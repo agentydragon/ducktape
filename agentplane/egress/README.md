@@ -38,7 +38,7 @@ One Go package per concern:
   watch periods for every kind; this package adds EgressCredentials and Secrets through
   Kubernetes-generated clients and shared informers from `client/`.
 - `rules`: the agent-facing `egress.agentplane-staging.svc.cluster.local/v1/rules` API, on its own
-  independently authenticated listener: the gRPC `EgressRules` service and its generated HTTP/JSON facade,
+  independently authenticated listener: the generated HTTP/JSON facade of the gRPC `EgressRules` service,
   beside the agent documentation.
 - `decision` and `history`: admission records, and their bounded best-effort write to the shared
   PostgreSQL history; `admin` serves that history, a change stream, readiness and liveness, and
@@ -203,10 +203,8 @@ the empty service is readiness and the service `livez` liveness, which stays `SE
 answers so a recoverable watch outage never restarts it. It admits every caller, because the kubelet
 sends no bearer; `GetHealth` does not. `Watch` is not served.
 
-The admin listener is an HTTP server that takes cleartext HTTP/2 and sends a request of content type
-`application/grpc` to the gRPC server; every other request is a 404. The gRPC server is mounted on the HTTP
-server as a handler (`grpc.Server.ServeHTTP`), so the HTTP server's `Shutdown` is what stops it, after
-ending the open watches.
+The admin listener serves gRPC alone. On shutdown it ends the open watches, then stops gracefully: the
+other calls in flight finish within the drain deadline.
 
 Every `EgressAdmin` call admits only the ServiceAccounts in `admin_grpc_callers`, each proving itself by
 a bearer of audience `admin_grpc_audience` that is reviewed for every call (an acceptance is reused
@@ -220,9 +218,9 @@ health alone.
 
 ## Rules gRPC API
 
-`EgressRules` (<egress_rules.proto>) serves `GetRules` on the agent API listener, which takes
-gRPC beside HTTP. `GET /v1/rules` is its gRPC-Gateway facade (<../grpc/facade/facade.go>), which forwards
-over loopback to that listener so the servicer authenticates every request. The answer is the redacted
+`EgressRules` (<egress_rules.proto>) serves `GetRules` on a loopback listener of the process's own; nothing
+outside the process calls it. `GET /v1/rules` on the agent API listener is its gRPC-Gateway facade
+(<../grpc/facade/facade.go>), which forwards to that listener so the servicer authenticates every request. The answer is the redacted
 view of the ServiceAccount the bearer proves and nothing else: the bearer is read from `authorization`
 metadata, which the facade fills from the `Authorization` header, and reviewed by the verifier, so the hop
 token and the projected tokens it accepts are accepted on both.
@@ -298,9 +296,11 @@ container, so a failed migration keeps that Pod unready while the previous proxi
 ## Replica lifecycle
 
 Readiness (the empty health service and `GetHealth`'s `ready`) and every CONNECT/HTTP admission share `Index` availability: all four watched kinds must be
-initially synced and have completed a watch cycle within three configured resync periods
-(`resync_seconds`, default 300, at least two). A negative clock age also fails closed. DB health does
-not participate. The `livez` health service only proves the admin listener answers; a recoverable watch outage does not
+initially synced, and none may be failing. A kind fails when one of its list or watch requests fails
+or client-go's watch error handler reports an abnormal end, and recovers on its next successful list
+or watch; `GetHealth` names each failing kind with its error and since when. client-go owns the
+watch timeouts, resumes and relists, and its HTTP/2 health checks turn a dead connection into a
+failed request. DB health does not participate. The `livez` health service only proves the admin listener answers; a recoverable watch outage does not
 cause a restart loop. Every request on an existing TLS/HTTP2 connection is gated again. After DNS I/O,
 a changed egress-policy decision denies that admission without forwarding or replay.
 Revocation is eventually observed independently by each watch, not globally linearizable.

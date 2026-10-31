@@ -3,7 +3,10 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
+	"net/http"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,14 +19,21 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	toolscache "k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
+	ctrlcache "sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type observedRunner struct {
@@ -121,7 +131,7 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	publicServer := grpc.NewServer()
+	publicServer := grpc.NewServer(g.Methods().ServerOptions(0)...)
 	g.RegisterExecutor(publicServer)
 	go func() { _ = publicServer.Serve(publicListener) }()
 	t.Cleanup(publicServer.Stop)
@@ -154,9 +164,7 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 	}
 	quiescing := f.sandbox.DeepCopy()
 	quiescing.Status.OperatingMode = sandboxapi.OperatingModeSuspended
-	meta.SetStatusCondition(&quiescing.Status.Conditions, metav1.Condition{
-		Type: sandboxapi.ConditionRunning, Status: metav1.ConditionTrue, Reason: phaseQuiescing,
-	})
+	quiescing.Status.StopStage = sandboxapi.StopStageQuiescing
 	if err := f.objects.Status().Update(t.Context(), quiescing); err != nil {
 		t.Fatal(err)
 	}
@@ -302,8 +310,8 @@ func TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.
 	}
 	g := f.newGateway(t, "test-reconnecting-gateway", "192.0.2.30")
 	g.config.RunnerSecurity = runner_transport.Security{Mode: runner_transport.Insecure}
-	// Discovery is deliberately later than this test's deadline: transport loss must trigger its own retry.
-	g.config.ControlTiming.HeartbeatInterval = time.Hour
+	// The Sandbox's only event: transport loss must trigger its own retry.
+	g.RunnerDiscoveryHandler().OnAdd(f.sandbox, true)
 	listener, err := net.Listen("tcp", "127.0.0.1:9090")
 	if err != nil {
 		t.Fatal(err)
@@ -347,55 +355,170 @@ func TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.
 	if _, err := second.runner.GetStatus(ctx, &runnerpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("replacement Runner did not serve calls: %v", err)
 	}
-	stale := &fencedRunnerConn{conn: second.direct.conn, identity: first.direct.identity}
+	stale := &fencedRunnerConn{conn: second.direct.conn, identity: first.direct.identity, connection: first}
 	if _, err := runnerservicepb.NewRunnerClient(stale).GetStatus(ctx, &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("old boot remained usable after reconnect: %v", err)
 	}
 }
 
-func TestRunnerDiscoveryWakesOnlyWhenARunnerBecomesReachable(t *testing.T) {
-	g := &Gateway{runnerWake: make(chan struct{}, 1)}
+func TestRunnerDiscoveryEnqueuesTheSandboxAnEventConcerns(t *testing.T) {
+	g := &Gateway{observerQueue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())}
+	defer g.observerQueue.ShutDown()
 	handler := g.RunnerDiscoveryHandler()
-	woke := func() bool {
+	labelled := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "test-runner-pod", Labels: map[string]string{sandboxapi.SandboxLabel: "test-pod-box"}}}
+	handler.OnUpdate(labelled, labelled)
+	handler.OnAdd(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "test-unlabelled-pod"}}, false)
+	handler.OnDelete(toolscache.DeletedFinalStateUnknown{Obj: &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Name: "test-deleted-box"}}})
+	queued := make(map[string]struct{})
+	for g.observerQueue.Len() > 0 {
+		name, _ := g.observerQueue.Get()
+		queued[name] = struct{}{}
+		g.observerQueue.Done(name)
+	}
+	if !maps.Equal(queued, map[string]struct{}{"test-pod-box": {}, "test-deleted-box": {}}) {
+		t.Fatalf("queued Sandboxes = %v", queued)
+	}
+}
+
+// heartbeatingRunner reports its state every few milliseconds, far faster than any production runner.
+type heartbeatingRunner struct {
+	runnerservicepb.UnimplementedRunnerServer
+	heartbeats atomic.Int32
+}
+
+func (r *heartbeatingRunner) WatchState(request *runnerservicepb.WatchStateRequest, stream grpc.ServerStreamingServer[runnerservicepb.WatchStateResponse]) error {
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := stream.Send(&runnerservicepb.WatchStateResponse{
+			SandboxUid: request.SandboxUid, IncarnationUid: request.IncarnationUid, ConnectionEpoch: request.ConnectionEpoch,
+			RunnerBootId: "test-heartbeating-boot", Facts: &runnerstatepb.RunnerFacts{},
+		}); err != nil {
+			return err
+		}
+		r.heartbeats.Add(1)
 		select {
-		case <-g.runnerWake:
-			return true
-		default:
-			return false
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		case <-ticker.C:
 		}
 	}
-	pod := func(ready bool, ip string) *corev1.Pod {
-		status := corev1.ConditionFalse
-		if ready {
-			status = corev1.ConditionTrue
+}
+
+// countingTransport counts the requests made through it.
+type countingTransport struct {
+	next     http.RoundTripper
+	requests *atomic.Int32
+}
+
+func (t countingTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	t.requests.Add(1)
+	return t.next.RoundTrip(request)
+}
+
+func TestRunnerHeartbeatsReadNoSandboxOrPodFromTheAPIServer(t *testing.T) {
+	f := newSandboxFixture(t)
+	pod := f.pod.DeepCopy()
+	pod.Status.PodIP = "127.0.0.1"
+	if _, err := api.Clientset.CoreV1().Pods(f.namespace).UpdateStatus(t.Context(), pod, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	var requests atomic.Int32
+	counted := rest.CopyConfig(api.Config)
+	counted.Wrap(func(next http.RoundTripper) http.RoundTripper {
+		return countingTransport{next: next, requests: &requests}
+	})
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, sandboxapi.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
 		}
-		return &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "runner", Labels: map[string]string{sandboxapi.SandboxLabel: "box"}},
-			Status:     corev1.PodStatus{PodIP: ip, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: status}}},
+	}
+	inventory, err := ctrlcache.New(counted, ctrlcache.Options{Scheme: scheme, DefaultNamespaces: map[string]ctrlcache.Config{f.namespace: {}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	health := watchhealth.New()
+	g := f.newGatewayReading(t, inventory, health, "test-cached-gateway", "192.0.2.32")
+	g.config.RunnerSecurity = runner_transport.Security{Mode: runner_transport.Insecure}
+	for _, watched := range []client.Object{&sandboxapi.Sandbox{}, &corev1.Pod{}} {
+		informer, err := inventory.GetInformer(t.Context(), watched)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := informer.AddEventHandler(g.RunnerDiscoveryHandler()); err != nil {
+			t.Fatal(err)
 		}
 	}
-	handler.OnUpdate(pod(false, "10.0.0.1"), pod(false, "10.0.0.1"))
-	if woke() {
-		t.Fatal("an unchanged Pod woke discovery")
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	cacheDone := make(chan error, 1)
+	go func() { cacheDone <- inventory.Start(ctx) }()
+	if !inventory.WaitForCacheSync(ctx) {
+		t.Fatal("cache did not sync")
 	}
-	handler.OnUpdate(pod(false, "10.0.0.1"), pod(true, "10.0.0.1"))
-	if !woke() {
-		t.Fatal("a Sandbox Pod becoming Ready did not wake discovery")
+	health.MarkSynced()
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(sandboxapi.RunnerServicePort)))
+	if err != nil {
+		t.Fatal(err)
 	}
-	unrelated := pod(true, "10.0.0.2")
-	unrelated.Labels = nil
-	handler.OnAdd(unrelated, false)
-	if woke() {
-		t.Fatal("a Pod without the Sandbox label woke discovery")
+	server := grpc.NewServer()
+	runner := &heartbeatingRunner{}
+	runnerservicepb.RegisterRunnerServer(server, runner)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	finished := make(chan error, 1)
+	go func() { finished <- g.RunRunnerObservers(ctx) }()
+	defer func() {
+		cancel()
+		<-finished
+		<-cacheDone
+	}()
+	poll := time.NewTicker(time.Millisecond)
+	defer poll.Stop()
+	awaitHeartbeats := func(count int32) {
+		t.Helper()
+		for runner.heartbeats.Load() < count {
+			select {
+			case <-ctx.Done():
+				t.Fatalf("runner sent %d of %d heartbeats: %v", runner.heartbeats.Load(), count, ctx.Err())
+			case <-poll.C:
+			}
+		}
 	}
-	idle := &sandboxapi.Sandbox{}
-	handler.OnUpdate(idle, idle)
-	if woke() {
-		t.Fatal("a Sandbox without a new incarnation woke discovery")
+	for {
+		if _, err := g.connections.holder(string(f.sandbox.UID)); err == nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("Runner never became callable: %v", ctx.Err())
+		case <-poll.C:
+		}
 	}
-	started := &sandboxapi.Sandbox{Status: sandboxapi.SandboxStatus{Incarnation: &sandboxapi.Incarnation{Name: "runner", UID: "u1"}}}
-	handler.OnUpdate(idle, started)
-	if !woke() {
-		t.Fatal("a Sandbox gaining an incarnation did not wake discovery")
+	baseline := requests.Load()
+	awaitHeartbeats(runner.heartbeats.Load() + 50)
+	if added := requests.Load() - baseline; added != 0 {
+		t.Fatalf("50 runner heartbeats made %d Sandbox or Pod API requests", added)
+	}
+}
+
+// A proxied call can take a connection from holder just before its observer ends it and closes the
+// ClientConn; gRPC then fails the call Canceled ("the client connection is closing"), which callers
+// do not retry.
+func TestCallOnEndedConnectionReportsTheEnd(t *testing.T) {
+	conn, err := grpc.NewClient("passthrough:///test-runner.invalid:1", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection := &runnerConnection{ended: make(chan struct{})}
+	connection.direct = &fencedRunnerConn{conn: conn, identity: metadata.MD{}, connection: connection}
+	connection.runner = runnerservicepb.NewRunnerClient(connection.direct)
+	connection.end(errSupersededConnection)
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := connection.runner.GetStatus(t.Context(), &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Aborted {
+		t.Fatalf("call on an ended connection = %v, want the connection's end (Aborted)", err)
 	}
 }

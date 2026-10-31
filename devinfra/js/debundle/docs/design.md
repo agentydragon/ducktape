@@ -183,14 +183,19 @@ endpoint's effects were not summarizable (barrier relations of `cell_order`, a
 `strict_chain` edge with an opaque endpoint, a binding-ordering edge with an
 assumed effect) and never `eager_use`, rebind or co-location edges.
 
-Binding-ordering causes carry each endpoint effect's `EffectProvenance`. The
-interpreter's per-statement fallback accumulator (`fallback_outcome`, filled by
-`bounded_invocation_fallback` and returned-callback promotion) is the only
-producer of assumed effects: at the statement's merge,
-`SynchronousCalls::fallback_only` keeps the bindings it alone contributed.
-Other conservative promotions (escaped callbacks invoked by opaque code,
-unsupported-input whole-body promotion) stay `Observed`; that only rejects
-more premises. `promote_at_init_calls` also offers each binding's
+Binding-ordering causes carry each endpoint effect's `EffectProvenance`. In
+the interpreter a conservative path runs under `ExecutionState::assumption`
+(`Executor::assuming`); effects inserted meanwhile are recorded in the
+outcome's `SynchronousCalls::fallback_only` with that path unless already
+held, and an observed insertion clears the entry. `invoke` clears the
+assumption, so an invocation's outcome and memo stay relative to it, and
+`absorb_binding_effects` re-tags a nested outcome under the merging path. The
+per-statement fallback accumulator (`fallback_outcome`) merges under
+`fallback_summary` at the statement's end. Graph build tags the
+`UnresolvedCallFallback` closure's eager uses for the shared-`var` order. A
+path whose code the statement definitely runs (an applied accessor, an
+unsupported construction's body, a named setter) stays `Observed`, which only
+rejects more premises. `promote_at_init_calls` also offers each binding's
 observed-only timeline, and a pair keeps a both-observed cause over an assumed
 one, because the timeline joins each effect only to its nearest neighbour: an
 assumed write between two observed ones would otherwise carry their order on
@@ -1140,7 +1145,7 @@ independently observed blocker in `export_reentry.json`, beside
 `dependency_graph.json`. `loader` names the loader derivation and the first
 witness of each failure kind; `global_blockers` names artifact incompleteness
 and nonordinary static requests across the artifact. The per-target
-`closure_blockers` names non-ESM, top-level-await, and vendor-affected
+`closure_blockers` names non-ESM, top-level-await, and open replacement-bundle
 closure chunks; unsupported, unresolved, missing, or non-entry static
 requests; and a target cycle. Request blockers carry their source chunk and
 specifier, plus the resolved chunk/file when resolution succeeded. The report
@@ -1306,6 +1311,18 @@ conservative. Private truncated roots are expanded once per source statement
 without adding them to the persistent escaped-callback cache. Incomplete
 reachability retains whole-body fallback.
 
+**Builtin member rows.** `MEMBER_ROWS` in `facts/abstract_domain/builtins.rs`
+summarizes host methods selected by property name on any receiver. A call
+`x.addEventListener("type", listener)` with a string-literal type and no spread
+selects the `addEventListener` row, which invokes no argument at call time: the
+fallback takes no roots and no inline-callback closure from the call, and the
+synchronous summary leaves its arguments out of the callback pool it runs at
+the call. The listener still becomes globally reachable, so later opaque code
+may invoke it. The receiver's identity is not proved; the row is a host
+assumption about every same-named method. Known gap: an object `options`
+argument's dictionary conversion reads `capture`, `once`, `passive` and
+`signal` through `[[Get]]`, which the row does not list.
+
 **Inherited class effects.** When an opaque use can invoke a class's
 constructor, field initializers, methods, or accessors, promotion follows the
 class's retained superclass value too. For a top-level class declaration with
@@ -1324,8 +1341,9 @@ summaries; the call also remains impure for S-chain ordering unless a
 separate purity hint applies. The hint suppresses the conservative
 "the callback may have run now" edge for inline functions, object
 literals containing functions, and first-order argument callbacks.
-The synchronous value-flow summary honors the same argument exemption for
-static event-listener registrations. Neither exemption suppresses reentry
+The synchronous value-flow summary honors the same argument exemption, and
+both honor it for calls a builtin member row admits with no `invokes` (below).
+Neither exemption suppresses reentry
 through callbacks already escaped to host code or available exports.
 Purity annotations alone do not assert that callback arguments are deferred.
 The separate exact-signature `no_reentry_callback_exports` author contract
@@ -1904,7 +1922,7 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   the union iff every chunk satisfies A1–A6 and the union graph
   is acyclic.
 - **A8. Whitelisted globals are not shadowed at chunk top level.**
-  `S`-edge construction consults a small purity whitelist —
+  `S`-edge construction consults the builtin summary table —
   `Math.PI`, `Number.isNaN(...)`, `Boolean(...)`, etc. — that
   classifies certain built-in property reads and calls as `Pure`.
   Soundness depends on those names referring to the global
@@ -1912,21 +1930,22 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   level (`const Math = userland; …; Math.PI`), the call dispatches
   through the user-bound value, which can fire arbitrary code.
   The validator's classifier consults a `compute_shadowed_globals`
-  pass and falls the whitelist back to `Unknown` for any
+  pass and falls the table back to `Unknown` for any
   shadowed name, so a chunk that does shadow remains sound (just
   conservatively over-restricted). The "no shadowing" form
-  documented here is the _unrestricted-whitelist_ version: chunks
+  documented here is the _unrestricted-table_ version: chunks
   that satisfy A8 reach the precise S-edge classification; chunks
   that violate it still validate correctly, with strictly more
   S edges than necessary.
 
-  The whitelist itself is admission-restricted: every entry must
-  fire no user-defined code on any argument value (no `ToNumber` /
-  `ToString` / `ToPrimitive` coercion paths, no iterator protocol,
-  no proxy traps, no own-property `[[Get]]`, no mutation). See
-  <purity_soundness.md> "Admission rule: PURE_STATIC_CALLS" for the contract that
-  governs adding new entries; soundness is preserved iff the
-  contract is preserved.
+  The builtin summary table is admission-restricted: every row
+  lists each step that can fire user-defined code on an operand
+  (`ToNumber` / `ToString` / `ToPrimitive` coercion paths, the
+  iterator protocol, proxy traps, own-property `[[Get]]`, mutation),
+  and purity admits a call only when each listed step is silent for
+  its operands. See <purity_soundness.md> "Admission rule: builtin
+  summary rows" for the contract that governs adding rows; soundness
+  is preserved iff the contract is preserved.
 
 - **A9. Spec-declared purity annotations are author-trusted.** The
   spec format admits optional per-member `purity:` values that
@@ -3294,6 +3313,40 @@ source/spec/package bytes and path membership before and after probes and before
 publishing a report or checkpoint. Resume prepares again and validates a fresh
 baseline before reusing definitive checkpoint records.
 
+### Purity and synchronous execution share one context
+
+Statement purity, function effects and the synchronous interpreter's
+per-prefix facts live in one `IterativeInference` context
+(<inference.md> § Dependency regions). Its dependencies run forward only:
+
+- Function effects are source-only and complete before execution starts;
+  nothing at a source prefix refines them.
+- A statement's purity is a fact at its own program point, produced once
+  `Prefix(n)` has settled, from source facts, the completed function effects
+  and whole-chunk heap facts. The interpreter consumes it while executing
+  statement _n_ and produces `Prefix(n+1)`.
+- Interpreter results at _n_ refine only later consumers: the final purity
+  projection (a checked local record factory call drops its matching call
+  reason), heap-content order and the graph.
+
+Whether a member read's object can be written later is a whole-chunk fact
+(`facts/abstract_domain/heap.rs`), not prefix state: a pure statement leaves
+the S-chain and may move past a later write, so purity at _n_ needs "no write
+at any prefix", which `Prefix(n)` cannot say.
+
+**Rejected for now: one least fixpoint over growing prefix states.** Making
+`ExecutionState` a joinable growing fact would let later prefixes refine
+earlier purity: per-prefix heap state could replace the whole-chunk write
+facts, and effect growth anywhere would re-wake the statements before it.
+It was costed and lost on three counts. Effect growth at any prefix
+re-executes every prefix after the first affected one, so cascades are
+bounded only by statements × growth events. Every prefix snapshot must be
+retained instead of the bounded live frontier `take_final` gives today. And
+the cost on the canonical inputs could not be bounded before building it,
+against a budget of 10% per step. The settled-prefix invariant ("the state
+after statement _n_ is never rewritten") stays. The condition for revisiting
+this is recorded at the purity read of `Prefix(n)`.
+
 ## Vendor chunk swapping
 
 The `vendor` spec map classifies chunks as vendor code at one of four
@@ -3360,6 +3413,21 @@ writes. The strip does not build an dependency graph or consume
 `synchronous_calls`, so this analysis entry point omits only synchronous
 call-effect annotation. The split-brain and swap-privacy gates still use the
 same augmented calls, local effects, and cell-write summaries.
+
+### Swap equivalence is an author promise
+
+A swap mark promises the replacement behaves like the bundled code
+(SPEC.md § Vendor swap equivalence), so analysis derives facts from the bundled
+body. Treating swapped code as unknown (#13058) was the alternative: it is sound
+without the promise, but the bundled body is the only implementation the engine
+indexes, so it denies every swapped callee its summaries, and on Tana the
+callees behind the largest atomic groups (TypeScript decorate helpers swapped to
+MobX, Zod builders) are swapped. A false promise produces a wrong split, not a
+refusal: a replacement that runs `factory(callback)`'s callback at once where
+the bundled `factory` deferred it lets
+`const wrapped = factory(() => globalThis.mode.length)` move ahead of
+`globalThis.mode = "ready"` and throw. The visible case, a bundled replacement
+that is not an ESM leaf, still blocks export reentry.
 
 ### Deliberate split-brain bypasses in the strip pass
 

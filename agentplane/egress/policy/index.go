@@ -5,36 +5,36 @@ package policy
 
 import (
 	"sync"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 )
 
 // The kinds the proxy watches beside PolicySets and PolicyBindings.
 const (
-	Credentials reader.Kind = resources.CredentialsPlural
-	Secrets     reader.Kind = "secrets"
+	Credentials watchhealth.Kind = resources.CredentialsPlural
+	Secrets     watchhealth.Kind = "secrets"
 )
 
 // Index is everything the decision reads, keyed by name. Its writer is the informer.
 type Index struct {
 	// Rules is the egress rules of the namespace's PolicySets and the bindings that grant them.
 	Rules *reader.Index[resources.Rule]
-	// Freshness covers the rules, credentials and Secrets alike.
-	Freshness *reader.Freshness
+	// Health covers the rules, credentials and Secrets alike.
+	Health *watchhealth.Health
 
 	mu          sync.RWMutex
 	credentials map[string]resources.Credential
 	secrets     map[string]resources.Secret
 }
 
-// NewIndex returns an empty Index that stops being available once a kind's last completed cycle is
-// older than staleAfter.
-func NewIndex(staleAfter time.Duration) *Index {
+// NewIndex returns an empty Index that is unavailable until its informers sync, and while any of its
+// kinds fails to list or watch.
+func NewIndex() *Index {
 	return &Index{
 		Rules:       reader.NewIndex(resources.EgressRuleType, resources.ParseRule),
-		Freshness:   reader.NewFreshness(staleAfter, reader.PolicySets, reader.PolicyBindings, Credentials, Secrets),
+		Health:      watchhealth.New(),
 		credentials: map[string]resources.Credential{},
 		secrets:     map[string]resources.Secret{},
 	}

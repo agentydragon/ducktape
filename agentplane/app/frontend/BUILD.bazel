@@ -6,6 +6,7 @@
 # gazelle:exclude test_visual_navigation.py
 # gazelle:exclude test_visual_scenes.py
 # gazelle:exclude test_visual_operation_presentation.py
+# gazelle:exclude test_history_profile.py
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
@@ -64,7 +65,6 @@ filegroup(
         "//:node_modules/@opentelemetry/resources",
         "//:node_modules/@opentelemetry/sdk-trace-web",
         "//:node_modules/@tabler/icons-react",
-        "//:node_modules/@tanstack/react-virtual",
         "//:node_modules/@types/node",
         "//:node_modules/date-fns",
         "//:node_modules/happy-dom",
@@ -403,7 +403,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
-        ":live_stream",
+        ":stream_reader",
         ":watch_stream",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/action_service:operator_action_service_pb",
@@ -414,8 +414,8 @@ agentplane_vitest_test(
     name = "mcp_linkage_client_test",
     srcs = ["mcp_linkage_client.test.ts"],
     deps = [
-        ":live_stream",
         ":mcp_linkage_client",
+        ":stream_reader",
         "//:node_modules/@types/react",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/testing:watch",
@@ -428,8 +428,8 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
-        ":live_stream",
         ":mcp_linkage_client",
+        ":stream_reader",
         ":time_ago",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -468,12 +468,30 @@ ts_library(
 )
 
 ts_library(
+    name = "stream_reader",
+    srcs = ["stream_reader.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
+agentplane_vitest_test(
+    name = "stream_reader_test",
+    srcs = ["stream_reader.test.ts"],
+    deps = [
+        ":stream_reader",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend/testing:watch",
+    ],
+)
+
+ts_library(
     name = "live_stream",
     srcs = ["live_stream.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
+        ":stream_reader",
         "//:node_modules/@types/react",
+        "//:node_modules/eventsource-parser",
         "//:node_modules/react",
     ],
 )
@@ -483,7 +501,9 @@ agentplane_vitest_test(
     srcs = ["live_stream.test.ts"],
     deps = [
         ":live_stream",
+        ":stream_reader",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/testing:watch",
     ],
 )
 
@@ -491,17 +511,14 @@ ts_library(
     name = "watch_stream",
     srcs = ["watch_stream.ts"],
     tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":live_stream",
-    ],
+    deps = [":stream_reader"],
 )
 
 agentplane_vitest_test(
     name = "watch_stream_test",
     srcs = ["watch_stream.test.ts"],
     deps = [
-        ":live_stream",
+        ":stream_reader",
         ":watch_stream",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/testing:watch",
@@ -514,7 +531,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":format_time",
-        ":live_stream",
+        ":stream_reader",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -525,7 +542,7 @@ agentplane_vitest_test(
     name = "stream_status_test",
     srcs = ["stream_status.test.tsx"],
     deps = [
-        ":live_stream",
+        ":stream_reader",
         ":stream_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -543,6 +560,7 @@ ts_library(
     deps = [
         ":format_time",
         ":live_stream",
+        ":stream_reader",
         ":stream_status",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -661,6 +679,8 @@ agentplane_vitest_test(
         "//:node_modules/react-router",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/sandboxes:live",
+        "//agentplane/app/frontend/testing:watch",
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:thread_groups",
@@ -722,6 +742,7 @@ ts_library(
         ":format_time",
         ":live_stream",
         ":notification_types",
+        ":stream_reader",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -771,7 +792,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
-        ":live_stream",
+        ":stream_reader",
         ":watch_stream",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
@@ -931,6 +952,7 @@ ts_library(
         "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/app/frontend/testing:model_catalog",
         "//agentplane/app/frontend/threads:client",
+        "//agentplane/app/frontend/threads:history_sizes",
         "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/proto:runner_pb",
@@ -964,6 +986,13 @@ filegroup(
     name = "visual_bundle_css",
     testonly = True,
     srcs = ["harness/bundle.css"],
+)
+
+agentplane_visual_test(
+    name = "profile_history",
+    src = "test_history_profile.py",
+    tags = ["manual"],
+    title = "Agentplane: history CPU profiles",
 )
 
 agentplane_visual_test(

@@ -26,10 +26,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/proxy"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/agentydragon/ducktape/util/netlistener"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 	authenticationv1 "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -151,7 +151,7 @@ func openListener(name, address string) (net.Listener, error) {
 
 // serving treats a server shut down on purpose as done and anything else as the failure it is.
 func serving(name string, err error) error {
-	if errors.Is(err, http.ErrServerClosed) {
+	if err == nil || errors.Is(err, http.ErrServerClosed) || errors.Is(err, grpc.ErrServerStopped) {
 		return nil
 	}
 	return fmt.Errorf("%s listener: %w", name, err)
@@ -198,11 +198,9 @@ func serve(ctx context.Context, c config, proxyListener, agentAPIListener, admin
 		return err
 	}
 
-	watchPeriod := time.Duration(c.ResyncSeconds) * time.Second
-	index := policy.NewIndex(reader.StaleAfterCycles * watchPeriod)
+	index := policy.NewIndex()
 	watcher, err := informer.New(base, informer.Config{
 		Index: index, RulesNamespace: c.RulesNamespace, CredentialsNamespace: c.CredentialsNamespace,
-		WatchPeriod: watchPeriod,
 	})
 	if err != nil {
 		return err
@@ -244,13 +242,12 @@ func serve(ctx context.Context, c config, proxyListener, agentAPIListener, admin
 	// The facade outlives the termination signal so that reads admitted before it finish while draining.
 	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacade()
-	agentAPIServer, err := newAgentAPI(facadeContext, agentAPIListener.Addr().String(), verifier, index, agentDocs, docs.OpenAPI)
+	agentAPIServer, err := newAgentAPI(facadeContext, verifier, index, agentDocs, docs.OpenAPI)
 	if err != nil {
 		return err
 	}
-	adminServer := &http.Server{Handler: http.NotFoundHandler(), ReadHeaderTimeout: readHeaderTimeout}
-	adminShutdown, err := mountAdminGRPC(adminServer, c, reviews.TokenReviews(), admin.ServiceOptions{
-		Decisions: store, Changes: changes, HistoryHealth: decisions, Index: index.Freshness, Clock: time.Now,
+	adminServer, err := newAdminServer(c, reviews.TokenReviews(), admin.ServiceOptions{
+		Decisions: store, Changes: changes, HistoryHealth: decisions, Index: index.Health,
 	})
 	if err != nil {
 		return err
@@ -259,13 +256,13 @@ func serve(ctx context.Context, c config, proxyListener, agentAPIListener, admin
 	group, ctx := errgroup.WithContext(ctx)
 	group.Go(func() error { watcher.Run(ctx); return nil })
 	group.Go(func() error { return serving("proxy", egress.Serve(proxyListener)) })
-	group.Go(func() error { return serving("agent API", agentAPIServer.Serve(agentAPIListener)) })
+	group.Go(func() error { return agentAPIServer.Serve(agentAPIListener) })
 	// The admin listener is the readiness probe and readiness gates every Service this Pod backs, so
 	// it starts accepting last: the readiness check answering means the listeners above are serving.
 	group.Go(func() error { return serving("admin", adminServer.Serve(adminListener)) })
 	group.Go(func() error {
 		<-ctx.Done()
-		return drain(egress, index, agentAPIServer, adminShutdown)
+		return drain(egress, index, agentAPIServer, adminServer)
 	})
 	return group.Wait()
 }
@@ -279,7 +276,7 @@ type shutdowner interface {
 // admin listener outlives the proxy's drain so the kubelet can see the Pod go unready.
 func drain(egress *proxy.Proxy, index *policy.Index, agentAPIServer, adminServer shutdowner) error {
 	slog.Info("draining")
-	index.Freshness.MarkDraining()
+	index.Health.MarkDraining()
 	ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)
 	defer cancel()
 	if err := egress.Drain(ctx); err != nil {

@@ -291,3 +291,15 @@ py_library(
         "//util:visual_review",
     ],
 )
+
+py_test(
+    name = "test_artifacts",
+    srcs = ["test_artifacts.py"],
+    deps = [
+        ":artifacts",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

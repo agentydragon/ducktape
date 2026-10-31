@@ -481,7 +481,7 @@ fn selected_provider_uses_its_canonical_primitive_facts() {
 }
 
 #[test]
-fn vendor_affected_provider_does_not_reuse_original_primitive_facts() {
+fn vendor_marked_provider_keeps_its_primitive_facts() {
     let source = source(
         "import { limit as bytes } from './peer.js';",
         "4 * bytes + 256",
@@ -495,11 +495,10 @@ fn vendor_affected_provider_does_not_reuse_original_primitive_facts() {
             level: VendorLevel::Suppress,
         },
     )];
-    expect_atomic_conflict_rejection(
+    let fixture = run_fixture(
         FixtureOpts::new(&source, split_modules())
             .with_extra_chunks(&peers)
             .with_vendor_marks(&vendor_marks),
-        &["compute", "later"],
-        &["eager_use"],
     );
+    assert_preserved_entry_output(&fixture, "264 42\n");
 }

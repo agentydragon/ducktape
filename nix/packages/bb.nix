@@ -5,7 +5,7 @@
 }:
 pkgs.stdenv.mkDerivation {
   pname = "bb";
-  version = "5.0.466";
+  version = "5.0.498";
   src = artifacts.bb;
   dontUnpack = true;
   installPhase = ''

@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"errors"
-	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
@@ -38,7 +37,7 @@ func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAcc
 	if err := message.Validate(s.messageBodyLimit); err != nil {
 		return nil, err
 	}
-	if !s.policy.Freshness.Available(time.Now()) {
+	if !s.policy.Health.Available() {
 		return nil, errSendPolicyUnavailable
 	}
 	view, err := s.sandbox(ctx, message.DestinationRef)

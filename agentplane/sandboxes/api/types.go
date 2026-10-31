@@ -133,6 +133,31 @@ type QuiesceAttempt struct {
 	AttemptedAt  metav1.Time `json:"attemptedAt"`
 }
 
+// RunnerCredentialKind is the workload kind a runner credential generation was issued for.
+// +kubebuilder:validation:Enum=Pod;VM
+type RunnerCredentialKind string
+
+const (
+	RunnerCredentialKindPod RunnerCredentialKind = "Pod"
+	RunnerCredentialKindVM  RunnerCredentialKind = "VM"
+)
+
+// RunnerCredential is the controller's binding of a runner credential generation, whose Certificate
+// and Secret are `runner-<id>`, to the incarnation started with it.
+type RunnerCredential struct {
+	// ID is the current credential generation.
+	// +kubebuilder:validation:Pattern=`^[0-9a-f]{32}$`
+	ID   string               `json:"id"`
+	Kind RunnerCredentialKind `json:"kind"`
+	// AcceptedID is the generation of the last incarnation the controller accepted.
+	// +kubebuilder:validation:Pattern=`^[0-9a-f]{32}$`
+	AcceptedID string `json:"acceptedId,omitempty"`
+	// PodUID is the Pod bound to ID; a Pod with ID's label and another UID is a stale replacement.
+	PodUID string `json:"podUid,omitempty"`
+	// LastVMIUID is the last VMI accepted for the Sandbox's VM.
+	LastVMIUID string `json:"lastVmiUid,omitempty"`
+}
+
 // AutosuspendBlockerReason is a current runner fact that keeps the Sandbox from being idle.
 // +kubebuilder:validation:Enum=ActiveTurn;PendingCommand;Setup;Activation;Bootstrap;Admission;ExecutorRelay
 type AutosuspendBlockerReason string
@@ -195,6 +220,9 @@ type SandboxStatus struct {
 	QuiescedIncarnation *string `json:"quiescedIncarnation,omitempty"`
 	// The latest Quiesce request, scoped to its runner incarnation, for the controller's retry deadline.
 	QuiesceAttempt *QuiesceAttempt `json:"quiesceAttempt,omitempty"`
+	// RunnerCredential binds the controller-issued runner credential to the incarnation it was issued
+	// for. It lives under status so writers of the Sandbox's spec and metadata cannot rebind it.
+	RunnerCredential *RunnerCredential `json:"runnerCredential,omitempty"`
 	// OperatingMode is whether the controller runs the Sandbox: the one derivation every reader of
 	// `spec.running` reads instead.
 	OperatingMode OperatingMode `json:"operatingMode,omitempty"`
@@ -203,6 +231,9 @@ type SandboxStatus struct {
 	SuspendedBy *SuspendedBy `json:"suspendedBy,omitempty"`
 	// +kubebuilder:validation:Minimum=0
 	SuspendedAtWakeGeneration *int64 `json:"suspendedAtWakeGeneration,omitempty"`
+	// StopStage is how far the controller has taken stopping the Sandbox's workload; absent while
+	// the workload runs or starts. Readers dispatch on it; condition reasons are display only.
+	StopStage StopStage `json:"stopStage,omitempty"`
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
@@ -248,6 +279,20 @@ const (
 	SuspendedByIdle SuspendedBy = "Idle"
 	// A requester cleared `spec.running`.
 	SuspendedByRequested SuspendedBy = "Requested"
+)
+
+// +kubebuilder:validation:Enum=Quiescing;Deleting;Stopped
+type StopStage string
+
+const (
+	// The controller is sealing the current incarnation's Sessions before it stops or deletes it. A
+	// Sandbox resumed meanwhile still waits for the seal and gets a new incarnation.
+	StopStageQuiescing StopStage = "Quiescing"
+	// The Sandbox is being deleted and has no Session left to seal; the controller deletes its
+	// workload and runner credentials.
+	StopStageDeleting StopStage = "Deleting"
+	// No Pod or VM runs; the state volume is kept.
+	StopStageStopped StopStage = "Stopped"
 )
 
 // +kubebuilder:object:root=true

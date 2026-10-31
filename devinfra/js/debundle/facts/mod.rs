@@ -18,7 +18,7 @@
 //!   (TypeScript decorate helpers) and policy dispatch.
 //! - `at_init_fallback` — at-init unresolved-call fallback source
 //!   pruning (safe plain-array chains, opaque-call/inline-fn finders,
-//!   no-sync-callback member recognition).
+//!   `no_sync_callback_members` and builtin member-row exemptions).
 //! - `collector` — the single-pass [`StatementFactsCollector`] and the
 //!   inline-effect collector it delegates to.
 //! - `lazy_boundary` — the [`LazyBoundary`] trait and the shared
@@ -40,9 +40,9 @@ pub(crate) use crate::analysis_inputs::{
     AnalysisInputs, KnownEffect, LocalEffectPolicy, ValidatedNativeOperationFacts,
 };
 pub(crate) use crate::purity::{
-    ChunkCodeGraph, Purity, PurityRule, RedundantPureMemberHint, RedundantPurityHint,
-    SHADOW_TRACKED_GLOBALS, classify_class_static_purity, classify_expr_purity,
-    classify_var_decl_purity, detect_redundant_pure_member_hints, detect_redundant_purity_hints,
+    ChunkCodeGraph, Purity, RedundantPureMemberHint, RedundantPurityHint,
+    classify_class_static_purity, classify_expr_purity, classify_var_decl_purity,
+    detect_redundant_pure_member_hints, detect_redundant_purity_hints,
 };
 
 pub mod abstract_domain;
@@ -64,6 +64,7 @@ mod purity_classification;
 mod semantic_inference;
 mod set_iterables;
 mod source_unit_read_closure;
+pub(crate) mod standard_globals;
 mod statement_facts;
 pub(crate) mod sync_effects;
 mod value_flow;
@@ -100,7 +101,7 @@ pub use statement_facts::{
 pub(crate) use statement_facts::{
     ConstructorFacts, HeapContentEffects, LocalRecordFactoryPurityCertificate,
 };
-pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, ValueOrigin, own_data_keys};
+pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, own_data_keys};
 
 // Public API: importable at `facts::<item>` exactly as before the split.
 pub use analyze::{
@@ -110,6 +111,7 @@ pub use analyze::{
     complete_chunk_structural_with_inputs, complete_chunk_structural_with_native_allocations,
     module_has_top_level_await,
 };
+pub(crate) use analyze::{complete_chunk_structural_with_flow, structural_value_flow};
 pub use item_views::{TopLevelItemView, top_level_item_views};
 pub use local_effects::local_namespace_iife_target;
 pub use statement_facts::{

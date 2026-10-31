@@ -1,0 +1,519 @@
+package anthropic
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
+)
+
+func testConfig() Config {
+	return Config{
+		MaxTokens:           4096,
+		Thinking:            &ThinkingConfig{Type: "adaptive", BlockBinding: &BlockBindingConfig{PrefixMismatchBehavior: "error"}},
+		PromptCache:         &PromptCacheConfig{TTL: "1h"},
+		CacheDiagnostics:    true,
+		PerMessageEffort:    true,
+		StrictToolInput:     true,
+		EagerInputStreaming: true,
+	}
+}
+
+func testToolSurface() protocol.ToolSurface {
+	return protocol.ToolSurface{
+		Description: "Execute code in the sampler-owned environment.",
+		Parameters:  json.RawMessage(`{"type":"object","properties":{"code":{"type":"string"},"cell_id":{"type":"string"},"yield_time_ms":{"type":"integer","minimum":0,"maximum":60000}},"additionalProperties":false}`),
+	}
+}
+
+func testBuildRequest(params RequestParams, config Config, previousMessageID string) (Request, error) {
+	if params.Model == "" {
+		params.Model = "claude-test"
+	}
+	if params.Tools.Description == "" {
+		params.Tools = testToolSurface()
+	}
+	return BuildRequest(params, config, previousMessageID)
+}
+
+func TestBuildAnthropicRequestConvertsImagesAndConfiguresCacheAndEffort(t *testing.T) {
+	config := testConfig()
+	conversation := &Context{}
+	if err := conversation.ChangeEffort("low"); err != nil {
+		t.Fatal(err)
+	}
+	image := json.RawMessage(`{"type":"input_image","image_url":"data:image/png;base64,aGVsbG8="}`)
+	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "inspect this"}, {Type: "input_image", Raw: image}}); err != nil {
+		t.Fatal(err)
+	}
+	restoredEffort := "high"
+	conversation.PendingEffort = &restoredEffort
+	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "next turn"}}); err != nil {
+		t.Fatal(err)
+	}
+	body, err := testBuildRequest(RequestParams{Context: conversation, Effort: "high"}, config, "msg_previous")
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(encoded, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if wire["model"] != "claude-test" || wire["max_tokens"] != float64(4096) || wire["stream"] != true {
+		t.Fatalf("request identity/limits are wrong: %s", encoded)
+	}
+	thinking := wire["thinking"].(map[string]any)
+	if thinking["type"] != "adaptive" || thinking["block_binding"].(map[string]any)["prefix_mismatch_behavior"] != "error" {
+		t.Fatalf("thinking controls were not encoded: %s", encoded)
+	}
+	if wire["cache_control"].(map[string]any)["ttl"] != "1h" || wire["diagnostics"].(map[string]any)["previous_message_id"] != "msg_previous" {
+		t.Fatalf("cache controls were not encoded: %s", encoded)
+	}
+	if wire["output_config"].(map[string]any)["effort"] != "high" {
+		t.Fatalf("request effort was not encoded: %s", encoded)
+	}
+	tools := wire["tools"].([]any)
+	tool := tools[0].(map[string]any)
+	if tool["strict"] != true || tool["eager_input_streaming"] != true {
+		t.Fatalf("tool input controls were not encoded: %s", encoded)
+	}
+	messages := wire["messages"].([]any)
+	userMessage := messages[1].(map[string]any)
+	content := userMessage["content"].([]any)
+	imageBlock := content[1].(map[string]any)
+	source := imageBlock["source"].(map[string]any)
+	if imageBlock["type"] != "image" || source["type"] != "base64" || source["media_type"] != "image/png" || source["data"] != "aGVsbG8=" {
+		t.Fatalf("input image was not converted to Anthropic base64 content: %s", encoded)
+	}
+	if messages[0].(map[string]any)["output_config"].(map[string]any)["effort"] != "low" || messages[3].(map[string]any)["output_config"].(map[string]any)["effort"] != "high" {
+		t.Fatalf("per-message effort controls were not positioned around the user turn: %s", encoded)
+	}
+	if messages[2].(map[string]any)["role"] != "user" {
+		t.Fatalf("the restored effort activated before the new user input: %s", encoded)
+	}
+}
+
+func TestAnthropicHistoryObservationsUseNativeBlockIdentity(t *testing.T) {
+	message := map[string]json.RawMessage{"id": json.RawMessage(`"msg_history"`)}
+	decodeBlock := func(raw string) map[string]json.RawMessage {
+		t.Helper()
+		var block map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(raw), &block); err != nil {
+			t.Fatal(err)
+		}
+		return block
+	}
+
+	text := decodeBlock(`{"type":"text","text":"hello"}`)
+	started := anthropicItemStarted(message, 0, text).GetItemStarted()
+	if started == nil || started.GetItemId() != "msg_history#0" || started.GetKind() != eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT {
+		t.Fatalf("text block start was not normalized: %+v", started)
+	}
+	if delta := anthropicBlockDelta(message, 0, text, "text_delta", "hello").GetTextDelta(); delta == nil || delta.GetItemId() != "msg_history#0" || delta.GetText() != "hello" {
+		t.Fatalf("text delta was not normalized: %+v", delta)
+	}
+	if completed := anthropicBlockCompleted(message, 0, text).GetItemCompleted(); completed == nil || completed.GetText() != "hello" {
+		t.Fatalf("text block completion was not normalized: %+v", completed)
+	}
+
+	thinking := decodeBlock(`{"type":"thinking","thinking":"reasoning","signature":"sig_private"}`)
+	started = anthropicItemStarted(message, 1, thinking).GetItemStarted()
+	if started == nil || started.GetItemId() != "msg_history#1" || started.GetKind() != eventpb.ItemKind_ITEM_KIND_REASONING {
+		t.Fatalf("thinking block start was not normalized: %+v", started)
+	}
+	if delta := anthropicBlockDelta(message, 1, thinking, "thinking_delta", "reasoning").GetTextDelta(); delta == nil || delta.GetText() != "reasoning" {
+		t.Fatalf("thinking delta was not normalized: %+v", delta)
+	}
+	if anthropicBlockDelta(message, 1, thinking, "signature_delta", "sig_private") != nil {
+		t.Fatal("signature delta must remain raw source evidence")
+	}
+	if anthropicItemStarted(message, 2, decodeBlock(`{"type":"redacted_thinking","data":"opaque"}`)) != nil {
+		t.Fatal("redacted thinking must not be projected as plaintext")
+	}
+
+	tool := decodeBlock(`{"type":"tool_use","id":"call_native","name":"exec","input":{"code":"text(1)"}}`)
+	started = anthropicItemStarted(message, 2, tool).GetItemStarted()
+	if started == nil || started.GetItemId() != "call_native" || started.GetKind() != eventpb.ItemKind_ITEM_KIND_TOOL_CALL || started.GetToolName() != "exec" {
+		t.Fatalf("tool block start did not use native call identity: %+v", started)
+	}
+	if delta := anthropicBlockDelta(message, 2, tool, "input_json_delta", `{"code":`).GetToolArgumentsDelta(); delta == nil || delta.GetItemId() != "call_native" || delta.GetPartialJson() != `{"code":` {
+		t.Fatalf("tool input delta was not normalized: %+v", delta)
+	}
+	if args := anthropicToolArguments(message, 2, tool).GetToolArguments(); args == nil || args.GetItemId() != "call_native" || args.GetArgumentsJson() != `{"code":"text(1)"}` {
+		t.Fatalf("tool arguments were not normalized: %+v", args)
+	}
+	if anthropicItemStarted(message, 3, decodeBlock(`{"type":"compaction","content":"opaque","signature":"sig"}`)) != nil {
+		t.Fatal("compaction block must remain protocol evidence")
+	}
+}
+
+func TestBuildAnthropicRequestAcceptsStoredTextMessage(t *testing.T) {
+	conversation := &Context{}
+	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "stored conversation text"}}); err != nil {
+		t.Fatal(err)
+	}
+	body, err := testBuildRequest(RequestParams{Context: conversation}, testConfig(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := body.Messages[0]
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(message, &fields); err != nil {
+		t.Fatal(err)
+	}
+	var content []map[string]any
+	if err := json.Unmarshal(fields["content"], &content); err != nil {
+		t.Fatal(err)
+	}
+	text := content[0]["text"]
+	if text != "stored conversation text" {
+		t.Fatalf("stored text was not converted to Anthropic input_text: %+v", message)
+	}
+}
+
+func TestBuildAnthropicRequestReplaysSignedThinkingBlockUnchanged(t *testing.T) {
+	content := json.RawMessage(`{"type":"thinking","thinking":"preserve this","signature":"sig_fixture"}`)
+	native := json.RawMessage(`{"id":"msg_signed","type":"message","role":"assistant","model":"claude-test","content":[` + string(content) + `],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":7,"provider_usage":{"fixture":true}},"provider_metadata":{"opaque_sequence":9007199254740993}}`)
+	conversation := &Context{}
+	if err := conversation.AppendRecords([]json.RawMessage{native}); err != nil {
+		t.Fatal(err)
+	}
+	body, err := testBuildRequest(RequestParams{Context: conversation}, testConfig(), "msg_signed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayedMessage := body.Messages[0]
+	var replayFields map[string]json.RawMessage
+	if err := json.Unmarshal(replayedMessage, &replayFields); err != nil {
+		t.Fatal(err)
+	}
+	want, err := json.Marshal([]json.RawMessage{content})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(replayFields["content"], want) {
+		t.Fatalf("signed thinking content changed during replay: got %s want %s", replayFields["content"], want)
+	}
+	if len(replayFields) != 2 || !bytes.Contains(replayedMessage, []byte(`"role":"assistant"`)) {
+		t.Fatalf("response envelope metadata leaked onto the request wire: %s", replayedMessage)
+	}
+	stored, err := conversation.Records()
+	if err != nil || len(stored) != 1 || !bytes.Contains(stored[0], []byte(`"provider_metadata":{"opaque_sequence":9007199254740993}`)) ||
+		!bytes.Contains(stored[0], []byte(`"provider_usage":{"fixture":true}`)) {
+		t.Fatalf("unknown native response metadata was not retained in storage: records=%s err=%v", protocol.MustJSON(stored), err)
+	}
+	if body.Diagnostics == nil || body.Diagnostics.PreviousMessageID == nil || *body.Diagnostics.PreviousMessageID != "msg_signed" {
+		t.Fatalf("previous message diagnostics were lost: %+v", body.Diagnostics)
+	}
+}
+
+func TestAnthropicContextUsesNativeRecordsForToolCallsAndResults(t *testing.T) {
+	context := &Context{}
+	assistant := json.RawMessage(`{"id":"msg_tools","type":"message","role":"assistant","content":[{"type":"text","text":"running"},{"type":"tool_use","id":"call_1","name":"exec","input":{"code":"text(1)"},"vendor_field":"kept"}],"stop_reason":"tool_use","usage":{"input_tokens":2,"output_tokens":3},"vendor_metadata":{"fixture":true}}`)
+	if err := context.AppendRecords([]json.RawMessage{assistant}); err != nil {
+		t.Fatal(err)
+	}
+	calls, err := context.PendingCalls()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 || calls[0].Encoding != protocol.ExecEncodingJSON || calls[0].CallID != "call_1" || calls[0].Name != "exec" ||
+		calls[0].Input != `{"code":"text(1)"}` || calls[0].SourceRecord != 1 {
+		t.Fatalf("native tool_use was not the execution source: %+v", calls)
+	}
+	records, err := context.Records()
+	if err != nil || len(records) != 1 {
+		t.Fatalf("tool call created a duplicate canonical record: records=%d err=%v", len(records), err)
+	}
+	if err := context.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "done"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := context.CheckSettled(); err != nil {
+		t.Fatalf("tool result did not settle the call: %v", err)
+	}
+	if err := context.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "later"}}); err != nil {
+		t.Fatal(err)
+	}
+	records, err = context.Records()
+	if err != nil || len(records) != 3 {
+		t.Fatalf("native result/notification records=%d err=%v", len(records), err)
+	}
+	var firstResult, repeatedOutput struct {
+		Role    string `json:"role"`
+		Content []struct {
+			Type    string `json:"type"`
+			ToolUse string `json:"tool_use_id"`
+			Text    string `json:"text"`
+			Content any    `json:"content"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(records[1], &firstResult); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(records[2], &repeatedOutput); err != nil {
+		t.Fatal(err)
+	}
+	if firstResult.Role != "user" || len(firstResult.Content) != 1 || firstResult.Content[0].Type != "tool_result" || firstResult.Content[0].ToolUse != "call_1" {
+		t.Fatalf("first output was not a native tool_result: %+v", firstResult)
+	}
+	if repeatedOutput.Role != "user" || len(repeatedOutput.Content) != 1 || repeatedOutput.Content[0].Type != "text" ||
+		!strings.HasPrefix(repeatedOutput.Content[0].Text, "Asynchronous output from exec call call_1:\n") {
+		t.Fatalf("repeated output was not native user text: %+v", repeatedOutput)
+	}
+}
+
+func TestAnthropicPendingEffortRestoresAfterNewUserAndPreservesSignedPrefix(t *testing.T) {
+	thinking := json.RawMessage(`{"type":"thinking","thinking":"keep this signed prefix","signature":"sig_fixture","unknown_block_field":{"keep":true}}`)
+	message := json.RawMessage(`{"id":"msg_signed","type":"message","role":"assistant","content":[` + string(thinking) + `],"stop_reason":"end_turn","usage":{"input_tokens":4,"output_tokens":5,"unknown_usage":17},"provider_unknown":{"keep":"yes"}}`)
+	effort := "high"
+	context := &Context{Messages: []json.RawMessage{message}, PendingEffort: &effort}
+	wire, err := json.Marshal(context)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored Context
+	if err := json.Unmarshal(wire, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if restored.PendingEffort == nil || *restored.PendingEffort != "high" {
+		t.Fatalf("pending effort was not persisted: %s", wire)
+	}
+	if err := restored.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "new turn"}}); err != nil {
+		t.Fatal(err)
+	}
+	if restored.PendingEffort != nil || len(restored.Messages) != 3 {
+		t.Fatalf("restoration did not activate after the user message: %+v", restored)
+	}
+	var prefix map[string]json.RawMessage
+	if err := json.Unmarshal(restored.Messages[0], &prefix); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(prefix["content"], []byte(`"signature":"sig_fixture"`)) ||
+		!bytes.Contains(prefix["content"], []byte(`"unknown_block_field":{"keep":true}`)) ||
+		!bytes.Contains(restored.Messages[0], []byte(`"unknown_usage":17`)) ||
+		!bytes.Contains(restored.Messages[0], []byte(`"provider_unknown":{"keep":"yes"}`)) {
+		t.Fatalf("signed prefix or provider metadata changed: %s", restored.Messages[0])
+	}
+	var control struct {
+		Role         string `json:"role"`
+		Content      []any  `json:"content"`
+		OutputConfig struct {
+			Effort string `json:"effort"`
+		} `json:"output_config"`
+	}
+	if err := json.Unmarshal(restored.Messages[2], &control); err != nil {
+		t.Fatal(err)
+	}
+	if control.Role != "system" || len(control.Content) != 0 || control.OutputConfig.Effort != "high" {
+		t.Fatalf("restored effort control has wrong native shape: %+v", control)
+	}
+}
+
+func TestAnthropicContextRejectsUnsupportedAndDuplicateNativeCalls(t *testing.T) {
+	if err := (&Context{}).AppendRecords([]json.RawMessage{json.RawMessage(`{"role":"developer","content":[]}`)}); err == nil {
+		t.Fatal("unsupported native message role was accepted")
+	}
+	duplicate := json.RawMessage(`{"role":"assistant","content":[{"type":"tool_use","id":"same","name":"exec","input":{}},{"type":"tool_use","id":"same","name":"exec","input":{}}],"stop_reason":"tool_use"}`)
+	context := &Context{}
+	if err := context.AppendRecords([]json.RawMessage{duplicate}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := context.PendingCalls(); err == nil {
+		t.Fatal("duplicate native tool call IDs were accepted")
+	}
+	unknown := &Context{}
+	if err := unknown.AppendRecords([]json.RawMessage{json.RawMessage(`{"role":"user","content":[{"type":"tool_result","tool_use_id":"missing","content":"x"}]}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := unknown.PendingCalls(); err == nil {
+		t.Fatal("orphan native tool result was accepted")
+	}
+	if err := json.Unmarshal([]byte(`{"messages":[],"unknown_context_field":true}`), &Context{}); err == nil {
+		t.Fatal("unknown Anthropic context state was accepted")
+	}
+}
+
+func TestAnthropicExecutionStateAppendsOnlyChangedSnapshots(t *testing.T) {
+	context := &Context{}
+	state := &protocol.ExecutionState{Cells: []protocol.ActiveCell{{ID: "cell-1", Status: protocol.CellLive}}}
+	for range 2 {
+		if err := context.AppendExecutionState(state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(context.Messages) != 1 {
+		t.Fatalf("identical execution snapshots appended %d messages", len(context.Messages))
+	}
+	state.Cells[0].Status = protocol.CellCompleted
+	if err := context.AppendExecutionState(state); err != nil {
+		t.Fatal(err)
+	}
+	state.Cells = nil
+	if err := context.AppendExecutionState(state); err != nil {
+		t.Fatal(err)
+	}
+	if len(context.Messages) != 3 {
+		t.Fatalf("changed and cleared execution snapshots produced %d messages, want 3", len(context.Messages))
+	}
+}
+
+func TestAnthropicFragmentedEagerToolInputIsNotPublishedBeforeTerminalMessage(t *testing.T) {
+	partial := anthropicEventStream(
+		`{"type":"message_start","message":{"id":"msg_partial","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
+		`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_partial","name":"exec","input":{}}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"code\":\"text(1)\""}}`,
+	)
+	response, err := ReadStream(context.Background(), strings.NewReader(partial), nil, false)
+	var unknown *protocol.UnknownEffectError
+	if response != nil || !errors.As(err, &unknown) {
+		t.Fatalf("partial eager input became executable or lost its uncertain outcome: response=%+v err=%v", response, err)
+	}
+
+	complete := anthropicEventStream(
+		`{"type":"message_start","message":{"id":"msg_complete","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
+		`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_complete","name":"exec","input":{}}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"code\":"}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\"text(1)\"}"}}`,
+		`{"type":"content_block_stop","index":0}`,
+		`{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":1}}`,
+		`{"type":"message_stop"}`,
+	)
+	response, err = ReadStream(context.Background(), strings.NewReader(complete), nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	context := &Context{}
+	if err := context.AppendRecords([]json.RawMessage{response.Message}); err != nil {
+		t.Fatal(err)
+	}
+	calls, err := context.PendingCalls()
+	if err != nil || len(calls) != 1 || calls[0].CallID != "call_complete" || calls[0].Input != `{"code":"text(1)"}` {
+		t.Fatalf("complete fragmented input was not derived from the native message: calls=%+v err=%v", calls, err)
+	}
+}
+
+func TestAnthropicTruncatedStreamHasUnknownEffect(t *testing.T) {
+	stream := anthropicEventStream(`{"type":"message_start","message":{"id":"msg_truncated","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
+	response, err := ReadStream(context.Background(), strings.NewReader(stream), nil, false)
+	var unknown *protocol.UnknownEffectError
+	if response != nil || !errors.As(err, &unknown) {
+		t.Fatalf("truncated response outcome=%+v err=%v; want unknown effect", response, err)
+	}
+}
+
+func TestAnthropicRejectsUnsupportedOutputBlocks(t *testing.T) {
+	stream := anthropicEventStream(
+		`{"type":"message_start","message":{"id":"msg_unknown","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
+		`{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"tool_unknown"}}`,
+	)
+	response, err := ReadStream(context.Background(), strings.NewReader(stream), nil, false)
+	var known *protocol.KnownFailureError
+	if response != nil || !errors.As(err, &known) {
+		t.Fatalf("unsupported output block outcome=%+v err=%v; want a known rejection", response, err)
+	}
+}
+
+func TestAnthropicCompactionRequiresContentAndSignature(t *testing.T) {
+	for name, block := range map[string]string{
+		"missing content":   `{"type":"compaction","signature":"sig_fixture"}`,
+		"missing signature": `{"type":"compaction","content":"summary"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			stream := anthropicEventStream(
+				`{"type":"message_start","message":{"id":"msg_compaction","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
+				fmt.Sprintf(`{"type":"content_block_start","index":0,"content_block":%s}`, block),
+				`{"type":"content_block_stop","index":0}`,
+				`{"type":"message_delta","delta":{"stop_reason":"compaction"},"usage":{"output_tokens":1}}`,
+				`{"type":"message_stop"}`,
+			)
+			response, err := ReadStream(context.Background(), strings.NewReader(stream), nil, true)
+			var known *protocol.KnownFailureError
+			if response != nil || !errors.As(err, &known) {
+				t.Fatalf("invalid compaction outcome=%+v err=%v; want known rejection", response, err)
+			}
+		})
+	}
+}
+
+// TestAnthropicRequestWireBytes pins the exact request and compaction bodies; prompt caching keys
+// on the rendered prefix, so a serialization change invalidates cached prefixes.
+func TestAnthropicRequestWireBytes(t *testing.T) {
+	conversation := &Context{}
+	if err := conversation.ChangeEffort("low"); err != nil {
+		t.Fatal(err)
+	}
+	image := json.RawMessage(`{"type":"input_image","image_url":"data:image/png;base64,aGVsbG8="}`)
+	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "inspect this"}, {Type: "input_image", Raw: image}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := conversation.AppendRecords([]json.RawMessage{json.RawMessage(`{"id":"msg_tool","type":"message","role":"assistant","content":[{"type":"tool_use","id":"call_wire","name":"exec","input":{"code":"text(1)"}}],"stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1}}`)}); err != nil {
+		t.Fatal(err)
+	}
+	calls, err := conversation.PendingCalls()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := conversation.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "1"}}); err != nil {
+		t.Fatal(err)
+	}
+	for index, text := range []string{"first answer", "second answer"} {
+		if index > 0 {
+			if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "again"}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		record := fmt.Sprintf(`{"id":"msg_%d","type":"message","role":"assistant","content":[{"type":"text","text":%q}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`, index, text)
+		if err := conversation.AppendRecords([]json.RawMessage{json.RawMessage(record)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	instructions := "Follow the fixture rules."
+	params := RequestParams{Context: conversation, Model: "claude-test", Effort: "high", Instructions: &instructions, Tools: testToolSurface()}
+	config := testConfig()
+	config.Compaction = &CompactionConfig{MaxTokens: 2048, KeepRecentTurns: 1}
+	system := string(protocol.MustJSON(protocol.BaseInstructions + "\n\n" + instructions))
+	for _, test := range []struct {
+		name string
+		body func() (any, error)
+		want string
+	}{
+		{name: "request", body: func() (any, error) { return BuildRequest(params, config, "msg_1") }, want: `{"cache_control":{"ttl":"1h","type":"ephemeral"},"diagnostics":{"previous_message_id":"msg_1"},"max_tokens":4096,"messages":[{"content":[],"output_config":{"effort":"low"},"role":"system"},{"content":[{"text":"inspect this","type":"text"},{"source":{"data":"aGVsbG8=","media_type":"image/png","type":"base64"},"type":"image"}],"role":"user"},{"content":[{"type":"tool_use","id":"call_wire","name":"exec","input":{"code":"text(1)"}}],"role":"assistant"},{"content":[{"content":[{"text":"1","type":"text"}],"tool_use_id":"call_wire","type":"tool_result"}],"role":"user"},{"content":[{"type":"text","text":"first answer"}],"role":"assistant"},{"content":[{"text":"again","type":"text"}],"role":"user"},{"content":[{"type":"text","text":"second answer"}],"role":"assistant"}],"model":"claude-test","output_config":{"effort":"high"},"stream":true,"system":"<system>","thinking":{"type":"adaptive","block_binding":{"prefix_mismatch_behavior":"error"}},"tools":[{"description":"Execute code in the sampler-owned environment.","eager_input_streaming":true,"input_schema":{"additionalProperties":false,"properties":{"cell_id":{"type":"string"},"code":{"type":"string"},"yield_time_ms":{"type":"integer"}},"type":"object"},"name":"exec","strict":true}]}`},
+		{name: "request without previous message", body: func() (any, error) { return BuildRequest(params, config, "") }, want: `{"cache_control":{"ttl":"1h","type":"ephemeral"},"diagnostics":{"previous_message_id":null},"max_tokens":4096,"messages":[{"content":[],"output_config":{"effort":"low"},"role":"system"},{"content":[{"text":"inspect this","type":"text"},{"source":{"data":"aGVsbG8=","media_type":"image/png","type":"base64"},"type":"image"}],"role":"user"},{"content":[{"type":"tool_use","id":"call_wire","name":"exec","input":{"code":"text(1)"}}],"role":"assistant"},{"content":[{"content":[{"text":"1","type":"text"}],"tool_use_id":"call_wire","type":"tool_result"}],"role":"user"},{"content":[{"type":"text","text":"first answer"}],"role":"assistant"},{"content":[{"text":"again","type":"text"}],"role":"user"},{"content":[{"type":"text","text":"second answer"}],"role":"assistant"}],"model":"claude-test","output_config":{"effort":"high"},"stream":true,"system":"<system>","thinking":{"type":"adaptive","block_binding":{"prefix_mismatch_behavior":"error"}},"tools":[{"description":"Execute code in the sampler-owned environment.","eager_input_streaming":true,"input_schema":{"additionalProperties":false,"properties":{"cell_id":{"type":"string"},"code":{"type":"string"},"yield_time_ms":{"type":"integer"}},"type":"object"},"name":"exec","strict":true}]}`},
+		{name: "compaction", body: func() (any, error) {
+			plan, err := PrepareCompaction(params, config, "msg_1", "high")
+			if err != nil {
+				return nil, err
+			}
+			return plan.Body, nil
+		}, want: `{"cache_control":{"ttl":"1h","type":"ephemeral"},"compaction":{"type":"summarize"},"diagnostics":{"previous_message_id":"msg_1"},"max_tokens":2048,"messages":[{"content":[],"output_config":{"effort":"low"},"role":"system"},{"content":[{"text":"inspect this","type":"text"},{"source":{"data":"aGVsbG8=","media_type":"image/png","type":"base64"},"type":"image"}],"role":"user"},{"content":[{"type":"tool_use","id":"call_wire","name":"exec","input":{"code":"text(1)"}}],"role":"assistant"},{"content":[{"content":[{"text":"1","type":"text"}],"tool_use_id":"call_wire","type":"tool_result"}],"role":"user"},{"content":[{"type":"text","text":"first answer"}],"role":"assistant"}],"model":"claude-test","output_config":{"effort":"high"},"stream":true,"system":"<system>","thinking":{"type":"adaptive","block_binding":{"prefix_mismatch_behavior":"error"}},"tools":[{"description":"Execute code in the sampler-owned environment.","eager_input_streaming":true,"input_schema":{"additionalProperties":false,"properties":{"cell_id":{"type":"string"},"code":{"type":"string"},"yield_time_ms":{"type":"integer"}},"type":"object"},"name":"exec","strict":true}]}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body, err := test.body()
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := strings.Replace(string(protocol.MustJSON(body)), system, `"<system>"`, 1)
+			if got != test.want {
+				t.Fatalf("wire body changed:\ngot  %s\nwant %s", got, test.want)
+			}
+		})
+	}
+}
+
+func anthropicEventStream(events ...string) string {
+	var stream strings.Builder
+	for _, event := range events {
+		fmt.Fprintf(&stream, "data: %s\n\n", event)
+	}
+	return stream.String()
+}

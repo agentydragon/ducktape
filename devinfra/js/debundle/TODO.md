@@ -146,10 +146,11 @@ Statement-level overrides, the redundant-hint guardrail and compositional proof:
 
 The ignored `inferred_pure_collection_constructors_with_literal_args_emit_no_s_cycle`
 fixture is a deferred **RegExp admission feature**, not a contradictory classifier
-bug. `purity/whitelists.rs` explicitly requires static ECMA-262 pattern validation
-before admitting literal `RegExp` construction; the active classifier test
-correctly expects Unknown today. Keep the future test ignored until that
-precondition is implemented; do not whitelist constructors that can throw.
+bug. The `RegExp` row in `facts/abstract_domain/builtins.rs` throws on pattern
+values, so purity needs static ECMA-262 pattern validation before admitting
+literal `RegExp` construction; the active classifier test correctly expects
+Unknown today. Keep the future test ignored until that precondition is
+implemented; do not admit constructors that can throw.
 
 ## Rename pipeline
 

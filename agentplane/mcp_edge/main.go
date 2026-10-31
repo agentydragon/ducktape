@@ -19,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/authserver"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
@@ -68,15 +69,22 @@ func run(ctx context.Context, c config) error {
 	if err != nil {
 		return err
 	}
-	listener, err := net.Listen("tcp", c.address())
+	grpcListener, err := net.Listen("tcp", c.grpcAddress())
 	if err != nil {
-		return err
+		return fmt.Errorf("gRPC listener: %w", err)
 	}
-	defer listener.Close()
-	return serve(ctx, c, kubeConfig, kube, listener)
+	defer grpcListener.Close()
+	httpListener, err := net.Listen("tcp", c.httpAddress())
+	if err != nil {
+		return fmt.Errorf("HTTP listener: %w", err)
+	}
+	defer httpListener.Close()
+	return serve(ctx, c, kubeConfig, kube, grpcListener, httpListener)
 }
 
-func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernetes.Interface, listener net.Listener) error {
+// serve answers gRPC on grpcListener and HTTP (the facade, /mcp, OAuth and metrics) on httpListener until ctx ends or a
+// listener fails.
+func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernetes.Interface, grpcListener, httpListener net.Listener) error {
 	db, err := openDatabase(ctx, c.DatabaseURL)
 	if err != nil {
 		return err
@@ -87,7 +95,7 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernet
 		return fmt.Errorf("MCP edge PostgreSQL listener unavailable: %w", err)
 	}
 	defer hub.Close()
-	callers, watches, err := callerWatches(kubeConfig, c.CallerServiceAccountNamespaces, c.MintableAccounts, c.callerWatchPeriod())
+	callers, watches, err := callerWatches(kubeConfig, c.CallerServiceAccountNamespaces, c.MintableAccounts)
 	if err != nil {
 		return err
 	}
@@ -107,7 +115,7 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernet
 	connection_servicepb.RegisterConnectionServiceServer(grpcServer, connections.NewService(connectionStore, gate, hub))
 	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacade()
-	httpFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), 0, connection_servicepb.RegisterConnectionServiceHandlerFromEndpoint)
+	httpFacade, err := facade.NewHandler(facadeContext, grpcListener.Addr().String(), 0, connection_servicepb.RegisterConnectionServiceHandlerFromEndpoint)
 	if err != nil {
 		return err
 	}
@@ -122,9 +130,9 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernet
 		defer connection.Close()
 	}
 	server := &http.Server{Handler: observability.HTTPHandler(routes), ReadHeaderTimeout: 10 * time.Second}
-	facade.MountGRPC(server, grpcServer)
-	failed := make(chan error, 1)
-	go func() { failed <- server.Serve(listener) }()
+	failed := make(chan error, 2)
+	go func() { failed <- fmt.Errorf("gRPC listener: %w", grpcServer.Serve(grpcListener)) }()
+	go func() { failed <- fmt.Errorf("HTTP listener: %w", server.Serve(httpListener)) }()
 	var result error
 	select {
 	case result = <-failed:
@@ -135,17 +143,11 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernet
 	gate.Drain()
 	stopped, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 	defer cancel()
+	// The facade's calls are gRPC calls, so the HTTP listener stops first.
 	if err := server.Shutdown(stopped); err != nil {
 		server.Close()
 	}
-	grpcStopped := make(chan struct{})
-	go func() { grpcServer.GracefulStop(); close(grpcStopped) }()
-	select {
-	case <-grpcStopped:
-	case <-stopped.Done():
-		grpcServer.Stop()
-		<-grpcStopped
-	}
+	graceful.Stop(stopped, grpcServer)
 	return result
 }
 
@@ -168,7 +170,7 @@ func mountOAuth(ctx context.Context, routes *http.ServeMux, c config, db *sql.DB
 	if err != nil {
 		return nil, fmt.Errorf("starting external MCP authorization: %w", err)
 	}
-	caller := &coreCaller{authority: authority.VerifyBearer, callers: callers, kube: kube}
+	caller := &coreCaller{authority: authority.VerifyBearer, callers: callers, kube: kube, recheckPeriod: 5 * time.Second, tokens: map[auth.Account]cachedToken{}}
 	connection, err := dialActions(c.ActionsTarget, caller)
 	if err != nil {
 		return nil, err

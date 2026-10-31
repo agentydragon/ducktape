@@ -119,7 +119,16 @@ ROTATOR_CONFIG = Config(
             validity="1 year",
             pull=["gaffer"],
             push=["gaffer"],
-            destination=SopsDestination(sops_file=Path("secrets/ci/attic-gaffer-writer.sops.yaml")),
+            destination=KubernetesDestination(
+                secret=KubernetesSecretDestination(
+                    namespace=ci_token.GAFFER_WRITER.namespace,
+                    name=ci_token.GAFFER_WRITER.name,
+                    key=ci_token.GAFFER_WRITER_TOKEN.key,
+                ),
+                notification=WorkspaceNotification(
+                    workspace=workspace.NAME, annotation_key="gaffer.allegedly.works/attic-token-version"
+                ),
+            ),
         ),
     ]
 )
@@ -286,6 +295,16 @@ def _rotation(scope: Construct) -> None:
         ),
         type="Opaque",
     )
+    k8s.KubeSecret(
+        scope,
+        "gaffer-ci-writer-token",
+        metadata=k8s.ObjectMeta(
+            name=ci_token.GAFFER_WRITER.name,
+            namespace=ci_token.GAFFER_WRITER.namespace,
+            annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"},
+        ),
+        type="Opaque",
+    )
     notification_role = ClusterRole(
         scope,
         "ci-token-notification",
@@ -344,7 +363,7 @@ def _rotation(scope: Construct) -> None:
             k8s.PolicyRule(
                 api_groups=[""],
                 resources=["secrets"],
-                resource_names=[ci_token.READER.name, ci_token.WRITER.name],
+                resource_names=[ci_token.GAFFER_WRITER.name, ci_token.READER.name, ci_token.WRITER.name],
                 verbs=["get", "patch"],
             ),
             # Resolving `deploy/attic` to a pod first reads the Deployment.

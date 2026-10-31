@@ -25,6 +25,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -130,6 +131,7 @@ class Timeline:
     started: float = field(default_factory=time.monotonic)
     steps: list[tuple[str, float]] = field(default_factory=list)
     imports: list[tuple[str, float]] = field(default_factory=list)
+    _write_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def mark(self, step: str) -> None:
         at = round(time.monotonic() - self.started, 1)
@@ -148,7 +150,7 @@ class Timeline:
         return f"seconds after start: {steps}\nimage imports, seconds, slowest first: {imports}"
 
     def _record(self, entry: dict[str, str | float]) -> None:
-        with (undeclared_outputs_dir() / "k3s-timeline.jsonl").open("a") as out:
+        with self._write_lock, (undeclared_outputs_dir() / "k3s-timeline.jsonl").open("a") as out:
             out.write(json.dumps(entry) + "\n")
 
 
@@ -534,40 +536,48 @@ def running_stack(
             raise ValueError(f"Fixture workloads lack OCI layouts for: {sorted(missing)}")
         if fixture.vm_sandboxes:
             releases = vm_sandboxes.releases()
-            # Their images first, so they roll out while the stack's own import; a Pod that starts before
-            # its image is in containerd pulls it from the registry.
             infrastructure_images = vm_sandboxes.images(releases)
             k3s.import_images(infrastructure_images, timeline)
-            vm_sandboxes.install(k3s.kubectl, releases)
-            timeline.mark("KubeVirt and Kyverno applied")
         cert_manager, trust_manager = certificates.releases()
         cleanup.callback(certificates.report, k3s.kubectl, cert_manager + trust_manager)
-        k3s.import_images(certificates.images(cert_manager + trust_manager), timeline)
-        certificates.install(k3s.kubectl, cert_manager, trust_manager)
-        timeline.mark("cert-manager and trust-manager ready")
-        k3s.import_images(fixture_images, timeline)
-        timeline.mark("fixture images imported" if guest_images else "images imported")
-        for crd in crds:
-            k3s.kubectl("apply", "-f", str(crd))
-        if fixture.vm_sandboxes:
-            vm_sandboxes.wait_for_apis(k3s.kubectl)
-        timeline.mark("CRDs applied")
-        # Namespaces first, then CRD-backed and the rest; one apply tolerates ordering within a kind only.
-        namespaces = [d for d in fixture.objects if d["kind"] == "Namespace"]
-        rest = [d for d in fixture.objects if d["kind"] != "Namespace"]
-        k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(namespaces))
-        if fixture.vm_sandboxes:
-            cleanup.enter_context(raw_block.provisioning(cluster, node_name="env"))
-            timeline.mark("workspace provisioner ready")
-        print("apply:", k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest)))
-        logger.info("applied %s objects", len(rest))
-        timeline.mark("manifests applied")
-        certificates.wait_for_issuance(k3s.kubectl, fixture.namespace, "cluster-internal-ca-bundle")
-        timeline.mark("runner certificates issued and trust distributed")
-        if guest_images:
-            # Guest images are used only by Sandboxes the test creates after this stack is ready.
-            k3s.import_images(guest_images, timeline)
-            timeline.mark("images imported")
+        # Import the next group's images during apply/readiness work for the preceding group. A single
+        # worker preserves blob deduplication and joins before k3s teardown, including on setup failure.
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="image-import") as importing:
+            pki_import = importing.submit(
+                k3s.import_images, certificates.images(cert_manager + trust_manager), timeline
+            )
+            if fixture.vm_sandboxes:
+                vm_sandboxes.install(k3s.kubectl, releases)
+                timeline.mark("KubeVirt and Kyverno applied")
+            # Applying a workload before its image is imported would pull it from the registry.
+            pki_import.result()
+            fixture_import = importing.submit(k3s.import_images, fixture_images, timeline)
+            certificates.install(k3s.kubectl, cert_manager, trust_manager)
+            timeline.mark("cert-manager and trust-manager ready")
+            fixture_import.result()
+            timeline.mark("fixture images imported" if guest_images else "images imported")
+            guest_import = importing.submit(k3s.import_images, guest_images, timeline)
+            for crd in crds:
+                k3s.kubectl("apply", "-f", str(crd))
+            if fixture.vm_sandboxes:
+                vm_sandboxes.wait_for_apis(k3s.kubectl)
+            timeline.mark("CRDs applied")
+            # Namespaces first, then CRD-backed and the rest; one apply tolerates ordering within a kind only.
+            namespaces = [d for d in fixture.objects if d["kind"] == "Namespace"]
+            rest = [d for d in fixture.objects if d["kind"] != "Namespace"]
+            k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(namespaces))
+            if fixture.vm_sandboxes:
+                cleanup.enter_context(raw_block.provisioning(cluster, node_name="env"))
+                timeline.mark("workspace provisioner ready")
+            print("apply:", k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest)))
+            logger.info("applied %s objects", len(rest))
+            timeline.mark("manifests applied")
+            certificates.wait_for_issuance(k3s.kubectl, fixture.namespace, "cluster-internal-ca-bundle")
+            timeline.mark("runner certificates issued and trust distributed")
+            # Guest images serve Sandboxes created after stack readiness, so they can import during apply.
+            guest_import.result()
+            if guest_images:
+                timeline.mark("images imported")
 
         failed: list[str] = []
         deployments = [d["metadata"]["name"] for d in rest if d["kind"] == "Deployment"]

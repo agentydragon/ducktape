@@ -10,7 +10,6 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	sharedconfig "github.com/agentydragon/ducktape/agentplane/settings/go"
@@ -24,26 +23,23 @@ const settingPrefix = "AGENTPLANE_MCP_EDGE_"
 
 // config is the standalone edge's deployment contract. Secret values come from environment variables.
 type config struct {
-	DatabaseURL                    string   `mapstructure:"database_url" yaml:"database_url"`
-	ActionsTarget                  string   `mapstructure:"actions_target" yaml:"actions_target"`
-	Host                           string   `mapstructure:"host" yaml:"host"`
+	DatabaseURL   string `mapstructure:"database_url" yaml:"database_url"`
+	ActionsTarget string `mapstructure:"actions_target" yaml:"actions_target"`
+	Host          string `mapstructure:"host" yaml:"host"`
+	// Port is the gRPC listener's: ConnectionService and health. HTTPPort is the HTTP listener's: the facade, /mcp,
+	// OAuth and the metrics.
 	Port                           int      `mapstructure:"port" yaml:"port"`
+	HTTPPort                       int      `mapstructure:"http_port" yaml:"http_port"`
 	CallerServiceAccountNamespaces []string `mapstructure:"caller_service_account_namespaces" yaml:"caller_service_account_namespaces"`
 	// MintableAccounts is the explicit ownership scope granted to this edge's TokenRequest RBAC.
-	MintableAccounts   []auth.Account           `mapstructure:"mintable_accounts" yaml:"mintable_accounts"`
-	OperatorOIDC       api.OperatorOIDCSettings `mapstructure:"operator_oidc" yaml:"operator_oidc"`
-	OAuth              *oauthSettings           `mapstructure:"oauth" yaml:"oauth"`
-	MaxWaitSeconds     float64                  `mapstructure:"max_wait_seconds" yaml:"max_wait_seconds"`
-	DirectWaitSeconds  float64                  `mapstructure:"direct_wait_seconds" yaml:"direct_wait_seconds"`
-	CallerWatchSeconds int                      `mapstructure:"caller_watch_seconds" yaml:"caller_watch_seconds"`
+	MintableAccounts  []auth.Account           `mapstructure:"mintable_accounts" yaml:"mintable_accounts"`
+	OperatorOIDC      api.OperatorOIDCSettings `mapstructure:"operator_oidc" yaml:"operator_oidc"`
+	OAuth             *oauthSettings           `mapstructure:"oauth" yaml:"oauth"`
+	MaxWaitSeconds    float64                  `mapstructure:"max_wait_seconds" yaml:"max_wait_seconds"`
+	DirectWaitSeconds float64                  `mapstructure:"direct_wait_seconds" yaml:"direct_wait_seconds"`
 }
 
 type oauthSettings struct {
-	// CLEANUP(added 2026-10-23): Drop these legacy FastMCP keys after the GitOps OAuth secret no longer writes them.
-	ConfigURL         string `mapstructure:"config_url" yaml:"config_url"`
-	JWTSigningKeyFile string `mapstructure:"jwt_signing_key_file" yaml:"jwt_signing_key_file"`
-	EncryptionKeyFile string `mapstructure:"encryption_key_file" yaml:"encryption_key_file"`
-	// The edge's active external OAuth settings follow.
 	UpstreamClientID         string `mapstructure:"upstream_client_id" yaml:"upstream_client_id"`
 	UpstreamClientSecretFile string `mapstructure:"upstream_client_secret_file" yaml:"upstream_client_secret_file"`
 	BaseURL                  string `mapstructure:"base_url" yaml:"base_url"`
@@ -58,8 +54,8 @@ type oauthSettings struct {
 
 func loadConfig() (config, error) {
 	c := config{
-		Host: "0.0.0.0", Port: 8080, MaxWaitSeconds: 30, DirectWaitSeconds: 30,
-		CallerWatchSeconds: 300, OperatorOIDC: api.DefaultOperatorOIDCSettings(),
+		Host: "0.0.0.0", Port: 8080, HTTPPort: 8081, MaxWaitSeconds: 30, DirectWaitSeconds: 30,
+		OperatorOIDC: api.DefaultOperatorOIDCSettings(),
 	}
 	settings := viper.NewWithOptions(viper.ExperimentalBindStruct(), viper.EnvKeyReplacer(strings.NewReplacer(".", "__")))
 	settings.SetEnvPrefix("AGENTPLANE_MCP_EDGE")
@@ -115,8 +111,13 @@ func (c config) validate() error {
 			return errors.New(required.name + " is required")
 		}
 	}
-	if c.Port < 1 || c.Port > 65535 {
-		return errors.New("port must be between 1 and 65535")
+	for name, port := range map[string]int{"port": c.Port, "http_port": c.HTTPPort} {
+		if port < 1 || port > 65535 {
+			return errors.New(name + " must be between 1 and 65535")
+		}
+	}
+	if c.Port == c.HTTPPort {
+		return errors.New("port and http_port must differ")
 	}
 	if len(c.CallerServiceAccountNamespaces) == 0 {
 		return errors.New("caller_service_account_namespaces must list at least one namespace")
@@ -133,9 +134,6 @@ func (c config) validate() error {
 		if !slices.Contains(c.CallerServiceAccountNamespaces, account.Namespace) {
 			return errors.New("mintable_accounts must be in a caller namespace")
 		}
-	}
-	if c.CallerWatchSeconds < 2 {
-		return errors.New("caller_watch_seconds must be at least 2")
 	}
 	for _, seconds := range []float64{c.MaxWaitSeconds, c.DirectWaitSeconds} {
 		if seconds < 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
@@ -170,8 +168,6 @@ func (c config) validate() error {
 	return nil
 }
 
-func (c config) callerWatchPeriod() time.Duration {
-	return time.Duration(c.CallerWatchSeconds) * time.Second
-}
+func (c config) grpcAddress() string { return fmt.Sprintf("%s:%d", c.Host, c.Port) }
 
-func (c config) address() string { return fmt.Sprintf("%s:%d", c.Host, c.Port) }
+func (c config) httpAddress() string { return fmt.Sprintf("%s:%d", c.Host, c.HTTPPort) }

@@ -2,13 +2,16 @@
 //! behavior).
 //!
 //! A target chunk is loader-closed when the declared host loader cannot hand
-//! any code the target's namespace while the target evaluates. Every host
-//! loader site in every analyzed chunk counts as reachable during that
-//! evaluation: a callback any chunk published earlier can run then, so the
-//! chunk holding a site does not bound when it executes. Each site must be a
-//! literal request for a declared reentry-free builtin or for an analyzed chunk
-//! whose static and loader closure excludes the target and loads no unproved
-//! code.
+//! any code the target's namespace while the target evaluates. A site counts
+//! when it can run in that window. A site in top-level code runs only while
+//! its own module's body does, which is inside the window only for the target,
+//! its static closure and chunks a counted request loads. A site in a function
+//! can run whenever a callback runs, except in a chunk that statically imports
+//! the target outside a cycle with it: that chunk's body, and so every
+//! reference to its functions, starts only after the target finishes, unless a
+//! counted request loads it. Each counted site must be a literal request for a
+//! declared reentry-free module or for an analyzed chunk whose static and
+//! loader closure excludes the target and loads no unproved code.
 //!
 //! `Reach` grows to each chunk's static and loader closure. `LoaderClosed`
 //! failures grow with it, so a target is closed only in the completed closure;
@@ -18,11 +21,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 use spec::{
-    HostBehavior, LoaderResultForEvaluatingModule, NodeBuiltinModule,
+    EmbeddedLoader, HostBehavior, HostModule, LoaderResultForEvaluatingModule,
     SynchronousLoadRunsAppCallbacks,
 };
 
-use crate::analysis_inputs::{HostBehaviorKey, ProofDependencies};
+use crate::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey, ProofDependencies};
 use crate::ids::ChunkId;
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 
@@ -42,29 +45,42 @@ pub enum LoaderClosureFailureKind {
     /// A literal loader request that names no analyzed chunk entry and no
     /// recognized builtin.
     UnresolvableLoaderRequest,
-    /// A literal loader request for a builtin absent from
-    /// `reentry_free_builtin_modules`.
+    /// A literal loader request for a host module absent from
+    /// `reentry_free_builtin_modules` and `reentry_free_bun_modules`.
     NonReentryFreeBuiltinRequest,
+    /// A literal loader request for an embedded file whose host loader is
+    /// absent from `reentry_free_embedded_loaders`.
+    NonReentryFreeEmbeddedFile,
     /// A literal loader request whose loaded closure contains the target.
     LoaderRequestReachesTarget,
     /// A static request in a loaded closure that is not a resolved ordinary
     /// request for an analyzed chunk entry or a declared reentry-free builtin.
     LoadedClosureRequest,
     LoadedClosureTopLevelAwait,
-    /// A loaded closure contains a vendor-replaced chunk, whose code is unseen.
-    LoadedClosureVendorChunk,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub enum LoaderRequestTarget {
-    ReentryFreeBuiltin(NodeBuiltinModule),
+    ReentryFreeBuiltin(HostModule),
+    EmbeddedFile(EmbeddedLoader),
     Chunk(ChunkId),
+}
+
+/// Where a site can run relative to its module's evaluation.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum SitePlacement {
+    /// A direct load in top-level code: it runs only while its module's body
+    /// evaluates.
+    ModuleBody,
+    /// Anything a callback can reach.
+    Callable,
 }
 
 #[derive(Debug, Clone)]
 pub struct LoaderRequest<W> {
     pub target: LoaderRequestTarget,
     pub witness: W,
+    pub placement: SitePlacement,
 }
 
 /// One chunk's loader-relevant source facts. `W` is the caller's site witness;
@@ -76,8 +92,8 @@ pub struct ChunkLoaderSurface<W> {
     /// Literal loader requests resolved to a declared reentry-free builtin or
     /// an analyzed chunk entry.
     pub requests: Vec<LoaderRequest<W>>,
-    /// Sites that keep every target open wherever they occur.
-    pub site_failures: Vec<(LoaderClosureFailureKind, W)>,
+    /// Sites that keep a target open when they can run in its window.
+    pub site_failures: Vec<(LoaderClosureFailureKind, W, SitePlacement)>,
     /// Facts that keep a target open only when a loader request evaluates
     /// this chunk.
     pub load_failures: Vec<(LoaderClosureFailureKind, W)>,
@@ -85,13 +101,23 @@ pub struct ChunkLoaderSurface<W> {
     /// `synchronous_load_drains_microtasks: never`: they run in a promise job,
     /// which no synchronous load can start.
     pub suspended_sites: Vec<W>,
+    /// Non-literal loader calls the caller excluded under
+    /// `program_premises.non_literal_loader_calls: native_addons_only`: each
+    /// fails or loads a native addon whose initializer runs no application
+    /// code.
+    pub premised_sites: Vec<W>,
 }
 
 impl<W> ChunkLoaderSurface<W> {
+    pub fn fail(&mut self, kind: LoaderClosureFailureKind, witness: W, placement: SitePlacement) {
+        self.site_failures.push((kind, witness, placement));
+    }
+
     pub fn has_loader_sites(&self) -> bool {
         !self.requests.is_empty()
             || !self.site_failures.is_empty()
             || !self.suspended_sites.is_empty()
+            || !self.premised_sites.is_empty()
     }
 }
 
@@ -117,6 +143,10 @@ pub struct LoaderClosure<W> {
     pub loaded_chunks: BTreeSet<ChunkId>,
     /// Mandatorily suspended sites excluded from the closure.
     pub suspended_sites: usize,
+    /// Non-literal loader calls excluded under the program premise.
+    pub premised_sites: usize,
+    /// Requests and failing sites that cannot run in the target's window.
+    pub outside_window_sites: usize,
     /// Host keys the certificate consumed; empty unless closed.
     pub dependencies: ProofDependencies,
 }
@@ -133,9 +163,19 @@ pub fn solve_loader_closure<W: Clone + Ord>(
     host_behavior: &HostBehavior,
     targets: &BTreeSet<ChunkId>,
 ) -> BTreeMap<ChunkId, LoaderClosure<W>> {
+    let mut static_importers = BTreeMap::<ChunkId, BTreeSet<ChunkId>>::new();
+    for (chunk, surface) in chunks {
+        for imported in &surface.static_targets {
+            static_importers
+                .entry(*imported)
+                .or_default()
+                .insert(*chunk);
+        }
+    }
     let rules = LoaderClosureRules {
         chunks,
         host_behavior,
+        static_importers,
     };
     let producers = chunks
         .keys()
@@ -157,6 +197,8 @@ pub fn solve_loader_closure<W: Clone + Ord>(
                     failures: verdict.failures.clone(),
                     loaded_chunks: verdict.loaded_chunks.clone(),
                     suspended_sites: verdict.suspended_sites,
+                    premised_sites: verdict.premised_sites,
+                    outside_window_sites: verdict.outside_window_sites,
                     dependencies: judgment.dependencies().clone(),
                 },
             )
@@ -187,6 +229,8 @@ struct Verdict<W> {
     failures: BTreeMap<LoaderClosureFailureKind, LoaderClosureFailure<W>>,
     loaded_chunks: BTreeSet<ChunkId>,
     suspended_sites: usize,
+    premised_sites: usize,
+    outside_window_sites: usize,
 }
 
 impl<W: Ord> Verdict<W> {
@@ -195,6 +239,8 @@ impl<W: Ord> Verdict<W> {
             failures: BTreeMap::new(),
             loaded_chunks: BTreeSet::new(),
             suspended_sites: 0,
+            premised_sites: 0,
+            outside_window_sites: 0,
         }
     }
 
@@ -241,6 +287,25 @@ impl<W: Ord> Verdict<W> {
 struct LoaderClosureRules<'a, W> {
     chunks: &'a BTreeMap<ChunkId, ChunkLoaderSurface<W>>,
     host_behavior: &'a HostBehavior,
+    static_importers: BTreeMap<ChunkId, BTreeSet<ChunkId>>,
+}
+
+/// Chunks reachable from `start` over `edges`, excluding `start` unless a cycle
+/// returns to it.
+fn closure_over(
+    start: ChunkId,
+    edges: impl Fn(ChunkId) -> Option<BTreeSet<ChunkId>>,
+) -> BTreeSet<ChunkId> {
+    let mut seen = BTreeSet::new();
+    let mut pending = vec![start];
+    while let Some(chunk) = pending.pop() {
+        for next in edges(chunk).into_iter().flatten() {
+            if seen.insert(next) {
+                pending.push(next);
+            }
+        }
+    }
+    seen
 }
 
 impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
@@ -258,7 +323,8 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
                     .iter()
                     .filter_map(|request| match request.target {
                         LoaderRequestTarget::Chunk(target) => Some(target),
-                        LoaderRequestTarget::ReentryFreeBuiltin(_) => None,
+                        LoaderRequestTarget::ReentryFreeBuiltin(_)
+                        | LoaderRequestTarget::EmbeddedFile(_) => None,
                     }),
             )
             .collect();
@@ -269,6 +335,18 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
             }
         }
         context.propose(Key::Reach(chunk), Fact::Reach(reach));
+    }
+
+    /// The chunk a request loads, with its static and loader closure.
+    fn loaded_closure(
+        loaded: ChunkId,
+        context: &mut impl FactContext<Key, Fact<W>>,
+    ) -> BTreeSet<ChunkId> {
+        let mut closure = BTreeSet::from([loaded]);
+        if let Some(Fact::Reach(reach)) = context.read(Key::Reach(loaded)) {
+            closure.extend(reach.iter().copied());
+        }
+        closure
     }
 
     fn evaluate_loader_closed(
@@ -310,25 +388,92 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
                 ),
             ),
         }
-        for surface in self.chunks.values() {
+        let static_closure = closure_over(target, |chunk| {
+            self.chunks
+                .get(&chunk)
+                .map(|surface| surface.static_targets.clone())
+        });
+        let importers = closure_over(target, |chunk| self.static_importers.get(&chunk).cloned());
+        // Chunks whose bodies run in the window under static evaluation, and
+        // chunks whose code cannot run before the target finishes.
+        let mut body: BTreeSet<ChunkId> = static_closure.iter().copied().collect();
+        body.insert(target);
+        let after: BTreeSet<ChunkId> = importers.difference(&body).copied().collect();
+        // Chunks a counted request evaluates in the window run there whole.
+        let mut window_loaded = BTreeSet::new();
+        loop {
+            let counted =
+                |chunk: &ChunkId, placement: SitePlacement, loaded: &BTreeSet<ChunkId>| {
+                    loaded.contains(chunk)
+                        || match placement {
+                            SitePlacement::ModuleBody => body.contains(chunk),
+                            SitePlacement::Callable => !after.contains(chunk),
+                        }
+                };
+            let mut grown = window_loaded.clone();
+            for (chunk, surface) in self.chunks {
+                for request in &surface.requests {
+                    if let LoaderRequestTarget::Chunk(loaded) = request.target
+                        && counted(chunk, request.placement, &window_loaded)
+                    {
+                        grown.extend(Self::loaded_closure(loaded, context));
+                    }
+                }
+            }
+            if grown.len() == window_loaded.len() {
+                break;
+            }
+            window_loaded = grown;
+        }
+        let counted = |chunk: &ChunkId, placement: SitePlacement| {
+            window_loaded.contains(chunk)
+                || match placement {
+                    SitePlacement::ModuleBody => body.contains(chunk),
+                    SitePlacement::Callable => !after.contains(chunk),
+                }
+        };
+        for (chunk, surface) in self.chunks {
             verdict.suspended_sites += surface.suspended_sites.len();
-            for (kind, witness) in &surface.site_failures {
-                verdict.add(*kind, LoaderClosureWitness::Site(witness.clone()));
+            verdict.premised_sites += surface.premised_sites.len();
+            for (kind, witness, placement) in &surface.site_failures {
+                if counted(chunk, *placement) {
+                    verdict.add(*kind, LoaderClosureWitness::Site(witness.clone()));
+                } else {
+                    verdict.outside_window_sites += 1;
+                }
             }
             for request in &surface.requests {
+                if !counted(chunk, request.placement) {
+                    verdict.outside_window_sites += 1;
+                    continue;
+                }
                 let loaded = match request.target {
                     LoaderRequestTarget::ReentryFreeBuiltin(builtin) => {
                         dependencies
                             .host_behavior
-                            .insert(HostBehaviorKey::ReentryFreeBuiltinModule(builtin));
+                            .insert(HostBehaviorKey::reentry_free_module(builtin));
+                        if matches!(builtin, HostModule::Node(node) if node.reads_process_accessors())
+                        {
+                            dependencies
+                                .program_premises
+                                .insert(ProgramPremiseKey::ProcessPrototypeChainAccessors);
+                        }
+                        continue;
+                    }
+                    LoaderRequestTarget::EmbeddedFile(loader) => {
+                        dependencies
+                            .host_behavior
+                            .insert(HostBehaviorKey::ReentryFreeEmbeddedLoader(loader));
+                        if loader == EmbeddedLoader::Napi {
+                            dependencies
+                                .program_premises
+                                .insert(ProgramPremiseKey::NonLiteralLoaderCalls);
+                        }
                         continue;
                     }
                     LoaderRequestTarget::Chunk(loaded) => loaded,
                 };
-                let mut closure = BTreeSet::from([loaded]);
-                if let Some(Fact::Reach(reach)) = context.read(Key::Reach(loaded)) {
-                    closure.extend(reach.iter().copied());
-                }
+                let closure = Self::loaded_closure(loaded, context);
                 if closure.contains(&target) {
                     verdict.add(
                         LoaderClosureFailureKind::LoaderRequestReachesTarget,
@@ -349,6 +494,11 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
             dependencies
                 .host_behavior
                 .insert(HostBehaviorKey::SynchronousLoadDrainsMicrotasks);
+        }
+        if verdict.premised_sites > 0 {
+            dependencies
+                .program_premises
+                .insert(ProgramPremiseKey::NonLiteralLoaderCalls);
         }
         if verdict.failures.is_empty() {
             context.assume(&dependencies);
@@ -384,6 +534,13 @@ impl<W: Clone + Ord> IterativeRules for LoaderClosureRules<'_, W> {
                     current.suspended_sites = contribution.suspended_sites;
                     changed = true;
                 }
+                if contribution.premised_sites > current.premised_sites {
+                    current.premised_sites = contribution.premised_sites;
+                    changed = true;
+                }
+                // A diagnostic count that shrinks as the window grows; the
+                // latest evaluation is the most complete.
+                current.outside_window_sites = contribution.outside_window_sites;
                 for (kind, failure) in contribution.failures {
                     changed |= current.join_failure(kind, failure, usize::max);
                 }
@@ -397,6 +554,7 @@ impl<W: Clone + Ord> IterativeRules for LoaderClosureRules<'_, W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spec::NodeBuiltinModule;
 
     fn surface(
         static_targets: &[usize],
@@ -409,11 +567,13 @@ mod tests {
                 .map(|(target, witness)| LoaderRequest {
                     target: *target,
                     witness: *witness,
+                    placement: SitePlacement::Callable,
                 })
                 .collect(),
             site_failures: Vec::new(),
             load_failures: Vec::new(),
             suspended_sites: Vec::new(),
+            premised_sites: Vec::new(),
         }
     }
 
@@ -472,7 +632,9 @@ mod tests {
                     &[
                         (LoaderRequestTarget::Chunk(ChunkId(2)), "0->2"),
                         (
-                            LoaderRequestTarget::ReentryFreeBuiltin(NodeBuiltinModule::Path),
+                            LoaderRequestTarget::ReentryFreeBuiltin(HostModule::Node(
+                                NodeBuiltinModule::Path,
+                            )),
                             "0->path",
                         ),
                     ],
@@ -495,6 +657,86 @@ mod tests {
                 HostBehaviorKey::ReentryFreeBuiltinModule(NodeBuiltinModule::Path),
             ])
         );
+    }
+
+    fn failing(
+        mut surface: ChunkLoaderSurface<&'static str>,
+        witness: &'static str,
+        placement: SitePlacement,
+    ) -> ChunkLoaderSurface<&'static str> {
+        surface.fail(
+            LoaderClosureFailureKind::OpaqueLoaderSite,
+            witness,
+            placement,
+        );
+        surface
+    }
+
+    fn failure_witnesses(closure: &LoaderClosure<&'static str>) -> Option<usize> {
+        closure
+            .failures
+            .get(&LoaderClosureFailureKind::OpaqueLoaderSite)
+            .map(|failure| failure.occurrences)
+    }
+
+    /// 1 imports the target 0; 2 is unrelated; 0 imports 3.
+    #[test]
+    fn a_site_counts_only_when_it_can_run_in_the_target_window() {
+        let solve = |site_chunk: usize, placement: SitePlacement| {
+            let mut chunks = BTreeMap::from([
+                (ChunkId(0), surface(&[3], &[])),
+                (ChunkId(1), surface(&[0], &[])),
+                (ChunkId(2), surface(&[], &[])),
+                (ChunkId(3), surface(&[], &[])),
+            ]);
+            let chunk = chunks.remove(&ChunkId(site_chunk)).unwrap();
+            chunks.insert(ChunkId(site_chunk), failing(chunk, "site", placement));
+            failure_witnesses(&solve_one(&chunks, &audited_host(), 0))
+        };
+        // A callable site runs whenever a published callback runs, except in a
+        // chunk whose body starts only after the target finishes.
+        assert_eq!(solve(1, SitePlacement::Callable), None);
+        assert_eq!(solve(2, SitePlacement::Callable), Some(1));
+        assert_eq!(solve(3, SitePlacement::Callable), Some(1));
+        // A top-level load runs only while its module's body does.
+        assert_eq!(solve(1, SitePlacement::ModuleBody), None);
+        assert_eq!(solve(2, SitePlacement::ModuleBody), None);
+        assert_eq!(solve(3, SitePlacement::ModuleBody), Some(1));
+        assert_eq!(solve(0, SitePlacement::ModuleBody), Some(1));
+    }
+
+    #[test]
+    fn an_importer_in_a_cycle_with_the_target_still_counts() {
+        let chunks = BTreeMap::from([
+            (ChunkId(0), surface(&[1], &[])),
+            (
+                ChunkId(1),
+                failing(surface(&[0], &[]), "cycle", SitePlacement::Callable),
+            ),
+        ]);
+        assert_eq!(
+            failure_witnesses(&solve_one(&chunks, &audited_host(), 0)),
+            Some(1)
+        );
+    }
+
+    /// 2 loads 3 from a callback; 3's top-level site then runs in the window.
+    #[test]
+    fn a_counted_request_brings_the_loaded_chunk_into_the_window() {
+        let chunks = BTreeMap::from([
+            (ChunkId(0), surface(&[], &[])),
+            (
+                ChunkId(2),
+                surface(&[], &[(LoaderRequestTarget::Chunk(ChunkId(3)), "2->3")]),
+            ),
+            (
+                ChunkId(3),
+                failing(surface(&[], &[]), "loaded", SitePlacement::ModuleBody),
+            ),
+        ]);
+        let closure = solve_one(&chunks, &audited_host(), 0);
+        assert_eq!(failure_witnesses(&closure), Some(1));
+        assert_eq!(closure.loaded_chunks, BTreeSet::from([ChunkId(3)]));
     }
 
     #[test]

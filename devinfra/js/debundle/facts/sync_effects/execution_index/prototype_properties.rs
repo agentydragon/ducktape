@@ -30,7 +30,7 @@ fn prototype_intrinsic_roots(
     intrinsic_roots(
         value,
         aliases,
-        &index.global_object_names,
+        &index.census_globals,
         declared,
         &BTreeMap::new(),
         &CallableReturnInputs::default(),
@@ -43,7 +43,8 @@ fn prototype_intrinsic_roots(
         NativeReceiverRoot::OrdinaryDirect { .. }
         | NativeReceiverRoot::OrdinaryDescendant { .. }
         | NativeReceiverRoot::ArrayIteratorPrototype
-        | NativeReceiverRoot::SetIteratorPrototype => None,
+        | NativeReceiverRoot::SetIteratorPrototype
+        | NativeReceiverRoot::BundleGlobal => None,
     })
     .collect()
 }
@@ -61,7 +62,7 @@ fn contained_roots(
                 roots.extend(contained_roots(value, aliases, index, declared));
             }
         }
-        ValueExpr::Origin(ValueOrigin::Function(key)) => {
+        ValueExpr::Alloc(Kind::Function, key) => {
             for id in index
                 .prototype_callable_reads
                 .get(key)
@@ -76,7 +77,7 @@ fn contained_roots(
                 ));
             }
         }
-        ValueExpr::Origin(ValueOrigin::Class(key)) => {
+        ValueExpr::Alloc(Kind::Class, key) => {
             if let Some(owner) = index.class_owners.get(key) {
                 for (key, callable) in &index.callables {
                     if callable.owner == *owner {
@@ -141,7 +142,7 @@ fn contained_root_bindings(value: &ValueExpr, index: &ExecutionIndex, bindings: 
                 contained_root_bindings(value, index, bindings);
             }
         }
-        ValueExpr::Origin(ValueOrigin::Function(key)) => {
+        ValueExpr::Alloc(Kind::Function, key) => {
             bindings.extend(
                 index
                     .prototype_callable_reads
@@ -151,7 +152,7 @@ fn contained_root_bindings(value: &ValueExpr, index: &ExecutionIndex, bindings: 
                     .cloned(),
             );
         }
-        ValueExpr::Origin(ValueOrigin::Class(key)) => {
+        ValueExpr::Alloc(Kind::Class, key) => {
             if let Some(owner) = index.class_owners.get(key) {
                 for (key, callable) in &index.callables {
                     if callable.owner == *owner {
@@ -193,7 +194,7 @@ fn contained_root_bindings(value: &ValueExpr, index: &ExecutionIndex, bindings: 
         | ValueExpr::Undefined
         | ValueExpr::NonCallable
         | ValueExpr::Unknown
-        | ValueExpr::Origin(_) => {}
+        | ValueExpr::Alloc(..) => {}
     }
 }
 
@@ -246,12 +247,12 @@ impl ExecutionIndex {
             .chain(
                 self.hoisted_bindings
                     .iter()
-                    .map(|(id, key)| (id.clone(), ValueExpr::Origin(ValueOrigin::Function(*key)))),
+                    .map(|(id, key)| (id.clone(), ValueExpr::Alloc(Kind::Function, *key))),
             )
             .chain(
                 self.class_bindings
                     .iter()
-                    .map(|(key, id)| (id.clone(), ValueExpr::Origin(ValueOrigin::Class(*key)))),
+                    .map(|(key, id)| (id.clone(), ValueExpr::Alloc(Kind::Class, *key))),
             )
             .collect::<Vec<_>>();
         let producer_count = bindings.len();

@@ -38,6 +38,37 @@ type Attachment struct {
 
 type RequestAdmission func(context.Context, func(context.Context) error) error
 
+// Readiness contains the independently configurable app-server startup windows.
+type Readiness struct {
+	ExecServerDependencyTimeout time.Duration
+	StartupTimeout              time.Duration
+	InitializeTimeout           time.Duration
+}
+
+// Resolve supplies defaults for omitted windows and rejects invalid direct Go configuration.
+func (r Readiness) Resolve() (Readiness, error) {
+	if err := resolveDuration("Codex exec-server dependency timeout", &r.ExecServerDependencyTimeout, 30*time.Second); err != nil {
+		return Readiness{}, err
+	}
+	if err := resolveDuration("Codex app-server startup timeout", &r.StartupTimeout, 90*time.Second); err != nil {
+		return Readiness{}, err
+	}
+	if err := resolveDuration("Codex app-server initialize timeout", &r.InitializeTimeout, 60*time.Second); err != nil {
+		return Readiness{}, err
+	}
+	return r, nil
+}
+
+func resolveDuration(name string, value *time.Duration, defaultValue time.Duration) error {
+	if *value < 0 {
+		return fmt.Errorf("%s must be positive", name)
+	}
+	if *value == 0 {
+		*value = defaultValue
+	}
+	return nil
+}
+
 type Dependencies struct {
 	Context            context.Context
 	State              state.State
@@ -49,6 +80,7 @@ type Dependencies struct {
 	RequestAdmission   RequestAdmission
 	Admission          lifecycle.AdmissionGuard
 	ExecServer         *codexexecserver.Host
+	Readiness          Readiness
 	OnError            func(error)
 	OnChange           func()
 }
@@ -121,6 +153,11 @@ func NewHost(launch harness.LaunchConfig, deps Dependencies) (*Host, error) {
 	if deps.Context == nil || deps.State == nil || deps.Workers == nil || deps.Processes == nil || deps.Supervisor == nil || deps.StateDir == "" || deps.RequestAdmission == nil || deps.Admission == nil || deps.OnError == nil {
 		return nil, errors.New("Codex app-server host dependencies are incomplete")
 	}
+	readiness, err := deps.Readiness.Resolve()
+	if err != nil {
+		return nil, err
+	}
+	deps.Readiness = readiness
 	return &Host{deps: deps, launch: launch, store: filepath.Join(deps.StateDir, "codex"), changed: make(chan struct{})}, nil
 }
 
@@ -272,7 +309,7 @@ func (c *Host) clearInitializingOwner(owner *Attachment) {
 }
 
 func (c *Host) initialize(ctx context.Context, owner *Attachment, generation uint64) error {
-	startup, cancel := context.WithTimeout(ctx, 90*time.Second)
+	startup, cancel := context.WithTimeout(ctx, c.deps.Readiness.StartupTimeout)
 	defer cancel()
 	command, err := codex.ServerCommand(c.launch)
 	if err != nil {
@@ -314,7 +351,7 @@ func (c *Host) initialize(ctx context.Context, owner *Attachment, generation uin
 	c.notify()
 	err = process.WriteLine(startup, string(initialize))
 	if err == nil {
-		timer := time.NewTimer(60 * time.Second)
+		timer := time.NewTimer(c.deps.Readiness.InitializeTimeout)
 		select {
 		case err = <-p.initialized:
 		case <-p.ended:
@@ -322,7 +359,7 @@ func (c *Host) initialize(ctx context.Context, owner *Attachment, generation uin
 		case <-startup.Done():
 			err = startup.Err()
 		case <-timer.C:
-			err = errors.New("the Codex app-server did not answer initialize within 60s")
+			err = fmt.Errorf("the Codex app-server did not answer initialize within %s", c.deps.Readiness.InitializeTimeout)
 		}
 		timer.Stop()
 	}

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Collection
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
@@ -92,69 +92,15 @@ class HistoryServiceClient:
         finally:
             call.cancel()
 
-    async def read_session_observations(
-        self, session_id: str, *, before_cursor: int | None = None, after_cursor: int | None = None, limit: int = 30
-    ) -> history_service_pb2.ReadSessionObservationsResponse:
-        if (
-            not session_id
-            or not 1 <= limit <= 200
-            or (before_cursor is not None and before_cursor < 0)
-            or (after_cursor is not None and after_cursor < 0)
-            or (before_cursor is not None and after_cursor is not None)
-        ):
-            raise ValueError("invalid session observation page")
-        request = history_service_pb2.ReadSessionObservationsRequest(session_id=session_id, limit=limit)
-        if before_cursor is not None:
-            request.before_cursor = before_cursor
-        if after_cursor is not None:
-            request.after_cursor = after_cursor
-        return await self.unary(self.stub.ReadSessionObservations, request)
-
     async def get_session_summary(self, session_id: str) -> history_service_pb2.SessionSummary:
         return await self.unary(
             self.stub.GetSessionSummary, history_service_pb2.GetSessionSummaryRequest(session_id=session_id)
         )
 
-    async def batch_get_session_summaries(
-        self, session_ids: Collection[str]
-    ) -> list[history_service_pb2.SessionSummary]:
-        response = await self.unary(
-            self.stub.BatchGetSessionSummaries,
-            history_service_pb2.BatchGetSessionSummariesRequest(session_ids=session_ids),
-        )
-        return list(response.summaries)
-
-    async def find_sessions(
-        self,
-        *,
-        sandbox_name: str | None = None,
-        sandbox_name_contains: str | None = None,
-        sandbox_uid: str | None = None,
-    ) -> list[history_service_pb2.SessionSandbox]:
-        """Every Session written by the exact Sandbox UID/name, or whose name contains the text."""
-        request = history_service_pb2.FindSessionsRequest()
-        if sandbox_name is not None:
-            request.sandbox_name = sandbox_name
-        if sandbox_name_contains is not None:
-            request.sandbox_name_contains = sandbox_name_contains
-        if sandbox_uid is not None:
-            request.sandbox_uid = sandbox_uid
-        return list((await self.unary(self.stub.FindSessions, request)).sessions)
-
     async def read_thread_entities(
         self, request: history_service_pb2.ReadThreadEntitiesRequest
     ) -> history_service_pb2.ReadThreadEntitiesResponse:
         return await self.unary(self.stub.ReadThreadEntities, request)
-
-    async def read_entity_evidence(
-        self, request: history_service_pb2.ReadEntityEvidenceRequest
-    ) -> history_service_pb2.ReadEntityEvidenceResponse:
-        return await self.unary(self.stub.ReadEntityEvidence, request)
-
-    async def read_native_frames(
-        self, request: history_service_pb2.ReadNativeFramesRequest
-    ) -> history_service_pb2.ReadNativeFramesResponse:
-        return await self.unary(self.stub.ReadNativeFrames, request)
 
     async def watch_session_summaries(self) -> AsyncGenerator[None]:
         """Yield once per change notice until planned renewal, which returns; anything else raises."""

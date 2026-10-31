@@ -94,6 +94,8 @@ in
   imports = [ ./../../nix/nixos/modules/vm-hardware.nix ];
 
   networking.hostName = "agentplane-runner-vm";
+  # The Runner Gateway initiates mTLS gRPC connections to the guest's runner listener.
+  networking.firewall.allowedTCPPorts = [ 9090 ];
   services.openssh.enable = lib.mkForce false;
   services.qemuGuest.enable = true;
   systemd.packages = [ supervisionUnits ];
@@ -193,9 +195,8 @@ in
     shell = pkgs.bash;
   };
   users.mutableUsers = false;
-  # The guest accepts no connections: KubeVirt's serial console and the runner's outbound control
-  # stream are its only interfaces, so do not create an account password or an SSH key just to
-  # satisfy host defaults.
+  # Interactive access uses KubeVirt's serial console, so do not create an account password or
+  # an SSH key just to satisfy host defaults.
   users.allowNoPasswordLogin = true;
 
   fileSystems = {

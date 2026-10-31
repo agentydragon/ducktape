@@ -2,6 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::*;
 use crate::analysis_inputs::{ProofDependencies, ValueInputRef};
+use crate::facts::abstract_domain::heap::{
+    ChunkHeap, plain_array_bindings, tracked_allocation_roots,
+};
 use crate::facts::{
     ChunkValueFlow, DynamicScopeFact, LocalClassConstructionProof, SetIterableProof,
     analyze_chunk_structural, compute_shadowed_globals, top_level_item_views,
@@ -26,6 +29,7 @@ fn classify(src: &str) -> Purity {
         &BTreeSet::new(),
         &ChunkCodeGraph::default(),
     )
+    .project()
 }
 
 /// Parse `{prefix}\nconst _ = {expr_src};` and hand `classify` the chunk-top item
@@ -56,7 +60,7 @@ fn classify_with_graph(
 ) -> Purity {
     classify_last_const(prefix, expr_src, |body, shadowed, init| {
         let graph = build(body, shadowed);
-        classify_expr_purity(init, shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+        classify_expr_purity(init, shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph).project()
     })
 }
 
@@ -81,10 +85,11 @@ fn graph_with_conditioned_set_proof(
 ) -> ChunkCodeGraph {
     let views = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&views);
-    let candidate_roots = plain_data_candidate_roots(&views);
-    let flow = ChunkValueFlow::analyze_with_candidates(&views, &candidate_roots);
-    let plain_data = collect_plain_data_bindings(&views, &shadowed, &flow);
-    let plain_arrays = collect_plain_array_bindings(&views, &shadowed);
+    let flow = ChunkValueFlow::analyze_with_candidates(&views, &tracked_allocation_roots(&views));
+    let plain_data = ChunkHeap::analyze(&views, &shadowed, &flow, None)
+        .plain_data_bindings()
+        .bindings;
+    let plain_arrays = plain_array_bindings(&views, &shadowed);
     let dynamic_scope = DynamicScopeFact::analyze(&views);
     let set_shapes = crate::facts::SetIterableShapes::analyze(
         &views,
@@ -148,6 +153,7 @@ fn classify_with_module(prefix: &str, expr_src: &str) -> Purity {
             &BTreeSet::new(),
             &ChunkCodeGraph::default(),
         )
+        .project()
     })
 }
 
@@ -163,6 +169,7 @@ fn classify_with_declared_pure(prefix: &str, expr_src: &str, declared: &[&str]) 
             &declared_pure,
             &ChunkCodeGraph::default(),
         )
+        .project()
     })
 }
 
@@ -380,14 +387,14 @@ fn classify_sequence_takes_worst() {
     assert!(!(classify("(A, x = 1, C)")).is_pure());
 }
 
-// --- Whitelist: pure static property reads -------------------------------
+// --- Builtin table: intrinsic data property reads ------------------------
 
 #[test]
-fn whitelist_static_props_are_pure() {
-    // Table-driven over the whole whitelist: every entry is a pure
-    // internal-slot read, no coercion.
-    for &(recv, prop) in PURE_STATIC_PROPS {
-        let src = format!("{recv}.{prop}");
+fn intrinsic_data_property_reads_are_pure() {
+    // Every data property in the table, primitive- or function-valued, is a
+    // non-accessor own property: reading it runs no getter.
+    for property in builtins::DATA_PROPERTIES {
+        let src = format!("{}.{}", property.global, property.name);
         assert!(
             classify(&src).is_pure(),
             "expected static read `{src}` to classify Pure"
@@ -396,33 +403,42 @@ fn whitelist_static_props_are_pure() {
 }
 
 #[test]
-fn whitelist_misses_fall_back_to_unknown() {
-    // Same receivers, properties that aren't on the whitelist:
+fn unlisted_properties_fall_back_to_unknown() {
+    // Same receivers, properties that aren't in the table:
     // could be a getter / a coercing call. Stays Unknown.
     assert!(!(classify("Math.unknownProp")).is_pure());
     assert!(!(classify("Number.unknownProp")).is_pure());
     assert!(!(classify("Symbol.unknownProp")).is_pure());
 }
 
-// --- Whitelist: pure calls -----------------------------------------------
+// --- Builtin table: calls -----------------------------------------------
 
 #[test]
-fn whitelist_static_calls_are_pure_regardless_of_arg() {
-    // Type predicates and `Object.is` neither coerce nor read user props
-    // on the argument, so any Pure-classified args (an identifier and an
-    // array literal here, two arguments to cover `Object.is`) keep the call
-    // Pure. Table-driven over the whole whitelist.
-    for &(recv, prop) in PURE_STATIC_CALLS {
-        let src = format!("{recv}.{prop}(x, [1, 2, 3])");
+fn rows_admitting_any_operands_are_pure_regardless_of_arg() {
+    // Type predicates, `Object.is` and `Boolean` neither coerce nor read
+    // user props on the argument, so any Pure-classified args (an
+    // identifier and an array literal here, two arguments to cover
+    // `Object.is`) keep the call Pure.
+    let mut checked = 0;
+    for row in builtins::ROWS {
+        if !row.invocation.contains(&Invocation::Call) || !admits_any_operands(row) {
+            continue;
+        }
+        let src = match row.op.callee() {
+            (global, Some(member)) => format!("{global}.{member}(x, [1, 2, 3])"),
+            (global, None) => format!("{global}(x, [1, 2, 3])"),
+        };
         assert!(
             classify(&src).is_pure(),
-            "expected static call `{src}` to classify Pure"
+            "expected call `{src}` to classify Pure"
         );
+        checked += 1;
     }
+    assert!(checked > 0, "some row admits any operands");
 }
 
 #[test]
-fn whitelist_static_calls_unknown_arg_infects() {
+fn builtin_calls_unknown_arg_infects() {
     // An argument whose evaluation may itself fire user code
     // poisons the whole call: even though `Array.isArray` is
     // a pure operation, evaluating `io()` first is not.
@@ -430,47 +446,24 @@ fn whitelist_static_calls_unknown_arg_infects() {
     assert!(!(classify("Number.isNaN(o.x)")).is_pure());
 }
 
-// --- PURE_STATIC_FUNCTION_REFS: read-vs-call distinction ---------------
+// --- Function-valued data properties: read-vs-call distinction ----------
 
 #[test]
-fn static_function_ref_aliases_are_pure() {
-    // Bare member READS access own data properties of the
-    // built-in receiver per ECMA-262 — no getter fires, no
-    // observable side effect. Aliasing the function value into a
-    // binding stays pure (the value isn't called). Table-driven
-    // over the whole whitelist so every entry (current and
-    // future) carries its positive direction.
-    for &(recv, prop) in PURE_STATIC_FUNCTION_REFS {
-        let src = format!("{recv}.{prop}");
-        assert!(
-            classify(&src).is_pure(),
-            "expected function-ref read `{src}` to classify Pure"
-        );
-    }
-}
-
-#[test]
-fn static_function_ref_calls_remain_unknown() {
-    // The CALL form of each function-ref entry is unsafe on
-    // arbitrary args (see `PURE_STATIC_FUNCTION_REFS`
-    // doc-comment for why each is excluded from
-    // `PURE_STATIC_CALLS`). The function-ref entry only opens
-    // the read path; the general (opaque-binding-arg) call must
-    // stay Unknown so the soundness contract holds. Table-driven
-    // over the whole whitelist; entries that are also in
-    // `PURE_STATIC_CALLS` (currently `Object.is`) are call-pure
-    // by their own admission contract and skipped here.
-    //
-    // Note: a subset of these calls (`Object.{keys, values,
-    // entries, freeze, fromEntries}`) becomes Pure when called
-    // with a syntactically plain-data argument — pinned in the
-    // `object_*` tests below. The opaque-Ident args used here
-    // fall outside that narrow shape.
-    for &(recv, prop) in PURE_STATIC_FUNCTION_REFS {
-        if PURE_STATIC_CALLS.contains(&(recv, prop)) {
+fn function_valued_property_calls_remain_unknown() {
+    // Reading a function-valued data property is pure; calling it is
+    // summarized only by its row. Every such function whose row does not
+    // admit any operands (or that has no row) must stay Unknown on opaque
+    // args. Some rows (`Object.{keys, values, entries, freeze, fromEntries}`)
+    // admit a syntactically plain-data argument — pinned in the `object_*`
+    // tests below; the opaque-Ident args used here fall outside that shape.
+    for property in builtins::DATA_PROPERTIES {
+        if property.value != builtins::PropertyValue::Function
+            || builtins::lookup(property.global, Some(property.name), Invocation::Call)
+                .is_some_and(admits_any_operands)
+        {
             continue;
         }
-        let src = format!("{recv}.{prop}(o, p)");
+        let src = format!("{}.{}(o, p)", property.global, property.name);
         assert!(
             !classify(&src).is_pure(),
             "expected function-ref CALL `{src}` to stay Unknown"
@@ -486,11 +479,9 @@ fn static_function_ref_calls_remain_unknown() {
 
 #[test]
 fn static_function_ref_object_shadowed_falls_back_to_unknown() {
-    // `Object` joins WHITELIST_RECEIVERS in this PR; if the
-    // chunk shadows it (via a top-level decl OR an import
-    // specifier per A8), the function-ref read must fall back
-    // to Unknown — `Object.X` then resolves through the
-    // user-bound value.
+    // If the chunk shadows `Object` (via a top-level decl OR an import
+    // specifier per A8), the function-ref read must fall back to
+    // Unknown — `Object.X` then resolves through the user-bound value.
     assert!(!(classify_with_module("const Object = userland;", "Object.defineProperty")).is_pure());
     assert!(
         !(classify_with_module(
@@ -502,17 +493,47 @@ fn static_function_ref_object_shadowed_falls_back_to_unknown() {
 }
 
 #[test]
-fn whitelist_global_callables_are_pure() {
-    // `ToBoolean`-style callables fire no user code on any value: an
-    // identifier, a primitive and an object literal all stay Pure.
-    for &name in PURE_GLOBAL_CALLS {
-        for arg in ["x", "0", "{}"] {
-            let src = format!("{name}({arg})");
-            assert!(
-                classify(&src).is_pure(),
-                "expected global call `{src}` to classify Pure"
-            );
-        }
+fn boolean_is_pure_on_any_value() {
+    // ToBoolean fires no user code on any value: an identifier, a
+    // primitive and an object literal all stay Pure.
+    for arg in ["x", "0", "{}"] {
+        let src = format!("Boolean({arg})");
+        assert!(
+            classify(&src).is_pure(),
+            "expected global call `{src}` to classify Pure"
+        );
+    }
+}
+
+#[test]
+fn to_string_rows_admit_only_result_primitive_operands() {
+    // `ToString` completes without user code on any result-primitive
+    // operand; other operands keep a coercion reason.
+    for src in [
+        "Symbol(`description`)",
+        "Symbol(1 + 2)",
+        "new URLSearchParams(`a=1`)",
+    ] {
+        assert!(classify(src).is_pure(), "expected `{src}` to classify Pure");
+    }
+    for src in ["Symbol(x)", "Symbol({})", "new URLSearchParams(q)"] {
+        assert!(!classify(src).is_pure(), "expected `{src}` to stay unknown");
+    }
+}
+
+#[test]
+fn rows_without_assumed_identity_stay_unknown() {
+    // These callees' identities need the census or an author input
+    // (`native_operation_inputs`), which syntactic purity does not consult.
+    for src in [
+        "Symbol.for('key')",
+        "Math.round(1.5)",
+        "Object.getOwnPropertyNames({ a: 1 })",
+        "new RegExp('a+')",
+        "new FinalizationRegistry(() => {})",
+        "Object.defineProperties({}, {})",
+    ] {
+        assert!(!classify(src).is_pure(), "expected `{src}` to stay unknown");
     }
 }
 
@@ -532,10 +553,8 @@ fn unsafe_global_callables_stay_unknown() {
 fn unsafe_static_calls_stay_unknown() {
     // One representative per way an unlisted call fires user code:
     // coercion (`Math.abs`), iteration (`Array.from`), `toJSON`
-    // (`JSON.stringify`, a receiver outside the whitelist). `Object.*` calls
-    // are not repeated here: `static_function_ref_calls_remain_unknown` skips
-    // any function ref already listed in `PURE_STATIC_CALLS`, so listing one
-    // fails a test only where an explicit assert or an `object_*` test names it.
+    // (`JSON.stringify`, a receiver outside the table). `Object.*` calls
+    // are covered by `function_valued_property_calls_remain_unknown`.
     for src in ["Math.abs(x)", "Array.from(x)", "JSON.stringify(x)"] {
         assert!(
             !classify(src).is_pure(),
@@ -544,13 +563,13 @@ fn unsafe_static_calls_stay_unknown() {
     }
 }
 
-// --- Whitelist: shadowing fallback ---------------------------------------
+// --- Builtin table: shadowing fallback ----------------------------------
 
 #[test]
-fn shadowed_receiver_disables_whitelist() {
+fn shadowed_receiver_disables_builtin_rows() {
     // A chunk-top-level binding for `Math` makes `Math.PI` no
-    // longer reach the global; the whitelist must fall back
-    // to Unknown.
+    // longer reach the global; its rows must fall back to
+    // Unknown.
     assert!(!(classify_with_module("const Math = userland;", "Math.PI")).is_pure());
     assert!(!(classify_with_module("function Math() {}", "Math.E")).is_pure());
     assert!(!(classify_with_module("const Array = X;", "Array.isArray(x)")).is_pure());
@@ -559,14 +578,14 @@ fn shadowed_receiver_disables_whitelist() {
 }
 
 #[test]
-fn unshadowed_receiver_keeps_whitelist() {
+fn unshadowed_receiver_keeps_builtin_rows() {
     // A chunk that declares an unrelated binding leaves the
-    // whitelist active — only same-named shadowing disables.
+    // rows active — only same-named shadowing disables.
     assert!((classify_with_module("const other = userland;", "Math.PI")).is_pure());
 }
 
 #[test]
-fn import_specifier_locals_shadow_whitelist() {
+fn import_specifier_locals_shadow_builtin_rows() {
     // Import bindings are top-level lexical decls and shadow
     // the global the same way `const Math = …` does. The
     // classifier must reach the same Unknown fallback. (Soundness
@@ -595,12 +614,20 @@ fn import_specifier_locals_shadow_whitelist() {
     );
 }
 
-// --- Whitelist: shadow tracking covers every table -----------------------
+// --- Builtin table: shadow tracking covers every global ------------------
 
 #[test]
 fn builtin_constructors_without_args_are_pure() {
-    // Table-driven over every no-arg constructor, WHATWG ones included.
-    for &name in PURE_BUILTIN_NEW_NO_ARGS {
+    for name in [
+        "Map",
+        "Set",
+        "WeakMap",
+        "WeakSet",
+        "Array",
+        "TextDecoder",
+        "TextEncoder",
+        "URLSearchParams",
+    ] {
         let src = format!("new {name}()");
         assert!(
             classify(&src).is_pure(),
@@ -675,7 +702,7 @@ fn computed_method_and_accessor_keys_are_evaluated() {
 
 #[test]
 fn shadowed_proxy_constructor_falls_back_to_unknown() {
-    // Proxy is part of the derived whitelist-name census, so all
+    // Proxy is in `builtins::GLOBALS`, so all
     // chunk-top binding forms suppress the intrinsic rule.
     for prefix in [
         "const Proxy = userland;",
@@ -697,6 +724,7 @@ fn shadowed_proxy_constructor_falls_back_to_unknown() {
             &BTreeSet::new(),
             &ChunkCodeGraph::default(),
         )
+        .project()
     });
     assert!(
         !purity.is_pure(),
@@ -706,8 +734,8 @@ fn shadowed_proxy_constructor_falls_back_to_unknown() {
 
 #[test]
 fn shadowed_whatwg_constructor_falls_back_to_unknown() {
-    // The new tables join SHADOW_TRACKED_GLOBALS via the derived
-    // union, so a chunk-top rebind disables the whitelist.
+    // Host constructors join `builtins::GLOBALS`, so a chunk-top rebind
+    // disables their rows.
     assert!(
         !(classify_with_module(
             "const TextDecoder = class { constructor() { globalThis.boom = 1; } };",
@@ -726,9 +754,9 @@ fn shadowed_whatwg_constructor_falls_back_to_unknown() {
 
 #[test]
 fn shadowed_builtin_new_falls_back_to_unknown() {
-    // SOUNDNESS: `compute_shadowed_globals` must track every name
-    // any whitelist table keys on (SHADOW_TRACKED_GLOBALS — the
-    // derived union), not just WHITELIST_RECEIVERS. A chunk-top
+    // SOUNDNESS: `compute_shadowed_globals` must track every global a
+    // builtin row names (`builtins::GLOBALS`), not just member receivers.
+    // A chunk-top
     // `const Map = class { … }` rebinds the name; `new Map()` then
     // constructs the user class, which can run arbitrary code.
     assert!(
@@ -860,6 +888,7 @@ fn class_observable(src: &str) -> bool {
         &BTreeSet::new(),
         &ChunkCodeGraph::default(),
     )
+    .project()
     .is_pure()
 }
 
@@ -923,7 +952,7 @@ fn declared_pure_call_with_impure_arg_inherits_arg_purity() {
 #[test]
 fn declared_pure_overrides_global_shadowing() {
     // Author trust contract: a declared-pure annotation wins
-    // over both the whitelist's shadowing fallback and the
+    // over both the builtin rows' shadowing fallback and the
     // body's actual contents. The validator does not
     // second-guess.
     assert!(
@@ -1159,6 +1188,7 @@ fn fluent_root_body_local_shadow_defeats_trust() {
                 &string_set(&["k"]),
             );
             classify_expr_purity(init, shadowed, &local_shadowed, &BTreeSet::new(), &graph)
+                .project()
         },
     );
     assert!(!purity.is_pure());
@@ -1290,9 +1320,8 @@ fn object_freeze_on_object_with_spread_falls_back_to_unknown() {
 fn object_keys_on_plain_data_binding_classifies_pure() {
     // `Object.keys(plain)` where `plain` is a chunk-top
     // `const plain = {…}` bound to a plain-data shape —
-    // accessor-free by `collect_plain_data_bindings` /
-    // `PlainDataWriteScanner` invariants. Same admission as
-    // a fresh literal.
+    // accessor-free because its allocation stays private and
+    // clean (`ChunkHeap`). Same admission as a fresh literal.
     assert!(classify_built("const plain = { a: 1 };", "Object.keys(plain)").is_pure());
 }
 
@@ -1361,6 +1390,7 @@ fn classify_built(prefix: &str, expr_src: &str) -> Purity {
         &BTreeSet::new(),
         &graph,
     )
+    .project()
 }
 
 #[test]
@@ -1421,8 +1451,11 @@ fn stable_numeric_var_candidates_are_narrow_and_keep_throwing_arithmetic_unknown
         None,
     );
     assert!(graph.primitive_bindings.contains("value"));
-    assert!(!graph.number_bindings.contains("value"));
-    assert!(graph.number_or_undefined_bindings.contains("value"));
+    assert_eq!(
+        graph.binding_prims.kinds.get("value"),
+        Some(&PrimKinds::NUMBER.union(PrimKinds::UNDEFINED)),
+        "a stable var is Number after its initializer and undefined before it"
+    );
 
     let redeclared_module = parse("var value = 1; function value() {}");
     let redeclared_structure = analyze_chunk_structural(&redeclared_module, None, |_| None);
@@ -1518,7 +1551,7 @@ fn classify_with_imported_purities(
 }
 
 fn impure_verdict() -> Purity {
-    Purity::from_reason(PurityRule::UnknownCall, swc_common::DUMMY_SP)
+    Effects::of(Effect::Invoke(InvokeSite::Call), swc_common::DUMMY_SP).project()
 }
 
 #[test]
@@ -1559,6 +1592,7 @@ fn conditioned_constructor_dependencies_flow_through_local_calls_and_bindings() 
             &BTreeSet::new(),
             &graph,
         )
+        .project()
         .dependencies(),
         Some(&dependencies),
         "safe eager class fields must retain their conditioned proof premise"
@@ -1579,7 +1613,8 @@ fn conditioned_constructor_dependencies_flow_through_local_calls_and_bindings() 
         &BTreeSet::new(),
         &BTreeSet::new(),
         &graph,
-    );
+    )
+    .project();
     assert_eq!(purity.dependencies(), Some(&dependencies));
     assert_eq!(
         classify_var_decl_purity(
@@ -1594,6 +1629,7 @@ fn conditioned_constructor_dependencies_flow_through_local_calls_and_bindings() 
                 rebindings: &BTreeSet::new(),
             },
         )
+        .project()
         .dependencies(),
         Some(&dependencies),
         "the declaration-level binding initializer retains its premise"
@@ -1620,7 +1656,8 @@ fn conditioned_dependencies_follow_the_exact_direct_literal_set_certificate() {
         &BTreeSet::new(),
         &BTreeSet::new(),
         &graph,
-    );
+    )
+    .project();
     assert_eq!(certified.dependencies(), Some(&dependencies));
 
     let ModuleItem::Stmt(Stmt::Decl(Decl::Var(independent))) = &module.body[1] else {
@@ -1632,12 +1669,13 @@ fn conditioned_dependencies_follow_the_exact_direct_literal_set_certificate() {
         &BTreeSet::new(),
         &BTreeSet::new(),
         &graph,
-    );
+    )
+    .project();
     assert!(independent.is_pure());
     assert_eq!(
         independent.dependencies(),
         Some(&ProofDependencies::default()),
-        "the independent literal-iterable whitelist must not inherit unrelated input refs"
+        "the independent literal-iterable row must not inherit unrelated input refs"
     );
 }
 
@@ -1676,6 +1714,7 @@ fn nested_conditioned_arguments_keep_dependencies_across_pure_builtins() {
             expression,
             |_, _, init| {
                 classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+                    .project()
             },
         );
         assert!(purity.is_pure(), "{expression} remains pure");
@@ -1688,10 +1727,11 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
     let module = parse("class Box { state = new Set(); }\nconst instance = new Box();");
     let views = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&views);
-    let candidate_roots = plain_data_candidate_roots(&views);
-    let flow = ChunkValueFlow::analyze_with_candidates(&views, &candidate_roots);
-    let plain_data = collect_plain_data_bindings(&views, &shadowed, &flow);
-    let plain_arrays = collect_plain_array_bindings(&views, &shadowed);
+    let flow = ChunkValueFlow::analyze_with_candidates(&views, &tracked_allocation_roots(&views));
+    let plain_data = ChunkHeap::analyze(&views, &shadowed, &flow, None)
+        .plain_data_bindings()
+        .bindings;
+    let plain_arrays = plain_array_bindings(&views, &shadowed);
     let dependencies = value_input_dependencies("static/provider.js", 2);
     let class_shapes = crate::facts::LocalClassConstructionShapes::analyze(
         &views,
@@ -1743,7 +1783,8 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
         &BTreeSet::new(),
         &BTreeSet::new(),
         &graph,
-    );
+    )
+    .project();
     assert!(purity.is_pure());
     assert_eq!(purity.dependencies(), Some(&dependencies));
 }

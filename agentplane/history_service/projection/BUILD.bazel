@@ -20,6 +20,7 @@ go_library(
         "//agentplane/history_service/storage",
         "//agentplane/history_service/threadfold",
         "//agentplane/postgres/go:postgres",
+        "//agentplane/postgres/go/lease",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",
@@ -53,6 +54,7 @@ go_test(
         "//agentplane/history_service/storage",
         "//agentplane/history_service/testing/spans",
         "//agentplane/history_service/threadfold",
+        "//agentplane/postgres/go/lease",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
@@ -64,6 +66,7 @@ go_test(
         "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/timestamppb",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 

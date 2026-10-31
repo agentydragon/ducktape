@@ -218,8 +218,8 @@ func TestAPageReadUnderAFenceThatNoLongerHoldsIsNotRecorded(t *testing.T) {
 			if state.lastSuccess.Valid || !state.nextAttempt.Valid || state.nextAttempt.Time.After(now()) {
 				t.Errorf("subscription state = %+v, want no success and due at once", state)
 			}
-			if holder := g.claimHolder(t); !holder.Valid || holder.UUID != claim.lease {
-				t.Errorf("claim = %v, want the worker's %s", holder, claim.lease)
+			if holder := g.claimHolder(t); !holder.Valid || holder.UUID != claim.held.Holder {
+				t.Errorf("claim = %v, want the worker's %s", holder, claim.held.Holder)
 			}
 		})
 	}

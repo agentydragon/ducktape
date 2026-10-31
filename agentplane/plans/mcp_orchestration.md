@@ -5,6 +5,14 @@ a stopgap that acts for the operator ([ADR](../docs/adr_orchestration_v1.md)).**
 implemented in that group's contract. What remains: moving each operation to a grant its backend checks (P3),
 and bounding what a launcher may let its workers do.
 
+**Priority update, 2026-10-30 PDT:** the next agent workflow is caller-privilege Agentplane Session
+spawning and cooperation for a standing daily CI-maintenance agent. Follow the
+[selected create contract](task_dag.md#thread_create_policy--authorize-session-creation-separately)
+and [stakeholder priorities](task_dag.md#stakeholder-priorities-2026-10-30-pdt). Different-privilege
+launch bounds below remain later work. Reuse the canonical operation authorities and make the
+interface naturally discoverable to agents; a new authorization bypass is not an acceptable
+shortcut. The historical P0/P1/P3 phase labels below are not the current dispatch priority order.
+
 Claude.ai is the first client, but nothing here is specific to it: the same Actions serve any MCP Connection, and an
 orchestrator in a Session Sandbox reaches them through the [`agentplane` CLI](../docs/agent_cli.md)
 ([user stories 2 and 3](user_stories.md#2-trusted-orchestrator-untrusted-fleet)).

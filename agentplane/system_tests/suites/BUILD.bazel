@@ -83,7 +83,7 @@ k3s_suite(
     ],
 )
 
-# Credential/sampler and sandbox/OOM groups share one stack with at most three guests.
+# Every VM scenario boots independently on the same stack and runs concurrently.
 k3s_suite(
     name = "test_vm",
     srcs = ["test_vm.py"],

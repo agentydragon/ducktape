@@ -74,7 +74,7 @@ func (r *Reconciler) haltVM(ctx context.Context, vm *kubevirtv1.VirtualMachine) 
 // startVM creates the Sandbox's VM, or starts its halted one with the template as it is now, so a
 // changed image or template applies at this start; a halted VM's disks are kept.
 func (r *Reconciler) startVM(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload, template *sandboxapi.SandboxTemplate) (workload, *unready, error) {
-	credentialID := sandbox.Annotations[RunnerCredentialIDAnnotation]
+	credentialID := runnerCredential(sandbox).ID
 	if w.vm != nil {
 		credentialID = w.vm.Annotations[RunnerCredentialIDAnnotation]
 	}

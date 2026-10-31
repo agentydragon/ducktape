@@ -141,6 +141,9 @@ pub struct RequestedLogicalModule {
 pub struct ExportReentryReport {
     /// The declared host behavior the policy was derived under, echoed as read.
     pub host_behavior: spec::HostBehavior,
+    /// The declared program premises, echoed as read.
+    #[serde(skip_serializing_if = "is_default_premises")]
+    pub program_premises: spec::ProgramPremises,
     pub policy: ExportReentryPolicy,
     pub loader: ExportReentryLoaderDerivation,
     pub global_blockers: Vec<ExportReentryGlobalBlocker>,
@@ -153,7 +156,7 @@ pub struct ExportReentryReport {
 pub struct ExportReentryHostBuiltinLeaf {
     pub source_chunk: String,
     pub specifier: String,
-    pub builtin: spec::NodeBuiltinModule,
+    pub builtin: spec::HostModule,
     pub request_count: usize,
 }
 
@@ -186,7 +189,7 @@ pub enum ExportReentryClosureBlocker {
     TopLevelAwait {
         source_chunk: String,
     },
-    VendorAffectedChunk {
+    OpenReplacementBundle {
         source_chunk: String,
     },
     UnsupportedStaticRequest {
@@ -284,6 +287,9 @@ pub struct MaterializeLogicalModulesOptions {
 /// chunk id.
 pub struct MaterializeSpecInputs<'a> {
     pub host_behavior: &'a spec::HostBehavior,
+    pub program_premises: &'a spec::ProgramPremises,
+    /// Host loader per embedded input file (`inputs.embedded_loaders_path`).
+    pub embedded_loaders: &'a BTreeMap<String, spec::BunLoader>,
     pub logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
     pub chunk_renames: &'a BTreeMap<String, ChunkRenames>,
     pub unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
@@ -299,6 +305,8 @@ pub fn materialize_logical_modules(
 ) -> Result<MaterializeLogicalModulesResult> {
     let MaterializeSpecInputs {
         host_behavior,
+        program_premises,
+        embedded_loaders,
         logical_modules,
         chunk_renames,
         unassigned_mode,
@@ -330,13 +338,15 @@ pub fn materialize_logical_modules(
         prune_artifact_to_chunk_ids(&mut artifact, &selected_chunk_ids);
     }
     let artifact_indexes = ArtifactIndexes::build(&artifact)?;
-    let vendor_affected_chunk_ids = vendor_plan.affected_chunk_ids();
     let export_reentry_reports = export_reentry_reports(
         &artifact,
         &artifact_indexes,
-        host_behavior,
+        loader_surface::LoaderAssumptions {
+            host_behavior,
+            program_premises,
+            embedded_loaders,
+        },
         vendor_plan,
-        &vendor_affected_chunk_ids,
         &selected_chunk_ids,
         options.report_emission.rejection_dir().is_some(),
     )?;
@@ -347,16 +357,12 @@ pub fn materialize_logical_modules(
     // Program-level pass over the selected chunks' retained static-import
     // closure: cross-module purity verdicts for each chunk's imported
     // function bindings, consumed per chunk via
-    // `AnalysisInputs::imported_purities`.
-    // Fully-swapped vendor chunks stay opaque — they are excluded from
-    // the emission set and their bodies are replaced by the upstream
-    // package, so they must not contribute purity facts.
-    let full_swap_chunk_ids = vendor_plan.full_swap_chunk_ids();
+    // `AnalysisInputs::imported_purities`. Vendor-swapped providers take part
+    // through their bundled bodies (SPEC.md § Vendor swap equivalence).
     let cross_module_chunk_closure = cross_module::selected_static_import_closure(
         &artifact,
         &artifact_indexes,
         &selected_chunk_ids,
-        &full_swap_chunk_ids,
     )?;
     let artifact_ref: &ChunkBundle = &artifact;
     // Vendor consultation for lowering's import construction: runtime re-imports whose source
@@ -456,10 +462,10 @@ pub fn materialize_logical_modules(
             graph_provenance: options.graph_provenance.as_ref(),
             explicit_binding_destinations: &explicit_binding_destinations,
             resolved_member_sites: &resolved_member_sites,
+            replacement_packages: &vendor_plan.replacement_packages(),
+            predefined_globals: host_behavior.predefined_globals,
         },
         &declared_pure_new,
-        &full_swap_chunk_ids,
-        &vendor_affected_chunk_ids,
         Some(&cross_module_chunk_closure),
     )?;
     let chunk_results = GLOBALS
@@ -514,12 +520,16 @@ pub fn materialize_logical_modules(
 fn export_reentry_reports(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
-    host_behavior: &spec::HostBehavior,
+    assumptions: loader_surface::LoaderAssumptions<'_>,
     vendor_plan: &vendor::VendorResolutionPlan,
-    vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
     selected_chunk_names: &[String],
     include_closure_diagnostics: bool,
 ) -> Result<BTreeMap<ChunkId, ExportReentryReport>> {
+    let loader_surface::LoaderAssumptions {
+        host_behavior,
+        program_premises,
+        ..
+    } = assumptions;
     // An incomplete artifact cannot certify incoming host/nonordinary edges.
     let all_chunks_present = artifact.chunks.len() == artifact.chunk_table.len();
     let mut global_blockers = Vec::new();
@@ -554,13 +564,7 @@ fn export_reentry_reports(
         .iter()
         .filter_map(|name| artifact.chunk_table.get(name))
         .collect();
-    let mut loader_derivations = loader_derivations(
-        artifact,
-        indexes,
-        host_behavior,
-        vendor_affected_chunk_ids,
-        &targets,
-    )?;
+    let mut loader_derivations = loader_derivations(artifact, indexes, assumptions, &targets)?;
     let mut reports = BTreeMap::new();
     for name in selected_chunk_names {
         let Some(target) = artifact.chunk_table.get(name) else {
@@ -569,14 +573,7 @@ fn export_reentry_reports(
         let closure = if artifact.has_chunk(target)
             && (include_closure_diagnostics || !global_proof_is_blocked)
         {
-            collect_closure_blockers(
-                target,
-                artifact,
-                indexes,
-                host_behavior,
-                vendor_plan,
-                vendor_affected_chunk_ids,
-            )?
+            collect_closure_blockers(target, artifact, indexes, host_behavior, vendor_plan)?
         } else {
             ExportReentryClosureInspection::default()
         };
@@ -595,6 +592,7 @@ fn export_reentry_reports(
             target,
             ExportReentryReport {
                 host_behavior: host_behavior.clone(),
+                program_premises: program_premises.clone(),
                 policy,
                 loader,
                 global_blockers: global_blockers.clone(),
@@ -610,10 +608,10 @@ fn export_reentry_reports(
 fn loader_derivations(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
-    host_behavior: &spec::HostBehavior,
-    vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
+    assumptions: loader_surface::LoaderAssumptions<'_>,
     targets: &BTreeSet<ChunkId>,
 ) -> Result<BTreeMap<ChunkId, ExportReentryLoaderDerivation>> {
+    let host_behavior = assumptions.host_behavior;
     let uniform = |derivation: ExportReentryLoaderDerivation| {
         targets
             .iter()
@@ -623,12 +621,7 @@ fn loader_derivations(
     if host_behavior.synchronous_module_loader == spec::SynchronousModuleLoader::None {
         return Ok(uniform(ExportReentryLoaderDerivation::NoSynchronousLoader));
     }
-    let surfaces = loader_surface::loader_surfaces(
-        artifact,
-        indexes,
-        host_behavior,
-        vendor_affected_chunk_ids,
-    )?;
+    let surfaces = loader_surface::loader_surfaces(artifact, indexes, assumptions)?;
     if !surfaces.has_loader_sites() {
         return Ok(uniform(ExportReentryLoaderDerivation::NoHostLoaderSites));
     }
@@ -638,15 +631,15 @@ fn loader_derivations(
             .map(|(target, closure)| {
                 (
                     target,
-                    ExportReentryLoaderDerivation::from_closure(
-                        &closure,
-                        &surfaces.requests,
-                        artifact,
-                    ),
+                    ExportReentryLoaderDerivation::from_closure(&closure, &surfaces, artifact),
                 )
             })
             .collect(),
     )
+}
+
+fn is_default_premises(premises: &spec::ProgramPremises) -> bool {
+    *premises == spec::ProgramPremises::default()
 }
 
 fn collect_closure_blockers(
@@ -655,18 +648,14 @@ fn collect_closure_blockers(
     indexes: &ArtifactIndexes,
     host_behavior: &spec::HostBehavior,
     vendor_plan: &vendor::VendorResolutionPlan,
-    vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<ExportReentryClosureInspection> {
-    let loader_present =
-        host_behavior.synchronous_module_loader == spec::SynchronousModuleLoader::Present;
     // Follow resolved static requests even when another blocker is present,
     // so the report exposes independent predicates and structural cycles.
     let mut outgoing = BTreeMap::<ChunkId, BTreeSet<ChunkId>>::new();
     let mut closure = BTreeSet::from([target]);
     let mut pending = vec![target];
     let mut blockers = Vec::new();
-    let mut host_builtin_leaf_counts =
-        BTreeMap::<(String, String, spec::NodeBuiltinModule), usize>::new();
+    let mut host_builtin_leaf_counts = BTreeMap::<(String, String, spec::HostModule), usize>::new();
     while let Some(source) = pending.pop() {
         let chunk = artifact.chunk(source)?;
         let runtime = &chunk.analysis.runtime_facts;
@@ -681,10 +670,8 @@ fn collect_closure_blockers(
                 source_chunk: source_name.clone(),
             });
         }
-        if vendor_affected_chunk_ids.contains(&source)
-            && (loader_present || !vendor_plan.preserves_static_import_closure(source))
-        {
-            blockers.push(ExportReentryClosureBlocker::VendorAffectedChunk {
+        if vendor_plan.replacement_bundle_is_open(source) {
+            blockers.push(ExportReentryClosureBlocker::OpenReplacementBundle {
                 source_chunk: source_name.clone(),
             });
         }
@@ -709,8 +696,7 @@ fn collect_closure_blockers(
                 &artifact.chunk_table,
             ) else {
                 if request.mode == StaticModuleRequestMode::OrdinaryEsm
-                    && let Some(builtin) =
-                        selected_host_builtin_leaf(&request.specifier, host_behavior)
+                    && let Some(builtin) = host_behavior.reentry_free_module(&request.specifier)
                 {
                     *host_builtin_leaf_counts
                         .entry((source_name.clone(), request.specifier.clone(), builtin))
@@ -802,17 +788,6 @@ fn collect_closure_blockers(
             })
             .collect(),
     })
-}
-
-fn selected_host_builtin_leaf(
-    specifier: &str,
-    host_behavior: &spec::HostBehavior,
-) -> Option<spec::NodeBuiltinModule> {
-    let builtin = spec::NodeBuiltinModule::from_static_specifier(specifier)?;
-    host_behavior
-        .reentry_free_builtin_modules
-        .contains(&builtin)
-        .then_some(builtin)
 }
 
 fn resolve_report_target(

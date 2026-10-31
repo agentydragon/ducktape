@@ -55,6 +55,45 @@ class Store:
             ).one()
         return SessionSnapshot(cursor=row.cursor, blocked=row.blocked)
 
+    async def archive_items(self, session_id: str) -> list[dict[str, Any]]:
+        """Append-only conversation transcript, retained across compaction."""
+        async with self.engine.connect() as connection:
+            rows = (
+                await connection.execute(
+                    text(
+                        "SELECT record::text FROM sampler_conversation_item i "
+                        "JOIN sampler_session s ON s.conversation_id=i.conversation_id "
+                        "WHERE s.id=:session_id ORDER BY i.ordinal"
+                    ),
+                    {"session_id": session_id},
+                )
+            ).all()
+        decoded = [json.loads(row[0]) for row in rows]
+        assert all(isinstance(item, dict) for item in decoded)
+        return decoded
+
+    async def active_context(self, session_id: str) -> list[dict[str, Any]]:
+        """The active native model context, exposed as its record list for assertions."""
+        async with self.engine.connect() as connection:
+            row = (
+                await connection.execute(
+                    text(
+                        "SELECT c.api, c.context::text FROM sampler_conversation c "
+                        "JOIN sampler_session s ON s.conversation_id=c.id WHERE s.id=:session_id"
+                    ),
+                    {"session_id": session_id},
+                )
+            ).one()
+        if row.context is None or row.context == "null":
+            return await self.archive_items(session_id)
+        decoded: Any = json.loads(row.context)
+        assert isinstance(decoded, dict)
+        key = {"responses": "items", "anthropic_messages": "messages"}[row.api]
+        records = decoded.get(key)
+        assert isinstance(records, list)
+        assert all(isinstance(item, dict) for item in records)
+        return records
+
     async def idle_generation(self, session_id: str) -> int | None:
         async with self.engine.connect() as connection:
             generation = await connection.scalar(

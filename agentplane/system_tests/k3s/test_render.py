@@ -7,9 +7,10 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import bcrypt
+import pytest
 import pytest_bazel
 import yaml
-from pydantic import AnyHttpUrl
+from pydantic import AnyHttpUrl, ValidationError
 
 from agentplane.app.model_catalog import ModelCatalog
 
@@ -25,7 +26,10 @@ from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
 from agentplane.system_tests.vm_configuration import SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from agentplane.x.central_sampler.settings import Settings as CentralSamplerSettings
+from agentplane.x.central_sampler.settings import (
+    MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
+    Settings as CentralSamplerSettings,
+)
 from cluster.cdk8s.agentplane import central_sampler, history_service, llm_ingress, runner_gateway
 from util.bazel.runfiles import get_required_path
 from util.settings_contract import env_name
@@ -144,8 +148,6 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         fixture_chart.MCP_EDGE_SERVICE.url
     )
     assert "AGENTPLANE_ACTIONS_OAUTH" not in {entry["name"] for entry in actions_container["env"]}
-    actions_config = yaml.safe_load(_resource(docs, "ConfigMap", "actions-settings")["data"]["settings.yaml"])
-    assert actions_config["integrated_connection_service"] is False
     edge_database_env_name = env_name(McpEdgeSettings, "database_url")
     edge_database_env = {entry["name"]: entry for entry in edge_container["env"]}[edge_database_env_name]
     edge_migrator = edge_pod["initContainers"][0]
@@ -419,6 +421,13 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     assert {"port": 9090} in interface["ports"]
     config_map = _resource(fixture.objects, "ConfigMap", "runner-vm-config")
     config = json.loads(config_map["data"]["runner.json"])
+    assert config["codex_readiness"] == {
+        "exec_server_ready_timeout_ms": 60_000,
+        "exec_server_probe_timeout_ms": 5_000,
+        "exec_server_dependency_timeout_ms": 120_000,
+    }
+    pod_config = json.loads(_resource(fixture.objects, "ConfigMap", "runner-config")["data"]["runner.json"])
+    assert "codex_readiness" not in pod_config
     assert config["control"] == {
         "listen_address": "0.0.0.0:9090",
         "security": {
@@ -456,9 +465,26 @@ def test_central_sampler_fixtures_render_app_ingress_gateway_and_history_wiring(
         settings = CentralSamplerSettings.model_validate_json(
             _resource(docs, "ConfigMap", f"{central_sampler.NAME}-settings")["data"]["settings.json"]
         )
-        assert settings.llm_proxy_url == llm_ingress.proxied_url(NAMESPACE)
-        assert str(settings.credential_file) == "/var/run/secrets/central-sampler/llm"
+        ingress_connection = settings.connections["llm-ingress"]
+        assert ingress_connection.base_url == llm_ingress.proxied_url(NAMESPACE)
+        assert ingress_connection.auth.type == "bearer"
+        assert str(ingress_connection.auth.credential_file) == "/var/run/secrets/central-sampler/llm"
+        assert set(settings.connections) == {"llm-ingress"}
+        assert settings.rpc_timeout_seconds == 10
+        assert settings.executor_initialize_timeout_seconds == (120 if vm else 30)
+        without_initialize_timeout = CentralSamplerSettings.model_validate(
+            settings.model_dump(exclude={"executor_initialize_timeout_seconds"})
+        )
+        assert without_initialize_timeout.executor_initialize_timeout_seconds == 30
+        invalid_timeout = settings.model_dump()
+        invalid_timeout["executor_initialize_timeout_seconds"] = MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS + 1
+        with pytest.raises(ValidationError):
+            CentralSamplerSettings.model_validate(invalid_timeout)
         assert set(settings.models) == {fixture_chart.GPT6_LUNA_RESPONSES.id}
+        model = settings.models[fixture_chart.GPT6_LUNA_RESPONSES.id]
+        assert model.connection == "llm-ingress"
+        assert model.provider_model == fixture_chart.GPT6_LUNA_RESPONSES.id
+        assert model.api == "responses"
         assert any(
             mount["name"] == "caller-tokens" and mount["mountPath"] == "/var/run/secrets/central-sampler"
             for mount in container["volumeMounts"]

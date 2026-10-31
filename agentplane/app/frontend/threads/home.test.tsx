@@ -8,8 +8,10 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { SandboxView, ThreadView } from "../schema";
 import { Home } from "./home";
 import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./live";
+import { SandboxesLiveProvider, type SandboxesSnapshot } from "../sandboxes/live";
 import type { SessionNoticeStates } from "../notification_types";
 import { Sidebar } from "../sidebar";
+import { serveEventStreams } from "../testing/watch";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
@@ -73,36 +75,30 @@ const THREADS = [
  * every threads stream opened, in order. */
 async function render(): Promise<string[]> {
   const threadStreams: string[] = [];
-  vi.stubGlobal(
-    "EventSource",
-    class extends EventTarget {
-      readyState = 0;
-      constructor(url: string) {
-        super();
-        const { pathname, searchParams } = new URL(url, "http://test");
-        if (pathname === "/threads/notices/stream") {
-          const states: SessionNoticeStates = { observedAt: "2026-01-01T00:00:00Z", inboxes: [] };
-          queueMicrotask(() => this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(states) })));
-          return;
-        }
-        expect(pathname).toBe("/live/threads");
-        threadStreams.push(url);
-        const search = searchParams.get("search")?.toLowerCase();
-        const snapshot: ThreadsSnapshot = {
-          threads: THREADS.filter(
-            (candidate) => search === undefined || candidate.name?.toLowerCase().includes(search)
-          ),
-          more: false,
-          archived_count: 0,
-          sandboxes: [SANDBOX],
-          updates_connected: true,
-          watch: { fresh: true, stale_after_seconds: 90, refreshed_seconds_ago: { sandboxes: 0 } },
-        };
-        queueMicrotask(() => this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) })));
-      }
-      close(): void {}
+  serveEventStreams((stream) => {
+    const { pathname, searchParams } = stream.url;
+    if (pathname === "/threads/notices/stream") {
+      const states: SessionNoticeStates = { observedAt: "2026-01-01T00:00:00Z", inboxes: [] };
+      stream.event("snapshot", JSON.stringify(states));
+      return;
     }
-  );
+    if (pathname === "/live/sandboxes") {
+      const inventory: SandboxesSnapshot = { sandboxes: [SANDBOX], watch: { healthy: true, failing: {} } };
+      stream.event("snapshot", JSON.stringify(inventory));
+      return;
+    }
+    expect(pathname).toBe("/live/threads");
+    threadStreams.push(stream.url.href);
+    const search = searchParams.get("search")?.toLowerCase();
+    const snapshot: ThreadsSnapshot = {
+      threads: THREADS.filter((candidate) => search === undefined || candidate.name?.toLowerCase().includes(search)),
+      more: false,
+      archived_count: 0,
+      updates_connected: true,
+      watch: { healthy: true, failing: {} },
+    };
+    stream.event("snapshot", JSON.stringify(snapshot));
+  });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -111,8 +107,10 @@ async function render(): Promise<string[]> {
       <MantineProvider env="test">
         <MemoryRouter>
           <RoutedThreadsLiveProvider>
-            <Sidebar settingsOpen={false} onOpenSettings={() => undefined} open onClose={() => undefined} />
-            <Home />
+            <SandboxesLiveProvider>
+              <Sidebar settingsOpen={false} onOpenSettings={() => undefined} open onClose={() => undefined} />
+              <Home />
+            </SandboxesLiveProvider>
           </RoutedThreadsLiveProvider>
         </MemoryRouter>
       </MantineProvider>

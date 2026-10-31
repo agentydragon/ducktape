@@ -34,13 +34,14 @@ use serde_json::Value;
 /// Re-exported so test files can reference the spec enums behind
 /// `Member::with_purity` / `Member::with_effect` without a direct `spec` dep.
 pub use spec::{
-    ArgumentInputContract, CapturedValueContract, CapturedValueKind, ChunkExportPurity,
-    CommutingStatementsContract, HostBehavior, InitializerPurity, LoaderResultForEvaluatingModule,
-    MemberEffect, MemberPurity, NativeCallIdentityInputContract, NativeCallIdentityKind,
-    NativeOperationInputContract, NativeOperationKind, NodeBuiltinModule, ReentryFreeOperation,
-    ResolvedMemberSelector, SourceUnitSelector, SynchronousLoadDrainsMicrotasks,
-    SynchronousLoadRunsAppCallbacks, SynchronousModuleLoader, ValueInputContract, VendorLevel,
-    VendorMark,
+    ArgumentInputContract, BunModule, CapturedValueContract, CapturedValueKind, ChunkExportPurity,
+    CommutingStatementsContract, EmbeddedLoader, HostBehavior, InitializerPurity,
+    LoaderResultForEvaluatingModule, MemberEffect, MemberPurity, NativeCallIdentityInputContract,
+    NativeCallIdentityKind, NativeOperationInputContract, NativeOperationKind, NodeBuiltinModule,
+    NonLiteralLoaderCalls, PredefinedGlobals, ProcessPrototypeChainAccessors, ProgramPremises,
+    ReentryFreeOperation, ResolvedMemberSelector, SourceUnitSelector,
+    SynchronousLoadDrainsMicrotasks, SynchronousLoadRunsAppCallbacks, SynchronousModuleLoader,
+    ValueInputContract, VendorLevel, VendorMark,
 };
 
 use std::collections::BTreeSet;
@@ -50,7 +51,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tempfile::TempDir;
 
-const DEBUNDLER_RLOCATION: &str = "_main/devinfra/js/debundle/debundle";
+const DEBUNDLER_RLOCATION: &str = "_main/devinfra/js/debundle/debundle_e2e";
 const NODE_RLOCATION: &str = "nodejs_linux_amd64/bin/node";
 
 static MODULE_EXPORT_PROBE_COUNTER: AtomicUsize = AtomicUsize::new(0);

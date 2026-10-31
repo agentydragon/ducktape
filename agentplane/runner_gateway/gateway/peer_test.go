@@ -9,7 +9,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	kubefake "k8s.io/client-go/kubernetes/fake"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -74,15 +73,14 @@ func testVMRunnerOwnership(t *testing.T, mode runner_transport.SecurityMode) {
 			}
 			change(sandbox, pod, vmi, vm)
 			scheme := runtime.NewScheme()
-			for _, add := range []func(*runtime.Scheme) error{sandboxapi.AddToScheme, kubevirtv1.AddToScheme} {
+			for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, sandboxapi.AddToScheme, kubevirtv1.AddToScheme} {
 				if err := add(scheme); err != nil {
 					t.Fatal(err)
 				}
 			}
-			objects := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, vmi, vm).Build()
+			objects := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, vmi, vm, pod).Build()
 			g := &Gateway{
 				config: Config{Namespace: sandbox.Namespace, RunnerSecurity: runner_transport.Security{Mode: mode}}, objects: objects,
-				sandboxes: &sandboxResolver{core: kubefake.NewSimpleClientset(pod).CoreV1()},
 			}
 			uri, err := runner_transport.RunnerURI(sandbox.Namespace, string(sandbox.UID), "current-credential")
 			if err != nil {

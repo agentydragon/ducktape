@@ -82,7 +82,8 @@ func newLifecycle(r *Runner, adapters *codexexecserver.Adapters, store state.Sta
 			Context: r.ctx, State: l.state, Workers: &l.workers, Processes: l.processes,
 			Supervisor: r.supervisor, HarnessEnvironment: r.config.HarnessEnvironment,
 			StateDir: r.config.StateDir, RequestAdmission: r.admitCodexRequest,
-			Admission: r.admitLifecycleEffect, ExecServer: r.codexExecServer, OnError: r.fail, OnChange: r.changed,
+			Admission: r.admitLifecycleEffect, ExecServer: r.codexExecServer,
+			Readiness: r.config.CodexAppServerReadiness, OnError: r.fail, OnChange: r.changed,
 		})
 		if err != nil {
 			return nil, err

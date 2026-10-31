@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"sync"
 	"time"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -40,6 +41,58 @@ type connectionRecords struct {
 	discovery    discoveryclient.DiscoveryV1Interface
 	namespace    string
 	holder       connectionHolder
+	now          func() time.Time
+	observed     leaseObservations
+}
+
+// leaseObservations decides when another replica's connection Lease expires as client-go leaderelection
+// does: by how long this replica has seen the same renewal on its own monotonic clock, never by comparing
+// the writer's RenewTime with the local clock, so a skewed writer clock neither expires a live claim early
+// nor keeps a dead one forever. A replica that has not seen a renewal before waits a full duration.
+type leaseObservations struct {
+	mu   sync.Mutex
+	seen map[string]leaseObservation
+}
+
+type leaseObservation struct {
+	renewal   leaseRenewal
+	firstSeen time.Time
+}
+
+// leaseRenewal identifies one renewal; any change shows the holder is alive.
+type leaseRenewal struct {
+	uid         types.UID
+	holder      string
+	transitions int32
+	renewMicros int64
+}
+
+// held reports whether lease's holder still holds it at now: whether this replica first saw its current
+// renewal less than its duration ago. The caller has checked that holder, RenewTime and duration are set.
+func (o *leaseObservations) held(lease *coordinationv1.Lease, now time.Time) bool {
+	renewal := leaseRenewal{
+		uid: lease.UID, holder: *lease.Spec.HolderIdentity, renewMicros: lease.Spec.RenewTime.UnixMicro(),
+	}
+	if lease.Spec.LeaseTransitions != nil {
+		renewal.transitions = *lease.Spec.LeaseTransitions
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	observation, ok := o.seen[lease.Name]
+	if !ok || observation.renewal != renewal {
+		observation = leaseObservation{renewal: renewal, firstSeen: now}
+		if o.seen == nil {
+			o.seen = map[string]leaseObservation{}
+		}
+		o.seen[lease.Name] = observation
+	}
+	return now.Sub(observation.firstSeen) < time.Duration(*lease.Spec.LeaseDurationSeconds)*time.Second
+}
+
+func (o *leaseObservations) forget(name string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	delete(o.seen, name)
 }
 
 func newConnectionRecords(
@@ -51,7 +104,7 @@ func newConnectionRecords(
 	if coordination == nil || discovery == nil || namespace == "" || holder.name == "" || holder.ip == "" || holder.port < 1 {
 		return nil, fmt.Errorf("connection-record clients, namespace and holder are required")
 	}
-	return &connectionRecords{coordination: coordination, discovery: discovery, namespace: namespace, holder: holder}, nil
+	return &connectionRecords{coordination: coordination, discovery: discovery, namespace: namespace, holder: holder, now: time.Now}, nil
 }
 
 func (r *connectionRecords) claim(ctx context.Context, sandbox sandboxreader.Identity, podUID string) (uint64, error) {
@@ -70,8 +123,7 @@ func (r *connectionRecords) claim(ctx context.Context, sandbox sandboxreader.Ide
 				return fmt.Errorf("refusing to adopt Lease %s: foreign or being deleted", leaseName)
 			}
 			if current.Spec.HolderIdentity != nil && *current.Spec.HolderIdentity != r.holder.name &&
-				current.Spec.RenewTime != nil && current.Spec.LeaseDurationSeconds != nil &&
-				time.Now().Before(current.Spec.RenewTime.Add(time.Duration(*current.Spec.LeaseDurationSeconds)*time.Second)) {
+				current.Spec.RenewTime != nil && current.Spec.LeaseDurationSeconds != nil && r.observed.held(current, r.now()) {
 				return errRunnerOwned
 			}
 			if current.Spec.LeaseTransitions != nil {
@@ -95,13 +147,16 @@ func (r *connectionRecords) claim(ctx context.Context, sandbox sandboxreader.Ide
 				HolderIdentity:       stringPointer(r.holder.name),
 				LeaseDurationSeconds: int32Pointer(leaseDurationSeconds),
 				LeaseTransitions:     int32Pointer(next),
-				RenewTime:            &metav1.MicroTime{Time: time.Now().UTC()},
+				RenewTime:            &metav1.MicroTime{Time: r.now().UTC()},
 			},
 		}
 		if current == nil {
 			_, err = r.coordination.Leases(r.namespace).Create(ctx, lease, metav1.CreateOptions{})
 		} else {
 			lease.ResourceVersion = current.ResourceVersion
+			if uid := sandboxlease.LastConnectedPodUID(current.Annotations); uid != "" {
+				lease.Annotations[sandboxlease.LastConnectedPodUIDAnnotation] = uid
+			}
 			_, err = r.coordination.Leases(r.namespace).Update(ctx, lease, metav1.UpdateOptions{})
 		}
 		if err != nil {
@@ -113,6 +168,7 @@ func (r *connectionRecords) claim(ctx context.Context, sandbox sandboxreader.Ide
 	if err != nil {
 		return 0, fmt.Errorf("accept runner connection: %w", err)
 	}
+	r.observed.forget(leaseName)
 	if err := r.pointControlEndpoints(ctx, sandbox, epoch); err != nil {
 		return 0, fmt.Errorf("point Sandbox control Service at connection holder: %w", err)
 	}
@@ -133,6 +189,7 @@ func (r *connectionRecords) recordBootID(ctx context.Context, sandbox sandboxrea
 			lease.Annotations = make(map[string]string)
 		}
 		lease.Annotations[sandboxlease.RunnerBootIDAnnotation] = bootID
+		lease.Annotations[sandboxlease.LastConnectedPodUIDAnnotation] = lease.Annotations[sandboxlease.PodUIDAnnotation]
 		_, err = r.coordination.Leases(r.namespace).Update(ctx, lease, metav1.UpdateOptions{})
 		return err
 	})

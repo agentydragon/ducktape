@@ -69,6 +69,10 @@ pub struct ReturnedRecordSummary {
     pub members: Vec<DeferredRecordMember>,
     /// Composed source/native proof, including its captured-input dependencies.
     pub inference: crate::reports::schema::InferenceUse,
+    /// As on `ForeignCallSummary`: the swap's replacement package when the
+    /// emitted program runs it instead of this body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replacement_package: Option<String>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -115,6 +119,56 @@ pub struct DescriptorCopyFactorySummary {
     pub signatures: Vec<spec::DescriptorCopyFactorySignature>,
 }
 
+/// How the importer must invoke a derived foreign callable for its summary to
+/// apply: a class only through `new`, a function only through an ordinary call.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ForeignInvocation {
+    Call,
+    Construct,
+}
+
+/// One possible result of a derived foreign call.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ForeignReturn {
+    /// The argument value itself (`undefined` when not supplied).
+    Argument {
+        index: usize,
+    },
+    /// An object or closure allocated by this call. It may hold the
+    /// `retained_arguments`; nothing else in the importer can reach it.
+    FreshAllocation,
+    Primitive,
+}
+
+/// Provider-derived summary of one exported callable (SPEC.md § Derived
+/// foreign call summaries). Under A11 and the closed native census, a matching
+/// call runs no code other than the provider body itself: no getter, coercion,
+/// argument, host or export callback. It writes only to its own allocations.
+/// Arguments outside `retained_arguments` and `Argument` returns are dropped.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+pub struct ForeignCallSummary {
+    pub defining_module: String,
+    pub export: String,
+    pub local: String,
+    pub source_location: Option<SourceLocation>,
+    pub invocation: ForeignInvocation,
+    pub returns: BTreeSet<ForeignReturn>,
+    pub retained_arguments: BTreeSet<usize>,
+    /// Census families the body constructs from (`new WeakMap()`); their
+    /// integrity premise is in `dependencies`.
+    pub native_constructions: BTreeSet<NativeIntrinsic>,
+    /// The vendor swap's replacement package when the emitted program runs it
+    /// instead of this body; the summary then rests on the swap's equivalence
+    /// promise (SPEC.md § Vendor swap equivalence).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replacement_package: Option<String>,
+    /// Trusted provider judgment; deliberately absent from report JSON.
+    #[serde(skip)]
+    pub(crate) dependencies: ProofDependencies,
+}
+
 /// Capabilities of one bare imported callable, keyed by the importer's local
 /// binding name. More than one proof can support the same capability.
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize)]
@@ -128,6 +182,8 @@ pub struct CallableSummary {
     pub callback_object_arguments: Option<CallbackObjectArguments>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub descriptor_copy_factory: Option<DescriptorCopyFactorySummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub foreign_call: Option<ForeignCallSummary>,
 }
 
 impl CallableSummary {
@@ -138,6 +194,7 @@ impl CallableSummary {
             namespace_wrapper: None,
             callback_object_arguments: None,
             descriptor_copy_factory: None,
+            foreign_call: None,
         }
     }
 
@@ -170,7 +227,22 @@ impl CallableSummary {
         &self.callback_factory_evidence
     }
 
+    pub fn foreign_call(summary: ForeignCallSummary) -> Self {
+        Self {
+            foreign_call: Some(summary),
+            ..Self::default()
+        }
+    }
+
     pub fn merge(&mut self, other: Self) {
+        if let Some(call) = other.foreign_call {
+            assert!(
+                self.foreign_call
+                    .as_ref()
+                    .is_none_or(|previous| previous == &call)
+            );
+            self.foreign_call = Some(call);
+        }
         if let Some(factory) = other.descriptor_copy_factory {
             assert!(
                 self.descriptor_copy_factory
@@ -231,6 +303,28 @@ pub enum NativeIntrinsic {
 }
 
 impl NativeIntrinsic {
+    /// Every global property name `for_global_binding` recognizes.
+    pub(crate) const GLOBAL_BINDINGS: &[&str] = &[
+        "Error",
+        "Function",
+        "Object",
+        "Array",
+        "Math",
+        "RegExp",
+        "Symbol",
+        "Promise",
+        "Map",
+        "Set",
+        "WeakMap",
+        "WeakSet",
+        "FinalizationRegistry",
+        "globalThis",
+        "window",
+        "self",
+        "frames",
+        "top",
+    ];
+
     pub(crate) fn for_global_binding(property: &str) -> Option<Self> {
         match property {
             "Error" => Some(Self::Error),
@@ -248,6 +342,27 @@ impl NativeIntrinsic {
             "FinalizationRegistry" => Some(Self::FinalizationRegistry),
             "globalThis" | "window" | "self" | "frames" | "top" => Some(Self::GlobalObject),
             _ => None,
+        }
+    }
+
+    /// The global object's own property holding the family's constructor or
+    /// namespace.
+    pub(crate) fn global_binding(self) -> Option<&'static str> {
+        match self {
+            Self::GlobalObject | Self::UnknownGlobalValue => None,
+            Self::Error => Some("Error"),
+            Self::FinalizationRegistry => Some("FinalizationRegistry"),
+            Self::Function => Some("Function"),
+            Self::Object => Some("Object"),
+            Self::Array => Some("Array"),
+            Self::Math => Some("Math"),
+            Self::RegExp => Some("RegExp"),
+            Self::Symbol => Some("Symbol"),
+            Self::Promise => Some("Promise"),
+            Self::Map => Some("Map"),
+            Self::Set => Some("Set"),
+            Self::WeakMap => Some("WeakMap"),
+            Self::WeakSet => Some("WeakSet"),
         }
     }
 }
@@ -283,6 +398,29 @@ pub struct ProofDependencies {
     pub argument_inputs: BTreeSet<ArgumentInputRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub host_behavior: BTreeSet<HostBehaviorKey>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub program_premises: BTreeSet<ProgramPremiseKey>,
+}
+
+/// One `program_premises` assertion consumed by a proof (SPEC.md § Program
+/// premises).
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProgramPremiseKey {
+    ProcessPrototypeChainAccessors,
+    NonLiteralLoaderCalls,
+}
+
+/// Global properties that hold only fresh ordinary objects created by
+/// analyzed code (SPEC.md § Bundle-owned globals).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BundleGlobalNames {
+    pub names: BTreeSet<String>,
+    /// Every property keyed by a `Symbol.for` symbol.
+    pub registered_symbols: bool,
+    /// No analyzed write may replace `Map`, `Set`, `WeakMap` or `WeakSet`,
+    /// so constructing one allocates a fresh object.
+    pub fresh_collections: bool,
 }
 
 /// One `host_behavior` assertion consumed by a proof (SPEC.md § Host behavior).
@@ -295,6 +433,19 @@ pub enum HostBehaviorKey {
     SynchronousLoadRunsAppCallbacks,
     SynchronousLoadDrainsMicrotasks,
     ReentryFreeBuiltinModule(spec::NodeBuiltinModule),
+    ReentryFreeBunModule(spec::BunModule),
+    ReentryFreeEmbeddedLoader(spec::EmbeddedLoader),
+    PredefinedGlobals,
+}
+
+impl HostBehaviorKey {
+    /// The list entry that declared `module` reentry-free.
+    pub fn reentry_free_module(module: spec::HostModule) -> Self {
+        match module {
+            spec::HostModule::Node(builtin) => Self::ReentryFreeBuiltinModule(builtin),
+            spec::HostModule::Bun(bun) => Self::ReentryFreeBunModule(bun),
+        }
+    }
 }
 
 impl ProofDependencies {
@@ -304,6 +455,7 @@ impl ProofDependencies {
             && self.descriptor_copy_authors.is_empty()
             && self.argument_inputs.is_empty()
             && self.host_behavior.is_empty()
+            && self.program_premises.is_empty()
     }
 
     pub fn extend(&mut self, other: &Self) {
@@ -316,6 +468,8 @@ impl ProofDependencies {
             .extend(other.argument_inputs.iter().cloned());
         self.host_behavior
             .extend(other.host_behavior.iter().copied());
+        self.program_premises
+            .extend(other.program_premises.iter().copied());
     }
 }
 
@@ -527,6 +681,8 @@ pub struct NativeIntegrity {
     /// when a receiver refinement was actually used.
     pub value_input_evidence: BTreeMap<ValueInputRef, ValueInputEvidence>,
     pub consumed_value_inputs: BTreeSet<ValueInputRef>,
+    /// Host claims a receiver discharge consumed.
+    pub consumed_host_behavior: BTreeSet<HostBehaviorKey>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -550,6 +706,12 @@ pub struct AnalysisAssumptions {
     /// Host operations the author audited as unable to run application code
     /// synchronously (`host_behavior.reentry_free_operations`).
     pub reentry_free_operations: BTreeSet<spec::ReentryFreeOperation>,
+    /// `host_behavior.predefined_globals`: whether the host predefines only
+    /// standard global properties.
+    pub predefined_globals: spec::PredefinedGlobals,
+    /// The whole-program bundle-owned global properties (SPEC.md §
+    /// Bundle-owned globals); empty unless `predefined_globals: standard`.
+    pub bundle_globals: BundleGlobalNames,
     /// Exact author-certified browser-global slots whose stored capabilities
     /// cannot be consumed before this chunk finishes synchronous init.
     pub deferred_global_publications: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,
@@ -618,6 +780,23 @@ pub struct AnalysisAssumptions {
     pub fluent_bindings: BTreeSet<String>,
 }
 
+impl AnalysisAssumptions {
+    /// Whether an author contract describes calls through this imported local.
+    pub(crate) fn names_imported_callable(&self, local: &str) -> bool {
+        self.inline_callback_factories.contains(local)
+            || self.callback_factory_members.contains_key(local)
+            || self.retained_callback_factories.contains_key(local)
+            || self.retained_callback_factory_members.contains_key(local)
+            || self.retained_callback_constructors.contains_key(local)
+            || self.no_reentry_exports.contains(local)
+            || self.no_reentry_callback_exports.contains_key(local)
+            || self.no_reentry_members.contains_key(local)
+            || self.no_reentry_record_members.contains_key(local)
+            || self.namespace_independent_members.contains_key(local)
+            || self.fluent_bindings.contains(local)
+    }
+}
+
 /// Inputs to semantic analysis. Author assertions stay separate from imported
 /// call summaries and the caller-selected local-effect policy.
 #[derive(Debug, Clone, Default)]
@@ -647,9 +826,11 @@ pub struct AnalysisInputs {
     /// established each one. These may depend on defining-chunk author
     /// contracts; they are never local author assumptions.
     pub imported_callables: BTreeMap<String, CallableSummary>,
-    /// Inferred direct ESM import bindings whose possible values are primitive.
-    /// Used only to suppress ToPrimitive callback promotion, never eager reads.
-    pub imported_primitives: BTreeSet<String>,
+    /// Inferred values of direct ESM import bindings, keyed by local binding
+    /// name: each stable exported value projected through the import
+    /// resolver. Used only to suppress ToPrimitive callback promotion, never
+    /// eager reads.
+    pub imported_values: BTreeMap<String, crate::facts::abstract_domain::value::Value>,
 }
 
 /// Exact-site native inputs after the canonical execution index validated

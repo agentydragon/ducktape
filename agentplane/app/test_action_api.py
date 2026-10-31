@@ -267,9 +267,12 @@ async def test_live_action_policy_retries_failure_and_reuses_same_generation(
         assert retried["action_policy"]["synced"] is True
         assert len(_get_action_policy_calls(review)) == 2
 
-        await review.sandbox.patch_sandbox({"metadata": {"annotations": {"policy-cache-reuse": "1"}}})
+        # A stream skips a frame identical to its last one, so this change must show in the frame.
+        wake_on_send = not (await review.sandbox.sandbox())["spec"].get("wakeOnSend", False)
+        await review.sandbox.patch_sandbox({"spec": {"wakeOnSend": wake_on_send}})
         event, reused = await _read_sse_event(events)
         assert event == "snapshot"
+        assert reused["sandbox"]["wake_on_send"] is wake_on_send
         assert reused["action_policy"]["synced"] is True
         assert len(_get_action_policy_calls(review)) == 2
 
@@ -288,6 +291,8 @@ async def test_live_action_policy_invalidates_on_policy_set_and_binding_events(
         assert initial["action_policy"]["synced"] is True
         assert len(_get_action_policy_calls(review)) == 1
 
+        # A stream skips a frame identical to its last one, so each re-read answers differently.
+        review.service.policy = _action_policy_response(synced=False)
         sandbox = await review.sandbox.sandbox()
         group, version = sandbox["apiVersion"].split("/", maxsplit=1)
         await review.sandbox.custom_objects.create_namespaced_custom_object(
@@ -311,8 +316,10 @@ async def test_live_action_policy_invalidates_on_policy_set_and_binding_events(
         )
         event, after_set = await _read_sse_event(events)
         assert event == "snapshot"
-        assert after_set["action_policy"]["synced"] is True
+        assert after_set["action_policy"]["synced"] is False
         assert len(_get_action_policy_calls(review)) == 2
+
+        review.service.policy = _action_policy_response(synced=True)
 
         await review.sandbox.custom_objects.create_namespaced_custom_object(
             group,

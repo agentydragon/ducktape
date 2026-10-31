@@ -56,21 +56,10 @@ py_test(
 )
 
 py_library(
-    name = "operator_oidc",
-    srcs = ["operator_oidc.py"],
-    deps = [
-        ":operator_oidc_settings",
-        "//util:oidc_principal",
-    ],
-)
-
-py_library(
     name = "policy_view",
     srcs = ["policy_view.py"],
     deps = [
         ":models",
-        "//agentplane:policy_sets",
-        "//agentplane/action_service/policies:registry",
         "@pypi//pydantic",
     ],
 )
@@ -305,15 +294,16 @@ go_library(
         "//agentplane/action_service/worker",
         "//agentplane/grpc/bearer",
         "//agentplane/grpc/facade",
+        "//agentplane/grpc/graceful",
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
-        "//agentplane/policy/reader",
         "//agentplane/postgres/go:postgres",
         "//agentplane/postgres/go/probes",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",
+        "//agentplane/watchhealth",
         "//agentplane/workload_auth/go/auth",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",

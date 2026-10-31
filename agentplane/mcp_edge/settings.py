@@ -24,14 +24,16 @@ class Settings(YamlFileSettings):
     database_url: str = Field(min_length=1)
     actions_target: str = Field(min_length=1)
     host: str = "0.0.0.0"
-    port: int = Field(default=8080, ge=1, le=65535)
+    port: int = Field(default=8080, ge=1, le=65535, description="The gRPC listener's port.")
+    http_port: int = Field(
+        default=8081, ge=1, le=65535, description="The HTTP listener's port: the facade, /mcp, OAuth and metrics."
+    )
     caller_service_account_namespaces: Set[str] = Field(min_length=1)
     mintable_accounts: tuple[str, ...] = ()
     operator_oidc: OperatorOidcSettings
     oauth: OAuthSettings | None = None
     max_wait_seconds: float = Field(default=30, ge=0, allow_inf_nan=False)
     direct_wait_seconds: float = Field(default=30, ge=0, allow_inf_nan=False)
-    caller_watch_seconds: int = Field(default=300, ge=2)
 
     @model_validator(mode="after")
     def validate_mintable_accounts(self) -> Settings:

@@ -1,0 +1,32 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/x/central_sampler:__pkg__"])
+
+go_library(
+    name = "anthropic",
+    srcs = [
+        "anthropic.go",
+        "compaction.go",
+        "config.go",
+        "context.go",
+        "observations.go",
+        "wire.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/x/central_sampler/anthropic",
+    deps = [
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/x/central_sampler/protocol",
+    ],
+)
+
+go_test(
+    name = "anthropic_test",
+    size = "small",
+    srcs = ["anthropic_test.go"],
+    embed = [":anthropic"],
+    race = "on",
+    deps = [
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/x/central_sampler/protocol",
+    ],
+)

@@ -150,6 +150,7 @@ go_library(
     visibility = ["//agentplane/runner_gateway:__subpackages__"],
     deps = [
         "//agentplane/grpc/facade",
+        "//agentplane/grpc/graceful",
         "//agentplane/observability",
         "//agentplane/postgres/go:postgres",
         "//agentplane/runner_gateway/dispatcher",
@@ -157,6 +158,7 @@ go_library(
         "//agentplane/runner_gateway/gateway",
         "//agentplane/runner_transport",
         "//agentplane/sandboxes/api",
+        "//agentplane/watchhealth",
         "//agentplane/workload_auth/go/auth",
         "//util/netlistener",
         "@com_github_go_logr_logr//:logr",
@@ -168,6 +170,7 @@ go_library(
         "@io_k8s_client_go//kubernetes",
         "@io_k8s_client_go//kubernetes/scheme",
         "@io_k8s_client_go//rest",
+        "@io_k8s_client_go//tools/cache",
         "@io_k8s_client_go//tools/clientcmd",
         "@io_k8s_sigs_controller_runtime//pkg/cache",
         "@io_k8s_sigs_controller_runtime//pkg/client",

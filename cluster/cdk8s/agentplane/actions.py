@@ -307,14 +307,10 @@ class Actions(Construct):
             "host": "0.0.0.0",
             "port": self.service.pod_port,
             "token_audience": WORKLOAD_TOKEN_AUDIENCE,
-            # CLEANUP(added 2026-10-27): Keep false until the manifest key is removed after this image rolls out.
-            "integrated_connection_service": False,
             "operator_oidc": props.operator_oidc,
             "policy_namespace": env.namespace,
             "caller_service_account_namespaces": sorted(props.caller_service_account_namespaces),
             "direct_wait_seconds": 30,
-            # CLEANUP(added 2026-10-27): Retain the legacy maximum until the new image rolls out and this key is removed.
-            "max_wait_seconds": 180,
         }
         if props.web_push is not None:
             content["web_push"] = {

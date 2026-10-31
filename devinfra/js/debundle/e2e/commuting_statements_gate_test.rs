@@ -7,7 +7,9 @@
 //! - a pair the analysis derived to conflict (a known write and read of one
 //!   cell or binding, a shared `var`) is rejected even though asserted;
 //! - a binding timeline is a derived conflict only between two observed
-//!   effects; one a synchronous fallback merely assumed is inertable;
+//!   effects; one a conservative path merely assumed (the fallback summary,
+//!   a callback opaque code may invoke, an escaped closure, whole-body
+//!   promotion) is inertable;
 //! - a pair with no `sequenced` edge between its endpoints is rejected as
 //!   unused.
 
@@ -503,11 +505,10 @@ fn timeline_between_two_fallback_effects_is_inertable() {
     for cause in &timelines {
         for side in ["source", "target"] {
             assert_eq!(cause[side]["kind"], "fallback", "{cause:#}");
-            assert_eq!(
-                cause[side]["reason"]["code"], "callback_pool_limit",
-                "{cause:#}"
-            );
-            assert_eq!(cause[side]["reason"]["limit"], 64, "{cause:#}");
+            let reason = &cause[side]["reason"];
+            assert_eq!(reason["path"], "fallback_summary", "{cause:#}");
+            assert_eq!(reason["loss"]["code"], "callback_pool_limit", "{cause:#}");
+            assert_eq!(reason["loss"]["limit"], 64, "{cause:#}");
         }
     }
 }
@@ -553,4 +554,206 @@ fn timeline_between_observed_write_and_fallback_read_is_inertable() {
             "{cause:#}"
         );
     }
+}
+
+/// `prelude` declares helpers (`helpers`) beside `state`; `first`, `second`
+/// and `third` close the `outer`/`inner` cycle as in [`state_source`].
+fn probe_source(prelude: &str, helpers: &[&str], first: &str, second: &str) -> String {
+    let exports = helpers.join(", ");
+    format!(
+        "let state = 0;\nfunction bump() {{ state = 1; return 3; }}\nfunction peek() {{ return state; }}\n{prelude}\nconst first = {first};\nconst second = {second};\nconst third = typeof second;\nconsole.log(typeof first, third, state);\nexport {{ state, bump, peek, {exports}, first, second, third }};\n"
+    )
+}
+
+fn probe_split<'a>(
+    source: &'a str,
+    helpers: &[&'static str],
+    pairs: Vec<CommutingStatementsContract>,
+) -> FixtureOpts<'a> {
+    let cells: Vec<Member> = ["state", "bump", "peek"]
+        .iter()
+        .chain(helpers)
+        .copied()
+        .map(Member::new)
+        .collect();
+    FixtureOpts::new(
+        source,
+        vec![
+            logical_module("cells/state", &cells),
+            logical_module(
+                "probes/outer",
+                &[Member::new("first"), Member::new("third")],
+            ),
+            logical_module("probes/inner", &[Member::new("second")]),
+        ],
+    )
+    .with_unassigned_mode(unassigned_mode_inline())
+    .with_commuting_statements("static/app", pairs)
+}
+
+/// The `state` conflict between `first` and `second` exists only through
+/// conservative paths, `path` among them: without the pair its timeline
+/// closes the cycle; with it the pair is accepted, every inerted `state`
+/// timeline is assumed on both sides, `path` assumed at least one effect, and
+/// the bundle prints `output`.
+fn assert_assumed_pair_accepted(
+    source: &str,
+    helpers: &[&'static str],
+    path: serde_json::Value,
+    output: &str,
+) {
+    let without = expect_cycle_rejection(probe_split(source, helpers, vec![]), &STATE_MODULES);
+    assert!(
+        without["cut"].as_array().expect("cut").iter().any(|edge| {
+            let cause = &edge["explanation"]["cause"];
+            cause["rule"] == "binding_timeline" && cause["binding"] == "state"
+        }),
+        "{without:#}"
+    );
+    let fixture = run_fixture(probe_split(source, helpers, vec![first_second_pair()]));
+    assert_preserved_entry_output(&fixture, output);
+    let timelines = inerted_state_timelines(&fixture);
+    assert!(!timelines.is_empty(), "no `state` timeline inerted");
+    for cause in &timelines {
+        for side in ["source", "target"] {
+            assert_eq!(cause[side]["kind"], "fallback", "{cause:#}");
+        }
+    }
+    assert!(
+        timelines.iter().any(|cause| {
+            ["source", "target"]
+                .iter()
+                .any(|side| cause[side]["reason"] == path)
+        }),
+        "{path} assumed no inerted effect: {timelines:#?}"
+    );
+}
+
+/// The same shape with `first` writing and `second` reading `state` through
+/// direct calls the statement definitely makes: a derived conflict.
+fn assert_observed_pair_rejected(source: &str, helpers: &[&'static str]) {
+    expect_rejected(
+        || probe_split(source, helpers, vec![first_second_pair()]),
+        "contradicted",
+        &[
+            ENTRY,
+            CONTRADICTION,
+            "`first`",
+            "`second`",
+            "timeline of `state`",
+        ],
+    );
+}
+
+/// `bump`/`peek` escaped to `JSON.stringify`.
+const ESCAPE_PRELUDE: &str = "const escape = JSON.stringify([bump, peek]);";
+
+/// [`ESCAPE_PRELUDE`] after a write to an `Object` static, so the native
+/// census no longer proves `Object`'s own data slots intact: reading one may
+/// yield or run any escaped callback (a replaced getter could), and the
+/// interpreter promotes their closures. Neither alias read calls them. Each
+/// probe ends in a host call so its strict S-chain edge is inertable; the
+/// read runs first and contributes `state` first.
+const NATIVE_ESCAPE_PRELUDE: &str =
+    "const mark = (Object.probeFlag = 1);\nconst escape = JSON.stringify([bump, peek]);";
+
+#[test]
+fn native_member_read_promoting_escaped_callbacks_is_inertable() {
+    let source = probe_source(
+        NATIVE_ESCAPE_PRELUDE,
+        &["mark", "escape"],
+        "(Object.defineProperty, JSON.stringify(1))",
+        "(Object.getOwnPropertyDescriptor, JSON.stringify(2))",
+    );
+    assert_assumed_pair_accepted(
+        &source,
+        &["mark", "escape"],
+        serde_json::json!({"path": "escaped_callback_closure"}),
+        "string string 0\n",
+    );
+}
+
+#[test]
+fn native_member_read_beside_observed_effects_rejects_the_pair() {
+    let source = probe_source(
+        NATIVE_ESCAPE_PRELUDE,
+        &["mark", "escape"],
+        "(bump(), Object.defineProperty, JSON.stringify(1))",
+        "(peek(), Object.getOwnPropertyDescriptor, JSON.stringify(2))",
+    );
+    assert_observed_pair_rejected(&source, &["mark", "escape"]);
+}
+
+/// A host call within the callback pool bound invokes each callback it
+/// received as if it ran; `JSON.stringify` never calls a function element.
+#[test]
+fn opaque_call_invoking_its_callback_arguments_is_inertable() {
+    let source = probe_source(
+        ESCAPE_PRELUDE,
+        &["escape"],
+        "JSON.stringify([bump])",
+        "JSON.stringify([peek])",
+    );
+    assert_assumed_pair_accepted(
+        &source,
+        &["escape"],
+        serde_json::json!({"path": "opaque_callback_invocation"}),
+        "string string 0\n",
+    );
+}
+
+/// `box` escaped to `JSON.stringify`, so its fields may since hold anything
+/// (an accessor among them): reading one promotes the closure of the
+/// callbacks it may yield. Reading a field never calls it. The trailing host
+/// call keeps each statement opaque, so their strict S-chain edge is
+/// inertable too; it runs after the read, which contributed `state` first.
+const BOX_PRELUDE: &str = "const box = { f: bump, g: peek };\nconst boxed = JSON.stringify(box);";
+
+#[test]
+fn escaped_record_member_read_closure_is_inertable() {
+    let source = probe_source(
+        BOX_PRELUDE,
+        &["box", "boxed"],
+        "(box.f, JSON.stringify(1))",
+        "(box.g, JSON.stringify(2))",
+    );
+    assert_assumed_pair_accepted(
+        &source,
+        &["box", "boxed"],
+        serde_json::json!({"path": "escaped_callback_closure"}),
+        "string string 0\n",
+    );
+}
+
+#[test]
+fn escaped_record_member_read_beside_observed_effects_rejects_the_pair() {
+    let source = probe_source(
+        BOX_PRELUDE,
+        &["box", "boxed"],
+        "(bump(), box.f, JSON.stringify(1))",
+        "(peek(), box.g, JSON.stringify(2))",
+    );
+    assert_observed_pair_rejected(&source, &["box", "boxed"]);
+}
+
+/// `arguments` defeats input modeling, so a call to `touch`/`look` promotes
+/// their whole lazy bodies; the `later` closures that touch `state` never
+/// run.
+#[test]
+fn whole_body_promotion_for_unsupported_inputs_is_inertable() {
+    let prelude = "function touch() { const later = () => { state = 2; }; return arguments.length + typeof later.length; }\nfunction look() { const later = () => state; return arguments.length + typeof later.length; }";
+    let source = probe_source(prelude, &["touch", "look"], "touch()", "look()");
+    assert_assumed_pair_accepted(
+        &source,
+        &["touch", "look"],
+        serde_json::json!({"path": "whole_body_promotion", "operation": "callable_inputs"}),
+        "string string 0\n",
+    );
+}
+
+#[test]
+fn unsupported_inputs_beside_observed_effects_rejects_the_pair() {
+    let prelude = "function touch() { state = 2; return arguments.length; }\nfunction look() { return state + arguments.length; }";
+    let source = probe_source(prelude, &["touch", "look"], "touch()", "look()");
+    assert_observed_pair_rejected(&source, &["touch", "look"]);
 }

@@ -42,7 +42,7 @@ class Holder {
   run() { return this.record.execute(); }
 }
 function create(record) { return new Holder(record); }
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 42;
@@ -696,10 +696,20 @@ fn composed_proofs_reject_native_set_mutation_and_unsafe_field_initializers() {
         &mutated_fixture,
         "true 1 40 0 capture,getter,mutated,mutated\n",
     );
-    expect_atomic_conflict_rejection(
-        composition_options(&mutated, &[SET_MUTATION]),
-        &["registry", "residual"],
-        &[],
+    // The adder write reaches `new Set(['a', 'b'])`, which calls it, but not
+    // the empty `#values = new Set()`, which never reads it.
+    let graph =
+        run_rejection_fixture(composition_options(&mutated, &[SET_MUTATION])).dependency_graph();
+    assert!(
+        !source_unit(&graph, "unique")
+            .synchronous_execution
+            .as_ref()
+            .expect("Set construction execution report")
+            .complete
+    );
+    inference_use(
+        source_unit(&graph, "registry"),
+        InferenceRule::LocalClassConstruction,
     );
 
     let unsafe_field = COMPOSITION_SOURCE.replace(

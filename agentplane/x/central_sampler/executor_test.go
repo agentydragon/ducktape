@@ -41,6 +41,83 @@ func TestExecutorRejectsMalformedInputBeforeDispatch(t *testing.T) {
 	}
 }
 
+func TestExecutorInitializationWaitIsIndependentOfGeneralRPCTimeout(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	client := &fakeExecutionClient{}
+	stream := &gatedExecutorStream{
+		started: make(chan struct{}), release: make(chan struct{}), finished: make(chan struct{}),
+		response: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "retained-executor"},
+	}
+	client.open = func(ctx context.Context, _ *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+		stream.ctx = ctx
+		return stream, nil
+	}
+	executor := newFakeExecutor(t, store, owner, client)
+	executor.rpcTimeout = 5 * time.Millisecond
+	executor.initializeTimeout = time.Minute
+	result := make(chan error, 1)
+	go func() { result <- executor.openSession(t.Context(), nil) }()
+	<-stream.started
+	select {
+	case err := <-result:
+		t.Fatalf("executor initialization ended at the general RPC timeout: %v", err)
+	case <-stream.ctx.Done():
+		t.Fatalf("executor initialization stream ended at the general RPC timeout: %v", stream.ctx.Err())
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(stream.release)
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+	<-stream.finished
+	if err := executor.close(); err != nil {
+		t.Fatal(err)
+	}
+	assertNoUnresolvedNestedIntents(t, store, owner)
+}
+
+func TestExecutorInitializationTimeoutKeepsUnknownOutcome(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	client := &fakeExecutionClient{}
+	stream := &gatedExecutorStream{started: make(chan struct{}), release: make(chan struct{}), finished: make(chan struct{})}
+	client.open = func(ctx context.Context, _ *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+		stream.ctx = ctx
+		return stream, nil
+	}
+	executor := newFakeExecutor(t, store, owner, client)
+	executor.rpcTimeout = time.Minute
+	executor.initializeTimeout = 5 * time.Millisecond
+	result := make(chan error, 1)
+	go func() { result <- executor.openSession(t.Context(), nil) }()
+	<-stream.started
+	var transport *executorTransportError
+	select {
+	case err := <-result:
+		if !errors.As(err, &transport) || transport.phase != "receive" {
+			t.Fatalf("executor initialization error=%v, want unknown receive outcome", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("executor initialization did not honor its configured timeout")
+	}
+	close(stream.release)
+	<-stream.finished
+	var raw []byte
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT result FROM sampler_intent WHERE conversation_id=$1 AND request->>'method'='initialize' ORDER BY id LIMIT 1`, owner.ConversationID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var evidence map[string]any
+	if err := json.Unmarshal(raw, &evidence); err != nil {
+		t.Fatal(err)
+	}
+	if evidence["remote_outcome"] != "unknown" || evidence["automatic_replay"] != false || evidence["phase"] != "receive" {
+		t.Fatalf("initialization timeout evidence=%+v", evidence)
+	}
+	if err := executor.close(); err != nil {
+		t.Fatal(err)
+	}
+	assertNoUnresolvedNestedIntents(t, store, owner)
+}
+
 func TestApplyPatchStartRejectionIsReturnedAsNestedToolFailure(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
 	client := &fakeExecutionClient{}
@@ -553,15 +630,18 @@ func TestExecutorNeverSubstitutesMissingSessionOnRecovery(t *testing.T) {
 		response *executorpb.OpenSessionResponse
 		openErr  error
 	}{
-		{name: "unknown retained session", response: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_UNKNOWN, Message: "unknown retained session"}}},
+		{name: "unknown outcome is not definitive", response: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_UNKNOWN, Message: "unknown session id retained-executor"}}},
+		{name: "rejection is not session loss", response: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, Message: "executor access denied", UpstreamCode: ptrInt32(-32600)}}},
+		{name: "different session ID", response: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, Message: "unknown session id another-executor", UpstreamCode: ptrInt32(-32600)}}},
 		{name: "different session", response: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "new-executor"}},
 		{name: "unavailable adapter", openErr: status.Error(codes.Unavailable, "adapter unavailable")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store, owner := claimedExecutorStore(t)
 			client := &fakeExecutionClient{}
-			reads := 0
+			reads, opens := 0, 0
 			client.open = func(ctx context.Context, _ *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+				opens++
 				if tc.openErr != nil {
 					return nil, tc.openErr
 				}
@@ -574,8 +654,8 @@ func TestExecutorNeverSubstitutesMissingSessionOnRecovery(t *testing.T) {
 			e := newFakeExecutor(t, store, owner, client)
 			e.reconnectRequired = true
 			_, err := e.rpc(t.Context(), "process/read", executorRead{ProcessID: "existing", MaxBytes: 65536}, nil)
-			if err == nil || reads != 0 {
-				t.Fatalf("session substitution: err=%v reads=%d", err, reads)
+			if err == nil || reads != 0 || opens != 1 {
+				t.Fatalf("session substitution: err=%v reads=%d opens=%d", err, reads, opens)
 			}
 			conversation, readErr := store.Read(t.Context(), owner)
 			if readErr != nil {
@@ -586,6 +666,143 @@ func TestExecutorNeverSubstitutesMissingSessionOnRecovery(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestExecutorOpenRejectionNeedsDurableNativeEvidenceForRecovery(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	intent, err := store.RecordNested(t.Context(), owner, IntentExecutor, map[string]any{"method": "initialize"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor := newFakeExecutor(t, store, owner, &fakeExecutionClient{})
+	response := &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{
+		Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, UpstreamCode: ptrInt32(-32600), Message: "unknown session id retained-executor",
+	}}
+	frameErr := errors.New("native response frame persistence failed")
+	err = executor.finishOpenFailure(t.Context(), intent, response, frameErr)
+	var rejected *executorRejectedError
+	if !errors.As(err, &rejected) || rejected.recorded || isDefinitiveLostExecutorSession(rejected, "retained-executor") {
+		t.Fatalf("partial response evidence qualified for session loss recovery: rejection=%+v error=%v", rejected, err)
+	}
+	if !errors.Is(err, frameErr) {
+		t.Fatalf("native frame persistence error was discarded: %v", err)
+	}
+	result, err := intentResultForDB(t, store, intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["outcome"] != "rejected" {
+		t.Fatalf("typed rejection was not durably settled: %+v", result)
+	}
+}
+
+func TestExecutorReplacesDefinitivelyLostSessionWithoutReplayingCurrentOperation(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	if err := store.RegisterProcess(t.Context(), owner, "old-process", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ProcessResult(t.Context(), owner, "old-process", nil, "running", nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RetainProcessOutput(t.Context(), owner, "old-process", 5, []byte("observed output"), false, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CellResult(t.Context(), owner, "live-cell", "live"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RegisterModelProcess(t.Context(), owner, "drained-process", 99, false); err != nil {
+		t.Fatal(err)
+	}
+	exitCode := 0
+	if err := store.RetainProcessOutput(t.Context(), owner, "drained-process", 8, []byte("final buffered output"), true, &exitCode); err != nil {
+		t.Fatal(err)
+	}
+
+	client := &fakeExecutionClient{}
+	var resumes []*executorpb.OpenSessionRequest
+	starts := 0
+	var startedWithSession string
+	client.open = func(ctx context.Context, request *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+		resumes = append(resumes, proto.Clone(request).(*executorpb.OpenSessionRequest))
+		if len(resumes) == 1 {
+			return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{
+				Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, UpstreamCode: ptrInt32(-32600), Message: "unknown session id retained-executor",
+			}}}, nil
+		}
+		if request.ResumeSessionId != nil {
+			t.Fatalf("fresh session request resumed %q", *request.ResumeSessionId)
+		}
+		return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{
+			Status: completedExecutionStatus(), ExecutionSessionId: "fresh-executor",
+			Shell: &executorpb.ExecutionShell{Name: "bash", Path: "/bin/bash"},
+		}}, nil
+	}
+	client.start = func(_ context.Context, request *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+		starts++
+		startedWithSession = request.ExecutionSessionId
+		return &executorpb.StartProcessResponse{Status: completedExecutionStatus(), ProcessId: request.ProcessId}, nil
+	}
+	reads := 0
+	client.read = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+		reads++
+		if request.ProcessId == "old-process" || request.ProcessId == "drained-process" {
+			t.Fatalf("retired process %q reached the fresh executor", request.ProcessId)
+		}
+		return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}, Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
+	}
+	e := newFakeExecutor(t, store, owner, client)
+	e.shell = &execShell{Name: "bash", Path: "/bin/bash"}
+	e.environment = map[string]string{}
+	e.reconnectRequired = true
+	_, err := e.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"echo must not run","yield_time_ms":0}`))
+	if err == nil || !strings.Contains(err.Error(), "fresh session was opened") || !strings.Contains(err.Error(), "not dispatched") {
+		t.Fatalf("first model-facing operation error=%v, want visible not-dispatched session-loss error", err)
+	}
+	if starts != 0 || reads != 0 || len(resumes) != 2 || resumes[0].GetResumeSessionId() != "retained-executor" || resumes[1].ResumeSessionId != nil {
+		t.Fatalf("session recovery unexpectedly replayed work: starts=%d reads=%d resumes=%+v", starts, reads, resumes)
+	}
+	if _, err := e.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"true","yield_time_ms":0}`)); err != nil {
+		t.Fatal(err)
+	}
+	if starts != 1 || reads != 1 || startedWithSession != "fresh-executor" {
+		t.Fatalf("subsequent operation did not use the fresh session: starts=%d reads=%d session=%q", starts, reads, startedWithSession)
+	}
+	buffered, err := e.writeStdin(t.Context(), json.RawMessage(`{"session_id":99,"chars":""}`))
+	if err != nil || buffered.Output != "final buffered output" || buffered.ExitCode == nil || *buffered.ExitCode != 0 {
+		t.Fatalf("drained output was not served locally after session loss: result=%+v error=%v", buffered, err)
+	}
+	process, err := store.Process(t.Context(), owner, "old-process")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if process.Status != "abandoned" || process.AfterSequence == nil || *process.AfterSequence != 5 || string(process.BufferedOutput) != "observed output" {
+		t.Fatalf("old process evidence was not retained: %+v", process)
+	}
+	state, err := store.ExecutionState(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Processes) != 0 || len(state.Cells) != 1 || state.Cells[0].ID != "live-cell" {
+		t.Fatalf("executor loss did not retire only executor handles: %+v", state)
+	}
+	conversation, err := store.Read(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.ExecutorSession == nil || *conversation.ExecutorSession != "fresh-executor" {
+		t.Fatalf("stored executor session=%v, want fresh-executor", conversation.ExecutorSession)
+	}
+	contextJSON, err := json.Marshal(conversation.Archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(contextJSON), "retained exec-server session was definitively lost") || !strings.Contains(string(contextJSON), "no mutation was replayed") {
+		t.Fatalf("model-visible loss notice missing: %s", contextJSON)
+	}
+	if err := e.close(); err != nil {
+		t.Fatal(err)
+	}
+	assertNoUnresolvedNestedIntents(t, store, owner)
 }
 
 func TestExecutorReconnectsBeforeNextOperationWithoutReplayingMutation(t *testing.T) {
@@ -771,6 +988,36 @@ type fakeExecutionStream struct {
 	once    sync.Once
 }
 
+type gatedExecutorStream struct {
+	ctx      context.Context
+	started  chan struct{}
+	release  chan struct{}
+	finished chan struct{}
+	response *executorpb.OpenSessionResponse
+	mu       sync.Mutex
+	first    bool
+}
+
+func (s *gatedExecutorStream) Recv() (*executorpb.OpenSessionResponse, error) {
+	s.mu.Lock()
+	if s.first {
+		s.mu.Unlock()
+		<-s.ctx.Done()
+		return nil, s.ctx.Err()
+	}
+	s.first = true
+	s.mu.Unlock()
+	close(s.started)
+	select {
+	case <-s.release:
+	case <-s.ctx.Done():
+		close(s.finished)
+		return nil, s.ctx.Err()
+	}
+	close(s.finished)
+	return s.response, nil
+}
+
 func (s *fakeExecutionStream) Recv() (*executorpb.OpenSessionResponse, error) {
 	var response *executorpb.OpenSessionResponse
 	s.once.Do(func() { response = s.initial })
@@ -797,7 +1044,7 @@ func claimedExecutorStore(t *testing.T) (*Store, Owner) {
 
 func newFakeExecutor(t *testing.T, store *Store, owner Owner, client executorClient) *Executor {
 	t.Helper()
-	return &Executor{store: store, owner: owner, client: client, scope: &executorpb.ExecutionScope{SessionId: owner.ConversationID}, sessionID: "retained-executor", lifetime: t.Context(), cwd: "/tmp", processLocks: map[string]*sync.Mutex{}}
+	return &Executor{store: store, owner: owner, client: client, scope: &executorpb.ExecutionScope{SessionId: owner.ConversationID}, sessionID: "retained-executor", lifetime: t.Context(), cwd: "/tmp", processLocks: map[string]*sync.Mutex{}, initializeTimeout: time.Minute}
 }
 
 func completedExecutionStatus() *executorpb.ExecutionStatus {

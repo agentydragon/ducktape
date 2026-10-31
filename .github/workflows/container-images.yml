@@ -128,7 +128,7 @@ jobs:
       - uses: ./.github/actions/mint-automation-token
         id: app
         with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+          private_key: ${{ secrets.DUCKTAPE_AUTOMATION_PRIVATE_KEY }}
 
       - uses: ./.github/actions/setup-nix-devtools
         with:

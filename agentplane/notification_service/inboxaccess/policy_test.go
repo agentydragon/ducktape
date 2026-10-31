@@ -2,7 +2,6 @@ package inboxaccess
 
 import (
 	"testing"
-	"time"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -35,7 +34,7 @@ func sendRule(targets policyapi.SandboxTargets) policyapi.Rule {
 
 // policyOf is a Policy holding one set of the rules, bound to sender.
 func policyOf(rules ...policyapi.Rule) *Policy {
-	policy := NewPolicy(time.Minute)
+	policy := NewPolicy()
 	policy.Rules.PutPolicySet(&policyapi.PolicySet{
 		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "test-set"},
 		Spec:       policyapi.PolicySetSpec{Rules: rules},

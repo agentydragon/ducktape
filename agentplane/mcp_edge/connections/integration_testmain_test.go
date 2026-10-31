@@ -163,25 +163,30 @@ func serve(t *testing.T) *served {
 	s.store = NewStore(db, s.callers)
 	server := grpc.NewServer()
 	pb.RegisterConnectionServiceServer(server, NewService(s.store, s.gate, updates))
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	httpFacade, err := facade.NewHandler(t.Context(), listener.Addr().String(), 0, pb.RegisterConnectionServiceHandlerFromEndpoint)
+	httpListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpFacade, err := facade.NewHandler(t.Context(), grpcListener.Addr().String(), 0, pb.RegisterConnectionServiceHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
 	httpServer := &http.Server{Handler: httpFacade, ReadHeaderTimeout: callDeadline}
-	facade.MountGRPC(httpServer, server)
-	go func() { _ = httpServer.Serve(listener) }()
+	go func() { _ = server.Serve(grpcListener) }()
+	t.Cleanup(server.Stop)
+	go func() { _ = httpServer.Serve(httpListener) }()
 	t.Cleanup(func() { httpServer.Close() })
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := grpc.NewClient(grpcListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { connection.Close() })
 	s.client = pb.NewConnectionServiceClient(connection)
-	s.url = "http://" + listener.Addr().String()
+	s.url = "http://" + httpListener.Addr().String()
 	return s
 }
 

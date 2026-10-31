@@ -1,17 +1,18 @@
 /**
  * Visual-test harness: Python configures canned data and explicitly mounts the app. No scene registry.
  * `fetch` (stubbed by network.ts, imported first so the
- * app's client captures the stub) answers API, Electric Shape and Dispatcher watch routes. `EventSource`
- * remains only for the live sandbox, thread, and action-inventory views.
+ * app's client captures the stub) answers API, Electric Shape, event stream and watch routes.
  */
 import {
   electricLive,
   electricShape,
   electricSubset,
+  liveEventStream,
   liveNdjsonWatch,
   ndjsonWatch,
-  publishNdjsonWatch,
+  publishStreams,
   routes,
+  type ServerSentEvent,
   UNANSWERED,
 } from "./network";
 import type { SandboxView, ThreadView } from "../schema";
@@ -65,6 +66,7 @@ import { EventEntrySchema } from "../../../proto/event_log_pb";
 import { DisclosureVisual } from "./disclosure_visual";
 import { OperationPresentationVisual } from "./operation_presentation_visual";
 import { LocalCommands } from "../threads/local_commands";
+import { rememberRowHeight } from "../threads/history_sizes";
 import { streamRegistry } from "../stream_status";
 import { ThemeProvider } from "../theme";
 import rollout from "./realistic_rollout.json";
@@ -1943,6 +1945,89 @@ function lifecycleGroupRows(threadId: string): Record<string, unknown>[] {
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
+function shortThreadSwitchRows(threadId: string): Record<string, unknown>[] {
+  if (threadId !== IDLE_THREAD && threadId !== UNNAMED_STOPPED_THREAD) {
+    return [{ ...viewState(80, null), thread_id: threadId }];
+  }
+  const event = (value: MessageInitShape<typeof EventSchema>["observation"]): Record<string, unknown> =>
+    toJson(EventSchema, create(EventSchema, { observation: value })) as Record<string, unknown>;
+  const rekey = (row: Record<string, unknown>, id: string) => ({ ...row, entity_id: id });
+  return [
+    { ...viewState(80, null), thread_id: threadId },
+    rekey(lifecycle(1, "setup_started", event({ case: "setupStarted", value: {} }), threadId), "visual-setup"),
+    rekey(
+      lifecycle(
+        2,
+        "setup_output",
+        event({
+          case: "setupOutput",
+          value: { stream: { case: "stdout", value: new TextEncoder().encode("Workspace sync complete\n") } },
+        }),
+        threadId
+      ),
+      "visual-setup-output"
+    ),
+    rekey(
+      lifecycle(3, "setup_finished", event({ case: "setupFinished", value: { exitCode: 0 } }), threadId),
+      "visual-setup-finished"
+    ),
+    rekey(
+      lifecycle(10, "turn_started", event({ case: "turnStarted", value: { turnId: "visual-turn" } }), threadId),
+      "visual-lifecycle-before"
+    ),
+    rekey(
+      lifecycle(11, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+      "visual-harness-before"
+    ),
+    entity(
+      "confirmed_input",
+      "visual-input",
+      20,
+      { harness_message_id: "visual-input", origin_command_ids: [] },
+      {
+        thread_id: threadId,
+        input_ref: payload(20, "visual-input", "confirmed_input", "Check the short thread after switching."),
+      }
+    ),
+    rekey(
+      lifecycle(
+        30,
+        "turn_completed",
+        event({ case: "turnCompleted", value: { turnId: "visual-turn", status: TurnStatus.COMPLETED } }),
+        threadId
+      ),
+      "visual-lifecycle-after"
+    ),
+    rekey(
+      lifecycle(31, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+      "visual-harness-after"
+    ),
+    item(40, "visual-reasoning", ItemKind.REASONING, "The history has seven compact rows.", { threadId }),
+    item(50, "visual-answer", ItemKind.ASSISTANT_TEXT, "The short thread is ready.", { threadId }),
+    item(60, "visual-tool", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "Read",
+      arguments: '{"path":"notes.txt"}',
+      output: "No additional history is needed.",
+    }),
+  ];
+}
+
+function historyProfileRows(threadId: string, rowCount: number): Record<string, unknown>[] {
+  if (!Number.isInteger(rowCount) || rowCount < 1 || rowCount > 5000) {
+    throw new RangeError(`History profile row count must be between 1 and 5000: ${rowCount}`);
+  }
+  return [
+    { ...viewState(rowCount, null), thread_id: threadId },
+    ...Array.from({ length: rowCount }, (_, index) =>
+      item(index + 1, `profile-row-${index}`, ItemKind.ASSISTANT_TEXT, `Profile history row ${index}.`, {
+        threadId,
+        turn: `profile-turn-${index}`,
+      })
+    ),
+  ];
+}
+
 function setupRows(threadId: string, running = false): Record<string, unknown>[] {
   const event = (value: MessageInitShape<typeof EventSchema>["observation"]): Record<string, unknown> =>
     toJson(EventSchema, create(EventSchema, { observation: value })) as Record<string, unknown>;
@@ -3205,176 +3290,149 @@ routes.push(
   ]
 );
 
-const FRESH: WatchHealth = {
-  fresh: true,
-  stale_after_seconds: 900,
-  refreshed_seconds_ago: {
-    sandboxes: 4.2,
-    pods: 3.1,
-    "policybindings.agentplane.allegedly.works": 11.7,
-    "policysets.agentplane.allegedly.works": 8.3,
-  },
-};
+const HEALTHY: WatchHealth = { healthy: true, failing: {} };
 
-/** A watch that has stopped cycling: what the `_stale` scenarios have to show rather than hide. */
-const WEDGED: WatchHealth = {
-  fresh: false,
-  stale_after_seconds: 900,
-  refreshed_seconds_ago: {
-    sandboxes: 2417.4,
-    pods: 2417.4,
-    "policybindings.agentplane.allegedly.works": 11.7,
-    "policysets.agentplane.allegedly.works": 8.3,
+/** A watch whose requests are failing: what the `_stale` scenarios have to show rather than hide. */
+const FAILING: WatchHealth = {
+  healthy: false,
+  failing: {
+    sandboxes: {
+      error:
+        'Get "https://kubernetes.default.svc/apis/agentplane.allegedly.works/v1alpha1/namespaces/agentplane/sandboxes": dial tcp: connection refused',
+      since: "2026-10-30T11:20:00Z",
+    },
+    pods: {
+      error: 'Get "https://kubernetes.default.svc/api/v1/namespaces/agentplane/pods": dial tcp: connection refused',
+      since: "2026-10-30T11:20:00Z",
+    },
   },
 };
 
 function watch(): WatchHealth {
-  return flags.has("watchStale") ? WEDGED : FRESH;
+  return flags.has("watchStale") ? FAILING : HEALTHY;
 }
 
-/** Live inventory remains EventSource; Action facade watches and projected threads use fetch streams. */
-class HarnessEventSource extends EventTarget {
-  static readonly sources = new Set<HarnessEventSource>();
-  static publish(pathSuffix: string): void {
-    for (const source of this.sources) {
-      const url = new URL(source.url, "http://harness");
-      if (url.pathname.endsWith(pathSuffix) && source.readyState === this.OPEN) source.serve(url);
-    }
+/** What the live stream at `url` sends, when it opens and whenever a fixture publishes it again. */
+function liveEvents(url: URL): ServerSentEvent[] {
+  if (url.pathname === "/live/threads") {
+    // The listing the server would push: the newest `limit` matches, then the open thread.
+    const all = THREADS_WITH_SANDBOXES.map(mapThread);
+    const search = url.searchParams.get("search")?.toLowerCase();
+    const limit = Number(url.searchParams.get("limit"));
+    const matching = all.filter(
+      (thread) =>
+        (url.searchParams.get("include_archived") === "true" || !thread.archived) &&
+        (search === undefined ||
+          (thread.name ?? "").toLowerCase().includes(search) ||
+          thread.sandbox.toLowerCase().includes(search))
+    );
+    const listed = matching.slice(0, limit);
+    const open = all.find((thread) => thread.id === url.searchParams.get("open_thread"));
+    const snapshot: ThreadsSnapshot = {
+      threads: open === undefined || listed.includes(open) ? listed : [...listed, open],
+      more: matching.length > limit,
+      archived_count: all.filter((thread) => thread.archived).length,
+      updates_connected: !flags.has("threadDatabaseDisconnected"),
+      watch: watch(),
+    };
+    return [{ event: "snapshot", data: snapshot }];
   }
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSED = 2;
-  readonly url: string;
-  readyState = HarnessEventSource.CONNECTING;
-
-  constructor(url: string) {
-    super();
-    this.url = url;
-    HarnessEventSource.sources.add(this);
-    // After the view's listeners are attached, which happens right after construction.
-    setTimeout(() => this.serve(new URL(url, "http://harness")), 0);
+  if (/^\/live\/sandboxes\/[^/]+\/egress\/decisions$/.test(url.pathname)) {
+    return [{ event: "snapshot", data: egressDecisions() }];
   }
-
-  private serve(url: URL): void {
-    this.readyState = HarnessEventSource.OPEN;
-    if (url.pathname === "/live/threads") {
-      // The listing the server would push: the newest `limit` matches, then the open thread.
-      const all = THREADS_WITH_SANDBOXES.map(mapThread);
-      const search = url.searchParams.get("search")?.toLowerCase();
-      const limit = Number(url.searchParams.get("limit"));
-      const matching = all.filter(
-        (thread) =>
-          (url.searchParams.get("include_archived") === "true" || !thread.archived) &&
-          (search === undefined ||
-            (thread.name ?? "").toLowerCase().includes(search) ||
-            thread.sandbox.toLowerCase().includes(search))
-      );
-      const listed = matching.slice(0, limit);
-      const open = all.find((thread) => thread.id === url.searchParams.get("open_thread"));
-      const snapshot: ThreadsSnapshot = {
-        sandboxes: SANDBOXES,
-        threads: open === undefined || listed.includes(open) ? listed : [...listed, open],
-        more: matching.length > limit,
-        archived_count: all.filter((thread) => thread.archived).length,
-        updates_connected: !flags.has("threadDatabaseDisconnected"),
-        watch: watch(),
-      };
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      if (flags.has("threadStreamDropped")) this.drop();
-      return;
-    }
-    if (/^\/live\/sandboxes\/[^/]+\/egress\/decisions$/.test(url.pathname)) {
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(egressDecisions()) }));
-      return;
-    }
-    if (url.pathname === "/live/sandboxes") {
-      const snapshot: SandboxesSnapshot = { sandboxes: SANDBOXES, watch: watch() };
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      if (flags.has("inventoryStreamDropped")) this.drop();
-      return;
-    }
-    if (url.pathname === "/threads/notices/stream") {
-      const states: Record<string, Partial<InboxNoticeState>> = {
-        [THREE_UNPROCESSED_THREAD]: {
-          queued: 2,
-          unacknowledged: 1,
-          notice: "NOTICE_PROGRESS_CONFIRMED",
-          noticeWaitReason: "NOTICE_WAIT_REASON_DEBOUNCING",
-          eligibleAt: ago(-90_000),
-        },
-        [ONE_UNPROCESSED_THREAD]: { unacknowledged: 1, notice: "NOTICE_PROGRESS_CONFIRMED" },
-        [DELIVERY_FAILED_THREAD]: { queued: 1, notice: "NOTICE_PROGRESS_ATTEMPTED", error: "runner unreachable" },
-      };
-      const inboxes = url.searchParams
-        .getAll("thread_id")
-        .filter((session) => session in states)
-        .map((session): InboxNoticeState => ({
-          inboxId: `inbox-${session}`,
-          sessionId: session,
-          queued: 0,
-          unacknowledged: 0,
-          ...states[session],
-        }));
-      const snapshot: SessionNoticeStates = { observedAt: ago(0), inboxes };
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      // A dropped Thread listing takes the notice stream down with it, so the badges show stale too.
-      if (flags.has("threadStreamDropped")) this.drop();
-      return;
-    }
-    const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
-    const notification = url.pathname.match(/^\/sandboxes\/([^/]+)\/notifications\/stream$/);
-    if (notification) {
-      if (flags.has("notificationStatusUnavailable")) {
-        this.drop();
-        return;
-      }
-      const snapshot = notificationStatus(notification[1]);
-      const first = snapshot.inboxes[0];
-      if (flags.has("notificationExtraEntry") && first) {
-        first.inbox.lastCursor = "10";
-        first.unannouncedCount += 1;
-        first.pendingAcknowledgementCount += 1;
-        first.pendingEntries.push({
-          cursor: "10",
-          createdAt: ago(0),
-          provider: "github",
-          summary: "GitHub workflow_run · completed",
-        });
-      }
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      return;
-    }
-    if (/^\/sandboxes\/[^/]+\/console\/stream$/.test(url.pathname)) {
-      this.dispatchEvent(new MessageEvent("output", { data: JSON.stringify(btoa("guest console output\r\n")) }));
-      return;
-    }
-    if (sandbox !== null) {
-      const snapshot: SandboxSnapshot = {
-        sandbox: SANDBOXES.find((row) => row.name === decodeURIComponent(sandbox)) ?? null,
-        bindings: BINDINGS,
-        action_policy: ACTION_POLICY,
-        threads: THREADS,
-        updates_connected: !flags.has("threadDatabaseDisconnected"),
-        watch: watch(),
-      };
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      return;
-    }
-    throw new Error(`Unexpected EventSource route: ${url.pathname}`);
+  if (url.pathname === "/live/sandboxes") {
+    const snapshot: SandboxesSnapshot = { sandboxes: SANDBOXES, watch: watch() };
+    return [{ event: "snapshot", data: snapshot }];
   }
-
-  private drop(): void {
-    this.readyState = HarnessEventSource.CONNECTING;
-    this.dispatchEvent(new Event("error"));
+  if (url.pathname === "/threads/notices/stream") {
+    const states: Record<string, Partial<InboxNoticeState>> = {
+      [THREE_UNPROCESSED_THREAD]: {
+        queued: 2,
+        unacknowledged: 1,
+        notice: "NOTICE_PROGRESS_CONFIRMED",
+        noticeWaitReason: "NOTICE_WAIT_REASON_DEBOUNCING",
+        eligibleAt: ago(-90_000),
+      },
+      [ONE_UNPROCESSED_THREAD]: { unacknowledged: 1, notice: "NOTICE_PROGRESS_CONFIRMED" },
+      [DELIVERY_FAILED_THREAD]: { queued: 1, notice: "NOTICE_PROGRESS_ATTEMPTED", error: "runner unreachable" },
+    };
+    const inboxes = url.searchParams
+      .getAll("thread_id")
+      .filter((session) => session in states)
+      .map((session): InboxNoticeState => ({
+        inboxId: `inbox-${session}`,
+        sessionId: session,
+        queued: 0,
+        unacknowledged: 0,
+        ...states[session],
+      }));
+    const snapshot: SessionNoticeStates = { observedAt: ago(0), inboxes };
+    return [{ event: "snapshot", data: snapshot }];
   }
-
-  close(): void {
-    HarnessEventSource.sources.delete(this);
-    this.readyState = HarnessEventSource.CLOSED;
+  const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
+  const notification = url.pathname.match(/^\/sandboxes\/([^/]+)\/notifications\/stream$/);
+  if (notification) {
+    if (flags.has("notificationStatusUnavailable")) return [];
+    const snapshot = notificationStatus(notification[1]);
+    const first = snapshot.inboxes[0];
+    if (flags.has("notificationExtraEntry") && first) {
+      first.inbox.lastCursor = "10";
+      first.unannouncedCount += 1;
+      first.pendingAcknowledgementCount += 1;
+      first.pendingEntries.push({
+        cursor: "10",
+        createdAt: ago(0),
+        provider: "github",
+        summary: "GitHub workflow_run · completed",
+      });
+    }
+    return [{ event: "snapshot", data: snapshot }];
   }
+  if (/^\/sandboxes\/[^/]+\/console\/stream$/.test(url.pathname)) {
+    return [{ event: "output", data: btoa("guest console output\r\n") }];
+  }
+  if (sandbox !== null) {
+    const snapshot: SandboxSnapshot = {
+      sandbox: SANDBOXES.find((row) => row.name === decodeURIComponent(sandbox)) ?? null,
+      bindings: BINDINGS,
+      action_policy: ACTION_POLICY,
+      threads: THREADS,
+      updates_connected: !flags.has("threadDatabaseDisconnected"),
+      watch: watch(),
+    };
+    return [{ event: "snapshot", data: snapshot }];
+  }
+  throw new Error(`Unexpected event stream route: ${url.pathname}`);
 }
 
-window.EventSource = HarnessEventSource as unknown as typeof EventSource;
+/** Whether the stream at `url` drops once it has sent its events. */
+function drops(url: URL): boolean {
+  // A dropped Thread listing takes the notice stream down with it, so the badges show stale too.
+  if (url.pathname === "/live/threads" || url.pathname === "/threads/notices/stream")
+    return flags.has("threadStreamDropped");
+  if (url.pathname === "/live/sandboxes") return flags.has("inventoryStreamDropped");
+  if (/^\/sandboxes\/[^/]+\/notifications\/stream$/.test(url.pathname))
+    return flags.has("notificationStatusUnavailable");
+  return false;
+}
+
+// A dropped stream is not answered again while its drop flag stays set, as on a network that stays
+// down; once the flag is cleared it is served afresh.
+const droppedStreams = new Set<string>();
+
+routes.unshift([
+  "GET",
+  /^\/(live\/.+|threads\/notices\/stream|sandboxes\/[^/]+\/(notifications|console)\/stream)$/,
+  (match, query, signal) => {
+    const url = new URL(`${match[0]}?${query.toString()}`, "http://harness");
+    const key = `${url.pathname}${url.search}`;
+    const drop = drops(url);
+    if (!drop) droppedStreams.delete(key);
+    else if (droppedStreams.has(key)) return UNANSWERED;
+    else droppedStreams.add(key);
+    return liveEventStream(url.pathname, () => liveEvents(url), signal, drop);
+  },
+]);
 
 // Mutable mock service state; Python fixture methods change it before mounting React.
 let previewAction: ActionRequestView | null = null;
@@ -3398,8 +3456,8 @@ function projectQueuedSession(): void {
   };
   THREADS.push(projected);
   THREADS_WITH_SANDBOXES.push(projected);
-  HarnessEventSource.publish("/live/sandboxes/ready-sandbox");
-  HarnessEventSource.publish("/live/threads");
+  publishStreams("/live/sandboxes/ready-sandbox");
+  publishStreams("/live/threads");
 }
 
 function mount(element: ReactNode): void {
@@ -3459,8 +3517,7 @@ const visualHarness = {
   /** Sets `flag` and serves the open streams whose path ends in `pathSuffix` again. */
   publish(flag: Flag, pathSuffix: string): void {
     flags.add(flag);
-    HarnessEventSource.publish(pathSuffix);
-    publishNdjsonWatch(pathSuffix);
+    publishStreams(pathSuffix);
   },
   ageOutage(milliseconds: number): void {
     streamRegistry.now = () => Date.now() + milliseconds;
@@ -3551,6 +3608,24 @@ const visualHarness = {
   },
   interleavedEvents(): void {
     threadEntityRows = interleavedRows;
+  },
+  shortThreadSwitchHistory(): void {
+    mapThread = (thread) => (thread.id === IDLE_THREAD ? { ...thread, name: "Short thread arriving" } : thread);
+    threadEntityRows = shortThreadSwitchRows;
+  },
+  historyProfile(rowCount: number): void {
+    const rowsByThread = new Map<string, Record<string, unknown>[]>();
+    threadEntityRows = (threadId) => {
+      let rows = rowsByThread.get(threadId);
+      if (!rows) {
+        rows = historyProfileRows(threadId, rowCount);
+        rowsByThread.set(threadId, rows);
+      }
+      return rows;
+    };
+  },
+  rememberHistoryRowHeight(threadId: string, width: number, key: string, height: number): void {
+    rememberRowHeight(threadId, width, key, height);
   },
   lifecycleGroup(): void {
     threadEntityRows = lifecycleGroupRows;

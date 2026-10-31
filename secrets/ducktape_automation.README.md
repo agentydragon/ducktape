@@ -46,3 +46,14 @@ over the existing `github-secrets-sync-pat` is reduced blast radius.
 
 - `agentydragon/ducktape`
 - `agentydragon/gaffer-private`
+
+## Actions distribution
+
+OpenTofu copies `githubAppPrivateKey` from the existing SOPS-managed
+`flux-system/ducktape-automation-github-app` Secret into Ducktape's
+`DUCKTAPE_AUTOMATION_PRIVATE_KEY` Actions secret. The local
+`mint-automation-token` action takes that key directly and mints short-lived
+installation tokens; it no longer decrypts the standalone PEM in CI.
+
+Keep the standalone PEM and its CI recipient while gaffer-private still uses
+it. Remove that access only after gaffer's consumer migration is verified.

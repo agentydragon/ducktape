@@ -1887,6 +1887,71 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
     run_partial_swap_with_mark(ws, vendor, &[(args.package_name, &package_root)])
 }
 
+// ─── analysis of swapped implementations ────────────────────────────────
+//
+// A swap promises the replacement behaves like the bundled implementation
+// (SPEC.md § Vendor swap equivalence), so facts derived from the bundled
+// body justify splits around calls that run the replacement.
+
+#[test]
+fn partial_swap_split_uses_summary_of_swapped_export_body() {
+    // The bundled `object` only allocates, so `wrapped` retains its callback
+    // without running it and `later` may move to a module of its own.
+    const PROVIDER: &str =
+        "export function object(shape) { const kind = \"object\"; return { kind, shape }; }\n";
+    let (ws, package_root) = setup_partial_swap_consumer_fixture(
+        "vendor-partial-swap-equivalent-export-",
+        &format!("{PROVIDER}export const keep = () => 7;\n"),
+        "import { object } from \"./megachunk.js\";\n\
+         const wrapped = object({ read: () => later });\n\
+         const later = 42;\n\
+         console.log(wrapped.shape.read());\n",
+        "fac",
+        "1.0.0",
+        "lib/index.mjs",
+        PROVIDER,
+    );
+    let report_root = ws.out_root.join("reports").join("tree");
+    let spec = build_bundled_partial_swap_spec(
+        &ws,
+        json!({"static/megachunk.js": partial_swap_vendor(
+            "equivalent export fixture",
+            &[("fac", partial_package("1.0.0", "lib/index.mjs", Some("fac")))],
+            &[("object", swap_symbol("fac", PartialSwapKind::Member, Some("object"), None))],
+        )}),
+        Some(json!({
+            "logical_modules": {
+                "static/app": {
+                    "callbacks/wrapped": {
+                        "members": [{ "name": "wrapped", "selector": { "binding": { "name": "wrapped" } } }],
+                    },
+                    "values/later": {
+                        "members": [{ "name": "later", "selector": { "binding": { "name": "later" } } }],
+                    },
+                },
+            },
+            "unassigned_mode": { "static/app": { "kind": "inline_in_entry" } },
+            "materialize_logical_modules": {
+                "prune_other_chunks": false,
+                "report_out_dir": &report_root,
+            },
+        })),
+    );
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    write_yaml_file(&spec_path, &spec);
+
+    let result = run_debundler(&spec_path, &[("fac", &package_root)]);
+    assert_success(&result);
+    let modules: Value = read_json(&report_root.join("static/app/modules.json"));
+    assert_eq!(
+        modules["imported_callables"]["object"]["foreign_call"]["replacement_package"],
+        "fac"
+    );
+    let app_root = ws.out_root.join("app");
+    install_node_module(&app_root, "fac", "1.0.0", PROVIDER);
+    assert_node_output(&app_root.join("static/app/entry.js"), "42\n", "");
+}
+
 // ─── partial-swap consumer soundness ────────────────────────────────────
 //
 // The per-symbol rewrite handles `ImportDecl` consumers. Two other consumer
@@ -3067,24 +3132,13 @@ fn run_interleaved_calls_through_adapter(swap_adapter: bool) -> CommandResult {
     run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)])
 }
 
-/// A fully swapped chunk's body is replaced by the upstream package at serve
-/// time, so the cross-module purity oracle must not derive verdicts from its
-/// bundle copy: with `adapter` kept the interleaved calls are pure and the
-/// split is accepted; with it swapped `callWrap` stays an opaque call and the
-/// split is rejected on an S-cycle.
+/// A full swap promises the package behaves like the bundled chunk, so the
+/// cross-module purity oracle derives verdicts from the bundled body: the
+/// interleaved calls through `adapter` are pure whether or not it is swapped.
 #[test]
-fn full_swapped_chunk_stays_opaque_to_cross_module_purity() {
+fn full_swapped_chunk_keeps_cross_module_purity() {
     assert_success(&run_interleaved_calls_through_adapter(false));
-
-    let swapped = run_interleaved_calls_through_adapter(true);
-    assert!(!swapped.status.success(), "stdout:\n{}", swapped.stdout);
-    for expected in ["cycle", "mod_a", "mod_b", "side-effect"] {
-        assert!(
-            swapped.stderr.to_lowercase().contains(expected),
-            "stderr missing {expected:?}:\n{}",
-            swapped.stderr,
-        );
-    }
+    assert_success(&run_interleaved_calls_through_adapter(true));
 }
 
 fn browser_bundled_reentry_fixture(bundle_source: &str, loader: &str) -> VendorSwapFixture {
@@ -3100,7 +3154,7 @@ fn browser_bundled_reentry_fixture(bundle_source: &str, loader: &str) -> VendorS
             ),
             (
                 "static/app.js",
-                "import { factory, keep } from './vendor.js';\nconst prefix = (keep(), new globalThis.Error());\nconst value = factory();\nexport function read() { return value; }\n",
+                "import { factory, keep } from './vendor.js';\nconst prefix = (keep(), new globalThis.Date());\nconst value = factory();\nexport function read() { return value; }\n",
             ),
         ],
     );
@@ -3167,9 +3221,8 @@ fn closed_bundled_replacement_preserves_browser_export_proof() {
 }
 
 #[test]
-fn bundled_reentry_proof_requires_no_synchronous_loader_and_closed_bundle() {
+fn bundled_reentry_proof_requires_closed_bundle() {
     for (bundle, loader) in [
-        ("export const factory = () => 'ready';\n", "present"),
         (
             "import './app.js'; export const factory = () => 'ready';\n",
             "none",

@@ -236,8 +236,8 @@ func TestStopHaltsTheVMAndKeepsIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	reconcileOnce(t, r)
-	if reason := runningReason(t, c); reason != "Stopped" {
-		t.Errorf("Running reason = %s, want Stopped", reason)
+	if stage := getSandbox(t, c).Status.StopStage; stage != sandboxapi.StopStageStopped {
+		t.Errorf("stopStage = %q, want Stopped", stage)
 	}
 	if getPVC(t, c) == nil {
 		t.Fatal("stopping deleted the state PVC")

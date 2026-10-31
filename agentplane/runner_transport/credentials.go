@@ -3,36 +3,34 @@
 package runner_transport
 
 import (
-	"bytes"
 	"context"
+	"crypto"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
-	"net"
-	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/spiffe/go-spiffe/v2/bundle/x509bundle"
+	"github.com/spiffe/go-spiffe/v2/spiffeid"
+	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
+	"github.com/spiffe/go-spiffe/v2/svid/x509svid"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
 )
 
-const (
-	// GatewayURI is the fixed identity of the Runner Gateway in the runner
-	// control mutual-TLS trust domain.
-	GatewayURI = "spiffe://agentplane/runner-gateway"
+// GatewayURI is the fixed identity of the Runner Gateway in the runner
+// control mutual-TLS trust domain.
+const GatewayURI = "spiffe://agentplane/runner-gateway"
 
-	identityScheme = "spiffe"
-	identityHost   = "agentplane"
-	identityPrefix = "spiffe://agentplane/runner/"
-)
+var trustDomain = spiffeid.RequireTrustDomainFromString("agentplane")
 
 // Config names the projected certificate, private key, and trust roots.
-// The files are read again during every TLS handshake so projected-secret
-// rotations are picked up without restarting the process.
+// Credentials reload a file when it is replaced, so projected-secret rotations
+// are picked up at the next TLS handshake without restarting the process.
 type Config struct {
 	CertFile string `json:"cert_file" yaml:"cert_file" mapstructure:"cert_file"`
 	KeyFile  string `json:"key_file" yaml:"key_file" mapstructure:"key_file"`
@@ -42,17 +40,8 @@ type Config struct {
 // RunnerURI returns the identity assigned to one Runner credential. credentialID
 // is a fresh opaque ID bound to the active Pod or VMI incarnation by its label.
 func RunnerURI(namespace, sandboxUID, credentialID string) (string, error) {
-	if !validPathSegment(namespace) {
-		return "", errors.New("namespace must be a non-empty URI path segment")
-	}
-	if !validPathSegment(sandboxUID) {
-		return "", errors.New("sandbox UID must be a non-empty URI path segment")
-	}
-	if !validPathSegment(credentialID) {
-		return "", errors.New("credential ID must be a non-empty URI path segment")
-	}
-	if len(namespace) > 63 {
-		return "", errors.New("namespace must be at most 63 characters")
+	if len(namespace) == 0 || len(namespace) > 63 {
+		return "", errors.New("namespace must be 1 to 63 characters")
 	}
 	for _, r := range namespace {
 		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
@@ -62,30 +51,28 @@ func RunnerURI(namespace, sandboxUID, credentialID string) (string, error) {
 	if namespace[0] == '-' || namespace[len(namespace)-1] == '-' {
 		return "", errors.New("namespace must not start or end with a hyphen")
 	}
-	return identityPrefix + namespace + "/" + sandboxUID + "/" + credentialID, nil
+	id, err := spiffeid.FromSegments(trustDomain, "runner", namespace, sandboxUID, credentialID)
+	if err != nil {
+		return "", fmt.Errorf("runner identity: %w", err)
+	}
+	return id.String(), nil
 }
 
 // ParseRunnerURI parses a Runner credential URI and returns its Kubernetes
 // namespace, Sandbox UID, and credential ID, in that order.
 func ParseRunnerURI(raw string) (namespace, sandboxUID, credentialID string, err error) {
-	u, err := url.Parse(raw)
+	id, err := spiffeid.FromString(raw)
 	if err != nil {
 		return "", "", "", fmt.Errorf("parse runner identity URI: %w", err)
 	}
-	if u.Scheme != identityScheme || u.Host != identityHost || u.User != nil || u.Opaque != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+	if !id.MemberOf(trustDomain) {
 		return "", "", "", errors.New("runner identity URI must use the agentplane SPIFFE trust domain")
 	}
-	if u.RawPath != "" || u.String() != raw {
-		return "", "", "", errors.New("runner identity URI must use its canonical encoding")
-	}
-	segments := strings.Split(strings.TrimPrefix(u.Path, "/"), "/")
+	segments := strings.Split(strings.TrimPrefix(id.Path(), "/"), "/")
 	if len(segments) != 4 || segments[0] != "runner" {
 		return "", "", "", errors.New("runner identity URI must contain namespace, Sandbox UID, and credential ID")
 	}
 	namespace, sandboxUID, credentialID = segments[1], segments[2], segments[3]
-	if !validPathSegment(sandboxUID) || !validPathSegment(credentialID) {
-		return "", "", "", errors.New("runner identity URI contains an invalid UID or credential ID")
-	}
 	canonical, err := RunnerURI(namespace, sandboxUID, credentialID)
 	if err != nil {
 		return "", "", "", err
@@ -97,282 +84,217 @@ func ParseRunnerURI(raw string) (namespace, sandboxUID, credentialID string, err
 }
 
 // ClientCredentials creates mTLS client credentials pinned to the exact
-// GatewayURI or RunnerURI supplied as expectedPeerURI. The expected URI is
-// checked on every handshake against the peer leaf certificate's sole URI SAN.
+// GatewayURI or RunnerURI supplied as expectedPeerURI.
 func (c Config) ClientCredentials(expectedPeerURI string) (credentials.TransportCredentials, error) {
-	if err := validateIdentityURI(expectedPeerURI); err != nil {
+	expected, err := parseIdentity(expectedPeerURI)
+	if err != nil {
 		return nil, fmt.Errorf("invalid expected peer URI: %w", err)
 	}
-	localIdentity, err := c.validateLocalCertificate(x509.ExtKeyUsageClientAuth)
+	source, err := newFileSource(c, x509.ExtKeyUsageClientAuth)
 	if err != nil {
 		return nil, err
 	}
-	verify := func(peerCertificates []*x509.Certificate) ([][]*x509.Certificate, error) {
-		return c.verifyPeer(peerCertificates, x509.ExtKeyUsageServerAuth, expectedPeerURI)
-	}
-	tlsConfig := &tls.Config{
-		MinVersion: tls.VersionTLS12,
-		// SPIFFE URI SANs are identities, not TLS DNS names. VerifyConnection
-		// below performs full x509 chain and EKU verification before accepting
-		// the exact URI SAN; this flag skips only hostname matching.
-		InsecureSkipVerify: true,
-		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
-			certificate, err := c.loadLocalKeyPair(x509.ExtKeyUsageClientAuth, localIdentity)
-			if err != nil {
-				return nil, err
-			}
-			return &certificate, nil
-		},
-		VerifyConnection: func(state tls.ConnectionState) error {
-			_, err := verify(state.PeerCertificates)
-			return err
-		},
-	}
-	return &transportCredentials{
-		inner:  credentials.NewTLS(tlsConfig),
-		verify: verify,
-	}, nil
+	return credentials.NewTLS(tlsconfig.MTLSClientConfig(source, source, authorize(expected, x509.ExtKeyUsageServerAuth))), nil
 }
 
 // ServerCredentials creates mTLS server credentials pinned to the expected client URI.
 func (c Config) ServerCredentials(expectedPeerURI string) (credentials.TransportCredentials, error) {
-	if err := validateIdentityURI(expectedPeerURI); err != nil {
+	expected, err := parseIdentity(expectedPeerURI)
+	if err != nil {
 		return nil, fmt.Errorf("invalid expected peer URI: %w", err)
 	}
-	localIdentity, err := c.validateLocalCertificate(x509.ExtKeyUsageServerAuth)
+	source, err := newFileSource(c, x509.ExtKeyUsageServerAuth)
 	if err != nil {
 		return nil, err
 	}
-	verify := func(peerCertificates []*x509.Certificate) ([][]*x509.Certificate, error) {
-		return c.verifyPeer(peerCertificates, x509.ExtKeyUsageClientAuth, expectedPeerURI)
-	}
-	tlsConfig := &tls.Config{
-		MinVersion: tls.VersionTLS12,
-		ClientAuth: tls.RequireAnyClientCert,
-		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
-			certificate, err := c.loadLocalKeyPair(x509.ExtKeyUsageServerAuth, localIdentity)
-			if err != nil {
-				return nil, err
-			}
-			return &certificate, nil
-		},
-		VerifyConnection: func(state tls.ConnectionState) error {
-			_, err := verify(state.PeerCertificates)
-			return err
-		},
-	}
-	return &transportCredentials{
-		inner:  credentials.NewTLS(tlsConfig),
-		verify: verify,
-	}, nil
+	return credentials.NewTLS(tlsconfig.MTLSServerConfig(source, source, authorize(expected, x509.ExtKeyUsageClientAuth))), nil
 }
 
 // LocalIdentity returns the certificate URI after validating its chain and the
 // caller's required authentication usage.
 func (c Config) LocalIdentity(usage x509.ExtKeyUsage) (string, error) {
-	return c.validateLocalCertificate(usage)
+	source, err := newFileSource(c, usage)
+	if err != nil {
+		return "", err
+	}
+	return source.identity.String(), nil
 }
 
-// PeerIdentity returns the sole verified SPIFFE URI SAN in a gRPC TLS peer.
-// The certificate must be the leaf of a populated VerifiedChains entry; a
-// caller-created TLSInfo with only PeerCertificates is not authenticated.
+// PeerIdentity returns the SPIFFE ID of a gRPC TLS peer and rejects a peer whose
+// leaf has expired since the handshake.
+//
+// It reads the leaf from credentials.TLSInfo rather than using
+// grpccredentials.PeerIDFromContext, whose AuthInfo hides the certificate
+// needed for that expiry check. The leaf is authenticated because every TLS
+// credential on these connections comes from this package, whose handshake
+// fails unless go-spiffe verified and authorized the presented chain.
 func PeerIdentity(ctx context.Context) (string, error) {
 	remote, ok := peer.FromContext(ctx)
-	if !ok || remote == nil {
+	if !ok {
 		return "", errors.New("gRPC peer is missing")
 	}
-	var state tls.ConnectionState
-	switch info := remote.AuthInfo.(type) {
-	case credentials.TLSInfo:
-		state = info.State
-	case *credentials.TLSInfo:
-		if info == nil {
-			return "", errors.New("gRPC peer TLS info is missing")
-		}
-		state = info.State
-	default:
+	info, ok := remote.AuthInfo.(credentials.TLSInfo)
+	if !ok || len(info.State.PeerCertificates) == 0 {
 		return "", errors.New("gRPC peer is not authenticated with TLS")
 	}
-	if len(state.PeerCertificates) == 0 || len(state.VerifiedChains) == 0 || len(state.VerifiedChains[0]) == 0 {
-		return "", errors.New("gRPC peer TLS certificate has no verified chain")
-	}
-	leaf := state.PeerCertificates[0]
-	if !bytes.Equal(leaf.Raw, state.VerifiedChains[0][0].Raw) {
-		return "", errors.New("gRPC peer verified chain does not match its presented leaf")
-	}
+	leaf := info.State.PeerCertificates[0]
 	now := time.Now()
 	if now.Before(leaf.NotBefore) || now.After(leaf.NotAfter) {
 		return "", errors.New("gRPC peer TLS certificate is outside its validity period")
 	}
-	identity, err := certificateIdentity(leaf)
+	id, err := x509svid.IDFromCert(leaf)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("gRPC peer identity: %w", err)
 	}
-	if err := validateIdentityURI(identity); err != nil {
+	if _, err := parseIdentity(id.String()); err != nil {
 		return "", fmt.Errorf("gRPC peer has an unsupported identity: %w", err)
 	}
-	return identity, nil
+	return id.String(), nil
 }
 
-func (c Config) validateLocalCertificate(usage x509.ExtKeyUsage) (string, error) {
-	certificate, err := c.loadKeyPair(usage)
-	if err != nil {
-		return "", err
-	}
-	identity, err := certificateIdentity(certificate.Leaf)
-	if err != nil {
-		return "", fmt.Errorf("local certificate identity: %w", err)
-	}
-	if err := validateIdentityURI(identity); err != nil {
-		return "", fmt.Errorf("local certificate identity: %w", err)
-	}
-	if err := c.verifyLocalChain(certificate, usage); err != nil {
-		return "", err
-	}
-	return identity, nil
-}
-
-func (c Config) loadLocalKeyPair(usage x509.ExtKeyUsage, expectedIdentity string) (tls.Certificate, error) {
-	certificate, err := c.loadKeyPair(usage)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-	identity, err := certificateIdentity(certificate.Leaf)
-	if err != nil {
-		return tls.Certificate{}, fmt.Errorf("local certificate identity: %w", err)
-	}
-	if identity != expectedIdentity {
-		return tls.Certificate{}, fmt.Errorf("local certificate identity changed from %q to %q", expectedIdentity, identity)
-	}
-	if err := c.verifyLocalChain(certificate, usage); err != nil {
-		return tls.Certificate{}, err
-	}
-	return certificate, nil
-}
-
-func (c Config) verifyLocalChain(certificate tls.Certificate, usage x509.ExtKeyUsage) error {
-	if len(certificate.Certificate) == 0 {
-		return errors.New("local certificate contains no leaf certificate")
-	}
-	chain := make([]*x509.Certificate, 0, len(certificate.Certificate))
-	for _, der := range certificate.Certificate {
-		parsed, err := x509.ParseCertificate(der)
-		if err != nil {
-			return fmt.Errorf("parse local certificate chain: %w", err)
+// authorize accepts exactly the expected peer ID with the EKU its role needs;
+// go-spiffe's chain verification accepts any EKU.
+func authorize(expected spiffeid.ID, usage x509.ExtKeyUsage) tlsconfig.Authorizer {
+	matchID := tlsconfig.AuthorizeID(expected)
+	return func(id spiffeid.ID, verifiedChains [][]*x509.Certificate) error {
+		if err := matchID(id, verifiedChains); err != nil {
+			return err
 		}
-		chain = append(chain, parsed)
-	}
-	identity, err := certificateIdentity(chain[0])
-	if err != nil {
-		return err
-	}
-	_, err = c.verifyPeer(chain, usage, identity)
-	return err
-}
-
-func (c Config) loadKeyPair(usage x509.ExtKeyUsage) (tls.Certificate, error) {
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		certificate, err := tls.LoadX509KeyPair(c.CertFile, c.KeyFile)
-		if err == nil {
-			if len(certificate.Certificate) == 0 {
-				return tls.Certificate{}, errors.New("configured certificate contains no certificates")
-			}
-			leaf, parseErr := x509.ParseCertificate(certificate.Certificate[0])
-			if parseErr != nil {
-				return tls.Certificate{}, fmt.Errorf("parse configured leaf certificate: %w", parseErr)
-			}
-			certificate.Leaf = leaf
-			if err := requireEKU(leaf, usage); err != nil {
-				return tls.Certificate{}, err
-			}
-			return certificate, nil
+		if err := requireEKU(verifiedChains[0][0], usage); err != nil {
+			return fmt.Errorf("peer certificate: %w", err)
 		}
-		lastErr = err
+		return nil
 	}
-	return tls.Certificate{}, fmt.Errorf("load configured certificate and key: %w", lastErr)
 }
 
-func (c Config) loadRoots() (*x509.CertPool, error) {
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		roots, err := readRoots(c.CAFile)
-		if err == nil {
-			return roots, nil
-		}
-		lastErr = err
-	}
-	return nil, fmt.Errorf("load configured CA roots: %w", lastErr)
+// fileSource serves the local X509-SVID and trust bundle from the mounted
+// cert-manager and trust-manager files. Each Get stats the files and parses
+// them again only when one was replaced (kubelet and Secret volume updates swap
+// files atomically); a failed load fails that handshake and is retried on the
+// next one.
+type fileSource struct {
+	config   Config
+	usage    x509.ExtKeyUsage
+	identity spiffeid.ID
+
+	mu          sync.Mutex
+	svid        *x509svid.SVID
+	svidFiles   []os.FileInfo
+	bundle      *x509bundle.Bundle
+	bundleFiles []os.FileInfo
 }
 
-func readRoots(path string) (*x509.CertPool, error) {
-	contents, err := os.ReadFile(path)
+// newFileSource loads the local credentials and requires the certificate to
+// chain to the configured roots with the given EKU. Rotation must keep the
+// identity loaded here.
+func newFileSource(config Config, usage x509.ExtKeyUsage) (*fileSource, error) {
+	svid, err := loadSVID(config, usage)
 	if err != nil {
 		return nil, err
 	}
-	pool := x509.NewCertPool()
-	remaining := contents
-	count := 0
-	for len(bytes.TrimSpace(remaining)) > 0 {
-		block, rest := pem.Decode(remaining)
-		if block == nil {
-			return nil, errors.New("CA file contains invalid PEM data")
-		}
-		remaining = rest
-		if block.Type != "CERTIFICATE" {
-			return nil, fmt.Errorf("CA file contains PEM block %q, expected CERTIFICATE", block.Type)
-		}
-		certificate, err := x509.ParseCertificate(block.Bytes)
-		if err != nil {
-			return nil, fmt.Errorf("parse CA certificate: %w", err)
-		}
-		if !certificate.IsCA {
-			return nil, errors.New("CA file contains a certificate that is not a CA")
-		}
-		pool.AddCert(certificate)
-		count++
+	source := &fileSource{config: config, usage: usage, identity: svid.ID}
+	if _, err := parseIdentity(svid.ID.String()); err != nil {
+		return nil, fmt.Errorf("local certificate identity: %w", err)
 	}
-	if count == 0 {
+	if _, _, err := x509svid.Verify(svid.Certificates, source); err != nil {
+		return nil, fmt.Errorf("verify local certificate chain: %w", err)
+	}
+	return source, nil
+}
+
+func (s *fileSource) GetX509SVID() (*x509svid.SVID, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	files, err := statFiles(s.config.CertFile, s.config.KeyFile)
+	if err != nil {
+		return nil, err
+	}
+	if s.svid != nil && sameFiles(files, s.svidFiles) {
+		return s.svid, nil
+	}
+	svid, err := loadSVID(s.config, s.usage)
+	if err != nil {
+		return nil, err
+	}
+	if svid.ID != s.identity {
+		return nil, fmt.Errorf("local certificate identity changed from %q to %q", s.identity, svid.ID)
+	}
+	s.svid, s.svidFiles = svid, files
+	return svid, nil
+}
+
+func (s *fileSource) GetX509BundleForTrustDomain(td spiffeid.TrustDomain) (*x509bundle.Bundle, error) {
+	if td != trustDomain {
+		return nil, fmt.Errorf("no trust bundle for trust domain %q", td)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	files, err := statFiles(s.config.CAFile)
+	if err != nil {
+		return nil, err
+	}
+	if s.bundle != nil && sameFiles(files, s.bundleFiles) {
+		return s.bundle, nil
+	}
+	bundle, err := x509bundle.Load(trustDomain, s.config.CAFile)
+	if err != nil {
+		return nil, fmt.Errorf("load configured CA roots: %w", err)
+	}
+	if bundle.Empty() {
 		return nil, errors.New("CA file contains no certificates")
 	}
-	return pool, nil
+	s.bundle, s.bundleFiles = bundle, files
+	return bundle, nil
 }
 
-func (c Config) verifyPeer(certificates []*x509.Certificate, usage x509.ExtKeyUsage, expected string) ([][]*x509.Certificate, error) {
-	if len(certificates) == 0 || certificates[0] == nil {
-		return nil, errors.New("peer did not present a certificate")
-	}
-	leaf := certificates[0]
-	if err := requireEKU(leaf, usage); err != nil {
-		return nil, fmt.Errorf("peer certificate: %w", err)
-	}
-	identity, err := certificateIdentity(leaf)
+// loadSVID reads the key pair with crypto/tls, which accepts the SEC 1 and
+// PKCS #1 keys cert-manager writes by default; x509svid.Load takes only PKCS #8.
+func loadSVID(config Config, usage x509.ExtKeyUsage) (*x509svid.SVID, error) {
+	pair, err := tls.LoadX509KeyPair(config.CertFile, config.KeyFile)
 	if err != nil {
-		return nil, fmt.Errorf("peer certificate identity: %w", err)
+		return nil, fmt.Errorf("load configured certificate and key: %w", err)
 	}
-	if identity != expected {
-		return nil, fmt.Errorf("peer identity %q does not match expected identity %q", identity, expected)
+	certificates := make([]*x509.Certificate, 0, len(pair.Certificate))
+	for _, der := range pair.Certificate {
+		certificate, err := x509.ParseCertificate(der)
+		if err != nil {
+			return nil, fmt.Errorf("parse configured certificate chain: %w", err)
+		}
+		certificates = append(certificates, certificate)
 	}
-
-	roots, err := c.loadRoots()
-	if err != nil {
+	if err := requireEKU(certificates[0], usage); err != nil {
 		return nil, err
 	}
-	intermediates := x509.NewCertPool()
-	for _, intermediate := range certificates[1:] {
-		if intermediate != nil {
-			intermediates.AddCert(intermediate)
+	id, err := x509svid.IDFromCert(certificates[0])
+	if err != nil {
+		return nil, fmt.Errorf("local certificate identity: %w", err)
+	}
+	signer, ok := pair.PrivateKey.(crypto.Signer)
+	if !ok {
+		return nil, fmt.Errorf("configured private key %T is not a signer", pair.PrivateKey)
+	}
+	return &x509svid.SVID{ID: id, Certificates: certificates, PrivateKey: signer}, nil
+}
+
+func statFiles(paths ...string) ([]os.FileInfo, error) {
+	files := make([]os.FileInfo, 0, len(paths))
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, info)
+	}
+	return files, nil
+}
+
+func sameFiles(current, loaded []os.FileInfo) bool {
+	for i := range current {
+		if !os.SameFile(current[i], loaded[i]) || !current[i].ModTime().Equal(loaded[i].ModTime()) || current[i].Size() != loaded[i].Size() {
+			return false
 		}
 	}
-	chains, err := leaf.Verify(x509.VerifyOptions{
-		Roots:         roots,
-		Intermediates: intermediates,
-		KeyUsages:     []x509.ExtKeyUsage{usage},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("verify peer certificate chain: %w", err)
-	}
-	return chains, nil
+	return true
 }
 
 func requireEKU(certificate *x509.Certificate, usage x509.ExtKeyUsage) error {
@@ -384,88 +306,12 @@ func requireEKU(certificate *x509.Certificate, usage x509.ExtKeyUsage) error {
 	return fmt.Errorf("certificate must explicitly allow extended key usage %s", usage)
 }
 
-func certificateIdentity(certificate *x509.Certificate) (string, error) {
-	if certificate == nil || len(certificate.URIs) != 1 || certificate.URIs[0] == nil {
-		return "", errors.New("certificate must contain exactly one URI SAN")
-	}
-	return certificate.URIs[0].String(), nil
-}
-
-func validateIdentityURI(identity string) error {
-	if identity == GatewayURI {
-		return nil
-	}
-	if _, _, _, err := ParseRunnerURI(identity); err != nil {
-		return fmt.Errorf("identity must be GatewayURI or a valid RunnerURI: %w", err)
-	}
-	return nil
-}
-
-func validPathSegment(value string) bool {
-	if value == "" || value == "." || value == ".." {
-		return false
-	}
-	for _, r := range value {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.') {
-			return false
+// parseIdentity accepts only GatewayURI or a canonical RunnerURI.
+func parseIdentity(identity string) (spiffeid.ID, error) {
+	if identity != GatewayURI {
+		if _, _, _, err := ParseRunnerURI(identity); err != nil {
+			return spiffeid.ID{}, fmt.Errorf("identity must be GatewayURI or a valid RunnerURI: %w", err)
 		}
 	}
-	return true
-}
-
-type transportCredentials struct {
-	inner  credentials.TransportCredentials
-	verify func([]*x509.Certificate) ([][]*x509.Certificate, error)
-}
-
-func (c *transportCredentials) ClientHandshake(ctx context.Context, authority string, rawConn net.Conn) (net.Conn, credentials.AuthInfo, error) {
-	conn, info, err := c.inner.ClientHandshake(ctx, authority, rawConn)
-	if err != nil {
-		return nil, nil, err
-	}
-	return c.attachVerifiedChain(conn, info)
-}
-
-func (c *transportCredentials) ServerHandshake(rawConn net.Conn) (net.Conn, credentials.AuthInfo, error) {
-	conn, info, err := c.inner.ServerHandshake(rawConn)
-	if err != nil {
-		return nil, nil, err
-	}
-	return c.attachVerifiedChain(conn, info)
-}
-
-func (c *transportCredentials) attachVerifiedChain(conn net.Conn, info credentials.AuthInfo) (net.Conn, credentials.AuthInfo, error) {
-	var tlsInfo credentials.TLSInfo
-	switch value := info.(type) {
-	case credentials.TLSInfo:
-		tlsInfo = value
-	case *credentials.TLSInfo:
-		if value == nil {
-			_ = conn.Close()
-			return nil, nil, errors.New("gRPC TLS credentials returned nil TLSInfo")
-		}
-		tlsInfo = *value
-	default:
-		_ = conn.Close()
-		return nil, nil, fmt.Errorf("gRPC TLS credentials returned unexpected auth info %T", info)
-	}
-	chains, err := c.verify(tlsInfo.State.PeerCertificates)
-	if err != nil {
-		_ = conn.Close()
-		return nil, nil, fmt.Errorf("verify peer certificate after TLS handshake: %w", err)
-	}
-	tlsInfo.State.VerifiedChains = chains
-	return conn, tlsInfo, nil
-}
-
-func (c *transportCredentials) Info() credentials.ProtocolInfo {
-	return c.inner.Info()
-}
-
-func (c *transportCredentials) Clone() credentials.TransportCredentials {
-	return &transportCredentials{inner: c.inner.Clone(), verify: c.verify}
-}
-
-func (c *transportCredentials) OverrideServerName(serverName string) error {
-	return c.inner.OverrideServerName(serverName)
+	return spiffeid.FromString(identity)
 }

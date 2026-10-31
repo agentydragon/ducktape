@@ -213,25 +213,6 @@ class BazelWorkspace:
         cmd.extend(self.startup_flags)
         return tuple(cmd)
 
-    def find_package(self, filepath: Path) -> Path | None:
-        """Find the Bazel package containing a file by walking up to find BUILD."""
-        current = self.root / filepath.parent
-        while current >= self.root:
-            if (current / "BUILD.bazel").exists() or (current / "BUILD").exists():
-                return current.relative_to(self.root)
-            if current == self.root:
-                break
-            current = current.parent
-        return None
-
-    def file_to_label(self, filepath: Path) -> BazelLabel | None:
-        """Convert a repo-relative filepath to a Bazel source file label."""
-        pkg = self.find_package(filepath)
-        if pkg is None:
-            return None
-        rel = filepath.relative_to(pkg) if pkg != Path() else filepath
-        return BazelLabel(repo="", package=pkg, name=str(rel))
-
     def query(
         self,
         expr: str,

@@ -27,14 +27,13 @@ _NAMESPACE = uuid.UUID("6f9619ff-8b86-d011-b42d-00c04fc964ff")
 @dataclasses.dataclass(frozen=True)
 class BazelCIRole:
     name: str
-    publication_evidence: bool
+    publication_outputs: bool
 
 
-TEST_ROLE = BazelCIRole("test", publication_evidence=True)
-BUILD_ROLE = BazelCIRole("build", publication_evidence=True)
-RACE_ROLE = BazelCIRole("race", publication_evidence=False)
-BAZEL_CI_ROLES = (TEST_ROLE, BUILD_ROLE, RACE_ROLE)
-BAZEL_CI_PUBLICATION_ROLES = tuple(role for role in BAZEL_CI_ROLES if role.publication_evidence)
+TEST_ROLE = BazelCIRole("test", publication_outputs=False)
+BUILD_ROLE = BazelCIRole("build", publication_outputs=True)
+BAZEL_CI_ROLES = (TEST_ROLE, BUILD_ROLE)
+BAZEL_CI_PUBLICATION_ROLES = tuple(role for role in BAZEL_CI_ROLES if role.publication_outputs)
 _OTHER_INVOCATION_ROLES = ("nix-wheel-build", "release-unstamped", "release-stamped")
 
 

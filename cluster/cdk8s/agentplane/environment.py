@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
 from urllib.parse import urlsplit
 
 from cdk8s import Duration
@@ -24,6 +23,7 @@ from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.runner.configuration import GuestResources
 from agentplane.subjects import ServiceAccountRef
 from agentplane.x.central_sampler import settings
+from cluster.cdk8s.secret_ref import SecretKey
 from model_catalog.catalog import Route
 
 
@@ -53,12 +53,15 @@ class CentralSamplerProps:
     """The opt-in central code-mode service's model contracts and runtime limits."""
 
     models: Mapping[str, settings.ModelConfig]
-    llm_proxy_url: str
-    credential_file: Path
+    connections: Mapping[str, settings.ConnectionConfig]
     max_live_sessions: int
     turn_timeout_seconds: int
     rpc_timeout_seconds: int
     lease_seconds: int
+    # The settings carry each credential file path; this map names only the Secret key
+    # projected there, keyed by connection name.
+    connection_credentials: Mapping[str, SecretKey] = field(default_factory=dict)
+    executor_initialize_timeout_seconds: int = settings.DEFAULT_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS
     auto_compact_tokens: int | None = None
 
 

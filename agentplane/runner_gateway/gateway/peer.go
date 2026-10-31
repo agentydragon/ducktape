@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strconv"
 
@@ -10,6 +11,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -28,22 +31,22 @@ func (g *Gateway) runnerDestination(ctx context.Context, sandbox *sandboxapi.San
 	if ref == nil {
 		return runnerDestination{}, status.Error(codes.Unavailable, "Sandbox has no runner incarnation")
 	}
-	pod, err := g.sandboxes.core.Pods(sandbox.Namespace).Get(ctx, ref.Name, metav1.GetOptions{})
-	if err != nil {
-		return runnerDestination{}, unavailable(err)
+	var pod corev1.Pod
+	if err := g.readWorkload(ctx, sandbox.Namespace, ref.Name, &pod); err != nil {
+		return runnerDestination{}, err
 	}
 	view := routingView(sandboxreader.View{Identity: sandboxreader.Identity{
 		Namespace: sandbox.Namespace, Name: sandbox.Name, UID: string(sandbox.UID),
 	}, Resource: sandbox})
-	if !podIsReadyForSandbox(pod, view) || pod.Status.PodIP == "" {
+	if !podIsReadyForSandbox(&pod, view) || pod.Status.PodIP == "" {
 		return runnerDestination{}, status.Error(codes.Unavailable, "runner Pod is unavailable")
 	}
 	credentialID := pod.Labels[sandboxapi.RunnerCredentialLabel]
-	owner := metav1.GetControllerOf(pod)
+	owner := metav1.GetControllerOf(&pod)
 	if owner.APIVersion == sandboxVMIAPIVer && owner.Kind == sandboxVMIKind {
 		var vmi kubevirtv1.VirtualMachineInstance
-		if err := g.objects.Get(ctx, client.ObjectKey{Namespace: pod.Namespace, Name: owner.Name}, &vmi); err != nil {
-			return runnerDestination{}, unavailable(err)
+		if err := g.readWorkload(ctx, pod.Namespace, owner.Name, &vmi); err != nil {
+			return runnerDestination{}, err
 		}
 		if vmi.UID != owner.UID || !vmi.DeletionTimestamp.IsZero() || vmi.Labels[sandboxapi.SandboxLabel] != sandbox.Name {
 			return runnerDestination{}, status.Error(codes.PermissionDenied, "runner VM incarnation changed")
@@ -53,8 +56,8 @@ func (g *Gateway) runnerDestination(ctx context.Context, sandbox *sandboxapi.San
 			return runnerDestination{}, status.Error(codes.PermissionDenied, "runner VMI is not owned by its Sandbox VM")
 		}
 		var vm kubevirtv1.VirtualMachine
-		if err := g.objects.Get(ctx, client.ObjectKey{Namespace: pod.Namespace, Name: vmOwner.Name}, &vm); err != nil {
-			return runnerDestination{}, unavailable(err)
+		if err := g.readWorkload(ctx, pod.Namespace, vmOwner.Name, &vm); err != nil {
+			return runnerDestination{}, err
 		}
 		if vm.UID != vmOwner.UID || !metav1.IsControlledBy(&vm, sandbox) {
 			return runnerDestination{}, status.Error(codes.PermissionDenied, "runner VM is not owned by its Sandbox")
@@ -75,14 +78,29 @@ func (g *Gateway) runnerDestination(ctx context.Context, sandbox *sandboxapi.San
 	}, nil
 }
 
-// validateRunnerDestination rechecks the live workload independently of transport authentication.
+// readWorkload reads one object of a runner's workload: a missing object is the verdict that the runner
+// is unavailable, any other failure an error to retry.
+func (g *Gateway) readWorkload(ctx context.Context, namespace, name string, object client.Object) error {
+	err := g.objects.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, object)
+	if apierrors.IsNotFound(err) {
+		return status.Errorf(codes.Unavailable, "runner workload %T is gone", object)
+	}
+	if err != nil {
+		return fmt.Errorf("read runner workload %T: %w", object, err)
+	}
+	return nil
+}
+
+// validateRunnerDestination rechecks the workload on every runner heartbeat, independently of transport
+// authentication. It reads the Gateway's reader, the informer cache in production: the Lease's
+// resourceVersion compare-and-swap, not this read, fences which replica holds the runner.
 func (g *Gateway) validateRunnerDestination(ctx context.Context, expected runnerDestination) error {
 	if expected.identity.Namespace != g.config.Namespace {
 		return status.Error(codes.PermissionDenied, "runner is outside the Gateway namespace")
 	}
 	var sandbox sandboxapi.Sandbox
-	if err := g.objects.Get(ctx, client.ObjectKey{Namespace: expected.identity.Namespace, Name: expected.identity.Name}, &sandbox); err != nil {
-		return unavailable(err)
+	if err := g.readWorkload(ctx, expected.identity.Namespace, expected.identity.Name, &sandbox); err != nil {
+		return err
 	}
 	if string(sandbox.UID) != expected.identity.UID {
 		return status.Error(codes.PermissionDenied, "runner Sandbox was replaced")

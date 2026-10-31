@@ -67,6 +67,9 @@ require github.com/danielgtaylor/huma/v2 v2.39.1
 // Direct dependencies for the generated HTTP facades of agentplane services
 require github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0
 
+// Direct dependencies for the Action Service's one listener shared by gRPC and HTTP
+require github.com/soheilhy/cmux v0.1.5
+
 // Direct dependencies for Agentplane YAML consumers
 require gopkg.in/yaml.v3 v3.0.1
 
@@ -107,6 +110,9 @@ require (
 // Direct dependencies for agentplane/mcp_edge/authserver (the OAuth authorization server external MCP clients use)
 // Gotcha: op.Server and op.RegisterServer "may change until v4", in a v3 minor release too.
 require github.com/zitadel/oidc/v3 v3.51.16
+
+// Direct dependencies for agentplane/runner_transport (SPIFFE mTLS between Runner and Gateway)
+require github.com/spiffe/go-spiffe/v2 v2.7.0
 
 // Indirect dependencies (merged from genkit and worthy go.mods)
 require (

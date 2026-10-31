@@ -24,6 +24,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -33,6 +34,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 func TestWriteSSEPreservesEventIDAndJSONData(t *testing.T) {
@@ -61,11 +63,11 @@ func TestWriteSSEPreservesEventIDAndJSONData(t *testing.T) {
 }
 
 func TestLiveWatchHealthOmitsCacheSyncImplementationDetail(t *testing.T) {
-	got := healthView(liveinventory.WatchHealth{
-		Fresh: true, Synced: true, StaleAfterSeconds: 30,
-		RefreshedSecondsAgo: map[string]float64{"pods": 0.1},
+	since := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	got := healthView(watchhealth.Status{
+		Synced: true, Failing: map[watchhealth.Kind]watchhealth.Failure{"pods": {Error: "test-failure", Since: since}},
 	})
-	if !got.Fresh || got.StaleAfterSeconds != 30 || got.RefreshedSecondsAgo["pods"] != 0.1 {
+	if got.Healthy || got.Failing["pods"] != (kindFailureView{Error: "test-failure", Since: since}) {
 		t.Fatalf("health projection = %#v", got)
 	}
 	encoded, err := json.Marshal(got)
@@ -119,6 +121,12 @@ func (f *streamTestLive) Snapshot(context.Context) (liveinventory.Snapshot, erro
 	return f.snapshots[index], nil
 }
 
+func (f *streamTestLive) Health() watchhealth.Status {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.snapshots[len(f.snapshots)-1].Watch
+}
+
 func (f *streamTestLive) Subscribe() (<-chan struct{}, func()) {
 	return f.changes, func() {}
 }
@@ -134,17 +142,17 @@ func TestLiveSandboxStreamSendsInitialUpdateAndStaleHealth(t *testing.T) {
 					{Reason: sandboxapi.AutosuspendBlockerActiveTurn, SessionID: &activeSession},
 					{Reason: sandboxapi.AutosuspendBlockerBootstrap},
 				}},
-			}}, Watch: liveinventory.WatchHealth{Fresh: true, StaleAfterSeconds: 30}},
+			}}, Watch: watchhealth.Status{Available: true, Synced: true}},
 			{Sandboxes: []sandboxapi.Sandbox{{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo"},
 				Status:     sandboxapi.SandboxStatus{IdleSuspendAt: &deadline, IdleSuspendBlockers: []sandboxapi.AutosuspendBlocker{}},
-			}}, Watch: liveinventory.WatchHealth{Fresh: true, StaleAfterSeconds: 30}},
-			{Sandboxes: []sandboxapi.Sandbox{{ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo"}}}, Watch: liveinventory.WatchHealth{Fresh: false, StaleAfterSeconds: 30}},
+			}}, Watch: watchhealth.Status{Available: true, Synced: true}},
+			{Sandboxes: []sandboxapi.Sandbox{{ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo"}}}, Watch: watchhealth.Status{Synced: true, Failing: map[watchhealth.Kind]watchhealth.Failure{"sandboxes": {Error: "test-failure"}}}},
 		},
 		changes: make(chan struct{}, 1),
 	}
 	server := NewHTTPServer(nil)
-	routes := &streamingRoutes{server: server, deps: StreamingDependencies{Live: live}}
+	routes := newStreamingRoutes(server, StreamingDependencies{Live: live})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	request := httptest.NewRequest(http.MethodGet, "/live/sandboxes", nil).WithContext(ctx)
@@ -159,7 +167,7 @@ func TestLiveSandboxStreamSendsInitialUpdateAndStaleHealth(t *testing.T) {
 	waitForStreamText(t, response, `"idle_suspend_at":"2026-10-20T01:04:03Z"`)
 	waitForStreamText(t, response, `"autosuspend_blockers":[]`)
 	live.changes <- struct{}{}
-	waitForStreamText(t, response, `"fresh":false`)
+	waitForStreamText(t, response, `"healthy":false`)
 	waitForStreamText(t, response, `"idle_suspend_at":null`)
 	cancel()
 	select {
@@ -448,10 +456,18 @@ func (f *streamTestHistory) ReadWatermark(context.Context, uuid.UUID) (uint64, e
 	return 100, nil
 }
 
-type streamTestChanges struct{ changes chan struct{} }
+type streamTestChanges struct {
+	changes chan struct{}
+	// unsubscribed, when set, receives each ended subscription.
+	unsubscribed chan struct{}
+}
 
 func (f *streamTestChanges) Subscribe(...string) (<-chan struct{}, func(), error) {
-	return f.changes, func() {}, nil
+	return f.changes, func() {
+		if f.unsubscribed != nil {
+			f.unsubscribed <- struct{}{}
+		}
+	}, nil
 }
 
 type threadFollowResult struct {
@@ -982,4 +998,219 @@ func waitForStreamTextAfter(t *testing.T, response *streamingRecorder, before, a
 			t.Fatalf("stream did not contain %q after %q; body: %s", after, before, body)
 		}
 	}
+}
+
+const liveFramesSandboxUID = "33333333-3333-4333-8333-333333333333"
+
+var (
+	liveFramesFirstThread  = uuid.MustParse("00000000-0000-0000-0000-00000000000a")
+	liveFramesSecondThread = uuid.MustParse("00000000-0000-0000-0000-00000000000b")
+)
+
+// countingLive is a live inventory whose snapshot the test replaces. It counts reads and signals every subscriber
+// of each change.
+type countingLive struct {
+	mu           sync.Mutex
+	snapshot     liveinventory.Snapshot
+	reads        int
+	subscribers  []chan struct{}
+	unsubscribed chan struct{}
+}
+
+func (f *countingLive) Snapshot(context.Context) (liveinventory.Snapshot, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reads++
+	return f.snapshot, nil
+}
+
+func (f *countingLive) Health() watchhealth.Status {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.snapshot.Watch
+}
+
+func (f *countingLive) Subscribe() (<-chan struct{}, func()) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	changes := make(chan struct{}, 1)
+	f.subscribers = append(f.subscribers, changes)
+	return changes, func() { f.unsubscribed <- struct{}{} }
+}
+
+func (f *countingLive) change(snapshot liveinventory.Snapshot) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.snapshot = snapshot
+	for _, changes := range f.subscribers {
+		select {
+		case changes <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func (f *countingLive) readCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.reads
+}
+
+type countingThreadStore struct {
+	threadReadStore
+	mu    sync.Mutex
+	rows  []threads.Thread
+	pages int
+}
+
+func (f *countingThreadStore) ListPage(context.Context, int, *threads.PageCursor, bool) (threads.Page, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.pages++
+	return threads.Page{Threads: append([]threads.Thread(nil), f.rows...)}, nil
+}
+
+func (f *countingThreadStore) ArchivedCount(context.Context) (int, error) { return 0, nil }
+
+func (f *countingThreadStore) setRows(rows ...threads.Thread) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.rows = rows
+}
+
+func (f *countingThreadStore) pageCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.pages
+}
+
+func liveFramesSnapshot(idleSuspendAt *metav1.Time) liveinventory.Snapshot {
+	return liveinventory.Snapshot{
+		Sandboxes: []sandboxapi.Sandbox{{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo", UID: types.UID(liveFramesSandboxUID)},
+			Status:     sandboxapi.SandboxStatus{IdleSuspendAt: idleSuspendAt},
+		}},
+		Watch: watchhealth.Status{Available: true, Synced: true},
+	}
+}
+
+type liveFramesFixture struct {
+	live    *countingLive
+	store   *countingThreadStore
+	updates *streamTestChanges
+	routes  *streamingRoutes
+}
+
+func newLiveFramesFixture() *liveFramesFixture {
+	summary := historydata.FoldSummary{Present: true, Sandbox: "demo", SandboxUID: liveFramesSandboxUID}
+	f := &liveFramesFixture{
+		live:    &countingLive{snapshot: liveFramesSnapshot(nil), unsubscribed: make(chan struct{}, 8)},
+		store:   &countingThreadStore{rows: []threads.Thread{{ID: liveFramesFirstThread}}},
+		updates: &streamTestChanges{changes: make(chan struct{}, 1), unsubscribed: make(chan struct{}, 8)},
+	}
+	history := &streamTestHistory{
+		summaries:   map[uuid.UUID]historydata.FoldSummary{liveFramesFirstThread: summary, liveFramesSecondThread: summary},
+		sandboxes:   map[uuid.UUID]string{liveFramesFirstThread: "demo", liveFramesSecondThread: "demo"},
+		sandboxUIDs: map[uuid.UUID]string{liveFramesFirstThread: liveFramesSandboxUID, liveFramesSecondThread: liveFramesSandboxUID},
+	}
+	f.routes = newStreamingRoutes(NewHTTPServer(nil), StreamingDependencies{
+		Live: f.live, Threads: f.store, History: history, Updates: f.updates,
+	})
+	return f
+}
+
+// openLiveStreams serves count identical requests and returns their responses and a wait for every handler to return.
+func openLiveStreams(ctx context.Context, handler http.HandlerFunc, newRequest func() *http.Request, count int) ([]*streamingRecorder, func()) {
+	var handlers sync.WaitGroup
+	responses := make([]*streamingRecorder, count)
+	for n := range responses {
+		responses[n] = newStreamingRecorder()
+		request := newRequest().WithContext(ctx)
+		handlers.Go(func() { handler(responses[n], request) })
+	}
+	return responses, handlers.Wait
+}
+
+func waitForEveryStream(t *testing.T, responses []*streamingRecorder, text string) {
+	t.Helper()
+	for _, response := range responses {
+		waitForStreamText(t, response, text)
+	}
+}
+
+func (f *liveFramesFixture) assertReads(t *testing.T, step string, snapshots, threadPages int) {
+	t.Helper()
+	if got := f.live.readCount(); got != snapshots {
+		t.Fatalf("%s: live snapshot reads = %d, want %d", step, got, snapshots)
+	}
+	if got := f.store.pageCount(); got != threadPages {
+		t.Fatalf("%s: thread page reads = %d, want %d", step, got, threadPages)
+	}
+}
+
+// awaitProducerStopped waits for the shared producer to drop its thread update subscription.
+func (f *liveFramesFixture) awaitProducerStopped(t *testing.T) {
+	t.Helper()
+	select {
+	case <-f.updates.unsubscribed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the shared producer did not stop after its last stream ended")
+	}
+}
+
+func TestLiveThreadStreamsComputeEachThreadUpdateOnceAndIgnoreKubernetes(t *testing.T) {
+	f := newLiveFramesFixture()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	responses, wait := openLiveStreams(ctx, f.routes.liveThreads, func() *http.Request {
+		return httptest.NewRequest(http.MethodGet, "/live/threads?limit=10", nil)
+	}, 3)
+
+	waitForEveryStream(t, responses, liveFramesFirstThread.String())
+	f.assertReads(t, "initial frame", 0, 1)
+
+	// Sandboxes come from /live/sandboxes: a Kubernetes change neither reads the inventory nor re-reads threads.
+	deadline := metav1.NewTime(time.Date(2026, 10, 20, 1, 4, 3, 0, time.UTC))
+	f.live.change(liveFramesSnapshot(&deadline))
+	f.store.setRows(threads.Thread{ID: liveFramesSecondThread}, threads.Thread{ID: liveFramesFirstThread})
+	f.updates.changes <- struct{}{}
+	waitForEveryStream(t, responses, liveFramesSecondThread.String())
+	f.assertReads(t, "thread update", 0, 2)
+	for _, response := range responses {
+		if body := response.String(); strings.Contains(body, `"sandboxes"`) || strings.Contains(body, "idle_suspend_at") {
+			t.Fatalf("thread stream carried Sandboxes: %s", body)
+		}
+	}
+
+	cancel()
+	wait()
+	f.awaitProducerStopped(t)
+}
+
+func TestLiveSandboxStreamsShareThreadReadsAcrossViewers(t *testing.T) {
+	f := newLiveFramesFixture()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	responses, wait := openLiveStreams(ctx, f.routes.liveSandbox, func() *http.Request {
+		request := httptest.NewRequest(http.MethodGet, "/live/sandboxes/demo?include_archived=false", nil)
+		request.SetPathValue("name", "demo")
+		return request
+	}, 2)
+
+	waitForEveryStream(t, responses, liveFramesFirstThread.String())
+	f.assertReads(t, "initial frame", 1, 1)
+
+	deadline := metav1.NewTime(time.Date(2026, 10, 20, 1, 4, 3, 0, time.UTC))
+	f.live.change(liveFramesSnapshot(&deadline))
+	waitForEveryStream(t, responses, `"idle_suspend_at":"2026-10-20T01:04:03Z"`)
+	f.assertReads(t, "Kubernetes-only change", 2, 1)
+
+	f.store.setRows(threads.Thread{ID: liveFramesSecondThread}, threads.Thread{ID: liveFramesFirstThread})
+	f.updates.changes <- struct{}{}
+	waitForEveryStream(t, responses, liveFramesSecondThread.String())
+	f.assertReads(t, "thread update", 3, 2)
+
+	cancel()
+	wait()
+	f.awaitProducerStopped(t)
 }

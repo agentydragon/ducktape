@@ -178,7 +178,7 @@ fn report_redundant_hints_to_stderr(chunk_id: &str, analysis: &ChunkFactAnalysis
             property = hint.property,
             reason = match hint.reason {
                 RedundantPureMemberReason::WhitelistedStaticCall =>
-                    "pure via PURE_STATIC_CALLS (already on the global-receiver whitelist)",
+                    "pure via its builtin summary row",
             },
         );
     }

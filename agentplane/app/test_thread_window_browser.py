@@ -262,9 +262,9 @@ async def test_repeated_pagination_through_wildly_uneven_row_heights_keeps_the_r
 ) -> None:
     """A live report described the jump as reliable across repeated reloads of one real thread --
     not an occasional race, but something that keeps happening on that thread's actual content.
-    estimateSize is a flat 180px; a page of rows nowhere near that (a one-liner next to a message
-    twenty paragraphs long) makes virtualizer.scrollToIndex's estimate-based jump, and the two
-    frames of correctFromDom afterwards, wrong by a large and inconsistent margin each cycle --
+    The old integration used a flat 180px estimate; a page of rows nowhere near that (a one-liner
+    next to a message twenty paragraphs long) made its estimate-based jump and subsequent
+    DOM correction wrong by a large and inconsistent margin each cycle --
     unlike append_items's mild variance, which every existing pagination test here uses. Runs
     several scroll-to-top cycles deep into that unevenness, each one fully settled before the
     next, to isolate accumulated estimate error from any gesture-timing race."""

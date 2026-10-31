@@ -121,7 +121,6 @@ ts_library(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:icons",
-        "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:mark_glyph",
         "//agentplane/app/frontend:sandbox_status",
         "//agentplane/app/frontend:schema",
@@ -165,6 +164,7 @@ ts_library(
         "//:node_modules/react-router",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:live_stream",
+        "//agentplane/app/frontend:stream_reader",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:time_ago",
     ],
@@ -273,6 +273,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:trace_search",
         "//agentplane/app/frontend/testing:langfuse_search",
         "//agentplane/app/frontend/testing:model_catalog",
+        "//agentplane/app/frontend/testing:watch",
         "//agentplane/app/frontend/threads:client",
     ],
 )
@@ -283,6 +284,7 @@ agentplane_vitest_test(
     deps = [
         ":client",
         ":list",
+        ":live",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",

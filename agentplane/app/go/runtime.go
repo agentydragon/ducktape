@@ -153,8 +153,7 @@ func run(ctx context.Context, config Config) error {
 		return fmt.Errorf("configure Sandbox inventory: %w", err)
 	}
 	policies := policyaccess.New(config.SandboxNamespace, objects)
-	liveIndex, err := liveinventory.New(kubeConfig, config.SandboxNamespace,
-		liveinventory.WithWatchPeriod(time.Duration(config.ResyncSeconds)*time.Second))
+	liveIndex, err := liveinventory.New(kubeConfig, config.SandboxNamespace)
 	if err != nil {
 		return fmt.Errorf("configure live Kubernetes inventory: %w", err)
 	}
@@ -455,7 +454,10 @@ func newSystemStatus(config Config, httpClient *http.Client) (*status.Checker, [
 		}
 	}
 	for _, endpoint := range []struct{ name, raw string }{
-		{"Connection Service", config.ConnectionServiceURL}, {"Notification Service", config.NotificationsURL}, {"Egress proxy", config.EgressAdminURL},
+		{"Action Service", config.ActionFederation.ServiceURL},
+		{"Connection Service", config.ConnectionServiceURL},
+		{"Notification Service", config.NotificationsURL},
+		{"Egress proxy", config.EgressAdminURL},
 	} {
 		target, err := grpcTargetFromHTTPURL(endpoint.raw)
 		if err != nil {
@@ -467,7 +469,6 @@ func newSystemStatus(config Config, httpClient *http.Client) (*status.Checker, [
 			return nil, nil, err
 		}
 	}
-	probes = append(probes, status.HTTPHealthProbe("Action Service", httpClient, healthURL(config.ActionFederation.ServiceURL, "/healthz")))
 	if config.ElectricURL != "" {
 		probes = append(probes, status.HTTPHealthProbe("Electric", httpClient, healthURL(config.ElectricURL, "/v1/health")))
 	}

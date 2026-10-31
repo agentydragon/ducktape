@@ -55,11 +55,16 @@ follows it; code that differs converges on it.
 
 - Callers send `authorization: Bearer <token>` metadata, reading the projected token file for every
   call: projected tokens rotate.
-- A servicer admits its caller first thing in each RPC through `agentplane/workload_auth/go/auth`:
-  `Resolver.RequireAccount` checks the caller's account against an allowlist, and `Resolver.Resolve`
-  returns the whole principal for a door that authorizes on more than the account (the runner ingress
-  binds a Session to its writer; runner control resolves the Sandbox Pod). Services never carry their
-  own copy of the bearer parsing.
+- A Go server admits callers in one interceptor, `auth.Methods.ServerOptions`
+  (`agentplane/workload_auth/go/auth`): `auth.Methods` maps every served method's full name to a
+  `Rule` (`Accounts` for an allowlist, `AnyAccount` for any account the `Resolver` serves, `Public`
+  only for the health service via `auth.HealthMethods`). A method it does not list is refused before
+  its bearer is read, so a new RPC is closed until its Rule is written. The package owning a servicer
+  exports its `Methods`; the handler reads the admitted principal with `auth.Caller`. Tests iterate
+  the generated `ServiceDesc` with `agentplane/testing/grpcmethods`.
+- A door that authorizes on more than the account calls `Resolver.Resolve` itself (the runner
+  ingress binds a Session to its writer; runner control resolves the Sandbox Pod). Services never
+  carry their own copy of the bearer parsing.
 
 ## Errors
 
@@ -76,10 +81,9 @@ follows it; code that differs converges on it.
 - Every unary call passes `timeout=` from the client's settings.
 - A long-lived stream carries no call deadline: it bounds its handshake and each write with
   `asyncio.timeout` instead. A Go server bounds the time waiting for each stream `Send` to clear
-  transport backpressure; this does not guarantee when the peer receives a frame, because an HTTP
-  facade may queue the write before flushing it. If that wait times out or its lease/drain context
-  ends, the handler returns without another send. Facaded writes attach an abort callback to the
-  individual HTTP/2 stream so an outstanding response flush ends too.
+  transport backpressure ([`streaming.SendWithin`](../grpc/streaming/send.go)); this does not
+  guarantee when the peer receives a frame. If that wait times out or its lease/drain context ends,
+  the handler returns without another send, which releases the outstanding write.
 - A watch stream the server bounds by a lease ends with an explicit reconnect message when the lease
   or a drain expires while it is idle. If either ends during an outstanding write, the handler
   terminates that stream without sending a reconnect frame.
@@ -131,8 +135,14 @@ Everything that holds a connection is closed by a context manager, never by a ha
 ## Server lifecycle
 
 - `grpc.aio.server()`, register servicers, then serve through the shared context manager;
-  `stop(grace=5)` on shutdown. A second listener exists only where a network fence admits different callers to it (the
-  runner-facing port).
+  `stop(grace=5)` on shutdown. A second gRPC listener exists only where a network fence admits different callers to it
+  (the runner-facing port).
+- A Go server serves gRPC on its own listener with `grpc.Server.Serve`, never through `ServeHTTP` on an HTTP server,
+  and stops with [`graceful.Stop`](../grpc/graceful/stop.go): calls in flight finish until the shutdown deadline. HTTP
+  routes beside it (a facade, agent documentation, metrics, callbacks) take a separate HTTP listener and Service port,
+  which stops first, since a facade's calls are gRPC calls. **Deviation:** the Action Service keeps both on one port, so
+  a sandbox reaches it at one address; [`graceful.Shared`](../grpc/graceful/shared.go) sends HTTP/2 connections to
+  the gRPC server and the rest to the HTTP server, each still served and drained natively.
 - Health is the standard `grpc.health.v1.Health` service on the service's own gRPC port, which
   `agentplane.grpc.serving.add_health` registers, probed by Kubernetes' native `grpc` liveness and
   readiness probes. No separate HTTP health server.

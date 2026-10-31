@@ -190,12 +190,12 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				current.NextProbe = now.Add(healthInterval)
 				zap.L().Info("Codex exec-server ready", zap.String("url", h.config.URL))
 			} else if !now.Before(current.ReadyDeadline) {
-				current.Error = fmt.Sprintf("Codex exec-server did not become ready within %s: %v", readyBudget, probeErr)
+				current.Error = fmt.Sprintf("Codex exec-server did not become ready within %s: %v", h.config.Readiness.Timeout, probeErr)
 				current.RestartFailures++
 				current.Phase = Stopping
 			} else {
 				current.Error = probeErr.Error()
-				current.NextProbe = now.Add(readinessRetry)
+				current.NextProbe = now.Add(h.config.Readiness.ProbeInterval)
 			}
 		case Ready:
 			if probeErr == nil {
@@ -276,13 +276,13 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			return nil
 		}
 		if probeResult != nil {
-			return controller.NewRequeueError(nil, readinessRetry)
+			return controller.NewRequeueError(nil, min(h.config.Readiness.ProbeInterval, current.ReadyDeadline.Sub(now)))
 		}
 		if h.probePending() {
 			return nil
 		}
 		if now.Before(current.NextProbe) {
-			return controller.NewRequeueError(nil, current.NextProbe.Sub(now))
+			return controller.NewRequeueError(nil, min(current.NextProbe.Sub(now), current.ReadyDeadline.Sub(now)))
 		}
 		if err := write(); err != nil {
 			return err
@@ -290,7 +290,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		h.startProbe(func(ctx context.Context) error {
 			probeCtx, cancel := context.WithDeadline(ctx, current.ReadyDeadline)
 			defer cancel()
-			probeCtx, cancel = context.WithTimeout(probeCtx, readinessProbe)
+			probeCtx, cancel = context.WithTimeout(probeCtx, h.config.Readiness.ProbeTimeout)
 			defer cancel()
 			return h.probe(probeCtx)
 		})
@@ -330,7 +330,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		current.Phase = Starting
 		current.Generation++
 		current.ProcessID = fmt.Sprintf("%s-%d", ResourceID, current.Generation)
-		current.ReadyDeadline = now.Add(readyBudget)
+		current.ReadyDeadline = now.Add(h.config.Readiness.Timeout)
 		current.NextProbe = time.Time{}
 		current.RetryAt = time.Time{}
 		current.Error = ""

@@ -3,14 +3,14 @@ package main
 import (
 	"context"
 	"errors"
-	"net/http"
+	"maps"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/admin"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
-	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
@@ -48,51 +48,51 @@ func (c *config) adminGRPCCallers() ([]auth.Account, error) {
 	return callers, nil
 }
 
-// mountAdminGRPC serves the standard health service on the listener of the admin HTTP server, and
-// the EgressAdmin API beside it when c configures the admin gRPC API: it admits the callers and the
-// audience from c. options holds what the services read.
-func mountAdminGRPC(adminServer *http.Server, c config, reviews auth.TokenReviews, options admin.ServiceOptions) (shutdowner, error) {
-	grpcServer := grpc.NewServer(observability.GRPCServerOption())
-	healthpb.RegisterHealthServer(grpcServer, admin.NewProbes(options.Index, options.Clock))
-	var shutdown shutdowner = adminServer
-	if c.adminGRPCEnabled() {
-		service, err := newAdminService(c, reviews, options)
-		if err != nil {
-			return nil, err
-		}
-		egressadminpb.RegisterEgressAdminServer(grpcServer, service)
-		shutdown = watchingServer{Server: adminServer, service: service}
-	}
-	facade.MountGRPC(adminServer, grpcServer)
-	return shutdown, nil
-}
-
-func newAdminService(c config, reviews auth.TokenReviews, options admin.ServiceOptions) (*admin.Service, error) {
-	callers, err := c.adminGRPCCallers()
-	if err != nil {
-		return nil, err
-	}
-	namespaces := make([]string, 0, len(callers))
-	for _, caller := range callers {
-		if !slices.Contains(namespaces, caller.Namespace) {
-			namespaces = append(namespaces, caller.Namespace)
-		}
-	}
-	if options.Resolver, err = auth.NewResolver(reviews, c.AdminGRPCAudience, namespaces); err != nil {
-		return nil, err
-	}
-	options.Callers, options.WatchLease = callers, adminWatchLease
-	return admin.NewService(options), nil
-}
-
-// watchingServer ends the watches its gRPC service holds open before the HTTP server shuts down,
-// because Shutdown waits for every call to return.
-type watchingServer struct {
-	*http.Server
+// adminServer is the admin listener's gRPC server: the standard health service, and the EgressAdmin API
+// beside it when service is set.
+type adminServer struct {
+	*grpc.Server
 	service *admin.Service
 }
 
-func (s watchingServer) Shutdown(ctx context.Context) error {
-	s.service.Drain()
-	return s.Server.Shutdown(ctx)
+// newAdminServer serves the EgressAdmin API when c configures the admin gRPC API, admitting the
+// callers and the audience from c. options holds what the services read.
+func newAdminServer(c config, reviews auth.TokenReviews, options admin.ServiceOptions) (adminServer, error) {
+	methods := auth.HealthMethods()
+	var service *admin.Service
+	if c.adminGRPCEnabled() {
+		callers, err := c.adminGRPCCallers()
+		if err != nil {
+			return adminServer{}, err
+		}
+		namespaces := make([]string, 0, len(callers))
+		for _, caller := range callers {
+			if !slices.Contains(namespaces, caller.Namespace) {
+				namespaces = append(namespaces, caller.Namespace)
+			}
+		}
+		resolver, err := auth.NewResolver(reviews, c.AdminGRPCAudience, namespaces)
+		if err != nil {
+			return adminServer{}, err
+		}
+		maps.Copy(methods, admin.Methods(resolver, callers))
+		options.WatchLease = adminWatchLease
+		service = admin.NewService(options)
+	}
+	grpcServer := grpc.NewServer(append(methods.ServerOptions(0), observability.GRPCServerOption())...)
+	healthpb.RegisterHealthServer(grpcServer, admin.NewProbes(options.Index))
+	if service != nil {
+		egressadminpb.RegisterEgressAdminServer(grpcServer, service)
+	}
+	return adminServer{Server: grpcServer, service: service}, nil
+}
+
+// Shutdown ends the open watches, which would otherwise hold the drain until ctx ends, and stops
+// the server once the other calls have finished or ctx has ended.
+func (s adminServer) Shutdown(ctx context.Context) error {
+	if s.service != nil {
+		s.service.Drain()
+	}
+	graceful.Stop(ctx, s.Server)
+	return nil
 }

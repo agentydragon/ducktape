@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 )
 
 // Codex rust-v0.162.1 core/src/tools/code_mode/delegate.rs (CoreTurnHost::notify) injects a
@@ -18,7 +20,7 @@ import (
 const notificationTokenLimit = 12000
 
 // QueueNotification durably queues a non-empty notify() text for the active turn. It returns
-// ErrPrecondition when no turn is active; upstream then reports "no active turn" to the host.
+// protocol.ErrPrecondition when no turn is active; upstream then reports "no active turn" to the host.
 func (s *Store) QueueNotification(ctx context.Context, owner Owner, callID, cellID, text string) error {
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		conversation, err := lockOwnerHeader(ctx, tx, owner)
@@ -30,7 +32,7 @@ func (s *Store) QueueNotification(ctx context.Context, owner Owner, callID, cell
 			return err
 		}
 		if session.ActiveTurn == nil {
-			return ErrPrecondition
+			return protocol.ErrPrecondition
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO sampler_notification(conversation_id,call_id,cell_id,text) VALUES($1,$2,$3,$4)`,
 			conversation.ID, callID, cellID, text)
@@ -54,7 +56,7 @@ func (s *Store) DrainNotifications(ctx context.Context, owner Owner) (bool, erro
 			return err
 		}
 		if conversation.Pending != nil {
-			return ErrPrecondition
+			return protocol.ErrPrecondition
 		}
 		session, err := sessionForConversation(ctx, tx, conversation.ID)
 		if err != nil {
@@ -105,18 +107,19 @@ func (s *Store) settleNotifications(ctx context.Context, tx *sql.Tx, owner Owner
 			}
 			continue
 		}
-		item := ResponsesItem{
-			Type: ResponsesItemCustomToolOutput, CallID: notification.callID,
-			Output: []ResponsesContentPart{{Type: "input_text", Text: truncateMiddleWithTokenBudget(notification.text, notificationTokenLimit)}},
-		}
-		if err := s.recordEvidence(ctx, tx, owner, conversation, session, operationID, "notification", "recorded",
-			map[string]any{"cell_id": notification.cellID, "item": item}); err != nil {
+		call, err := conversation.Archive.FindCall(notification.callID)
+		if err != nil {
 			return false, err
 		}
-		conversation.Items = append(conversation.Items, item)
-		if conversation.ContextItems != nil {
-			conversation.ContextItems = append(conversation.ContextItems, item)
+		output := []protocol.ContentPart{{Type: "input_text", Text: truncateMiddleWithTokenBudget(notification.text, notificationTokenLimit)}}
+		if err := s.recordEvidence(ctx, tx, owner, conversation, session, operationID, "notification", "recorded",
+			map[string]any{"cell_id": notification.cellID, "call_id": notification.callID, "output": output}); err != nil {
+			return false, err
 		}
+		if err := conversation.appendToolResult(call, output); err != nil {
+			return false, err
+		}
+
 	}
 	return record && len(notifications) > 0, nil
 }

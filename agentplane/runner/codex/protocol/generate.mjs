@@ -1,10 +1,9 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { InputData, JSONSchemaInput, quicktype } from "quicktype-core";
 
-const [schemaPath, transportSchemaPath, outputPath] = process.argv.slice(2);
+const [schemaPath, outputPath] = process.argv.slice(2);
 const schema = JSON.parse(await readFile(schemaPath, "utf8"));
 const input = new JSONSchemaInput();
-const transportSchema = JSON.parse(await readFile(transportSchemaPath, "utf8"));
 // Select consumed protocol types; their fields and dependencies stay upstream-owned.
 const roots = [
   "InitializeParams",
@@ -28,8 +27,6 @@ for (const name of roots) {
   if (!schema.definitions[name]) throw new Error(`Missing Codex schema: ${name}`);
   properties[name] = { $ref: `#/definitions/${name}` };
 }
-if (!transportSchema.definitions.JSONRPCErrorError) throw new Error("Missing Codex JSON-RPC error schema");
-properties.RPCError = transportSchema.definitions.JSONRPCErrorError;
 
 for (const [name, kind] of [
   ["AgentMessageItem", "agentMessage"],

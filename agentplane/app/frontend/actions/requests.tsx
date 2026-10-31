@@ -3,7 +3,7 @@ import { IconCheck, IconX } from "../icons";
 import { createContext, type JSX, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 import { displayableError } from "../client";
-import type { StreamConnection } from "../live_stream";
+import type { StreamConnection } from "../stream_reader";
 import { useOptionalStreamStatus } from "../stream_status";
 import { ActionCall } from "./call";
 import {

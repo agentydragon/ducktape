@@ -21,7 +21,10 @@ Cluster and k3s templates select mTLS; standalone behavior tests may explicitly 
 paths, endpoints, providers, explicit
 environment allowlists, platform instructions, isolation settings, and the configurable Session
 reconciliation worker count (default 16). That worker count does not cap Session admission. The
-launch file contains only Sandbox identity and optional bootstrap source.
+optional `codex_readiness` object configures executor readiness, its probe windows, and app-server
+startup windows independently; omitted values retain their defaults. Each explicit value must be
+a positive integer millisecond count representable as a Go duration. The launch file contains only
+Sandbox identity and optional bootstrap source.
 
 The Pod exec-server companion serves HTTP `GET /healthz` in its existing process for Kubernetes
 liveness and readiness checks. Health checks inspect its Unix control socket within one second and

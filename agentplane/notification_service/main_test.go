@@ -168,13 +168,17 @@ func restart(t *testing.T, tune func(*config)) running {
 		).Build(),
 		Policies: apiConfig,
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
-	go func() { served <- serve(ctx, c, deps, listener) }()
+	go func() { served <- serve(ctx, c, deps, grpcListener, httpListener) }()
 	var result error
 	var received sync.Once
 	wait := func() error {
@@ -192,14 +196,14 @@ func restart(t *testing.T, tune func(*config)) running {
 		return wait()
 	}
 	t.Cleanup(func() { _ = stop() })
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := grpc.NewClient(grpcListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { connection.Close() })
 	return running{
 		notifications: notificationspb.NewNotificationsClient(connection), health: healthpb.NewHealthClient(connection),
-		url: "http://" + listener.Addr().String(), db: db, actionsToken: c.Actions.TokenFile, wait: wait, stop: stop,
+		url: "http://" + httpListener.Addr().String(), db: db, actionsToken: c.Actions.TokenFile, wait: wait, stop: stop,
 	}
 }
 

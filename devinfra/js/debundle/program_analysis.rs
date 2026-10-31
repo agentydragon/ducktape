@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use analysis::cross_module_values::resolve_primitive_binding_import_dependencies;
+use analysis::cross_module_purity::StableExportValue;
+use analysis::facts::abstract_domain::primitive::{NoBindings, evaluate};
+use analysis::facts::abstract_domain::value::PrimKinds;
 use analysis::facts::module_has_top_level_await;
 use swc_common::{Span, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
@@ -10,7 +12,8 @@ use artifact::FileRole;
 use artifact::reports::{
     ChunkAnalysisReport, ChunkCounts, ChunkFileRecord, ChunkModuleKind, ChunkRuntimeFacts,
     ExportAliasRecord, ImportRecord, ImportSpecifierKind, ImportSpecifierRecord, InteropUse,
-    InteropUseKind, KeptTopLevelDeclarationRecord, StaticModuleRequest, StaticModuleRequestMode,
+    InteropUseKind, KeptTopLevelDeclarationRecord, LoaderBinding, LoaderBindingUse,
+    LoaderBindingUses, NamespaceRequest, SitePhase, StaticModuleRequest, StaticModuleRequestMode,
     TopLevelDeclarationKind,
 };
 use binding_targets::{
@@ -21,6 +24,7 @@ use binding_targets::{
 use js_ast::{ParsedJsModule, SourceLineIndex, str_value};
 
 mod loader_phase;
+mod loader_reach;
 
 /// True when a specifier string is a relative module path that the
 /// pass-through emission rewriter could canonicalize (any `.` / `/`
@@ -87,6 +91,66 @@ fn is_host_require_member(member: &MemberExpr, unresolved_context: SyntaxContext
             Expr::Ident(ident) => ident.sym == *"globalThis" && ident.ctxt == unresolved_context,
             _ => false,
         }
+}
+
+/// A direct call of the global `eval` with one argument whose value folds to
+/// exactly `"require"`.
+fn is_eval_of_require(call: &CallExpr, unresolved_context: SyntaxContext) -> bool {
+    matches!(&call.callee, Callee::Expr(callee)
+        if matches!(callee.unwrap_parens(), Expr::Ident(id)
+            if id.sym == *"eval" && id.ctxt == unresolved_context))
+        && matches!(call.args.as_slice(), [arg]
+            if arg.spread.is_none() && fold_string(&arg.expr).as_deref() == Some("require"))
+}
+
+/// The value of a string expression built only from literals, `+` and
+/// `String.prototype.replace` with a literal pattern (a string, or the empty
+/// `/^/` regex, which prepends) and a replacement without `$` patterns.
+fn fold_string(expr: &Expr) -> Option<String> {
+    match expr.unwrap_parens() {
+        Expr::Lit(Lit::Str(value)) => Some(str_value(value)),
+        Expr::Tpl(tpl) if tpl.exprs.is_empty() => tpl
+            .quasis
+            .first()?
+            .cooked
+            .as_ref()
+            .map(|cooked| cooked.to_string_lossy().into_owned()),
+        Expr::Bin(bin) if bin.op == BinaryOp::Add => {
+            Some(fold_string(&bin.left)? + &fold_string(&bin.right)?)
+        }
+        Expr::Call(call) => {
+            let Callee::Expr(callee) = &call.callee else {
+                return None;
+            };
+            let Expr::Member(member) = callee.unwrap_parens() else {
+                return None;
+            };
+            if !member_is_named(member, "replace") {
+                return None;
+            }
+            let receiver = fold_string(&member.obj)?;
+            let [pattern, replacement] = call.args.as_slice() else {
+                return None;
+            };
+            if pattern.spread.is_some() || replacement.spread.is_some() {
+                return None;
+            }
+            let replacement = fold_string(&replacement.expr)?;
+            if replacement.contains('$') {
+                return None;
+            }
+            match pattern.expr.unwrap_parens() {
+                Expr::Lit(Lit::Regex(regex)) if &*regex.exp == "^" && regex.flags.is_empty() => {
+                    Some(replacement + &receiver)
+                }
+                pattern => {
+                    let pattern = fold_string(pattern)?;
+                    Some(receiver.replacen(&pattern, &replacement, 1))
+                }
+            }
+        }
+        _ => None,
+    }
 }
 
 fn is_import_meta_require_member(member: &MemberExpr) -> bool {
@@ -162,48 +226,93 @@ pub struct DeclarationRecord {
 }
 
 enum PrimitiveExportSource {
-    Bindings(BTreeSet<Id>),
+    Value(PrimitiveValue),
     ReExport { source: String, export: String },
 }
 
-/// Bindings whose value is needed to prove that a normally-completing
-/// expression returns a primitive. This is deliberately separate from purity:
-/// templates and operators can coerce objects and run user code while still
-/// producing a primitive result when they complete.
-fn primitive_value_requirements(expression: &Expr) -> Option<BTreeSet<Id>> {
-    let requirements = match expression.unwrap_parens() {
-        Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
-        | Expr::Tpl(_)
-        | Expr::Unary(_)
-        | Expr::Update(_) => return Some(BTreeSet::new()),
-        Expr::Ident(id) => return Some(BTreeSet::from([id.to_id()])),
-        Expr::Bin(binary) => match binary.op {
-            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing => {
-                let mut requirements = primitive_value_requirements(&binary.left)?;
-                requirements.extend(primitive_value_requirements(&binary.right)?);
-                requirements
+/// The primitive types an expression computes itself, and the bindings whose
+/// values it copies.
+struct PrimitiveValue {
+    kinds: PrimKinds,
+    copies: BTreeSet<Id>,
+}
+
+impl PrimitiveValue {
+    fn join(mut self, other: Self) -> Self {
+        self.kinds = self.kinds.union(other.kinds);
+        self.copies.extend(other.copies);
+        self
+    }
+}
+
+/// A normally-completing expression's value, when it is primitive given the
+/// bindings it copies. This is deliberately separate from purity: templates
+/// and operators can coerce objects and run user code while still producing a
+/// primitive result when they complete.
+fn primitive_value(expression: &Expr) -> Option<PrimitiveValue> {
+    match expression.unwrap_parens() {
+        Expr::Ident(id) => Some(PrimitiveValue {
+            kinds: PrimKinds::NONE,
+            copies: BTreeSet::from([id.to_id()]),
+        }),
+        Expr::Bin(binary)
+            if matches!(
+                binary.op,
+                BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
+            ) =>
+        {
+            Some(primitive_value(&binary.left)?.join(primitive_value(&binary.right)?))
+        }
+        Expr::Cond(cond) => Some(primitive_value(&cond.cons)?.join(primitive_value(&cond.alt)?)),
+        Expr::Seq(sequence) => primitive_value(sequence.exprs.last()?),
+        computed => evaluate(computed, &NoBindings).map(|kinds| PrimitiveValue {
+            kinds,
+            copies: BTreeSet::new(),
+        }),
+    }
+}
+
+/// Resolves stable local bindings to their types and the imports they copy.
+/// A binding copying an unstable binding, or reached again through a cycle,
+/// stays unknown.
+struct StableValueResolver<'a> {
+    bindings: &'a BTreeMap<Id, PrimitiveValue>,
+    imported_bindings: &'a BTreeMap<Id, String>,
+    resolved: BTreeMap<Id, Option<(PrimKinds, BTreeSet<String>)>>,
+}
+
+impl StableValueResolver<'_> {
+    fn resolve(&mut self, value: &PrimitiveValue) -> Option<(PrimKinds, BTreeSet<String>)> {
+        let mut kinds = value.kinds;
+        let mut imports = BTreeSet::new();
+        for copy in &value.copies {
+            if let Some(local) = self.imported_bindings.get(copy) {
+                imports.insert(local.clone());
+                continue;
             }
-            _ => return Some(BTreeSet::new()),
-        },
-        Expr::Cond(cond) => {
-            let mut requirements = primitive_value_requirements(&cond.cons)?;
-            requirements.extend(primitive_value_requirements(&cond.alt)?);
-            requirements
+            let (copied, copied_imports) = self.resolve_binding(copy)?;
+            kinds = kinds.union(copied);
+            imports.extend(copied_imports);
         }
-        Expr::Seq(sequence) => {
-            return sequence
-                .exprs
-                .last()
-                .and_then(|last| primitive_value_requirements(last));
+        Some((kinds, imports))
+    }
+
+    fn resolve_binding(&mut self, id: &Id) -> Option<(PrimKinds, BTreeSet<String>)> {
+        if let Some(resolved) = self.resolved.get(id) {
+            return resolved.clone();
         }
-        _ => return None,
-    };
-    Some(requirements)
+        // Visiting marks the binding unknown, so a cycle resolves to unknown.
+        self.resolved.insert(id.clone(), None);
+        let value = self.bindings.get(id)?;
+        let resolved = self.resolve(value);
+        self.resolved.insert(id.clone(), resolved.clone());
+        resolved
+    }
 }
 
 fn collect_primitive_export_candidates(
     item: &ModuleItem,
-    bindings: &mut BTreeMap<Id, BTreeSet<Id>>,
+    bindings: &mut BTreeMap<Id, PrimitiveValue>,
     exports: &mut BTreeMap<String, Vec<Option<PrimitiveExportSource>>>,
 ) {
     let declaration = match item {
@@ -217,19 +326,26 @@ fn collect_primitive_export_candidates(
         for decl in &var.decls {
             if let Pat::Ident(id) = &decl.name
                 && let Some(initializer) = decl.init.as_deref()
-                && let Some(requirements) = primitive_value_requirements(initializer)
+                && let Some(mut value) = primitive_value(initializer)
             {
-                bindings.insert(id.id.to_id(), requirements);
+                // A `var` read before its initializer runs, including by an
+                // importer in a module cycle, is `undefined`.
+                if var.kind == VarDeclKind::Var {
+                    value.kinds = value.kinds.union(PrimKinds::UNDEFINED);
+                }
+                bindings.insert(id.id.to_id(), value);
             }
         }
     }
     match item {
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => {
             for id in binding_targets::declaration_ids(&decl.decl) {
-                exports
-                    .entry(id.0.to_string())
-                    .or_default()
-                    .push(Some(PrimitiveExportSource::Bindings(BTreeSet::from([id]))));
+                exports.entry(id.0.to_string()).or_default().push(Some(
+                    PrimitiveExportSource::Value(PrimitiveValue {
+                        kinds: PrimKinds::NONE,
+                        copies: BTreeSet::from([id]),
+                    }),
+                ));
             }
         }
         ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) => {
@@ -256,9 +372,10 @@ fn collect_primitive_export_candidates(
                         } else {
                             match &specifier.orig {
                                 ModuleExportName::Ident(id) => {
-                                    Some(PrimitiveExportSource::Bindings(BTreeSet::from([
-                                        id.to_id()
-                                    ])))
+                                    Some(PrimitiveExportSource::Value(PrimitiveValue {
+                                        kinds: PrimKinds::NONE,
+                                        copies: BTreeSet::from([id.to_id()]),
+                                    }))
                                 }
                                 _ => None,
                             }
@@ -289,8 +406,7 @@ fn collect_primitive_export_candidates(
             }
         }
         ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(default)) => {
-            let source =
-                primitive_value_requirements(&default.expr).map(PrimitiveExportSource::Bindings);
+            let source = primitive_value(&default.expr).map(PrimitiveExportSource::Value);
             exports
                 .entry("default".to_string())
                 .or_default()
@@ -301,23 +417,6 @@ fn collect_primitive_export_candidates(
         }
         _ => {}
     }
-}
-
-fn resolve_primitive_binding_requirements(
-    requirements: &BTreeSet<Id>,
-    imported_bindings: &BTreeMap<Id, String>,
-    stable_bindings: &BTreeMap<Id, BTreeSet<String>>,
-) -> Option<BTreeSet<String>> {
-    let mut imports = BTreeSet::new();
-    for requirement in requirements {
-        if let Some(local) = imported_bindings.get(requirement) {
-            imports.insert(local.clone());
-        } else {
-            let local_imports = stable_bindings.get(requirement)?;
-            imports.extend(local_imports.iter().cloned());
-        }
-    }
-    Some(imports)
 }
 
 /// If `item` is a top-level declaration of a kind we anchor extraction on,
@@ -401,13 +500,70 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         }
     }
 
+    let census_sites = interop_uses
+        .iter()
+        .map(|(_, span, _, _)| loader_phase::site_key(*span))
+        .collect();
+    let reach = loader_reach::loader_reach(&parsed.module, &census_sites, dynamic_scope);
     let suspended = loader_phase::mandatorily_suspended_sites(
         &parsed.module,
-        &interop_uses
-            .iter()
-            .map(|(_, span, _, _)| loader_phase::site_key(*span))
+        &census_sites
+            .union(&loader_reach::tracked_use_keys(&reach))
+            .copied()
             .collect(),
     );
+    let phase = |key: loader_phase::SiteKey| {
+        if reach.unreachable.contains(&key) {
+            SitePhase::Unreachable
+        } else if suspended.contains(&key) {
+            SitePhase::MandatorilySuspended
+        } else if reach.top_level.contains(&key) {
+            SitePhase::ModuleBody
+        } else {
+            SitePhase::Synchronous
+        }
+    };
+    let key_line = |(lo, hi): loader_phase::SiteKey| {
+        line_index.line_for_span(Span::new(swc_common::BytePos(lo), swc_common::BytePos(hi)))
+    };
+    let loader_bindings = reach
+        .tracked
+        .into_iter()
+        .map(|tracked| LoaderBindingUses {
+            binding: match tracked.binding {
+                loader_reach::TrackedBinding::Import { source, imported } => {
+                    LoaderBinding::Import { source, imported }
+                }
+                loader_reach::TrackedBinding::LoaderAlias {
+                    definition: (lo, hi),
+                } => LoaderBinding::LoaderAlias {
+                    definition: Span::new(swc_common::BytePos(lo), swc_common::BytePos(hi)),
+                    exported_as: tracked.exported_as,
+                },
+                loader_reach::TrackedBinding::CreatedLoader { .. } => LoaderBinding::CreatedLoader,
+            },
+            uses: tracked
+                .uses
+                .into_iter()
+                .map(|tracked_use| LoaderBindingUse {
+                    item_index: tracked_use.item_index,
+                    line: key_line(tracked_use.key),
+                    literal: tracked_use.literal,
+                    call: tracked_use.call,
+                    consumer: tracked_use.consumer,
+                    phase: phase(tracked_use.key),
+                })
+                .collect(),
+        })
+        .collect();
+    let namespace_requests = reach
+        .namespace_sources
+        .into_iter()
+        .map(|(item_index, specifier)| NamespaceRequest {
+            item_index,
+            specifier,
+        })
+        .collect();
     let mut runtime_facts = ChunkRuntimeFacts {
         module_kind: if parsed.module.body.is_empty() {
             ChunkModuleKind::EmptySource
@@ -429,21 +585,19 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                 span,
                 kind,
                 specifier,
-                mandatory_suspension: suspended.contains(&loader_phase::site_key(span)),
+                phase: phase(loader_phase::site_key(span)),
             })
             .collect(),
+        loader_bindings,
+        namespace_requests,
         ..ChunkRuntimeFacts::default()
     };
 
-    let mut primitive_binding_requirements = BTreeMap::new();
+    let mut primitive_bindings = BTreeMap::new();
     let mut primitive_imported_bindings = BTreeMap::new();
     let mut primitive_exports = BTreeMap::<String, Vec<Option<PrimitiveExportSource>>>::new();
     for item in &parsed.module.body {
-        collect_primitive_export_candidates(
-            item,
-            &mut primitive_binding_requirements,
-            &mut primitive_exports,
-        );
+        collect_primitive_export_candidates(item, &mut primitive_bindings, &mut primitive_exports);
         if let ModuleItem::ModuleDecl(ModuleDecl::Import(decl)) = item {
             if import_decl_has_runtime_request(decl) {
                 runtime_facts.static_requests.push(StaticModuleRequest {
@@ -565,44 +719,34 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         && !runtime_facts.has_own_cjs_export_surface
         && !dynamic_scope
     {
-        let stable_primitive_bindings = primitive_binding_requirements
+        let stable_bindings = primitive_bindings
             .into_iter()
             .filter(|(id, _)| {
                 binding_declarations.get(id) == Some(&1) && !binding_writes.contains(id)
             })
             .collect::<BTreeMap<_, _>>();
-        let stable_binding_import_dependencies = resolve_primitive_binding_import_dependencies(
-            stable_primitive_bindings,
-            &primitive_imported_bindings,
-        );
-
+        let mut resolver = StableValueResolver {
+            bindings: &stable_bindings,
+            imported_bindings: &primitive_imported_bindings,
+            resolved: BTreeMap::new(),
+        };
         for (name, sources) in primitive_exports {
             let [Some(source)] = sources.as_slice() else {
                 continue;
             };
-            match source {
-                PrimitiveExportSource::Bindings(requirements) => {
-                    let Some(imports) = resolve_primitive_binding_requirements(
-                        requirements,
-                        &primitive_imported_bindings,
-                        &stable_binding_import_dependencies,
-                    ) else {
+            let value = match source {
+                PrimitiveExportSource::Value(value) => {
+                    let Some((kinds, imports)) = resolver.resolve(value) else {
                         continue;
                     };
-                    if imports.is_empty() {
-                        runtime_facts.stable_primitive_exports.insert(name);
-                    } else {
-                        runtime_facts
-                            .stable_primitive_export_import_dependencies
-                            .insert(name, imports);
-                    }
+                    StableExportValue::Local { kinds, imports }
                 }
-                PrimitiveExportSource::ReExport { source, export } => {
-                    runtime_facts
-                        .stable_primitive_export_reexports
-                        .insert(name, (source.clone(), export.clone()));
-                }
-            }
+                PrimitiveExportSource::ReExport { source, export } => StableExportValue::ReExport {
+                    source: source.clone(),
+                    export: export.clone(),
+                },
+            };
+            runtime_facts.stable_export_values.insert(name, value);
         }
     }
 
@@ -756,6 +900,9 @@ struct ModuleScanVisitor {
     item_index: usize,
     interop_uses: Vec<(usize, Span, InteropUseKind, Option<String>)>,
     direct_call_members: BTreeSet<u32>,
+    /// Direct `eval` calls already classified as the callee of an
+    /// `EvaluatedRequire*Call`.
+    evaluated_require_callees: BTreeSet<u32>,
     unresolved_context: SyntaxContext,
     binding_declarations: BTreeMap<Id, usize>,
     binding_writes: BTreeSet<Id>,
@@ -864,9 +1011,44 @@ impl Visit for ModuleScanVisitor {
             self.interop_uses
                 .push((self.item_index, node.span, kind, literal));
         }
+        if let Callee::Expr(callee) = &node.callee
+            && let Expr::Call(inner) = callee.unwrap_parens()
+            && is_eval_of_require(inner, self.unresolved_context)
+        {
+            let literal = match node.args.as_slice() {
+                [arg] if arg.spread.is_none() => match arg.expr.unwrap_parens() {
+                    Expr::Lit(Lit::Str(value)) => Some(str_value(value)),
+                    _ => None,
+                },
+                _ => None,
+            };
+            let kind = if literal.is_some() {
+                InteropUseKind::EvaluatedRequireLiteralCall
+            } else {
+                InteropUseKind::EvaluatedRequireDynamicCall
+            };
+            self.evaluated_require_callees.insert(inner.span.lo.0);
+            self.has_cjs_interop = true;
+            self.interop_uses
+                .push((self.item_index, node.span, kind, literal));
+        }
         if matches!(&node.callee, Callee::Expr(expr) if matches!(expr.unwrap_parens(), Expr::Ident(id) if id.sym.as_ref() == "eval"))
         {
-            self.dynamic_scope = true;
+            // Direct eval of code that is exactly `require` reads that binding
+            // and nothing else; any other code may read or write any binding.
+            if is_eval_of_require(node, self.unresolved_context) {
+                self.has_cjs_interop = true;
+                if !self.evaluated_require_callees.contains(&node.span.lo.0) {
+                    self.interop_uses.push((
+                        self.item_index,
+                        node.span,
+                        InteropUseKind::UnboundRequire,
+                        None,
+                    ));
+                }
+            } else {
+                self.dynamic_scope = true;
+            }
         }
         if matches!(node.callee, Callee::Import(_)) {
             self.dynamic_import_count += 1;
@@ -989,5 +1171,39 @@ impl Visit for ModuleScanVisitor {
             self.has_rewritable_specifier = true;
         }
         node.visit_children_with(self);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use swc_common::GLOBALS;
+
+    #[test]
+    fn folds_constant_string_expressions() {
+        for (source, expected) in [
+            (r#""require""#, Some("require")),
+            (r#""quire".replace(/^/, "re")"#, Some("require")),
+            (r#""re" + "quire""#, Some("require")),
+            (r#""rexquire".replace("x", "")"#, Some("require")),
+            ("`require`", Some("require")),
+            (r#""quire".replace(/^/g, "re")"#, None),
+            (r#""quire".replace(/q/, "re")"#, None),
+            (r#""quire".replace(/^/, "$&")"#, None),
+            ("name", None),
+        ] {
+            GLOBALS.set(&Default::default(), || {
+                let parsed =
+                    js_ast::parse_js_module("fixture.js", &format!("({source});")).expect("parse");
+                let ModuleItem::Stmt(Stmt::Expr(statement)) = &parsed.module.body[0] else {
+                    panic!("expression statement");
+                };
+                assert_eq!(
+                    fold_string(&statement.expr).as_deref(),
+                    expected,
+                    "{source}"
+                );
+            });
+        }
     }
 }

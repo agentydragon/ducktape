@@ -338,12 +338,18 @@ class ThreadPage(BaseModel):
     next_page_token: str | None
 
 
+class KindFailure(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    error: str
+    since: datetime
+
+
 class WatchHealth(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    fresh: bool
-    stale_after_seconds: float
-    refreshed_seconds_ago: dict[str, float]
+    healthy: bool
+    failing: dict[str, KindFailure]
 
 
 class SandboxesSnapshot(BaseModel):

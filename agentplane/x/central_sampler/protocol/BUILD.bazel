@@ -1,0 +1,24 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//agentplane/x/central_sampler:__subpackages__"])
+
+go_library(
+    name = "protocol",
+    srcs = [
+        "content.go",
+        "context.go",
+        "errors.go",
+        "evidence.go",
+        "instructions.go",
+        "json.go",
+        "status.go",
+        "tool_definitions.go",
+        "tool_invocation.go",
+        "tool_surface.go",
+    ],
+    embedsrcs = ["base_instructions.txt"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol",
+    deps = [
+        "//agentplane/proto:event_go_proto",
+    ],
+)

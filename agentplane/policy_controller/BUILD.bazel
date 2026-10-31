@@ -16,11 +16,11 @@ go_library(
     ],
     deps = [
         "//agentplane/policy/api/v1alpha1",
+        "//agentplane/policy/client:applyconfiguration_api",
         "//agentplane/policy/client/apply",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_api//rbac/v1:rbac",
         "@io_k8s_apimachinery//pkg/api/errors",
-        "@io_k8s_apimachinery//pkg/api/meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
         "@io_k8s_apimachinery//pkg/runtime",

@@ -9,13 +9,16 @@ skill_package(
         skill_mapping(
             srcs = [
                 "SKILL.md",
+                "scripts/analyze_executions.py",
                 "scripts/attribution.py",
                 "scripts/checks.jq",
+                "scripts/collect.py",
                 "scripts/collect.sh",
                 "scripts/contention.jq",
                 "scripts/evidence.sh",
                 "scripts/gate_headroom.py",
                 "scripts/inspect.sh",
+                "scripts/snapshot_analysis.py",
                 "scripts/summarize.jq",
                 "scripts/test_costs.jq",
             ],
@@ -69,6 +72,11 @@ jq(
 ]]
 
 py_library(
+    name = "analyze_executions",
+    srcs = ["scripts/analyze_executions.py"],
+)
+
+py_library(
     name = "artifact_tools",
     srcs = ["scripts/attribution.py"],
 )
@@ -76,6 +84,27 @@ py_library(
 py_library(
     name = "gate_headroom",
     srcs = ["scripts/gate_headroom.py"],
+)
+
+py_library(
+    name = "snapshot_analysis",
+    srcs = ["scripts/snapshot_analysis.py"],
+)
+
+py_library(
+    name = "collect",
+    srcs = ["scripts/collect.py"],
+)
+
+py_test(
+    name = "test_analyze_executions",
+    srcs = ["test_analyze_executions.py"],
+    deps = [
+        ":analyze_executions",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(
@@ -94,6 +123,28 @@ py_test(
     srcs = ["test_gate_headroom.py"],
     deps = [
         ":gate_headroom",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_snapshot_analysis",
+    srcs = ["test_snapshot_analysis.py"],
+    deps = [
+        ":snapshot_analysis",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_collect",
+    srcs = ["test_collect.py"],
+    deps = [
+        ":collect",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

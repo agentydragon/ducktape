@@ -28,10 +28,9 @@ const (
 	RunnerTrustBundleName = "cluster-internal-ca-bundle"
 	RunnerTrustBundleKey  = "ca-certificates.crt"
 
+	// A VM's active credential and the VMI accepted for it. The Sandbox's binding is in
+	// status.runnerCredential.
 	RunnerCredentialIDAnnotation         = "agentplane.allegedly.works/runner-credential"
-	RunnerCredentialKindAnnotation       = "agentplane.allegedly.works/runner-credential-kind"
-	RunnerCredentialAcceptedIDAnnotation = "agentplane.allegedly.works/runner-credential-accepted-id"
-	RunnerCredentialPodUIDAnnotation     = "agentplane.allegedly.works/runner-credential-pod-uid"
 	RunnerCredentialVMIUIDAnnotation     = "agentplane.allegedly.works/runner-credential-vmi-uid"
 	RunnerCredentialLastVMIUIDAnnotation = "agentplane.allegedly.works/runner-credential-last-vmi-uid"
 
@@ -45,6 +44,21 @@ const (
 
 var runnerCertificateGVK = schema.GroupVersionKind{
 	Group: runnerCertificateGroup, Version: runnerCertificateVersion, Kind: runnerCertificateKind,
+}
+
+// runnerCredential is the Sandbox's binding, or the zero binding if none was issued.
+func runnerCredential(sandbox *sandboxapi.Sandbox) sandboxapi.RunnerCredential {
+	if binding := sandbox.Status.RunnerCredential; binding != nil {
+		return *binding
+	}
+	return sandboxapi.RunnerCredential{}
+}
+
+// setRunnerCredential writes the binding through the status subresource, which only the controller
+// may write.
+func (r *Reconciler) setRunnerCredential(ctx context.Context, sandbox *sandboxapi.Sandbox, binding sandboxapi.RunnerCredential) error {
+	sandbox.Status.RunnerCredential = &binding
+	return r.Status().Update(ctx, sandbox)
 }
 
 // RunnerCertificateSecretName is the unique Secret name for one credential generation. The
@@ -78,12 +92,11 @@ func (r *Reconciler) ensureRunnerCredential(ctx context.Context, sandbox *sandbo
 			w.runnerIncarnationPublished = previouslyPublishedRunnerIncarnation(sandbox, w)
 			return w, &unready{reason: "RunnerCredentialMissing", message: fmt.Sprintf("Pod %s has no controller-issued runner credential", w.pod.Name)}, nil
 		}
-		boundID := sandbox.Annotations[RunnerCredentialIDAnnotation]
-		boundPodUID := sandbox.Annotations[RunnerCredentialPodUIDAnnotation]
+		bound := runnerCredential(sandbox)
 		if w.pod.UID == "" {
 			return w, credentialPending("RunnerCredentialPending", fmt.Sprintf("Pod %s has no assigned UID yet", w.pod.Name)), nil
 		}
-		if boundID != id || (boundPodUID != "" && boundPodUID != string(w.pod.UID)) {
+		if bound.ID != id || (bound.PodUID != "" && bound.PodUID != string(w.pod.UID)) {
 			// Never bind an existing certificate generation to another Pod UID. A replacement with
 			// a stale template label is deleted; once it is gone, the no-Pod path assigns a fresh ID
 			// and Certificate before creating its replacement.
@@ -92,12 +105,9 @@ func (r *Reconciler) ensureRunnerCredential(ctx context.Context, sandbox *sandbo
 			}
 			return w, &unready{reason: "RunnerCredentialMismatch", message: fmt.Sprintf("Pod %s has a stale runner credential and is being replaced", w.pod.Name)}, nil
 		}
-		if boundPodUID == "" {
-			ensureAnnotations(sandbox)
-			sandbox.Annotations[RunnerCredentialKindAnnotation] = "pod"
-			sandbox.Annotations[RunnerCredentialPodUIDAnnotation] = string(w.pod.UID)
-			sandbox.Annotations[RunnerCredentialAcceptedIDAnnotation] = id
-			if err := r.Update(ctx, sandbox); err != nil {
+		if bound.PodUID == "" {
+			bound.Kind, bound.PodUID, bound.AcceptedID = sandboxapi.RunnerCredentialKindPod, string(w.pod.UID), id
+			if err := r.setRunnerCredential(ctx, sandbox, bound); err != nil {
 				return w, nil, err
 			}
 		}
@@ -120,26 +130,21 @@ func (r *Reconciler) ensureRunnerCredential(ctx context.Context, sandbox *sandbo
 	if err != nil || blocked != nil {
 		return w, blocked, err
 	}
-	kind := "pod"
+	kind := sandboxapi.RunnerCredentialKindPod
 	if template.Spec.VM != nil {
-		kind = "vm"
+		kind = sandboxapi.RunnerCredentialKindVM
 	}
-	id := sandbox.Annotations[RunnerCredentialIDAnnotation]
-	previousKind := sandbox.Annotations[RunnerCredentialKindAnnotation]
-	boundPodUID := sandbox.Annotations[RunnerCredentialPodUIDAnnotation]
-	lastVMIUID := sandbox.Annotations[RunnerCredentialLastVMIUIDAnnotation]
-	acceptedID := sandbox.Annotations[RunnerCredentialAcceptedIDAnnotation]
-	if !validRunnerCredentialID(id) || previousKind != kind ||
-		(kind == "pod" && boundPodUID != "") || (kind == "vm" && lastVMIUID != "" && id == acceptedID) {
+	bound := runnerCredential(sandbox)
+	id := bound.ID
+	if !validRunnerCredentialID(id) || bound.Kind != kind ||
+		(kind == sandboxapi.RunnerCredentialKindPod && bound.PodUID != "") ||
+		(kind == sandboxapi.RunnerCredentialKindVM && bound.LastVMIUID != "" && id == bound.AcceptedID) {
 		id, err = newRunnerCredentialID()
 		if err != nil {
 			return w, nil, err
 		}
-		ensureAnnotations(sandbox)
-		sandbox.Annotations[RunnerCredentialIDAnnotation] = id
-		sandbox.Annotations[RunnerCredentialKindAnnotation] = kind
-		delete(sandbox.Annotations, RunnerCredentialPodUIDAnnotation)
-		if err := r.Update(ctx, sandbox); err != nil {
+		bound.ID, bound.Kind, bound.PodUID = id, kind, ""
+		if err := r.setRunnerCredential(ctx, sandbox, bound); err != nil {
 			return w, nil, err
 		}
 	}
@@ -188,7 +193,7 @@ func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sand
 		if err := r.Update(ctx, vm); err != nil {
 			return w, nil, err
 		}
-		if err := r.setSandboxRunnerCredential(ctx, sandbox, id, "vm"); err != nil {
+		if err := r.setVMRunnerCredential(ctx, sandbox, id); err != nil {
 			return w, nil, err
 		}
 		expectedVMIUID = ""
@@ -211,7 +216,7 @@ func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sand
 		if err := r.Update(ctx, vm); err != nil {
 			return w, nil, err
 		}
-		if err := r.setSandboxRunnerCredential(ctx, sandbox, id, "vm"); err != nil {
+		if err := r.setVMRunnerCredential(ctx, sandbox, id); err != nil {
 			return w, nil, err
 		}
 		expectedVMIUID = ""
@@ -255,7 +260,7 @@ func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sand
 			if err := r.Update(ctx, vm); err != nil {
 				return w, nil, err
 			}
-			if err := r.setSandboxRunnerCredential(ctx, sandbox, id, "vm"); err != nil {
+			if err := r.setVMRunnerCredential(ctx, sandbox, id); err != nil {
 				return w, nil, err
 			}
 			if certificateGate, err = r.ensureRunnerCertificate(ctx, sandbox, id); err != nil || certificateGate != nil {
@@ -292,7 +297,7 @@ func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sand
 	if w.vmi != nil && expectedVMIUID == string(w.vmi.UID) && w.vmi.Labels[sandboxapi.RunnerCredentialLabel] == id {
 		w.runnerCredentialAccepted = true
 		w.runnerIncarnationPublished = true
-		if sandbox.Annotations[RunnerCredentialLastVMIUIDAnnotation] != string(w.vmi.UID) {
+		if runnerCredential(sandbox).LastVMIUID != string(w.vmi.UID) {
 			if err := r.setSandboxLastVMIUID(ctx, sandbox, id, string(w.vmi.UID)); err != nil {
 				return w, nil, err
 			}
@@ -310,21 +315,16 @@ func kubevirtRunStrategyHalted() kubevirtv1.VirtualMachineRunStrategy {
 	return kubevirtv1.RunStrategyHalted
 }
 
-func (r *Reconciler) setSandboxRunnerCredential(ctx context.Context, sandbox *sandboxapi.Sandbox, id, kind string) error {
-	ensureAnnotations(sandbox)
-	sandbox.Annotations[RunnerCredentialIDAnnotation] = id
-	sandbox.Annotations[RunnerCredentialKindAnnotation] = kind
-	delete(sandbox.Annotations, RunnerCredentialPodUIDAnnotation)
-	return r.Update(ctx, sandbox)
+func (r *Reconciler) setVMRunnerCredential(ctx context.Context, sandbox *sandboxapi.Sandbox, id string) error {
+	bound := runnerCredential(sandbox)
+	bound.ID, bound.Kind, bound.PodUID = id, sandboxapi.RunnerCredentialKindVM, ""
+	return r.setRunnerCredential(ctx, sandbox, bound)
 }
 
 func (r *Reconciler) setSandboxLastVMIUID(ctx context.Context, sandbox *sandboxapi.Sandbox, id, vmiUID string) error {
-	ensureAnnotations(sandbox)
-	sandbox.Annotations[RunnerCredentialIDAnnotation] = id
-	sandbox.Annotations[RunnerCredentialKindAnnotation] = "vm"
-	sandbox.Annotations[RunnerCredentialLastVMIUIDAnnotation] = vmiUID
-	sandbox.Annotations[RunnerCredentialAcceptedIDAnnotation] = id
-	return r.Update(ctx, sandbox)
+	bound := runnerCredential(sandbox)
+	bound.ID, bound.Kind, bound.LastVMIUID, bound.AcceptedID = id, sandboxapi.RunnerCredentialKindVM, vmiUID, id
+	return r.setRunnerCredential(ctx, sandbox, bound)
 }
 
 func (r *Reconciler) ensureRunnerCertificate(ctx context.Context, sandbox *sandboxapi.Sandbox, credentialID string) (*unready, error) {

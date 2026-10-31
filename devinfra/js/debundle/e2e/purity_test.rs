@@ -140,11 +140,10 @@ export { userSchema, productSchema, orderSchema };
 }
 
 #[test]
-#[ignore = "blocked on a RegExp entry in the Expr::New whitelist: Set/Map array-literal \
-            forms landed (PURE_BUILTIN_NEW_ARRAY_ITERABLE; see the new_map / new_set / \
-            new_map_with_array_of_pure_pairs tests below), but `new RegExp(\"a+\")` still \
-            classifies UnknownNew; the entry needs a static ECMA-262 pattern validator first \
-            (see PURE_BUILTIN_NEW_STRING_LITERAL_ARG)"]
+#[ignore = "blocked on RegExp admission: Set/Map array-literal forms landed (the Set/Map \
+            builtin rows; see the new_map / new_set / new_map_with_array_of_pure_pairs tests \
+            below), but `new RegExp(\"a+\")` still classifies UnknownNew; its row throws on \
+            pattern values until a static ECMA-262 pattern validator exists"]
 fn inferred_pure_collection_constructors_with_literal_args_emit_no_s_cycle() {
     // `new Set([...])`, `new Map([...])`, `new RegExp("...")` with
     // literal-only args are pure by built-in catalogue. Set/Map
@@ -660,8 +659,8 @@ export { A, B, C, PureBox };
 
 // `new Map()`/`Set()`/`WeakMap()`/`WeakSet()`/`Array()` allocate
 // the fresh container and return — no iterator protocol, no
-// user-code getters. Same admission contract as
-// `PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS` / `PURE_GLOBAL_CALLS`.
+// user-code getters. Same admission contract as every builtin
+// summary row.
 // Also covers the array-literal-iterable form for `Set`/`Map`:
 // built-in Array iterator + primitive-key Set.add/Map.set fire
 // no user code, so an Array-literal arg with all-Pure
@@ -823,7 +822,7 @@ export { Hidden, after };
 // boolean, null, bigint) the `ToString` step runs no user code,
 // so the call has no observable side effects beyond producing a
 // fresh symbol primitive. Same admission contract as the
-// existing `PURE_GLOBAL_CALLS` whitelist (`Boolean`).
+// `Boolean` row.
 //
 // Without this rule, the classifier returns `Purity::Unknown`
 // for any `Symbol(...)` call, the declarator is flagged

@@ -6,7 +6,8 @@ import type { Decision } from "./client";
 import { liveEgressDecisionsUrl, type DecisionsSnapshot } from "./live";
 import { TimeAgo } from "../time_ago";
 import { type DecisionGroup, groupDecisions } from "./decision_groups";
-import { followStream, type StreamConnection } from "../live_stream";
+import { followStream } from "../live_stream";
+import { type StreamConnection } from "../stream_reader";
 import { useStreamStatus } from "../stream_status";
 
 /** The groups whose requests are listed, comma-separated; a group key has no comma in it. */

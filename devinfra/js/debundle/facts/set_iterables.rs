@@ -9,6 +9,7 @@ use crate::analysis_inputs::{
     NativeInputKind, NativeOperationInputEvidence, ProofDependencies, ResolvedNativeOperationInput,
     StableSetIterableUse,
 };
+use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use anyhow::{Result, bail};
@@ -419,7 +420,8 @@ fn proven_static_member_sets(
                             return false;
                         };
                         let mut receiver_values = flow.values_of_expr(&member.obj).into_iter();
-                        let Some(ValueOrigin::Object(object)) = receiver_values.next() else {
+                        let Some(Value::Alloc(Kind::Object, object)) = receiver_values.next()
+                        else {
                             return false;
                         };
                         receiver_values.next().is_none()
@@ -563,16 +565,20 @@ impl Visit for ArrayUseScanner<'_> {
 mod tests {
     use super::*;
     use crate::facts::{compute_shadowed_globals, top_level_item_views};
-    use crate::purity::collect_plain_data_bindings;
     use raw_js_test_support::parse;
 
     fn proves_only_new(src: &str) -> bool {
         let module = parse(src);
         let body = top_level_item_views(&module.body);
         let shadowed = compute_shadowed_globals(&body);
-        let candidate_roots = crate::purity::plain_data_candidate_roots(&body);
-        let flow = ChunkValueFlow::analyze_with_candidates(&body, &candidate_roots);
-        let plain_data = collect_plain_data_bindings(&body, &shadowed, &flow);
+        let flow = ChunkValueFlow::analyze_with_candidates(
+            &body,
+            &crate::facts::abstract_domain::heap::tracked_allocation_roots(&body),
+        );
+        let plain_data =
+            crate::facts::abstract_domain::heap::ChunkHeap::analyze(&body, &shadowed, &flow, None)
+                .plain_data_bindings()
+                .bindings;
         let proof = SetIterableShapes::analyze(
             &body,
             &shadowed,

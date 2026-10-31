@@ -9,6 +9,7 @@ use super::value_model::{
     ordered_own_property_names,
 };
 use crate::analysis_inputs::ProofDependencies;
+use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::semantic_inference::{NativePremise, SemanticFact, SemanticFacts, SemanticKey};
 use crate::reports::schema::{InferenceRule, InferenceUse};
 use std::collections::{BTreeMap, BTreeSet};
@@ -188,7 +189,7 @@ pub(super) fn infer_own_property_projection(
     let source_is_exact_object = source_values.len() == 1
         && matches!(
             source_values.first(),
-            Some(AbstractValue::Origin(crate::facts::ValueOrigin::Object(object)))
+            Some(AbstractValue::Value(Value::Alloc(Kind::Object, object)))
                 if *object == source_object
         );
     if !source_is_exact_object || !valid_shape(shape) || tainted {
@@ -277,8 +278,8 @@ mod tests {
     use crate::facts::abstract_domain::integrity::{
         IntegrityFlags, IntrinsicSlot, PrototypeWrites,
     };
+    use crate::facts::abstract_domain::value::{Kind, Value};
     use crate::facts::semantic_inference::{SemanticFacts, native_premise};
-    use crate::facts::value_flow::ValueOrigin;
     use crate::reports::schema::InferenceRule;
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -301,15 +302,17 @@ mod tests {
     #[test]
     fn ordinary_projection_has_no_native_call_premise() {
         let source_object = 7;
-        let source_values =
-            Values::from([AbstractValue::Origin(ValueOrigin::Object(source_object))]);
+        let source_values = Values::from([AbstractValue::Value(Value::Alloc(
+            Kind::Object,
+            source_object,
+        ))]);
         let shape = OwnPropertyShape {
             properties: BTreeMap::from([("field".to_owned(), OwnPropertyDescriptorSyntax::Data)]),
             creation_order: vec!["field".to_owned()],
         };
         let prefix_properties = BTreeMap::from([(
             Some("field".to_owned()),
-            Values::from([AbstractValue::NonCallable]),
+            Values::from([AbstractValue::PRIMITIVE]),
         )]);
         let proof = infer_own_property_projection(
             source_object,
@@ -344,15 +347,17 @@ mod tests {
     #[test]
     fn native_projection_imports_the_call_premise_provenance() {
         let source_object = 7;
-        let source_values =
-            Values::from([AbstractValue::Origin(ValueOrigin::Object(source_object))]);
+        let source_values = Values::from([AbstractValue::Value(Value::Alloc(
+            Kind::Object,
+            source_object,
+        ))]);
         let shape = OwnPropertyShape {
             properties: BTreeMap::from([("field".to_owned(), OwnPropertyDescriptorSyntax::Data)]),
             creation_order: vec!["field".to_owned()],
         };
         let prefix_properties = BTreeMap::from([(
             Some("field".to_owned()),
-            Values::from([AbstractValue::NonCallable]),
+            Values::from([AbstractValue::PRIMITIVE]),
         )]);
         let value_input = ValueInputRef {
             defining_chunk: "native-census".to_owned(),
@@ -361,6 +366,7 @@ mod tests {
         let integrity = IntegrityFlags::new(
             true,
             BTreeSet::new(),
+            &[],
             ProofDependencies {
                 value_inputs: BTreeSet::from([value_input.clone()]),
                 ..Default::default()

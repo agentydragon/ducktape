@@ -86,7 +86,7 @@ func TestGetRulesTellsTheCallerHowToPresentEveryCredential(t *testing.T) {
 }
 
 func TestGetRulesNamesEachTargetByItsOwnFields(t *testing.T) {
-	index := policy.NewIndex(0)
+	index := policy.NewIndex()
 	index.Rules.PutPolicySet(policySet("all-targets", githubRule))
 	index.Rules.PutBinding(binding("sb", "b", "all-targets"))
 	index.PutCredential(resources.Credential{
@@ -127,7 +127,7 @@ func TestGetRulesNamesEachTargetByItsOwnFields(t *testing.T) {
 }
 
 func TestGetRulesKeepsAnEmptyListDistinctFromAnAbsentOne(t *testing.T) {
-	index := policy.NewIndex(0)
+	index := policy.NewIndex()
 	index.Rules.PutPolicySet(policySet("none", policyapi.Rule{
 		Type: resources.EgressRuleType, Hosts: []string{"a.example.com"}, Methods: []string{}, Paths: []string{},
 	}))

@@ -1,7 +1,7 @@
 """Load BuildBuddy evidence for release and image publication planners.
 
-Output files may be merged across invocations. Test verdicts must come from the
-exact test invocation, verified against the current GitHub push workflow.
+Output files come from normal build invocations. Test verdicts come separately
+from the race-enabled test invocation, verified against the current push workflow.
 """
 
 from __future__ import annotations
@@ -27,7 +27,8 @@ def load(
     if not invocation_ids:
         print("::warning::no bazel-ci invocation to read; retaining all publication candidates", file=sys.stderr)
     readable: dict[str, Invocation] = {}
-    for invocation_id in dict.fromkeys(invocation_ids):
+    requested_ids = [*invocation_ids, *([test_invocation_id] if test_invocation_id else [])]
+    for invocation_id in dict.fromkeys(requested_ids):
         try:
             readable[invocation_id] = read(invocation_id)
         except (BuildBuddyError, KeyError, TypeError, ValueError, IndexError) as error:
@@ -36,7 +37,11 @@ def load(
                 file=sys.stderr,
             )
     return PublicationEvidence(
-        outputs=merge(readable.values()),
+        outputs=merge(
+            readable[identifier]
+            for identifier in dict.fromkeys(invocation_ids)
+            if identifier != test_invocation_id and identifier in readable
+        ),
         tests=verify(
             readable.get(test_invocation_id),
             invocation_id_value=test_invocation_id,

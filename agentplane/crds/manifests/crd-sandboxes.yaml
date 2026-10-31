@@ -263,6 +263,52 @@ spec:
                 description: The UID of the last incarnation whose runner sealed every
                   Session, kept after it stops.
                 type: string
+              runnerCredential:
+                description: 'RunnerCredential binds the controller-issued runner
+                  credential to the incarnation it was issued
+
+                  for. It lives under status so writers of the Sandbox''s spec and
+                  metadata cannot rebind it.'
+                properties:
+                  acceptedId:
+                    description: AcceptedID is the generation of the last incarnation
+                      the controller accepted.
+                    pattern: ^[0-9a-f]{32}$
+                    type: string
+                  id:
+                    description: ID is the current credential generation.
+                    pattern: ^[0-9a-f]{32}$
+                    type: string
+                  kind:
+                    description: RunnerCredentialKind is the workload kind a runner
+                      credential generation was issued for.
+                    enum:
+                    - Pod
+                    - VM
+                    type: string
+                  lastVmiUid:
+                    description: LastVMIUID is the last VMI accepted for the Sandbox's
+                      VM.
+                    type: string
+                  podUid:
+                    description: PodUID is the Pod bound to ID; a Pod with ID's label
+                      and another UID is a stale replacement.
+                    type: string
+                required:
+                - id
+                - kind
+                type: object
+              stopStage:
+                description: 'StopStage is how far the controller has taken stopping
+                  the Sandbox''s workload; absent while
+
+                  the workload runs or starts. Readers dispatch on it; condition reasons
+                  are display only.'
+                enum:
+                - Quiescing
+                - Deleting
+                - Stopped
+                type: string
               suspendedAtWakeGeneration:
                 format: int64
                 minimum: 0

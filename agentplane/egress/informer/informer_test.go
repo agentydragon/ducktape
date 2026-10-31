@@ -1,16 +1,19 @@
 package informer
 
 import (
+	"errors"
+	"net/http"
+	"path"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/rest"
 )
 
 func TestIndexFollowsTheAPIServer(t *testing.T) {
@@ -35,7 +38,7 @@ func TestIndexFollowsTheAPIServer(t *testing.T) {
 		return result
 	}
 
-	f.eventually("the index to sync", func() bool { return f.index.Freshness.Available(time.Now()) })
+	f.eventually("the index to sync", f.index.Health.Available)
 	f.eventuallyDecides("test-cred", allowed("first-value"))
 	f.eventuallyDecides("test-cred-elsewhere", policy.Denied{Reason: decision.CredentialUnavailable})
 
@@ -50,26 +53,41 @@ func TestIndexFollowsTheAPIServer(t *testing.T) {
 	f.eventuallyDecides("test-cred", policy.Denied{Reason: decision.NoBinding})
 }
 
-// Credentials and Secrets are watched beside the rules, through clients that record their cycles.
-func TestEveryWatchedKindCompletesCycles(t *testing.T) {
-	f := newFixture(t)
-	f.start()
-	f.eventually("every kind to complete a watch period", func() bool {
-		status := f.index.Freshness.Status(time.Now())
-		for _, kind := range []reader.Kind{reader.PolicySets, reader.PolicyBindings, policy.Credentials, policy.Secrets} {
-			// A completed cycle is at least a period old by the time it is recorded; the seed is not.
-			if age, recorded := status.Ages[kind]; !recorded || age > time.Since(f.started)-watchPeriod/2 {
-				return false
+// Credentials and Secrets are watched beside the rules, through clients that record their health: a
+// kind whose requests fail keeps the index unavailable and is named as failing.
+func TestAFailingKindKeepsTheIndexUnavailable(t *testing.T) {
+	for _, kind := range []watchhealth.Kind{policy.Credentials, policy.Secrets} {
+		t.Run(string(kind), func(t *testing.T) {
+			f := newFixture(t)
+			base := rest.CopyConfig(apiConfig)
+			base.Wrap(func(next http.RoundTripper) http.RoundTripper {
+				return roundTripFunc(func(request *http.Request) (*http.Response, error) {
+					if watchhealth.Kind(path.Base(request.URL.Path)) == kind {
+						return nil, errors.New("test fault: the API server is unreachable")
+					}
+					return next.RoundTrip(request)
+				})
+			})
+			f.startThrough(base)
+			f.eventually(string(kind)+" to be reported failing", func() bool {
+				_, failing := f.index.Health.Status().Failing[kind]
+				return failing
+			})
+			if f.index.Health.Available() {
+				t.Errorf("the index is available while %s fails", kind)
 			}
-		}
-		return status.Synced && status.Available
-	})
+		})
+	}
 }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return f(request) }
 
 // The CRD schema rejects every credential this parser refuses, so only one stored under an older
 // schema can reach it.
 func TestACredentialThatDoesNotParseIsRemoved(t *testing.T) {
-	index := policy.NewIndex(time.Hour)
+	index := policy.NewIndex()
 	index.Rules.PutPolicySet(&policyapi.PolicySet{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-egress"},
 		Spec:       policyapi.PolicySetSpec{Rules: []policyapi.Rule{egressRule("test-cred")}},

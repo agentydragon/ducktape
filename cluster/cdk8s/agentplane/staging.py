@@ -32,7 +32,17 @@ from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.runner.configuration import GuestResources, ResourceLimits
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
-from agentplane.x.central_sampler.settings import ModelConfig, ResponsesConfig
+from agentplane.x.central_sampler.settings import (
+    AnthropicBlockBindingConfig,
+    AnthropicCompactionConfig,
+    AnthropicMessagesConfig,
+    AnthropicPromptCacheConfig,
+    AnthropicThinkingConfig,
+    AuthConfig,
+    ConnectionConfig,
+    ModelConfig,
+    ResponsesConfig,
+)
 from cluster.cdk8s import (
     agent_access_profiles,
     cilium,
@@ -89,11 +99,13 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
+from cluster.cdk8s.litellm.secrets import ANTHROPIC_API_KEY
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.public_coder import egress as public_coder_egress
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
 from model_catalog.catalog import Provider
 
@@ -116,11 +128,19 @@ _MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata.j
 
 # Official OpenAI routes use Responses Lite and freeform Code mode.
 # New third-party coding routes use standard Responses with JSON exec.
-_LITE_FREEFORM = ModelConfig(
-    reasoning_efforts={""}, api="responses", responses=ResponsesConfig(dialect="lite"), exec_encoding="freeform"
-)
-_STANDARD_JSON = ModelConfig(
-    reasoning_efforts={""}, api="responses", responses=ResponsesConfig(dialect="standard"), exec_encoding="json"
+_LITE_RESPONSES = ResponsesConfig(dialect="lite")
+_STANDARD_RESPONSES = ResponsesConfig(dialect="standard")
+_ANTHROPIC_MESSAGES = AnthropicMessagesConfig(
+    max_tokens=32_768,
+    thinking=AnthropicThinkingConfig(
+        type="adaptive", block_binding=AnthropicBlockBindingConfig(prefix_mismatch_behavior="error")
+    ),
+    prompt_cache=AnthropicPromptCacheConfig(ttl="5m"),
+    cache_diagnostics=True,
+    per_message_effort=True,
+    strict_tool_input=True,
+    eager_input_streaming=True,
+    compaction=AnthropicCompactionConfig(max_tokens=8_192, auto_compact_tokens=750_000),
 )
 
 
@@ -180,6 +200,7 @@ _WEB_PUSH_SECRET = "agentplane-staging-web-push-vapid"
 _WEB_PUSH_SECRET_FILE = "web-push-vapid.sops.yaml"
 _GITHUB_MCP_CLIENT_SECRET = "haku-console-github-mcp-client-credentials"
 _LITELLM_KEY_SECRET = "litellm-key-agentplane-staging"
+_ANTHROPIC_API_KEY_SECRET = "agentplane-staging-anthropic-api-key"
 _OIDC_SESSION_SECRET = "agentplane-staging-session-secret"
 _CONNECTION_SERVICE = mcp_edge.service(STAGING_NAMESPACE)
 # staging's one Pod execution environment, and the ducktape tools image it runs; `image-pins/` selects
@@ -398,13 +419,44 @@ ENV = Environment(
     ),
     central_sampler=CentralSamplerProps(
         models={
-            route.id: (_LITE_FREEFORM if route.upstream.provider == Provider.CHATGPT else _STANDARD_JSON).model_copy(
-                update={"reasoning_efforts": {"", *route.reasoning_efforts}}
+            route.id: (
+                ModelConfig(
+                    connection="anthropic-api",
+                    provider_model=route.model.id,
+                    api="anthropic_messages",
+                    anthropic_messages=_ANTHROPIC_MESSAGES,
+                    exec_encoding="json",
+                    reasoning_efforts=set(route.reasoning_efforts),
+                )
+                if route.upstream.provider == Provider.ANTHROPIC_API
+                else ModelConfig(
+                    connection="llm-ingress",
+                    provider_model=route.id,
+                    api="responses",
+                    responses=(_LITE_RESPONSES if route.upstream.provider == Provider.CHATGPT else _STANDARD_RESPONSES),
+                    exec_encoding="freeform" if route.upstream.provider == Provider.CHATGPT else "json",
+                    reasoning_efforts={"", *route.reasoning_efforts},
+                )
             )
-            for route in STAGING_APP_MODELS.codex
+            for route in STAGING_APP_MODELS.central_sampler
         },
-        llm_proxy_url=llm_ingress.service(STAGING_NAMESPACE).url,
-        credential_file=Path("/var/run/secrets/central-sampler/llm"),
+        connections={
+            "llm-ingress": ConnectionConfig(
+                base_url=llm_ingress.service(STAGING_NAMESPACE).url,
+                auth=AuthConfig(type="bearer", credential_file=Path("/var/run/secrets/central-sampler/llm")),
+            ),
+            "anthropic-api": ConnectionConfig(
+                base_url="https://api.anthropic.com",
+                auth=AuthConfig(
+                    type="anthropic_api_key", credential_file=Path("/var/run/secrets/central-sampler-anthropic/api-key")
+                ),
+            ),
+        },
+        connection_credentials={
+            "anthropic-api": SecretRef(namespace=STAGING_NAMESPACE, name=_ANTHROPIC_API_KEY_SECRET).key(
+                ANTHROPIC_API_KEY.key
+            )
+        },
         max_live_sessions=32,
         turn_timeout_seconds=3600,
         rpc_timeout_seconds=30,
@@ -605,7 +657,7 @@ def chart(app: App) -> Chart:
         key=_BUILDBUDDY_KEY.file_name,
         store=EXTERNAL_CREDS_STORE,
     )
-    notification_service = notifications.service(STAGING_NAMESPACE)
+    notification_service = notifications.http_service(STAGING_NAMESPACE)
     https_route(
         chart,
         "notifications-github-webhook-route",
@@ -685,6 +737,30 @@ def chart(app: App) -> Chart:
             )
         ),
         data=[remote_data(_LITELLM_KEY_SECRET, "api-key")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+    )
+    ExternalSecret(
+        chart,
+        "anthropic-api-key-external-secret",
+        metadata=ApiObjectMetadata(
+            name=_ANTHROPIC_API_KEY_SECRET,
+            namespace=STAGING_NAMESPACE,
+            annotations={
+                "description": "ESO copy of the canonical Anthropic API key from litellm for the central sampler."
+            },
+        ),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster(
+            single_secret_store(
+                chart,
+                "agentplane-staging-anthropic-api-key",
+                reader=reader,
+                source_namespace=ANTHROPIC_API_KEY.secret.namespace,
+                source_secret=ANTHROPIC_API_KEY.secret.name,
+                consumer_namespace=STAGING_NAMESPACE,
+            )
+        ),
+        data=[remote_data(ANTHROPIC_API_KEY.secret.name, ANTHROPIC_API_KEY.key, secret_key=ANTHROPIC_API_KEY.key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
     )
     ExternalSecret(
@@ -815,6 +891,12 @@ def agentplane_staging(
                 api_version="external-secrets.io/v1",
                 kind="ExternalSecret",
                 name=_LITELLM_KEY_SECRET,
+                namespace=STAGING_NAMESPACE,
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="external-secrets.io/v1",
+                kind="ExternalSecret",
+                name=_ANTHROPIC_API_KEY_SECRET,
                 namespace=STAGING_NAMESPACE,
             ),
             KustomizationSpecHealthChecks(

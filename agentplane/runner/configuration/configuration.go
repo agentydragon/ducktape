@@ -11,7 +11,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
@@ -35,6 +37,7 @@ type Configuration struct {
 	Claude                      *HarnessConfiguration         `json:"claude"`
 	Codex                       *HarnessConfiguration         `json:"codex"`
 	Environment                 json.RawMessage               `json:"environment"`
+	CodexReadiness              *CodexReadinessConfiguration  `json:"codex_readiness"`
 	DebugCheckpoint             *DebugCheckpointConfiguration `json:"debug_checkpoint"`
 }
 
@@ -43,6 +46,63 @@ const DefaultSessionReconcileConcurrency = 16
 type DebugCheckpointConfiguration struct {
 	Name      string `json:"name"`
 	CommandID string `json:"command_id"`
+}
+
+type CodexReadinessConfiguration struct {
+	ExecServerReadyTimeoutMS      *int64 `json:"exec_server_ready_timeout_ms"`
+	ExecServerProbeTimeoutMS      *int64 `json:"exec_server_probe_timeout_ms"`
+	ExecServerProbeIntervalMS     *int64 `json:"exec_server_probe_interval_ms"`
+	ExecServerDependencyTimeoutMS *int64 `json:"exec_server_dependency_timeout_ms"`
+	AppServerStartTimeoutMS       *int64 `json:"app_server_start_timeout_ms"`
+	AppServerInitializeTimeoutMS  *int64 `json:"app_server_initialize_timeout_ms"`
+}
+
+const maxGoDurationMilliseconds = int64(1<<63-1) / int64(time.Millisecond)
+
+func durationMilliseconds(name string, value *int64) (time.Duration, error) {
+	if value == nil {
+		return 0, nil
+	}
+	if *value <= 0 || *value > maxGoDurationMilliseconds {
+		return 0, fmt.Errorf("codex_readiness.%s must be a positive millisecond value representable by time.Duration", name)
+	}
+	return time.Duration(*value) * time.Millisecond, nil
+}
+
+func (c *CodexReadinessConfiguration) resolve() (codexexecserver.Readiness, codexappserver.Readiness, error) {
+	if c == nil {
+		c = &CodexReadinessConfiguration{}
+	}
+	execReadiness := codexexecserver.Readiness{}
+	appReadiness := codexappserver.Readiness{}
+	var err error
+	if execReadiness.Timeout, err = durationMilliseconds("exec_server_ready_timeout_ms", c.ExecServerReadyTimeoutMS); err != nil {
+		return codexexecserver.Readiness{}, codexappserver.Readiness{}, err
+	}
+	if execReadiness.ProbeTimeout, err = durationMilliseconds("exec_server_probe_timeout_ms", c.ExecServerProbeTimeoutMS); err != nil {
+		return codexexecserver.Readiness{}, codexappserver.Readiness{}, err
+	}
+	if execReadiness.ProbeInterval, err = durationMilliseconds("exec_server_probe_interval_ms", c.ExecServerProbeIntervalMS); err != nil {
+		return codexexecserver.Readiness{}, codexappserver.Readiness{}, err
+	}
+	if appReadiness.ExecServerDependencyTimeout, err = durationMilliseconds("exec_server_dependency_timeout_ms", c.ExecServerDependencyTimeoutMS); err != nil {
+		return codexexecserver.Readiness{}, codexappserver.Readiness{}, err
+	}
+	if appReadiness.StartupTimeout, err = durationMilliseconds("app_server_start_timeout_ms", c.AppServerStartTimeoutMS); err != nil {
+		return codexexecserver.Readiness{}, codexappserver.Readiness{}, err
+	}
+	if appReadiness.InitializeTimeout, err = durationMilliseconds("app_server_initialize_timeout_ms", c.AppServerInitializeTimeoutMS); err != nil {
+		return codexexecserver.Readiness{}, codexappserver.Readiness{}, err
+	}
+	execReadiness, err = execReadiness.Resolve()
+	if err != nil {
+		return codexexecserver.Readiness{}, codexappserver.Readiness{}, err
+	}
+	appReadiness, err = appReadiness.Resolve()
+	if err != nil {
+		return codexexecserver.Readiness{}, codexappserver.Readiness{}, err
+	}
+	return execReadiness, appReadiness, nil
 }
 
 type EnvironmentVariables struct {
@@ -324,6 +384,13 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 	if err != nil {
 		return Resolved{}, nil, err
 	}
+	execReadiness, appReadiness, err := f.CodexReadiness.resolve()
+	if err != nil {
+		return Resolved{}, nil, err
+	}
+	if executor != nil {
+		executor.Readiness = execReadiness
+	}
 	launchBytes, err := os.ReadFile(launchPath)
 	if err != nil {
 		return Resolved{}, nil, err
@@ -348,6 +415,7 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 		VMProcessPolicy:             isolation,
 		PodPID1:                     podPID1,
 		CodexExecServer:             executor,
+		CodexAppServerReadiness:     appReadiness,
 	}
 	if f.WorkspaceRoot != nil {
 		config.WorkspaceRoot = *f.WorkspaceRoot

@@ -95,9 +95,6 @@ func NewStore(db *sql.DB, retention time.Duration, capacity int) (*Store, error)
 	return &Store{db: db, retention: retention, capacity: capacity}, nil
 }
 
-// Retention is how long a decision is kept and served.
-func (s *Store) Retention() time.Duration { return s.retention }
-
 // Append stores the records and notifies listening replicas, in one transaction.
 func (s *Store) Append(ctx context.Context, records []decision.Record) error {
 	ctx, cancel := context.WithTimeout(ctx, operationTimeout)

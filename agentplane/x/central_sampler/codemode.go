@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 )
 
 const maxCodeModeFrame = 64 * 1024 * 1024
@@ -43,6 +45,36 @@ type codeJournalEvent struct {
 	phase       string
 	object      map[string]any
 	done        chan error
+}
+
+type codeModeResponsePhase string
+
+const (
+	codeOperationResponsePhase codeModeResponsePhase = "operation_response"
+	codeInitialResponsePhase   codeModeResponsePhase = "execute_initial_response"
+)
+
+type codeModeHostResponseError struct {
+	method  string
+	phase   codeModeResponsePhase
+	message string
+}
+
+func (e *codeModeHostResponseError) Error() string {
+	return fmt.Sprintf("code-mode operation failed: %s", e.message)
+}
+
+func (e *codeModeHostResponseError) evidence() map[string]any {
+	evidence := map[string]any{
+		"status":  "error",
+		"method":  e.method,
+		"phase":   string(e.phase),
+		"message": e.message,
+	}
+	if e.method == "session/execute" && e.phase == codeOperationResponsePhase {
+		evidence["execution_started"] = false
+	}
+	return evidence
 }
 
 func newCodeModeBinding(parent context.Context, manager *CodeModeHost, host *Host, store *Store, owner Owner, executor *Executor, sessionID string) *CodeMode {
@@ -169,7 +201,7 @@ func (r *CodeMode) delegate(id int64, frame *codeFrame, journaled <-chan error) 
 		result := codeDelegateResult{Status: "ok", Value: &codeToolResult{Type: "notification/delivered"}}
 		if strings.TrimSpace(frame.Request.Text) != "" {
 			err := r.store.QueueNotification(ctx, r.owner, frame.Request.CallID, r.cellHandle(frame.Request.CellID), frame.Request.Text)
-			if errors.Is(err, ErrPrecondition) {
+			if errors.Is(err, protocol.ErrPrecondition) {
 				result = codeDelegateResult{Status: "error", Message: fmt.Sprintf("failed to inject exec notify message for cell %s: no active turn", frame.Request.CellID)}
 			} else if err != nil {
 				if ctx.Err() == nil {
@@ -198,11 +230,10 @@ func (r *CodeMode) delegate(id int64, frame *codeFrame, journaled <-chan error) 
 		r.fail(err)
 		return
 	}
-	requestJournal["kind"] = "tool"
 	if invocation.CellID != "" {
 		requestJournal["cell_id"] = r.cellHandle(invocation.CellID)
 	}
-	intent, err := r.store.RecordNested(ctx, r.owner, requestJournal)
+	intent, err := r.store.RecordNested(ctx, r.owner, IntentTool, requestJournal)
 	if err != nil {
 		if ctx.Err() == nil {
 			r.fail(err)
@@ -319,7 +350,7 @@ func (r *CodeMode) request(ctx context.Context, request codeOperation, execute b
 		}
 		return nil, err
 	}
-	value, err := validateCodeModeResult(resultFrame)
+	value, err := validateCodeModeResult(resultFrame, request.method(), codeOperationResponsePhase)
 	if err != nil {
 		return nil, err
 	}
@@ -334,7 +365,7 @@ func (r *CodeMode) request(ctx context.Context, request codeOperation, execute b
 	if started.Type != "execution/started" || cellID == "" {
 		return nil, errors.New("code-mode execute response has no cellId")
 	}
-	if err := r.store.CellResult(ctx, r.owner, r.cellHandle(cellID), "live"); err != nil {
+	if err := r.store.CellResult(ctx, r.owner, r.cellHandle(cellID), protocol.CellLive); err != nil {
 		return nil, err
 	}
 	defer r.setForeground(id)()
@@ -347,7 +378,7 @@ func (r *CodeMode) request(ctx context.Context, request codeOperation, execute b
 		}
 		return nil, err
 	}
-	return validateCodeModeResult(initialFrame)
+	return validateCodeModeResult(initialFrame, request.method(), codeInitialResponsePhase)
 }
 
 // setForeground marks request id as the observation the model waits on and returns its reset.
@@ -424,21 +455,34 @@ func waitJournal(ctx context.Context, journaled <-chan error) error {
 	}
 }
 
-func validateCodeModeResult(frame *codeWireResult) (json.RawMessage, error) {
-	if frame.Status != "ok" {
-		return nil, fmt.Errorf("code-mode operation failed: %s", frame.Message)
+func validateCodeModeResult(frame *codeWireResult, method string, phase codeModeResponsePhase) (json.RawMessage, error) {
+	switch frame.Status {
+	case "error":
+		if frame.Message == "" {
+			return nil, errors.New("code-mode error response has no message")
+		}
+		return nil, &codeModeHostResponseError{method: method, phase: phase, message: frame.Message}
+	case "ok":
+		var object struct{}
+		if err := decodeProtocolObject(frame.Value, &object); err != nil {
+			return nil, err
+		}
+		return frame.Value, nil
+	default:
+		return nil, fmt.Errorf("unsupported code-mode response status %q", frame.Status)
 	}
-	var object struct{}
-	if err := decodeProtocolObject(frame.Value, &object); err != nil {
-		return nil, err
-	}
-	return frame.Value, nil
 }
 
-func (r *CodeMode) Execute(ctx context.Context, call ResponsesToolCall) ([]ResponsesContentPart, error) {
+func (r *CodeMode) Execute(ctx context.Context, call protocol.ToolInvocation) ([]protocol.ContentPart, error) {
 	prepared, err := r.prepareCall(ctx, call)
 	if err != nil {
-		return nil, &KnownFailureError{Evidence: map[string]any{"reason": err.Error(), "call": call, "dispatched": false}}
+		// Codex's FunctionCallError::RespondToModel returns input errors to the model;
+		// they do not stop the turn or abandon unrelated live cells and processes.
+		var inputError *toolError
+		if errors.As(err, &inputError) {
+			return []protocol.ContentPart{{Type: "input_text", Text: "Error: " + inputError.Error()}}, nil
+		}
+		return nil, err
 	}
 	started := time.Now()
 	value, err := r.request(ctx, prepared.operation, prepared.execute)
@@ -476,19 +520,19 @@ type preparedCall struct {
 	maxTokens *int
 }
 
-func (r *CodeMode) prepareCall(ctx context.Context, call ResponsesToolCall) (preparedCall, error) {
-	if call.Name == "exec" && call.Type == ResponsesItemFunctionCall {
+func (r *CodeMode) prepareCall(ctx context.Context, call protocol.ToolInvocation) (preparedCall, error) {
+	if call.Name == "exec" && call.Encoding == protocol.ExecEncodingJSON {
 		return r.prepareJSONCall(ctx, call)
 	}
-	if call.Name == "wait" && call.Type == ResponsesItemFunctionCall {
+	if call.Name == "wait" && call.Encoding == protocol.ExecEncodingJSON {
 		return r.prepareWait(ctx, call.Input)
 	}
-	if call.Name != "exec" || call.Type != ResponsesItemCustomToolCall {
-		return preparedCall{}, fmt.Errorf("unsupported model tool %q (%s)", call.Name, call.Type)
+	if call.Name != "exec" || call.Encoding != protocol.ExecEncodingFreeform {
+		return preparedCall{}, &toolError{fmt.Sprintf("unsupported model tool %q (%s)", call.Name, call.Encoding)}
 	}
 	source, err := parseExecSource(call.Input)
 	if err != nil {
-		return preparedCall{}, err
+		return preparedCall{}, &toolError{err.Error()}
 	}
 	return r.prepareExecute(call.CallID, source)
 }
@@ -523,13 +567,13 @@ type jsonExecInput struct {
 
 // JSON exec uses the same host operations and journal as the native freeform contract.
 // Resuming through exec keeps the compatibility surface to one function.
-func (r *CodeMode) prepareJSONCall(ctx context.Context, call ResponsesToolCall) (preparedCall, error) {
+func (r *CodeMode) prepareJSONCall(ctx context.Context, call protocol.ToolInvocation) (preparedCall, error) {
 	var input jsonExecInput
 	if err := decodeToolInput([]byte(call.Input), &input); err != nil {
-		return preparedCall{}, err
+		return preparedCall{}, &toolError{err.Error()}
 	}
 	if (input.Code == nil) == (input.CellID == nil) {
-		return preparedCall{}, errors.New("exec requires exactly one of code or cell_id")
+		return preparedCall{}, &toolError{"exec requires exactly one of code or cell_id"}
 	}
 	if input.CellID != nil {
 		terminate := input.Terminate != nil && *input.Terminate
@@ -538,23 +582,23 @@ func (r *CodeMode) prepareJSONCall(ctx context.Context, call ResponsesToolCall) 
 			MaxTokens: input.MaxOutputTokens, Terminate: terminate,
 		})
 		if err != nil {
-			return preparedCall{}, err
+			return preparedCall{}, &toolError{err.Error()}
 		}
 		return r.prepareWaitArguments(ctx, arguments)
 	}
 	if input.Terminate != nil {
-		return preparedCall{}, errors.New("terminate requires cell_id")
+		return preparedCall{}, &toolError{"terminate requires cell_id"}
 	}
 	if strings.TrimSpace(*input.Code) == "" {
-		return preparedCall{}, errors.New("exec requires non-empty code")
+		return preparedCall{}, &toolError{"exec requires non-empty code"}
 	}
 	yieldMS, err := safeIntegerArgument("yield_time_ms", input.YieldTimeMS)
 	if err != nil {
-		return preparedCall{}, err
+		return preparedCall{}, &toolError{err.Error()}
 	}
 	maxTokens, err := safeIntegerArgument("max_output_tokens", input.MaxOutputTokens)
 	if err != nil {
-		return preparedCall{}, err
+		return preparedCall{}, &toolError{err.Error()}
 	}
 	return r.prepareExecute(call.CallID, execSource{code: *input.Code, yieldTimeMS: yieldMS, maxOutputTokens: maxTokens})
 }
@@ -599,7 +643,7 @@ func resolveWaitArguments(arguments waitInput) (waitArguments, error) {
 func (r *CodeMode) prepareWait(ctx context.Context, input string) (preparedCall, error) {
 	arguments, err := parseWaitArguments(input)
 	if err != nil {
-		return preparedCall{}, err
+		return preparedCall{}, &toolError{err.Error()}
 	}
 	return r.prepareWaitArguments(ctx, arguments)
 }
@@ -612,17 +656,17 @@ func (r *CodeMode) prepareWaitArguments(ctx context.Context, arguments waitArgum
 	}
 	known := false
 	for _, cell := range state.Cells {
-		if cell.ID == cellID && cell.Status == "live" {
+		if cell.ID == cellID && cell.Status == protocol.CellLive {
 			known = true
 			break
 		}
 	}
 	if !known {
-		return preparedCall{}, errors.New("wait requires a known live cell_id; process session_id is not accepted")
+		return preparedCall{}, &toolError{"wait requires a known live cell_id; process session_id is not accepted"}
 	}
 	nativeID, err := r.nativeCell(cellID)
 	if err != nil {
-		return preparedCall{}, err
+		return preparedCall{}, &toolError{err.Error()}
 	}
 	session := codeSessionOperation{Method: "session/wait", SessionID: r.sessionID}
 	if arguments.terminate {
@@ -701,12 +745,12 @@ func parseExecSource(input string) (execSource, error) {
 
 // observe records the observed cell's lifecycle status.
 func (r *CodeMode) observe(ctx context.Context, observation codeObservation) error {
-	status := "completed"
+	status := protocol.CellCompleted
 	switch observation.Kind {
 	case codeYielded:
-		status = "live"
+		status = protocol.CellLive
 	case codeTerminated:
-		status = "terminated"
+		status = protocol.CellTerminated
 	case codeResult:
 	default:
 		return fmt.Errorf("unsupported cell observation %q", observation.Kind)
@@ -721,7 +765,7 @@ func (r *CodeMode) Interrupt(ctx context.Context) (map[string]any, error) {
 	}
 	outcomes := map[string]any{}
 	for _, cell := range state.Cells {
-		if !strings.HasPrefix(cell.ID, r.sessionID+":") || cell.Status != "live" {
+		if !strings.HasPrefix(cell.ID, r.sessionID+":") || cell.Status != protocol.CellLive {
 			continue
 		}
 		nativeID, err := r.nativeCell(cell.ID)

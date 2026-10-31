@@ -138,8 +138,14 @@ configMapGenerator:
             push:
               - gaffer
             destination:
-              storage: sops
-              sops_file: secrets/ci/attic-gaffer-writer.sops.yaml
+              secret:
+                namespace: nix-cache
+                name: attic-gaffer-ci-writer
+                key: attic_token
+              notification:
+                workspace: github-secrets-sync
+                annotation_key: gaffer.allegedly.works/attic-token-version
+              storage: kubernetes
         attic_namespace: nix-cache
         attic_deployment: deploy/attic
         server_config: /config/server.toml

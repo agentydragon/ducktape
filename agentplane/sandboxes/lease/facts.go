@@ -15,6 +15,7 @@ const (
 	ConnectionLabel               = "agentplane.allegedly.works/runner-connection"
 	ConnectionEpochAnnotation     = "agentplane.allegedly.works/connection-epoch"
 	PodUIDAnnotation              = "agentplane.allegedly.works/pod-uid"
+	LastConnectedPodUIDAnnotation = "agentplane.allegedly.works/last-connected-pod-uid"
 	RunnerBootIDAnnotation        = "agentplane.allegedly.works/runner-boot-id"
 	QuiesceStageAnnotation        = "agentplane.allegedly.works/quiesce-stage"
 	IdleSinceAnnotation           = "agentplane.allegedly.works/idle-since"
@@ -208,7 +209,8 @@ func DecodeFacts(leaseName string, annotations map[string]string, incarnationUID
 // with the same annotations do not require a Sandbox reconciliation.
 func FactsChanged(previous, current map[string]string) bool {
 	for _, key := range []string{
-		PodUIDAnnotation, QuiesceStageAnnotation, IdleSinceAnnotation, BootstrapAnnotation, SetupsRunningAnnotation,
+		PodUIDAnnotation, LastConnectedPodUIDAnnotation, RunnerBootIDAnnotation, QuiesceStageAnnotation,
+		IdleSinceAnnotation, BootstrapAnnotation, SetupsRunningAnnotation,
 		AutosuspendBlockersAnnotation,
 	} {
 		if previous[key] != current[key] {
@@ -216,4 +218,16 @@ func FactsChanged(previous, current map[string]string) bool {
 		}
 	}
 	return false
+}
+
+// LastConnectedPodUID identifies a verified runner, independently of the current observation claim.
+// A boot ID also proves contact on Leases written before the durable annotation was introduced.
+func LastConnectedPodUID(annotations map[string]string) string {
+	if uid := annotations[LastConnectedPodUIDAnnotation]; uid != "" {
+		return uid
+	}
+	if annotations[RunnerBootIDAnnotation] != "" {
+		return annotations[PodUIDAnnotation]
+	}
+	return ""
 }

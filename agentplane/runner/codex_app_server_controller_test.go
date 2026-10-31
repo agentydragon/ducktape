@@ -101,6 +101,7 @@ func TestCodexJoinedStartupSurvivesTransientExecutorFailure(t *testing.T) {
 
 func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
 	stateDir := t.TempDir()
+	const dependencyTimeout = 37 * time.Second
 	synctest.Test(t, func(t *testing.T) {
 		entered := make(chan struct{})
 		var enteredOnce sync.Once
@@ -123,8 +124,8 @@ func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
 		if initial.Phase != codexappserver.Initializing || initial.ExecServerReadyDeadline.IsZero() {
 			t.Fatalf("Codex initial dependency state = %+v, want a 30s executor wait", initial)
 		}
-		if remaining := initial.ExecServerReadyDeadline.Sub(time.Now()); remaining != 30*time.Second {
-			t.Fatalf("initial executor readiness budget = %s, want %s", remaining, 30*time.Second)
+		if remaining := initial.ExecServerReadyDeadline.Sub(time.Now()); remaining != dependencyTimeout {
+			t.Fatalf("initial executor readiness budget = %s, want %s", remaining, dependencyTimeout)
 		}
 
 		time.Sleep(10 * time.Second)
@@ -141,11 +142,11 @@ func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
 			t.Fatalf("joined Codex demand = %d, want 2", demand)
 		}
 
-		time.Sleep(20 * time.Second)
+		time.Sleep(dependencyTimeout - 10*time.Second)
 		synctest.Wait()
 		expired := codexAppServerRuntime(t, r)
-		if expired.Phase != codexappserver.Stopped || expired.Attempt != 2 || !strings.Contains(expired.Error, "within 30s") {
-			t.Fatalf("Codex state at original 30s deadline = %+v, want demand 2 consumed", expired)
+		if expired.Phase != codexappserver.Stopped || expired.Attempt != 2 || !strings.Contains(expired.Error, "within 37s") {
+			t.Fatalf("Codex state at original 37s deadline = %+v, want demand 2 consumed", expired)
 		}
 		if !expired.ExecServerReadyDeadline.IsZero() {
 			t.Errorf("Codex retained expired dependency deadline: %s", expired.ExecServerReadyDeadline)
@@ -170,7 +171,10 @@ func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(cont
 	ctx, cancel := context.WithCancel(context.Background())
 	codexExecServerConfig := codexexecserver.Config{URL: "ws://127.0.0.1:4599"}
 	codexConfig := harness.LaunchConfig{Binary: "/bin/false"}
-	config := Config{StateDir: stateDir, Codex: &codexConfig, CodexExecServer: &codexExecServerConfig}
+	config := Config{
+		StateDir: stateDir, Codex: &codexConfig, CodexExecServer: &codexExecServerConfig,
+		CodexAppServerReadiness: codexappserver.Readiness{ExecServerDependencyTimeout: 37 * time.Second},
+	}
 	r := &Runner{
 		config: config, ctx: ctx, cancel: cancel, owner: owner, store: store,
 		changes: make(chan struct{}), fatal: make(chan error, 1),

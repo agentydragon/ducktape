@@ -4,7 +4,7 @@ use debundle_e2e_support::*;
 use serde_json::{Value, json};
 
 const CHUNK_ID: &str = "static/provider";
-const PROVIDER: &str = r#"const prefix = new globalThis.Error();
+const PROVIDER: &str = r#"const prefix = new globalThis.Date();
 export const value = "ready";
 export function read() { return value; }
 "#;
@@ -66,7 +66,10 @@ fn declared_block_is_echoed_as_read_and_unknown_is_accepted() {
         synchronous_load_runs_app_callbacks: Some(SynchronousLoadRunsAppCallbacks::Never),
         synchronous_load_drains_microtasks: Some(SynchronousLoadDrainsMicrotasks::Unknown),
         reentry_free_builtin_modules: [NodeBuiltinModule::Path].into_iter().collect(),
+        reentry_free_bun_modules: [BunModule::Ws].into_iter().collect(),
+        reentry_free_embedded_loaders: [EmbeddedLoader::Text].into_iter().collect(),
         reentry_free_operations: [ReentryFreeOperation::PromiseResolve].into_iter().collect(),
+        predefined_globals: PredefinedGlobals::Standard,
         note: Some("Audited against a synthetic fixture host.".to_string()),
     }));
     assert_eq!(
@@ -77,7 +80,10 @@ fn declared_block_is_echoed_as_read_and_unknown_is_accepted() {
             "synchronous_load_runs_app_callbacks": "never",
             "synchronous_load_drains_microtasks": "unknown",
             "reentry_free_builtin_modules": ["path"],
+            "reentry_free_bun_modules": ["ws"],
+            "reentry_free_embedded_loaders": ["text"],
             "reentry_free_operations": ["promise_resolve"],
+            "predefined_globals": "standard",
             "note": "Audited against a synthetic fixture host.",
         })
     );
@@ -119,6 +125,36 @@ fn loader_keys_require_a_present_loader() {
                 &format!("host_behavior.{key}"),
                 "synchronous_module_loader: present",
             ],
+        );
+    }
+}
+
+#[test]
+fn process_accessor_builtins_require_the_program_premise() {
+    for builtin in [NodeBuiltinModule::Process, NodeBuiltinModule::WorkerThreads] {
+        let host_behavior = HostBehavior {
+            reentry_free_builtin_modules: [builtin].into_iter().collect(),
+            ..HostBehavior::default()
+        };
+        expect_rejection_containing_all(
+            accepted_provider().with_host_behavior(host_behavior.clone()),
+            &["program_premises.process_prototype_chain_accessors: none"],
+        );
+        let fixture = run_fixture(
+            accepted_provider()
+                .with_host_behavior(host_behavior)
+                .with_program_premises(ProgramPremises {
+                    process_prototype_chain_accessors: ProcessPrototypeChainAccessors::None,
+                    note: Some("Audited against a synthetic fixture program.".to_string()),
+                    ..ProgramPremises::default()
+                }),
+        );
+        assert_eq!(
+            export_reentry_report(&fixture)["program_premises"],
+            json!({
+                "process_prototype_chain_accessors": "none",
+                "note": "Audited against a synthetic fixture program.",
+            })
         );
     }
 }

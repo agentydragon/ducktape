@@ -530,3 +530,20 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_codex_title_projection",
+    srcs = ["test_codex_title_projection.py"],
+    requires_docker = True,
+    deps = [
+        ":database",
+        ":ingest",
+        ":models",
+        ":restic",
+        ":testing",
+        "//:conftest",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

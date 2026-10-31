@@ -1,6 +1,6 @@
 ---
 name: ci_latency
-description: Diagnose where recent CI feedback time and compute go across PR types, GitHub runners, BuildBuddy provisioning, Bazel analysis/actions/tests and critical paths; prioritize practical improvements with reproducible evidence.
+description: Diagnose CI feedback time and compute from workflow queues through slow-test internals, fixtures and waits; test coverage-preserving improvements to implementation, setup, teardown and parallelism with reproducible evidence.
 ---
 
 # CI latency analysis
@@ -20,6 +20,10 @@ run as the latest snapshot in that namespace (below). `cihealth` covers
 release/pin currency and failed CI more broadly. No Mimir metric, Shapley
 calculation, or dashboard is required for a useful report; propose
 instrumentation only when it closes a decision-relevant evidence gap.
+
+Test implementations and test architecture are part of the optimization scope.
+Follow measured bottlenecks to whatever depth yields useful, coverage-preserving
+changes; workflow configuration and target-duration rankings are not the boundary.
 
 ## Start from the previous investigation
 
@@ -131,15 +135,34 @@ finishing, required checks succeeding, GitHub reporting mergeability, auto-merge
 being enabled, and the eventual merge itself. If push timestamps or exact head
 association cannot be recovered, say so and present a labeled proxy instead of
 inventing a precise push-to-green percentile. Use a new output directory outside
-the checkout. `collect.sh` refuses a filtered query with 1,000 or more results: split it into smaller windows instead of accepting
-GitHub's search cap. It pages runs, jobs (all attempts), open PRs and head checks,
-and includes older unfinished runs separately. Each collection is a sweep, not an
-atomic snapshot; preserve its start/end timestamps.
+the checkout. `collect.sh` recursively partitions dense run windows by second,
+checks every page against the API's reported total, and fails if even a one-second
+partition reaches GitHub's 1,000-result cap. It pages jobs with `filter=all` to
+preserve attempts, collects open-PR head checks, and sweeps older unfinished runs
+separately. A collection is not atomic; preserve its start/end timestamps.
 
 ```bash
 bash scripts/collect.sh agentydragon/ducktape "$SINCE" "$UNTIL" "$OUT"
 bash scripts/evidence.sh "$OUT" > "$OUT/evidence.json"
 ```
+
+To compare required-gate feedback for exact PR heads and completed runner occupancy
+in the same snapshot, name the required job contexts explicitly:
+
+```bash
+python3 scripts/snapshot_analysis.py "$OUT/snapshot.json" \
+  --since "$SINCE" --until "$UNTIL" \
+  --gate "Bazel CI" --gate "Pre-commit checks" \
+  --output "$OUT/snapshot-analysis.json"
+```
+
+The feedback clock is a labeled proxy from the first observed PR workflow creation
+to the latest visible successful required-gate completion for that repository and
+head SHA. Each gate retains its own run and job clocks; missing, canceled, fork and
+unknown states are surfaced instead of counted as green. Occupancy includes only
+completed jobs assigned to a runner, clipped to the requested half-open window.
+GitHub job timestamps are used directly; BuildBuddy cached durations are not a
+freshness or occupancy signal.
 
 `evidence.sh` runs the same jq recipes used for the report. `summarize.jq` produces
 queue/runtime percentiles, occupied time and step totals. `contention.jq` attributes
@@ -185,6 +208,25 @@ records are counted rather than assumed zero. A target's summary can retain
 old cached durations and aggregate many shards, so do not rank fresh cost from
 that field alone. Inspect the critical path before promising feedback savings.
 
+For an offline cross-invocation stage and clock summary, save the
+`bbapi invocation list --json` response and each selected
+`bbapi execution <invocation-id> --json` response, then run:
+
+```bash
+python3 scripts/analyze_executions.py \
+  --invocations "$OUT/invocations.json" \
+  --executions "$OUT/execution-details" \
+  --observed-at "$OBSERVED_AT" > "$OUT/execution-summary.json"
+```
+
+`--observed-at` is the explicit UTC snapshot time. The analyzer deduplicates
+execution IDs and summarizes stages by mnemonic. Queue spans use
+`queuedTimestamp` to `workerStartTimestamp`; worker preparation uses
+`workerStartTimestamp` to `executionStartTimestamp`, which includes input-fetch
+time and does not isolate VM allocation. Spans require valid, ordered clocks.
+Partial rows are not aged to the observation time; span totals are action-seconds
+and do not measure worker occupancy or quota capacity.
+
 Before attributing costs to a landed optimization, verify the effective tested
 source contains it: `git merge-base --is-ancestor "$FIX_SHA" "$TESTED_SHA"`
 (exit 0: present; 1: absent; other: unavailable history). Use child invocation
@@ -199,6 +241,71 @@ shortlist, collect `GetExecution` first and fetch logs/XML only for selected
 labels; enumerating thousands of cached target/artifact pages is unnecessary.
 When testing fewer shards, preserve every case and compare both process/CPU
 totals and the slowest shard; repeated session setup may dominate cheap cases.
+
+## Explain what slow tests are doing
+
+For the major contributors selected from fresh cost and critical-path evidence,
+inspect the test source, fixture dependency graph and runtime behavior. Follow
+expensive or unexplained phases into subprocesses, services and dependencies.
+Do not stop at "this test takes seven minutes" or "setup is expensive," or let
+easy workflow tweaks substitute for investigating the dominant test work.
+
+When a selected test emits spans, use them as the primary phase evidence before
+adding instrumentation. [Agentplane's phase-tracing notes](https://github.com/agentydragon/ducktape/blob/devel/agentplane/system_tests/README.md#phase-tracing)
+document `test.outputs/vm-phases.jsonl`, the separate k3s timeline, and how the
+traces relate to fixture and scenario lifetimes. Follow the
+[BuildBuddy artifact recipe](https://github.com/agentydragon/ducktape/blob/devel/devinfra/buildbuddy/skill/buildbuddy_api/SKILL.md#three-kinds-of-file-three-commands):
+list the exact invocation's test artifacts first, then download the trace
+for the relevant target and shard/run/attempt. Tie it to the tested source SHA
+and a physical execution; do not infer a trace from a cached target summary.
+
+Reconstruct parent/child span structure and concurrent intervals; identify a
+critical path only where event dependencies establish it. Never sum nested or
+overlapping spans. Correlate their wall-time intervals with
+the test action, native command evidence, and service/guest logs. A span is not
+CPU time or a native command duration. Account for clock skew across hosts and
+the test time spent exporting spans. For a long wait, identify the queued work,
+the state producer and the observer that notices it. If CPU or off-CPU time is
+still unexplained, use a real profiler; do not add ad hoc timers.
+
+- Reconstruct setup, readiness, scenario execution, assertions, diagnostics and
+  teardown. Use existing phase artifacts, logs, traces and real CPU/off-CPU or
+  sampling profilers as appropriate. Attribute elapsed time as well as CPU:
+  distinguish useful computation, repeated work, I/O, contention and waiting.
+  A Bazel action duration or a CPU profile alone cannot explain blocked time.
+- For material waits, identify the predicate, its producer and wake-up mechanism.
+  Inspect fixed sleeps, polling loops, backoff, debounce and sequential readiness
+  checks. Determine whether the state is already ready while the test sleeps, or
+  whether the producer itself is slow. Evaluate event/watch notifications or
+  predicate-driven synchronization while preserving deadlines, cancellation,
+  missed-event protection and any intentional stability-observation interval.
+  Low CPU or a sleep call alone is not evidence of removable time.
+- Explain what guarantee each costly operation buys. Look for unnecessarily large
+  inputs, repeated serialization/copying/hashing, duplicated end-to-end proofs,
+  excessive process launches and expensive fixtures for narrow assertions.
+  Evaluate equivalent faster algorithms, inputs or fixture construction. Preserve
+  the behavior and failure modes under test; equal test counts or passing results
+  alone do not prove equal coverage. Replacing a real integration boundary with a
+  mock is a coverage tradeoff, not an equivalent speedup.
+- Treat fixture scope/lifetime, setup and teardown, resource reuse, test/target
+  boundaries, target count, parametrization, batching, sharding and in-test
+  concurrency as changeable. Measure repeated setup against the longest shard,
+  invalidation/selectivity and scheduling overhead. Before sharing or overlapping
+  work, establish state isolation, ordering, capacity and cleanup ownership; keep
+  independent instances or cold starts where they are part of the test contract.
+- Try promising changes in bounded same-input experiments. Compare the actual
+  cases/assertions and exercised paths, wall/CPU/resource costs, reliability and
+  required-gate critical path. Control or label cache, worker and ordering effects;
+  faster tests that introduce flakes or merely move work are not established wins.
+
+For each investigated bottleneck, report the operation and source location, why
+it is needed, the measured work/wait mechanism, the proposed equivalent change
+and its experiment or rejection. Mark unexplained time explicitly. Continue
+until the evidence supports an actionable recommendation, a reason to retain the
+work, or a specific visibility/resource boundary with the next discriminating
+observation. Choose depth by whether further evidence can change the decision,
+not a fixed layer count or a requirement to audit every test. "Profile fixtures"
+is an unfinished investigation while the relevant source and runtime are available.
 
 ## Primary outcome: commit-to-actionable feedback
 
@@ -253,6 +360,12 @@ where possible; note unknown and overlapping intervals explicitly:
    reasons for a cold start (pool/instance, isolation, concurrency, image changes,
    idle expiration), but do not claim reuse failed without evidence that reuse was
    possible. Avoid confusing a GitHub runner with a BuildBuddy VM or an RBE action.
+   For live diagnosis, compare the sampled BuildBuddy Active view and per-invocation
+   execution/queue timestamps with GitHub job queuing and outer VM preparation.
+   Track workflow/child invocation lineage and deduplicate physical execution IDs.
+   `IN_PROGRESS` can outlive its VM; absent or epoch timestamps are unknown. Infer
+   throttling only from explicit quota rejection or observed queueing with backlog
+   and exhausted capacity.
 3. **Bazel:** inner test/build invocation(s), startup, loading/analysis, execution,
    downloads/uploads, finalization. Inspect `command.profile.gz`, critical-path
    tool log, cache scorecard, target and execution records as needed (see the

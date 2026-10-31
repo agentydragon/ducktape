@@ -16,7 +16,9 @@ module's virtual source path and exact byte boundaries. Format per oven-sh/bun
 
 `modules_ptr` locates a table of `CompiledModuleGraphFile`, also `#[repr(C)]`
 and 52 bytes each -- six `StringPointer`s (name, contents, sourcemap, bytecode,
-module_info, bytecode_origin_path) followed by four `u8` enums.
+module_info, bytecode_origin_path) followed by four `u8` enums: encoding,
+loader, module_format, side. The loader is Bun's `options.Loader`, the one the
+runtime applies when the file is required.
 
 Every `StringPointer.off` is relative to a base the graph does not record
 directly: the mapped region's start. `byte_count` is *not* it -- deriving
@@ -27,6 +29,7 @@ plausible `/$bunfs/root/` path, which stays correct if the struct grows.
 """
 
 import argparse
+import json
 import pathlib
 import struct
 
@@ -34,6 +37,24 @@ TRAILER = b"\n---- Bun! ----\n"
 OFFSETS_SIZE = 8 + 8 + 4 + 8 + 4
 MODULE_ENTRY_SIZE = 52
 BUNFS_PREFIX = b"/$bunfs/root/"
+# `options.Loader` values in declaration order, through the last one checked
+# against a real graph (`text`, 13).
+BUN_LOADERS = (
+    "jsx",
+    "js",
+    "ts",
+    "tsx",
+    "css",
+    "file",
+    "json",
+    "jsonc",
+    "toml",
+    "wasm",
+    "napi",
+    "base64",
+    "dataurl",
+    "text",
+)
 
 
 class ExtractError(Exception):
@@ -115,6 +136,7 @@ def parse_modules(data: bytes) -> list[dict]:
         contents = _string(data, base, fields[2], fields[3])
         sourcemap = _string(data, base, fields[4], fields[5])
         bytecode_len = fields[7]
+        loader = data[entry + 49]
         modules.append(
             {
                 "index": k,
@@ -122,6 +144,7 @@ def parse_modules(data: bytes) -> list[dict]:
                 "contents": contents,
                 "sourcemap": sourcemap,
                 "has_bytecode": bytecode_len > 0,
+                "loader": loader,
             }
         )
     return modules
@@ -243,6 +266,11 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     ap.add_argument(
+        "--embedded-loaders",
+        type=pathlib.Path,
+        help="write a JSON object mapping every module's extracted path to the Bun loader the runtime applies to it",
+    )
+    ap.add_argument(
         "--only-js",
         action="store_true",
         help=(
@@ -319,6 +347,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.list:
         args.list.parent.mkdir(parents=True, exist_ok=True)
         args.list.write_text("".join(f"{p}\n" for p in sorted(written)))
+
+    if args.embedded_loaders:
+        loaders = {}
+        for mod in modules:
+            if mod["loader"] >= len(BUN_LOADERS):
+                raise SystemExit(f"{mod['name']}: unknown Bun loader {mod['loader']}")
+            loaders[_safe_relpath(mod["name"])] = BUN_LOADERS[mod["loader"]]
+        args.embedded_loaders.parent.mkdir(parents=True, exist_ok=True)
+        args.embedded_loaders.write_text(json.dumps(loaders, indent=0, sort_keys=True) + "\n")
 
     if args.debundle_list:
         args.debundle_list.parent.mkdir(parents=True, exist_ok=True)

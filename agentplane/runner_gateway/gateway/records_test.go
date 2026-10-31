@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -74,6 +75,69 @@ func TestConnectionRecordsRejectForeignObjects(t *testing.T) {
 	}
 }
 
+// Another replica's claim expires one Lease duration after this replica last saw it renewed, whatever its
+// writer's clock put in RenewTime: a clock behind must not expire a live claim early, nor one ahead keep a
+// dead claim for the length of the skew.
+func TestClaimExpiresByLocallyObservedRenewal(t *testing.T) {
+	for _, skew := range []time.Duration{-time.Hour, time.Hour} {
+		t.Run(skew.String(), func(t *testing.T) {
+			ctx := context.Background()
+			identity := sandboxreader.Identity{Name: testSandbox, UID: testSandboxUID}
+			start := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+			writerClock := start.Add(skew)
+			kube := kubernetesfake.NewSimpleClientset(&coordinationv1.Lease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: testSandbox + sandboxlease.RunnerLeaseSuffix, Namespace: testNamespace,
+					OwnerReferences: []metav1.OwnerReference{sandboxOwnerReference(identity)},
+				},
+				Spec: coordinationv1.LeaseSpec{
+					HolderIdentity: stringPointer("test-other-gateway"), LeaseDurationSeconds: int32Pointer(leaseDurationSeconds),
+					LeaseTransitions: int32Pointer(1), RenewTime: &metav1.MicroTime{Time: writerClock},
+				},
+			})
+			records, err := newConnectionRecords(kube.CoordinationV1(), kube.DiscoveryV1(), testNamespace,
+				connectionHolder{name: "test-gateway", ip: "192.0.2.10", port: sandboxapi.ControlServicePort})
+			if err != nil {
+				t.Fatal(err)
+			}
+			now := start
+			records.now = func() time.Time { return now }
+			duration := time.Duration(leaseDurationSeconds) * time.Second
+			refused := func(at time.Duration) {
+				t.Helper()
+				now = start.Add(at)
+				if _, err := records.claim(ctx, identity, testPodUID); !errors.Is(err, errRunnerOwned) {
+					t.Fatalf("claim at %v took a live connection: %v", at, err)
+				}
+			}
+			refused(0)
+			refused(duration - time.Second)
+			// The holder renews by its own clock, which the claim never compares with this one.
+			renewedAt := duration - time.Second
+			lease, err := kube.CoordinationV1().Leases(testNamespace).Get(ctx, testSandbox+sandboxlease.RunnerLeaseSuffix, metav1.GetOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			lease.Spec.RenewTime = &metav1.MicroTime{Time: writerClock.Add(renewedAt)}
+			if _, err := kube.CoordinationV1().Leases(testNamespace).Update(ctx, lease, metav1.UpdateOptions{}); err != nil {
+				t.Fatal(err)
+			}
+			// Expiry counts from when this replica first sees the renewal, not when it was written.
+			seenAt := renewedAt + time.Second
+			refused(seenAt)
+			refused(seenAt + duration - time.Second)
+			now = start.Add(seenAt + duration)
+			epoch, err := records.claim(ctx, identity, testPodUID)
+			if err != nil {
+				t.Fatalf("lapsed connection was not taken over: %v", err)
+			}
+			if epoch != 2 {
+				t.Fatalf("takeover epoch = %d, want 2", epoch)
+			}
+		})
+	}
+}
+
 func TestConnectionRenewPublishesAndClearsAutosuspendBlockers(t *testing.T) {
 	kube := kubernetesfake.NewSimpleClientset()
 	identity := sandboxreader.Identity{Name: testSandbox, UID: testSandboxUID}
@@ -110,5 +174,53 @@ func TestConnectionRenewPublishesAndClearsAutosuspendBlockers(t *testing.T) {
 	}
 	if _, exists := lease.Annotations[sandboxlease.AutosuspendBlockersAnnotation]; exists {
 		t.Fatalf("idle runner retained blocker annotation: %s", lease.Annotations[sandboxlease.AutosuspendBlockersAnnotation])
+	}
+}
+
+func TestObservationClaimsPreserveVerifiedContact(t *testing.T) {
+	ctx := context.Background()
+	kube := kubernetesfake.NewSimpleClientset()
+	identity := sandboxreader.Identity{Name: testSandbox, UID: testSandboxUID}
+	records, err := newConnectionRecords(kube.CoordinationV1(), kube.DiscoveryV1(), testNamespace,
+		connectionHolder{name: "gateway", ip: "192.0.2.10", port: sandboxapi.ControlServicePort})
+	if err != nil {
+		t.Fatal(err)
+	}
+	epoch, err := records.claim(ctx, identity, testPodUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := func() *coordinationv1.Lease {
+		t.Helper()
+		lease, err := kube.CoordinationV1().Leases(testNamespace).Get(ctx, testSandbox+sandboxlease.RunnerLeaseSuffix, metav1.GetOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return lease
+	}
+	if sandboxlease.LastConnectedPodUID(read().Annotations) != "" {
+		t.Fatal("claim counted as contact")
+	}
+	if err := records.recordBootID(ctx, identity, epoch, "boot"); err != nil {
+		t.Fatal(err)
+	}
+	for _, uid := range []string{testPodUID, "replacement-pod"} {
+		epoch, err = records.claim(ctx, identity, uid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lease := read()
+		if lease.Annotations[sandboxlease.RunnerBootIDAnnotation] != "" {
+			t.Fatal("claim retained current boot ID")
+		}
+		if sandboxlease.LastConnectedPodUID(lease.Annotations) != testPodUID {
+			t.Fatal("claim erased verified contact")
+		}
+	}
+	if err := records.recordBootID(ctx, identity, epoch, "replacement-boot"); err != nil {
+		t.Fatal(err)
+	}
+	if sandboxlease.LastConnectedPodUID(read().Annotations) != "replacement-pod" {
+		t.Fatal("verified replacement did not update contact")
 	}
 }

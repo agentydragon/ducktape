@@ -9,6 +9,21 @@ and Sandbox launch. Gates are in the [task DAG](task_dag.md#3-multiagent-decisio
 the decisions still open are summarized under [cases to resolve](#cases-to-resolve-before-implementation).
 The operator may revisit the service-enforced rule direction if implementation does not work well.
 
+## Selected first workflow, 2026-10-30 PDT
+
+The [stakeholder priority order](task_dag.md#stakeholder-priorities-2026-10-30-pdt) selects
+Agentplane-level Session spawning at the caller's privilege level, including reuse of its
+environment with separate directories. Starting less-privileged agents can wait. The first
+concrete standing-agent example is daily CI-latency maintenance and fix PRs, with child Sessions
+for delegated work; persistent reactive roles and agents pursuing ongoing goals are both desired.
+
+The bounded create/control/communication contract needs review, but does not depend on settling
+the complete management/delegation vocabulary or implementing native-child Session projection.
+Use Claude/Codex workflows as reference designs for natural tool use. Domain identities, authority,
+durable ownership and failure behavior still need to be sound in this first slice. Cross-access
+cooperation remains a product goal; the broader requirements below are not all prerequisites for
+same-privilege spawning.
+
 ## Requirements and preferences
 
 - Agents with different access must be able to collaborate across separate Sandboxes. Useful
@@ -288,9 +303,9 @@ Refuse protected operations before initial sync or when required policy data exc
 freshness limit. A watch outage must not permit indefinite use of old grants. Re-evaluate
 authorization and freshness throughout transcript streams, and stop further Event emission when
 the replica observes loss of the required permission or its policy view becomes too stale.
-Independent overlapping grants still apply. Notifications implements this for sends
-([`policy_watch_period_s`](../notification_service/README.md#running-and-deployment)), following the
-egress informer; History's read rule reuses `policy/reader`. No global replica-acknowledgement
+Independent overlapping grants still apply. Notifications implements this for sends (refused while its
+policy informers are unsynced or failing; [README](../notification_service/README.md#running-and-deployment)),
+following the egress informer; History's read rule reuses `policy/reader`. No global replica-acknowledgement
 barrier is required for v1.
 
 ### Alternatives if the tentative direction needs revision
@@ -365,7 +380,7 @@ already divide by the service that enforces them:
 | Lasts as long as     | the Sandbox                                         | the history                                                                      |
 
 Today History checks only that the caller is one of its configured `reader_accounts` (staging: the
-app and Notifications), then serves any Session by ID; there is no per-Session or per-Sandbox check,
+app, Notifications and the `orchestration_v1` executor), then serves any Session by ID; there is no per-Session or per-Sandbox check,
 and a workload ServiceAccount is refused (`api/service.go`, `workload_auth/go/auth`). Writes are
 fenced separately: the ingress binds a Session to its first pushing ServiceAccount (namespace, name,
 UID) and refuses any other (`ingress/ingress.go`). The archive therefore already holds an identity of its

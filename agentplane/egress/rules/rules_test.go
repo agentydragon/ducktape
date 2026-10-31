@@ -128,7 +128,7 @@ func documentation(agentDocs fs.FS) http.Handler {
 
 // githubIndex grants the sandbox account `sb` the GitHub policy and `other` a policy of its own.
 func githubIndex() *policy.Index {
-	index := policy.NewIndex(0)
+	index := policy.NewIndex()
 	index.Rules.PutPolicySet(policySet("github", githubRule, openRule))
 	index.Rules.PutPolicySet(policySet("other-only", openRule))
 	index.Rules.PutBinding(binding("sb", "b-sb", "github"))

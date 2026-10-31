@@ -10,6 +10,7 @@ import (
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	targetpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func targetCmd() *cobra.Command {
@@ -230,10 +231,17 @@ func filterTargetHistoryStatuses(statuses []*targetpb.TargetStatus, failuresOnly
 
 func targetStatsSubCmd() *cobra.Command {
 	var repo string
+	var branch string
+	var since string
+	var until string
 	cmd := &cobra.Command{
 		Use:   "stats",
 		Short: "Show flake statistics for targets",
 		RunE: func(_ *cobra.Command, _ []string) error {
+			startedAfter, startedBefore, err := parseTargetTimeRange(since, until, time.Now())
+			if err != nil {
+				return err
+			}
 			c, err := newClient()
 			if err != nil {
 				return err
@@ -252,6 +260,9 @@ func targetStatsSubCmd() *cobra.Command {
 			req := &targetpb.GetTargetStatsRequest{
 				RequestContext: &ctxpb.RequestContext{GroupId: groupID},
 				Repo:           repo,
+				BranchName:     branch,
+				StartedAfter:   startedAfter,
+				StartedBefore:  startedBefore,
 			}
 			resp, err := c.rpc.GetTargetStats(context.Background(), req)
 			if err != nil {
@@ -278,16 +289,26 @@ func targetStatsSubCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect)")
+	cmd.Flags().StringVar(&branch, "branch", "", "Filter to invocations on this branch")
+	cmd.Flags().StringVar(&since, "since", "", "Restrict to invocations after this time (Go duration such as 168h or date YYYY-MM-DD)")
+	cmd.Flags().StringVar(&until, "until", "", "Restrict to invocations before this time (Go duration ago, such as 24h, or date YYYY-MM-DD)")
 	return cmd
 }
 
 func targetFlakesSubCmd() *cobra.Command {
 	var repo string
+	var branch string
+	var since string
+	var until string
 	cmd := &cobra.Command{
 		Use:   "flakes <target-label>",
 		Short: "Show flake samples for a target",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
+			startedAfter, startedBefore, err := parseTargetTimeRange(since, until, time.Now())
+			if err != nil {
+				return err
+			}
 			c, err := newClient()
 			if err != nil {
 				return err
@@ -307,8 +328,11 @@ func targetFlakesSubCmd() *cobra.Command {
 				RequestContext: &ctxpb.RequestContext{GroupId: groupID},
 				Label:          args[0],
 				Repo:           repo,
+				BranchName:     branch,
+				StartedAfter:   startedAfter,
+				StartedBefore:  startedBefore,
 			}
-			resp, err := c.rpc.GetTargetFlakeSamples(context.Background(), req)
+			resp, err := fetchAllTargetFlakeSamples(c, req)
 			if err != nil {
 				return err
 			}
@@ -329,7 +353,61 @@ func targetFlakesSubCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect)")
+	cmd.Flags().StringVar(&branch, "branch", "", "Filter to invocations on this branch")
+	cmd.Flags().StringVar(&since, "since", "", "Restrict to invocations after this time (Go duration such as 168h or date YYYY-MM-DD)")
+	cmd.Flags().StringVar(&until, "until", "", "Restrict to invocations before this time (Go duration ago, such as 24h, or date YYYY-MM-DD)")
 	return cmd
+}
+
+func fetchAllTargetFlakeSamples(c *client, req *targetpb.GetTargetFlakeSamplesRequest) (*targetpb.GetTargetFlakeSamplesResponse, error) {
+	result := &targetpb.GetTargetFlakeSamplesResponse{}
+	seenPageTokens := make(map[string]struct{})
+	if token := req.GetPageToken(); token != "" {
+		seenPageTokens[token] = struct{}{}
+	}
+	for {
+		page, err := c.rpc.GetTargetFlakeSamples(context.Background(), req)
+		if err != nil {
+			return nil, err
+		}
+		if result.GetResponseContext() == nil {
+			result.ResponseContext = page.GetResponseContext()
+		}
+		result.Samples = append(result.GetSamples(), page.GetSamples()...)
+		nextPageToken := page.GetNextPageToken()
+		if nextPageToken == "" {
+			break
+		}
+		if _, ok := seenPageTokens[nextPageToken]; ok {
+			return nil, fmt.Errorf("GetTargetFlakeSamples returned repeated next_page_token %q", nextPageToken)
+		}
+		seenPageTokens[nextPageToken] = struct{}{}
+		req.PageToken = nextPageToken
+	}
+	return result, nil
+}
+
+func parseTargetTimeRange(since, until string, now time.Time) (*timestamppb.Timestamp, *timestamppb.Timestamp, error) {
+	startedAfter, err := parseSince(since, now)
+	if err != nil {
+		return nil, nil, fmt.Errorf("--since: %w", err)
+	}
+	startedBefore, err := parseSince(until, now)
+	if err != nil {
+		return nil, nil, fmt.Errorf("--until: %w", err)
+	}
+	if !startedAfter.IsZero() && !startedBefore.IsZero() && startedAfter.After(startedBefore) {
+		return nil, nil, fmt.Errorf("--since must be at or before --until")
+	}
+
+	var afterTimestamp, beforeTimestamp *timestamppb.Timestamp
+	if !startedAfter.IsZero() {
+		afterTimestamp = timestamppb.New(startedAfter)
+	}
+	if !startedBefore.IsZero() {
+		beforeTimestamp = timestamppb.New(startedBefore)
+	}
+	return afterTimestamp, beforeTimestamp, nil
 }
 
 func targetLogSubCmd() *cobra.Command {

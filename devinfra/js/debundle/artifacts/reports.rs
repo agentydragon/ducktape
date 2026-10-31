@@ -1,11 +1,12 @@
 //! Serialized report models and the shared JSON writer for artifact output.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::BufWriter;
 use std::path::Path;
 
 use analysis::DepKind;
+use analysis::cross_module_purity::StableExportValue;
 use anyhow::{Context, Result};
 use serde::Serialize;
 use swc_common::Span;
@@ -186,17 +187,10 @@ pub struct ChunkAnalysisReport {
 
 #[derive(Debug, Clone, Default)]
 pub struct ChunkRuntimeFacts {
-    /// Direct ESM exports whose complete local binding history is primitive.
-    /// Canonical shallow-scan facts; never serialized or author asserted.
-    pub stable_primitive_exports: BTreeSet<String>,
-    /// Stable exports whose value is primitive when each listed named/default
-    /// import binding has a primitive value. Resolved by the program-level
-    /// cross-module analysis; never serialized or author asserted.
-    pub stable_primitive_export_import_dependencies: BTreeMap<String, BTreeSet<String>>,
-    /// Stable exports that directly re-export another named/default export.
-    /// Resolved by the program-level cross-module analysis; never serialized
-    /// or author asserted.
-    pub stable_primitive_export_reexports: BTreeMap<String, (String, String)>,
+    /// Direct ESM exports whose complete local binding history is primitive
+    /// once their copied imports are. Resolved by the program-level
+    /// cross-module analysis.
+    pub stable_export_values: BTreeMap<String, StableExportValue>,
     pub module_kind: ChunkModuleKind,
     pub has_top_level_await: bool,
     pub has_cjs_interop: bool,
@@ -207,6 +201,8 @@ pub struct ChunkRuntimeFacts {
     pub static_requests: Vec<StaticModuleRequest>,
     /// Source-only host interop sites from the canonical shallow SWC walk.
     pub interop_uses: Vec<InteropUse>,
+    pub loader_bindings: Vec<LoaderBindingUses>,
+    pub namespace_requests: Vec<NamespaceRequest>,
 }
 
 #[derive(Debug, Clone)]
@@ -217,9 +213,83 @@ pub struct InteropUse {
     pub span: Span,
     pub kind: InteropUseKind,
     pub specifier: Option<String>,
+    pub phase: SitePhase,
+}
+
+/// When a source site can run relative to the stack that enters its function
+/// (SPEC.md § Loader-closed derivation).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SitePhase {
+    Synchronous,
+    /// Synchronous, in top-level code outside every function: it runs only
+    /// while its own module's body evaluates.
+    ModuleBody,
     /// The site follows an `await` on every path of its innermost async
     /// function, so it never runs on the stack that invoked that function.
-    pub mandatory_suspension: bool,
+    MandatorilySuspended,
+    /// No reachable code can enter the site's innermost function.
+    Unreachable,
+}
+
+/// Uses of a binding that may hold the host loader: an import binding, or a
+/// top-level binding initialized with exactly `import.meta.require`.
+#[derive(Debug, Clone)]
+pub struct LoaderBindingUses {
+    pub binding: LoaderBinding,
+    /// Uses in reachable code; unreachable uses are dropped.
+    pub uses: Vec<LoaderBindingUse>,
+}
+
+#[derive(Debug, Clone)]
+pub enum LoaderBinding {
+    Import {
+        source: String,
+        imported: String,
+    },
+    LoaderAlias {
+        /// The `import.meta.require` census site that initializes it.
+        definition: Span,
+        /// Names a local export publishes it under.
+        exported_as: Vec<String>,
+    },
+    /// A binding initialized with a direct call of a `createRequire` named
+    /// import from the `module` builtin.
+    CreatedLoader,
+}
+
+/// What immediately consumes a use: the value a call returns, or the binding
+/// itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoaderUseConsumer {
+    /// `use.name`, read and not called.
+    MemberRead(String),
+    /// `use.name(...)`.
+    MemberCall(String),
+    /// The initializer of a `var`/`let`/`const` binding the walk tracks.
+    BindingInitializer,
+    Other,
+}
+
+#[derive(Debug, Clone)]
+pub struct LoaderBindingUse {
+    pub item_index: usize,
+    pub line: Option<usize>,
+    /// `Some` for a direct call whose only argument is a string literal.
+    pub literal: Option<String>,
+    /// A direct call, literal or not.
+    pub call: bool,
+    /// For a call, what consumes its result; otherwise what consumes the
+    /// binding's value.
+    pub consumer: LoaderUseConsumer,
+    pub phase: SitePhase,
+}
+
+/// A request exposing its target's whole export surface: `import * as`,
+/// `export * from`, `export { … } from`.
+#[derive(Debug, Clone)]
+pub struct NamespaceRequest {
+    pub item_index: usize,
+    pub specifier: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -230,6 +300,11 @@ pub enum InteropUseKind {
     ImportMetaRequireReference,
     GlobalThisRequire,
     UnboundRequire,
+    /// A call of a direct `eval` whose code folds to exactly `require`:
+    /// `eval("require")("x")` with one string literal.
+    EvaluatedRequireLiteralCall,
+    /// The same with any other argument list.
+    EvaluatedRequireDynamicCall,
     UnboundModule,
     /// `module.exports`: the export object, which cannot load a module.
     UnboundModuleExports,

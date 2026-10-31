@@ -1,6 +1,7 @@
 //! Abstract value vocabulary and value relationships used by synchronous execution analysis.
 
-use crate::facts::value_flow::{ValueOrigin, static_prop as static_string_prop};
+use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
+use crate::facts::value_flow::static_prop as static_string_prop;
 use imbl::{OrdMap, OrdSet};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -119,14 +120,15 @@ impl From<Span> for CallSite {
 }
 
 impl AbstractValue {
-    /// Whether this value is one of the exact primitive abstractions.
-    /// `Unknown` and `Unavailable` are intentionally excluded: either can
-    /// represent a non-primitive result or a throwing evaluation.
+    pub(super) const UNDEFINED: Self = Self::Value(Value::Prim(PrimKinds::UNDEFINED));
+    /// A primitive of untracked type.
+    pub(super) const PRIMITIVE: Self = Self::Value(Value::Prim(PrimKinds::ANY));
+
+    /// Whether this value is a primitive. `Top` and `Unavailable` are
+    /// excluded: either can represent a non-primitive result or a throwing
+    /// evaluation.
     pub(super) fn is_primitive(&self) -> bool {
-        matches!(
-            self,
-            Self::NonCallable | Self::Undefined | Self::StringPrimitive(_)
-        )
+        matches!(self, Self::Value(Value::Prim(_)))
     }
 }
 
@@ -177,9 +179,11 @@ impl<T> Ord for Captured<T> {
     }
 }
 
+/// The interpreter's values: the shared lattice plus carriers for the
+/// callable and heap summaries the lattice does not express yet.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum AbstractValue {
-    Origin(ValueOrigin),
+    Value(Value),
     Closure(u32, CapturedContext),
     /// A class's static or prototype surface can expose its deferred methods.
     /// Merely creating the class does not execute those methods.
@@ -196,8 +200,6 @@ pub(super) enum AbstractValue {
     /// through the paired defineProperties call; all other uses keep the
     /// carrier opaque.
     OwnDescriptorMap(CallSite),
-    /// An exact primitive string retained for own-name arrays and keyed reads.
-    StringPrimitive(String),
     /// A foreign source factory's deferred object graph. Provider captures are
     /// retained in its imported summary; using this token activates the full
     /// conservative importer binding/callback pool, never foreign SWC IDs.
@@ -206,12 +208,6 @@ pub(super) enum AbstractValue {
     /// Array constructor/prototype capability obtained from a proven array.
     ArrayIntrinsic,
     GlobalObject,
-    Undefined,
-    NonCallable,
-    /// Evaluating an expression throws before producing a value (for example,
-    /// a lexical binding read in its temporal dead zone).
-    Unavailable,
-    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -309,14 +305,40 @@ pub(super) fn ordered_own_property_names(creation_order: &[String]) -> Vec<Strin
         .collect()
 }
 
+/// How a member read names its property.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum MemberKey {
+    /// `object.name`.
+    Static,
+    /// `object[expression]`; the identifier when the expression is one.
+    Computed(Option<Id>),
+}
+
+impl MemberKey {
+    pub(super) fn of(property: &MemberProp) -> Self {
+        match property {
+            MemberProp::Ident(_) => Self::Static,
+            MemberProp::Computed(key) => match key.expr.unwrap_parens() {
+                Expr::Ident(binding) => Self::Computed(Some(binding.to_id())),
+                _ => Self::Computed(None),
+            },
+            MemberProp::PrivateName(_) => Self::Computed(None),
+        }
+    }
+
+    pub(super) fn is_static(&self) -> bool {
+        *self == Self::Static
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(super) enum ValueExpr {
     Binding(Id),
-    Origin(ValueOrigin),
+    Alloc(Kind, u32),
     ObjectLiteral(u32, Vec<(Option<String>, Self)>),
     Undefined,
     NonCallable,
-    Member(Box<Self>, Option<String>, bool),
+    Member(Box<Self>, Option<String>, MemberKey),
     Call(Box<Self>, Vec<Self>, CallSite),
     New(Box<Self>, Vec<Self>, CallSite),
     /// Source spelling of `Object.getPrototypeOf([][Symbol.iterator]())`.
@@ -451,9 +473,9 @@ impl ValueExpr {
     pub(super) fn from_expr(expr: &Expr) -> Self {
         match expr.unwrap_parens() {
             Expr::Ident(ident) => Self::Binding(ident.to_id()),
-            Expr::Fn(function) => Self::Origin(ValueOrigin::Function(function.function.span.lo.0)),
-            Expr::Arrow(arrow) => Self::Origin(ValueOrigin::Function(arrow.span.lo.0)),
-            Expr::Class(class) => Self::Origin(ValueOrigin::Class(class.class.span.lo.0)),
+            Expr::Fn(function) => Self::Alloc(Kind::Function, function.function.span.lo.0),
+            Expr::Arrow(arrow) => Self::Alloc(Kind::Function, arrow.span.lo.0),
+            Expr::Class(class) => Self::Alloc(Kind::Class, class.class.span.lo.0),
             Expr::Object(object) => Self::ObjectLiteral(
                 object.span.lo.0,
                 object
@@ -475,15 +497,15 @@ impl ValueExpr {
                             ),
                             Prop::Method(method) => (
                                 static_property_name(&method.key),
-                                Self::Origin(ValueOrigin::Function(method.function.span.lo.0)),
+                                Self::Alloc(Kind::Function, method.function.span.lo.0),
                             ),
                             Prop::Getter(getter) => (
                                 static_property_name(&getter.key),
-                                Self::Origin(ValueOrigin::Function(getter.function.span.lo.0)),
+                                Self::Alloc(Kind::Function, getter.function.span.lo.0),
                             ),
                             Prop::Setter(setter) => (
                                 static_property_name(&setter.key),
-                                Self::Origin(ValueOrigin::Function(setter.function.span.lo.0)),
+                                Self::Alloc(Kind::Function, setter.function.span.lo.0),
                             ),
                         },
                     })
@@ -501,7 +523,7 @@ impl ValueExpr {
             Expr::Member(member) => Self::Member(
                 Box::new(Self::from_expr(&member.obj)),
                 static_prop(&member.prop),
-                matches!(member.prop, MemberProp::Ident(_)),
+                MemberKey::of(&member.prop),
             ),
             Expr::OptChain(chain) => match chain.base.as_ref() {
                 OptChainBase::Call(call) if call.args.iter().all(|arg| arg.spread.is_none()) => {
@@ -529,7 +551,7 @@ impl ValueExpr {
                         Self::Member(
                             Box::new(Self::from_expr(&member.obj)),
                             static_prop(&member.prop),
-                            matches!(member.prop, MemberProp::Ident(_)),
+                            MemberKey::of(&member.prop),
                         ),
                     ];
                     if !matches!(member.obj.unwrap_parens(), Expr::Ident(_))
@@ -663,7 +685,7 @@ impl ValueExpr {
                     value.bindings(result);
                 }
             }
-            Self::Origin(_) | Self::Undefined | Self::NonCallable | Self::Unknown => {}
+            Self::Alloc(..) | Self::Undefined | Self::NonCallable | Self::Unknown => {}
         }
     }
 
@@ -704,12 +726,12 @@ impl ValueExpr {
             // namespace. Sinks still handle unknown receivers and
             // publications conservatively below.
             Self::Unknown => false,
-            Self::Origin(_) | Self::Undefined | Self::NonCallable => false,
+            Self::Alloc(..) | Self::Undefined | Self::NonCallable => false,
         }
     }
 
     fn is_direct_namespace_member_callee(callee: &Self, id: &Id) -> bool {
-        matches!(callee, Self::Member(object, Some(_), true)
+        matches!(callee, Self::Member(object, Some(_), MemberKey::Static)
             if matches!(object.as_ref(), Self::Binding(namespace) if namespace == id))
     }
 
@@ -743,11 +765,11 @@ impl ValueExpr {
         visiting: &mut BTreeSet<Id>,
     ) -> bool {
         match self {
-            Self::ObjectLiteral(_, _) | Self::Origin(ValueOrigin::Function(_)) => false,
+            Self::ObjectLiteral(_, _) | Self::Alloc(Kind::Function, _) => false,
             // Class metadata may contain a namespace path, including a
             // self-referential static initializer. Keep the existing
             // conservative class-surface fallback.
-            Self::Origin(ValueOrigin::Class(_)) => self.may_publish_namespace(id, aliases, facts),
+            Self::Alloc(Kind::Class, _) => self.may_publish_namespace(id, aliases, facts),
             Self::Binding(binding) => {
                 if binding == id
                     || aliases.contains(binding)
@@ -772,7 +794,7 @@ impl ValueExpr {
             Self::Alternatives(values) => values
                 .iter()
                 .any(|value| value.may_equal_namespace(id, aliases, facts, visiting)),
-            Self::Member(object, Some(property), true) => {
+            Self::Member(object, Some(property), MemberKey::Static) => {
                 if let Some(value) = facts.own_data_member(object, property, id, aliases) {
                     value.may_equal_namespace(id, aliases, facts, visiting)
                 } else {
@@ -824,7 +846,7 @@ impl ValueExpr {
             Self::Member(object, property, is_static) => {
                 let projected = property
                     .as_deref()
-                    .filter(|_| *is_static)
+                    .filter(|_| is_static.is_static())
                     .and_then(|property| facts.own_data_member(object, property, id, aliases));
                 projected.unwrap_or(object).may_publish_namespace_inner(
                     id,
@@ -909,10 +931,10 @@ impl ValueExpr {
                     false
                 }
             }
-            Self::Origin(ValueOrigin::Class(_)) => {
+            Self::Alloc(Kind::Class, _) => {
                 facts.class_may_publish(self, id, aliases, visiting_bindings, visiting_classes)
             }
-            Self::Origin(_) | Self::Undefined | Self::NonCallable => false,
+            Self::Alloc(..) | Self::Undefined | Self::NonCallable => false,
         }
     }
 
@@ -969,7 +991,7 @@ impl ValueExpr {
             Self::Member(object, property, is_static) => {
                 if let Some(value) = property
                     .as_deref()
-                    .filter(|_| *is_static)
+                    .filter(|_| is_static.is_static())
                     .and_then(|property| facts.own_data_member(object, property, id, aliases))
                 {
                     return value.may_be_namespace_mutation_receiver_with_alias_query(
@@ -1000,7 +1022,7 @@ impl ValueExpr {
                     || !Self::is_direct_namespace_member_callee(callee, id)
             }
             Self::New(..) | Self::Unknown => true,
-            Self::Origin(_) | Self::Undefined | Self::NonCallable => false,
+            Self::Alloc(..) | Self::Undefined | Self::NonCallable => false,
         }
     }
 
@@ -1017,7 +1039,7 @@ impl ValueExpr {
         match self {
             Self::ObjectLiteral(_, properties) => properties.iter().any(|(name, value)| {
                 let direct_member_value = name.is_some()
-                    && matches!(value, Self::Member(object, Some(_), true)
+                    && matches!(value, Self::Member(object, Some(_), MemberKey::Static)
                         if matches!(object.as_ref(), Self::Binding(namespace) if namespace == id));
                 !direct_member_value
                     && value.may_publish_namespace_in_factory_result(id, aliases, facts)
@@ -1166,7 +1188,7 @@ impl NamespaceValueFacts {
 
     fn may_be_local_class_value(&self, value: &ValueExpr, visiting: &mut BTreeSet<Id>) -> bool {
         match value {
-            ValueExpr::Origin(ValueOrigin::Class(_)) => true,
+            ValueExpr::Alloc(Kind::Class, _) => true,
             ValueExpr::Binding(binding) => {
                 if !visiting.insert(binding.clone()) {
                     return false;
@@ -1196,7 +1218,7 @@ impl NamespaceValueFacts {
         visiting: &mut BTreeSet<Id>,
     ) -> Option<(u32, ClassSurface)> {
         match value {
-            ValueExpr::Origin(ValueOrigin::Class(span)) => Some((*span, ClassSurface::Constructor)),
+            ValueExpr::Alloc(Kind::Class, span) => Some((*span, ClassSurface::Constructor)),
             ValueExpr::Binding(binding) => {
                 if !visiting.insert(binding.clone()) {
                     return None;
@@ -1243,7 +1265,7 @@ impl NamespaceValueFacts {
                         return true;
                     };
                     self.class_may_publish(
-                        &ValueExpr::Origin(ValueOrigin::Class(base_span)),
+                        &ValueExpr::Alloc(Kind::Class, base_span),
                         id,
                         aliases,
                         visiting_bindings,

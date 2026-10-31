@@ -6,6 +6,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Callable, Coroutine, Sequence
 from contextlib import AsyncExitStack, aclosing, asynccontextmanager
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -61,10 +62,43 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
             cleanup.push_async_callback(suspend_and_delete, cluster, client, view.name, view.uid)
             with phase_tracer.start_as_current_span(
                 "vm.sandbox.ready", attributes={"sandbox.name": view.name, "sandbox.uid": str(view.uid)}
-            ):
-                return await wait_until_running(client, view.name)
+            ) as ready_span:
+                ready = await wait_until_running(client, view.name)
+                record_launch_transitions(ready_span, ready)
+                return ready
 
         yield create
+
+
+def record_launch_transitions(span: trace.Span, view: SandboxView) -> None:
+    """Mark when the controller and kubelet reached each launch step, so a slow Ready can be split.
+
+    Each True condition of the Sandbox and its Pod, and each running container's start, becomes a
+    span event at the time the cluster recorded it. The span ends when the test saw Ready, so the gap
+    after the last event is the readiness poll. Status is the API server's untyped payload.
+    """
+    pod_status = view.pod.status if view.pod else None
+    for source, status in (("sandbox", view.status), ("pod", pod_status)):
+        for condition in _dicts((status or {}).get("conditions")):
+            at = condition.get("lastTransitionTime")
+            if condition.get("status") == "True" and isinstance(at, str):
+                span.add_event(f"{source}.{condition.get('type')}", timestamp=_nanoseconds(at))
+    for container in _dicts((pod_status or {}).get("containerStatuses")):
+        state = container.get("state")
+        running = state.get("running") if isinstance(state, dict) else None
+        started = running.get("startedAt") if isinstance(running, dict) else None
+        if isinstance(started, str):
+            span.add_event(
+                "pod.container_started", {"container": str(container.get("name"))}, timestamp=_nanoseconds(started)
+            )
+
+
+def _dicts(value: object) -> list[dict[str, object]]:
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _nanoseconds(timestamp: str) -> int:
+    return int(datetime.fromisoformat(timestamp).timestamp() * 1e9)
 
 
 class SandboxNotReadyError(Exception):
@@ -95,7 +129,7 @@ async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: U
             async with asyncio.timeout(SANDBOX_READY_SECONDS), aclosing(client.sandbox_snapshots()) as snapshots:
                 async for snapshot in snapshots:
                     last_snapshot = snapshot
-                    if not snapshot.watch.fresh:
+                    if not snapshot.watch.healthy:
                         continue
                     view = next((view for view in snapshot.sandboxes if view.name == name), None)
                     if view is None:

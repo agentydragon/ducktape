@@ -67,7 +67,7 @@ fn class_field_native_premises_include_other_analyzed_chunks() {
     let source = "import './replacement.js';\nconst a = (() => 1)();\nclass Registry { field = new Set(); }\nconst b = new Registry();\nconst c = b ? a : 0;\nconsole.log(c);\n";
     for replacement in [
         "globalThis.Set = function () {};\n",
-        "export function mutate() { Set.prototype.add = function () { return this; }; }\n",
+        "export function mutate() { const root = globalThis; root.Set = function () {}; }\n",
     ] {
         expect_sequenced_cycle_rejection(
             FixtureOpts::new(
@@ -84,12 +84,13 @@ fn class_field_native_premises_include_other_analyzed_chunks() {
 }
 
 /// A global slot's value may be any native, so a write through its read-back
-/// leaves every intrinsic slot unknown, not only a family it names. The
-/// control writes the same property on a fresh local object.
+/// reaches its key on every intrinsic: the `%Set%` global slot for `Set`, but
+/// not for `add`, which the empty `new Set()` never reads. The control writes
+/// the same property on a fresh local object.
 #[test]
-fn global_slot_read_back_write_poisons_every_native_slot() {
+fn global_slot_read_back_write_reaches_its_key_on_every_native() {
     let source = "import './holder.js';\nconst a = (() => 1)();\nclass Registry { field = new Set(); }\nconst b = new Registry();\nconst c = b ? a : 0;\nconsole.log(c);\n";
-    let split = |holder: &'static [(&'static str, &'static str)]| {
+    fn split<'a>(source: &'a str, holder: &'a [(&'a str, &'a str)]) -> FixtureOpts<'a> {
         FixtureOpts::new(
             source,
             vec![logical_module(
@@ -98,17 +99,22 @@ fn global_slot_read_back_write_poisons_every_native_slot() {
             )],
         )
         .with_extra_chunks(holder)
-    };
-    let fixture = run_fixture(split(&[(
-        "static/holder",
+    }
+    for holder in [
         "const box = {};\nexport function mutate() { box.add = function () { return this; }; }\n",
-    )]));
-    assert_preserved_entry_output(&fixture, "1\n");
+        "const box = globalThis.holder;\nexport function mutate() { box.add = function () { return this; }; }\n",
+    ] {
+        let fixture = run_fixture(split(source, &[("static/holder", holder)]));
+        assert_preserved_entry_output(&fixture, "1\n");
+    }
     expect_sequenced_cycle_rejection(
-        split(&[(
-            "static/holder",
-            "const box = globalThis.holder;\nexport function mutate() { box.add = function () { return this; }; }\n",
-        )]),
+        split(
+            source,
+            &[(
+                "static/holder",
+                "const box = globalThis.holder;\nexport function mutate() { box.Set = function () {}; }\n",
+            )],
+        ),
         &["registry", "residual"],
     );
 }

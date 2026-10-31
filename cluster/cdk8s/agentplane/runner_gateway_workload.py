@@ -322,6 +322,7 @@ class RunnerGateway(Construct):
             "role",
             metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
             rules=[
+                # Flux can apply RBAC before the image rolls: older Gateways still read workloads directly.
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
                 RolePolicyRule(
                     resources=[

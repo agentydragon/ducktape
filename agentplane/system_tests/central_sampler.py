@@ -99,12 +99,7 @@ async def _delete_sandbox(cluster: Cluster, name: str, uid: str) -> None:
     await cluster.kubectl(
         "wait", f"sandbox/{name}", "--for=jsonpath={.status.operatingMode}=Suspended", "--timeout=300s"
     )
-    await cluster.kubectl(
-        "wait",
-        f"sandbox/{name}",
-        '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
-        "--timeout=300s",
-    )
+    await cluster.kubectl("wait", f"sandbox/{name}", "--for=jsonpath={.status.stopStage}=Stopped", "--timeout=300s")
     async with cluster.api_client() as connection:
         await k8s.CustomObjectsApi(connection).delete_namespaced_custom_object(
             GROUP,

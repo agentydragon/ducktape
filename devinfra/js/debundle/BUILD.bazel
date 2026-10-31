@@ -472,6 +472,15 @@ rust_test(
     deps = ["@crates//:tempfile"],
 )
 
+# The `globals` package's environment lists name the hosts' standard global
+# properties (SPEC.md § Predefined globals).
+genrule(
+    name = "standard_globals_json",
+    srcs = ["//:node_modules/globals"],
+    outs = ["standard_globals.json"],
+    cmd = "for f in $(SRCS); do if [ -f $$f/globals.json ]; then cp $$f/globals.json $@; fi; done; test -s $@",
+)
+
 rust_library(
     name = "analysis",
     srcs = [
@@ -479,12 +488,13 @@ rust_library(
         "assignment_assembly.rs",
         "atomic_groups.rs",
         "cross_module_purity.rs",
-        "cross_module_values.rs",
         "facts/abstract_domain.rs",
         "facts/abstract_domain/builtins.rs",
         "facts/abstract_domain/effect.rs",
+        "facts/abstract_domain/foreign_call.rs",
         "facts/abstract_domain/heap.rs",
         "facts/abstract_domain/integrity.rs",
+        "facts/abstract_domain/primitive.rs",
         "facts/abstract_domain/value.rs",
         "facts/analyze.rs",
         "facts/array_content_effects.rs",
@@ -505,6 +515,7 @@ rust_library(
         "facts/semantic_inference.rs",
         "facts/set_iterables.rs",
         "facts/source_unit_read_closure.rs",
+        "facts/standard_globals.rs",
         "facts/statement_facts.rs",
         "facts/sync_effects.rs",
         "facts/sync_effects/execution_index.rs",
@@ -534,26 +545,26 @@ rust_library(
         "lib.rs",
         "loader_closure.rs",
         "module_assignment.rs",
-        "purity/builtin_calls.rs",
         "purity/classifier.rs",
         "purity/classifier_tests.rs",
         "purity/code_graph.rs",
         "purity/effect_inference.rs",
+        "purity/fluent.rs",
         "purity/fresh_record.rs",
         "purity/graph_purity_tests.rs",
         "purity/mod.rs",
-        "purity/plain_data.rs",
+        "purity/native_rows.rs",
         "purity/purity_type.rs",
         "purity/redundant_hints.rs",
         "purity/redundant_hints_tests.rs",
         "purity/ts_enum_iife.rs",
-        "purity/value_inference.rs",
-        "purity/whitelists.rs",
         "reports/mod.rs",
         "reports/schema.rs",
     ],
+    compile_data = [":standard_globals_json"],
     crate_root = "lib.rs",
     edition = "2024",
+    rustc_env = {"STANDARD_GLOBALS_JSON": "$(execpath :standard_globals_json)"},
     deps = [
         ":binding_targets",
         ":graph_provenance",
@@ -958,6 +969,7 @@ rust_library(
     name = "program_analysis",
     srcs = [
         "loader_phase.rs",
+        "loader_reach.rs",
         "program_analysis.rs",
     ],
     crate_root = "program_analysis.rs",
@@ -967,6 +979,7 @@ rust_library(
         ":artifact",
         ":binding_targets",
         ":js_ast",
+        ":spec",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
@@ -1424,6 +1437,25 @@ rust_binary(
     crate_root = "main.rs",
     edition = "2024",
     visibility = ["//visibility:public"],
+    deps = [
+        ":cli",
+        ":gate",
+        "@crates//:clap",
+        "@crates//:swc_common",
+    ],
+)
+
+# Snapshot e2e cases copy and hash the engine. Keep symbols on the normal CLI,
+# but omit them from the test executable to avoid repeating that byte work.
+rust_binary(
+    name = "debundle_e2e",
+    testonly = True,
+    srcs = ["main.rs"],
+    crate_name = "debundle",
+    crate_root = "main.rs",
+    edition = "2024",
+    rustc_flags = ["-Cstrip=symbols"],
+    visibility = ["//devinfra/js/debundle/e2e:__pkg__"],
     deps = [
         ":cli",
         ":gate",

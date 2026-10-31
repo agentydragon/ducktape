@@ -11,6 +11,7 @@ def _erofs_image_impl(ctx):
             "mkfs.erofs",
             "--tar=f",
             "--all-root",
+            "--quiet",
             "-T0",
             "-U",
             "00000000-0000-0000-0000-000000000000",

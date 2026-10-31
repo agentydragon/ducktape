@@ -53,7 +53,7 @@ fn assert_split_rejected_with_peer(
 fn forward_export_and_late_const_arrow_do_not_reach_an_earlier_unknown_call() {
     assert_split_preserved(
         r#"export { readLater };
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 1;
@@ -69,7 +69,7 @@ console.log(later);
 fn late_exported_class_does_not_reach_an_earlier_unknown_call() {
     assert_split_preserved(
         r#"export { Reader };
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 1;
@@ -86,7 +86,7 @@ fn exported_hoisted_function_is_reachable_before_its_declaration() {
     assert_split_rejected_with_peer(
         r#"import "./peer.js";
 export function readLater() { return later; }
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 1;
@@ -106,7 +106,7 @@ export {};
 fn exported_default_function_is_reachable_before_its_declaration() {
     assert_split_rejected_with_peer(
         r#"import "./peer.js";
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 1;
@@ -128,7 +128,7 @@ fn initialized_exported_const_arrow_reaches_a_later_unknown_call() {
     assert_split_rejected_with_peer(
         r#"import "./peer.js";
 export const readLater = () => later;
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 1;
@@ -149,7 +149,7 @@ fn reachable_opaque_exported_body_retains_lexical_callback_reads() {
     assert_split_rejected_with_peer(
         r#"import "./peer.js";
 export function opaque() { foreignTag`${readLater}`; }
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 1;
@@ -171,7 +171,7 @@ fn reachable_exported_direct_eval_retains_all_local_callables() {
     assert_split_rejected_with_peer(
         r#"import "./peer.js";
 export function evaluate() { eval("readLater()"); }
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 1;
@@ -192,7 +192,7 @@ export {};
 fn opaque_export_without_private_capture_does_not_widen_to_all_source_units() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"export function opaque(callback) { callback?.(); }
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 1;

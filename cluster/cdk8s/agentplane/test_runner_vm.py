@@ -15,14 +15,18 @@ from cdk8s import (
 )
 from more_itertools import one
 
-from agentplane.runner.configuration import Configuration, VMEnvironment
+from agentplane.runner.configuration import CodexReadiness, Configuration, VMEnvironment
 from cluster.cdk8s.agentplane import runner_sandbox, runner_vm, staging
 
 HARNESS_ENV = {"EXAMPLE_SERVICE_URL": "http://service.test"}
 
 
 def _runner_vm_manifests(
-    *, app: App, console_autologin: bool, session_reconcile_concurrency: int | None = None
+    *,
+    app: App,
+    console_autologin: bool,
+    session_reconcile_concurrency: int | None = None,
+    codex_readiness: CodexReadiness | None = None,
 ) -> dict[str, dict[str, Any]]:
     chart = Chart(app, "test")
     runner_vm.RunnerVmTemplate(
@@ -41,6 +45,7 @@ def _runner_vm_manifests(
         platform_instructions="Test platform guidance.",
         harness_env=HARNESS_ENV,
         session_reconcile_concurrency=session_reconcile_concurrency,
+        codex_readiness=codex_readiness,
     )
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
     config_map = one(
@@ -69,6 +74,8 @@ def test_harness_env_reaches_the_vm_environment(scratch_app: App) -> None:
     runner = Configuration.model_validate(rendered["runner"])
     assert all(runner.harness_environment.values[name] == value for name, value in HARNESS_ENV.items())
     assert runner.session_reconcile_concurrency is None
+    assert runner.codex_readiness is None
+    assert "codex_readiness" not in rendered["runner"]
     assert isinstance(runner.environment, VMEnvironment)
 
 
@@ -76,6 +83,21 @@ def test_session_reconcile_concurrency_reaches_vm_runner_configuration(scratch_a
     rendered = _runner_vm_manifests(app=scratch_app, console_autologin=False, session_reconcile_concurrency=2048)
     config = Configuration.model_validate(rendered["runner"])
     assert config.session_reconcile_concurrency == 2048
+
+
+def test_codex_readiness_reaches_vm_runner_configuration(scratch_app: App) -> None:
+    readiness = CodexReadiness(
+        exec_server_ready_timeout_ms=60_000,
+        exec_server_probe_timeout_ms=5_000,
+        exec_server_dependency_timeout_ms=120_000,
+    )
+    rendered = _runner_vm_manifests(app=scratch_app, console_autologin=False, codex_readiness=readiness)
+
+    assert rendered["runner"]["codex_readiness"] == {
+        "exec_server_ready_timeout_ms": 60_000,
+        "exec_server_probe_timeout_ms": 5_000,
+        "exec_server_dependency_timeout_ms": 120_000,
+    }
 
 
 def test_vm_size_and_runner_configuration_share_resource_policy(scratch_app: App) -> None:

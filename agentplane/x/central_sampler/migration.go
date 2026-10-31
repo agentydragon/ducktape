@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
 )
@@ -14,8 +15,10 @@ import (
 //go:embed schema/*.sql
 var migrationFiles embed.FS
 
-// Migrate applies the sampler-owned Goose SQL migrations.
-func Migrate(ctx context.Context, db *sql.DB) error {
+// Migrate applies the sampler-owned Goose SQL migrations, converts retained conversations to
+// their native API representation, and verifies the resulting schema. modelAPIs explicitly maps
+// configured public model routes to their provider API for legacy sessions without request evidence.
+func Migrate(ctx context.Context, db *sql.DB, modelAPIs map[string]protocol.APIStyle) error {
 	files, err := fs.Sub(migrationFiles, "schema")
 	if err != nil {
 		return err
@@ -33,13 +36,16 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if _, err := provider.Up(ctx); err != nil {
 		return err
 	}
+	if err := migrateNativeConversations(ctx, db, modelAPIs); err != nil {
+		return fmt.Errorf("migrate native sampler conversations: %w", err)
+	}
 	return verifySchema(ctx, db)
 }
 
 func verifySchema(ctx context.Context, db *sql.DB) error {
 	expected := map[string]map[string]string{
-		"sampler_conversation":      {"code_session_epoch": "integer", "id": "uuid", "generation": "integer", "owner": "uuid", "lease_until": "timestamp with time zone", "pending": "jsonb", "stopped": "boolean", "executor_session": "character varying", "context_items": "jsonb", "instructions": "text", "context_tokens": "integer", "executor_shell": "character varying", "environment_context": "jsonb"},
-		"sampler_conversation_item": {"conversation_id": "uuid", "ordinal": "bigint", "item": "jsonb"},
+		"sampler_conversation":      {"api": "text", "code_session_epoch": "integer", "id": "uuid", "generation": "integer", "owner": "uuid", "lease_until": "timestamp with time zone", "pending": "jsonb", "stopped": "boolean", "executor_session": "character varying", "context": "jsonb", "instructions": "text", "context_tokens": "integer", "executor_shell": "character varying", "environment_context": "jsonb"},
+		"sampler_conversation_item": {"conversation_id": "uuid", "ordinal": "bigint", "record": "jsonb"},
 		"sampler_intent":            {"id": "uuid", "conversation_id": "uuid", "generation": "integer", "request": "jsonb", "result": "jsonb"},
 		"sampler_process":           {"id": "character varying", "conversation_id": "uuid", "generation": "integer", "after_seq": "integer", "status": "character varying", "tty": "boolean", "exit_code": "integer", "buffered_output": "bytea", "model_session_id": "integer", "omitted_bytes": "bigint"},
 		"sampler_cell":              {"id": "character varying", "conversation_id": "uuid", "generation": "integer", "status": "character varying"},
@@ -75,6 +81,27 @@ func verifySchema(ctx context.Context, db *sql.DB) error {
 		for column := range columns {
 			return fmt.Errorf("central sampler schema is missing %s.%s", table, column)
 		}
+	}
+	var apiNullable string
+	if err := db.QueryRowContext(ctx, `SELECT is_nullable FROM information_schema.columns
+		WHERE table_schema=current_schema() AND table_name='sampler_conversation' AND column_name='api'`).Scan(&apiNullable); err != nil {
+		return fmt.Errorf("inspect central sampler API nullability: %w", err)
+	}
+	if apiNullable != "NO" {
+		return fmt.Errorf("central sampler schema sampler_conversation.api is nullable")
+	}
+	var apiConstraint bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
+		JOIN pg_namespace n ON n.oid=t.relnamespace
+		WHERE n.nspname=current_schema() AND t.relname='sampler_conversation'
+		AND c.conname='sampler_conversation_api_check'
+		AND pg_get_constraintdef(c.oid) LIKE '%responses%'
+		AND pg_get_constraintdef(c.oid) LIKE '%anthropic_messages%')`).Scan(&apiConstraint); err != nil {
+		return fmt.Errorf("inspect central sampler API constraint: %w", err)
+	}
+	if !apiConstraint {
+		return fmt.Errorf("central sampler schema is missing sampler_conversation_api_check")
 	}
 	return nil
 }

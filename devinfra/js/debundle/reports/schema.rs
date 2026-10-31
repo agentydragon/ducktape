@@ -314,9 +314,30 @@ pub enum NativeReceiverPath {
 #[serde(rename_all = "snake_case")]
 pub enum NativePropertyKey {
     String(String),
+    /// Any string starting with `prefix` and ending with `suffix`.
+    Affixed {
+        prefix: String,
+        suffix: String,
+    },
     SymbolIterator,
     OtherSymbol,
     Unknown,
+}
+
+impl NativePropertyKey {
+    /// Whether a key in this domain may be the string `name`.
+    pub(crate) fn may_be_string(&self, name: &str) -> bool {
+        match self {
+            Self::String(key) => key == name,
+            Self::Affixed { prefix, suffix } => {
+                name.len() >= prefix.len() + suffix.len()
+                    && name.starts_with(prefix.as_str())
+                    && name.ends_with(suffix.as_str())
+            }
+            Self::SymbolIterator | Self::OtherSymbol => false,
+            Self::Unknown => true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -359,6 +380,7 @@ pub enum NativeIntegrityGuard {
     NativeCallIdentity,
     SetIterable,
     LocalClassConstruction,
+    ForeignCallSummary,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -456,7 +478,6 @@ pub enum InferenceRule {
     StableFunction,
     StableProvider,
     ArgumentNoEscape,
-    CallbackFactory,
     ReturnedRecord,
     NamespaceWrapper,
     OwnPropertySourceOrigin,
@@ -466,6 +487,7 @@ pub enum InferenceRule {
     OwnPropertyDescriptorProjection,
     DescriptorCopyProvider,
     DescriptorCopyFactory,
+    ForeignCallSummary,
 }
 
 /// A purpose-specific certificate actually used by synchronous execution.
@@ -491,6 +513,8 @@ pub struct SynchronousExecutionReport {
     pub inference_uses: Vec<InferenceUse>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub local_record_factory_uses: Vec<LocalRecordFactoryUse>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub local_record_factory_rejections: Vec<LocalRecordFactoryRejection>,
     /// Evaluated premises which failed; other eligibility conditions may also fail.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_integrity_checks: Vec<NativeIntegrityCheck>,
@@ -536,6 +560,67 @@ pub struct LocalRecordFactoryUse {
     pub(crate) span: swc_common::Span,
 }
 
+/// A direct call of an annotated record factory whose argument is outside the
+/// admitted fresh-record shapes, so the author premise was not consulted.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LocalRecordFactoryRejection {
+    pub factory_binding: String,
+    pub reason: RecordFactoryRejectionReason,
+    /// Outermost record property holding the refused value, when there is one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub property: Option<String>,
+    /// The returned allocation's failed constructor check, for `constructor_proof`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub construction: Option<ConstructionRejection>,
+    pub lexical_statement_ordinal: SourceUnitOrdinal,
+    pub source_location: Option<SourceLocation>,
+    #[serde(skip)]
+    pub(crate) span: swc_common::Span,
+}
+
+/// Why an annotated record-factory call kept the conservative path. The
+/// first group refuses the argument's shape; the rest are checked-constructor
+/// proof conditions outside the record.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordFactoryRejectionReason {
+    /// The call does not pass exactly one direct object literal.
+    NotObjectLiteral,
+    /// An object spread whose source is not a proven fresh plain-data record.
+    Spread,
+    ComputedKey,
+    /// A getter or setter, which a constructor property read could invoke.
+    Accessor,
+    /// A `__proto__` key, which sets the prototype instead of a field.
+    PrototypeKey,
+    DuplicateKey,
+    /// An array hole or array spread.
+    ArrayShape,
+    /// A value whose evaluation can run code (calls, assignments, sequences, ...).
+    UnsupportedValue,
+    /// A binding read not proven to hold a primitive or a function at the call.
+    UnprovenBinding,
+    /// A member read not proven to be a closed enum's own primitive member.
+    UnprovenMemberRead,
+    /// A template substitution not proven primitive, so `ToString` could run code.
+    TemplateSubstitution,
+    /// Synchronous execution was already incomplete before this statement.
+    IncompleteExecution,
+    /// The result binding is exported, with importer reentry not ruled out.
+    ExportedResult,
+    /// The call is not the sole initializer of one declared binding, or the
+    /// statement also writes properties or exports values.
+    StatementShape,
+    /// The statement evaluates other calls or unproven conversions.
+    ArgumentEffects,
+    /// The callee is not the stable, unexposed hoisted factory function.
+    FactoryIdentity,
+    /// The factory body is not one return of checked local allocations.
+    FactoryBody,
+    /// A constructed class failed the checked local constructor proof.
+    ConstructorProof,
+}
+
 /// A successful timing refinement that consumed a `reentry_free_operations`
 /// entry (SPEC.md § Host behavior).
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -549,6 +634,7 @@ pub struct ReentryFreeOperationUse {
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ExecutionPrecisionLoss {
     pub reason: ExecutionPrecisionLossReason,
+    pub reach: HavocReach,
     /// Lexical source unit containing the operation or truncated callable.
     pub statement_ordinal: SourceUnitOrdinal,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -593,6 +679,46 @@ pub enum ExecutionPrecisionLossReason {
         limit: usize,
         pool_size: usize,
     },
+}
+
+/// What the code a precision loss may run can reach, classified per
+/// SPEC.md § Synchronous execution diagnostics. A report only: the conservative
+/// path promotes the same effects for both.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HavocReach {
+    /// The unmodelled part is known source code: its callables and the
+    /// values it receives reach no code the interpreter cannot name.
+    Bounded,
+    Global {
+        cause: GlobalReachCause,
+    },
+}
+
+/// The first collapse rule that made a reach `global`.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GlobalReachCause {
+    /// The code calls, directly or through the synchronous read closure, a
+    /// callee the source does not name: an import, a global, a parameter, an
+    /// unknown member, or an opaque body.
+    UnknownCallee,
+    /// An input reaches a value opaque code may hold or have changed: an
+    /// unknown value, a tainted object, an escaped callable, or a global
+    /// object alias.
+    TaintedInput,
+    /// A class the code runs is published, escaped or tainted, so its methods
+    /// may run on a borrowed receiver.
+    BorrowedReceiver,
+    /// Dynamic scope (`eval`, `with`) makes the read closure incomplete.
+    DynamicScope,
+    /// An input is a foreign deferred record.
+    ForeignRecord,
+    /// The operation itself is unmodelled; values the interpreter does not
+    /// know choose the code it may run.
+    UnmodelledOperation,
+    /// The callbacks unknown code may invoke: the prefix-wide escape pool.
+    EscapedCallbackPool,
 }
 
 /// Why a local class construction kept the conservative path.
@@ -658,6 +784,68 @@ impl std::fmt::Display for ExecutionPrecisionLossReason {
             }
             Self::CallbackPoolLimit { limit, pool_size } => {
                 write!(f, "`callback_pool_limit` (pool {pool_size}, limit {limit})")
+            }
+        }
+    }
+}
+
+/// The conservative path that assumed a binding effect instead of deriving
+/// it (SPEC.md § Commuting statements). Each path assumes some code may run
+/// (or reach the binding) at the statement; none follows an invocation the
+/// statement definitely makes.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "path", rename_all = "snake_case")]
+pub enum AssumedEffectReason {
+    /// The statement's bounded fallback summary: having stopped expanding
+    /// callbacks, or handed a returned callback to opaque code, the
+    /// interpreter assumes each may run. `loss` opened the summary.
+    FallbackSummary { loss: ExecutionPrecisionLossReason },
+    /// A callback opaque code may invoke (escaped earlier, exported, or
+    /// reachable from the opaque operation's inputs), executed as if it ran.
+    OpaqueCallbackInvocation,
+    /// The synchronous read/rebind closure of a callback, class or foreign
+    /// record exposed to opaque code, promoted without executing it.
+    EscapedCallbackClosure,
+    /// The lazy body of an accessor owner whose setter a property write or
+    /// `Object.assign` may trigger on a receiver of unknown shape.
+    PossibleSetter,
+    /// The whole lazy body of a callable the interpreter executed but could
+    /// not model (`callable_inputs`, `array_iteration`), beyond what that
+    /// execution reached.
+    WholeBodyPromotion { operation: ExecutionOperation },
+    /// The omitted callback effects restored when a private-constructor
+    /// result proof's execution failed.
+    PrivateConstructorRestore,
+    /// Graph build: the read closure of a callee at-init promotion could not
+    /// resolve, assumed to run at the calling statement.
+    UnresolvedCallClosure,
+}
+
+impl std::fmt::Display for AssumedEffectReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::FallbackSummary { loss } => write!(f, "the {loss} fallback summary"),
+            Self::OpaqueCallbackInvocation => {
+                f.write_str("a callback opaque code may invoke (`opaque_callback_invocation`)")
+            }
+            Self::EscapedCallbackClosure => {
+                f.write_str("an escaped callback's closure (`escaped_callback_closure`)")
+            }
+            Self::PossibleSetter => f.write_str("a possible setter (`possible_setter`)"),
+            Self::WholeBodyPromotion { operation } => {
+                let operation = serde_json::to_value(operation)
+                    .expect("execution operations serialize as strings");
+                write!(
+                    f,
+                    "whole-body promotion (`whole_body_promotion`, {})",
+                    operation.as_str().expect("unit variant")
+                )
+            }
+            Self::PrivateConstructorRestore => f.write_str(
+                "the failed private-constructor proof's restore (`private_constructor_restore`)",
+            ),
+            Self::UnresolvedCallClosure => {
+                f.write_str("an unresolved at-init call's closure (`unresolved_call_closure`)")
             }
         }
     }

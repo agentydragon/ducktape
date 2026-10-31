@@ -10,14 +10,12 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
@@ -49,9 +47,6 @@ type config struct {
 	// PolicyNamespace holds the PolicySets and PolicyBindings the service watches; it writes ActionsReady only on
 	// those bindings.
 	PolicyNamespace string `mapstructure:"policy_namespace"`
-	// PolicyResyncSeconds is how long the API server holds each policy watch open; nothing auto-decides once a
-	// watch has missed reader.StaleAfterCycles of these.
-	PolicyResyncSeconds int `mapstructure:"policy_resync_seconds"`
 	// GitHubVisibility is the unauthenticated GitHub lookup behind `github_public_repository` policies.
 	GitHubVisibility gitHubVisibility `mapstructure:"github_visibility"`
 	// WebPush is on when any of its settings is set; off, no push is sent and no subscription is accepted.
@@ -62,12 +57,6 @@ type config struct {
 	MCPServers map[string]linkage.Server `mapstructure:"mcp_servers"`
 	// MCPClientMetadata is the client identity of the servers that use the shared Client ID Metadata Document.
 	MCPClientMetadata linkage.ClientMetadata `mapstructure:"mcp_client_metadata"`
-	// CLEANUP(added 2026-10-27): Accept the generated false value until it is removed from manifests after this image
-	// has rolled out. A true value is rejected; this binary does not serve the integrated Connection API.
-	IntegratedConnectionService bool `mapstructure:"integrated_connection_service"`
-	// CLEANUP(added 2026-10-27): Accept the generated value (up to 180 seconds) until it is removed after this image
-	// rolls out. The MCP edge owns caller waits; Action Service uses DirectWaitSeconds only for orchestration_v1.
-	MaxWaitSeconds float64 `mapstructure:"max_wait_seconds"`
 	// DirectWaitSeconds bounds orchestration_v1 Session operations.
 	DirectWaitSeconds float64 `mapstructure:"direct_wait_seconds"`
 	// SessionDispatcher is where the orchestration_v1 groups send Session commands, and HistoryService where they read
@@ -91,11 +80,11 @@ type gitHubVisibility struct {
 
 func defaultConfig() config {
 	return config{
-		Host: "0.0.0.0", Port: 8080, OperatorOIDC: api.DefaultOperatorOIDCSettings(), PolicyResyncSeconds: 300,
+		Host: "0.0.0.0", Port: 8080, OperatorOIDC: api.DefaultOperatorOIDCSettings(),
 		GitHubVisibility: gitHubVisibility{
 			APIBaseURL: policies.GitHubAPIBaseURL, CacheTTLSeconds: policies.VisibilityTTL.Seconds(),
 		},
-		ActionGroups: &catalog.Catalog{}, MaxWaitSeconds: 30, DirectWaitSeconds: 30,
+		ActionGroups: &catalog.Catalog{}, DirectWaitSeconds: 30,
 	}
 }
 
@@ -186,9 +175,6 @@ func (c *config) validate() error {
 	if len(c.CallerServiceAccountNamespaces) == 0 {
 		return errors.New("caller_service_account_namespaces must list at least one namespace")
 	}
-	if c.policyWatchPeriod() < reader.MinWatchPeriod {
-		return fmt.Errorf("policy_resync_seconds must be at least %v", reader.MinWatchPeriod.Seconds())
-	}
 	if c.GitHubVisibility.CacheTTLSeconds < 0 {
 		return errors.New("github_visibility.cache_ttl_seconds must not be negative")
 	}
@@ -200,16 +186,8 @@ func (c *config) validate() error {
 	if err := linkage.Validate(c.MCPServers, c.MCPClientMetadata); err != nil {
 		return err
 	}
-	if c.IntegratedConnectionService {
-		return errors.New("integrated_connection_service is retired")
-	}
-	if c.MaxWaitSeconds > 180 {
-		return errors.New("retired max_wait_seconds must not exceed 180")
-	}
-	for _, seconds := range []float64{c.MaxWaitSeconds, c.DirectWaitSeconds} {
-		if seconds < 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
-			return errors.New("MCP wait seconds must be finite and nonnegative")
-		}
+	if c.DirectWaitSeconds < 0 || math.IsNaN(c.DirectWaitSeconds) || math.IsInf(c.DirectWaitSeconds, 0) {
+		return errors.New("direct_wait_seconds must be finite and nonnegative")
 	}
 	if err := c.validateOrchestration(); err != nil {
 		return err
@@ -246,10 +224,6 @@ func (c *config) validateOrchestration() error {
 		}
 	}
 	return nil
-}
-
-func (c *config) policyWatchPeriod() time.Duration {
-	return time.Duration(c.PolicyResyncSeconds) * time.Second
 }
 
 // settingsFile is the settings file as gopkg.in/yaml.v3 decodes it.

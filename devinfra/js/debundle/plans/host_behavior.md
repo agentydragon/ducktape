@@ -43,32 +43,26 @@ host_behavior:
   note: "Audited against Bun 1.3.10 standalone, revision …, sha256 …"
 ```
 
-Landed through step 3: the keys, their validation, the loader-closed
-derivation and mandatory suspension (SPEC.md § Loader-closed derivation).
-On the canonical Claude CLI input with hypothetical audited keys (including
-`synchronous_load_drains_microtasks: never`) all 76 graphs stay conservative
-and the ten conflicts are unchanged. The exported loader alias, two `module`
-imports and `ws` in loaded closures keep every target open. 24 of the 476
-literal `import.meta.require` calls are mandatorily suspended; the rest target
-application chunks whose closures reach back into 44 of the 76 targets. `ws`
-remains an unresolved static request in 7 of the conflict chunks. Step 4
-narrows the remaining sites to those that can run while the target evaluates.
+Landed: the keys, their validation, the loader-closed derivation with its
+evaluation window, mandatory suspension, callable reachability, loader-alias
+and `module` use classification, program premises and embedded-file loaders
+(SPEC.md § Loader-closed derivation, § Program premises, § Reentry-free
+embedded files). On Claude CLI 2.1.292 with the audited spec and both
+premises, 40 of 76 graphs leave conservative and 8 of the 10 conflicts remain.
+The other 36 graphs are held only by `loader_request_reaches_target`, which is
+genuine reentry: a lazy request runs a not-yet-evaluated importer's body
+against the target's live namespace (gaffer-private #669's probe). Narrowing
+that further means bounding which callbacks an incomplete at-init call can run
+(<abstract_interpreter.md>), not changing the loader rule. Evidence:
+<../debug/2026_10_30_claude_export_reentry_blockers.md>.
 
 ## Steps
 
-### 4. Callable reachability and the loader alias
-
-Prove at-initialization reachability of the callable containing a loader site,
-including aliases, returned functions, getters, constructors and host-invoked
-callbacks; syntactic nesting proves neither presence nor absence. An exported
-loader alias is an independent escape and is classified for every guarded
-chunk; proving only a target's small import closure is insufficient.
-
 ### 5. Adopt
 
-Canonical Claude CLI replay on an engine with steps 1–4; adopt `host_behavior`
-in both private specs with the audit recorded in the pinning doc; report the
-gate result as observed. Class B pivots (`YC`, `Gj`, `Ujr`, `xe`) belong to
+Repin gaffer-private to an engine with the loader-closed stack and land its
+spec adoption (gaffer-private #670: premises, new list entries, embedded-loader
+manifest); report the gate result as observed. Class B pivots (`YC`, `Gj`, `Ujr`, `xe`) belong to
 <synchronous_execution_fallback.md> and `native_operation_inputs`, not here.
 
 ## Audit obligation

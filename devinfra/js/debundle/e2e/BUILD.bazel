@@ -103,7 +103,7 @@ rust_library(
     crate_name = "debundle_e2e_support",
     crate_root = "support/mod.rs",
     data = [
-        "//devinfra/js/debundle",
+        "//devinfra/js/debundle:debundle_e2e",
         "@nodejs_linux_amd64//:bin/node",
     ],
     edition = "2024",
@@ -177,6 +177,15 @@ debundle_e2e_test(name = "no_reentry_callback_test")
 
 debundle_e2e_test(name = "empty_collection_timing_test")
 
+debundle_e2e_test(name = "bundle_owned_globals_test")
+
+debundle_e2e_test(name = "native_construction_row_test")
+
+debundle_e2e_test(
+    name = "native_slot_integrity_test",
+    deps = ["@crates//:serde_json"],
+)
+
 debundle_e2e_test(name = "native_constructor_identity_order_test")
 
 debundle_e2e_test(
@@ -212,7 +221,10 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "loader_closed_reentry_test",
-    deps = ["@crates//:serde_json"],
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
 )
 
 debundle_e2e_test(
@@ -228,6 +240,14 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "retained_callback_factory_test",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "foreign_call_summary_test",
     deps = [
         "//devinfra/js/debundle:analysis",
         "@crates//:serde_json",
@@ -542,7 +562,7 @@ rust_test(
     srcs = ["cross_chunk_readable_imports_test.rs"],
     crate_root = "cross_chunk_readable_imports_test.rs",
     data = [
-        "//devinfra/js/debundle",
+        "//devinfra/js/debundle:debundle_e2e",
         "@nodejs_linux_amd64//:bin/node",
     ],
     edition = "2024",
@@ -926,3 +946,5 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(name = "callback_pool_order_test")
+
+debundle_e2e_test(name = "bounded_callback_fallback_heap_test")

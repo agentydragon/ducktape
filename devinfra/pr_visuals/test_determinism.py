@@ -26,7 +26,7 @@ from util.visual_review import VisualReviewAsset, VisualReviewManifest
 
 
 def _listing(by_invocation: dict[str, list[dict[str, object]]]):
-    """`bbapi artifact list <invocation> --json`, answered per invocation."""
+    """`bbapi artifact list <invocation> --kind test --json`, answered per invocation."""
 
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(command, 0, json.dumps(by_invocation[str(command[3])]), "")
@@ -378,7 +378,7 @@ def test_exit_status_preserves_review_and_test_failures_but_not_diagnostic_drift
             case ["bbr", "test", flag, *_]:
                 invocations.append(flag.removeprefix("--invocation_id="))
                 return subprocess.CompletedProcess(command, returncode, "", "")
-            case ["bbapi", "artifact", "list", invocation, "--json"]:
+            case ["bbapi", "artifact", "list", invocation, "--kind", "test", "--json"]:
                 uri = published_uris[invocations.index(invocation)]
                 artifacts = [_artifact("//ui:visual", "loading.png", invocation)]
                 if invocation == invocations[0]:
@@ -438,7 +438,7 @@ def test_unstarted_commands_are_reported_without_discarding_observations(
                     return subprocess.CompletedProcess(command, 1, "", "Error: invocation not found")
                 payload = {"targetGroups": [{"targets": [_test_row("//ui:visual", seconds=9.0)]}]}
                 return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
-            case ("bbapi", "artifact", "list", invocation, "--json"):
+            case ("bbapi", "artifact", "list", invocation, "--kind", "test", "--json"):
                 return subprocess.CompletedProcess(
                     command,
                     0,

@@ -7,9 +7,9 @@ import (
 	"maps"
 	"slices"
 	"sync"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,14 +24,14 @@ import (
 const callerLabel = "agentplane.allegedly.works/use-action-service"
 
 type callerIndex struct {
-	freshness *reader.Freshness
-	mintable  sets.Set[auth.Account]
-	mu        sync.RWMutex
-	accounts  sets.Set[auth.Account]
+	health   *watchhealth.Health
+	mintable sets.Set[auth.Account]
+	mu       sync.RWMutex
+	accounts map[auth.Account]string // labeled, mintable ServiceAccount -> current UID
 }
 
 func (i *callerIndex) CallerServiceAccounts() ([]auth.Account, bool) {
-	if !i.freshness.Available(time.Now()) {
+	if !i.health.Available() {
 		return nil, false
 	}
 	i.mu.RLock()
@@ -41,13 +41,16 @@ func (i *callerIndex) CallerServiceAccounts() ([]auth.Account, bool) {
 	}), true
 }
 
-func (i *callerIndex) Admits(account auth.Account) bool {
-	if !i.freshness.Available(time.Now()) {
-		return false
+// CurrentUID returns the UID of an account that carries the caller label now, per the informer. It reports false
+// whenever the account is absent or the view is unhealthy, so callers fail closed.
+func (i *callerIndex) CurrentUID(account auth.Account) (string, bool) {
+	if !i.health.Available() {
+		return "", false
 	}
 	i.mu.RLock()
 	defer i.mu.RUnlock()
-	return i.accounts.Has(account)
+	uid, ok := i.accounts[account]
+	return uid, ok && uid != ""
 }
 
 func (i *callerIndex) put(account *corev1.ServiceAccount) {
@@ -55,38 +58,29 @@ func (i *callerIndex) put(account *corev1.ServiceAccount) {
 	defer i.mu.Unlock()
 	caller := auth.Account{Namespace: account.Namespace, Name: account.Name}
 	if i.mintable.Has(caller) {
-		i.accounts.Insert(caller)
+		i.accounts[caller] = string(account.UID)
 	}
 }
 
 func (i *callerIndex) remove(namespace, name string) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	i.accounts.Delete(auth.Account{Namespace: namespace, Name: name})
+	delete(i.accounts, auth.Account{Namespace: namespace, Name: name})
 }
 
-func callerWatches(base *rest.Config, namespaces []string, mintable []auth.Account, period time.Duration) (*callerIndex, *reader.Watches, error) {
-	namespaces = sets.List(sets.New(namespaces...))
-	kinds := make([]reader.Kind, len(namespaces))
-	for n, namespace := range namespaces {
-		kinds[n] = reader.Kind(namespace + "/serviceaccounts")
-	}
-	index := &callerIndex{freshness: reader.NewFreshness(reader.StaleAfterCycles*period, kinds...), mintable: sets.New(mintable...), accounts: sets.New[auth.Account]()}
-	watches, err := reader.NewWatches(base, index.freshness, period)
-	if err != nil {
-		return nil, nil, err
-	}
-	for n, namespace := range namespaces {
-		core, err := kubernetes.NewForConfig(watches.ConfigRecordingAs(kinds[n]))
+func callerWatches(base *rest.Config, namespaces []string, mintable []auth.Account) (*callerIndex, *reader.Watches, error) {
+	index := &callerIndex{health: watchhealth.New(), mintable: sets.New(mintable...), accounts: map[auth.Account]string{}}
+	watches := reader.NewWatches(base, index.health)
+	for _, namespace := range sets.List(sets.New(namespaces...)) {
+		kind := watchhealth.Kind(namespace + "/serviceaccounts")
+		core, err := kubernetes.NewForConfig(watches.ConfigRecordingAs(kind))
 		if err != nil {
 			return nil, nil, err
 		}
-		selected := func(options *metav1.ListOptions) {
-			watches.TweakListOptions(options)
-			options.LabelSelector = callerLabel + "=true"
-		}
+		selected := func(options *metav1.ListOptions) { options.LabelSelector = callerLabel + "=true" }
 		if err := reader.Watch(
 			watches,
+			kind,
 			coreinformers.NewTypedFilteredServiceAccountInformer(core, namespace, 0, nil, selected),
 			index.put, func(name string) { index.remove(namespace, name) },
 		); err != nil {
@@ -97,9 +91,9 @@ func callerWatches(base *rest.Config, namespaces []string, mintable []auth.Accou
 }
 
 func (i *callerIndex) ready() bool {
-	status := i.freshness.Status(time.Now())
+	status := i.health.Status()
 	if !status.Available {
-		slog.Warn("MCP edge caller view unavailable", "synced", status.Synced, "ages", status.Ages)
+		slog.Warn("MCP edge caller view unavailable", "synced", status.Synced, "failing", status.Failing)
 	}
 	return status.Available
 }

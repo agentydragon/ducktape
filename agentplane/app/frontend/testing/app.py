@@ -56,6 +56,7 @@ class Scene(StrEnum):
     HIDDEN_CODEPOINTS = "hiddenCodepoints"
     DORMANT_SESSION = "dormantSession"
     INTERLEAVED_EVENTS = "interleavedEvents"
+    SHORT_THREAD_SWITCH_HISTORY = "shortThreadSwitchHistory"
     LIFECYCLE_GROUP = "lifecycleGroup"
     THREAD_SETUP = "threadSetup"
     THREAD_SETUP_RUNNING = "threadSetupRunning"
@@ -192,6 +193,15 @@ class AgentplaneFixture:
 
     async def build(self, scene: Scene) -> None:
         await self.page.evaluate("scene => window.agentplaneVisual[scene]()", scene)
+
+    async def build_history_profile(self, row_count: int) -> None:
+        await self.page.evaluate("rowCount => window.agentplaneVisual.historyProfile(rowCount)", row_count)
+
+    async def remember_history_row_height(self, thread_id: str, width: int, key: str, height: float) -> None:
+        await self.page.evaluate(
+            "([threadId, width, key, height]) => window.agentplaneVisual.rememberHistoryRowHeight(threadId, width, key, height)",
+            [thread_id, width, key, height],
+        )
 
     async def enable_suspended_sandbox_wake_on_message(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.enableSuspendedSandboxWakeOnMessage()")

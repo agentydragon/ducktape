@@ -26,6 +26,7 @@ go_library(
     deps = [
         ":dispatcher_notification_go_proto",
         ":session_dispatcher_go_proto",
+        "//agentplane/grpc/bearer",
         "//agentplane/grpc/streaming",
         "//agentplane/observability",
         "//agentplane/postgres/go:postgres",
@@ -55,7 +56,6 @@ go_library(
         "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
@@ -80,6 +80,22 @@ go_test(
 )
 
 go_test(
+    name = "methods_test",
+    srcs = ["methods_test.go"],
+    embed = [":dispatcher"],
+    deps = [
+        ":session_dispatcher_go_proto",
+        "//agentplane/testing/grpcmethods",
+        "//agentplane/testing/kubeapiserver",
+        "//agentplane/workload_auth/go/auth",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
     name = "store_integration_test",
     size = "medium",
     srcs = [
@@ -94,7 +110,6 @@ go_test(
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/runner_gateway/migrations",
-        "//agentplane/testing/kubeapiserver",
         "//agentplane/testing/postgres",
         "//agentplane/workload_auth/go/auth",
         "@com_github_lib_pq//:pq",
@@ -103,7 +118,6 @@ go_test(
         "@io_k8s_client_go//util/workqueue",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
     ],
@@ -192,4 +206,10 @@ go_test(
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
     ],
+)
+
+go_test(
+    name = "watch_test",
+    srcs = ["watch_test.go"],
+    embed = [":dispatcher"],
 )

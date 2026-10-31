@@ -161,8 +161,9 @@ fn fn_purity_call_inherits_chunk_local_function_purity() {
     };
     let init = var.decls[0].init.as_deref().expect("init");
     assert!(
-        (classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph))
-            .is_pure()
+        (classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+            .project())
+        .is_pure()
     );
 }
 
@@ -297,6 +298,31 @@ fn plain_data_alias_member_mutation_disqualifies_source() {
     assert!(!is_plain_data(
         "const lookup = { key: 'token' }, alias = lookup; alias.key = () => later;",
         "lookup",
+    ));
+}
+
+/// Regression: a method stored on the object runs with `this` bound to it,
+/// so calling one that writes through `this` mutates the object. Arrow
+/// methods, `this`-free functions and inherited intrinsics leave it plain.
+#[test]
+fn plain_data_method_call_writing_through_this_disqualifies_receiver() {
+    assert!(!is_plain_data(
+        "const o = { x: 1, m: function () { this.x = 2; } }; o.m();",
+        "o",
+    ));
+    assert!(!is_plain_data(
+        "const o = { x: 1, m: function () { this.x = 2; } }; const alias = o; alias.m();",
+        "o",
+    ));
+    assert!(!is_plain_data(
+        "function bump() { this.x = 2; } const o = { x: 1, bump }; o.bump();",
+        "o",
+    ));
+    assert!(is_plain_data(
+        "function read() { return 3; } \
+         const o = { x: 1, m: () => 2, n: function () { return 3; }, read }; \
+         o.m(); o.n(); o.read(); o.hasOwnProperty('x');",
+        "o",
     ));
 }
 

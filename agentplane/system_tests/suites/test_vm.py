@@ -29,7 +29,7 @@ pytestmark = pytest.mark.vm_sandboxes
 @pytest.mark.vm_sandboxes
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
-async def test_vm_credentials_and_central_sampler(
+async def test_vm_scenarios(
     cluster: Cluster, tmp_path: Path, client: Client, scenario_resources: ScenarioResources, scripted: ScriptedUpstream
 ) -> None:
     harnesses = [runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX]
@@ -43,29 +43,6 @@ async def test_vm_credentials_and_central_sampler(
                     cluster, owned_client, sandbox, harness, models[harness], scripted
                 ),
             )
-
-    # pytest-asyncio serializes separate tests. Overlap boots on one stack, while each task
-    # releases its own guests as soon as its assertions finish. The sampler owns its resources.
-    async with asyncio.TaskGroup() as scenarios:
-        for harness in harnesses:
-            scenarios.create_task(credentials(harness))
-        scenarios.create_task(
-            central_sampler.dispatcher_central_setup_tool_and_retained_answer(
-                cluster,
-                tmp_path,
-                scripted,
-                Executor(template="runner-vm", cwd="/state/workspaces/accept"),
-                central_sampler.VM_EXECUTION,
-            )
-        )
-
-
-@pytest.mark.vm_sandboxes
-@pytest.mark.scripted_model
-async def test_vm_sandbox_scenarios(
-    client: Client, scenario_resources: ScenarioResources, scripted: ScriptedUpstream
-) -> None:
-    models = await models_offered_for(client, [runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX])
 
     async def turn(harness: runner_pb2.Harness, template: str) -> None:
         async with scenario_resources() as (owned_client, sandbox):
@@ -81,7 +58,24 @@ async def test_vm_sandbox_scenarios(
                 vm_sandbox.codex_tool_oom(owned_client, sandbox, models[runner_pb2.HARNESS_CODEX], scripted),
             )
 
+    # pytest-asyncio serializes separate tests. Launch every independent boot here so a
+    # finished scenario never leaves its worker capacity idle behind another test's teardown.
+    # Each task owns its guests and cleanup; the sampler has its own ownership scope.
     async with asyncio.TaskGroup() as scenarios:
+        for harness in harnesses:
+            scenarios.create_task(credentials(harness))
+        scenarios.create_task(
+            traced_vm_scenario(
+                "central-sampler",
+                central_sampler.dispatcher_central_setup_tool_and_retained_answer(
+                    cluster,
+                    tmp_path,
+                    scripted,
+                    Executor(template="runner-vm", cwd="/state/workspaces/accept"),
+                    central_sampler.VM_EXECUTION,
+                ),
+            )
+        )
         # Only Claude selects the private supervisor checks; both use the ordinary guest image.
         scenarios.create_task(turn(runner_pb2.HARNESS_CLAUDE, SUPERVISION_TEMPLATE))
         scenarios.create_task(turn(runner_pb2.HARNESS_CODEX, VM_TEMPLATE))

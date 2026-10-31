@@ -6,6 +6,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 )
 
 // Codex rust-v0.162.1 utils/string/src/truncate.rs APPROX_BYTES_PER_TOKEN.
@@ -15,7 +17,7 @@ const approxBytesPerToken = 4
 // core/src/tools/code_mode/mod.rs handle_runtime_response and output.rs CodeModeToolOutput: the
 // script error joins the content items, the token budget truncates them, then the status header
 // goes first. cellHandle is the model-facing cell ID.
-func cellOutput(observation codeObservation, cellHandle string, maxTokens *int, wallTime time.Duration) ([]ResponsesContentPart, error) {
+func cellOutput(observation codeObservation, cellHandle string, maxTokens *int, wallTime time.Duration) ([]protocol.ContentPart, error) {
 	var status string
 	switch observation.Kind {
 	case codeYielded:
@@ -30,16 +32,16 @@ func cellOutput(observation codeObservation, cellHandle string, maxTokens *int, 
 	default:
 		return nil, fmt.Errorf("unsupported cell observation %q", observation.Kind)
 	}
-	items := make([]ResponsesContentPart, 0, len(observation.Cell.ContentItems)+2)
+	items := make([]protocol.ContentPart, 0, len(observation.Cell.ContentItems)+2)
 	for _, raw := range observation.Cell.ContentItems {
-		var item ResponsesContentPart
+		var item protocol.ContentPart
 		if err := json.Unmarshal(raw, &item); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
 	}
 	if observation.Kind == codeResult && observation.Cell.ErrorText != nil {
-		items = append(items, ResponsesContentPart{Type: "input_text", Text: "Script error:\n" + *observation.Cell.ErrorText})
+		items = append(items, protocol.ContentPart{Type: "input_text", Text: "Script error:\n" + *observation.Cell.ErrorText})
 	}
 	budget := defaultCodeModeMaxOutputTokens
 	if maxTokens != nil {
@@ -50,13 +52,13 @@ func cellOutput(observation codeObservation, cellHandle string, maxTokens *int, 
 		return nil, err
 	}
 	seconds := math.Round(wallTime.Seconds()*10) / 10
-	header := ResponsesContentPart{Type: "input_text", Text: fmt.Sprintf("%s\nWall time %.1f seconds\nOutput:\n", status, seconds)}
-	return append([]ResponsesContentPart{header}, items...), nil
+	header := protocol.ContentPart{Type: "input_text", Text: fmt.Sprintf("%s\nWall time %.1f seconds\nOutput:\n", status, seconds)}
+	return append([]protocol.ContentPart{header}, items...), nil
 }
 
 // Codex rust-v0.162.1 core/src/tools/code_mode/mod.rs truncate_code_mode_result with
 // TruncationPolicy::Tokens.
-func truncateCodeModeResult(items []ResponsesContentPart, maxTokens int) ([]ResponsesContentPart, error) {
+func truncateCodeModeResult(items []protocol.ContentPart, maxTokens int) ([]protocol.ContentPart, error) {
 	for _, item := range items {
 		if item.Type != "input_text" {
 			return truncateOutputItems(items, maxTokens)
@@ -67,7 +69,7 @@ func truncateCodeModeResult(items []ResponsesContentPart, maxTokens int) ([]Resp
 
 // Codex rust-v0.162.1 utils/output-truncation/src/lib.rs
 // formatted_truncate_text_content_items_with_policy for all-text content.
-func formattedTruncateTextItems(items []ResponsesContentPart, maxTokens int) []ResponsesContentPart {
+func formattedTruncateTextItems(items []protocol.ContentPart, maxTokens int) []protocol.ContentPart {
 	if len(items) == 0 {
 		return items
 	}
@@ -82,14 +84,14 @@ func formattedTruncateTextItems(items []ResponsesContentPart, maxTokens int) []R
 	// formatted_truncate_text
 	text := fmt.Sprintf("Warning: truncated output (original token count: %d)\nTotal output lines: %d\n\n%s",
 		approxTokenCount(combined), countLines(combined), truncateMiddleWithTokenBudget(combined, maxTokens))
-	return []ResponsesContentPart{{Type: "input_text", Text: text}}
+	return []protocol.ContentPart{{Type: "input_text", Text: text}}
 }
 
 // Codex rust-v0.162.1 utils/output-truncation/src/lib.rs truncate_function_output_items_with_policy
 // with TruncationPolicy::Tokens. Audio uses estimate_audio_token_count's size fallback; this
 // service does not decode audio duration.
-func truncateOutputItems(items []ResponsesContentPart, maxTokens int) ([]ResponsesContentPart, error) {
-	out := make([]ResponsesContentPart, 0, len(items))
+func truncateOutputItems(items []protocol.ContentPart, maxTokens int) ([]protocol.ContentPart, error) {
+	out := make([]protocol.ContentPart, 0, len(items))
 	remaining := maxTokens
 	omittedText, omittedAudio := 0, 0
 	for _, item := range items {
@@ -103,13 +105,13 @@ func truncateOutputItems(items []ResponsesContentPart, maxTokens int) ([]Respons
 				continue
 			}
 			if cost := approxTokenCount(item.Text); cost <= remaining {
-				out = append(out, ResponsesContentPart{Type: "input_text", Text: item.Text})
+				out = append(out, protocol.ContentPart{Type: "input_text", Text: item.Text})
 				remaining -= cost
 			} else {
 				if snippet := truncateMiddleWithTokenBudget(item.Text, remaining); snippet == "" {
 					omittedText++
 				} else {
-					out = append(out, ResponsesContentPart{Type: "input_text", Text: snippet})
+					out = append(out, protocol.ContentPart{Type: "input_text", Text: snippet})
 				}
 				remaining = 0
 			}
@@ -131,10 +133,10 @@ func truncateOutputItems(items []ResponsesContentPart, maxTokens int) ([]Respons
 		}
 	}
 	if omittedText > 0 {
-		out = append(out, ResponsesContentPart{Type: "input_text", Text: fmt.Sprintf("[omitted %d text items ...]", omittedText)})
+		out = append(out, protocol.ContentPart{Type: "input_text", Text: fmt.Sprintf("[omitted %d text items ...]", omittedText)})
 	}
 	if omittedAudio > 0 {
-		out = append(out, ResponsesContentPart{Type: "input_text", Text: fmt.Sprintf("[omitted %d audio items ...]", omittedAudio)})
+		out = append(out, protocol.ContentPart{Type: "input_text", Text: fmt.Sprintf("[omitted %d audio items ...]", omittedAudio)})
 	}
 	return out, nil
 }

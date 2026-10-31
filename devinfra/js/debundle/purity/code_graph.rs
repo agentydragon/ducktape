@@ -1,4 +1,6 @@
 use super::*;
+use crate::facts::abstract_domain::heap;
+use crate::facts::abstract_domain::primitive::{BindingPrims, collect_binding_prims};
 use crate::facts::{
     DynamicScopeFact, LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableProof,
     SetIterableShapes, StructuralStatementFacts,
@@ -30,31 +32,27 @@ pub struct ChunkCodeGraph {
     /// admitted as pure with args evaluated normally. Author-trust
     /// contract; see <docs/purity_soundness.md> "Declared purity".
     declared_pure_members: BTreeMap<String, BTreeSet<String>>,
-    /// Chunk-top consts with result-primitive values, plus stable top-level
-    /// numeric vars. Their values carry no user accessors, so coercion of a
-    /// reference fires no user code. Stable vars require retained declaration
-    /// and no-write facts plus a Number-only initializer proof. Init effects
-    /// remain classified separately. See `collect_binding_value_classes`.
+    /// Primitive types of chunk-top consts and stable top-level numeric vars,
+    /// read by operator classification. See `collect_binding_prims`.
+    pub(crate) binding_prims: BindingPrims,
+    /// Projection of `binding_prims`: bindings whose values carry no user
+    /// accessors and are never Symbol, so coercing a reference fires no user
+    /// code. Init effects remain classified separately.
     pub(crate) primitive_bindings: BTreeSet<String>,
-    /// Bindings whose values are exactly Number (or BigInt). These preserve
-    /// the mixed-numeric exception check even when both operands are primitive.
-    pub(crate) number_bindings: BTreeSet<String>,
-    /// Number-valued consts plus stable numeric vars. A stable var is Number
-    /// after its initializer and `undefined` before it, so it is always
-    /// non-BigInt but is not an exact Number at every module position.
-    pub(crate) number_or_undefined_bindings: BTreeSet<String>,
-    pub(crate) bigint_bindings: BTreeSet<String>,
-    /// Immutable Symbol-valued consts are safe only for ToPropertyKey.
-    /// They must not enter `primitive_bindings`: ToString(Symbol)
-    /// throws, unlike the result-primitive forms tracked there.
+    /// Projection of `binding_prims`: Symbol-valued bindings are safe only for
+    /// ToPropertyKey; ToString(Symbol) throws.
     pub(crate) symbol_const_bindings: BTreeSet<String>,
     /// Chunk-top `const X = [..]` bindings that remain static ordinary
     /// arrays under the same no-escape scan as `PlainData`, and are
-    /// never used as the receiver of unknown/mutating array methods.
-    /// At-init fallback uses this to avoid treating `X.map(cb)` /
-    /// `X.forEach(cb)` as if those built-ins might invoke functions
-    /// held inside `X`; the callback body is still modeled separately.
+    /// never used as the receiver of unknown/mutating array methods
+    /// (`heap::plain_array_bindings`). At-init fallback uses this to
+    /// avoid treating `X.map(cb)` / `X.forEach(cb)` as if those
+    /// built-ins might invoke functions held inside `X`.
     plain_array_bindings: BTreeSet<String>,
+    /// Plain arrays whose elements are all primitives
+    /// (`heap::primitive_element_arrays`): their element callbacks receive
+    /// only primitives.
+    primitive_element_arrays: BTreeSet<String>,
     /// Candidate own primitive fields of single-init TS enum objects.
     ts_enum_named_data_candidates: BTreeMap<Id, TsEnumNamedDataCandidate>,
     /// Primitive enum fields are safe computed property keys only when the
@@ -132,9 +130,9 @@ pub(crate) enum ChunkBinding {
     /// Chunk-top binding whose value is provably a plain object/array
     /// — `const X = <plain literal>`, or `let`/`var` whose every
     /// re-bind is also a plain literal, or the TS-enum-IIFE shape
-    /// (see `is_ts_enum_iife_init_for_binding`). The chunk-wide write
-    /// scan (`PlainDataWriteScanner`) rejects any post-init accessor
-    /// installation, so property reads `X.k` / `X[k]` are pure.
+    /// (see `is_ts_enum_iife_init_for_binding`) — whose allocations stay
+    /// private and unwritten (`facts/abstract_domain/heap.rs`), so
+    /// property reads `X.k` / `X[k]` are pure.
     /// Full soundness write-up: <docs/purity_soundness.md> §
     /// "ChunkBinding::PlainData".
     PlainData,
@@ -230,11 +228,14 @@ impl ChunkCodeGraph {
         stable_var_number_candidates: &BTreeSet<Id>,
         locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
     ) -> Self {
-        let candidate_roots = plain_data_candidate_roots(body);
-        let value_flow =
-            crate::facts::ChunkValueFlow::analyze_with_candidates(body, &candidate_roots);
-        let plain_data_bindings = collect_plain_data_bindings(body, shadowed, &value_flow);
-        let plain_array_bindings = collect_plain_array_bindings(body, shadowed);
+        let value_flow = crate::facts::ChunkValueFlow::analyze_with_candidates(
+            body,
+            &heap::tracked_allocation_roots(body),
+        );
+        let plain_data_bindings = heap::ChunkHeap::analyze(body, shadowed, &value_flow, None)
+            .plain_data_bindings()
+            .bindings;
+        let plain_array_bindings = heap::plain_array_bindings(body, shadowed);
         let dynamic_scope = DynamicScopeFact::analyze(body);
         let local_class_construction_proof =
             LocalClassConstructionShapes::analyze(body, shadowed, &value_flow, dynamic_scope);
@@ -459,7 +460,7 @@ impl ChunkCodeGraph {
                     )
                 })
                 .collect();
-        let value_classes = collect_binding_value_classes(
+        let binding_prims = collect_binding_prims(
             body,
             shape_inputs.shadowed,
             shape_inputs.stable_var_number_candidates,
@@ -482,6 +483,8 @@ impl ChunkCodeGraph {
                     .collect()
             })
             .unwrap_or_default();
+        let primitive_element_arrays =
+            heap::primitive_element_arrays(body, shape_inputs.plain_array_bindings, &binding_prims);
         let mut purity_call_targets = call_context.imported_targets.clone();
         purity_call_targets.extend(Self::inferred_function_keys(
             body,
@@ -499,12 +502,11 @@ impl ChunkCodeGraph {
                 .collect(),
             pure_new_constructors: shape_inputs.declared_pure_new.clone(),
             declared_pure_members: shape_inputs.declared_pure_members.clone(),
-            primitive_bindings: value_classes.primitive_bindings,
-            number_bindings: value_classes.number_bindings,
-            number_or_undefined_bindings: value_classes.number_or_undefined_bindings,
-            bigint_bindings: value_classes.bigint_bindings,
-            symbol_const_bindings: value_classes.symbol_const_bindings,
+            primitive_bindings: binding_prims.non_symbol_bindings(),
+            symbol_const_bindings: binding_prims.symbol_bindings(),
+            binding_prims,
             plain_array_bindings: shape_inputs.plain_array_bindings.clone(),
+            primitive_element_arrays,
             ts_enum_named_data_candidates,
             plain_data_dependencies,
             plain_data_inference_uses,
@@ -601,6 +603,11 @@ impl ChunkCodeGraph {
     /// array-method at-init fallback refinement.
     pub(crate) fn is_plain_array(&self, name: &str) -> bool {
         self.plain_array_bindings.contains(name)
+    }
+
+    /// Whether `name` is a plain array whose elements are all primitives.
+    pub(crate) fn is_primitive_element_array(&self, name: &str) -> bool {
+        self.primitive_element_arrays.contains(name)
     }
 
     pub(crate) fn ts_enum_named_data_candidates(&self) -> &BTreeMap<Id, TsEnumNamedDataCandidate> {
@@ -851,7 +858,7 @@ fn classify_function_body(
     shadowed: &BTreeSet<&'static str>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
-) -> Purity {
+) -> Effects {
     // Names bound by this function (its params and every binding
     // declared anywhere in its body) lexically shadow EVERY outer
     // resolution path of the same name: chunk-top PlainData
@@ -879,9 +886,9 @@ fn classify_function_body(
         .params
         .iter()
         .filter_map(|pat| param_destructuring_purity(pat))
-        .fold(Purity::pure(), Purity::worst);
+        .fold(Effects::none(), Effects::then);
     let mut collector = BodyPurityCollector {
-        purity: Purity::pure(),
+        effects: Effects::none(),
         fresh_record: graph.fresh_record_proof(function.key),
         shadowed,
         local_shadowed,
@@ -889,7 +896,7 @@ fn classify_function_body(
         graph,
     };
     function.visit_body_with(&mut collector);
-    param_purity.worst(collector.purity)
+    param_purity.then(collector.effects)
 }
 
 fn classify_function_body_transfer(
@@ -904,7 +911,7 @@ fn classify_function_body_transfer(
         .as_ref()
         .expect("transfer extraction configures an obligation buffer");
     obligations.borrow_mut().clear();
-    let mut purity = classify_function_body(function, shadowed, declared_pure, graph);
+    let mut purity = classify_function_body(function, shadowed, declared_pure, graph).project();
     if let Purity::NotPure { reasons } = &mut purity
         && let Some(locate) = locate.as_deref_mut()
     {
@@ -930,23 +937,26 @@ fn classify_function_body_transfer(
 /// params (fresh array from the arguments list) contribute nothing;
 /// default-value expressions are classified separately as
 /// expressions by the body walk.
-pub(crate) fn param_destructuring_purity(pat: &Pat) -> Option<Purity> {
+pub(crate) fn param_destructuring_purity(pat: &Pat) -> Option<Effects> {
     match pat {
         Pat::Ident(_) => None,
         Pat::Rest(rest) => param_destructuring_purity(&rest.arg),
         Pat::Assign(assign) => param_destructuring_purity(&assign.left),
-        Pat::Array(arr) => Some(Purity::from_reason_with_detail(
-            PurityRule::DestructuringPattern,
+        Pat::Array(arr) => Some(Effects::of_detail(
+            Effect::Coerce(CoerceSite::Destructuring),
             arr.span,
             "array destructuring fires the iterator protocol on the bound value".to_string(),
         )),
-        Pat::Object(obj) => Some(Purity::from_reason_with_detail(
-            PurityRule::DestructuringPattern,
+        Pat::Object(obj) => Some(Effects::of_detail(
+            Effect::Coerce(CoerceSite::Destructuring),
             obj.span,
             "object destructuring fires [[Get]] (user getters / proxy traps) on the bound value"
                 .to_string(),
         )),
-        Pat::Invalid(_) | Pat::Expr(_) => Some(Purity::from_reason(PurityRule::Other, pat.span())),
+        Pat::Invalid(_) | Pat::Expr(_) => Some(Effects::of(
+            Effect::Havoc(HavocCause::Unmodeled),
+            pat.span(),
+        )),
     }
 }
 
@@ -956,7 +966,7 @@ pub(crate) fn param_destructuring_purity(pat: &Pat) -> Option<Purity> {
 /// lazy scopes — their purity, if needed, comes from their own
 /// graph entry or from the caller's `Unknown` fallback).
 struct BodyPurityCollector<'a> {
-    purity: Purity,
+    effects: Effects,
     fresh_record: Option<&'a FreshRecordProof>,
     shadowed: &'a BTreeSet<&'static str>,
     /// Every name bound by the function whose body is being walked
@@ -998,7 +1008,7 @@ impl Visit for BodyPurityCollector<'_> {
             self.declared_pure,
             self.graph,
         );
-        self.purity = std::mem::replace(&mut self.purity, Purity::pure()).worst(p);
+        self.effects = std::mem::take(&mut self.effects).then(p);
     }
 
     // Statement-level effects that don't surface as an Impure /
@@ -1007,16 +1017,16 @@ impl Visit for BodyPurityCollector<'_> {
     // pauses execution observably to a host attached to the
     // process. Both make the enclosing function not Pure.
     fn visit_throw_stmt(&mut self, node: &ThrowStmt) {
-        let throw_reason = Purity::from_reason(PurityRule::ThrowStmt, node.span);
-        self.purity = std::mem::replace(&mut self.purity, Purity::pure()).worst(throw_reason);
+        let throw_reason = Effects::of(Effect::Havoc(HavocCause::ThrowStatement), node.span);
+        self.effects = std::mem::take(&mut self.effects).then(throw_reason);
         // Still recurse so the thrown expression contributes its
         // own purity (e.g. `throw io()` should also see the call).
         node.arg.visit_with(self);
     }
 
     fn visit_debugger_stmt(&mut self, node: &DebuggerStmt) {
-        let dbg_reason = Purity::from_reason(PurityRule::DebuggerStmt, node.span);
-        self.purity = std::mem::replace(&mut self.purity, Purity::pure()).worst(dbg_reason);
+        let dbg_reason = Effects::of(Effect::Havoc(HavocCause::Debugger), node.span);
+        self.effects = std::mem::take(&mut self.effects).then(dbg_reason);
     }
 
     // Iteration statements fire user code beyond their
@@ -1028,22 +1038,22 @@ impl Visit for BodyPurityCollector<'_> {
     // regular recursion, but the protocol firing is invisible to it
     // — flag the statement itself.
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
-        let reason = Purity::from_reason_with_detail(
-            PurityRule::IterationProtocol,
+        let reason = Effects::of_detail(
+            Effect::Coerce(CoerceSite::Iteration),
             node.span,
             "for-of fires the iterator protocol on the iterated value".to_string(),
         );
-        self.purity = std::mem::replace(&mut self.purity, Purity::pure()).worst(reason);
+        self.effects = std::mem::take(&mut self.effects).then(reason);
         node.visit_children_with(self);
     }
 
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
-        let reason = Purity::from_reason_with_detail(
-            PurityRule::IterationProtocol,
+        let reason = Effects::of_detail(
+            Effect::Coerce(CoerceSite::Iteration),
             node.span,
             "for-in enumeration can fire proxy traps on the enumerated value".to_string(),
         );
-        self.purity = std::mem::replace(&mut self.purity, Purity::pure()).worst(reason);
+        self.effects = std::mem::take(&mut self.effects).then(reason);
         node.visit_children_with(self);
     }
 
@@ -1052,7 +1062,7 @@ impl Visit for BodyPurityCollector<'_> {
     // init expression's own classification doesn't cover.
     fn visit_var_declarator(&mut self, node: &VarDeclarator) {
         if let Some(reason) = param_destructuring_purity(&node.name) {
-            self.purity = std::mem::replace(&mut self.purity, Purity::pure()).worst(reason);
+            self.effects = std::mem::take(&mut self.effects).then(reason);
         }
         node.visit_children_with(self);
     }

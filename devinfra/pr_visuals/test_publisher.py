@@ -86,7 +86,7 @@ def _listing(
 def _listing_per_invocation(
     by_invocation: dict[str, list[dict[str, object]]], blobs: dict[str, bytes] | None = None
 ) -> Callable[..., subprocess.CompletedProcess[str]]:
-    """`bbapi artifact list <invocation> --json`, answered differently per invocation."""
+    """`bbapi artifact list <invocation> --kind test --json`, answered differently per invocation."""
     blobs = blobs or {}
 
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -362,7 +362,7 @@ def test_download_visual_tests_groups_manifests_by_executed_target(tmp_path: Pat
         "//haku/console/frontend:screenshots",
     ]
     assert (tests[0].directory / "hot.png").read_bytes() == b"png"
-    assert commands[1] == [Path("bbapi"), "artifact", "list", "real", "--json"]
+    assert commands[1] == [Path("bbapi"), "artifact", "list", "real", "--kind", "test", "--json"]
     assert sum("blob" in [str(part) for part in command] for command in commands) == 2
 
 
@@ -404,7 +404,7 @@ def test_bbapi_lists_once_and_downloads_each_blob_wave_from_one_manifest(tmp_pat
 
     assert len(tests[0].manifest.assets) == 12
     assert [call for call in calls if [str(part) for part in call][1:3] == ["artifact", "list"]] == [
-        [Path("bbapi"), "artifact", "list", "invocation", "--json"]
+        [Path("bbapi"), "artifact", "list", "invocation", "--kind", "test", "--json"]
     ]
     assert len(manifests) == 2
     assert len(manifests[0]) == 1

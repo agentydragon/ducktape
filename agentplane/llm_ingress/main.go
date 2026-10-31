@@ -59,7 +59,7 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	defer handler.backend.CloseIdleConnections()
+	defer handler.transport.CloseIdleConnections()
 	address := net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
 	listener, err := net.Listen("tcp", address)
 	if err != nil {

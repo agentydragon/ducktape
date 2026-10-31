@@ -61,7 +61,13 @@ def list_ci_artifacts(
     listed: list[ListedArtifact] = []
     failures: list[str] = []
     for invocation in invocations:
-        result = run([bbapi, "artifact", "list", invocation, "--json"], check=False, text=True, capture_output=True)
+        # Visual manifests live in test outputs; build outputs can be symlinks without download URIs.
+        result = run(
+            [bbapi, "artifact", "list", invocation, "--kind", "test", "--json"],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
         if result.returncode != 0 or INVOCATION_ABSENT in result.stderr:
             if INVOCATION_ABSENT not in result.stderr:
                 failures.append(f"{invocation}: {result.stderr.strip()}")

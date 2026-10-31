@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Set
-from typing import ClassVar, Literal
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import SettingsConfigDict
@@ -17,7 +17,6 @@ from agentplane.log_levels import LogLevels
 from agentplane.subjects import ServiceAccountRef
 from util.yaml_file_settings import YamlFileSettings
 
-DEFAULT_MAX_WAIT_SECONDS = 30.0
 DEFAULT_DIRECT_WAIT_SECONDS = 30.0
 
 
@@ -83,23 +82,8 @@ class Settings(YamlFileSettings):
         allow_inf_nan=False,
         description="Maximum duration for orchestration_v1 Session operations.",
     )
-    policy_resync_seconds: int = Field(
-        default=300, gt=0, description="Policy watch lifetime; every watched kind is relisted this often."
-    )
-    # CLEANUP(added 2026-10-27): Retained up to the generated maximum until the key is removed after rollout.
-    max_wait_seconds: float = Field(
-        default=DEFAULT_MAX_WAIT_SECONDS,
-        ge=0,
-        le=180,
-        allow_inf_nan=False,
-        description="Retired compatibility value; the MCP edge owns external receipt wait limits.",
-    )
     github_visibility: GitHubVisibilitySettings = Field(default_factory=GitHubVisibilitySettings)
     operator_oidc: OperatorOidcSettings | None = None
-    # CLEANUP(added 2026-10-27): Keep the generated false value until its manifest key is removed after rollout.
-    integrated_connection_service: Literal[False] = Field(
-        default=False, description="Retired; true is rejected and the Action Service serves no Connection API."
-    )
     action_groups: dict[Key, ActionGroup] = Field(
         default_factory=dict, description="Reviewed ActionGroup catalog, keyed by stable namespaced group key."
     )

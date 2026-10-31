@@ -27,6 +27,7 @@ def chart(app: App) -> Chart:
             "buildbuddy-api-key",
             "ci-age-key",
             "ducktape-automation-github-app",
+            "gaffer-repo-fetch-pat",
             "github-secrets-sync-pat",
             "pr-visuals-s3-credentials",
             # keep-sorted end
@@ -40,7 +41,14 @@ def chart(app: App) -> Chart:
         "attic-ci-token",
         identity=identity,
         namespace=ci_token.WRITER.namespace,
-        read=[ci_token.READER.name, ci_token.WRITER.name],
+        read=[ci_token.GAFFER_WRITER.name, ci_token.READER.name, ci_token.WRITER.name],
+    )
+    opentofu.secret_access(
+        chart,
+        "drivefs-artifacts-s3-credentials",
+        identity=identity,
+        namespace="seaweedfs-credentials",
+        read=["drivefs-artifacts-s3-credentials"],
     )
     opentofu.gitops_workspace(
         chart,

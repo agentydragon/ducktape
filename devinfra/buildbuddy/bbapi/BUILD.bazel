@@ -68,6 +68,7 @@ go_test(
     srcs = [
         "cmd_artifact_test.go",
         "cmd_ci_test.go",
+        "cmd_invocation_list_test.go",
         "cmd_invocation_watch_test.go",
         "cmd_target_test.go",
         "grpc_test.go",

@@ -9,10 +9,6 @@ py_library(
     name = "model_test_data",
     srcs = ["model_test_data.py"],
     visibility = ["//agentplane/app:__subpackages__"],
-    deps = [
-        "//agentplane/app:model_catalog",
-        "//agentplane/runner:harness",
-    ],
 )
 
 py_library(

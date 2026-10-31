@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -26,6 +28,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"k8s.io/client-go/util/workqueue"
 )
 
 type fixtureHistory struct {
@@ -137,7 +140,7 @@ func exportFixtureSession(t *testing.T, store *Store) *Session {
 	session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(), Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "test-model"},
 		Executor: &sandboxpb.SandboxDestination{Owner: &sandboxpb.ServiceAccount{Namespace: "test", Name: "executor"}, Sandbox: "test-executor", SandboxUid: uuid.NewString()}, ExpectedIncarnationUid: uuid.NewString(),
-	}, "test-account-uid")
+	}, "test-account-uid", protocol.APIStyleResponses)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,6 +150,48 @@ func exportFixtureSession(t *testing.T, store *Store) *Session {
 func admitExportEvent(ctx context.Context, store *Store, id string, index int) error {
 	_, err := store.Admit(ctx, id, &commandpb.Command{CommandId: fmt.Sprintf("command-%d", index), Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "test input"}}}, "test-account-uid", nil)
 	return err
+}
+
+// recordingDelayingQueue stands in for the queue's clock: it records each
+// requested retry delay and makes the item ready at once.
+type recordingDelayingQueue struct {
+	workqueue.TypedDelayingInterface[string]
+	delays []time.Duration
+}
+
+func (q *recordingDelayingQueue) AddAfter(item string, delay time.Duration) {
+	q.delays = append(q.delays, delay)
+	q.Add(item)
+}
+
+type exportOutcome struct {
+	caughtUp bool
+	err      error
+}
+
+func TestExportQueueBacksOffFailuresAndResetsAfterProgress(t *testing.T) {
+	delaying := &recordingDelayingQueue{TypedDelayingInterface: workqueue.NewTypedDelayingQueue[string]()}
+	unavailable := errors.New("History unavailable")
+	outcomes := []exportOutcome{{err: unavailable}, {err: unavailable}, {caughtUp: false}, {err: unavailable}, {caughtUp: true}}
+	queue := newExportQueue(workqueue.TypedRateLimitingQueueConfig[string]{DelayingQueue: delaying}, func(context.Context, string) (bool, error) {
+		outcome := outcomes[0]
+		outcomes = outcomes[1:]
+		return outcome.caughtUp, outcome.err
+	})
+	defer queue.queue.ShutDown()
+	queue.queue.Add("backoff-session")
+	for range 5 {
+		if !queue.processNext(t.Context()) {
+			t.Fatal("export queue shut down")
+		}
+	}
+	// Failures double the delay; an exhausted quantum is progress, so the next failure starts over.
+	if expected := []time.Duration{exportRetryBase, 2 * exportRetryBase, exportRetryBase}; !slices.Equal(delaying.delays, expected) {
+		t.Fatalf("retry delays=%v expected=%v", delaying.delays, expected)
+	}
+	if queue.queue.Len() != 0 || queue.queue.NumRequeues("backoff-session") != 0 {
+		t.Fatalf("caught-up Session left queued=%d requeues=%d", queue.queue.Len(), queue.queue.NumRequeues("backoff-session"))
+	}
 }
 
 func TestHistoryExportReconcilesLostAcknowledgementAndConcurrentCommits(t *testing.T) {
@@ -276,11 +321,6 @@ func TestHistoryExporterRotatesOneSessionAcrossFiniteQuanta(t *testing.T) {
 	current, err := store.GetSession(t.Context(), session.ID, "")
 	if err != nil {
 		t.Fatal(err)
-	}
-	// Starting at the only ID must wrap around to it rather than exclude it forever.
-	pending, err := store.PendingSessions(t.Context(), "history-fixture", nil, session.ID, 1)
-	if err != nil || len(pending) != 1 || pending[0].ID != session.ID {
-		t.Fatalf("rotating pending sessions=%v err=%v", pending, err)
 	}
 	history := &fixtureHistory{entries: map[uint64]*eventlogpb.EventEntry{}, received: make(chan uint64, 1024)}
 	target, token := startFixtureHistory(t, history)

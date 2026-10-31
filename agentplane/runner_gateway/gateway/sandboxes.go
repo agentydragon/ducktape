@@ -7,13 +7,13 @@ import (
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	coreclient "k8s.io/client-go/kubernetes/typed/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -22,7 +22,6 @@ const (
 	sandboxVMIKind   = "VirtualMachineInstance"
 	phaseRunning     = "Running"
 	phaseQuiescing   = "Quiescing"
-	phaseDeleting    = "Deleting"
 	modeSuspended    = "Suspended"
 	phaseCreate      = "Creating"
 	phaseSuspend     = "Suspending"
@@ -36,29 +35,24 @@ type sandboxView struct {
 }
 
 // sandboxResolver names the Sandbox and runner Pod a request is for, and admits it only while the Pod serves it.
+// It reads objects, the informer cache in production, and admits nothing while health says the cache may
+// not be acted on.
 type sandboxResolver struct {
 	namespace string
 	sandboxes *sandboxreader.Reader
-	core      coreclient.CoreV1Interface
+	objects   client.Reader
+	health    *watchhealth.Health
 }
 
-func newSandboxResolver(namespace string, objects client.Reader, core coreclient.CoreV1Interface) (*sandboxResolver, error) {
-	if core == nil {
-		return nil, fmt.Errorf("Kubernetes core client is required")
+func newSandboxResolver(namespace string, objects client.Reader, health *watchhealth.Health) (*sandboxResolver, error) {
+	if health == nil {
+		return nil, fmt.Errorf("Kubernetes cache health is required")
 	}
 	sandboxes, err := sandboxreader.New(namespace, objects)
 	if err != nil {
 		return nil, err
 	}
-	return &sandboxResolver{namespace: namespace, sandboxes: sandboxes, core: core}, nil
-}
-
-func (r *sandboxResolver) get(ctx context.Context, name string) (sandboxView, error) {
-	view, err := r.sandboxes.Get(ctx, name)
-	if err != nil {
-		return sandboxView{}, err
-	}
-	return routingView(view), nil
+	return &sandboxResolver{namespace: namespace, sandboxes: sandboxes, objects: objects, health: health}, nil
 }
 
 func routingView(view sandboxreader.View) sandboxView {
@@ -76,17 +70,10 @@ func unavailable(err error) error {
 }
 
 func sandboxPhase(resource *sandboxapi.Sandbox) string {
-	runningReason := ""
-	sealed := false
-	if running := meta.FindStatusCondition(resource.Status.Conditions, sandboxapi.ConditionRunning); running != nil {
-		runningReason = running.Reason
-	}
-	if quiesced := meta.FindStatusCondition(resource.Status.Conditions, sandboxapi.ConditionQuiesced); quiesced != nil && quiesced.Status == metav1.ConditionTrue {
-		sealed = true
-	}
+	stage := resource.Status.StopStage
 	incarnated := resource.Status.Incarnation != nil
 	if resource.DeletionTimestamp != nil && !resource.DeletionTimestamp.IsZero() {
-		if sealed || runningReason == phaseDeleting {
+		if meta.IsStatusConditionTrue(resource.Status.Conditions, sandboxapi.ConditionQuiesced) || stage == sandboxapi.StopStageDeleting {
 			return phaseTearDown
 		}
 		return phaseQuiescing
@@ -106,13 +93,16 @@ func sandboxPhase(resource *sandboxapi.Sandbox) string {
 	if !incarnated {
 		return modeSuspended
 	}
-	if runningReason == phaseQuiescing {
+	if stage == sandboxapi.StopStageQuiescing {
 		return phaseQuiescing
 	}
 	return phaseSuspend
 }
 
 func (r *sandboxResolver) destination(ctx context.Context, destination *sandboxespb.SandboxDestination, writes bool) (sandboxView, error) {
+	if !r.health.Available() {
+		return sandboxView{}, status.Error(codes.Unavailable, "Sandbox inventory is not synchronized")
+	}
 	incarnation, err := r.sandboxes.Incarnation(ctx, destination)
 	if err != nil {
 		return sandboxView{}, err
@@ -127,14 +117,15 @@ func (r *sandboxResolver) destination(ctx context.Context, destination *sandboxe
 	if view.incarnation == nil {
 		return sandboxView{}, status.Error(codes.Unavailable, "destination unavailable; no offline admission")
 	}
-	pod, err := r.core.Pods(r.namespace).Get(ctx, view.incarnation.Name, metav1.GetOptions{})
+	var pod corev1.Pod
+	err = r.objects.Get(ctx, client.ObjectKey{Namespace: r.namespace, Name: view.incarnation.Name}, &pod)
 	if apierrors.IsNotFound(err) {
 		return sandboxView{}, status.Error(codes.Unavailable, "destination unavailable; no offline admission")
 	}
 	if err != nil {
 		return sandboxView{}, fmt.Errorf("read Sandbox runner Pod: %w", err)
 	}
-	if !podIsReadyForSandbox(pod, view) {
+	if !podIsReadyForSandbox(&pod, view) {
 		return sandboxView{}, status.Error(codes.Unavailable, "destination unavailable; no offline admission")
 	}
 	return view, nil

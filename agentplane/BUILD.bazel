@@ -38,20 +38,6 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 py_library(
-    name = "tracing",
-    srcs = ["tracing.py"],
-    deps = [
-        "@pypi//opentelemetry_api",
-        "@pypi//opentelemetry_exporter_otlp_proto_grpc",
-        "@pypi//opentelemetry_exporter_otlp_proto_http",
-        "@pypi//opentelemetry_instrumentation_fastapi",
-        "@pypi//opentelemetry_instrumentation_grpc",
-        "@pypi//opentelemetry_instrumentation_httpx",
-        "@pypi//opentelemetry_sdk",
-    ],
-)
-
-py_library(
     name = "subjects",
     srcs = ["subjects.py"],
     visibility = [
@@ -70,15 +56,6 @@ py_library(
         "//agentplane:__subpackages__",
         "//cluster/cdk8s:__subpackages__",
         "//cluster/validation:__pkg__",
-    ],
-)
-
-py_library(
-    name = "service_process",
-    srcs = ["service_process.py"],
-    deps = [
-        ":log_levels",
-        "@pypi//kubernetes_asyncio",
     ],
 )
 
@@ -116,37 +93,7 @@ py_test(
 )
 
 py_library(
-    name = "background_task",
-    srcs = ["background_task.py"],
-)
-
-py_test(
-    name = "test_background_task",
-    srcs = ["test_background_task.py"],
-    deps = [
-        ":background_task",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "log_levels",
     srcs = ["log_levels.py"],
     deps = ["@pypi//pydantic"],
-)
-
-py_test(
-    name = "test_service_process",
-    srcs = ["test_service_process.py"],
-    deps = [
-        ":log_levels",
-        ":service_process",
-        "//:conftest",
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
 )

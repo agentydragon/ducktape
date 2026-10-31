@@ -43,7 +43,7 @@ func (r *ProxyRunner) withClient(ctx context.Context, sandbox SandboxSnapshot, c
 	return runnerclient.WithClient(ctx, runnerclient.Config{
 		Target: r.target(sandbox.Name), TokenFile: r.TokenFile, Timeout: r.Timeout,
 		SandboxName: sandbox.Name, SandboxUID: sandbox.UID, SandboxNamespace: sandbox.Namespace,
-		DisableRetry: true, ReplaceOutgoingMetadata: true,
+		ReplaceOutgoingMetadata: true,
 	}, call)
 }
 

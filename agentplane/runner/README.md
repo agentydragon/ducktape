@@ -92,6 +92,9 @@ last acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays hi
   Pods and VMs invoke the same executable with explicit `--config` and `--launch-file` arguments.
   The [Runner configuration inventory](CONFIGURATION.md) documents the configuration sources and VM paths.
 
+The optional `codex_readiness` object sets the executor and app-server readiness windows independently;
+the configuration inventory lists the fields and defaults.
+
 The production executable is `//agentplane/runner/cmd:agentplane-runner`, shipped with the `agentplane`
 CLI in `//agentplane/runner:disk_image`. The runner and executor modes share the same executable;
 executor mode returns before Runner, COSI and telemetry startup. The native Claude/Codex executables,

@@ -8,13 +8,12 @@
 
 use super::abstract_domain::builtins::Row;
 use super::abstract_domain::integrity::{Integrity, IntegrityFlags, IntrinsicSlot};
-use super::callable_inference::{
-    CallableInferenceInputs, FunctionBindingFacts, ReturnedRecordFacts,
-};
+use super::abstract_domain::value::{Kind, Value};
+use super::callable_inference::{CallableInferenceInputs, FunctionBindingFacts};
 use super::local_class_construction::LocalClassConstructionShapes;
 use super::set_iterables::SetIterableShapes;
 use super::statement_facts::StructuralStatementFacts;
-use super::value_flow::{ChunkValueFlow, ValueOrigin};
+use super::value_flow::ChunkValueFlow;
 use crate::analysis_inputs::{
     ArgumentInputRef, DescriptorCopyAuthorRef, DescriptorCopyFactorySummary, NativeIntrinsic,
     ProofDependencies, ResolvedArgumentInput,
@@ -28,7 +27,6 @@ use spec::DescriptorCopyFactorySignature;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
-use std::sync::Arc;
 use swc_common::Span;
 use swc_ecma_ast::Id;
 
@@ -51,14 +49,6 @@ pub(crate) enum SemanticKey {
         parameter_index: usize,
         exact_arity: usize,
     },
-    CallbackFactory {
-        binding: Id,
-        function: u32,
-    },
-    ReturnedRecord {
-        binding: Id,
-        function: u32,
-    },
     NamespaceWrapper {
         binding: Id,
         function: u32,
@@ -76,8 +66,6 @@ impl SemanticKey {
             Self::StableFunction { .. } => InferenceRule::StableFunction,
             Self::StableProvider { .. } => InferenceRule::StableProvider,
             Self::ArgumentNoEscape { .. } => InferenceRule::ArgumentNoEscape,
-            Self::CallbackFactory { .. } => InferenceRule::CallbackFactory,
-            Self::ReturnedRecord { .. } => InferenceRule::ReturnedRecord,
             Self::NamespaceWrapper { .. } => InferenceRule::NamespaceWrapper,
             Self::DescriptorCopyProvider(_) => InferenceRule::DescriptorCopyProvider,
             Self::DescriptorCopyCall(_) => InferenceRule::DescriptorCopyFactory,
@@ -91,8 +79,6 @@ impl SemanticKey {
 pub(crate) enum SemanticFact {
     Certificate,
     Function(u32),
-    CallbackFactory(u32),
-    ReturnedRecord(Arc<ReturnedRecordFacts>),
     NamespaceWrapper(u32),
 }
 
@@ -240,7 +226,7 @@ impl NativePremises {
                 binding: binding.clone(),
                 global_this_qualified: false,
             },
-            row.family(),
+            row.family()?,
             row.requires,
             site,
             context,
@@ -402,7 +388,7 @@ impl SemanticRules {
                     function: *function,
                 })?;
                 let source = self.callables.functions.get(binding)?;
-                if !source.hoisted || source.rebound {
+                if source.rebound {
                     return None;
                 }
                 context.assume(&ProofDependencies {
@@ -413,8 +399,6 @@ impl SemanticRules {
             }
             SemanticKey::StableFunction { .. }
             | SemanticKey::StableProvider { .. }
-            | SemanticKey::CallbackFactory { .. }
-            | SemanticKey::ReturnedRecord { .. }
             | SemanticKey::NamespaceWrapper { .. } => {
                 if self.dynamic_scope {
                     return None;
@@ -634,22 +618,16 @@ impl ArgumentNoEscapeFacts {
             let binding = &input.binding;
             let function = input.function_start;
             let values = flow.values_of_binding(binding);
-            if !values.iter().eq([ValueOrigin::Function(function)]) {
+            if !values.iter().eq([Value::Alloc(Kind::Function, function)]) {
                 continue;
             }
             let rebound = statements.iter().any(|statement| {
                 statement.rebinds.eager.contains(binding)
                     || statement.rebinds.lazy.contains(binding)
             });
-            callables.functions.insert(
-                binding.clone(),
-                FunctionBindingFacts {
-                    values,
-                    hoisted: true,
-                    definite_initializer: true,
-                    rebound,
-                },
-            );
+            callables
+                .functions
+                .insert(binding.clone(), FunctionBindingFacts { values, rebound });
             let parameter_index = input.evidence.parameter_index;
             let exact_arity = input.evidence.exact_arity;
             selected.entry(binding.clone()).or_default().push((

@@ -873,7 +873,8 @@ class Egress(Construct):
                 self.agent_api.egress(),
                 llm_ingress.service(namespace).egress(),
                 actions.service(namespace).egress(),
-                notifications.service(namespace).egress(),
+                # Sandboxes reach Notifications' HTTP facade and documentation, not its gRPC listener.
+                notifications.http_service(namespace).egress(),
                 forgejo.HTTP.egress(),
                 ollama.AUTH_PROXY.egress(),
                 litellm_proxy.service(litellm_spec).egress(),

@@ -598,7 +598,13 @@ loader-value references, dynamic direct calls, global loader uses, and
 CommonJS export uses remain as typed sites in the optional `--interop-census`;
 calls through an alias are not traced. The census also lists dynamic `import()`
 calls (`dynamic_import`) and separates `module.exports` (`unbound_module_exports`)
-from other `module` uses (`unbound_module`). The census counts every chunk and
+from other `module` uses (`unbound_module`). A direct `eval` of the global
+`eval` whose single argument folds to exactly `"require"` (string literals,
+`+`, and `.replace` with a string or empty `/^/` pattern and a `$`-free
+replacement) reads the module-scope `require` and nothing else: it is an
+`unbound_require` site, or, as the callee of a call, an
+`evaluated_require_literal_call` or `evaluated_require_dynamic_call`. Any other
+direct `eval` makes the module's scope dynamic. The census counts every chunk and
 bounds detailed sites with `--max-interop-sites`. An absent path in the union
 graph excludes only paths through resolved ordinary static requests and these
 direct literal candidates; it does not clear any export-reentry blocker.
@@ -619,7 +625,10 @@ host_behavior:
   synchronous_load_runs_app_callbacks: unknown # never
   synchronous_load_drains_microtasks: unknown # never
   reentry_free_builtin_modules: [path, fs/promises]
+  reentry_free_bun_modules: [bun:ffi, ws]
+  reentry_free_embedded_loaders: [text]
   reentry_free_operations: [async_local_storage_construct, promise_resolve]
+  predefined_globals: unknown # standard
   note: "Audited against <executable identity, revision, digest>"
 ```
 
@@ -630,7 +639,10 @@ host_behavior:
 | `synchronous_load_runs_app_callbacks` | `unknown` | Loader-closed derivation (below)                |
 | `synchronous_load_drains_microtasks`  | `unknown` | Mandatory suspension (loader-closed derivation) |
 | `reentry_free_builtin_modules`        | empty     | Export-reentry closure and loader requests      |
+| `reentry_free_bun_modules`            | empty     | Export-reentry closure and loader requests      |
+| `reentry_free_embedded_loaders`       | empty     | Loader requests for embedded files              |
 | `reentry_free_operations`             | empty     | Synchronous-effect interpreter (below)          |
+| `predefined_globals`                  | `unknown` | Native census: bundle-owned globals (below)     |
 | `note`                                | absent    | None: YAML-only provenance, like other `note:`s |
 
 The three loader keys describe a loader, so each requires
@@ -650,6 +662,23 @@ runs nor authenticates the executable. Debugger-initiated evaluation and state
 changes are outside the behavior-equivalence contract; ordinary
 program-accessible hooks and getters remain in scope.
 
+### Predefined globals
+
+`predefined_globals: standard` declares that before the program runs the host
+defines no global-object property, own or inherited through the global
+object's host prototypes, outside a closed list, and gives each listed
+property its standard definition; in particular a host-defined `global` is the
+global object. A window's named properties (elements with an `id` or `name`,
+child browsing contexts) stay allowed: they are host objects or other realms'
+windows, never this realm's intrinsics. The list is the union of the `globals` npm package's
+(<https://github.com/sindresorhus/globals>, the version pinned in
+`pnpm-lock.yaml`) `builtin`, `es*`, `browser`, `worker`, `serviceworker`,
+`sharedWorker`, `audioWorklet`, `paintWorklet`, `node`, `nodeBuiltin`,
+`commonjs` and `shared-node-browser` lists, plus the own properties of
+`%Object.prototype%`. `unknown` asserts nothing. The author checks that the
+audited executable, its preloads and any script loaded before the program add
+no other global.
+
 ### Synchronous module loader
 
 `synchronous_module_loader: none` declares that no host API can synchronously
@@ -664,16 +693,12 @@ back to the selected chunk. CommonJS compatibility references alone do not
 expose that chunk's exports. Callbacks actually passed or published remain
 tracked, including callbacks that escape through global or unknown objects.
 
-Vendor replacement may preserve the proof when the original residual edges
-over-approximate the effective dependencies. A bundled partial replacement
-qualifies only when its prepared bundle is an ESM leaf with no static requests
-or top-level await: generated facades lead only to that leaf, while residual
-pruning can delete original edges. Bundles with external requests, raw package
-swaps and full package swaps retain conservative export reentry. Boundary
-renames and suppressed chunks add no dependency edges. With a synchronous
-loader present, every vendor-affected chunk in the target's closure blocks the
-proof, and host-loader sites are admitted only by the loader-closed derivation
-below.
+Vendor-swapped chunks take part through their bundled bodies (§ Vendor swap
+equivalence): a replacement evaluates like the code it replaces. The one
+visible exception is a bundled partial replacement whose prepared bundle is
+not an ESM leaf (it has static requests or top-level `await`); it blocks the
+proof as `open_replacement_bundle`. Host-loader sites are admitted only by the
+loader-closed derivation below.
 
 ### Loader-closed derivation
 
@@ -693,20 +718,28 @@ all of the following hold:
   host-loader queries). A non-literal call, an `import.meta.require` reference
   (an alias, including an exported loader value), `globalThis.require`, an
   unbound `require` or `module` (other than `module.exports`), `import.meta` as
-  a value or with a computed key, a TypeScript `import =`, and any request for
-  the `module` builtin keep every target open. A dynamic `import()` is not a
+  a value or with a computed key, a TypeScript `import =`, and a use of the
+  `module` builtin that can make a loader keep every target open. Under
+  `program_premises.non_literal_loader_calls: native_addons_only` (§ Program
+  premises) a direct non-literal call, of `import.meta.require`, of a loader
+  alias, of a created loader (below) or of an evaluated `require`, is excluded
+  and counted in `premised_sites`; every other form stays open. An evaluated
+  `require` called with one string literal is a literal request. A dynamic `import()` is not a
   synchronous loader site: ECMA-262 evaluates its target in a later job
   (`ContinueDynamicImport`), never on the requester's stack. Whether it names
   a debundled internal module stays the A3 admission check
   (<docs/design.md> § Conditions on the input chunk), which resolves every
   string-literal specifier, parenthesized or not, at any depth.
-- Each literal request names a `reentry_free_builtin_modules` entry or resolves
-  to an analyzed chunk's entry file. A request for any other builtin or an
-  unresolved specifier keeps every target open.
+- Each literal request names a `reentry_free_builtin_modules` or
+  `reentry_free_bun_modules` entry, resolves to an analyzed chunk's entry
+  file, or names an embedded file whose host loader is a
+  `reentry_free_embedded_loaders` entry (§ Reentry-free embedded files). A
+  request for any other builtin or embedded file, or an unresolved specifier,
+  keeps every target open.
 - For each request resolved to a chunk, that chunk's static and loader closure
   excludes the target, and every chunk in it has only resolved ordinary static
-  requests to analyzed chunk entries or reentry-free builtins, no top-level
-  `await`, and no vendor replacement. Cycles through the target are therefore
+  requests to analyzed chunk entries or reentry-free builtins and no top-level
+  `await`. Cycles through the target are therefore
   open; a loaded chunk need not be ESM.
 
 With `synchronous_load_drains_microtasks: never`, a mandatorily suspended site
@@ -723,10 +756,62 @@ field initializers and static blocks are never suspended, and a site the walk
 finds on no path stays unsuspended. The derivation then consumes the key and
 reports the excluded `suspended_sites`.
 
-Every other site in every analyzed chunk counts as reachable during the
-target's initialization, wherever it is nested: a callback any chunk published
-earlier can run then, so the chunk holding a site does not bound when it
-executes; no site is narrowed to the target's initialization. A site the census does not see, such as a
+A site no reachable code can enter is excluded and counted in
+`unreachable_sites`. Top-level code is reachable. A function expression, arrow,
+method, accessor, constructor, class field initializer or static block is
+reachable when its enclosing code is. A function declaration, or a binding
+initialized with a function expression or arrow, is reachable when its
+enclosing code is and either its binding escapes (any reference other than a
+direct call, including an export, `new`, `.call` or a repeated declaration) or
+a reachable function calls it directly. Lexical nesting proves nothing either
+way: a site in a nested function counts when that function is reachable.
+Direct `eval` or `with` makes every function of the module reachable. The
+analysis is per module: an imported function is an export, hence an escape, of
+its defining module. A statement after an unconditional `throw`, `return`,
+`break` or `continue` in the same statement list never runs, and neither does
+anything nested in it: its references publish nothing and its calls enter
+nothing. A function declaration there is still instantiated with the list's
+scope and keeps the ordinary rule.
+
+The `module` builtin is classified by its uses. A literal loader request for
+it whose result is only read as `.builtinModules` is a request for the builtin
+`module`. Its named import `builtinModules` is data. Its named import
+`createRequire` may only be called directly as the initializer of a
+`var`/`let`/`const` binding, at any depth, which makes a created loader: a
+direct call of it with one string literal naming a host module (§ Reentry-free
+builtin modules) is a request for that module, a `.resolve(...)` call loads
+nothing, and any other use (another literal, which it resolves against its own
+base, a non-literal call, an export or any other reference) is opaque. Every
+other import of `module` (default, namespace, re-export or another named
+import) and any other use of these keeps every target open as
+`loader_factory_request`. A static or literal request for `module` loads it
+like any builtin, so `module` must be listed in `reentry_free_builtin_modules`
+for the request itself.
+
+A top-level binding initialized with exactly `import.meta.require` is a loader
+alias. Its definition is classified through its uses instead of as an opaque
+reference. Each use of the alias, in its own module or through a named or
+default import of a name it is exported under, is classified like a census
+site: a direct call with one string literal is a literal request resolved
+against the defining module (whose `import.meta` the loader belongs to);
+any other call or reference, including a re-export through a local binding,
+keeps every target open. A namespace import, `export *` or
+`export { … } from` of a module exporting a loader alias, and a literal loader
+request or reachable dynamic `import()` of one, expose the alias and keep every
+target open.
+
+A remaining site counts when it can run in the target's window, from the
+target's entry into evaluation until it finishes. A direct load in top-level
+code, outside every function, runs only while its own module's body evaluates:
+it counts in the target, in the target's static closure, and in a chunk a
+counted request loads. Any other site, including a loader value that escapes
+from top-level code, runs whenever a callback can, since a callback any chunk
+published earlier can run in the window. It counts unless its chunk
+statically imports the target outside a cycle with it: that chunk's body, and
+with it every reference to its functions, starts only after the target
+finishes. A counted request that loads a chunk brings that chunk's whole
+static and loader closure into the window. Sites outside the window are
+counted in `outside_window_sites`. A site the census does not see, such as a
 computed `globalThis` read, `process.mainModule` or `Function`/indirect `eval`
 code, is outside this proof, as it is outside the census.
 
@@ -778,12 +863,68 @@ synchronously reenter an application chunk during module evaluation. Only
 ordinary static ESM requests that the artifact resolver did not resolve may use
 the closed Node builtin list, and literal `import.meta.require` requests in the
 loader-closed derivation. The export-reentry report records each consumed
-static source chunk, specifier, builtin ID, and request count. Unselected names,
-unknown bare packages, and package replacements such as `ws` stay unresolved.
+static source chunk, specifier, builtin ID, and request count. Unselected names
+and unknown bare packages stay unresolved.
+
+`reentry_free_bun_modules` applies the same leaf rule to the closed list of
+host modules outside Node's namespace: `bun:ffi` and the packages Bun replaces
+with built-in implementations, `undici` and `ws`, each under its exact
+spelling. For a bare package name the author also asserts that every request
+from an analyzed module resolves to the host's replacement, never to an
+installed package.
+
+### Reentry-free embedded files
+
+`inputs.embedded_loaders_path` names a JSON object mapping each embedded file's
+input path to the loader the host applies when it is required, as Bun's
+standalone module graph records it (`bun_standalone_extract.py
+--embedded-loaders`). It is a fact of the input, not an author assertion. An
+absolute literal loader request `/<path>` whose `<path>` the manifest lists is
+a request for that embedded file. `reentry_free_embedded_loaders` lists the
+loaders the author audited as running no application code: `text` returns the
+file's text and `napi` runs only the native addon's initializer. A `file` asset
+is not admissible: Bun's runtime loads it by extension, so a `.mjs` asset
+recorded as `file` runs as code. `napi` therefore also requires
+`program_premises.non_literal_loader_calls: native_addons_only`, whose second
+clause covers every addon initializer, and the spec is rejected without it. A
+`file`, `js` or other loader keeps every target open as
+`non_reentry_free_embedded_file`. Relative requests and static imports of
+embedded files are not resolved.
+
 This leaf rule grants no purity, call safety, return shape, or later callback
 fact; CommonJS/application loader, non-ESM, vendor, unsupported-request, and
 cycle blockers retain their normal rules. The closed set is specific to the
 audited host, not a promise about future runtimes or all Node modules.
+
+## Program premises
+
+`program_premises` declares facts about the analyzed program that the engine
+cannot derive, one assertion per key, beside `host_behavior` in flat and tree
+specs. An omitted key asserts nothing. Each is an author assertion over the
+whole program, including code the analyzer never sees; the audit and its
+provenance go in `note`, which the engine does not read. `export_reentry.json`
+echoes a non-empty block, and a closed loader certificate lists each premise it
+consumed under `premise_keys`.
+
+```yaml
+program_premises:
+  process_prototype_chain_accessors: none # or unknown
+  non_literal_loader_calls: native_addons_only # or unknown
+  note: "Audit: <where the premise was checked>"
+```
+
+- `process_prototype_chain_accessors: none`: no code in the program defines or
+  redefines an accessor property on `process` or on any object in its
+  prototype chain (including `EventEmitter.prototype` and `Object.prototype`),
+  or changes that chain. Building the `process` namespace reads every property
+  along that chain, and `worker_threads` sets `process` members inside a
+  worker, so `reentry_free_builtin_modules` accepts `process` and
+  `worker_threads` only with this premise; otherwise the spec is rejected.
+- `non_literal_loader_calls: native_addons_only`: every loader call whose
+  argument is not one string literal either fails or loads a native addon, and
+  no native addon's initializer calls application JavaScript or a module
+  loader. The loader-closed derivation then excludes such calls (§ Loader-closed
+  derivation).
 
 ## Hoisted function imports
 
@@ -809,6 +950,25 @@ comments-only file: it cannot execute statements or reenter an importer.
 Sources containing statements without a runtime ESM declaration retain the
 `non_esm_chunk` blocker. This source fact does not waive any other closure or
 runtime requirement.
+
+## Vendor swap equivalence
+
+A `swap`, `partial_swap` or `bundled_partial_swap` mark is the author's
+promise that each replacement behaves like the bundled code it replaces, in
+everything the engine reasons about: purity, whether and when callbacks run
+(synchronously or deferred), returned values and allocations, module-evaluation
+effects and loader behavior. Analysis derives facts from the bundled body and
+applies them to the emitted program, which runs the replacement. The author
+owns the promise. A different build of the same package version (down-levelled
+syntax, lowered decorators, another bundler's helpers) or a wrong version pin
+can break it without any visible change to the spec. The promise covers the
+replacement's behavior as the bundled code exhibits it; global or intrinsic
+changes a replacement package makes while initializing remain the author's A11
+obligation (<docs/design.md> § Conditions on the input chunk).
+
+A swapped export's derived foreign call summary names the replacement in
+`modules.json` as `imported_callables.*.foreign_call.replacement_package`, so
+the author can audit it against that package. Other facts carry no such field.
 
 ## Partial vendor-swap ownership
 
@@ -842,14 +1002,6 @@ reentry: the member read and its eager binding dependency remain. Mutation,
 opaque escape, reflective writes, accessors, unknown keys, and reads before the
 initializer keep the conservative member-read path. Purity of the initializer
 alone does not establish the receiver's property identity.
-
-When that same stable enum member is used as a computed property key, the
-shared purity analysis may also prove its value primitive and omit only the
-possible `ToPropertyKey` callback/reentry. The member expression still runs
-normally and retains its eager binding dependency; only an exact static own
-member of the single recognized initializer qualifies. Whole-chunk mutation,
-escape, and accessor checks still apply, as do binding rebind and source-order
-checks.
 
 Opaque calls holding a class or instance may invoke its constructor, field
 initializers, methods, and accessors. Their synchronous read closure stops at a
@@ -933,16 +1085,26 @@ it does not declare the factory pure or native identities intact.
 Admission requires a direct unary call of the selected stable top-level hoisted
 factory with a fresh literal data record. The canonical AST check excludes
 assignment/sequence-wrapped records, spreads, computed keys, accessors,
-`__proto__`, and other eager calls. Nested dense arrays, literal values, inline
-callbacks and independently checked enum reads are supported. A record value
-may also be an identifier when it resolves to one simple top-level `const`
-declaration with a direct string, number, boolean, null, or BigInt literal
-initializer. That initializer must precede the call, the current prefix must
-contain exactly one primitive abstract value for the binding, and the binding
-must have no source writes or dynamic-scope contamination. The binding read
-still executes normally, retaining its eager dependency and TDZ behavior;
-object/function aliases and computed or otherwise nonliteral initializers are
-not admitted. The ordinary
+`__proto__`, duplicate keys, array holes and other eager calls. Nested dense
+arrays, literal values, inline callbacks, method definitions and independently
+checked enum reads are supported; defining a method allocates a function the
+record retains like an inline callback. A template literal is supported when
+every substitution is a literal, a primitive `const` below or a checked enum
+read, so its `ToString` runs no user code. A record value may also be an
+identifier when, at the call, it is an initialized top-level binding with no
+dynamic-scope contamination and one of:
+
+- one simple top-level `const` with a direct string, number, boolean, null, or
+  BigInt literal initializer, preceding the call, with no source writes and
+  exactly one primitive abstract value in the current prefix;
+- exactly one source function as its whole-chunk and prefix value; the record
+  stores it without calling it and retains it like an inline callback;
+- exactly one untainted literal dense array or plain-data object as its
+  whole-chunk and prefix value, every current slot of which is primitive.
+
+The binding read still executes normally, retaining its eager dependency and
+TDZ behavior; other object aliases, other member reads and nonliteral
+initializers are not admitted. The ordinary
 source-checked return-only constructor proof and normal execution remain in
 force, including eager lexical reads, TDZ, argument evaluation, exposure checks,
 side effects and ordering. A typed call-site certificate may remove the generic
@@ -954,7 +1116,11 @@ exact checked constructor/property and input-object/missing-property pairs
 consume the assertion. Failed source proof or runtime admission restores
 conservative reachability and issues no purity certificate. Consumed author
 obligations appear in `synchronous_execution.local_record_factory_uses`,
-separately from inferred native integrity.
+separately from inferred native integrity. An annotated direct call that keeps
+the conservative path records one typed reason in
+`synchronous_execution.local_record_factory_rejections`: the refused record
+shape with its outermost property, or the checked-proof condition that failed
+(with the constructor check for `constructor_proof`).
 
 An implicit local class constructor can also receive a source-derived
 construction certificate. The class must be a direct declaration in the same
@@ -1015,11 +1181,26 @@ retained lazy closure are included as well, covering an accessor that returns
 another conversion callable. This is callback-effect analysis; it does not
 classify the enclosing operator as pure.
 
-Source-proved stable primitive imports enter that same retained value flow, so
-copying one through local bindings preserves its callback-free conversion fact.
-Reassignment to an object or an unknown alternative restores conservative
-conversion analysis. This does not fold the imported value, prove the operator
-cannot throw, or remove binding-read and import-order constraints.
+Primitive values are tracked by their possible ECMAScript primitive types. A
+chunk-top `const`, or a stable top-level `var` with a Number initializer (whose
+type also includes its hoisted `undefined`), has the types its initializer
+completes with: literals, templates, operator results, conditional and logical
+alternatives, the last sequence element, earlier tracked bindings, and the
+primitive return of a builtin row purity may trust by spelling, when its
+unshadowed, unwritten intrinsic receives only primitive operands where it
+coerces (`Symbol` returns Symbol, `Number.isNaN` Boolean). The synchronous
+interpreter, which proves each row's integrity slots, also takes `Math.round`
+and its family as Number and `Symbol.for` as Symbol. A stable direct ESM export
+carries its types to named/default importers and re-exports, so copying one
+through local bindings preserves its callback-free conversion fact;
+reassignment to an object or an unknown alternative restores conservative
+conversion analysis. An exact static own primitive member of a stable
+single-initializer TS enum, used as a computed property key, is primitive too;
+whole-chunk mutation, escape, accessor, rebind and source-order checks still
+apply. A primitive operand omits only conversion callbacks: a Symbol is a safe
+property key but not a string or numeric operand, and mixed BigInt/Number
+arithmetic still throws. No value is folded, and every binding read,
+import-order and TDZ constraint remains.
 
 Guarded native call summaries share one checked projection for call timing
 and successful return values. The summarized operations, the argument counts
@@ -1027,7 +1208,7 @@ and operand shapes they admit, their allocations, writes and return shapes are
 the rows of `facts/abstract_domain/builtins.rs`, each with its ECMA-262
 citation. A call is admitted only when every coercion its row lists lands on a
 proven primitive or exact ordinary operand. A row returning a primitive
-composes with subsequent conversions; a row returning an argument keeps that
+gives its result's types; a row returning an argument keeps that
 argument's identity and the callbacks stored in it; a row with an untracked
 result stays opaque.
 
@@ -1121,13 +1302,24 @@ and publication premise still requires the same independent source audit.
 
 ## Inferred native property-key domains
 
-Native mutation analysis distinguishes finite string keys, definitely Symbol
-keys and unknown keys. Stable aliases of unshadowed `Symbol.for(literal)` and
-lexical `[key, value]` loops over closed data-object `Object.entries` inputs
-can preserve unrelated named global bindings. The latter requires intact
-Object operations and Array iterators for both the result and pair
-destructuring. Mutation directly on a native object remains a mutation of that
-family, regardless of key domain.
+Native mutation analysis distinguishes finite string keys, affixed string
+keys, definitely Symbol keys and unknown keys. Stable aliases of unshadowed
+`Symbol.for(value)` and lexical `[key, value]` loops over closed data-object
+`Object.entries` inputs can preserve unrelated named global bindings. The latter
+requires intact Object operations and Array iterators for both the result and
+pair destructuring. `Symbol.for` returns a Symbol whatever its argument; a
+throwing conversion leaves no key.
+
+An affixed key is a string with a constant prefix and suffix: an untagged
+template with substitutions (its first and last literal parts), or `left +
+right` where an operand is a string literal, template, affixed key or stable
+alias of one. `+` with a string operand is string concatenation, so the result
+starts with a string left operand's prefix and ends with a string right
+operand's suffix; the other operand's conversion may run user code but cannot
+change those characters. A numeric literal is a key, not a string operand. An
+affixed key may name exactly the strings at least as long as its affixes that
+start and end with them. Mutation directly on a native object still invalidates that
+family's prototype slots, regardless of key domain.
 
 A11 supplies initial native identity. All analyzed chunks contribute their
 canonical mutation facts, including deferred writes, before resolving a closed
@@ -1136,9 +1328,11 @@ point. Providers and consumers share this inferred integrity input; it is not
 a spec assumption or configurable override. Unknown keys, unstable bindings,
 shadowing, unsupported patterns and visible native replacement fall back
 conservatively. Global-slot value reads retain unresolved native identity
-through aliases and descendants; only proved global-object receivers receive
-key disjointness. A11 remains an author obligation for hidden native-alias
-paths. Key precision grants no call, purity, throw or return summary.
+through aliases and descendants, so a write through one may reach any native
+object, under its key; a bundle-owned global's value (§ Bundle-owned globals)
+reaches none. A11 remains an author obligation for hidden
+native-alias paths, including a descriptor method called through an alias.
+Key precision grants no call, purity, throw or return summary.
 
 ## Captured ordinary-object values
 
@@ -1220,10 +1414,40 @@ audit, code outside the analyzed prefix, or host behavior.
 
 A native premise is an integrity flag on an intrinsic slot: `%Set%`,
 `%Object.freeze%`, `%Array.prototype%`, `%ArrayIteratorPrototype%`. A slot is
-intact when the closed whole-program write census (§ Inferred native
-property-key domains) has no known or possible write to it, to its family or to
-the global object; it is unknown otherwise. Two author fields instead assert
-slots at one exact source site, as an `IntrinsicIntact(slots, site)` axiom:
+intact when no write in the closed whole-program write census (§ Inferred
+native property-key domains) can reach it; it is unknown otherwise.
+
+A `%Set%` or `%Object.freeze%` slot is an own data property of the global
+object or of a census constructor or namespace. A property write, update,
+delete or reflective definition changes only its receiver's own property under
+its key: a setter or Proxy trap it runs is analyzed source with census writes
+of its own, and A11 excludes host code changing intrinsics. So:
+
+- A string key reaches only slots its domain may name, on every object its
+  receiver may be; a Symbol key reaches none. Slot names are the finite set of
+  census global bindings and builtin static names, none of them `__proto__`:
+  a `__proto__` write changes the receiver's prototype, not an own slot, and a
+  key whose write runs an accessor runs analyzed source or host code (A11). `Error.prepareStackTrace = f` leaves `%Error%`
+  intact, and `location.href = url` leaves every own slot not named `href`
+  intact.
+- A global-object receiver reaches only global slots. A constructor or
+  namespace receiver reached through its intact global binding reaches only
+  its own slots; through a replaced one it may be any object.
+  `%Object.prototype%` writes reach no `%Object.<name>%` slot.
+- An unknown key reaches every slot of its receiver. A computed key or
+  iterator-prototype path is exact only while every slot it was derived
+  through is intact.
+- Assigning a census name replaces its global slot. Rebinding a global-object
+  alias (`globalThis = other`) leaves every slot unknown.
+
+A prototype slot covers every property on the object, including inherited
+lookups, so it is unknown after any write to its family or the global object.
+
+Each consumer names every slot its operation reads: the callee's binding and
+member, and any constructor static or prototype method the algorithm looks up.
+
+Two author fields instead assert slots at one exact source site, as an
+`IntrinsicIntact(slots, site)` axiom:
 
 ```yaml
 chunk_analysis_options:
@@ -1260,7 +1484,7 @@ location, selected binding and site.
 | `promise_resolve`                    | Top-level simple binding initialized by a zero-argument `Promise.resolve()`                                                                            | `%Promise%`, `%Promise.resolve%`                                            |
 | `set_from_primitive_array`           | Top-level simple binding initialized by `new Set([primitive literals])` over a dense, nonspread array                                                  | `%Set%`, `%Set.prototype%`, `%Array.prototype%`, `%ArrayIteratorPrototype%` |
 | `set_from_set_spread`                | `new Set([...seed, primitive literals])` in the same declaration and output as a selected `set_from_primitive_array` seed and every declarator between | Those slots and `%SetIteratorPrototype%`                                    |
-| `object_own_data_function_read`      | Top-level simple binding initialized by `Object.<name>`, an own-data function of the shared `PURE_STATIC_FUNCTION_REFS` table                          | `%Object%`, `%Object.<name>%`                                               |
+| `object_own_data_function_read`      | Top-level simple binding initialized by `Object.<name>`, a function-valued data property in the builtin summary table                                  | `%Object%`, `%Object.<name>%`                                               |
 | `array_spread_from_primitive_arrays` | Last declarator of a `const` whose earlier declarators are dense primitive arrays and whose initializer holds primitives and spreads of them           | `%Array.prototype%`, `%ArrayIteratorPrototype%`                             |
 | `callee: object_freeze`              | Top-level function whose sole statement returns `Object.freeze(arg)` with one nonspread argument                                                       | `%Object%`, `%Object.freeze%` at that call                                  |
 | `callee: set_empty_private_field`    | Stable top-level class with an implicit constructor and one private field initialized by zero-argument `new Set`                                       | `%Set%` at that constructor                                                 |
@@ -1284,6 +1508,52 @@ input applies only together with `host_behavior.reentry_free_operations:
 arguments with their effects and throws; the input grants no family-wide
 integrity, purity, return shape or guarantee at another site, and A11 remains
 the external obligation for code outside the analyzed program.
+
+### Bundle-owned globals
+
+Under `host_behavior.predefined_globals: standard` a write through the value of
+a bundle-owned global property reaches no intrinsic slot, whatever its key.
+Without that key every global-slot read-back stays an unknown value.
+
+A property `g` of the global object is bundle-owned when it is not in the
+standard list (§ Predefined globals), is not a census binding name, and every
+census write that may store into `g` stores a fresh object, a primitive, a
+fresh `Map`, `Set`, `WeakMap` or `WeakSet` (when no write may replace those
+bindings), or the value of a bundle-owned property, `g`'s own included:
+`root.g = {}`, `root.g = root.g || {}`, `root.g ??= new Map()`,
+`root[key] = root[key] ?? { ... }`. A store that may name `g` is any write
+whose key domain may be `g` and whose receiver may be the global object, an
+unknown value, a native descendant or a prototype. Properties keyed by
+`Symbol.for` symbols form one bundle-owned slot, read through a stable binding
+with a `Symbol.for` key domain, while no write may replace `%Symbol%` or
+`%Symbol.for%`.
+
+The set is a greatest fixed point over every analyzed chunk's writes, since
+all chunks share one global object: a write through a bundle-owned value is not
+itself a store into a global or prototype. Every property is dropped if any
+global-chain write has an unknown key or may name `__proto__`, if a keyless
+reflective write (`Object.assign`, `Object.setPrototypeOf`) reaches such a
+receiver, or if a legacy accessor method (`__defineGetter__`) named by its key
+is called on one. A sloppy assignment to an undeclared `g` is a store into `g`;
+updates, destructuring and reflective writes naming `g` drop it, as does a
+`delete` that may name `g` on the global object. A `delete` on a prototype
+stores nothing.
+
+Soundness, by induction over execution: initially `g` is absent from the
+global object and, by the host claim, from its host prototypes, or is a named
+property; the `%Object.prototype%` names are in the list. Every later store
+into `g`, on the global object or a prototype it inherits from, writes a
+non-intrinsic value, so `g` never holds an intrinsic; a `delete` only removes.
+Writes through `g`'s value land on non-intrinsic objects, so they cannot store
+into `g` on the global chain either. Setters and Proxy traps a write runs are
+analyzed source with census writes of their own; A11 excludes host code
+changing intrinsics or adding globals, and covers hidden native-alias paths as
+for every census fact: an aliased or computed descriptor method, or a write
+through a parameter or container field that holds the global object. Analyzed
+chunks are ES modules, so top-level declarations create no global property,
+and dynamic scope leaves the census open. A descendant of `g`'s value stays
+unknown. Proofs that use the discharge record `predefined_globals` among their
+host behavior dependencies.
 
 ## Commuting statements
 
@@ -1356,15 +1626,38 @@ frontier); those the premise makes inert.
 
 A binding effect is `observed` when it comes from the statement's syntax
 (declaration, initializer, eager read or rebind, local effect) or from
-synchronous execution the interpreter followed precisely. It is `fallback` when
-only the statement's fallback summary contributed it: having stopped expanding
-callbacks (`callback_pool_limit`, `recursive_invocation`,
-`invocation_depth_limit`, `invocation_expansion_limit`) or handed a returned
-callback to opaque code, the interpreter assumes each such callback may run and
-attributes its whole synchronous read/rebind closure to the statement. An
-effect both observed and assumed is `observed`. Asserting a pair with a
-`fallback` effect asserts that the assumed callback does not run (or does not
-reach the binding) during that statement's initialization. Ordering derived
+synchronous execution of code the statement definitely runs. It is `fallback`
+when only a conservative path contributed it, one that assumes code may run at
+the statement; the `reason`'s `path` names the first such path:
+
+- `fallback_summary` (`loss`: the precision loss that opened it): having
+  stopped expanding callbacks (`callback_pool_limit`, `recursive_invocation`,
+  `invocation_depth_limit`, `invocation_expansion_limit`) or handed a
+  returned callback to opaque code, the interpreter attributes each such
+  callback's whole synchronous read/rebind closure to the statement.
+- `opaque_callback_invocation`: a callback opaque code may invoke (escaped
+  earlier, exported, or reachable from the opaque operation's inputs),
+  executed as if it ran.
+- `escaped_callback_closure`: the synchronous closure of a callback, class or
+  foreign record exposed to opaque code, including values a member read of
+  an escaped record or of a native slot the census does not prove intact may
+  yield.
+- `possible_setter`: an accessor owner's body that a property write after an
+  unknown call, or an `Object.assign` onto an unproven target, may trigger.
+  A setter declared for the written property stays `observed`.
+- `whole_body_promotion` (`operation`: `callable_inputs` or
+  `array_iteration`): the lazy body of a callable whose inputs or iteration the
+  interpreter could not model, beyond what its execution reached.
+- `private_constructor_restore`: callback effects restored when a
+  private-constructor result proof's execution failed.
+- `unresolved_call_closure` (shared-`var` accesses only): the read closure of
+  an at-init callee promotion could not resolve.
+
+A setter or getter applied to the read receiver, a constructor body run by an
+unsupported `new`, and a method called on a receiver holding an array stay
+`observed`. An effect both observed and assumed is `observed`. Asserting a
+pair with a `fallback` effect asserts that the assumed code does not run (or
+does not reach the binding) during that statement's initialization. Ordering derived
 between two observed effects is never routed only through an assumed one: the
 binding timeline also orders each binding's observed effects among
 themselves, so inerting an edge to a fallback effect never releases an
@@ -1462,11 +1755,11 @@ also records the callback and execution context without invoking it.
 
 ## Inferred returned-record construction timing
 
-For a stable directly exported hoisted zero-argument function declaration that allocates one fresh
-empty Map and returns only noncomputed methods/getters, source analysis may
-certify that construction cannot synchronously reenter importer code. This is
-independent of purity and possible throws. The proof requires an exact defining
-entry/export and the shared intrinsic-integrity checks across analyzed modules.
+A parameterless export with a derived foreign call summary (§ Derived foreign
+call summaries) whose result is always one fresh object literal of
+noncomputed, distinctly named methods and getters is a returned-record factory.
+An argument-free direct call cannot synchronously reenter importer
+code. This is independent of purity and possible throws.
 The returned record retains opaque deferred capabilities: later access,
 invocation and opaque consumption conservatively preserve importer live-cell
 reads and callback effects. The summary and provider member/capture provenance
@@ -1476,8 +1769,9 @@ Used certificates also appear in the dependency graph's
 `synchronous_execution.returned_record_uses` separately records `call_timing`
 and `return_capability` consumption with the call-site location and a summary
 reference. Callback-input factory evidence and uses retain their own fields.
-The summary's `inference` records the composing source-identity, empty-collection
-and native-integrity rules and their captured-input dependencies. Actual use
+The summary's `inference` records the composing source-identity rule, and the
+empty-collection and native-integrity rules when the body constructs a
+collection, with their captured-input dependencies. Actual use
 also appears in `synchronous_execution.inference_uses`; the dependency set is
 propagated from required premises rather than reconstructed by each consumer.
 
@@ -1505,6 +1799,34 @@ Provider identity and rule evidence appear under
 the provider derivation and the caller's own-property derivation in
 `synchronous_execution.inference_uses`.
 
+## Derived foreign call summaries
+
+A directly imported, stable top-level function or class declaration of another
+analyzed chunk receives a summary when every operation its call performs runs
+no other code. The body may read only its parameters and its own `const`/`let`
+bindings (`var` included; a read before the first declaration has no
+summary). It may create primitives, closures, and object or array literals with
+literal keys other than `__proto__`. It may construct an argument-free
+`Map`/`Set`/`WeakMap`/`WeakSet` whose global slot is intact in every analyzed
+chunk's census. A class may also define instance fields and write its declared
+private fields. Straight-line statements only. A class qualifies only without
+`extends`, decorators, parameter properties or an explicit `return`. Any other
+operation, including a read of any provider binding, leaves the callee unknown.
+A vendor-swapped provider is summarized from its bundled body (§ Vendor swap
+equivalence).
+
+The summary applies only to a spread-free ordinary call of a function or a
+`new` of a class through the importing binding, when no narrower summary or
+author contract names that binding. Such a call invokes no callback and records
+no precision loss. Its result is the returned argument itself, or a fresh
+opaque value retaining the callbacks of the arguments it may hold. The analysis
+taints the objects among those arguments, and a construction may still throw
+before the provider evaluates. Arguments it neither returns nor retains are not
+exposed. The call stays impure, so purity and side-effect order are unchanged.
+Methods of a returned object stay unknown. The summary appears in `modules.json`
+under `imported_callables.*.foreign_call`; a use appears in
+`synchronous_execution.inference_uses` as `foreign_call_summary`.
+
 ## Audited callback factories
 
 Optional calls retain conservative callee, receiver and argument callback
@@ -1514,10 +1836,11 @@ result. Optional calls do not acquire assertions scoped to ordinary direct-call
 syntax.
 
 Without an author assertion, a direct named import may receive an inferred
-callback-factory summary from its defining entry file. The export must have one
-stable identity: a hoisted function declaration or a definite top-level
-function initializer. Its synchronous body only returns a fresh ordinary
-zero-argument function. The admitted importer call supplies exactly one inline
+callback-factory summary from its defining entry file. The export must have a
+derived call summary (§ Derived foreign call summaries; a single-declarator
+top-level function or arrow initializer that is never reassigned also
+qualifies) whose body directly returns a fresh zero-argument function literal.
+The admitted importer call supplies exactly one inline
 callback; any other ordinary identifier parameters are omitted. The returned
 function may capture only those parameters and its own locals; indexed calls,
 writes and property reads must not introduce an additional callback capability.
@@ -2116,8 +2439,8 @@ Guarded native call summaries also report `native_call_identity`, whose
 derivation includes `native_integrity` for the global object and operation
 family. The completed census also tracks `Function` so consumers that invoke
 through `Function.prototype.call` can require its integrity explicitly.
-Stable callable, callback-factory and returned-record certificates use
-their corresponding rule names when consumed.
+Stable callable and returned-record conclusions use their corresponding rule
+names when consumed.
 The local-class chain includes `native_integrity`, `native_call_identity`,
 `empty_collection_construction` and `local_class_construction` when native
 fields are present; a source-only class has no unrelated native premises.
@@ -2136,6 +2459,34 @@ record names the first construction check that failed as a typed `rejection`
 (for example `field_may_exist_on_object_prototype` with the field, whose census
 entries are in `native_prototype_property_checks`); later checks may fail too.
 These records do not change gate acceptance or emitted JavaScript.
+
+Each record's `reach` classifies the code the conservative path stands for.
+`{"kind": "bounded"}`: known source code, namely a rejected local construction
+or an invocation truncated at a recursion, depth or expansion bound, whose
+inputs and synchronous read closure reach nothing the interpreter cannot name.
+Otherwise `{"kind": "global", "cause": …}` names the rule that applied, checked
+for dynamic scope first, then for each input, then over the read closure:
+
+- `dynamic_scope`: the chunk has direct `eval` or `with`.
+- `borrowed_receiver`: the constructed class is used outside `new`, exported
+  under export reentry, mutated, or escaped to opaque code; a class in the
+  read closure is mutated or escaped; or the truncated callable itself
+  escaped.
+- `tainted_input`: an input, through stored properties, captures and
+  accessors, is an unknown value, a global object alias, a tainted object, or
+  a callable already escaped to opaque code.
+- `foreign_record`: an input or the callee is a foreign deferred record.
+- `unknown_callee`: the read closure of the code and its inputs' callables
+  contains a call whose callee value flow does not resolve to local callables
+  or a builtin row, a member or protocol operation on an import, global or
+  otherwise unknown binding, or an opaque body. An `unknown_call_target` is
+  `unknown_callee`, except a foreign record's call (`foreign_record`).
+- `unmodelled_operation`: every `unsupported_operation`.
+- `escaped_callback_pool`: a bound hit while running the callbacks opaque code
+  may invoke, whose pool is the escape set accumulated over the prefix.
+
+A site reached more than once keeps one record, `global` if any reach was.
+The classification is a report: both reaches promote the same effects.
 
 Property-specific Object prototype premises appear in
 `synchronous_execution.native_prototype_property_checks`: each entry names the
@@ -2215,9 +2566,9 @@ as constraining, keyed by `explanation.kind`:
   `array_contents` or `set_contents`), or `after_barrier` / `barrier_after_prior`
   for the opaque-barrier dependence. `source`, `target` and `observation` are
   the provenance of that endpoint's binding effect (§ Commuting statements):
-  `{"kind": "observed"}` or `{"kind": "fallback", "reason": …}` with the
-  `precision_losses` reason that opened the statement's fallback summary; the
-  `explanation` text names each assumed side.
+  `{"kind": "observed"}` or `{"kind": "fallback", "reason": {"path": …}}`
+  naming the conservative path; the `explanation` text names each assumed
+  side.
 
 Impure-initializer evidence (`sequenced_source_unit`, `target_source_unit`)
 also carries `synchronous_execution_complete` when synchronous analysis ran;

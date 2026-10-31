@@ -18,6 +18,7 @@ use std::{cell::Cell, rc::Rc};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
+use super::abstract_domain::value::{Kind, Value};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 
 use super::{
@@ -26,16 +27,6 @@ use super::{
     lazy_visit_function, lazy_visit_getter_prop, lazy_visit_if_stmt, lazy_visit_may_skip,
     lazy_visit_method_prop, lazy_visit_setter_prop,
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum ValueOrigin {
-    Function(u32),
-    Class(u32),
-    Object(u32),
-    /// A fresh native Set identity, without plain-object or iterable shape.
-    NativeSet(u32),
-    Unknown,
-}
 
 pub(crate) fn native_set_allocation_roots(
     inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
@@ -69,16 +60,16 @@ pub(crate) struct CallTargets {
 struct OriginId(u32);
 
 /// Per-chunk, deterministic mapping between semantic origins and dense bitmap
-/// positions. The vector order preserves `ValueOrigin::Ord` when decoding.
+/// positions. The vector order preserves `Value::Ord` when decoding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct OriginTable {
-    origins: Vec<ValueOrigin>,
-    ids: HashMap<ValueOrigin, OriginId>,
+    origins: Vec<Value>,
+    ids: HashMap<Value, OriginId>,
 }
 
 impl OriginTable {
-    pub(super) fn from_origins(origins: impl IntoIterator<Item = ValueOrigin>) -> Self {
-        let mut origins: Vec<_> = origins.into_iter().chain([ValueOrigin::Unknown]).collect();
+    pub(super) fn from_origins(origins: impl IntoIterator<Item = Value>) -> Self {
+        let mut origins: Vec<_> = origins.into_iter().chain([Value::Top]).collect();
         origins.sort_unstable();
         origins.dedup();
         let ids = origins
@@ -95,20 +86,20 @@ impl OriginTable {
         Self { origins, ids }
     }
 
-    fn id(&self, origin: ValueOrigin) -> OriginId {
+    fn id(&self, origin: Value) -> OriginId {
         *self
             .ids
             .get(&origin)
-            .expect("ValueOrigin must belong to this chunk")
+            .expect("Value must belong to this chunk")
     }
 
-    fn origin(&self, id: OriginId) -> ValueOrigin {
+    fn origin(&self, id: OriginId) -> Value {
         self.origins[id.0 as usize]
     }
 
     #[cfg(test)]
     pub(super) fn for_expr(expr: &Expr) -> Arc<Self> {
-        let mut collector = ValueOriginCollector::default();
+        let mut collector = AllocationCollector::default();
         expr.visit_with(&mut collector);
         Arc::new(Self::from_origins(collector.origins))
     }
@@ -116,34 +107,39 @@ impl OriginTable {
 
 #[cfg(test)]
 #[derive(Default)]
-struct ValueOriginCollector {
-    origins: BTreeSet<ValueOrigin>,
+struct AllocationCollector {
+    origins: BTreeSet<Value>,
 }
 
 #[cfg(test)]
-impl Visit for ValueOriginCollector {
+impl Visit for AllocationCollector {
     fn visit_function(&mut self, node: &Function) {
-        self.origins.insert(ValueOrigin::Function(node.span.lo.0));
+        self.origins
+            .insert(Value::Alloc(Kind::Function, node.span.lo.0));
         node.visit_children_with(self);
     }
 
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-        self.origins.insert(ValueOrigin::Function(node.span.lo.0));
+        self.origins
+            .insert(Value::Alloc(Kind::Function, node.span.lo.0));
         node.visit_children_with(self);
     }
 
     fn visit_class(&mut self, node: &Class) {
-        self.origins.insert(ValueOrigin::Class(node.span.lo.0));
+        self.origins
+            .insert(Value::Alloc(Kind::Class, node.span.lo.0));
         node.visit_children_with(self);
     }
 
     fn visit_object_lit(&mut self, node: &ObjectLit) {
-        self.origins.insert(ValueOrigin::Object(node.span.lo.0));
+        self.origins
+            .insert(Value::Alloc(Kind::Object, node.span.lo.0));
         node.visit_children_with(self);
     }
 
     fn visit_array_lit(&mut self, node: &ArrayLit) {
-        self.origins.insert(ValueOrigin::Object(node.span.lo.0));
+        self.origins
+            .insert(Value::Alloc(Kind::Object, node.span.lo.0));
         node.visit_children_with(self);
     }
 }
@@ -197,13 +193,13 @@ impl Values {
         }
     }
 
-    pub(super) fn singleton(origins: Arc<OriginTable>, value: ValueOrigin) -> Self {
+    pub(super) fn singleton(origins: Arc<OriginTable>, value: Value) -> Self {
         let mut values = Self::empty(origins);
         values.insert(value);
         values
     }
 
-    fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         // Insertions and unions only grow the vector through a set bit, so
         // trailing zero words are never introduced.
         self.bitmap.bits.is_empty() && !self.unknown
@@ -230,8 +226,8 @@ impl Values {
     }
 
     #[cfg(test)]
-    pub(super) fn contains(&self, value: &ValueOrigin) -> bool {
-        if *value == ValueOrigin::Unknown {
+    pub(super) fn contains(&self, value: &Value) -> bool {
+        if *value == Value::Top {
             return self.unknown;
         }
         let Some(id) = self.origins.ids.get(value) else {
@@ -245,8 +241,8 @@ impl Values {
             .is_some_and(|word| word & (1_u64 << bit) != 0)
     }
 
-    pub(super) fn insert(&mut self, value: ValueOrigin) -> bool {
-        if value == ValueOrigin::Unknown {
+    pub(super) fn insert(&mut self, value: Value) -> bool {
+        if value == Value::Top {
             return !std::mem::replace(&mut self.unknown, true);
         }
         let id = self.origins.id(value).0;
@@ -277,7 +273,7 @@ impl Values {
     /// Ids of this set's origins whose bit is set in `mask` (indexed by
     /// `OriginId`), without decoding the other origins.
     fn ids_within<'a>(&'a self, mask: &'a [u64]) -> impl Iterator<Item = OriginId> + 'a {
-        let unknown = self.origins.id(ValueOrigin::Unknown);
+        let unknown = self.origins.id(Value::Top);
         let unknown = (self.unknown && bits_contain_id(mask, unknown)).then_some(unknown);
         BitIndices::new(
             self.bitmap
@@ -452,8 +448,8 @@ impl ValueBitmap {
     }
 }
 
-impl Extend<ValueOrigin> for Values {
-    fn extend<T: IntoIterator<Item = ValueOrigin>>(&mut self, iter: T) {
+impl Extend<Value> for Values {
+    fn extend<T: IntoIterator<Item = Value>>(&mut self, iter: T) {
         for origin in iter {
             self.insert(origin);
         }
@@ -500,7 +496,7 @@ pub(crate) struct ValuesIter<'a> {
 }
 
 impl Iterator for ValuesIter<'_> {
-    type Item = ValueOrigin;
+    type Item = Value;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(id) = self.bits.next() {
@@ -508,7 +504,7 @@ impl Iterator for ValuesIter<'_> {
         }
         if self.unknown && !self.yielded_unknown {
             self.yielded_unknown = true;
-            return Some(ValueOrigin::Unknown);
+            return Some(Value::Top);
         }
         None
     }
@@ -537,7 +533,7 @@ impl Iterator for ArcWords {
 }
 
 impl Iterator for ValuesIntoIter {
-    type Item = ValueOrigin;
+    type Item = Value;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(id) = self.bits.next() {
@@ -545,14 +541,14 @@ impl Iterator for ValuesIntoIter {
         }
         if self.unknown && !self.yielded_unknown {
             self.yielded_unknown = true;
-            return Some(ValueOrigin::Unknown);
+            return Some(Value::Top);
         }
         None
     }
 }
 
 impl IntoIterator for Values {
-    type Item = ValueOrigin;
+    type Item = Value;
     type IntoIter = ValuesIntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -569,7 +565,7 @@ impl IntoIterator for Values {
 }
 
 impl<'a> IntoIterator for &'a Values {
-    type Item = ValueOrigin;
+    type Item = Value;
     type IntoIter = ValuesIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -621,7 +617,7 @@ impl ValuesBuilder {
         }
     }
 
-    fn push(&mut self, value: ValueOrigin) {
+    fn push(&mut self, value: Value) {
         self.values.insert(value);
         #[cfg(test)]
         {
@@ -651,13 +647,15 @@ impl ValuesBuilder {
 /// results to the roots requested by one consumer.
 pub(crate) struct CandidateObjectIndex<'a> {
     flow: &'a ChunkValueFlow,
-    mask: Vec<u64>,
+    /// The nonzero words of the requested-root mask, by word index: a lookup
+    /// costs the requested roots, not every candidate object in the chunk.
+    mask: Vec<(usize, u64)>,
 }
 
 impl CandidateObjectIndex<'_> {
-    fn visit_bits(&self, bits: &[u64], mut visit: impl FnMut(ValueOrigin)) {
-        for (word_index, word) in bits.iter().copied().enumerate() {
-            let mut remaining = word & self.mask.get(word_index).copied().unwrap_or_default();
+    fn visit_bits(&self, bits: &[u64], mut visit: impl FnMut(Value)) {
+        for &(word_index, mask) in &self.mask {
+            let mut remaining = bits.get(word_index).copied().unwrap_or_default() & mask;
             while remaining != 0 {
                 let bit = remaining.trailing_zeros() as usize;
                 visit(self.flow.candidate_objects[word_index * 64 + bit]);
@@ -666,13 +664,13 @@ impl CandidateObjectIndex<'_> {
         }
     }
 
-    pub(crate) fn for_binding(&self, id: &Id, visit: impl FnMut(ValueOrigin)) {
+    pub(crate) fn for_binding(&self, id: &Id, visit: impl FnMut(Value)) {
         if let Some(bits) = self.flow.candidate_bindings.get(id) {
             self.visit_bits(bits, visit);
         }
     }
 
-    pub(crate) fn for_values(&self, values: &Values, mut visit: impl FnMut(ValueOrigin)) {
+    pub(crate) fn for_values(&self, values: &Values, mut visit: impl FnMut(Value)) {
         for value in values {
             if let Some(bits) = self.flow.candidate_reachability.get(&value) {
                 self.visit_bits(bits, &mut visit);
@@ -717,16 +715,16 @@ pub(crate) struct ChunkValueFlow {
     params: BTreeMap<u32, Vec<Option<Id>>>,
     /// Candidate roots and their transitive reachability are ordinary facts in
     /// the same store as bindings, properties, and returns.
-    candidate_objects: Vec<ValueOrigin>,
-    candidate_reachability: BTreeMap<ValueOrigin, Arc<Vec<u64>>>,
+    candidate_objects: Vec<Value>,
+    candidate_reachability: BTreeMap<Value, Arc<Vec<u64>>>,
     candidate_bindings: BTreeMap<Id, Arc<Vec<u64>>>,
     /// Callable identity to its chunk-top declaration binding, if any.
-    canonical: BTreeMap<ValueOrigin, Id>,
+    canonical: BTreeMap<Value, Id>,
     /// Structural successful-return shapes, kept separate from the
     /// over-approximating return-origin fixed point. A missing entry says
     /// nothing about the value returned by the function.
     fresh_returned_record_keys: BTreeMap<u32, BTreeSet<String>>,
-    pub(crate) callable_source_unit: BTreeMap<ValueOrigin, SourceUnitOrdinal>,
+    pub(crate) callable_source_unit: BTreeMap<Value, SourceUnitOrdinal>,
     /// Exact native Set allocation sites, each backed by a validated author
     /// operation input. Other constructor results remain unknown.
     native_set_allocations: BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
@@ -752,7 +750,7 @@ impl ChunkValueFlow {
 
     pub(crate) fn candidate_object_index(
         &self,
-        candidates: &BTreeSet<ValueOrigin>,
+        candidates: &BTreeSet<Value>,
     ) -> CandidateObjectIndex<'_> {
         let mut mask = vec![0; self.candidate_objects.len().div_ceil(64)];
         for candidate in candidates {
@@ -762,6 +760,11 @@ impl ChunkValueFlow {
                 .expect("candidate roots must be registered before value-flow solving");
             mask[index / 64] |= 1 << (index % 64);
         }
+        let mask = mask
+            .into_iter()
+            .enumerate()
+            .filter(|(_, word)| *word != 0)
+            .collect();
         CandidateObjectIndex { flow: self, mask }
     }
 
@@ -771,26 +774,26 @@ impl ChunkValueFlow {
     #[cfg(test)]
     pub(crate) fn candidate_object_index_reference_for_test(
         &self,
-        candidates: &BTreeSet<ValueOrigin>,
+        candidates: &BTreeSet<Value>,
     ) -> (
-        BTreeMap<ValueOrigin, BTreeSet<ValueOrigin>>,
-        BTreeMap<Id, BTreeSet<ValueOrigin>>,
+        BTreeMap<Value, BTreeSet<Value>>,
+        BTreeMap<Id, BTreeSet<Value>>,
     ) {
         let objects: Vec<_> = candidates.iter().copied().collect();
-        let mut reverse: BTreeMap<ValueOrigin, BTreeSet<ValueOrigin>> = BTreeMap::new();
+        let mut reverse: BTreeMap<Value, BTreeSet<Value>> = BTreeMap::new();
         for (function, values) in &self.returns {
             for value in values {
                 reverse
                     .entry(value)
                     .or_default()
-                    .insert(ValueOrigin::Function(*function));
+                    .insert(Value::Alloc(Kind::Function, *function));
             }
         }
         for (object, properties) in &self.properties {
             let container = if self.native_set_allocations.contains_key(object) {
-                ValueOrigin::NativeSet(*object)
+                Value::Alloc(Kind::Set, *object)
             } else {
-                ValueOrigin::Object(*object)
+                Value::Alloc(Kind::Object, *object)
             };
             for values in properties.values() {
                 for value in values {
@@ -838,10 +841,10 @@ impl ChunkValueFlow {
     #[cfg(test)]
     pub(crate) fn candidate_object_index_maps_for_test(
         &self,
-        candidates: &BTreeSet<ValueOrigin>,
+        candidates: &BTreeSet<Value>,
     ) -> (
-        BTreeMap<ValueOrigin, BTreeSet<ValueOrigin>>,
-        BTreeMap<Id, BTreeSet<ValueOrigin>>,
+        BTreeMap<Value, BTreeSet<Value>>,
+        BTreeMap<Id, BTreeSet<Value>>,
     ) {
         let index = self.candidate_object_index(candidates);
         let reachable = self
@@ -875,18 +878,23 @@ impl ChunkValueFlow {
 
     pub(crate) fn analyze_with_candidates(
         body: &[TopLevelItemView<'_>],
-        candidates: &BTreeSet<ValueOrigin>,
+        candidates: &BTreeSet<Value>,
     ) -> Self {
         FlowProgram::collect(body, candidates).solve().0
     }
 
     pub(crate) fn analyze_with_native_set_allocations(
         body: &[TopLevelItemView<'_>],
-        candidates: &BTreeSet<ValueOrigin>,
+        candidates: &BTreeSet<Value>,
         allocations: &BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
     ) -> Self {
         let mut candidates = candidates.clone();
-        candidates.extend(allocations.keys().copied().map(ValueOrigin::NativeSet));
+        candidates.extend(
+            allocations
+                .keys()
+                .copied()
+                .map(|site| Value::Alloc(Kind::Set, site)),
+        );
         FlowProgram::collect_with_native_set_allocations(body, &candidates, allocations)
             .solve()
             .0
@@ -906,7 +914,7 @@ impl ChunkValueFlow {
     #[cfg(test)]
     pub(crate) fn analyze_with_candidates_and_stats(
         body: &[TopLevelItemView<'_>],
-        candidates: &BTreeSet<ValueOrigin>,
+        candidates: &BTreeSet<Value>,
     ) -> (Self, FlowWorkStats) {
         let (flow, event_executions, argument_evaluations) =
             FlowProgram::collect(body, candidates).solve();
@@ -1030,24 +1038,32 @@ impl ChunkValueFlow {
         match expr.unwrap_parens() {
             Expr::Ident(ident) => self.values_of_binding(&ident.to_id()),
             Expr::Fn(function) => {
-                self.singleton_value(ValueOrigin::Function(function.function.span.lo.0))
+                self.singleton_value(Value::Alloc(Kind::Function, function.function.span.lo.0))
             }
-            Expr::Arrow(arrow) => self.singleton_value(ValueOrigin::Function(arrow.span.lo.0)),
-            Expr::Class(class) => self.singleton_value(ValueOrigin::Class(class.class.span.lo.0)),
-            Expr::Object(object) => self.singleton_value(ValueOrigin::Object(object.span.lo.0)),
-            Expr::Array(array) => self.singleton_value(ValueOrigin::Object(array.span.lo.0)),
+            Expr::Arrow(arrow) => {
+                self.singleton_value(Value::Alloc(Kind::Function, arrow.span.lo.0))
+            }
+            Expr::Class(class) => {
+                self.singleton_value(Value::Alloc(Kind::Class, class.class.span.lo.0))
+            }
+            Expr::Object(object) => {
+                self.singleton_value(Value::Alloc(Kind::Object, object.span.lo.0))
+            }
+            Expr::Array(array) => self.singleton_value(Value::Alloc(Kind::Object, array.span.lo.0)),
             Expr::New(construction)
                 if self
                     .native_set_allocations
                     .contains_key(&construction.span.lo.0) =>
             {
-                self.singleton_value(ValueOrigin::NativeSet(construction.span.lo.0))
+                self.singleton_value(Value::Alloc(Kind::Set, construction.span.lo.0))
             }
             Expr::Member(member) => {
                 let prop = static_prop(&member.prop);
                 let mut out = self.empty_values();
                 for origin in self.values_of_expr(&member.obj) {
-                    if let ValueOrigin::Object(object) | ValueOrigin::NativeSet(object) = origin {
+                    if let Value::Alloc(Kind::Object, object) | Value::Alloc(Kind::Set, object) =
+                        origin
+                    {
                         if let Some(prop) = &prop {
                             if let Some(values) = self
                                 .properties
@@ -1056,7 +1072,7 @@ impl ChunkValueFlow {
                             {
                                 out.union_with(values);
                             } else {
-                                out.insert(ValueOrigin::Unknown);
+                                out.insert(Value::Top);
                             }
                         } else {
                             if let Some(properties) = self.properties.get(&object) {
@@ -1066,10 +1082,10 @@ impl ChunkValueFlow {
                                     out.union_with(values);
                                 }
                             }
-                            out.insert(ValueOrigin::Unknown);
+                            out.insert(Value::Top);
                         }
                     } else {
-                        out.insert(ValueOrigin::Unknown);
+                        out.insert(Value::Top);
                     }
                 }
                 out
@@ -1080,12 +1096,12 @@ impl ChunkValueFlow {
                 };
                 let mut out = self.empty_values();
                 for origin in self.values_of_expr(callee) {
-                    if let ValueOrigin::Function(function) = origin {
+                    if let Value::Alloc(Kind::Function, function) = origin {
                         if let Some(values) = self.returns.get(&function) {
                             out.union_with(values);
                         }
                     } else {
-                        out.insert(ValueOrigin::Unknown);
+                        out.insert(Value::Top);
                     }
                 }
                 out
@@ -1116,12 +1132,12 @@ impl ChunkValueFlow {
         Values::empty(self.origin_table.clone())
     }
 
-    fn singleton_value(&self, value: ValueOrigin) -> Values {
+    fn singleton_value(&self, value: Value) -> Values {
         Values::singleton(self.origin_table.clone(), value)
     }
 
     fn unknown_values(&self) -> Values {
-        self.singleton_value(ValueOrigin::Unknown)
+        self.singleton_value(Value::Top)
     }
 
     #[cfg(test)]
@@ -1143,7 +1159,7 @@ impl ChunkValueFlow {
         }
     }
 
-    pub(crate) fn canonical_callable(&self, origin: ValueOrigin) -> Option<&Id> {
+    pub(crate) fn canonical_callable(&self, origin: Value) -> Option<&Id> {
         self.canonical.get(&origin)
     }
 
@@ -1162,11 +1178,12 @@ impl ChunkValueFlow {
         }
         let values = self.values_of_binding(&ident.to_id());
         let mut origins = values.iter();
-        let ValueOrigin::Function(function) = origins.next()? else {
+        let Value::Alloc(Kind::Function, function) = origins.next()? else {
             return None;
         };
         if origins.next().is_some()
-            || self.canonical_callable(ValueOrigin::Function(function)) != Some(&ident.to_id())
+            || self.canonical_callable(Value::Alloc(Kind::Function, function))
+                != Some(&ident.to_id())
         {
             return None;
         }
@@ -1181,9 +1198,9 @@ impl ChunkValueFlow {
 
     pub(crate) fn aliases_by_object(
         &self,
-        objects: &BTreeSet<ValueOrigin>,
-    ) -> BTreeMap<ValueOrigin, BTreeSet<String>> {
-        let mut aliases: BTreeMap<ValueOrigin, BTreeSet<String>> = BTreeMap::new();
+        objects: &BTreeSet<Value>,
+    ) -> BTreeMap<Value, BTreeSet<String>> {
+        let mut aliases: BTreeMap<Value, BTreeSet<String>> = BTreeMap::new();
         for (id, values) in &self.bindings {
             for object in values.iter().filter(|object| objects.contains(object)) {
                 aliases.entry(object).or_default().insert(id.0.to_string());
@@ -1301,7 +1318,7 @@ fn append_value_expr(
                 if let Some(found) = read_values(FlowKey::Binding(*slot)) {
                     values.extend(&found);
                 } else if !declared[slot.0 as usize] {
-                    values.push(ValueOrigin::Unknown);
+                    values.push(Value::Top);
                 }
             }
             FlowValueExpr::Value(value) => values.push(*value),
@@ -1309,22 +1326,24 @@ fn append_value_expr(
                 let mut objects = values.child();
                 append_value_expr(object, &mut objects, declared, read_values);
                 for origin in objects.finish() {
-                    if let ValueOrigin::Object(object) | ValueOrigin::NativeSet(object) = origin {
+                    if let Value::Alloc(Kind::Object, object) | Value::Alloc(Kind::Set, object) =
+                        origin
+                    {
                         if let Some(property) = property {
                             // Unknown is durable even when a later write adds a value.
                             if let Some(found) = read_values(FlowKey::Property(object, *property)) {
                                 values.extend(&found);
                             } else {
-                                values.push(ValueOrigin::Unknown);
+                                values.push(Value::Top);
                             }
                         } else {
                             if let Some(found) = read_values(FlowKey::Properties(object)) {
                                 values.extend(&found);
                             }
-                            values.push(ValueOrigin::Unknown);
+                            values.push(Value::Top);
                         }
                     } else {
-                        values.push(ValueOrigin::Unknown);
+                        values.push(Value::Top);
                     }
                 }
             }
@@ -1332,18 +1351,18 @@ fn append_value_expr(
                 let mut targets = values.child();
                 append_value_expr(callee, &mut targets, declared, read_values);
                 for origin in targets.finish() {
-                    if let ValueOrigin::Function(function) = origin {
+                    if let Value::Alloc(Kind::Function, function) = origin {
                         if let Some(found) = read_values(FlowKey::Return(function)) {
                             values.extend(&found);
                         }
                     } else {
-                        values.push(ValueOrigin::Unknown);
+                        values.push(Value::Top);
                     }
                 }
             }
             FlowValueExpr::Union(_, _) => unreachable!("unions are handled by the work stack"),
             FlowValueExpr::Empty => {}
-            FlowValueExpr::Unknown => values.push(ValueOrigin::Unknown),
+            FlowValueExpr::Unknown => values.push(Value::Top),
         }
     }
 }
@@ -1423,7 +1442,7 @@ impl FlowSymbols {
 #[derive(Debug, Clone)]
 enum FlowValueExpr {
     Binding(BindingSlot),
-    Value(ValueOrigin),
+    Value(Value),
     Member {
         object: Box<FlowValueExpr>,
         property: Option<PropertySlot>,
@@ -1496,11 +1515,13 @@ impl FlowValueExpr {
     fn from_ast_leaf(expr: &Expr, symbols: &mut FlowSymbols) -> Self {
         match expr {
             Expr::Ident(ident) => Self::Binding(symbols.binding(ident.to_id())),
-            Expr::Fn(function) => Self::Value(ValueOrigin::Function(function.function.span.lo.0)),
-            Expr::Arrow(arrow) => Self::Value(ValueOrigin::Function(arrow.span.lo.0)),
-            Expr::Class(class) => Self::Value(ValueOrigin::Class(class.class.span.lo.0)),
-            Expr::Object(object) => Self::Value(ValueOrigin::Object(object.span.lo.0)),
-            Expr::Array(array) => Self::Value(ValueOrigin::Object(array.span.lo.0)),
+            Expr::Fn(function) => {
+                Self::Value(Value::Alloc(Kind::Function, function.function.span.lo.0))
+            }
+            Expr::Arrow(arrow) => Self::Value(Value::Alloc(Kind::Function, arrow.span.lo.0)),
+            Expr::Class(class) => Self::Value(Value::Alloc(Kind::Class, class.class.span.lo.0)),
+            Expr::Object(object) => Self::Value(Value::Alloc(Kind::Object, object.span.lo.0)),
+            Expr::Array(array) => Self::Value(Value::Alloc(Kind::Object, array.span.lo.0)),
             Expr::Member(member) => Self::Member {
                 object: Box::new(Self::from_ast(&member.obj, symbols)),
                 property: static_prop(&member.prop).map(|name| symbols.property(name)),
@@ -1524,11 +1545,11 @@ impl FlowValueExpr {
 enum FlowEvent {
     FunctionDeclaration {
         id: BindingSlot,
-        origin: ValueOrigin,
+        origin: Value,
     },
     ClassDeclaration {
         id: BindingSlot,
-        origin: ValueOrigin,
+        origin: Value,
     },
     Variable {
         id: BindingSlot,
@@ -1556,7 +1577,7 @@ enum FlowEvent {
     WritePropertyValue {
         object: u32,
         property: PropertySlot,
-        value: ValueOrigin,
+        value: Value,
     },
     FunctionMetadata {
         function: u32,
@@ -1609,28 +1630,28 @@ struct FlowProgram {
     symbols: FlowSymbols,
     events: Vec<FlowEvent>,
     origin_table: Arc<OriginTable>,
-    candidate_objects: Vec<ValueOrigin>,
-    canonical: BTreeMap<ValueOrigin, Id>,
-    callable_source_unit: BTreeMap<ValueOrigin, SourceUnitOrdinal>,
+    candidate_objects: Vec<Value>,
+    canonical: BTreeMap<Value, Id>,
+    callable_source_unit: BTreeMap<Value, SourceUnitOrdinal>,
     native_set_allocations: BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
     fresh_returned_record_keys: BTreeMap<u32, BTreeSet<String>>,
 }
 
 impl FlowProgram {
-    fn collect(body: &[TopLevelItemView<'_>], candidate_objects: &BTreeSet<ValueOrigin>) -> Self {
+    fn collect(body: &[TopLevelItemView<'_>], candidate_objects: &BTreeSet<Value>) -> Self {
         Self::collect_with_native_set_allocations(body, candidate_objects, &BTreeMap::new())
     }
 
     fn collect_with_native_set_allocations(
         body: &[TopLevelItemView<'_>],
-        candidate_objects: &BTreeSet<ValueOrigin>,
+        candidate_objects: &BTreeSet<Value>,
         native_set_allocations: &BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
     ) -> Self {
         let mut collector = FlowProgramCollector {
             declared_ids: BTreeSet::new(),
             symbols: FlowSymbols::default(),
             events: Vec::new(),
-            origins: BTreeSet::from([ValueOrigin::Unknown]),
+            origins: BTreeSet::from([Value::Top]),
             source_unit: SourceUnitOrdinal(0),
             current_function: None,
             canonical: BTreeMap::new(),
@@ -1647,7 +1668,7 @@ impl FlowProgram {
             native_set_allocations
                 .keys()
                 .copied()
-                .map(ValueOrigin::NativeSet),
+                .map(|site| Value::Alloc(Kind::Set, site)),
         );
         Self {
             declared_ids: collector.declared_ids,
@@ -1775,11 +1796,11 @@ struct FlowProgramCollector {
     declared_ids: BTreeSet<Id>,
     symbols: FlowSymbols,
     events: Vec<FlowEvent>,
-    origins: BTreeSet<ValueOrigin>,
+    origins: BTreeSet<Value>,
     source_unit: SourceUnitOrdinal,
     current_function: Option<u32>,
-    canonical: BTreeMap<ValueOrigin, Id>,
-    callable_source_unit: BTreeMap<ValueOrigin, SourceUnitOrdinal>,
+    canonical: BTreeMap<Value, Id>,
+    callable_source_unit: BTreeMap<Value, SourceUnitOrdinal>,
     native_set_allocations: BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
     fresh_returned_record_keys: BTreeMap<u32, BTreeSet<String>>,
 }
@@ -1791,7 +1812,7 @@ impl Visit for FlowProgramCollector {
 
     fn visit_fn_decl(&mut self, node: &FnDecl) {
         let id = node.ident.to_id();
-        let origin = ValueOrigin::Function(node.function.span.lo.0);
+        let origin = Value::Alloc(Kind::Function, node.function.span.lo.0);
         self.declared_ids.insert(id.clone());
         self.canonical.entry(origin).or_insert_with(|| id.clone());
         self.events.push(FlowEvent::FunctionDeclaration {
@@ -1803,7 +1824,7 @@ impl Visit for FlowProgramCollector {
 
     fn visit_class_decl(&mut self, node: &ClassDecl) {
         let id = node.ident.to_id();
-        let origin = ValueOrigin::Class(node.class.span.lo.0);
+        let origin = Value::Alloc(Kind::Class, node.class.span.lo.0);
         self.declared_ids.insert(id.clone());
         self.canonical.entry(origin).or_insert_with(|| id.clone());
         self.callable_source_unit
@@ -1833,7 +1854,7 @@ impl Visit for FlowProgramCollector {
                             .native_set_allocations
                             .contains_key(&construction.span.lo.0) =>
                     {
-                        FlowValueExpr::Value(ValueOrigin::NativeSet(construction.span.lo.0))
+                        FlowValueExpr::Value(Value::Alloc(Kind::Set, construction.span.lo.0))
                     }
                     other => FlowValueExpr::from_ast(other, &mut self.symbols),
                 },
@@ -1866,7 +1887,7 @@ impl Visit for FlowProgramCollector {
 
     fn visit_object_lit(&mut self, node: &ObjectLit) {
         let object = node.span.lo.0;
-        self.origins.insert(ValueOrigin::Object(object));
+        self.origins.insert(Value::Alloc(Kind::Object, object));
         for prop in &node.props {
             if let PropOrSpread::Prop(prop) = prop {
                 match prop.as_ref() {
@@ -1891,7 +1912,7 @@ impl Visit for FlowProgramCollector {
                             self.events.push(FlowEvent::WritePropertyValue {
                                 object,
                                 property: self.symbols.property(property),
-                                value: ValueOrigin::Function(method.function.span.lo.0),
+                                value: Value::Alloc(Kind::Function, method.function.span.lo.0),
                             });
                         }
                     }
@@ -1904,7 +1925,7 @@ impl Visit for FlowProgramCollector {
 
     fn visit_array_lit(&mut self, node: &ArrayLit) {
         let object = node.span.lo.0;
-        self.origins.insert(ValueOrigin::Object(object));
+        self.origins.insert(Value::Alloc(Kind::Object, object));
         for (index, element) in node.elems.iter().enumerate() {
             if let Some(element) = element {
                 self.events.push(FlowEvent::WritePropertyExpr {
@@ -1926,9 +1947,9 @@ impl Visit for FlowProgramCollector {
         {
             self.fresh_returned_record_keys.insert(function, keys);
         }
-        self.origins.insert(ValueOrigin::Function(function));
+        self.origins.insert(Value::Alloc(Kind::Function, function));
         self.callable_source_unit
-            .entry(ValueOrigin::Function(function))
+            .entry(Value::Alloc(Kind::Function, function))
             .or_insert(self.source_unit);
         self.events.push(FlowEvent::FunctionMetadata {
             function,
@@ -1954,9 +1975,9 @@ impl Visit for FlowProgramCollector {
         {
             self.fresh_returned_record_keys.insert(function, keys);
         }
-        self.origins.insert(ValueOrigin::Function(function));
+        self.origins.insert(Value::Alloc(Kind::Function, function));
         self.callable_source_unit
-            .entry(ValueOrigin::Function(function))
+            .entry(Value::Alloc(Kind::Function, function))
             .or_insert(self.source_unit);
         self.events.push(FlowEvent::FunctionMetadata {
             function,
@@ -1981,7 +2002,8 @@ impl Visit for FlowProgramCollector {
     }
 
     fn visit_class(&mut self, node: &Class) {
-        self.origins.insert(ValueOrigin::Class(node.span.lo.0));
+        self.origins
+            .insert(Value::Alloc(Kind::Class, node.span.lo.0));
         node.visit_children_with(self);
     }
 
@@ -2023,11 +2045,11 @@ impl Visit for FlowProgramCollector {
     }
 }
 
-fn direct_callable_origin(expr: &Expr) -> Option<ValueOrigin> {
+fn direct_callable_origin(expr: &Expr) -> Option<Value> {
     match expr.unwrap_parens() {
-        Expr::Fn(function) => Some(ValueOrigin::Function(function.function.span.lo.0)),
-        Expr::Arrow(arrow) => Some(ValueOrigin::Function(arrow.span.lo.0)),
-        Expr::Class(class) => Some(ValueOrigin::Class(class.class.span.lo.0)),
+        Expr::Fn(function) => Some(Value::Alloc(Kind::Function, function.function.span.lo.0)),
+        Expr::Arrow(arrow) => Some(Value::Alloc(Kind::Function, arrow.span.lo.0)),
+        Expr::Class(class) => Some(Value::Alloc(Kind::Class, class.class.span.lo.0)),
         _ => None,
     }
 }
@@ -2157,7 +2179,7 @@ impl FlowRules {
         context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
     }
 
-    fn singleton_value(&self, value: ValueOrigin) -> Values {
+    fn singleton_value(&self, value: Value) -> Values {
         Values::singleton(self.origin_table.clone(), value)
     }
 }
@@ -2197,7 +2219,9 @@ impl IterativeRules for FlowRules {
                 let values = self.values_of_expr_tracking(right, context, None);
                 let objects = self.values_of_expr_tracking(object, context, None);
                 for origin in objects {
-                    if let ValueOrigin::Object(object) | ValueOrigin::NativeSet(object) = origin {
+                    if let Value::Alloc(Kind::Object, object) | Value::Alloc(Kind::Set, object) =
+                        origin
+                    {
                         Self::propose_property(context, object, *property, values.clone());
                     }
                 }
@@ -2250,7 +2274,7 @@ impl IterativeRules for FlowRules {
                 let mut cached_args: Vec<Option<CachedArgument>> = vec![None; args.len()];
 
                 for target in targets {
-                    let ValueOrigin::Function(function) = target else {
+                    let Value::Alloc(Kind::Function, function) = target else {
                         continue;
                     };
                     let params = match context.read(FlowKey::ReadyParameters(function)).cloned() {
@@ -2318,7 +2342,7 @@ impl CandidateRules {
         origin_table: Arc<OriginTable>,
         native_set_allocations: BTreeSet<u32>,
         completed_keys: impl IntoIterator<Item = &'a FlowKey>,
-        candidates: &[ValueOrigin],
+        candidates: &[Value],
     ) -> Self {
         let mut rules = Self {
             may_reach: vec![0; origin_table.origins.len().div_ceil(64)],
@@ -2338,13 +2362,13 @@ impl CandidateRules {
     }
 
     /// The origin whose reachability a completed property-union or return fact carries.
-    fn carrier_origin(&self, key: &FlowKey) -> Option<ValueOrigin> {
+    fn carrier_origin(&self, key: &FlowKey) -> Option<Value> {
         match key {
             FlowKey::Properties(object) if self.native_set_allocations.contains(object) => {
-                Some(ValueOrigin::NativeSet(*object))
+                Some(Value::Alloc(Kind::Set, *object))
             }
-            FlowKey::Properties(object) => Some(ValueOrigin::Object(*object)),
-            FlowKey::Return(function) => Some(ValueOrigin::Function(*function)),
+            FlowKey::Properties(object) => Some(Value::Alloc(Kind::Object, *object)),
+            FlowKey::Return(function) => Some(Value::Alloc(Kind::Function, *function)),
             _ => None,
         }
     }
@@ -2409,11 +2433,12 @@ impl IterativeRules for CandidateRules {
             }
             CandidateRule::Reachability(origin) => {
                 let carrier = match self.origin_table.origin(*origin) {
-                    ValueOrigin::Object(object) | ValueOrigin::NativeSet(object) => {
+                    Value::Alloc(Kind::Object, object) | Value::Alloc(Kind::Set, object) => {
                         FlowKey::Properties(object)
                     }
-                    ValueOrigin::Function(function) => FlowKey::Return(function),
-                    ValueOrigin::Class(_) | ValueOrigin::Unknown => return,
+                    Value::Alloc(Kind::Function, function) => FlowKey::Return(function),
+                    Value::Alloc(Kind::Class, _) | Value::Top => return,
+                    other => unreachable!("value flow tracks no {other:?}"),
                 };
                 let Some(values) = Self::carrier_values(context, carrier) else {
                     return;
@@ -2535,7 +2560,7 @@ impl FlowPass<'_> {
     fn invoke(&mut self, callee: &Expr, args: &[ExprOrSpread]) {
         let targets = self.flow.values_of_expr(callee);
         for target in targets {
-            let ValueOrigin::Function(function) = target else {
+            let Value::Alloc(Kind::Function, function) = target else {
                 continue;
             };
             let Some(params) = self.flow.params.get(&function).cloned() else {
@@ -2553,7 +2578,7 @@ impl FlowPass<'_> {
     fn visit_function_body(&mut self, function: u32, visit: impl FnOnce(&mut Self)) {
         self.flow
             .callable_source_unit
-            .entry(ValueOrigin::Function(function))
+            .entry(Value::Alloc(Kind::Function, function))
             .or_insert(self.source_unit);
         let previous = self.current_function.replace(function);
         visit(self);
@@ -2565,7 +2590,7 @@ impl FlowPass<'_> {
 impl Visit for FlowPass<'_> {
     fn visit_fn_decl(&mut self, node: &FnDecl) {
         let key = node.function.span.lo.0;
-        let value = ValueOrigin::Function(key);
+        let value = Value::Alloc(Kind::Function, key);
         self.flow
             .canonical
             .entry(value)
@@ -2576,7 +2601,7 @@ impl Visit for FlowPass<'_> {
     }
 
     fn visit_class_decl(&mut self, node: &ClassDecl) {
-        let value = ValueOrigin::Class(node.class.span.lo.0);
+        let value = Value::Alloc(Kind::Class, node.class.span.lo.0);
         self.flow
             .canonical
             .entry(value)
@@ -2597,12 +2622,13 @@ impl Visit for FlowPass<'_> {
             let values = self.flow.values_of_expr(init);
             if self.current_function.is_none() {
                 for value in &values {
-                    if matches!(value, ValueOrigin::Function(_) | ValueOrigin::Class(_))
-                        && matches!(
-                            init.unwrap_parens(),
-                            Expr::Fn(_) | Expr::Arrow(_) | Expr::Class(_)
-                        )
-                    {
+                    if matches!(
+                        value,
+                        Value::Alloc(Kind::Function, _) | Value::Alloc(Kind::Class, _)
+                    ) && matches!(
+                        init.unwrap_parens(),
+                        Expr::Fn(_) | Expr::Arrow(_) | Expr::Class(_)
+                    ) {
                         self.flow
                             .canonical
                             .entry(value)
@@ -2624,7 +2650,7 @@ impl Visit for FlowPass<'_> {
             AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
                 if let Some(prop) = static_prop(&member.prop) {
                     for origin in self.flow.values_of_expr(&member.obj) {
-                        if let ValueOrigin::Object(object) = origin {
+                        if let Value::Alloc(Kind::Object, object) = origin {
                             *self.changed |=
                                 self.flow
                                     .merge_property(object, prop.clone(), values.clone());
@@ -2656,9 +2682,10 @@ impl Visit for FlowPass<'_> {
                     }
                     Prop::Method(method) => {
                         if let Some(name) = object_prop(&method.key) {
-                            let values = self
-                                .flow
-                                .singleton_value(ValueOrigin::Function(method.function.span.lo.0));
+                            let values = self.flow.singleton_value(Value::Alloc(
+                                Kind::Function,
+                                method.function.span.lo.0,
+                            ));
                             *self.changed |= self.flow.merge_property(object, name, values);
                         }
                     }

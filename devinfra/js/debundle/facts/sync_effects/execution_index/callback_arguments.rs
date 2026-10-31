@@ -71,26 +71,23 @@ pub(super) struct GuardedRegion {
     pub predicate: Predicate,
 }
 
-/// Strengthens the existing timing certificate: no direct use returns or stores
-/// the callback, and each invocation supplies the same fresh module and its
-/// fresh own data object. The anonymous consumer must separately establish
-/// callback entry coverage. No intrinsic-integrity input participates.
+/// Strengthens a derived callback factory (`key` returning `closure`): no
+/// direct use returns or stores the callback, and each invocation supplies the
+/// same fresh module and its fresh own data object. The anonymous consumer
+/// must separately establish callback entry coverage. No intrinsic-integrity
+/// input participates.
 pub(super) fn ordinary_callback_arguments(
     index: &ExecutionIndex,
     key: u32,
+    closure: &Range<u32>,
 ) -> Option<BTreeSet<usize>> {
-    if !returned_callback_factory(index, key) {
-        return None;
-    }
     let outer = index.callables.get(&key)?;
     let [callback, cache] = outer.params.as_slice() else {
         return None;
     };
     let callback = callback.binding.as_ref()?;
     let cache = cache.binding.as_ref()?;
-    let inner = index
-        .callables
-        .get(&index.returned_factory_candidates.get(&key)?.lo.0)?;
+    let inner = index.callables.get(&closure.start)?;
     let [(assigned, ValueExpr::ObjectLiteral(module, fields))] = inner.local_assignments.as_slice()
     else {
         return None;
@@ -104,7 +101,7 @@ pub(super) fn ordinary_callback_arguments(
     if !contents.is_empty() || !index.plain_data_objects.contains(value) {
         return None;
     }
-    if !matches!(inner.returns.as_slice(), [ValueExpr::Member(base, Some(property), true)]
+    if !matches!(inner.returns.as_slice(), [ValueExpr::Member(base, Some(property), MemberKey::Static)]
         if matches!(base.as_ref(), ValueExpr::Binding(id) if id == cache) && property == field)
     {
         return None;
@@ -118,7 +115,7 @@ pub(super) fn ordinary_callback_arguments(
         return None;
     };
     let [
-        ValueExpr::Member(base, Some(property), true),
+        ValueExpr::Member(base, Some(property), MemberKey::Static),
         ValueExpr::Binding(second),
     ] = call.args.as_slice()
     else {

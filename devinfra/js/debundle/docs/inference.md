@@ -56,12 +56,14 @@ flowchart LR
 ```
 
 A slot is intact only when the census is closed (every analyzed chunk
-contributed, no dynamic scope) and neither its family nor the global object is
-mutated. The `Function` family is included so source-visible changes to
-`Function.prototype.call` can invalidate only proofs that consume that
-capability. Native prototype crossings, `Object.getPrototypeOf` result aliases
-and global-slot read-backs retain an opaque native root: a later write through
-one invalidates every slot rather than trusting the original receiver's family.
+contributed, no dynamic scope) and no census write reaches it (SPEC.md § Native
+integrity inputs): an own data slot by the write's receiver and key, a
+prototype slot by its family or the global object. The `Function` family is
+included so source-visible changes to `Function.prototype.call` can invalidate
+only proofs that consume that capability. Native prototype crossings,
+`Object.getPrototypeOf` result aliases and global-slot read-backs retain an
+opaque native root: a later write through one reaches its key on every native
+object rather than trusting the original receiver's family.
 An axiom covering every requested slot at the queried site is consumed instead
 of the census and recorded as that input's proof dependency.
 
@@ -74,9 +76,9 @@ a `set_empty_private_field` axiom can stand in at its site. Primitive Set
 iteration requires the Set and Array iterator slots and a checked source shape.
 The original restrictions on class identity, construction sites, arguments,
 primitive elements, mutation and escape remain in their structural analyses.
-Callback factories and returned records require the same stable-function
-judgment; returned records additionally require their native allocation. Their
-member and capture data are carried by the resulting fact. Each certificate
+Returned records and inferred callback factories are projections of a
+derived foreign call summary (`facts/abstract_domain/foreign_call.rs`), not
+certificates. Each certificate
 records which native premises it consulted, so its report names
 `native_call_identity`, `native_integrity` and `empty_collection_construction`
 exactly when the census established them.
@@ -238,6 +240,14 @@ order alone is insufficient.
   flow or function-purity caches. Own-property queries use the selected current
   prefix state; their results do not update provider source certificates and
   cannot survive a later mutation.
+- A statement's purity is a runtime fact (`RuntimeKey::Purity`) produced at its
+  own program point, after `Prefix(n)` settles and before the statement
+  executes; that execution and later ones read it. It reads source facts,
+  completed function effects and the whole-chunk heap state, never a later
+  prefix: heap writes at any prefix are a whole-chunk fact, so a pure
+  statement can move past them (<design.md> § Purity and synchronous execution
+  share one context). The vendor-prune path runs the same transfer without
+  execution.
 
 A changed source, author input, import summary or analysis policy creates a new
 context. A missing fact during evaluation is bottom, not proof that a JavaScript

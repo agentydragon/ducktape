@@ -8,6 +8,7 @@ import pytest_bazel
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS
 from cluster.cdk8s.litellm.config import model_entry
 from model_catalog.catalog import (
+    ANTHROPIC_API_LATEST_ROUTES,
     ANTHROPIC_API_ROUTES,
     ANTHROPIC_SUBSCRIPTION_ROUTES,
     ANTIGRAVITY_GEMINI_38_FLASH_HIGH,
@@ -53,7 +54,14 @@ def test_staging_picker_does_not_widen_its_key() -> None:
         *KEY_MODEL_LANES["antigravity_client_models"].allowed,
         *KEY_MODEL_LANES["ollama_chat_client_models"].allowed,
     )
-    assert all(route in admitted for route in STAGING_APP_MODELS.all)
+    # Wrapped harness choices remain within their LiteLLM key lanes. Direct API models
+    # selected only by the central sampler bypass LLM ingress and use their own connection.
+    assert all(route in admitted for route in (*STAGING_APP_MODELS.claude, *STAGING_APP_MODELS.codex))
+    central_only = (
+        set(STAGING_APP_MODELS.central_sampler) - set(STAGING_APP_MODELS.claude) - set(STAGING_APP_MODELS.codex)
+    )
+    assert central_only == set(ANTHROPIC_API_LATEST_ROUTES)
+    assert not central_only.intersection(admitted)
 
 
 def test_gpt_6_1_sol_is_available_to_agentplane_codex() -> None:
@@ -132,6 +140,24 @@ def test_equal_model_slugs_do_not_collapse_account_routes() -> None:
     assert model_entry(subscription)["litellm_params"]["api_key"] != model_entry(direct)["litellm_params"]["api_key"]
     assert subscription.reasoning_efforts
     assert not direct.reasoning_efforts
+
+
+def test_latest_direct_anthropic_routes_declare_model_specific_api_capabilities() -> None:
+    assert [route.model.id for route in ANTHROPIC_API_LATEST_ROUTES] == [
+        "claude-opus-5-5",
+        "claude-sonnet-5-5",
+        "claude-haiku-5-5",
+        "claude-fable-5-1",
+    ]
+    for route in ANTHROPIC_API_LATEST_ROUTES:
+        assert route.upstream.provider == Provider.ANTHROPIC_API
+        assert route.reasoning_efforts == ("low", "medium", "high", "xhigh", "max")
+        assert route.supports_function_calling is True
+        assert route.model.limits == TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)
+        assert route in STAGING_APP_MODELS.central_sampler
+        assert route not in STAGING_APP_MODELS.claude
+        assert route not in STAGING_APP_MODELS.codex
+        assert model_entry(route)["model_info"]["supports_function_calling"] is True
 
 
 def test_antigravity_google_routes_are_served_and_selected_for_both_harnesses() -> None:

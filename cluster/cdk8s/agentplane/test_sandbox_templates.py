@@ -14,7 +14,7 @@ from cdk8s_plus_34 import k8s
 from more_itertools import one
 
 from agentplane.crd_group import GROUP
-from agentplane.runner.configuration import CONFIG_FILE, LAUNCH_FILE, Configuration
+from agentplane.runner.configuration import CONFIG_FILE, LAUNCH_FILE, CodexReadiness, Configuration
 from cluster.cdk8s.agentplane import sandbox_pod, staging
 from cluster.cdk8s.agentplane.runner_sandbox import RunnerTemplate
 from cluster.cdk8s.pod_policy import workload_kind
@@ -68,7 +68,9 @@ def test_all_sandbox_workloads_use_shared_environment_defaults(staging_manifests
 
     # One Pod execution environment: no plain runner template beside the ducktape one.
     assert [template["metadata"]["name"] for template in templates] == [staging.POD_TEMPLATE]
-    config = Configuration.model_validate(_runner_configuration(staging_manifests, templates[0]["spec"]["pod"]["spec"]))
+    runner_config = _runner_configuration(staging_manifests, templates[0]["spec"]["pod"]["spec"])
+    assert "codex_readiness" not in runner_config
+    config = Configuration.model_validate(runner_config)
     assert config.session_reconcile_concurrency is None
     assert "TZ" in config.harness_environment.inherit
     assert "TZDIR" in config.harness_environment.inherit
@@ -205,6 +207,31 @@ def test_runner_template_configures_session_reconcile_concurrency(scratch_app: A
     template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
     config = _runner_configuration(docs, template["spec"]["pod"]["spec"])
     assert config["session_reconcile_concurrency"] == 2048
+
+
+def test_runner_template_serializes_codex_readiness_overrides(scratch_app: App) -> None:
+    chart = Chart(scratch_app, "runner-codex-readiness-test")
+    RunnerTemplate(
+        chart,
+        "runner-template",
+        staging.ENV,
+        name="test-runner",
+        image="example.invalid/runner",
+        codex_readiness=CodexReadiness(
+            exec_server_ready_timeout_ms=60_000,
+            exec_server_probe_timeout_ms=5_000,
+            exec_server_dependency_timeout_ms=120_000,
+        ),
+    )
+    docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
+    template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
+    config = _runner_configuration(docs, template["spec"]["pod"]["spec"])
+
+    assert config["codex_readiness"] == {
+        "exec_server_ready_timeout_ms": 60_000,
+        "exec_server_probe_timeout_ms": 5_000,
+        "exec_server_dependency_timeout_ms": 120_000,
+    }
 
 
 def test_environment_cannot_configure_resources_for_a_disabled_executor(scratch_app: App) -> None:

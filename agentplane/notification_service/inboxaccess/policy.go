@@ -6,11 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"time"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"k8s.io/client-go/rest"
 )
 
@@ -61,31 +61,25 @@ func (r Rule) covers(sandbox *sandboxapi.Sandbox) bool {
 
 // Policy is this service's view of the send rules of its namespace.
 type Policy struct {
-	Rules     *reader.Index[Rule]
-	Freshness *reader.Freshness
+	Rules  *reader.Index[Rule]
+	Health *watchhealth.Health
 }
 
-// NewPolicy returns an empty Policy that is unavailable until Watch fills it, and once a watched kind's last
-// completed cycle is older than staleAfter.
-func NewPolicy(staleAfter time.Duration) *Policy {
-	return &Policy{
-		Rules:     reader.NewIndex(ruleType, ParseRule),
-		Freshness: reader.NewFreshness(staleAfter, reader.PolicySets, reader.PolicyBindings),
-	}
+// NewPolicy returns an empty Policy that is unavailable until Watch fills it, and while a watched kind fails to list
+// or watch.
+func NewPolicy() *Policy {
+	return &Policy{Rules: reader.NewIndex(ruleType, ParseRule), Health: watchhealth.New()}
 }
 
 // Watch returns the watches that keep the policy equal to the namespace's PolicySets and PolicyBindings, and Ready
-// on each binding, from Run on. Its freshness should be reader.StaleAfterCycles of period.
-func (p *Policy) Watch(base *rest.Config, namespace string, period time.Duration) (*reader.Watches, error) {
-	watches, err := reader.NewWatches(base, p.Freshness, period)
-	if err != nil {
-		return nil, err
-	}
+// on each binding, from Run on.
+func (p *Policy) Watch(base *rest.Config, namespace string) (*reader.Watches, error) {
+	watches := reader.NewWatches(base, p.Health)
 	return watches, reader.WatchRules(watches, p.Rules, namespace, Ready)
 }
 
 // PermitsSend reports whether a binding of the sender grants a rule that allows sending to the Sandbox as the caller
-// read it. It says nothing of freshness, which the caller checks first.
+// read it. It says nothing of availability, which the caller checks first.
 func (p *Policy) PermitsSend(sender policyapi.ServiceAccountRef, sandbox *sandboxapi.Sandbox) bool {
 	for _, grant := range p.Rules.Grants(sender) {
 		for _, set := range grant.Sets {

@@ -117,6 +117,8 @@ class SandboxController(Construct):
                 RolePolicyRule(
                     resources=[custom_resource(_GROUP, "sandboxes")], verbs=["get", "list", "watch", "update"]
                 ),
+                # The controller is the only writer of Sandbox status, which holds the runner
+                # credential binding; Sandbox writers holding patch must not get this rule.
                 RolePolicyRule(resources=[custom_resource(_GROUP, "sandboxes/status")], verbs=["update"]),
                 # A Pod's controller owner reference sets blockOwnerDeletion, which admission allows
                 # only to who may update the owner's finalizers.

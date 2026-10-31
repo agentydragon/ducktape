@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
@@ -22,6 +24,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/gateway"
 	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/agentydragon/ducktape/util/netlistener"
 	"github.com/go-logr/logr"
@@ -34,6 +37,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -171,9 +175,22 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	if err != nil {
 		return err
 	}
-	inventory, err := cache.New(config, cache.Options{
+	inventoryHealth := watchhealth.New()
+	// A reflector names its type as the Go type; the health transport names a kind by its path.
+	kindByType := make(map[string]watchhealth.Kind)
+	for kind, object := range map[watchhealth.Kind]client.Object{
+		"sandboxes": &sandboxapi.Sandbox{}, "pods": &corev1.Pod{},
+		"virtualmachineinstances": &kubevirtv1.VirtualMachineInstance{}, "virtualmachines": &kubevirtv1.VirtualMachine{},
+	} {
+		kindByType[fmt.Sprintf("%T", object)] = kind
+	}
+	// KubeVirt informers start on the first VM Sandbox's read, so clusters without KubeVirt never watch it.
+	inventory, err := cache.New(inventoryHealth.Config(config, watchhealth.KindByPath), cache.Options{
 		Scheme: scheme, Mapper: objects.RESTMapper(),
 		DefaultNamespaces: map[string]cache.Config{c.Namespace: {}},
+		DefaultWatchErrorHandler: func(ctx context.Context, r *toolscache.Reflector, err error) {
+			inventoryHealth.WatchErrorHandler(kindByType[r.TypeDescription()])(ctx, r, err)
+		},
 	})
 	if err != nil {
 		return err
@@ -203,18 +220,9 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		Namespace:      c.Namespace, CallerAccounts: c.GatewayCallers, ExecutorCallers: c.ExecutorCallers,
 		SandboxControllerAccount: c.ControllerAccount,
 		HolderName:               c.PodName, HolderIP: c.PodIP, ProxyPort: int32(c.ProxyPort),
-	}, gatewayAuth, objects, kube.CoreV1(), kube.CoordinationV1(), kube.DiscoveryV1())
+	}, gatewayAuth, inventory, inventoryHealth, kube.CoordinationV1(), kube.DiscoveryV1())
 	if err != nil {
 		return err
-	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	failed := make(chan error, 8)
-	go func() {
-		reportUnexpected(ctx, failed, "Sandbox cache", inventory.Start(ctx))
-	}()
-	if !catalog.WaitSynced(ctx) {
-		return errors.New("Sandbox inventory did not synchronize")
 	}
 	for _, watched := range []client.Object{&sandboxapi.Sandbox{}, &corev1.Pod{}} {
 		informer, err := inventory.GetInformer(ctx, watched)
@@ -225,6 +233,16 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 			return err
 		}
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	failed := make(chan error, 8)
+	go func() {
+		reportUnexpected(ctx, failed, "Sandbox cache", inventory.Start(ctx))
+	}()
+	if !catalog.WaitSynced(ctx) {
+		return errors.New("Sandbox inventory did not synchronize")
+	}
+	inventoryHealth.MarkSynced()
 	if err := g.WatchConnectionLeases(ctx, kube); err != nil {
 		return err
 	}
@@ -254,17 +272,20 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		return ctx.Err()
 	}
 	service := &dispatcher.Service{
-		Store: store, Auth: dispatchAuth, Callers: accountSet(c.DispatcherCallers),
-		WakeCallers: accountSet(c.WakeCallers), Sandboxes: catalog, Runner: runner,
+		Store: store, WakeCallers: accountSet(c.WakeCallers), Sandboxes: catalog, Runner: runner,
 		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
-	server := grpc.NewServer(
+	methods := auth.HealthMethods()
+	maps.Copy(methods, dispatcher.Methods(dispatchAuth, c.DispatcherCallers))
+	maps.Copy(methods, g.Methods())
+	server := grpc.NewServer(append(
+		methods.ServerOptions(0),
 		observability.GRPCServerOption(),
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
 			MinTime:             30 * time.Second,
 			PermitWithoutStream: false,
 		}),
-	)
+	)...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
 	defer server.Stop()
 	g.RegisterProxy(server)
@@ -293,20 +314,14 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	}
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
 	cancel()
+	closing, release := context.WithTimeout(context.Background(), 5*time.Second)
+	defer release()
 	if facadeServer != nil {
-		closing, release := context.WithTimeout(context.Background(), 5*time.Second)
-		defer release()
 		if err := facadeServer.Shutdown(closing); err != nil {
 			slog.Warn("HTTP listener did not drain", "error", err)
 		}
 	}
-	stopped := make(chan struct{})
-	go func() { server.GracefulStop(); close(stopped) }()
-	select {
-	case <-stopped:
-	case <-time.After(5 * time.Second):
-		server.Stop()
-	}
+	graceful.Stop(closing, server)
 	return result
 }
 

@@ -14,8 +14,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 CREDENTIALS_PLURAL = "egresscredentials"
-# The `PolicySet` rule type this proxy enforces.
-EGRESS_RULE_TYPE = "egress"
 
 
 class _Wire(BaseModel):

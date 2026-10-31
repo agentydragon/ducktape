@@ -74,7 +74,7 @@ check their precondition and fall back conservatively — never widen a rule bec
 the common case is fine. If the easy fix isn't the deepest correct fix, do the deeper
 one or stop and explain the blocker. Theorem: <docs/design.md> § Soundness over
 completeness. Read <docs/purity_soundness.md> before touching
-<purity/whitelists.rs> or adding a purity annotation to a spec.
+<facts/abstract_domain/builtins.rs> or adding a purity annotation to a spec.
 
 ## Testing
 

@@ -201,7 +201,7 @@ fn pure_member_hints(
         .collect();
     // Minimal chunk — the redundant-pure_members check doesn't
     // consult the chunk body (the redundancy criterion is a
-    // pure function of the hint set + `PURE_STATIC_CALLS`), so
+    // pure function of the hint set + the builtin rows), so
     // any well-formed module works.
     let module = parse("const _ = 1;");
     let hints = AnalysisInputs {
@@ -221,8 +221,8 @@ fn pure_member_hints(
 #[test]
 fn redundant_pure_member_on_whitelisted_static_call_is_reported() {
     // `pure_members: [isArray]` on a binding named `Array` is a
-    // no-op — `Array.isArray(...)` is already in
-    // `PURE_STATIC_CALLS`. Spec author should drop the entry.
+    // no-op — the `Array.isArray` row admits any operands. Spec
+    // author should drop the entry.
     let got = pure_member_hints(&[("Array", &["isArray"])]);
     assert_eq!(
         got,
@@ -238,7 +238,7 @@ fn redundant_pure_member_on_whitelisted_static_call_is_reported() {
 fn load_bearing_pure_member_on_user_binding_is_not_reported() {
     // `pure_members: [forwardRef]` on a user-named binding `b`
     // is the load-bearing case — without it, `b.forwardRef(...)`
-    // stays Unknown (no path in the whitelist reaches a user
+    // stays Unknown (no builtin row reaches a user
     // binding). MUST NOT be flagged.
     let got = pure_member_hints(&[("b", &["forwardRef"])]);
     assert!(
@@ -249,9 +249,8 @@ fn load_bearing_pure_member_on_user_binding_is_not_reported() {
 
 #[test]
 fn pure_member_on_object_freeze_is_not_reported() {
-    // `Object.freeze(...)` IS in
-    // `PURE_OBJECT_CALLS_ON_PLAIN_DATA` but NOT in
-    // `PURE_STATIC_CALLS` — the auto-pure path requires the
+    // The `Object.freeze(...)` row admits only a plain-data
+    // operand — the auto-pure path requires the
     // plain-data arg shape, which the redundant check doesn't
     // verify per-callsite. MUST NOT be flagged: the spec hint
     // covers arbitrary arg shapes and is genuinely load-bearing
@@ -266,7 +265,7 @@ fn pure_member_on_object_freeze_is_not_reported() {
 #[test]
 fn pure_member_on_whitelist_receiver_unknown_prop_is_not_reported() {
     // `pure_members: [unknownProp]` on `Array` — `Array.unknownProp`
-    // is not in `PURE_STATIC_CALLS`, so the hint is load-bearing
+    // has no builtin row, so the hint is load-bearing
     // (covers a call the analyzer would otherwise classify
     // Unknown). MUST NOT be flagged.
     let got = pure_member_hints(&[("Array", &["unknownProp"])]);

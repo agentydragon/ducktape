@@ -35,7 +35,7 @@ async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluste
     async def snapshots() -> AsyncIterator[SandboxesSnapshot]:
         nonlocal closed, deletion_observed
         try:
-            for name, fresh, mode in [
+            for name, healthy, mode in [
                 ("owned-test-sandbox", True, OperatingMode.RUNNING),
                 ("owned-test-sandbox", False, OperatingMode.SUSPENDED),
                 ("other-sandbox", True, OperatingMode.SUSPENDED),
@@ -43,16 +43,12 @@ async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluste
             ]:
                 client.delete_sandbox.assert_not_awaited()
                 yield Mock(
-                    watch=Mock(fresh=fresh), sandboxes=[SimpleNamespace(name=name, uid=uid, operating_mode=mode)]
+                    watch=Mock(healthy=healthy), sandboxes=[SimpleNamespace(name=name, uid=uid, operating_mode=mode)]
                 )
             client.delete_sandbox.assert_awaited_once_with("owned-test-sandbox")
-            yield SandboxesSnapshot(
-                watch=WatchHealth(fresh=False, stale_after_seconds=30, refreshed_seconds_ago={}), sandboxes=[]
-            )
+            yield SandboxesSnapshot(watch=WatchHealth(healthy=False, failing={}), sandboxes=[])
             deletion_observed = True
-            yield SandboxesSnapshot(
-                watch=WatchHealth(fresh=True, stale_after_seconds=30, refreshed_seconds_ago={}), sandboxes=[]
-            )
+            yield SandboxesSnapshot(watch=WatchHealth(healthy=True, failing={}), sandboxes=[])
         finally:
             closed = True
 
@@ -74,7 +70,7 @@ async def test_cleanup_does_not_delete_a_replacement_sandbox(cluster: Cluster) -
 
     async def snapshots() -> AsyncIterator[SandboxesSnapshot]:
         yield Mock(
-            watch=Mock(fresh=True),
+            watch=Mock(healthy=True),
             sandboxes=[SimpleNamespace(name="owned-test-sandbox", uid=uuid4(), operating_mode=OperatingMode.SUSPENDED)],
         )
 
@@ -94,7 +90,7 @@ async def test_cleanup_bounds_a_watch_that_stops_making_progress(
     async def snapshots() -> AsyncIterator[SandboxesSnapshot]:
         nonlocal closed
         try:
-            yield Mock(watch=Mock(fresh=False), sandboxes=[])
+            yield Mock(watch=Mock(healthy=False), sandboxes=[])
             await asyncio.Event().wait()
         finally:
             closed = True

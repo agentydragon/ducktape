@@ -73,14 +73,19 @@ the loader derivation (SPEC.md § Loader-closed derivation), tagged by `rule`:
 (resolved literal requests per source chunk, specifier and `target`
 `{"builtin": id}` or `{"chunk": {"chunk", "file"}}`, with `request_count`),
 `loaded_chunks`, `suspended_sites` (mandatorily suspended sites excluded under
-`synchronous_load_drains_microtasks: never`), and `failures`. Each failure has a `reason`, its
+`synchronous_load_drains_microtasks: never`), `unreachable_sites` (sites no
+reachable code can enter), and `failures`. Each failure has a `reason`, its
 `occurrences`, and the `first` witness in chunk-name then site order: either
 `{"host_behavior": key}` or `{"site": {...}}`, a site naming its
 `source_chunk` and `form` (`interop` with the census `kind`, `item`, `line`,
 `specifier` and `resolved_target`; `static_request` with `specifier` and
-`resolved_target`; `top_level_await`; `vendor_chunk`).
+`resolved_target`; `loader_binding_use` with `item`, `line`, `call`,
+`specifier` and `resolved_target` for a use of an exported loader alias;
+`namespace_request` with `item`, `specifier` and `resolved_target`;
+`top_level_await`; `vendor_chunk`).
 `host_builtin_leaves`, when nonempty, lists each consumed
-`reentry_free_builtin_modules` static request. The typed
+`reentry_free_builtin_modules` or `reentry_free_bun_modules` static request;
+`builtin` holds the module ID either way. The typed
 `global_blockers` and `closure_blockers` arrays use a `reason` tag. Chunk
 references are canonical chunk IDs; static-request entries carry the source
 chunk and original specifier, with `resolved_target: {"chunk", "file"}` when
@@ -119,7 +124,7 @@ never relaxes the proof.
   },
   "global_blockers": [],
   "closure_blockers": [
-    { "reason": "vendor_affected_chunk", "source_chunk": "static/provider" },
+    { "reason": "open_replacement_bundle", "source_chunk": "static/provider" },
     { "reason": "target_cycle", "target_chunk": "static/provider" }
   ]
 }
@@ -240,8 +245,9 @@ the emitted entry filename is chosen separately by the chunk configuration.
 and `shared_var_access` rules carries `source` and `target`, and
 `uninitialized_observation` carries `observation`: the provenance of that
 endpoint's binding effect, `{"kind": "observed"}` or
-`{"kind": "fallback", "reason": {"code": …}}` (the reason uses the
-`synchronous_execution.precision_losses[].reason` shape). The fields are
+`{"kind": "fallback", "reason": {"path": …}}`; `fallback_summary` carries
+`loss` in the `synchronous_execution.precision_losses[].reason` shape and
+`whole_body_promotion` carries `operation`. The fields are
 required: a graph written before them does not deserialize, so the
 commuting-statements gate never reads an unclassified effect as assumed.
 

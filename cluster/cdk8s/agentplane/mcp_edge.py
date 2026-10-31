@@ -46,7 +46,13 @@ _SECRET_DIR = "/etc/agentplane-mcp"
 
 
 def service(namespace: str) -> ServiceRef:
-    return ServiceRef(name=NAME, port=Port(name="http", number=8080), pods=Pods(namespace, tuple(_LABELS.items())))
+    """The gRPC listener: ConnectionService and health."""
+    return ServiceRef(name=NAME, port=Port(name="grpc", number=8080), pods=Pods(namespace, tuple(_LABELS.items())))
+
+
+def http_service(namespace: str) -> ServiceRef:
+    """The HTTP listener: the facade, /mcp, OAuth and metrics."""
+    return ServiceRef(name=NAME, port=Port(name="http", number=8081), pods=Pods(namespace, tuple(_LABELS.items())))
 
 
 class McpEdge(Construct):
@@ -67,6 +73,7 @@ class McpEdge(Construct):
         super().__init__(scope, id)
         self.env = env
         self.endpoint = service(env.namespace)
+        self.http = http_service(env.namespace)
         props = env.mcp_edge
         if not props.caller_service_account_namespaces:
             raise ValueError("MCP edge needs an explicit caller namespace")
@@ -76,6 +83,7 @@ class McpEdge(Construct):
         content = {
             "host": "0.0.0.0",
             "port": self.endpoint.pod_port,
+            "http_port": self.http.pod_port,
             "actions_target": f"{actions.service(env.namespace).fqdn}:{actions.service(env.namespace).port.number}",
             "operator_oidc": props.operator_oidc,
             "caller_service_account_namespaces": sorted(props.caller_service_account_namespaces),
@@ -98,7 +106,7 @@ class McpEdge(Construct):
         workload = add_service_workload(
             self,
             env,
-            serves=[self.endpoint],
+            serves=[self.endpoint, self.http],
             container=NAME,
             image=_IMAGE,
             image_pull_policy=image_pull_policy,
@@ -174,16 +182,16 @@ class McpEdge(Construct):
         endpoint = self.endpoint
         hostname = self.env.mcp_edge.hostname
         if hostname is not None:
-            add_public_route(self, endpoint=endpoint, hostname=hostname)
+            add_public_route(self, endpoint=self.http, hostname=hostname)
         NetworkPolicy(
             self,
             "networkpolicy",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             endpoint_selector=endpoint.pods.selector,
             ingress=[
-                *([IngressRule.from_gateway(endpoint.pod_port)] if hostname is not None else []),
+                *([IngressRule.from_gateway(self.http.pod_port)] if hostname is not None else []),
                 app_component.service(namespace).pods.admit(endpoint.pod_port),
-                cilium.SCRAPERS.admit(endpoint.pod_port),
+                cilium.SCRAPERS.admit(self.http.pod_port),
             ],
             egress=[
                 cilium.dns_egress(resolves=["*"]),
@@ -198,5 +206,5 @@ class McpEdge(Construct):
             "service-monitor",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             selector=ServiceMonitorSpecSelector(match_labels=endpoint.labels),
-            endpoints=[Endpoint.plain(port=endpoint.port.name)],
+            endpoints=[Endpoint.plain(port=self.http.port.name)],
         )

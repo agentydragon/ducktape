@@ -41,10 +41,10 @@ on:
     outputs:
       bazel_invocation_ids:
         description: >
-          The Bazel invocations this run performed. Publish planners read what
-          these built — output digests, per-target test verdicts — rather than
-          rebuilding the same targets. Empty when the job did not run, which
-          callers must treat as "prove nothing", not "nothing changed".
+          The uninstrumented build invocation. Publish planners reuse its output
+          digests; test verdicts come separately from test_invocation_id. Empty when
+          the job did not run, which callers must treat as "prove nothing",
+          not "nothing changed".
         value: ${{ jobs.bazel-ci.outputs.bazel_invocation_ids }}
       test_invocation_id:
         description: Deterministic ID of this run's test invocation.
@@ -77,7 +77,7 @@ jobs:
     name: Test & Build
     outputs:
       # The ID step allocates every role for linkage/cancellation; this job output
-      # selects only publication evidence roles after the remote step ran.
+      # selects only normal-build output evidence after the remote step ran.
       bazel_invocation_ids: ${{ steps.bb-remote.outputs.bazel_invocation_ids && steps.invocation-ids.outputs.publication || '' }}
       test_invocation_id: ${{ steps.invocation-ids.outputs.test }}
       test_source_commit: ${{ steps.source.outputs.sha }}

@@ -8,6 +8,7 @@ kubernetes_clients(
     apply_configuration_types = [
         "ActionPolicy",
         "CredentialRef",
+        "MissingRole",
         "PolicyBinding",
         "PolicyBindingSpec",
         "PolicySet",

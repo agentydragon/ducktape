@@ -16,16 +16,17 @@ use analysis::analysis_inputs::{
     SelectedBindingValueInput, SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
 use analysis::cross_module_purity::{
-    ModulePurityFacts, ResolvedImport, resolve_asserted_callback_factory_members,
-    resolve_asserted_fluent_bindings, resolve_asserted_inline_callback_factories,
-    resolve_asserted_member_purities, resolve_asserted_namespace_independent_members,
-    resolve_asserted_no_reentry_bindings, resolve_asserted_no_reentry_callbacks,
-    resolve_asserted_no_reentry_members, resolve_asserted_no_reentry_record_members,
-    resolve_asserted_pure_new_bindings, resolve_asserted_retained_callback_constructors,
-    resolve_asserted_retained_callback_factories,
-    resolve_asserted_retained_callback_factory_members, resolve_imported_callable_summaries,
-    resolve_imported_purities,
+    CallableSummaryInputs, ExportValueSource, ModulePurityFacts, ResolvedImport, StableExportValue,
+    resolve_asserted_callback_factory_members, resolve_asserted_fluent_bindings,
+    resolve_asserted_inline_callback_factories, resolve_asserted_member_purities,
+    resolve_asserted_namespace_independent_members, resolve_asserted_no_reentry_bindings,
+    resolve_asserted_no_reentry_callbacks, resolve_asserted_no_reentry_members,
+    resolve_asserted_no_reentry_record_members, resolve_asserted_pure_new_bindings,
+    resolve_asserted_retained_callback_constructors, resolve_asserted_retained_callback_factories,
+    resolve_asserted_retained_callback_factory_members, resolve_export_values,
+    resolve_imported_callable_summaries, resolve_imported_purities,
 };
+use analysis::facts::abstract_domain::value::{PrimKinds, Value};
 use analysis::purity::Purity;
 use anyhow::{Context, Result, bail, ensure};
 use artifact::reports::{ExportAliasRecord, ImportRecord, ImportSpecifierKind};
@@ -153,16 +154,15 @@ struct ReparsedEntry {
     parsed: ParsedJsModule,
     imports: Vec<ImportRecord>,
     export_aliases: Vec<ExportAliasRecord>,
-    primitive_exports: BTreeSet<String>,
-    primitive_export_import_dependencies: BTreeMap<String, BTreeSet<String>>,
-    primitive_export_reexports: BTreeMap<String, (String, String)>,
+    stable_export_values: BTreeMap<String, StableExportValue>,
 }
 
 /// Output of the program-level purity pass, keyed by chunk name.
 pub(super) struct CrossModulePurities {
     /// Per-chunk imported-binding verdicts (`AnalysisInputs::imported_purities`).
     pub(super) bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,
-    pub(super) primitives: BTreeMap<String, BTreeSet<String>>,
+    /// Per-chunk imported-binding values (`AnalysisInputs::imported_values`).
+    pub(super) values: BTreeMap<String, BTreeMap<String, Value>>,
     /// Per-chunk pure-member sets for imported namespace-like bindings,
     /// merged into `AnalysisAssumptions::declared_pure_members`.
     pub(super) members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
@@ -176,6 +176,8 @@ pub(super) struct CrossModulePurities {
     pub(super) imported_callables: BTreeMap<String, BTreeMap<String, CallableSummary>>,
     /// Source-derived native mutation census shared by every analyzed chunk.
     pub(super) native_integrity: Option<NativeIntegrity>,
+    /// The whole-program bundle-owned globals (SPEC.md § Bundle-owned globals).
+    pub(super) bundle_globals: analysis::analysis_inputs::BundleGlobalNames,
     /// Source-resolved author inputs for the provider's own local analysis.
     pub(super) value_inputs: BTreeMap<String, Vec<ResolvedBindingValueInput>>,
     /// Source-resolved native operation premises for the provider initializer.
@@ -205,13 +207,12 @@ pub(super) struct CrossModulePurities {
 ///
 /// Starts from the user-selected chunks and follows each retained chunk's
 /// shallow-analysis import records through the same artifact-index resolver used
-/// by emission. Excluded chunks are opacity boundaries: they are neither added
-/// to the closure nor traversed.
+/// by emission. Vendor-swapped chunks are traversed like any other: their
+/// bundled bodies stand for the replacement (SPEC.md § Vendor swap equivalence).
 pub(super) fn selected_static_import_closure(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
     selected_chunk_ids: &[String],
-    excluded_chunks: &BTreeSet<ChunkId>,
 ) -> Result<BTreeSet<ChunkId>> {
     let mut closure = BTreeSet::new();
     let mut pending = Vec::new();
@@ -220,9 +221,6 @@ pub(super) fn selected_static_import_closure(
             .chunk_table
             .get(chunk_id)
             .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
-        if excluded_chunks.contains(&interned) {
-            continue;
-        }
         if closure.insert(interned) {
             pending.push(interned);
         }
@@ -242,9 +240,6 @@ pub(super) fn selected_static_import_closure(
             ) else {
                 continue;
             };
-            if excluded_chunks.contains(&target.target_chunk_id) {
-                continue;
-            }
             if closure.insert(target.target_chunk_id) {
                 pending.push(target.target_chunk_id);
             }
@@ -272,17 +267,19 @@ fn resolved_target_is_entry(
 /// stays opaque: its exports get no verdicts and imports of it stay
 /// unresolved (`unknown_call`), exactly as before this pass existed.
 ///
-/// `excluded_chunks` (fully vendor-swapped chunks excluded from the
-/// emission set) stay opaque to the oracle: an excluded chunk's body
-/// is replaced by the upstream package at serve time, so verdicts
-/// derived from the bundle copy would assert purity about code that is
-/// never emitted. Imports of such chunks stay `unknown_call`.
+/// A vendor-swapped provider (full, partial or bundled partial) is analyzed
+/// from its bundled body: the swap promises the replacement behaves like it
+/// (SPEC.md § Vendor swap equivalence).
 pub(super) struct CrossModuleAnalysisOptions<'a> {
     pub(super) chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
     pub(super) chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
     pub(super) graph_provenance: Option<&'a GraphProvenance>,
     pub(super) explicit_binding_destinations: &'a BTreeMap<String, HashMap<Id, usize>>,
     pub(super) resolved_member_sites: &'a BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
+    /// Export name → replacement package of every vendor-swapped export, by
+    /// defining chunk; summaries derived from those bodies name the package.
+    pub(super) replacement_packages: &'a BTreeMap<ChunkId, BTreeMap<String, String>>,
+    pub(super) predefined_globals: spec::PredefinedGlobals,
 }
 
 pub(super) fn collect_cross_module_imported_purities(
@@ -290,8 +287,6 @@ pub(super) fn collect_cross_module_imported_purities(
     indexes: &ArtifactIndexes,
     options: CrossModuleAnalysisOptions<'_>,
     declared_pure_new_bindings: &BTreeMap<String, BTreeSet<String>>,
-    excluded_chunks: &BTreeSet<ChunkId>,
-    primitive_opaque_chunks: &BTreeSet<ChunkId>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<CrossModulePurities> {
     let CrossModuleAnalysisOptions {
@@ -300,6 +295,8 @@ pub(super) fn collect_cross_module_imported_purities(
         graph_provenance,
         explicit_binding_destinations,
         resolved_member_sites,
+        replacement_packages,
+        predefined_globals,
     } = options;
     // Pass 1: re-parse entries stored as raw source so every chunk's body is
     // analyzable. Parse failures only warn — the pass is an analysis
@@ -308,9 +305,6 @@ pub(super) fn collect_cross_module_imported_purities(
     let mut reparsed: BTreeMap<ChunkId, ReparsedEntry> = BTreeMap::new();
     for chunk_artifact in &artifact.chunks {
         if !chunk_allowed(chunk_artifact.chunk_id, chunk_filter) {
-            continue;
-        }
-        if excluded_chunks.contains(&chunk_artifact.chunk_id) {
             continue;
         }
         let entry_file = &chunk_artifact.analysis.entry_file;
@@ -333,13 +327,7 @@ pub(super) fn collect_cross_module_imported_purities(
                         parsed,
                         imports: analysis.imports,
                         export_aliases: analysis.export_aliases,
-                        primitive_exports: analysis.runtime_facts.stable_primitive_exports,
-                        primitive_export_import_dependencies: analysis
-                            .runtime_facts
-                            .stable_primitive_export_import_dependencies,
-                        primitive_export_reexports: analysis
-                            .runtime_facts
-                            .stable_primitive_export_reexports,
+                        stable_export_values: analysis.runtime_facts.stable_export_values,
                     },
                 );
             }
@@ -355,16 +343,11 @@ pub(super) fn collect_cross_module_imported_purities(
     // Pass 2: assemble each chunk's oracle inputs from whichever body is
     // available (retained AST or re-parsed entry).
     let mut modules = BTreeMap::new();
-    let mut primitive_exports = BTreeMap::<String, BTreeSet<String>>::new();
-    let mut primitive_export_import_candidates =
-        BTreeMap::<String, BTreeMap<String, BTreeSet<String>>>::new();
-    let mut primitive_export_reexport_dependencies =
-        BTreeMap::<(String, String), ResolvedImport>::new();
+    let mut local_export_values =
+        BTreeMap::<(String, String), (PrimKinds, BTreeSet<String>)>::new();
+    let mut export_value_sources = BTreeMap::<(String, String), ExportValueSource>::new();
     for chunk_artifact in &artifact.chunks {
         if !chunk_allowed(chunk_artifact.chunk_id, chunk_filter) {
-            continue;
-        }
-        if excluded_chunks.contains(&chunk_artifact.chunk_id) {
             continue;
         }
         let chunk_name = artifact.chunk_table.name(chunk_artifact.chunk_id);
@@ -387,54 +370,46 @@ pub(super) fn collect_cross_module_imported_purities(
                 ),
                 (None, None) => continue,
             };
-        if !primitive_opaque_chunks.contains(&chunk_artifact.chunk_id) {
-            let (exports, import_candidates, reexport_candidates) =
-                match reparsed.get(&chunk_artifact.chunk_id) {
-                    Some(entry) => (
-                        &entry.primitive_exports,
-                        &entry.primitive_export_import_dependencies,
-                        &entry.primitive_export_reexports,
-                    ),
-                    None => {
-                        let facts = &chunk_artifact.analysis.runtime_facts;
-                        (
-                            &facts.stable_primitive_exports,
-                            &facts.stable_primitive_export_import_dependencies,
-                            &facts.stable_primitive_export_reexports,
-                        )
-                    }
-                };
-            primitive_exports.insert(chunk_name.to_string(), exports.clone());
-            primitive_export_import_candidates
-                .insert(chunk_name.to_string(), import_candidates.clone());
-            for (export, (source, imported_export)) in reexport_candidates {
-                let Some(target) = indexes.resolve_runtime_import_reference(
-                    source,
-                    chunk_artifact.chunk_id,
-                    entry_file,
-                    &artifact.chunk_table,
-                ) else {
-                    continue;
-                };
-                if excluded_chunks.contains(&target.target_chunk_id)
-                    || !chunk_allowed(target.target_chunk_id, chunk_filter)
-                    || !resolved_target_is_entry(artifact, &target)
-                {
+        let stable_export_values = match reparsed.get(&chunk_artifact.chunk_id) {
+            Some(entry) => &entry.stable_export_values,
+            None => &chunk_artifact.analysis.runtime_facts.stable_export_values,
+        };
+        for (export, value) in stable_export_values {
+            let key = (chunk_name.to_string(), export.clone());
+            let (source, imported_export) = match value {
+                StableExportValue::Local { kinds, imports } => {
+                    local_export_values.insert(key, (*kinds, imports.clone()));
                     continue;
                 }
-                primitive_export_reexport_dependencies.insert(
-                    (chunk_name.to_string(), export.clone()),
-                    ResolvedImport {
+                StableExportValue::ReExport { source, export } => (source, export),
+            };
+            let Some(target) = indexes.resolve_runtime_import_reference(
+                source,
+                chunk_artifact.chunk_id,
+                entry_file,
+                &artifact.chunk_table,
+            ) else {
+                continue;
+            };
+            if !chunk_allowed(target.target_chunk_id, chunk_filter)
+                || !resolved_target_is_entry(artifact, &target)
+            {
+                continue;
+            }
+            export_value_sources.insert(
+                key,
+                ExportValueSource {
+                    kinds: PrimKinds::NONE,
+                    copies: vec![ResolvedImport {
                         module: artifact
                             .chunk_table
                             .name(target.target_chunk_id)
                             .to_string(),
                         export: imported_export.clone(),
-                    },
-                );
-            }
+                    }],
+                },
+            );
         }
-        let body = &parsed.module.body;
         let mut imports = BTreeMap::new();
         for import in import_records {
             // Same artifact-output resolution the specifier rewriter uses;
@@ -448,8 +423,7 @@ pub(super) fn collect_cross_module_imported_purities(
             ) else {
                 continue;
             };
-            if excluded_chunks.contains(&target.target_chunk_id)
-                || !chunk_allowed(target.target_chunk_id, chunk_filter)
+            if !chunk_allowed(target.target_chunk_id, chunk_filter)
                 || !resolved_target_is_entry(artifact, &target)
             {
                 continue;
@@ -488,7 +462,7 @@ pub(super) fn collect_cross_module_imported_purities(
                     .map(|local| (alias.exported.clone(), local))
             })
             .collect();
-        for item in body {
+        for item in &parsed.module.body {
             if let ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) = item {
                 for name in exported_decl_names(&export_decl.decl) {
                     exports.entry(name.clone()).or_insert(name);
@@ -498,7 +472,7 @@ pub(super) fn collect_cross_module_imported_purities(
         modules.insert(
             chunk_name.to_string(),
             ModulePurityFacts {
-                body,
+                body: &parsed.module.body,
                 imports,
                 exports,
                 source: Some((
@@ -508,38 +482,32 @@ pub(super) fn collect_cross_module_imported_purities(
                     ),
                     parsed.line_index(),
                 )),
+                replacement_packages: replacement_packages
+                    .get(&chunk_artifact.chunk_id)
+                    .cloned()
+                    .unwrap_or_default(),
             },
         );
     }
 
-    let mut primitive_export_import_dependencies =
-        BTreeMap::<(String, String), Vec<ResolvedImport>>::new();
-    for (chunk, candidates) in primitive_export_import_candidates {
+    for ((chunk, export), (kinds, local_imports)) in local_export_values {
         let Some(module) = modules.get(&chunk) else {
             continue;
         };
-        for (export, local_imports) in candidates {
-            let dependencies: Option<Vec<_>> = local_imports
-                .iter()
-                .map(|local| module.imports.get(local).cloned())
-                .collect();
-            if let Some(dependencies) = dependencies {
-                primitive_export_import_dependencies.insert((chunk.clone(), export), dependencies);
-            }
+        let copies: Option<Vec<_>> = local_imports
+            .iter()
+            .map(|local| module.imports.get(local).cloned())
+            .collect();
+        if let Some(copies) = copies {
+            export_value_sources.insert((chunk, export), ExportValueSource { kinds, copies });
         }
     }
-
-    let primitive_exports = analysis::cross_module_values::resolve_primitive_exports(
-        primitive_exports,
-        primitive_export_import_dependencies,
-        primitive_export_reexport_dependencies,
-    );
+    let export_values = resolve_export_values(export_value_sources);
     let value_inputs = resolve_value_inputs(
         artifact,
         &modules,
         chunk_analysis_options,
         graph_provenance,
-        excluded_chunks,
         chunk_filter,
     )?;
     let native_operation_inputs = resolve_native_operation_inputs(
@@ -547,7 +515,6 @@ pub(super) fn collect_cross_module_imported_purities(
         &modules,
         chunk_analysis_options,
         graph_provenance,
-        excluded_chunks,
         chunk_filter,
         resolved_member_sites,
     )?;
@@ -556,7 +523,6 @@ pub(super) fn collect_cross_module_imported_purities(
         &modules,
         chunk_analysis_options,
         graph_provenance,
-        excluded_chunks,
         chunk_filter,
     )?;
     let commuting_statements = resolve_commuting_statements(
@@ -564,7 +530,6 @@ pub(super) fn collect_cross_module_imported_purities(
         &modules,
         chunk_analysis_options,
         graph_provenance,
-        excluded_chunks,
         chunk_filter,
         resolved_member_sites,
     )?;
@@ -663,7 +628,7 @@ pub(super) fn collect_cross_module_imported_purities(
             }
         }
     }
-    let callable_summaries = resolve_imported_callable_summaries(
+    let mut callable_summaries = resolve_imported_callable_summaries(
         &modules,
         &asserted_callback_factories,
         &chunk_export_purity
@@ -675,10 +640,13 @@ pub(super) fn collect_cross_module_imported_purities(
                 )
             })
             .collect(),
-        &value_inputs,
-        &native_operation_inputs,
-        explicit_binding_destinations,
-        &argument_inputs,
+        CallableSummaryInputs {
+            selected_value_inputs: &value_inputs,
+            selected_native_operation_inputs: &native_operation_inputs,
+            explicit_binding_destinations,
+            argument_inputs: &argument_inputs,
+            predefined_globals,
+        },
     )?;
     Ok(CrossModulePurities {
         no_reentry_callback_exports: resolve_asserted_no_reentry_callbacks(
@@ -726,28 +694,17 @@ pub(super) fn collect_cross_module_imported_purities(
                 })
                 .collect(),
         ),
-        primitives: modules
+        values: modules
             .iter()
-            .map(|(name, module)| {
-                let locals = module
-                    .imports
-                    .iter()
-                    .filter(|(_, target)| {
-                        primitive_exports
-                            .get(&target.module)
-                            .is_some_and(|exports| exports.contains(&target.export))
-                    })
-                    .map(|(local, _)| local.clone())
-                    .collect();
-                (name.clone(), locals)
-            })
+            .map(|(name, module)| (name.clone(), module.imported_values(&export_values)))
             .collect(),
-        bindings: resolve_imported_purities(&modules, &asserted_pure, &callable_summaries),
+        bindings: resolve_imported_purities(&modules, &asserted_pure, &mut callable_summaries),
         members: resolve_asserted_member_purities(&modules, &asserted_members),
         fluent: resolve_asserted_fluent_bindings(&modules, &asserted_fluent),
         constructors: resolve_asserted_pure_new_bindings(&modules, &asserted_pure_new),
         imported_callables: callable_summaries.imported_callables,
         native_integrity: callable_summaries.native_integrity,
+        bundle_globals: callable_summaries.bundle_globals,
         value_inputs: callable_summaries.value_inputs,
         native_operation_inputs: callable_summaries.native_operation_inputs,
         stable_set_spreads: callable_summaries.stable_set_spreads,
@@ -785,7 +742,6 @@ fn resolve_value_inputs(
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
     options: &BTreeMap<String, DependencyGraphOptions>,
     graph_provenance: Option<&GraphProvenance>,
-    excluded_chunks: &BTreeSet<ChunkId>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<BTreeMap<String, Vec<SelectedBindingValueInput>>> {
     let mut resolved = BTreeMap::new();
@@ -802,10 +758,6 @@ fn resolve_value_inputs(
                     "chunk_analysis_options.{chunk_name}.value_inputs names no loaded provider chunk"
                 )
             })?;
-        ensure!(
-            !excluded_chunks.contains(&chunk.chunk_id),
-            "chunk_analysis_options.{chunk_name}.value_inputs cannot target a fully swapped or excluded provider"
-        );
         ensure!(
             chunk_allowed(chunk.chunk_id, chunk_filter),
             "chunk_analysis_options.{chunk_name}.value_inputs provider is outside the existing analyzed import closure"
@@ -963,7 +915,6 @@ fn resolve_native_operation_inputs(
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
     options: &BTreeMap<String, DependencyGraphOptions>,
     graph_provenance: Option<&GraphProvenance>,
-    excluded_chunks: &BTreeSet<ChunkId>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
     resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 ) -> Result<BTreeMap<String, Vec<SelectedNativeOperationInput>>> {
@@ -983,10 +934,6 @@ fn resolve_native_operation_inputs(
                     "chunk_analysis_options.{chunk_name}.native_operation_inputs names no loaded provider chunk"
                 )
             })?;
-        ensure!(
-            !excluded_chunks.contains(&chunk.chunk_id),
-            "chunk_analysis_options.{chunk_name}.native_operation_inputs cannot target a fully swapped or excluded provider"
-        );
         ensure!(
             chunk_allowed(chunk.chunk_id, chunk_filter),
             "chunk_analysis_options.{chunk_name}.native_operation_inputs provider is outside the existing analyzed import closure"
@@ -1153,7 +1100,6 @@ fn resolve_commuting_statements(
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
     options: &BTreeMap<String, DependencyGraphOptions>,
     graph_provenance: Option<&GraphProvenance>,
-    excluded_chunks: &BTreeSet<ChunkId>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
     resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 ) -> Result<BTreeMap<String, Vec<ResolvedCommutingStatements>>> {
@@ -1169,9 +1115,8 @@ fn resolve_commuting_statements(
             .find(|chunk| artifact.chunk_table.name(chunk.chunk_id) == chunk_name)
             .with_context(|| format!("{prefix} names no loaded provider chunk"))?;
         ensure!(
-            !excluded_chunks.contains(&chunk.chunk_id)
-                && chunk_allowed(chunk.chunk_id, chunk_filter),
-            "{prefix} cannot target an excluded or outside-closure provider"
+            chunk_allowed(chunk.chunk_id, chunk_filter),
+            "{prefix} cannot target an outside-closure provider"
         );
         let facts = modules
             .get(chunk_name)
@@ -1357,7 +1302,6 @@ fn resolve_argument_inputs(
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
     options: &BTreeMap<String, DependencyGraphOptions>,
     graph_provenance: Option<&GraphProvenance>,
-    excluded_chunks: &BTreeSet<ChunkId>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<BTreeMap<String, Vec<ResolvedArgumentInput>>> {
     let mut resolved = BTreeMap::new();
@@ -1372,9 +1316,8 @@ fn resolve_argument_inputs(
             .find(|chunk| artifact.chunk_table.name(chunk.chunk_id) == chunk_name)
             .with_context(|| format!("{prefix} names no loaded provider chunk"))?;
         ensure!(
-            !excluded_chunks.contains(&chunk.chunk_id)
-                && chunk_allowed(chunk.chunk_id, chunk_filter),
-            "{prefix} cannot target an excluded or outside-closure provider"
+            chunk_allowed(chunk.chunk_id, chunk_filter),
+            "{prefix} cannot target an outside-closure provider"
         );
         let facts = modules
             .get(chunk_name)
@@ -1611,49 +1554,6 @@ mod tests {
         });
     }
 
-    fn closure_names(artifact: &ChunkBundle, closure: &BTreeSet<ChunkId>) -> BTreeSet<String> {
-        closure
-            .iter()
-            .map(|chunk_id| artifact.chunk_table.name(*chunk_id).to_string())
-            .collect()
-    }
-
-    #[test]
-    fn selected_static_import_closure_stops_at_excluded_chunks() {
-        let artifact = test_bundle(&[
-            (
-                "static/app",
-                "import { callWrap } from \"./adapter.js\";\ncallWrap(() => 1);\n",
-            ),
-            (
-                "static/adapter",
-                "import { wrap } from \"./vendorlib.js\";\n\
-export function callWrap(f) { return wrap(f); }\n",
-            ),
-            (
-                "static/vendorlib",
-                "export function wrap(f) { return { impl: f }; }\n",
-            ),
-        ]);
-        let indexes = ArtifactIndexes::build(&artifact).expect("build indexes");
-        let excluded = BTreeSet::from([artifact
-            .chunk_table
-            .get("static/adapter")
-            .expect("adapter chunk")]);
-        let closure = selected_static_import_closure(
-            &artifact,
-            &indexes,
-            &["static/app".to_string()],
-            &excluded,
-        )
-        .expect("closure");
-
-        assert_eq!(
-            closure_names(&artifact, &closure),
-            BTreeSet::from(["static/app".to_string()])
-        );
-    }
-
     #[test]
     fn request_only_host_loading_preserves_direct_esm_primitive_facts() {
         js_ast::with_swc_globals(|| {
@@ -1669,7 +1569,7 @@ export function callWrap(f) { return wrap(f); }\n",
                 !facts.has_own_cjs_export_surface,
                 "request-only loading does not create a CommonJS export surface"
             );
-            assert!(facts.stable_primitive_exports.contains("label"));
+            assert!(facts.stable_export_values.contains_key("label"));
 
             let parsed = js_ast::parse_js_module(
                 "cjs-surface.js",
@@ -1679,7 +1579,7 @@ export function callWrap(f) { return wrap(f); }\n",
             let facts = analyze_program_shallow(&parsed).runtime_facts;
             assert!(facts.has_cjs_interop);
             assert!(facts.has_own_cjs_export_surface);
-            assert!(!facts.stable_primitive_exports.contains("label"));
+            assert!(!facts.stable_export_values.contains_key("label"));
         });
     }
 
@@ -1711,20 +1611,20 @@ export function callWrap(f) { return wrap(f); }\n",
                     graph_provenance: None,
                     explicit_binding_destinations: &BTreeMap::new(),
                     resolved_member_sites: &BTreeMap::new(),
+                    replacement_packages: &BTreeMap::new(),
+                    predefined_globals: spec::PredefinedGlobals::Unknown,
                 },
                 &BTreeMap::new(),
-                &BTreeSet::new(),
-                &BTreeSet::new(),
                 None,
             )
             .expect("cross-module analysis succeeds");
 
-            let app_primitives = facts
-                .primitives
+            let app_values = facts
+                .values
                 .get("static/app")
                 .expect("app primitive fact set");
-            assert!(!app_primitives.contains("copied"));
-            assert!(!app_primitives.contains("forwarded"));
+            assert!(!app_values.contains_key("copied"));
+            assert!(!app_values.contains_key("forwarded"));
         });
     }
 
@@ -1768,10 +1668,10 @@ export function callWrap(f) { return wrap(f); }\n",
                     graph_provenance: None,
                     explicit_binding_destinations: &BTreeMap::new(),
                     resolved_member_sites: &BTreeMap::new(),
+                    replacement_packages: &BTreeMap::new(),
+                    predefined_globals: spec::PredefinedGlobals::Unknown,
                 },
                 &BTreeMap::new(),
-                &BTreeSet::new(),
-                &BTreeSet::new(),
                 None,
             )
             .expect("cross-module analysis succeeds");

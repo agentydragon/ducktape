@@ -11,6 +11,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/codexappserver",
     visibility = [
         "//agentplane/runner:__pkg__",
+        "//agentplane/runner/configuration:__pkg__",
         "//agentplane/runner/session:__pkg__",
     ],
     deps = [

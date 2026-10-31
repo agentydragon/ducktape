@@ -208,6 +208,9 @@ fn empty_set_field_rejects_shadowing_rebinding_and_dynamic_scope() {
     ] {
         let expected = if source.contains("eval('0')") {
             "dynamic-scope contamination"
+        } else if source.starts_with("Set = ") {
+            // The assignment leaves `Set` the global binding and replaces it.
+            "positively identified global Set slot write"
         } else {
             "requires one stable non-derived implicit-constructor class"
         };

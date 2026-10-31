@@ -181,35 +181,53 @@ impl VendorResolutionPlan {
         self.full_swaps.iter().map(|swap| swap.chunk_id).collect()
     }
 
-    pub fn affected_chunk_ids(&self) -> BTreeSet<ChunkId> {
-        self.boundary_renames
+    /// Replacement package of every swapped chunk export, by chunk. Facts
+    /// derived from those exports' bundled bodies rest on the swap's
+    /// equivalence promise (SPEC.md § Vendor swap equivalence).
+    pub fn replacement_packages(&self) -> BTreeMap<ChunkId, BTreeMap<String, String>> {
+        let full = self.full_swaps.iter().map(|swap| {
+            (
+                swap.chunk_id,
+                swap.vendor_exports
+                    .iter()
+                    .map(|export| (export.clone(), swap.resolution.package.clone()))
+                    .collect(),
+            )
+        });
+        let partial = self
+            .partial_swaps
             .iter()
-            .map(|plan| plan.chunk_id)
-            .chain(self.full_swaps.iter().map(|swap| swap.chunk_id))
-            .chain(self.partial_swaps.keys().copied())
-            .chain(self.bundled_partial_swaps.keys().copied())
-            .chain(self.suppressed.iter().copied())
-            .collect()
+            .map(|(chunk, plan)| (*chunk, &plan.symbols))
+            .chain(
+                self.bundled_partial_swaps
+                    .iter()
+                    .map(|(chunk, plan)| (*chunk, &plan.symbols)),
+            )
+            .map(|(chunk, symbols)| {
+                (
+                    chunk,
+                    symbols
+                        .iter()
+                        .map(|(export, symbol)| (export.clone(), symbol.package.clone()))
+                        .collect(),
+                )
+            });
+        full.chain(partial).collect()
     }
 
-    /// Whether prepared static edges over-approximate the effective edges of
-    /// this chunk after replacement. Residual pruning only deletes source
-    /// edges. A bundled replacement adds facade -> bundle edges, which cannot
-    /// lead back into the artifact when the bundle is a synchronous ESM leaf.
-    /// Raw package/full swaps have an unindexed dependency closure and cannot
-    /// supply this proof. Boundary renames and suppression add no edges.
-    pub fn preserves_static_import_closure(&self, chunk: ChunkId) -> bool {
-        if self.full_swaps.iter().any(|swap| swap.chunk_id == chunk)
-            || self.partial_swaps.contains_key(&chunk)
-        {
-            return false;
-        }
-        self.bundled_partial_swaps.get(&chunk).is_none_or(|swap| {
-            swap.bundle_runtime
+    /// Whether a bundled partial swap's replacement bundle is not a
+    /// synchronous ESM leaf. Its evaluation could then reach code (the
+    /// artifact, a top-level await) the bundled original never did, visibly
+    /// breaking the swap's equivalence promise. Raw packages are unindexed and
+    /// rest on the promise alone.
+    pub fn replacement_bundle_is_open(&self, chunk: ChunkId) -> bool {
+        self.bundled_partial_swaps.get(&chunk).is_some_and(|swap| {
+            !swap
+                .bundle_runtime
                 .module_kind
                 .supports_static_esm_closure()
-                && !swap.bundle_runtime.has_top_level_await
-                && swap.bundle_runtime.static_requests.is_empty()
+                || swap.bundle_runtime.has_top_level_await
+                || !swap.bundle_runtime.static_requests.is_empty()
         })
     }
 

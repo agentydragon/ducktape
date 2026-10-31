@@ -96,6 +96,11 @@ The importer consumes the `oci_image` targets through `oci_layout_rloc`, combine
 descriptors with the rendered tags, and streams each distinct blob once. It does not materialize
 Docker-format `oci_load` tarballs.
 
+One background importer loads the next image group while startup applies and waits for the preceding
+group: PKI during KubeVirt installation, service images during PKI readiness, and guest images during
+fixture application. Each workload waits for its own images before being applied, preventing registry
+pulls. Imports remain serial, and the importer joins before k3s teardown even when startup fails.
+
 The Pod runner uses the production `//agentplane/runner:disk_image` volume at `/run/agentplane/runner`, with a
 tools image for the rest. Pod suites import `:runner_harnesses_image`, which adds pinned Claude Code and Codex.
 VM-only targets omit the Pod runner image:
@@ -158,7 +163,8 @@ success receipt from that guest's own console. No separate root image or extra V
 
 Workspace ownership, native identity/security settings, systemd and kernel resource properties, and
 detached-child cleanup run through ordinary Session setup and retained History in both harness
-scenarios. The sampler boots alongside the two credential guests; the three sandbox/OOM guests follow.
+scenarios. The sampler, two credential guests and three sandbox/OOM guests boot together. The suite
+requests an 8-unit worker so the guests and k3s services fit without waiting for another group to exit.
 
 The guest loads the ACPI button/evdev drivers and runs BusyBox `acpid`. On a power-button event,
 the listener requests `systemctl poweroff`. Systemd stops the runner and its execution services,

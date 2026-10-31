@@ -310,12 +310,6 @@ func ParseSessionSpec(defaults *runnerpb.SessionSpec, fields map[string]any) (*r
 	return merged, nil
 }
 
-// MarshalProtoJSON returns the canonical protobuf JSON representation used by
-// the Python routes' MessageToDict response conversion.
-func MarshalProtoJSON(message proto.Message) ([]byte, error) {
-	return protojson.Marshal(message)
-}
-
 // RunnerConfig configures per-call control Service connections.
 type RunnerConfig struct {
 	Namespace      string

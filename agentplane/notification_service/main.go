@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -20,6 +21,7 @@ import (
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/actions"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api"
@@ -33,7 +35,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/webhook"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
@@ -104,12 +105,17 @@ func run(ctx context.Context, c config) error {
 	if err != nil {
 		return err
 	}
-	listener, err := net.Listen("tcp", net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
+	grpcListener, err := net.Listen("tcp", net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
 	if err != nil {
-		return err
+		return fmt.Errorf("gRPC listener: %w", err)
 	}
-	defer listener.Close()
-	return serve(ctx, c, deps, listener)
+	defer grpcListener.Close()
+	httpListener, err := net.Listen("tcp", net.JoinHostPort(c.Host, strconv.Itoa(c.HTTPPort)))
+	if err != nil {
+		return fmt.Errorf("HTTP listener: %w", err)
+	}
+	defer httpListener.Close()
+	return serve(ctx, c, deps, grpcListener, httpListener)
 }
 
 func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
@@ -120,7 +126,7 @@ func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
 	return db, nil
 }
 
-// newRoutes is the listener's HTTP routes: the HTTP form of `Notifications` under /v1/ (served by agentFacade), the
+// newRoutes is the HTTP listener's routes: the HTTP form of `Notifications` under /v1/ (served by agentFacade), the
 // webhook when GitHub is configured, and the agent documentation, which needs neither the database nor a peer.
 func newRoutes(agentFacade, webhookHandler http.Handler) (http.Handler, error) {
 	agentDocs, err := fs.Sub(docs.Agents, "agents")
@@ -136,10 +142,9 @@ func newRoutes(agentFacade, webhookHandler http.Handler) (http.Handler, error) {
 	return routes, nil
 }
 
-// serve answers on listener until ctx ends or a worker or the listener fails. gRPC and the HTTP routes share the
-// listener: the servicers are gRPC, and the HTTP form of `Notifications`, its documentation and the webhook are
-// plain HTTP.
-func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) error {
+// serve answers until ctx ends or a worker or a listener fails: the servicers on grpcListener, and the HTTP form of
+// `Notifications`, its documentation and the webhook on httpListener.
+func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListener net.Listener) error {
 	resolver, err := auth.NewResolver(deps.Reviews, c.TokenAudience, []string{c.Namespace})
 	if err != nil {
 		return err
@@ -184,9 +189,8 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 		return err
 	}
 	defer actionsConnection.Close()
-	watchPeriod := time.Duration(c.PolicyWatchPeriodSeconds) * time.Second
-	sendPolicy := inboxaccess.NewPolicy(reader.StaleAfterCycles * watchPeriod)
-	policyWatches, err := sendPolicy.Watch(deps.Policies, c.Namespace, watchPeriod)
+	sendPolicy := inboxaccess.NewPolicy()
+	policyWatches, err := sendPolicy.Watch(deps.Policies, c.Namespace)
 	if err != nil {
 		return err
 	}
@@ -234,16 +238,18 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 	operator := api.NewNotificationsOperator(options)
 	// A worker that stops ends the process, so a ready replica's workers are running.
 	health := probes.New(db, hub)
-	grpcServer := grpc.NewServer(observability.GRPCServerOption())
+	methods := auth.HealthMethods()
+	// A watch carries no deadline of its own, so the request timeout bounds its admission.
+	maps.Copy(methods, api.Methods(options))
+	grpcServer := grpc.NewServer(append(methods.ServerOptions(options.RequestTimeout), observability.GRPCServerOption())...)
 	notificationspb.RegisterNotificationsServer(grpcServer, api.NewNotifications(options))
 	operatorpb.RegisterNotificationsOperatorServer(grpcServer, operator)
 	healthpb.RegisterHealthServer(grpcServer, health)
-	// The facade is the listener's own client: its gRPC calls come back to the gRPC server mounted on it, so the
-	// servicers authenticate every request. It outlives the termination signal, so that calls admitted before it
+	// The facade is the gRPC listener's own client, so the servicers authenticate every request. It outlives the termination signal, so that calls admitted before it
 	// finish while draining.
 	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacade()
-	agentFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), 0, notificationspb.RegisterNotificationsHandlerFromEndpoint)
+	agentFacade, err := facade.NewHandler(facadeContext, grpcListener.Addr().String(), 0, notificationspb.RegisterNotificationsHandlerFromEndpoint)
 	if err != nil {
 		return err
 	}
@@ -252,7 +258,6 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 		return err
 	}
 	server := &http.Server{Handler: observability.HTTPHandler(routes), ReadHeaderTimeout: readHeaderTimeout}
-	facade.MountGRPC(server, grpcServer)
 
 	// Each worker follows the commits on its own signal.
 	signals := make([]<-chan struct{}, workers)
@@ -270,8 +275,8 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 		Dispatcher: dispatcherpb.NewSessionDispatcherClient(dispatcherConnection),
 		Actions:    actionsSource, GitHub: githubSource, Settings: c.Settings,
 	}
-	failed := make(chan error, workers+1)
-	// The workers outlive the listener, so a claim in progress is released before the database closes: the
+	failed := make(chan error, workers+2)
+	// The workers outlive the listeners, so a claim in progress is released before the database closes: the
 	// deferred cancel ends them, and the wait after it returns once they have released their claims.
 	workContext, stopWorkers := context.WithCancel(context.WithoutCancel(ctx))
 	running := runWorkers(workContext, workers, failed, func(ctx context.Context, index int) error {
@@ -279,7 +284,8 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 	})
 	defer running.Wait()
 	defer stopWorkers()
-	go func() { failed <- fmt.Errorf("listener: %w", server.Serve(listener)) }()
+	go func() { failed <- fmt.Errorf("gRPC listener: %w", grpcServer.Serve(grpcListener)) }()
+	go func() { failed <- fmt.Errorf("HTTP listener: %w", server.Serve(httpListener)) }()
 
 	var result error
 	select {
@@ -292,9 +298,11 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 	operator.Drain()
 	stopped, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 	defer cancel()
+	// The facade's calls are gRPC calls, so the HTTP listener stops first.
 	if err := server.Shutdown(stopped); err != nil {
 		server.Close()
 	}
+	graceful.Stop(stopped, grpcServer)
 	return result
 }
 

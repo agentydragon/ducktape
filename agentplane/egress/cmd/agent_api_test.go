@@ -15,9 +15,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-// The facade is the listener's own client: its gRPC call must come back to the gRPC server mounted
-// on the listener it was sent from.
-func TestAgentAPIAnswersTheRulesFacadeThroughItsOwnListener(t *testing.T) {
+func TestAgentAPIAnswersTheRulesFacadeAndDocumentation(t *testing.T) {
 	hop, err := auth.NewResolver(api.TokenReviews(), testAudience, []string{"test-ns"})
 	if err != nil {
 		t.Fatal(err)
@@ -28,13 +26,13 @@ func TestAgentAPIAnswersTheRulesFacadeThroughItsOwnListener(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	server, err := newAgentAPI(ctx, listener.Addr().String(), identity.NewVerifier(hop, nil), policy.NewIndex(0),
+	server, err := newAgentAPI(ctx, identity.NewVerifier(hop, nil), policy.NewIndex(),
 		fstest.MapFS{"llms.txt": {Data: []byte("# index")}}, []byte("{}"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() { _ = server.Close() })
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
 
 	get := func(path, authorization string) (int, []byte) {
 		t.Helper()

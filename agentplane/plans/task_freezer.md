@@ -13,8 +13,8 @@ Deferred by the operator on 2026-10-10. Revisit when the operator asks.
 
 ### `WORKLOAD_AUDIENCE_RENAME` — rename the `agentplane-egress` audience
 
-`workload_auth/README.md` calls `agentplane-egress` a compatibility audience that may become
-`agentplane-workload`. Renaming needs every verifier to accept both until running Sandbox Pods carry
+Sandbox workload tokens carry the `agentplane-egress` audience (`workload_auth/audience.py`), named for
+one of its verifiers; it could become `agentplane-workload`. Renaming needs every verifier to accept both until running Sandbox Pods carry
 the new projected token, or a Sandbox restart: an accept-both release, then dropping the old audience
 once every Sandbox Pod started after that release.
 
@@ -116,10 +116,6 @@ Extract from concrete repeated source implementations, not a hypothetical univer
 ### `HOME_ASSISTANT_NOTIFICATIONS` — entity and event subscriptions
 
 On an operator-selected source/use case. Define bounded entity/event filters, retained state versus edge semantics and authorized source access first.
-
-### `CRON_NOTIFICATIONS` — scheduled notifications for agents
-
-On scheduling demand. Review missed-tick/timezone/overlap policy before implementing durable schedules; it does not authorize wake.
 
 ### `KUBERNETES_MONITORING` — agents observe rollout progress and outcomes
 
@@ -279,10 +275,9 @@ Requires a fresh operator product/architecture decision. These alternatives are 
 
 ### `RUNNER_STATE_BOUNDARY_RETHINK` — should the runner own durable state?
 
-The central-sampling portion is now owned by active `CENTRAL_SAMPLER_V1` in
-[task DAG](task_dag.md#harness_placement_design--sampler-placement-and-state-authority), informed by
-the completed Codex placement and Postgres harness spikes (operator, 2026-10-27). Do not create a competing authority
-decision here. A standalone redesign of legacy Sandbox-hosted runners remains deferred until explicitly
+The central-sampling portion shipped as the opt-in [central sampler](../x/central_sampler/README.md)
+([placement decision](sampling_outside_sandboxes.md#accepted-central-sampler-v1)); do not create a
+competing authority decision here. A standalone redesign of legacy Sandbox-hosted runners remains deferred until explicitly
 selected. Central-admission implementation still waits for the reviewed authority design. Transport direction
 is settled separately by the [runner control](../docs/runner_control.md), which currently retains
 runner durability.
@@ -422,3 +417,18 @@ Claude runs one process per Session; Codex runs one app-server per Runner for al
 Sessions, so reaping that process touches every one of them. Reaping must account for native children and
 background work ([child evidence](../native/docs/child_sessions.md),
 [background work](../docs/background_work.md)), which the current busy signal does not track.
+
+## Frontend
+
+### `FRONTEND_QUERY_CACHE` — a query cache for ad-hoc fetches
+
+**Frozen; operator, 2026-10-30: think about it later.** About eight fetch-in-`useEffect` blocks with
+manual cancellation guards, a `setInterval` poll and a hand-built Action request cache could become
+TanStack Query (with `openapi-react-query` over the existing `openapi-fetch` client). See the
+[idiom audit](standard_idioms.md).
+
+### `FRONTEND_CONNECT_ES` — typed streaming clients
+
+**Frozen; operator, 2026-10-30: think about it later.** Backend watches are read as grpc-gateway NDJSON
+with hand-written ProtoJSON decoding; Connect-ES streaming clients generated from the same protos would
+replace that, at the cost of revisiting the app's deliberate gateway choice (`app/README.md`).

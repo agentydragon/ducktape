@@ -30,6 +30,7 @@ from agentplane.runner import configuration
 from agentplane.runner.configuration import (
     CONFIG_FILE,
     LAUNCH_FILE,
+    CodexReadiness,
     Configuration,
     ContainerExecutor,
     Endpoint,
@@ -140,12 +141,13 @@ class ServiceUrls:
 
 def service_urls(env: Environment, *, egress_api_service: ServiceRef | None = None) -> ServiceUrls:
     actions_service = actions.service(env.namespace)
+    notifications_http = notifications.http_service(env.namespace)
     egress_api = egress_api_service or egress.agent_api(env.namespace)
     egress_port = f":{egress_api.port.number}" if egress_api.port.number != 80 else ""
     return ServiceUrls(
         egress=f"http://{egress_api.fqdn}{egress_port}",
         actions=f"http://{actions_service.fqdn}:{actions_service.port.number}",
-        notifications=f"http://{notifications.service(env.namespace).fqdn}:8080",
+        notifications=f"http://{notifications_http.fqdn}:{notifications_http.port.number}",
     )
 
 
@@ -217,6 +219,8 @@ class RunnerSandbox(Construct):
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
         session_reconcile_concurrency: int | None = None,
+        pod_codex_readiness: CodexReadiness | None = None,
+        vm_codex_readiness: CodexReadiness | None = None,
         disable_otel_sdk: bool = False,
     ) -> None:
         super().__init__(scope, id)
@@ -242,6 +246,7 @@ class RunnerSandbox(Construct):
             trust_mounts=trust_mounts,
             egress_api_service=egress_api_service,
             session_reconcile_concurrency=session_reconcile_concurrency,
+            codex_readiness=pod_codex_readiness,
             disable_otel_sdk=disable_otel_sdk,
         )
         if env.vm_sandboxes:
@@ -274,6 +279,7 @@ class RunnerSandbox(Construct):
                 platform_instructions=platform_instructions(env, egress_api_service=egress_api_service),
                 harness_env=template.agent_cli_env,
                 session_reconcile_concurrency=session_reconcile_concurrency,
+                codex_readiness=vm_codex_readiness,
             )
 
     def add_platform_resources(self) -> None:
@@ -321,6 +327,7 @@ class RunnerTemplate(Construct):
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
         egress_api_service: ServiceRef | None = None,
         session_reconcile_concurrency: int | None = None,
+        codex_readiness: CodexReadiness | None = None,
         disable_otel_sdk: bool = False,
     ) -> None:
         super().__init__(scope, id)
@@ -337,6 +344,7 @@ class RunnerTemplate(Construct):
         self.image_pull_secret_name = image_pull_secret_name
         self.trust_mounts = trust_mounts if trust_mounts is not None else sandbox_pod.proxy_trust_mounts()
         self.session_reconcile_concurrency = session_reconcile_concurrency
+        self.codex_readiness = codex_readiness
         self.disable_otel_sdk = disable_otel_sdk
         self.agent_cli_env = agent_cli_environment(service_urls(env, egress_api_service=egress_api_service))
         if not env.isolated_codex_executor and executor_resources is not None:
@@ -420,6 +428,7 @@ class RunnerTemplate(Construct):
         config = Configuration(
             version=2,
             session_reconcile_concurrency=self.session_reconcile_concurrency,
+            codex_readiness=self.codex_readiness,
             state_dir=_STATE_DIR,
             initialization_cwd=_STATE_DIR,
             control=RunnerControl(
@@ -481,7 +490,7 @@ class RunnerTemplate(Construct):
                     # agentplane-workload EgressCredential derives from its name. Central
                     # substitutes the sidecar-only projected token; the ingress replaces
                     # that with its server-held LiteLLM virtual key after live
-                    # WorkloadPrincipal resolution.
+                    # workload authentication.
                     k8s.EnvVar(name="ANTHROPIC_AUTH_TOKEN", value=_WORKLOAD_PLACEHOLDER),
                     k8s.EnvVar(name="OPENAI_API_KEY", value=_WORKLOAD_PLACEHOLDER),
                 ],

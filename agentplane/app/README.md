@@ -258,14 +258,18 @@ whether the page can open a new one; it does not determine whether a retained Hi
 in the table. Session creation displays progress and prevents duplicate clicks while the request
 runs.
 
+Each `/live/sandboxes`, `/live/sandboxes/{name}` and `/live/threads` snapshot is computed once per change for every
+stream with the same parameters and sent to all of them; a stream skips a snapshot identical to its last one.
+Only the Action policy list, which depends on the viewer, is computed per stream.
+
 A snapshot is not a delta, and there is no resumable id: a relist replaces a kind wholesale and a
-`resourceVersion` expires, so a reconnecting tab is served a fresh snapshot instead. That leaves
-one failure to handle honestly -- a watch that has wedged looks exactly like a cluster where
-nothing is happening -- so every frame carries how long ago each kind last completed a cycle,
-against the same three-cycle bound the egress proxy's readiness uses, and a page whose data has
-stopped moving says so rather than showing it as live: the browser's connection and that verdict
-both feed the one connection indicator in the topbar, a spinner whose tooltip names each stream
-that is not current and why. Every stream, and the server's watch behind it, retries by itself.
+`resourceVersion` expires, so a reconnecting tab is served a fresh snapshot instead. Every frame
+carries the server's watch health: `healthy` once its informers have synced and while no kind's
+list or watch is failing, and each failing kind with its error and since when -- the same rule the
+egress proxy's readiness uses. A page whose server watch is failing says so rather than showing
+its data as live: the browser's connection and that verdict both feed the one connection
+indicator in the topbar, a spinner whose tooltip names each stream that is not current and why.
+Every stream, and the server's watch behind it, retries by itself.
 
 ## Authentication and authorization
 
@@ -303,13 +307,16 @@ since its response writer implements no `Flush()`.
 
 ## Sidebar inventory updates
 
-The sidebar subscribes to `/live/threads`: whole operational snapshots of all Sandboxes and a
-window of the Thread list, newest first. The window holds a page of Threads and grows a page at a
-time on request; a search (name, Sandbox, or the start of the ID) and the archived switch narrow it
-on the server, and the Thread a page has open rides along wherever it falls, so every Thread on
-screen stays current without the browser holding the whole list. `GET /threads` pages the same list
-under opaque tokens bound to their filters. Kubernetes watch invalidations and
-the existing PostgreSQL thread notifications both refresh that snapshot. A listener reconnect
+The sidebar subscribes to `/live/threads`: whole snapshots of a window of the Thread list, newest
+first. The window holds a page of Threads and grows a page at a time on request; a search (name,
+Sandbox, or the start of the ID) and the archived switch narrow it on the server, and the Thread a
+page has open rides along wherever it falls, so every Thread on screen stays current without the
+browser holding the whole list. `GET /threads` pages the same list under opaque tokens bound to
+their filters. The frame carries Threads only, so only the PostgreSQL thread notifications, which
+History summary changes also send, refresh it, and Kubernetes changes do not. The browser reads
+Sandboxes only from its one `/live/sandboxes` stream, which the whole shell shares (sidebar, landing
+page, Sandbox list, and a Thread's top bar and composer), so two views of one Sandbox cannot
+disagree. A listener reconnect
 rereads PostgreSQL, including writes whose notifications were missed while disconnected. There
 is no sidebar polling loop or new notification service.
 
@@ -613,7 +620,7 @@ one. Which lists the service enforces is its contract
   key or workload token: a harness sends the inert placeholder the `agentplane-workload`
   EgressCredential derives from its name, central substitutes the sidecar-only Pod-bound token,
   and the authenticated LLM ingress replaces it with its one server-held key after resolving the
-  `WorkloadPrincipal` the token proves. The model endpoint remains governed by the credentialless egress design
+  workload identity the token proves. The model endpoint remains governed by the credentialless egress design
   in [the ADR](../docs/adr_sandbox_proxy_gateway.md) rather than excepted from it.
 - **No gRPC-Web or Connect surface for browsers:** the app stays the one HTTP surface; the schema is
   shared through proto-JSON and generated types instead.

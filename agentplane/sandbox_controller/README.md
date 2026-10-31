@@ -18,7 +18,8 @@ Storage layouts, compatible attachments and retained identities: [Sandbox storag
 
 `runner_certificate_issuer` names the cert-manager Issuer used for per-incarnation `Certificate`
 requests. cert-manager owns key generation and renewal. The controller waits for the matching
-TLS Secret before starting a runner and binds its credential ID to the current Pod or VMI UID.
+TLS Secret before starting a runner and binds its credential ID to the current Pod or VMI UID in
+`status.runnerCredential`.
 Replacement workloads get distinct Secret names. trust-manager supplies the trusted roots.
 See [authentication and cutover](../docs/runner_control.md#authentication-and-incarnation-binding).
 
@@ -42,8 +43,11 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
 - [`workspace.go`](workspace.go): workspace layout validation, its PVC creation record and persisted claim binding.
 - [`identity.go`](identity.go): the Sandbox's ServiceAccount and `PolicyBinding`, and the
   conflicts that keep a Pod from starting. The `PolicyBinding` types are the Policy Controller's.
-- [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace and, of the kinds
-  it creates, to objects carrying the Sandbox label.
+- [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace.
+- [`cache.go`](cache.go): the cache holds only objects carrying the Sandbox label (Secrets,
+  ConfigMaps, Services, Certificates and the other kinds it creates or watches) plus Pod Events
+  and the Gateway's connection Leases. RBAC cannot select by label, so the Role still grants
+  `list`/`watch` on those kinds.
 
 Ordinary child resources use narrow server-side apply updates after an uncached ownership
 check. Creation is exclusive, so a same-name collision cannot adopt a foreign resource. PVCs
@@ -99,9 +103,9 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   A restart between the call and the write ends the same way, at the cost of one incarnation.
 - **`RunnerConnected` watches the Lease.** A new connection, a different runner Pod or a change in
   the runner's published facts (quiesce stage, idle-since, bootstrap state, setup state, autosuspend
-  blockers, valid only while the Lease's `pod-uid` is the incarnation's) enqueues the Sandbox;
-  renewals do not. Time is not an event, so the moment a live connection would lapse, and a lapsed
-  one, are requeued.
+  blockers, valid only while the Lease's `pod-uid` is the incarnation's) enqueues the Sandbox, as does
+  a renewal that revives a lapsed connection; other renewals do not. Time is not an event, so the
+  moment a live connection would lapse is requeued. A lapsed or pending connection is not polled.
 - **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Quiescing`. To give up on the seal,
   remove the finalizer by hand: the PVC is owned, so it goes with the Sandbox, and the Pod or VM
   with it.

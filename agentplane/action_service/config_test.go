@@ -53,7 +53,6 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c.DatabaseURL == "" || c.Host != "0.0.0.0" || c.Port != 8080 || len(c.ReaderAccounts) != 0 || c.operatorsEnabled() ||
-		c.PolicyResyncSeconds != 300 || c.IntegratedConnectionService ||
 		c.GitHubVisibility != (gitHubVisibility{APIBaseURL: "https://api.github.com", CacheTTLSeconds: 86400}) {
 		t.Errorf("settings: %+v", c)
 	}
@@ -144,7 +143,6 @@ func TestThePolicySettingsAreRead(t *testing.T) {
 	c, err := loadTestConfig(t, `token_audience: test-actions
 policy_namespace: test-policies
 caller_service_account_namespaces: [test-callers, test-more-callers]
-policy_resync_seconds: 60
 github_visibility:
   api_base_url: http://github.test.invalid/api
 `, settingPrefix+"GITHUB_VISIBILITY__CACHE_TTL_SECONDS=0.5")
@@ -152,7 +150,6 @@ github_visibility:
 		t.Fatal(err)
 	}
 	if c.PolicyNamespace != "test-policies" || !slices.Equal(c.CallerServiceAccountNamespaces, []string{"test-callers", "test-more-callers"}) ||
-		c.PolicyResyncSeconds != 60 ||
 		c.GitHubVisibility != (gitHubVisibility{APIBaseURL: "http://github.test.invalid/api", CacheTTLSeconds: 0.5}) {
 		t.Errorf("settings: %+v", c)
 	}
@@ -242,7 +239,6 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 		"no audience":             strings.Replace(requiredFile, "token_audience: test-actions\n", "", 1),
 		"no caller namespaces":    strings.Replace(requiredFile, "[test-agentplane]", "[]", 1),
 		"no policy namespace":     strings.Replace(requiredFile, "policy_namespace: test-agentplane\n", "", 1),
-		"policy resync too short": requiredFile + "policy_resync_seconds: 1\n",
 		"negative visibility TTL": requiredFile + "github_visibility: {cache_ttl_seconds: -1}\n",
 		"unknown visibility key":  requiredFile + "github_visibility: {token: never-print-this}\n",
 		"reader of a word":        requiredFile + "reader_accounts: [never-print-this]\n",
@@ -306,24 +302,11 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	}
 }
 
-func TestRetiredIntegratedConnectionSettingCannotEnableServing(t *testing.T) {
-	for _, file := range []string{"", "integrated_connection_service: false\n"} {
-		c, err := loadTestConfig(t, requiredFile+file)
-		if err != nil || c.IntegratedConnectionService {
-			t.Fatalf("disabled legacy setting: config=%+v err=%v", c, err)
-		}
-	}
-	if _, err := loadTestConfig(t, requiredFile+"integrated_connection_service: true\n"); err == nil || !strings.Contains(err.Error(), "retired") {
-		t.Fatalf("accepted legacy setting enabled: %v", err)
-	}
-}
-
-func TestInvalidMCPWaitsAreRefused(t *testing.T) {
+func TestInvalidDirectWaitsAreRefused(t *testing.T) {
 	for _, file := range []string{
-		"max_wait_seconds: -1\n",
-		"max_wait_seconds: 181\n",
+		"direct_wait_seconds: -1\n",
 		"direct_wait_seconds: .inf\n",
-		"max_wait_seconds: .nan\n",
+		"direct_wait_seconds: .nan\n",
 	} {
 		if _, err := loadTestConfig(t, requiredFile+file); err == nil {
 			t.Fatalf("accepted %s", file)

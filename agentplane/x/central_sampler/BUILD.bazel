@@ -4,6 +4,7 @@ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 # gazelle:resolve py agentplane.x.central_sampler.sampler_pb2 //agentplane/x/central_sampler:sampler_pb2
 # gazelle:resolve py agentplane.x.central_sampler.sampler_pb2_grpc //agentplane/x/central_sampler:sampler_pb2_grpc
 # gazelle:exclude test_live_provider.py
+# gazelle:exclude test_live_anthropic_provider.py
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
@@ -112,6 +113,41 @@ live_openai_py_test(
     ],
 )
 
+# Direct organization Anthropic Messages acceptance; manual and bounded. The live macro name is
+# retained because it also owns pytest's shared mock/live target mechanics.
+live_openai_py_test(
+    name = "test_live_anthropic_provider",
+    size = "large",
+    srcs = ["test_live_anthropic_provider.py"],
+    credential_secret = "ANTHROPIC_API_KEY",
+    data = ["@agentplane_codex_cli_linux_x64//:files"],
+    live_env = ["ANTHROPIC_MODEL"],
+    requires_docker = True,
+    tags = ["manual"],
+    deps = [
+        ":conftest",
+        ":settings",
+        ":testing",
+        ":testing_store",
+        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner:runner_service_pb2",
+        "//agentplane/testing:codex_fixtures",
+        "//agentplane/x/central_sampler:sampler_pb2",
+        "//agentplane/x/central_sampler:sampler_pb2_grpc",
+        "//util/testing:sqlalchemy_engines",
+        "//util/testing:undeclared_outputs",
+        "@pypi//grpcio",  # keep: mypy follows generated gRPC interfaces
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//types_grpcio",  # keep: mypy follows generated gRPC interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)
+
 py_test(
     name = "test_service",
     size = "medium",
@@ -139,6 +175,34 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_anthropic_service",
+    size = "medium",
+    srcs = ["test_anthropic_service.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":settings",
+        ":testing",
+        ":testing_store",
+        "//:conftest",
+        "//agentplane/native/testing:model_endpoint",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/runner:runner_service_pb2",
+        "//agentplane/x/central_sampler:sampler_pb2",
+        "//util/testing:sqlalchemy_engines",
+        "//util/testing:undeclared_outputs",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//types_grpcio",  # keep: mypy follows generated gRPC interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
 
@@ -295,21 +359,25 @@ go_library(
         "host.go",
         "image_preparation.go",
         "migration.go",
+        "native_context.go",
+        "native_migration.go",
+        "native_store.go",
         "notification.go",
         "output_truncation.go",
-        "provider.go",
-        "responses.go",
+        "protocol_adapter.go",
+        "provider_dispatch.go",
+        "provider_evidence.go",
         "runtime.go",
         "service.go",
         "settings.go",
         "store.go",
+        "tool_invocation.go",
         "tool_protocol.go",
         "types.go",
         "unified_exec.go",
         "view_image.go",
     ],
     embedsrcs = [
-        "codex/base_instructions.txt",
         "exec_description.txt",
         "codex/legacy_image_helper.txt",
         "codex/wait_description.txt",
@@ -318,14 +386,18 @@ go_library(
         "schema/0003_unified_exec_sessions.sql",
         "schema/0004_environment_context.sql",
         "schema/0005_code_session_epoch.sql",
+        "schema/0006_native_conversations.sql",
+        "schema/0007_status_checks.sql",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/x/central_sampler",
+    visibility = ["//agentplane/x/central_sampler/cmd:__pkg__"],
     deps = [
         ":sampler_go_proto",
         "//agentplane/executor:executor_go_proto",
         "//agentplane/grpc/bearer",
         "//agentplane/history_service:runner_ingress_go_proto",
         "//agentplane/postgres/go:postgres",
+        "//agentplane/postgres/go/lease",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
@@ -333,11 +405,15 @@ go_library(
         "//agentplane/proto:runner_go_proto",
         "//agentplane/runner:runner_service_go_proto",
         "//agentplane/workload_auth/go/auth",
+        "//agentplane/x/central_sampler/anthropic",
+        "//agentplane/x/central_sampler/protocol",
+        "//agentplane/x/central_sampler/responses",
         "@com_github_google_uuid//:uuid",
         "@com_github_invopop_jsonschema//:jsonschema",
         "@com_github_lib_pq//:pq",
         "@com_github_pressly_goose_v3//:goose",
         "@com_github_pressly_goose_v3//lock",
+        "@io_k8s_client_go//util/workqueue",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials/insecure",
@@ -355,6 +431,7 @@ go_test(
     name = "central_sampler_test",
     size = "medium",
     srcs = [
+        "anthropic_test.go",
         "codemode_description_test.go",
         "codemode_output_test.go",
         "codemode_protocol_test.go",
@@ -365,8 +442,9 @@ go_test(
         "host_test.go",
         "image_preparation_test.go",
         "integration_testmain_test.go",
+        "native_context_test.go",
+        "native_migration_test.go",
         "notification_test.go",
-        "provider_test.go",
         "runtime_lifecycle_test.go",
         "service_test.go",
         "settings_test.go",
@@ -390,10 +468,14 @@ go_test(
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/testing/postgres",
         "//agentplane/workload_auth/go/auth",
+        "//agentplane/x/central_sampler/anthropic",
+        "//agentplane/x/central_sampler/protocol",
+        "//agentplane/x/central_sampler/responses",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_client_go//util/workqueue",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",

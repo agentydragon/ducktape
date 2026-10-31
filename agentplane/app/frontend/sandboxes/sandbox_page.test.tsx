@@ -2,6 +2,7 @@
 import { MantineProvider } from "@mantine/core";
 import type { LangfuseSearchSettings, SandboxView, ThreadView, TraceSearchSettings } from "../schema";
 import { TEST_REASONING_EFFORTS, testModelCatalog } from "../testing/model_catalog";
+import { serveEventStreams } from "../testing/watch";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
@@ -65,9 +66,9 @@ const live = vi.hoisted(
         bindings: [],
         action_policy: null,
         updates_connected: true,
-        watch: { fresh: true, stale_after_seconds: 60, refreshed_seconds_ago: {} },
+        watch: { healthy: true, failing: {} },
       },
-      health: { fresh: true, stale_after_seconds: 60, refreshed_seconds_ago: {} },
+      health: { healthy: true, failing: {} },
       stream: {
         name: "Sandbox startup-test",
         connection: { phase: "live", since: 0 },
@@ -85,16 +86,6 @@ const readySandbox = live.snapshot.sandbox as SandboxView;
 const mutableSnapshot = live.snapshot as SandboxSnapshot;
 const readyPod = readySandbox.pod;
 const readyStatus = readySandbox.status;
-
-/** The Egress log panel stays mounted behind its tab and follows a stream that these tests never feed. */
-class SilentEventSource extends EventTarget {
-  static readonly CLOSED = 2;
-  readyState = 1;
-  constructor(readonly url: string) {
-    super();
-  }
-  close(): void {}
-}
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
@@ -207,7 +198,8 @@ async function render(
       ],
     })
 ): Promise<ReturnType<typeof vi.fn>> {
-  vi.stubGlobal("EventSource", SilentEventSource);
+  // The Egress log panel stays mounted behind its tab and follows a stream that these tests never feed.
+  serveEventStreams(() => undefined);
   fetchMock.mockImplementation((request: Request) => {
     const path = new URL(request.url).pathname;
     if (path === "/models") {

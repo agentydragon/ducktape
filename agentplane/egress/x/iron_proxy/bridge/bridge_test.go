@@ -24,7 +24,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	transformv1 "github.com/agentydragon/ducktape/agentplane/egress/x/iron_proxy/bridge/proto"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"google.golang.org/grpc"
@@ -98,12 +97,8 @@ func newTestBridge(t *testing.T) testBridge {
 		t.Fatal(err)
 	}
 
-	index := policy.NewIndex(time.Hour)
-	now := time.Now()
-	for _, kind := range []reader.Kind{policy.Credentials, reader.PolicySets, reader.PolicyBindings, policy.Secrets} {
-		index.Freshness.RecordCycle(kind, now)
-	}
-	index.Freshness.MarkSynced()
+	index := policy.NewIndex()
+	index.Health.MarkSynced()
 	index.PutCredential(resources.Credential{
 		Name:   "api",
 		Source: resources.SecretKey{Name: "keys", Key: "api"},
@@ -490,7 +485,7 @@ func TestTransformRequestReadinessRejectsBeforeTokenReview(t *testing.T) {
 
 func TestTransformRequestRequiresAvailablePolicyIndex(t *testing.T) {
 	lab := newTestBridge(t)
-	lab.index.Freshness.MarkDraining()
+	lab.index.Health.MarkDraining()
 	response, err := lab.client.TransformRequest(context.Background(), &transformv1.TransformRequestRequest{
 		Request: &transformv1.HttpRequest{
 			Method: http.MethodConnect,

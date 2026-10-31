@@ -6,7 +6,8 @@ dashed arrows are runner-initiated platform routes.
 
 The optional central sampler runs as its own Deployment and Service in staging and the
 [k3s acceptance scenarios](../system_tests/README.md#central-sampler), using the shared cdk8s
-construct, its own image and projected service-account credentials.
+construct and its own image. Responses models use the projected service-account token to call LLM
+ingress; selected Anthropic API models use a dedicated mounted key and a host-pinned Cilium egress rule.
 
 ## Session delivery
 
@@ -41,15 +42,22 @@ flowchart LR
     executor[Loopback Codex exec-server]
     history[History ingress and Thread fold]
     llm[LLM ingress]
-    provider[OpenAI-shaped Responses API]
+    responses[Responses API providers]
+    anthropic[Anthropic Messages API]
     dispatcher -->|Sampler gRPC: open, input, controls| sampler
     sampler -->|continuation, commands, evidence outbox| db
     sampler -->|typed execution RPCs| gateway
     gateway -->|mTLS Executor gRPC| runner
     runner -->|local Codex JSON-RPC over WebSocket| executor
     sampler -->|acknowledged outbox: RunnerIngress.Push| history
-    sampler -->|Session identity| llm --> provider
+    sampler -->|Responses API| llm -->|model API| responses
+    sampler -->|Anthropic Messages API| anthropic
 ```
+
+The staging picker gives direct Anthropic models only to the central sampler, keeping them out of the
+subscription-backed Codex and Claude harnesses. The Anthropic key is copied by ESO from the existing
+LiteLLM-owned secret and mounted only in the sampler container; Cilium pins direct API traffic to
+`api.anthropic.com` and its TLS server name. Responses calls retain the existing LLM ingress token path.
 
 The sampler lazily starts one shared Codex host process when code-mode work needs it and multiplexes
 logical Sessions through it. The host retains per-Session `store()` / `load()` values across cells

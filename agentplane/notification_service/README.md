@@ -74,13 +74,13 @@ flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (defaul
 and waiting for each watch write to clear transport backpressure; `watch_lease_s` (default 300) is how long a watch
 lasts before it ends with `reconnect_required`.
 `message_body_limit_bytes` (default 32768, at most 262144, which the database also holds) bounds a message body.
-`policy_watch_period_s` (default 60, at least 2) is how long each watch of PolicySets and PolicyBindings stays
-open; sends are refused once a watch has missed three. GitHub is on
+Sends are refused until the PolicySet and PolicyBinding informers have synced, and while either fails to list or
+watch. GitHub is on
 when any `github.*` setting is set, so a Secret without `github.app_id`, or the reverse, fails startup. A setting
 that fails validation stops startup without printing its value.
 
-One listener (`host`, `port`) serves gRPC (`Notifications`, `NotificationsOperator` and `grpc.health.v1`), the HTTP
-form of `Notifications` (the routes of [`notifications.proto`](notifications.proto); the operator service has none),
+The gRPC listener (`host`, `port`) serves `Notifications`, `NotificationsOperator` and `grpc.health.v1`. The HTTP
+listener (`host`, `http_port`) serves the HTTP form of `Notifications` (the routes of [`notifications.proto`](notifications.proto); the operator service has none),
 the agent documentation (`/llms.txt`, `/docs/agents/` and `/openapi.json`, the document generated from that proto,
 which answer without the database) and, when GitHub is on, `POST /v1/webhooks/github`. Health checks take no bearer: service `""` is readiness (the LISTEN
 connection is up and a query succeeds; it fails once the service is told to stop) and `livez` is liveness (the

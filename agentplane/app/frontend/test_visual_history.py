@@ -7,7 +7,14 @@ import pytest_asyncio
 import pytest_bazel
 from playwright.async_api import Page, expect
 
-from agentplane.app.frontend.testing.app import IDLE_THREAD, RUNNING_THREAD, SUSPENDED_THREAD, AgentplaneFixture, Scene
+from agentplane.app.frontend.testing.app import (
+    IDLE_THREAD,
+    RUNNING_THREAD,
+    SUSPENDED_THREAD,
+    UNNAMED_THREAD,
+    AgentplaneFixture,
+    Scene,
+)
 from agentplane.app.frontend.testing.visual_assertions import (
     _expand_tool_steps,
     _focus,
@@ -29,6 +36,139 @@ pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testi
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
+@pytest.mark.parametrize("viewport", [Viewport(width=828, height=866, device_scale_factor=1.25)], ids=["thread-switch"])
+async def test_switching_to_short_thread_keeps_history_compact(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.SHORT_THREAD_SWITCH_HISTORY)
+    page = view.page
+
+    # Measure the exact same seven rows on a different Thread before seeding the target Thread.
+    await app.mount_thread(UNNAMED_THREAD)
+    warmup_history = page.get_by_role("region", name="Thread history", exact=True)
+    await expect(warmup_history.locator("[data-history-row-key]")).to_have_count(7)
+    await expect(warmup_history).to_have_attribute("data-layout-settled", "true")
+    await wait_for_stable(page)
+    wide_width = round(await warmup_history.evaluate("element => element.clientWidth"))
+    await warmup_history.evaluate("element => { element.style.overflowY = 'scroll'; }")
+    await expect(warmup_history).to_have_attribute("data-layout-settled", "true")
+    await wait_for_stable(page)
+    narrow_width = round(await warmup_history.evaluate("element => element.clientWidth"))
+    warmup_rows = await warmup_history.locator("[data-history-row-key]").evaluate_all(
+        """rows => rows.map(row => {
+          const rect = row.getBoundingClientRect();
+          return { key: row.dataset.historyRowKey, height: rect.height };
+        })"""
+    )
+    heights = {row["key"]: row["height"] for row in warmup_rows}
+    assert len(heights) == 7, warmup_rows
+    for key in ("lifecycle:visual-lifecycle-before", "lifecycle:visual-lifecycle-after"):
+        await app.remember_history_row_height(IDLE_THREAD, wide_width, key, heights[key])
+    for key, height in heights.items():
+        await app.remember_history_row_height(IDLE_THREAD, narrow_width, key, height)
+
+    await app.mount_thread(RUNNING_THREAD)
+    thread_name = page.get_by_role("textbox", name="Thread name", exact=True)
+    await expect(thread_name).to_have_value("Running thread")
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await page.evaluate(
+        """() => {
+          const samples = [];
+          const observed = new WeakSet();
+          let active = true;
+          let frame = 0;
+          const resize = new ResizeObserver(() => sample());
+          const sample = () => {
+            const history = document.querySelector('[aria-label="Thread history"]');
+            if (!history) return;
+            const content = history.firstElementChild;
+            const rows = [...history.querySelectorAll('[data-history-row-key]')].map(row => {
+              const rect = row.getBoundingClientRect();
+              return { key: row.dataset.historyRowKey, top: rect.top, bottom: rect.bottom, height: rect.height };
+            });
+            samples.push({
+              route: window.location.hash,
+              rowCount: rows.length,
+              rows,
+              rowSpan: rows.length > 0 ? rows[rows.length - 1].bottom - rows[0].top : 0,
+              contentHeight: content?.getBoundingClientRect().height ?? 0,
+              scrollHeight: history.scrollHeight,
+              clientHeight: history.clientHeight,
+              historyClientWidth: history.clientWidth,
+              historyScrollTop: history.scrollTop,
+              windowScrollY: window.scrollY,
+              documentScrollTop: document.scrollingElement?.scrollTop ?? 0,
+            });
+          };
+          const attachTargets = () => {
+            const history = document.querySelector('[aria-label="Thread history"]');
+            if (!history) return;
+            for (const target of [history, history.firstElementChild, ...history.querySelectorAll('[data-history-row-key]')]) {
+              if (target && !observed.has(target)) {
+                observed.add(target);
+                resize.observe(target);
+              }
+            }
+          };
+          const mutations = new MutationObserver(() => {
+            attachTargets();
+            sample();
+          });
+          mutations.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+          const tick = () => {
+            if (!active) return;
+            attachTargets();
+            sample();
+            frame = requestAnimationFrame(tick);
+          };
+          frame = requestAnimationFrame(tick);
+          window.__shortThreadSwitchProbe = {
+            stop() {
+              active = false;
+              cancelAnimationFrame(frame);
+              mutations.disconnect();
+              resize.disconnect();
+              sample();
+              return samples;
+            },
+          };
+        }"""
+    )
+
+    target_thread = page.locator(".agentplane-thread-list-row[role='button']").filter(has_text="Short thread arriving")
+    await expect(target_thread).to_be_visible()
+    await target_thread.click()
+    await expect(thread_name).to_have_value("Short thread arriving")
+    await expect(history.locator("[data-history-row-key]")).to_have_count(7)
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await wait_for_stable(page)
+
+    row_keys = await history.locator("[data-history-row-key]").evaluate_all(
+        "rows => rows.map(row => row.dataset.historyRowKey)"
+    )
+    assert set(row_keys) == set(heights), row_keys
+    await view.check(context="short thread after switch")
+    await view.capture()
+
+    samples = await page.evaluate("() => window.__shortThreadSwitchProbe.stop()")
+    final = samples[-1]
+    assert any(sample["rowCount"] == 0 for sample in samples), "the switched-to Thread never mounted empty"
+    assert final["contentHeight"] < final["clientHeight"], final
+    assert final["contentHeight"] < 450, final
+    transient_geometry = [
+        sample
+        for sample in samples
+        if sample["rowCount"] == 7
+        and (
+            sample["rowSpan"] > 450
+            or sample["scrollHeight"] > sample["clientHeight"] + 1
+            or sample["historyScrollTop"] > 1
+            or sample["windowScrollY"] > 1
+            or sample["documentScrollTop"] > 1
+        )
+    ]
+    assert not transient_geometry, f"short history transiently expanded or scrolled: {transient_geometry[:8]}"
+
+
 @DESKTOP_AND_MOBILE
 async def test_single_tool_expansion_reserves_height(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(RUNNING_THREAD)
@@ -41,7 +181,7 @@ async def test_single_tool_expansion_reserves_height(view: VisualPage, app: Agen
     ).first
     await expect(control).to_contain_text("git branch -d stale")
     await control.scroll_into_view_if_needed()
-    await view.capture(name="single-tool-collapsed")
+    await view.capture(name=f"{view.capture_name}_single-tool-collapsed")
     before = await row.bounding_box()
     assert before is not None
     await control.click()
@@ -54,7 +194,7 @@ async def test_single_tool_expansion_reserves_height(view: VisualPage, app: Agen
     assert next_box is not None
     assert after["height"] > before["height"]
     assert next_box["y"] >= after["y"] + after["height"] - 1
-    await view.capture(name="single-tool-expanded")
+    await view.capture(name=f"{view.capture_name}_single-tool-expanded")
 
 
 @pytest.mark.parametrize(
@@ -119,7 +259,7 @@ async def test_composer_autosuspend_busy(view: VisualPage, app: AgentplaneFixtur
     await expect(details.get_by_role("link", name="Session running a turn", exact=True)).to_be_visible()
     await expect(details.get_by_role("link", name="Session running setup", exact=True)).to_be_visible()
     await expect(details).to_contain_text("Sandbox bootstrap running")
-    await view.capture(name="blockers")
+    await view.capture(name=f"{view.capture_name}_blockers")
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
@@ -866,12 +1006,26 @@ async def test_open_tool_calls_and_output_session_shell_calls_open(shell_calls: 
     view = shell_calls
     page = view.page
     await _open_tool_run(page)
+    history = page.get_by_role("region", name="Thread history")
     call = page.locator(".agentplane-step-details").filter(has_text="step 16")
     output_control = call.locator(".agentplane-output-disclosure .agentplane-disclosure-summary[aria-expanded='true']")
     output = call.locator(".agentplane-output-disclosure .agentplane-code-block")
     await _in_viewport(output_control)
     await expect(output).to_contain_text("step 16")
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await _focus(page, output)
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await history.evaluate("element => { element.scrollTop = element.scrollHeight; }")
+    await wait_for_stable(page)
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await expect(history).to_have_attribute("data-scroll-mode", "following")
+    await _in_viewport(output_control)
     await _in_viewport(output)
+    scroll = await history.evaluate(
+        "element => ({scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight})"
+    )
+    assert abs(scroll["scrollHeight"] - scroll["scrollTop"] - scroll["clientHeight"]) <= 1, scroll
+    await page.mouse.move(0, 0)
     await view.capture(target=view.page.locator("#app"))
 
 

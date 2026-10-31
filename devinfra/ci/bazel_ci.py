@@ -140,18 +140,6 @@ def _run_bazel(
     )
 
 
-def _race_targets(temp_dir: Path, test_query: Path) -> Path | None:
-    """Write the in-scope Go test labels, or return None when there are none."""
-    query = temp_dir / "go-test-query.txt"
-    query.write_text(f'kind("go_test rule", {test_query.read_text().strip()})\n')
-    go_tests = _capture(["bazel", "query", f"--query_file={query}"])
-    if not go_tests.strip():
-        return None
-    targets = temp_dir / "race-targets.txt"
-    targets.write_text(go_tests)
-    return targets
-
-
 def _select_targets(temp_dir: Path) -> tuple[bool, list[str], Path]:
     """Select full or bazel-diff affected targets and write the test query."""
     test_query = temp_dir / "test-query.txt"
@@ -198,6 +186,9 @@ def _select_targets(temp_dir: Path) -> tuple[bool, list[str], Path]:
     affected_query = temp_dir / "affected-query.txt"
     affected = temp_dir / "affected.txt"
 
+    # Cross-run base-hash caching was evaluated and deferred; see
+    # debug/bazel_diff_base_hash_cache.md for measurements and revisit conditions.
+    # Base/head queries share warm Bazel state: time the whole driver, not just base.
     _run(["git", "-c", "advice.detachedHead=false", "checkout", "--quiet", "--force", base])
     _run(["bazel-diff", "generate-hashes", "-w", str(Path.cwd()), "-b", "bazel", str(base_hashes)])
     _run(["git", "-c", "advice.detachedHead=false", "checkout", "--quiet", "--force", head_sha])
@@ -235,7 +226,7 @@ def _select_targets(temp_dir: Path) -> tuple[bool, list[str], Path]:
 
 
 def main() -> int:
-    """Run selection, test, build, and Go race tests, then finalize runner diagnostics."""
+    """Run selection, race-enabled tests and normal builds, then finalize runner diagnostics."""
     with tempfile.TemporaryDirectory(prefix="ducktape-bazel-ci-") as temp_path:
         temp_dir = Path(temp_path)
         try:
@@ -257,25 +248,7 @@ def main() -> int:
 
             _run_bazel("build", role="build", targets=targets)
             _probe("after-build")
-            if test_target_count == 0:
-                return 0
-
-            race_targets = _race_targets(temp_dir, test_query)
-            if race_targets is None:
-                print("No Go tests in scope -- skipping race detection.")
-                return 0
-
-            race_result = _run_bazel(
-                "test",
-                role="race",
-                targets=[f"--target_pattern_file={race_targets}"],
-                extra_flags=("--build_metadata=DISABLE_TARGET_TRACKING=true", "--@io_bazel_rules_go//go/config:race"),
-                check=False,
-            )
-            if race_result.returncode == 4:
-                print("No runnable Go tests after tag filtering; skipping race detection.")
-                return 0
-            return race_result.returncode
+            return 0
         finally:
             _finalize_probe()
 

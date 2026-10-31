@@ -276,9 +276,8 @@ The scripted model turn exercises remote shell and patch, then continues in a fr
 from Postgres, without a native rollout or second Runner conversation journal. The database retains
 actual provider requests/responses, including opaque encrypted reasoning, and correlated tool intents
 and results. An independent full upstream Codex consumer also accepts the scripted wire. This does
-not establish live provider or subscription compatibility. The recommendation favors central upstream
-Codex for broad compatibility today; the custom loop is a candidate if its bounded completed-cell
-checkpoints and tool contract suffice.
+not establish live provider or subscription compatibility. The operator then chose a custom loop
+([central sampler](../x/central_sampler/README.md)).
 
 Crash checks distinguish committed intent, dispatch, effect and returned result. Database-clock leases
 and ownership generations fence stale sampler writes. Postgres cannot atomically commit a shell side
@@ -297,20 +296,6 @@ Compaction is a separate extension. Instruction discovery, persistent JavaScript
 skills/MCP, approvals, hooks, memory, History export and frontend tracing remain omitted. A frontend
 trace was not an acceptance gate: the operator clarified that existing Langfuse links already provide
 partial visibility. Neither extension establishes production replacement or deployment.
-
-### Model exchange visibility
-
-A custom central sampler owns the request/response boundary before native adapters translate it.
-Merely relocating upstream Codex does not expose every model payload through app-server; equivalent
-evidence would need model-client instrumentation or an ingress capture path. Record a model-exchange ID linked to Session, turn and tool IDs, with ordered streaming parts,
-completion/error, usage and timing. Keep the request actually sent distinct from assembled input,
-frontend projections, and a recovered or retried attempt. This lets the frontend show prompts,
-instruction/context sources, compaction and tool results without inferring the model exchange from
-SDK events. Preserve opaque provider continuation data needed for resume. Store model
-payloads without substituted credentials under conversation authorization and an explicit retention policy; do not put auth headers
-or credential-bearing URLs in frontend traces. Central ownership must still bound buffering and apply
-backpressure when storage or a viewer is slow. The spike should show what fidelity upstream's API
-already exposes and what a fork/custom loop gains.
 
 ## Claude
 
@@ -339,66 +324,23 @@ Alternatives to compare:
   compatibility was tested here. Agentplane owns the tool/context loop and persistence; presenting
   a Claude identity does not supply Claude's built-in tool behavior.
 
-## Accepted central sampler v1
-
-Operator agreement, 2026-10-27: implement an independent central code-mode sampler with its own
-database and standalone API. Dispatcher admits/routes central commands directly to it; tools use
-sampler → Gateway proxy → mTLS Executor in Runner → loopback exec-server. Wrapped Codex and Claude keep execution
-and sampling together on their existing paths. Experimental code lives under `x/`; existing native
-Session state is not migrated.
-
-Operator request, 2026-10-28: rewrite the sampler in Go. This includes the service, provider/tool
-loop, persistence and History exporter. Preserve the prototype's API, PostgreSQL state,
-persistence/failure semantics and acceptance scenarios. The pinned upstream JS host remains a
-separate process from the Go service.
-
-Operator selection, 2026-10-28: enable the optional shared cdk8s workload in staging, offering the
-existing Codex models, and use that construct in k3s acceptance tests. One lazy Codex host process
-multiplexes many logical sampler Sessions and retains per-Session `store()` / `load()` values across
-cells and idle turns. Each Session keeps its upstream protocol-session ID across idle drivers and
-lease generations; active owner and executor binding are separate. Each code-mode cell runs in a
-fresh V8 isolate/thread with no JS globals shared across cells. Provider continuation stays in the
-sampler, and Gateway delegates
-remain scoped per Session. Pod CPU/memory limits bound the Go service and shared host in aggregate.
-Stronger kernel-enforced isolation for cells or Sessions is deferred for future evaluation.
-
-The selected provider scope is OpenAI-shaped Responses/code mode with pinned Codex 0.162.1 host
-and executor. Compaction, wait, stdin and interrupts are required. Standing instructions are
-supported; remote AGENTS.md discovery is useful but deferred. Executor replacement is deferred:
-new Sessions bind one Sandbox UID/incarnation. See the [API](../x/central_sampler/sampler.proto),
-[service contract](../x/central_sampler/SPEC.md) and active nodes in [the DAG](task_dag.md).
-
-The sampler owns continuation not represented in History. It exports critical reasoning, text,
-tool and lifecycle Events plus underlying evidence through existing RunnerIngress. Public Session
-ID is the inference identity, with Sandbox/incarnation identifying the executor. Central requests
-can carry a trusted Session metadata claim into Langfuse. Request/response evidence and normalized
-frontend projection are distinct; Thread remains a lossy view for display.
-
-### Coexistence and history across backends
-
-Keep wrapping harnesses we do not own as an independently usable backend, including official
-Claude and native Codex. The operator selected this transitional capability independently of the
-custom loop; external hosted agents and MCP clients similarly remain useful edges. No custom
-sampler success is a reason to retire wrapped harnesses or silently migrate their state.
-
-Provider APIs and harness JSON interfaces expose different facts. A common frontend needs a common
-projection, but native Codex does not expose everything a model did inside JS cells. Preserve raw
-backend-specific evidence and opaque continuation without inventing absent details. Provider context,
-human-visible history and execution-effect evidence serve different purposes: compaction can change
-context without erasing history. Source-linked normalized Events extend the existing projection;
-they do not claim a universal lossless transcript. Broader provider/history design remains separate.
-
-The gated Claude native remote-tools investigation and custom Claude sampler experiment remain
-independent branches. A later Claude sampler could share this code-mode runtime after prompting and
-contract characterization. CLIProxyAPI translation/cloaking alone does not supply native tool,
+The gated Claude native remote-tools investigation and a custom Claude subscription sampler remain
+independent branches. CLIProxyAPI translation/cloaking alone does not supply native tool,
 instruction, cache or continuation semantics or prove live provider/account support.
 
-TODO: For a Claude sampler, compare wrapping code-mode `exec` as a JSON `{code}` tool (the Messages
-API has no freeform/grammar tools) against Anthropic programmatic tool calling: `code_execution`
-with `allowed_callers` on our custom tools, so Claude's code calls `exec_command` and friends through
-pending `tool_use` round-trips. That code runs in Anthropic's container, not our V8 host (no
-`store`/`load`/`notify`), and excludes strict tools, forced `tool_choice` and MCP tools. Also check
-how LiteLLM translates Responses `custom` tools for Anthropic models.
+## Accepted central sampler v1
+
+Operator agreement, 2026-10-27, implemented as the [central sampler](../x/central_sampler/README.md):
+an independent code-mode sampler with its own database, reaching the Sandbox only through the
+Runner's Executor API. Its README records the placement and coexistence rulings.
+
+### Anthropic extension
+
+The central sampler supports organization-paid Anthropic Messages directly, with native
+conversation storage, server-side on-demand compaction and request/response content in its own DB.
+The [acceptance record](../x/central_sampler/docs/anthropic_acceptance.md) records merged changes,
+live-test scope and the observed staging rollout. The [remaining plan](../x/central_sampler/plans/anthropic.md)
+covers deferred BuildBuddy credentials, background compaction, dynamic tools and optional Langfuse export.
 
 [tag]: https://github.com/openai/codex/tree/rust-v0.162.1/codex-rs
 [env-add]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server-protocol/src/protocol/v2/environment.rs#L38-L53

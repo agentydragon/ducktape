@@ -38,12 +38,9 @@ def run_ci(tmp_path: Path) -> Callable[[dict[str, str]], subprocess.CompletedPro
                 "RBE_CONTAINER_IMAGE": "test-image",
                 "TEST_INVOCATION_ID": "11111111-1111-1111-1111-111111111111",
                 "BUILD_INVOCATION_ID": "22222222-2222-2222-2222-222222222222",
-                "RACE_INVOCATION_ID": "33333333-3333-3333-3333-333333333333",
-                "FAKE_GO_TESTS": "//ci:go_test",
                 "FAKE_TESTS": "//ci:normal_test",
                 "FAKE_TEST_EXIT": "0",
                 "FAKE_BUILD_EXIT": "0",
-                "FAKE_RACE_EXIT": "0",
             }
         )
         env.update(overrides)
@@ -112,29 +109,17 @@ def test_pr_target_selection(
     assert "--invocation_id=11111111-1111-1111-1111-111111111111" in test_args
     build_args = (tmp_path / "build-args.log").read_text().splitlines()
     assert "--invocation_id=22222222-2222-2222-2222-222222222222" in build_args
-    assert "--@io_bazel_rules_go//go/config:race" not in test_args
     assert "--@io_bazel_rules_go//go/config:race" not in build_args
-    assert (tmp_path / "race-targets.log").read_text() == "//ci:go_test\n"
-    race_args = (tmp_path / "race-args.log").read_text().splitlines()
-    assert "--invocation_id=33333333-3333-3333-3333-333333333333" in race_args
-    assert "--@io_bazel_rules_go//go/config:race" in race_args
-    assert "--build_metadata=DISABLE_TARGET_TRACKING=true" in race_args
-    go_test_query = (tmp_path / "go-test-query.log").read_text()
-    assert go_test_query.startswith('kind("go_test rule",')
-    assert 'except attr("tags"' not in go_test_query
 
 
 @pytest.mark.parametrize(
     ("overrides", "expected", "phases"),
     [
-        ({}, 0, ["test", "build", "race"]),
+        ({}, 0, ["test", "build"]),
         ({"FAKE_TESTS": ""}, 0, ["build"]),
-        ({"FAKE_GO_TESTS": ""}, 0, ["test", "build"]),
         ({"FAKE_TEST_EXIT": "1"}, 1, ["test"]),
         ({"FAKE_TEST_EXIT": "4"}, 4, ["test"]),
         ({"FAKE_BUILD_EXIT": "1"}, 1, ["test", "build"]),
-        ({"FAKE_RACE_EXIT": "1"}, 1, ["test", "build", "race"]),
-        ({"FAKE_RACE_EXIT": "4"}, 0, ["test", "build", "race"]),
         (
             {
                 "GITHUB_EVENT_NAME": "pull_request",
@@ -143,7 +128,7 @@ def test_pr_target_selection(
                 "FAKE_TEST_EXIT": "4",
             },
             0,
-            ["test", "build", "race"],
+            ["test", "build"],
         ),
     ],
 )

@@ -15,6 +15,7 @@ go_library(
     deps = [
         "//agentplane/executor:executor_go_proto",
         "//agentplane/grpc/streaming",
+        "//agentplane/runner/jsonrpc",
         "@com_github_coder_websocket//:websocket",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

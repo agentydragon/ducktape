@@ -44,6 +44,22 @@ ts_library(
     tsconfig = TSCONFIG,
 )
 
+ts_library(
+    name = "history_geometry",
+    srcs = ["history_geometry.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":history_sizes"],
+)
+
+agentplane_vitest_test(
+    name = "history_geometry_test",
+    srcs = ["history_geometry.test.ts"],
+    deps = [
+        ":history_geometry",
+        "//:node_modules/vitest",
+    ],
+)
+
 agentplane_vitest_test(
     name = "history_sizes_test",
     srcs = ["history_sizes.test.ts"],
@@ -77,21 +93,6 @@ agentplane_vitest_test(
     srcs = ["thread_view_recorder.test.ts"],
     deps = [
         ":thread_view_recorder",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
-    name = "layout_settle",
-    srcs = ["layout_settle.ts"],
-    tsconfig = TSCONFIG,
-)
-
-agentplane_vitest_test(
-    name = "layout_settle_test",
-    srcs = ["layout_settle.test.ts"],
-    deps = [
-        ":layout_settle",
         "//:node_modules/vitest",
     ],
 )
@@ -197,21 +198,43 @@ ts_library(
 )
 
 ts_library(
+    name = "history_viewport",
+    srcs = ["history_viewport.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":history_geometry",
+        ":thread_view_recorder",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "history_viewport_test",
+    srcs = ["history_viewport.test.ts"],
+    deps = [
+        ":history_geometry",
+        ":history_sizes",
+        ":history_viewport",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "virtualized_history",
     srcs = ["virtualized_history.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":history_geometry",
         ":history_row_views",
         ":history_rows",
-        ":history_sizes",
-        ":layout_settle",
+        ":history_viewport",
         ":thread_evidence",
         ":thread_sync",
         ":thread_view_recorder",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tanstack/react-virtual",
         "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
+        "//:node_modules/react-dom",
         "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:icons",
     ],
@@ -279,6 +302,7 @@ ts_library(
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend:trace_search",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/sandboxes:live",
     ],
 )
 
@@ -578,7 +602,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/zod",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:live_stream",
+        "//agentplane/app/frontend:stream_reader",
     ],
 )
 
@@ -606,7 +630,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:live_stream",
+        "//agentplane/app/frontend:stream_reader",
     ],
 )
 
@@ -811,6 +835,7 @@ ts_library(
         "//agentplane/app/frontend:status_mark",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/sandboxes:live",
     ],
 )
 
@@ -834,6 +859,8 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:sidebar",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/sandboxes:live",
+        "//agentplane/app/frontend/testing:watch",
     ],
 )
 

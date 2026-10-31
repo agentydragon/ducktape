@@ -18,10 +18,11 @@ would be for.
    `… pending = true AND entity_index < $1`, a load-older for it, and the cap. The design doc's
    "keyset page by admission cursor" describes the page that does not exist yet.
 2. **Electric's server memory** under history growth, a restart and a stalled reader is still an
-   adoption gate (<../../docs/thread_view_sync.md> § Server memory ownership). Probes exist on the
-   closed, unmerged spike PR #7490 (`shape_history_memory_test`, `shape_stalled_reader_test`,
-   `shape_capacity_test`); they need rewriting against `history_service/testing/electric_service.py` and the thread
-   tables.
+   adoption gate (<../../docs/thread_view_sync.md> § Server memory ownership).
+   `agentplane/app/test_electric_window_traffic.py` records Electric's cgroup and RSS counters over
+   one finite workload; it cannot show a long-running bound. Restart and stalled-reader probes
+   (sketched on the closed spike PR #7490 as `shape_stalled_reader_test` and `shape_capacity_test`)
+   are not written.
 3. **Compacting completed bodies (D5).** A body completed with the text that streamed keeps the
    generation it streamed in: one chunk per appending batch and one manifest per revision.
    Electric's behaviour is pinned (`test_electric_chunk_compaction.py`). Rewriting chunk 0 to the
@@ -34,6 +35,8 @@ would be for.
    reference.
 4. **Measure it on staging.**
    - The live log's traffic for a reader scrolled away from an active tail (**E5**).
+     `test_electric_window_traffic.py` measures it against a test Electric, without the app proxy
+     or browser compression; no staging number is recorded.
    - Shapes against `ELECTRIC_MAX_SHAPES`: one entity shape per thread, plus one per payload field
      in use.
 

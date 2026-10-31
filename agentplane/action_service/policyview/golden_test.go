@@ -4,7 +4,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -12,7 +11,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 )
 
 // golden.json holds fixed policy inputs and their workload/operator API projections.
@@ -39,7 +37,7 @@ func TestReadersReceiveTheirPolicyViews(t *testing.T) {
 	}
 	for name, v := range golden.Views {
 		t.Run(name, func(t *testing.T) {
-			index := informer.NewIndex(time.Hour, nil)
+			index := informer.NewIndex(nil)
 			for _, set := range v.PolicySets {
 				index.Rules.PutPolicySet(&set)
 			}
@@ -47,10 +45,7 @@ func TestReadersReceiveTheirPolicyViews(t *testing.T) {
 				index.Rules.PutBinding(&binding)
 			}
 			if v.Synced {
-				index.Freshness.MarkSynced()
-				for _, kind := range []reader.Kind{reader.PolicySets, reader.PolicyBindings} {
-					index.Freshness.RecordCycle(kind, time.Now())
-				}
+				index.Health.MarkSynced()
 			}
 			for viewer, written := range map[Reader]json.RawMessage{Workload: v.Workload, Operator: v.Operator} {
 				want := &action_servicepb.CallerActionPolicy{}

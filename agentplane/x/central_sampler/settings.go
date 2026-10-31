@@ -6,82 +6,175 @@ import (
 	"fmt"
 	"io"
 	"net/netip"
+	"net/url"
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"
 )
 
-type APIStyle string
-
-const APIStyleResponses APIStyle = "responses"
-
-type ResponsesDialect string
-
 const (
-	ResponsesDialectLite     ResponsesDialect = "lite"
-	ResponsesDialectStandard ResponsesDialect = "standard"
+	defaultExecutorInitializeTimeoutSeconds = 30
+	maxExecutorInitializeTimeoutSeconds     = int64((1<<63 - 1) / int64(time.Second))
 )
 
-type ExecEncoding string
+type AuthType string
 
 const (
-	ExecEncodingFreeform ExecEncoding = "freeform"
-	ExecEncodingJSON     ExecEncoding = "json"
+	AuthTypeBearer          AuthType = "bearer"
+	AuthTypeAnthropicAPIKey AuthType = "anthropic_api_key"
 )
 
 // ModelConfig contains the wire and tool-call encodings supported by one model route.
 type ModelConfig struct {
-	API              APIStyle        `json:"api"`
-	Responses        ResponsesConfig `json:"responses"`
-	ExecEncoding     ExecEncoding    `json:"exec_encoding"`
-	ReasoningEfforts []string        `json:"reasoning_efforts"`
-}
-
-type ResponsesConfig struct {
-	Dialect ResponsesDialect `json:"dialect"`
+	Connection        string                `json:"connection"`
+	ProviderModel     string                `json:"provider_model"`
+	API               protocol.APIStyle     `json:"api"`
+	Responses         responses.Config      `json:"responses,omitzero"`
+	AnthropicMessages *anthropic.Config     `json:"anthropic_messages,omitempty"`
+	ExecEncoding      protocol.ExecEncoding `json:"exec_encoding"`
+	ReasoningEfforts  []string              `json:"reasoning_efforts"`
 }
 
 func (c ModelConfig) Validate() error {
+	if c.Connection == "" {
+		return errors.New("model connection is required")
+	}
+	if c.ProviderModel == "" {
+		return errors.New("model provider_model is required")
+	}
 	if len(c.ReasoningEfforts) == 0 {
 		return errors.New("model reasoning_efforts must not be empty")
 	}
-	if c.API != APIStyleResponses {
-		return errors.New("model api must be responses")
-	}
-	if c.Responses.Dialect != ResponsesDialectLite && c.Responses.Dialect != ResponsesDialectStandard {
-		return errors.New("responses.dialect must be lite or standard")
-	}
-	if c.ExecEncoding != ExecEncodingFreeform && c.ExecEncoding != ExecEncodingJSON {
+	if c.ExecEncoding != protocol.ExecEncodingFreeform && c.ExecEncoding != protocol.ExecEncodingJSON {
 		return errors.New("exec_encoding must be freeform or json")
+	}
+	switch c.API {
+	case protocol.APIStyleResponses:
+		if err := c.Responses.Validate(); err != nil {
+			return err
+		}
+		if c.AnthropicMessages != nil {
+			return errors.New("anthropic_messages settings are only valid for the anthropic_messages API")
+		}
+	case protocol.APIStyleAnthropicMessages:
+		if c.Responses != (responses.Config{}) {
+			return errors.New("responses settings are only valid for the responses API")
+		}
+		if c.ExecEncoding != protocol.ExecEncodingJSON {
+			return errors.New("anthropic_messages requires exec_encoding json")
+		}
+		if c.AnthropicMessages == nil {
+			return errors.New("anthropic_messages settings are required for the anthropic_messages API")
+		}
+		for _, effort := range c.ReasoningEfforts {
+			if !slices.Contains([]string{"low", "medium", "high", "xhigh", "max"}, effort) {
+				return fmt.Errorf("anthropic reasoning effort %q is unsupported", effort)
+			}
+		}
+		if err := c.AnthropicMessages.Validate(); err != nil {
+			return err
+		}
+	default:
+		return errors.New("model api must be responses or anthropic_messages")
 	}
 	return nil
 }
 
+func (c ModelConfig) Compatible(other ModelConfig) bool {
+	if c.Connection != other.Connection || c.API != other.API || c.ExecEncoding != other.ExecEncoding {
+		return false
+	}
+	switch c.API {
+	case protocol.APIStyleResponses:
+		return c.Responses.Compatible(other.Responses)
+	case protocol.APIStyleAnthropicMessages:
+		return c.ProviderModel == other.ProviderModel && c.Responses == other.Responses && c.AnthropicMessages.Compatible(other.AnthropicMessages)
+	default:
+		return false
+	}
+}
+
+type ConnectionConfig struct {
+	BaseURL string     `json:"base_url"`
+	Auth    AuthConfig `json:"auth"`
+}
+
+type AuthConfig struct {
+	Type           AuthType `json:"type"`
+	Credential     string   `json:"credential,omitempty"`
+	CredentialFile string   `json:"credential_file,omitempty"`
+}
+
+func (c ConnectionConfig) Validate() error {
+	parsed, err := url.Parse(c.BaseURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || strings.HasSuffix(parsed.Host, ":") || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || strings.ContainsAny(c.BaseURL, "?#") {
+		return errors.New("connection base_url must be a safe http(s) URL without credentials, query, or fragment")
+	}
+	if rawPort := parsed.Port(); rawPort != "" {
+		port, err := strconv.Atoi(rawPort)
+		if err != nil || port < 1 || port > 65535 {
+			return errors.New("connection base_url must use a valid TCP port")
+		}
+	}
+	if (c.Auth.Credential == "") == (c.Auth.CredentialFile == "") {
+		return errors.New("connection auth requires exactly one of credential and credential_file")
+	}
+	switch c.Auth.Type {
+	case AuthTypeBearer, AuthTypeAnthropicAPIKey:
+	default:
+		return errors.New("connection auth.type must be bearer or anthropic_api_key")
+	}
+	return nil
+}
+
+func (a AuthConfig) ReadCredential() (string, error) {
+	if (a.Credential == "") == (a.CredentialFile == "") {
+		return "", errors.New("connection auth requires exactly one of credential and credential_file")
+	}
+	if a.CredentialFile == "" {
+		return a.Credential, nil
+	}
+	data, err := os.ReadFile(a.CredentialFile)
+	if err != nil {
+		return "", fmt.Errorf("read provider credential file: %w", err)
+	}
+	credential := strings.TrimSpace(string(data))
+	if credential == "" {
+		return "", errors.New("provider credential file is empty")
+	}
+	return credential, nil
+}
+
 type Settings struct {
-	Models                          map[string]ModelConfig `json:"models"`
-	DatabaseURL                     string                 `json:"database_url"`
-	Listen                          string                 `json:"listen"`
-	LLMProxyURL                     string                 `json:"llm_proxy_url"`
-	Credential                      string                 `json:"credential"`
-	CredentialFile                  string                 `json:"credential_file"`
-	Audience                        string                 `json:"audience"`
-	AllowedAccounts                 []string               `json:"allowed_accounts"`
-	CodeModeHost                    string                 `json:"code_mode_host"`
-	ExecutorCodex                   string                 `json:"executor_codex"`
-	Logs                            string                 `json:"logs"`
-	HistoryTarget                   string                 `json:"history_target"`
-	HistoryTokenFile                string                 `json:"history_token_file"`
-	GatewayTarget                   string                 `json:"gateway_target"`
-	GatewayTokenFile                string                 `json:"gateway_token_file"`
-	DirectExecutorTarget            string                 `json:"direct_executor_target"`
-	DirectExecutorInsecureLocaltest bool                   `json:"direct_executor_insecure_localtest"`
-	MaxLiveSessions                 int                    `json:"max_live_sessions"`
-	TurnTimeoutSeconds              int                    `json:"turn_timeout_seconds"`
-	RPCTimeoutSeconds               int                    `json:"rpc_timeout_seconds"`
-	LeaseSeconds                    int                    `json:"lease_seconds"`
-	AutoCompactTokens               *int                   `json:"auto_compact_tokens"`
-	Kubeconfig                      string                 `json:"kubeconfig"`
+	Models                           map[string]ModelConfig      `json:"models"`
+	Connections                      map[string]ConnectionConfig `json:"connections"`
+	DatabaseURL                      string                      `json:"database_url"`
+	Listen                           string                      `json:"listen"`
+	Audience                         string                      `json:"audience"`
+	AllowedAccounts                  []string                    `json:"allowed_accounts"`
+	CodeModeHost                     string                      `json:"code_mode_host"`
+	ExecutorCodex                    string                      `json:"executor_codex"`
+	Logs                             string                      `json:"logs"`
+	HistoryTarget                    string                      `json:"history_target"`
+	HistoryTokenFile                 string                      `json:"history_token_file"`
+	GatewayTarget                    string                      `json:"gateway_target"`
+	GatewayTokenFile                 string                      `json:"gateway_token_file"`
+	DirectExecutorTarget             string                      `json:"direct_executor_target"`
+	DirectExecutorInsecureLocaltest  bool                        `json:"direct_executor_insecure_localtest"`
+	MaxLiveSessions                  int                         `json:"max_live_sessions"`
+	TurnTimeoutSeconds               int                         `json:"turn_timeout_seconds"`
+	RPCTimeoutSeconds                int                         `json:"rpc_timeout_seconds"`
+	ExecutorInitializeTimeoutSeconds *int                        `json:"executor_initialize_timeout_seconds,omitempty"`
+	LeaseSeconds                     int                         `json:"lease_seconds"`
+	AutoCompactTokens                *int                        `json:"auto_compact_tokens"`
+	Kubeconfig                       string                      `json:"kubeconfig"`
 }
 
 func LoadSettings(path string) (Settings, error) {
@@ -132,8 +225,16 @@ func (s Settings) Validate() error {
 	if len(s.Models) == 0 || len(s.AllowedAccounts) == 0 {
 		return errors.New("models and allowed_accounts must not be empty")
 	}
-	if s.LLMProxyURL == "" || (s.Credential == "") == (s.CredentialFile == "") {
-		return errors.New("llm_proxy_url and exactly one credential source are required")
+	if len(s.Connections) == 0 {
+		return errors.New("connections must not be empty")
+	}
+	for name, connection := range s.Connections {
+		if name == "" {
+			return errors.New("connection name must not be empty")
+		}
+		if err := connection.Validate(); err != nil {
+			return fmt.Errorf("connection %s: %w", name, err)
+		}
 	}
 	for model, config := range s.Models {
 		if model == "" {
@@ -141,6 +242,16 @@ func (s Settings) Validate() error {
 		}
 		if err := config.Validate(); err != nil {
 			return fmt.Errorf("model %s: %w", model, err)
+		}
+		connection, ok := s.Connections[config.Connection]
+		if !ok {
+			return fmt.Errorf("model %s references unknown connection %s", model, config.Connection)
+		}
+		if config.API == protocol.APIStyleResponses && connection.Auth.Type != AuthTypeBearer {
+			return fmt.Errorf("model %s responses API requires bearer connection auth", model)
+		}
+		if config.API == protocol.APIStyleAnthropicMessages && connection.Auth.Type != AuthTypeAnthropicAPIKey {
+			return fmt.Errorf("model %s anthropic_messages API requires anthropic_api_key connection auth", model)
 		}
 	}
 	for _, account := range s.AllowedAccounts {
@@ -176,25 +287,36 @@ func (s Settings) Validate() error {
 	if s.MaxLiveSessions <= 0 || s.TurnTimeoutSeconds <= 0 || s.RPCTimeoutSeconds <= 0 || s.LeaseSeconds <= 30 {
 		return errors.New("resource limits and timeouts must be positive; lease_seconds must exceed 30")
 	}
+	if s.ExecutorInitializeTimeoutSeconds != nil {
+		seconds := int64(*s.ExecutorInitializeTimeoutSeconds)
+		if seconds <= 0 || seconds > maxExecutorInitializeTimeoutSeconds {
+			return errors.New("executor_initialize_timeout_seconds must be positive and fit in time.Duration")
+		}
+	}
 	if s.AutoCompactTokens != nil && *s.AutoCompactTokens <= 0 {
 		return errors.New("auto_compact_tokens must be positive")
 	}
 	return nil
 }
 
-func (s Settings) ReadCredential() (string, error) {
-	if s.CredentialFile == "" {
-		return s.Credential, nil
+func (s Settings) Connection(model string) (ConnectionConfig, error) {
+	config, ok := s.Models[model]
+	if !ok {
+		return ConnectionConfig{}, fmt.Errorf("unknown model %s", model)
 	}
-	data, err := os.ReadFile(s.CredentialFile)
-	if err != nil {
-		return "", fmt.Errorf("read LLM proxy credential file: %w", err)
+	connection, ok := s.Connections[config.Connection]
+	if !ok {
+		return ConnectionConfig{}, fmt.Errorf("model %s references unknown connection %s", model, config.Connection)
 	}
-	credential := strings.TrimSpace(string(data))
-	if credential == "" {
-		return "", errors.New("LLM proxy credential file is empty")
+	return connection, nil
+}
+
+func (s Settings) ExecutorInitializeTimeout() time.Duration {
+	seconds := defaultExecutorInitializeTimeoutSeconds
+	if s.ExecutorInitializeTimeoutSeconds != nil {
+		seconds = *s.ExecutorInitializeTimeoutSeconds
 	}
-	return credential, nil
+	return time.Duration(seconds) * time.Second
 }
 
 var executorDNSLabel = regexp.MustCompile(`^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$`)

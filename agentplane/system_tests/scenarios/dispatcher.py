@@ -295,7 +295,7 @@ async def _cleanup_sandbox(
         await cluster.kubectl(
             "wait",
             f"sandbox.agentplane.allegedly.works/{name}",
-            '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
+            "--for=jsonpath={.status.stopStage}=Stopped",
             "--timeout=300s",
         )
         await _delete(cluster, "sandbox.agentplane.allegedly.works", name, uid)
@@ -495,7 +495,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         await cluster.kubectl(
             "wait",
             f"sandbox.agentplane.allegedly.works/{sandbox}",
-            '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
+            "--for=jsonpath={.status.stopStage}=Stopped",
             "--timeout=300s",
         )
         target = await stack.enter_async_context(_forward(cluster))
@@ -601,7 +601,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             await cluster.kubectl(
                 "wait",
                 f"sandbox.agentplane.allegedly.works/{sandbox}",
-                '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
+                "--for=jsonpath={.status.stopStage}=Stopped",
                 "--timeout=300s",
             )
             deletion_session = str(uuid4())
@@ -749,7 +749,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
         await cluster.kubectl(
             "wait",
             f"sandbox.agentplane.allegedly.works/{sandbox}",
-            '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
+            "--for=jsonpath={.status.stopStage}=Stopped",
             "--timeout=300s",
         )
         stopped = json.loads(await cluster.kubectl("get", "sandbox", sandbox, "-o", "json"))

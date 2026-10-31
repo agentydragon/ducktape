@@ -6,6 +6,10 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 )
 
 func configurationFixture(t *testing.T) (map[string]any, string, string) {
@@ -228,6 +232,95 @@ func TestConfigurationUsesExplicitSessionReconcileConcurrency(t *testing.T) {
 	}
 	if config.SessionReconcileConcurrency != 2048 {
 		t.Fatalf("session reconcile concurrency = %d, want 2048", config.SessionReconcileConcurrency)
+	}
+}
+
+func TestConfigurationResolvesIndependentCodexReadinessWindows(t *testing.T) {
+	t.Setenv("RUNNER_TEST_PROVIDER_TOKEN", "provider-secret")
+	for _, test := range []struct {
+		name      string
+		readiness map[string]any
+		wantExec  codexexecserver.Readiness
+		wantApp   codexappserver.Readiness
+	}{
+		{
+			name: "defaults",
+			wantExec: codexexecserver.Readiness{
+				Timeout: 20 * time.Second, ProbeTimeout: 2 * time.Second, ProbeInterval: 100 * time.Millisecond,
+			},
+			wantApp: codexappserver.Readiness{
+				ExecServerDependencyTimeout: 30 * time.Second,
+				StartupTimeout:              90 * time.Second,
+				InitializeTimeout:           60 * time.Second,
+			},
+		},
+		{
+			name:      "partial independent overrides",
+			readiness: map[string]any{"exec_server_ready_timeout_ms": 725, "app_server_initialize_timeout_ms": 1337},
+			wantExec: codexexecserver.Readiness{
+				Timeout: 725 * time.Millisecond, ProbeTimeout: 2 * time.Second, ProbeInterval: 100 * time.Millisecond,
+			},
+			wantApp: codexappserver.Readiness{
+				ExecServerDependencyTimeout: 30 * time.Second,
+				StartupTimeout:              90 * time.Second,
+				InitializeTimeout:           1337 * time.Millisecond,
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			value, path, launchPath := configurationFixture(t)
+			value["environment"] = map[string]any{
+				"kind": "pod", "supervision": "subprocess",
+				"executor": map[string]any{"url": "ws://127.0.0.1:4501", "socket": "/run/test/executor.sock"},
+			}
+			if test.readiness != nil {
+				value["codex_readiness"] = test.readiness
+			}
+			writeJSONFixture(t, path, value)
+			resolved, _, _, err := load(path, launchPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resolved.CodexExecServer == nil || resolved.CodexExecServer.Readiness != test.wantExec {
+				t.Fatalf("exec-server readiness = %+v, want %+v", resolved.CodexExecServer, test.wantExec)
+			}
+			if resolved.CodexAppServerReadiness != test.wantApp {
+				t.Fatalf("app-server readiness = %+v, want %+v", resolved.CodexAppServerReadiness, test.wantApp)
+			}
+		})
+	}
+}
+
+func TestConfigurationRejectsInvalidCodexReadinessMilliseconds(t *testing.T) {
+	t.Setenv("RUNNER_TEST_PROVIDER_TOKEN", "provider-secret")
+	fields := []string{
+		"exec_server_ready_timeout_ms",
+		"exec_server_probe_timeout_ms",
+		"exec_server_probe_interval_ms",
+		"exec_server_dependency_timeout_ms",
+		"app_server_start_timeout_ms",
+		"app_server_initialize_timeout_ms",
+	}
+	invalidValues := []struct {
+		name  string
+		value any
+	}{
+		{name: "zero", value: 0},
+		{name: "negative", value: -1},
+		{name: "duration overflow", value: maxGoDurationMilliseconds + 1},
+		{name: "int64 overflow", value: json.Number("9223372036854775808")},
+	}
+	for _, field := range fields {
+		for _, invalid := range invalidValues {
+			t.Run(field+"/"+invalid.name, func(t *testing.T) {
+				value, path, launchPath := configurationFixture(t)
+				value["codex_readiness"] = map[string]any{field: invalid.value}
+				writeJSONFixture(t, path, value)
+				if _, _, _, err := load(path, launchPath); err == nil {
+					t.Fatal("accepted invalid readiness timeout")
+				}
+			})
+		}
 	}
 }
 

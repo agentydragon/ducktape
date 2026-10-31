@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/cosi"
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
@@ -23,6 +24,37 @@ type (
 type Adapters struct {
 	Start Start
 	Probe Probe
+}
+
+// Readiness contains the independently configurable executor startup windows.
+type Readiness struct {
+	Timeout       time.Duration
+	ProbeTimeout  time.Duration
+	ProbeInterval time.Duration
+}
+
+// Resolve supplies defaults for omitted windows and rejects invalid direct Go configuration.
+func (r Readiness) Resolve() (Readiness, error) {
+	if err := resolveDuration("Codex exec-server readiness timeout", &r.Timeout, 20*time.Second); err != nil {
+		return Readiness{}, err
+	}
+	if err := resolveDuration("Codex exec-server readiness probe timeout", &r.ProbeTimeout, 2*time.Second); err != nil {
+		return Readiness{}, err
+	}
+	if err := resolveDuration("Codex exec-server readiness probe interval", &r.ProbeInterval, 100*time.Millisecond); err != nil {
+		return Readiness{}, err
+	}
+	return r, nil
+}
+
+func resolveDuration(name string, value *time.Duration, defaultValue time.Duration) error {
+	if *value < 0 {
+		return fmt.Errorf("%s must be positive", name)
+	}
+	if *value == 0 {
+		*value = defaultValue
+	}
+	return nil
 }
 
 type Dependencies struct {
@@ -56,9 +88,14 @@ func NewHost(config Config, deps Dependencies, adapters Adapters) (*Host, error)
 	if config.URL == "" {
 		return nil, errors.New("Codex exec-server URL is required")
 	}
+	readiness, err := config.Readiness.Resolve()
+	if err != nil {
+		return nil, err
+	}
 	if deps.Context == nil || deps.State == nil || deps.Workers == nil || deps.Processes == nil || deps.Admission == nil || deps.OnError == nil || adapters.Start == nil || adapters.Probe == nil {
 		return nil, errors.New("Codex exec-server host dependencies are incomplete")
 	}
+	config.Readiness = readiness
 	return &Host{
 		config: config, ctx: deps.Context, state: deps.State, workers: deps.Workers,
 		processes: deps.Processes, admission: deps.Admission, onError: deps.OnError,

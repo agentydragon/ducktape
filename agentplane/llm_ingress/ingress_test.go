@@ -529,11 +529,20 @@ func mustRequest(t *testing.T, method, url string, headers http.Header) *http.Re
 	return req
 }
 
-func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
+// forwardedHeaders applies what Rewrite applies to the outgoing request headers.
+func forwardedHeaders(headers http.Header, principal auth.Principal, attribution attributionConfig) (http.Header, error) {
+	verified, err := verifiedRequestHeaders(principal, testBackendKey, attribution, "")
+	if err != nil {
+		return nil, err
+	}
+	forwarded := headers.Clone()
+	dropUntrustedRequestHeaders(forwarded, attribution)
+	maps.Copy(forwarded, verified)
+	return forwarded, nil
+}
+
+func TestCredentialAndIdentityHeadersAreReplacedByVerifiedOnes(t *testing.T) {
 	headers := http.Header{
-		"Connection":                    {"keep-alive, x-drop"},
-		"Keep-Alive":                    {"timeout=5"},
-		"X-Drop":                        {"untrusted-hop-value"},
 		"Authorization":                 {"Bearer workload-token"},
 		"X-Api-Key":                     {"forged"},
 		"X-Litellm-Api-Key":             {"forged"},
@@ -554,12 +563,12 @@ func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
 		{Key: "litellm.metadata.spend_logs_metadata.agentplane.pod_name", Source: verifiedPodName},
 		{Key: "litellm.metadata.spend_logs_metadata.agentplane.pod_uid", Source: verifiedPodUID},
 	}
-	forwarded, err := forwardedRequestHeaders(headers, principal, testBackendKey, attribution)
+	forwarded, err := forwardedHeaders(headers, principal, attribution)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{
-		"Connection", "Keep-Alive", "x-drop", "X-Api-Key", "X-Litellm-Api-Key",
+		"X-Api-Key", "X-Litellm-Api-Key",
 		"X-Agentplane-Pod-Uid", "Content-Length",
 	} {
 		if forwarded.Get(name) != "" {
@@ -588,7 +597,7 @@ func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
 		{name: "baggage only", attribution: attributionConfig{Baggage: attribution.Baggage}, wantBaggage: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			only, err := forwardedRequestHeaders(headers, principal, testBackendKey, test.attribution)
+			only, err := forwardedHeaders(headers, principal, test.attribution)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -603,7 +612,7 @@ func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
 		Baggage:     []attributionField{{Key: "custom.PodUid", Source: verifiedPodUID}},
 	}
 	headers.Set("X-Custom-Verified", `{"Pod.Name":"forged"}`)
-	customForwarded, err := forwardedRequestHeaders(headers, principal, testBackendKey, custom)
+	customForwarded, err := forwardedHeaders(headers, principal, custom)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -615,23 +624,6 @@ func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
 	if err := json.Unmarshal([]byte(forwarded.Get("X-Litellm-Spend-Logs-Metadata")), &metadata); err != nil ||
 		metadata["agentplane.pod_uid"] != "pod-a-uid" {
 		t.Fatalf("trusted metadata was not stamped: %v, err=%v", metadata, err)
-	}
-
-	source := http.Header{
-		"Connection":       {"x-drop"},
-		"X-Drop":           {"backend-hop"},
-		"Authorization":    {"Bearer backend-key"},
-		"Content-Length":   {"999"},
-		"Set-Cookie":       {"first=1", "second=2"},
-		"Content-Encoding": {"gzip"},
-		"X-Ordinary":       {"kept"},
-	}
-	destination := make(http.Header)
-	copyResponseHeaders(destination, source)
-	if destination.Get("X-Drop") != "" || destination.Get("Authorization") != "" || destination.Get("Content-Length") != "" ||
-		destination.Get("Content-Encoding") != "gzip" || destination.Get("X-Ordinary") != "kept" ||
-		len(destination.Values("Set-Cookie")) != 2 {
-		t.Fatalf("response headers were not filtered/copied correctly: %v", destination)
 	}
 }
 
@@ -960,5 +952,95 @@ func TestCentralSessionAttributionRequiresTrustedProducer(t *testing.T) {
 	}
 	if verifiedBaggage.Member("litellm.metadata.spend_logs_metadata.agentplane.session_id").Value() != sessionID || verifiedBaggage.Member("untrusted").Value() != "" {
 		t.Fatalf("unexpected Session baggage %v", verifiedBaggage)
+	}
+}
+
+func TestLargeRequestBodyStreamsWithoutFullBuffering(t *testing.T) {
+	tokenA := workloadToken(t, "test-sandbox-a")
+	firstChunk := bytes.Repeat([]byte("x"), 64*1024)
+	received := make(chan struct{})
+	var total atomic.Int64
+	backend := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		buffer := make([]byte, 32*1024)
+		signaled := false
+		for {
+			n, err := request.Body.Read(buffer)
+			total.Add(int64(n))
+			if n > 0 && !signaled {
+				signaled = true
+				close(received)
+			}
+			if err != nil {
+				break
+			}
+		}
+		_, _ = io.WriteString(writer, strconv.FormatInt(total.Load(), 10))
+	}))
+	t.Cleanup(backend.Close)
+	ingress := newIngressTestServer(t, api.TokenReviews(), backend.URL)
+	client := testClient()
+	defer client.CloseIdleConnections()
+
+	pipeReader, pipeWriter := io.Pipe()
+	req, err := http.NewRequest(http.MethodPost, ingress.URL+"/upload", pipeReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header = bearer(tokenA)
+	type result struct {
+		body []byte
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		response, err := client.Do(req)
+		if err != nil {
+			done <- result{err: err}
+			return
+		}
+		defer response.Body.Close()
+		body, err := io.ReadAll(response.Body)
+		done <- result{body: body, err: err}
+	}()
+	if _, err := pipeWriter.Write(firstChunk); err != nil {
+		t.Fatal(err)
+	}
+	// The request body is still open: only a streaming proxy has delivered bytes to the backend.
+	select {
+	case <-received:
+	case <-time.After(5 * time.Second):
+		t.Fatal("backend received nothing while the request body was still open")
+	}
+	if _, err := pipeWriter.Write(firstChunk); err != nil {
+		t.Fatal(err)
+	}
+	_ = pipeWriter.Close()
+	got := <-done
+	if got.err != nil || string(got.body) != strconv.Itoa(2*len(firstChunk)) {
+		t.Fatalf("body=%q err=%v", got.body, got.err)
+	}
+}
+
+func TestProtocolUpgradeIsNotForwardedToBackend(t *testing.T) {
+	tokenA := workloadToken(t, "test-sandbox-a")
+	backend := newFakeLiteLLM()
+	backendServer := newBackendServer(t, backend)
+	ingress := newIngressTestServer(t, api.TokenReviews(), backendServer.URL)
+	client := testClient()
+	defer client.CloseIdleConnections()
+
+	headers := bearer(tokenA)
+	headers.Set("Connection", "Upgrade")
+	headers.Set("Upgrade", "websocket")
+	response, err := client.Do(mustRequest(t, http.MethodGet, ingress.URL+"/v1/models", headers))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, response.Body)
+	_ = response.Body.Close()
+	got := backend.snapshotRequests()
+	if response.StatusCode == http.StatusSwitchingProtocols || len(got) != 1 ||
+		got[0].headers.Get("Upgrade") != "" || got[0].headers.Get("Connection") != "" {
+		t.Fatalf("status=%d backend requests=%+v", response.StatusCode, got)
 	}
 }

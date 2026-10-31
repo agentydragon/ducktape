@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/lease"
 	"github.com/google/uuid"
 )
 
@@ -62,9 +63,10 @@ func (g *GitHubState) ReviewsState(ctx context.Context, key GitHubReviewRefreshK
 	return GitHubReviewRefreshState{GitHubRefreshStatus: status, RepairAt: repairAt.UTC()}, nil
 }
 
-func (k GitHubReviewRefreshKey) row() (string, string, []any) {
-	return "github_review_refresh", "app_id = $1 AND installation_id = $2 AND repository_id = $3 AND subject_kind = 'pull_request' AND subject_key = $4",
-		[]any{k.AppID, k.InstallationID, k.Subject.RepositoryID, k.Subject.Key}
+var reviewRefresh = refreshTable("github_review_refresh", "app_id", "installation_id", "repository_id", "subject_kind", "subject_key")
+
+func (k GitHubReviewRefreshKey) refresh() (lease.Table, []any) {
+	return reviewRefresh, []any{k.AppID, k.InstallationID, k.Subject.RepositoryID, "pull_request", k.Subject.Key}
 }
 
 func (k GitHubReviewRefreshKey) validate() error {

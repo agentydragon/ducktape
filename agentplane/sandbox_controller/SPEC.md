@@ -36,7 +36,7 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   Sandbox is running is replaced by a new incarnation on the same PVC.
 - Clearing `spec.running` deletes the Pod, once the runner that connected from it has sealed every
   Session (`status.quiescedIncarnation` names the sealed Pod). A Pod whose runner never connected has
-  nothing to seal. The Sandbox stays held, with `Running` reason `Quiescing`, while the quiesce fails or
+  nothing to seal. The Sandbox stays held, with `status.stopStage: Quiescing`, while the quiesce fails or
   the ingress has not acknowledged it. The controller persists the last request time and runner Pod
   UID in `status.quiesceAttempt`, so watch events and controller restarts cannot bypass its one-minute
   retry deadline; Lease facts can complete the seal sooner. Applies only to a controller configured
@@ -75,10 +75,13 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   renewal. Runner TLS files mount from that generation's unique Secret, and the shared trust-manager
   CA bundle supplies the root. A renewed key can update only its own generation's Secret.
 - A Pod UID is bound to its credential before the controller publishes its incarnation. A VM's
-  first VMI UID is persisted on its VM and Sandbox. If KubeVirt unexpectedly replaces a VMI while
+  first VMI UID is persisted on its VM and in the Sandbox's status. If KubeVirt unexpectedly replaces a VMI while
   the VM still carries the old identity, the controller halts that replacement, rotates to a new
   credential ID and Secret name, and resumes only after the old VMI is gone and the new certificate
   is ready. A replacement never inherits a credential issued to its predecessor.
+- `status.runnerCredential` is the Sandbox's binding: the current credential ID and workload kind,
+  the bound Pod UID, and the last accepted VMI UID and credential ID. Only the controller writes it,
+  through the status subresource, so a writer of the Sandbox's spec or metadata cannot rebind it.
 - An older running Pod or VM without a runner credential follows the normal quiesce and stop path;
   the controller does not halt an active VM just to install credentials. A coordinated Gateway
   authentication rollout must wait until legacy runners are stopped.
@@ -180,7 +183,13 @@ virt-launcher Pod. The `Running` condition is True while the Pod runs (`PodRunni
 `CertificateIdentityConflict`, `CertificateSecretPending`, `CertificateSecretConflict`,
 `VMIStopping`, `IncarnationUnpublished`, `ServiceAccountConflict`, `PolicyBindingConflict`,
 `PodConflict` or `VMConflict`
-(a Pod or VM of the Sandbox's name that it does not control). Credential and certificate pending
+(a Pod or VM of the Sandbox's name that it does not control). Reasons are display only; readers
+dispatch on typed status fields.
+
+`status.stopStage` is how far the controller has taken stopping the workload, absent while it runs or
+starts: `Quiescing` while it seals the current incarnation's Sessions before stopping or deleting it,
+`Deleting` while a deleted Sandbox with nothing left to seal has its workload and runner credentials
+removed, and `Stopped` once no Pod or VM runs and the state volume is kept. Credential and certificate pending
 reasons requeue while cert-manager provisions or cleans up generation-specific resources; conflicts
 keep the workload from starting until resolved. `SuspendPending` holds a suspend while the runner's bootstrap is still running, so the
 suspend never interrupts it; a delete does not wait. While a scheduled Pod is Pending, the reason is
@@ -195,9 +204,16 @@ with the reason and message of `Running`.
 incarnation's Pod and was renewed within its duration plus a grace, so a connection from an earlier
 incarnation never counts and a gateway rollout's brief drop does not. It is False with `NeverConnected`,
 `AwaitingRunner`, `ConnectionLost`, `ConnectionPending` or `WorkloadNotReady`. `ConnectionPending`
-means the authenticated Gateway connection has not reported its runner boot ID, so it is not yet a
-live connection. Losing the connection restarts and replaces nothing. A controller not configured to
+means the Gateway has claimed observation of this incarnation but has not received its first valid
+`WatchState` message containing the runner boot ID. The Gateway initiates the mTLS connection to the
+runner listener; the claim precedes dialing and does not prove connectivity or authentication. Losing the connection restarts and replaces nothing. A controller not configured to
 read Leases omits it.
+
+Suspension and deletion require quiescence only for a verified runner incarnation. A Gateway
+observation claim alone does not prove contact. The Lease retains `last-connected-pod-uid` after
+a validated boot identity is recorded, across reconnect claims and Lease expiry; losing connectivity
+does not waive quiescence for a previously connected runner. A pending claim with no verified contact
+can stop without a Quiesce RPC.
 
 `Bootstrapped` is True once the Sandbox's bootstrap has run to success, and when the Sandbox has
 none (`NoBootstrap`). It is Unknown with `BootstrapNotReported` while the incarnation's runner has

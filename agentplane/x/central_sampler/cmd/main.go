@@ -12,10 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	centralsampler "github.com/agentydragon/ducktape/agentplane/x/central_sampler"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
 	"github.com/agentydragon/ducktape/util/netlistener"
 	"golang.org/x/sync/errgroup"
@@ -36,7 +38,11 @@ func run(ctx context.Context, settings centralsampler.Settings, initialize bool)
 	}
 	defer db.Close()
 	if initialize {
-		return centralsampler.Migrate(ctx, db)
+		modelAPIs := make(map[string]protocol.APIStyle, len(settings.Models))
+		for model, config := range settings.Models {
+			modelAPIs[model] = config.API
+		}
+		return centralsampler.Migrate(ctx, db, modelAPIs)
 	}
 	if err := os.MkdirAll(settings.Logs, 0700); err != nil {
 		return err
@@ -98,16 +104,9 @@ func run(ctx context.Context, settings centralsampler.Settings, initialize bool)
 	running.Go(func() error {
 		<-runningCtx.Done()
 		healthServer.Shutdown()
-		stopped := make(chan struct{})
-		go func() { server.GracefulStop(); close(stopped) }()
-		timer := time.NewTimer(5 * time.Second)
-		defer timer.Stop()
-		select {
-		case <-stopped:
-		case <-timer.C:
-			server.Stop()
-			<-stopped
-		}
+		stopping, release := context.WithTimeout(context.Background(), 5*time.Second)
+		defer release()
+		graceful.Stop(stopping, server)
 		return nil
 	})
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { expect, it } from "vitest";
-import { liveNdjsonWatch, publishNdjsonWatch } from "./network";
+import { liveNdjsonWatch, publishStreams } from "./network";
 
 it("publishes deltas only to matching live watches and removes canceled readers", async () => {
   const updates: string[] = [];
@@ -15,13 +15,13 @@ it("publishes deltas only to matching live watches and removes canceled readers"
   );
   const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
   expect((await reader.read()).value).toBe('{"result":{"snapshotComplete":{}}}\n');
-  publishNdjsonWatch("other:watch");
+  publishStreams("other:watch");
   expect(updates).toEqual([]);
-  publishNdjsonWatch("requests:watch");
+  publishStreams("requests:watch");
   expect((await reader.read()).value).toBe('{"result":{"upsert":{"id":"changed"}}}\n');
   expect(updates).toEqual(["published"]);
   await reader.cancel();
-  publishNdjsonWatch("requests:watch");
+  publishStreams("requests:watch");
   expect(updates).toEqual(["published"]);
 });
 
@@ -42,7 +42,7 @@ it("removes an aborted watch and honors a signal already aborted at construction
     const reader = response.body!.getReader();
     if (!alreadyAborted) stopped.abort();
     await expect(reader.read()).rejects.toThrow("aborted");
-    publishNdjsonWatch("abort:watch");
+    publishStreams("abort:watch");
     expect(published).toBe(false);
   }
 });

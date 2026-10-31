@@ -35,7 +35,7 @@ import { testItem } from "./testing/entity";
 import { badgeLabels, entity, reference, serving, THREAD, threadState, toggle, viewState } from "./testing/state";
 import { ThreadSyncContext, type ThreadEntity, type ThreadState, type ThreadSync } from "./thread_sync";
 import { TopbarContext } from "../topbar";
-import { type ServedWatch, stubWatchFetch } from "../testing/watch";
+import { reconnected, serveEventStreams, type ServedWatch, stubWatchFetch } from "../testing/watch";
 
 vi.mock("./client", async (importOriginal) => ({
   ...(await importOriginal<typeof ThreadClientModule>()),
@@ -116,7 +116,7 @@ let inventoryFresh = true;
 let inventoryDrops = false;
 let sharedFeed: "active" | "ended" | "failed" = "active";
 let sharedThread: Partial<ThreadView> = {};
-let eventSourceUrls: string[] = [];
+let eventStreamUrls: string[] = [];
 const TRACE_SEARCH_SETTINGS: TraceSearchSettings = {
   grafana_base_url: "https://grafana.test.invalid",
   tempo_datasource_uid: "tempo-test",
@@ -142,7 +142,7 @@ beforeEach(() => {
   inventoryDrops = false;
   sharedFeed = "active";
   sharedThread = {};
-  eventSourceUrls = [];
+  eventStreamUrls = [];
   traceSearchSettings = TRACE_SEARCH_SETTINGS;
   langfuseSearchSettings = LANGFUSE_SEARCH_SETTINGS;
   dispatchWatches = stubWatchFetch().served;
@@ -161,55 +161,38 @@ beforeEach(() => {
   for (const operation of [submitInput, changeModel, changeReasoningEffort, interruptTurn]) {
     vi.mocked(operation).mockReturnValue(new Promise(() => {}));
   }
-  vi.stubGlobal(
-    "EventSource",
-    class extends EventTarget {
-      // A drop is the network's, which the browser retries: the source stays CONNECTING.
-      readyState = 0;
-      closed = false;
-      constructor(readonly url: string) {
-        super();
-        eventSourceUrls.push(url);
-        queueMicrotask(() => {
-          if (new URL(url, "http://test").pathname === "/threads/notices/stream") {
-            this.dispatchEvent(
-              new MessageEvent("snapshot", {
-                data: JSON.stringify({ observedAt: "2026-01-01T12:00:00Z", inboxes: noticeInboxes }),
-              })
-            );
-            return;
-          }
-          if (sandboxes === null) return;
-          this.dispatchEvent(
-            new MessageEvent("snapshot", {
-              data: JSON.stringify({
-                sandboxes,
-                ...(new URL(url, "http://test").pathname === "/live/threads"
-                  ? {
-                      threads: threadRows ?? [
-                        { ...THREAD, harness_state: "HARNESS_STATE_RUNNING", feed_status: sharedFeed, ...sharedThread },
-                      ],
-                      more: false,
-                      archived_count: 0,
-                      updates_connected: true,
-                    }
-                  : {}),
-                watch: {
-                  fresh: inventoryFresh,
-                  stale_after_seconds: 90,
-                  refreshed_seconds_ago: { sandboxes: inventoryFresh ? 0 : 2400 },
-                },
-              }),
-            })
-          );
-          if (inventoryDrops) this.dispatchEvent(new Event("error"));
-        });
-      }
-      close(): void {
-        this.closed = true;
-      }
+  const served = serveEventStreams((stream) => {
+    const { pathname, search } = stream.url;
+    eventStreamUrls.push(`${pathname}${search}`);
+    if (pathname === "/threads/notices/stream") {
+      stream.event("snapshot", JSON.stringify({ observedAt: "2026-01-01T12:00:00Z", inboxes: noticeInboxes }));
+      return;
     }
-  );
+    if (sandboxes === null || reconnected(served, stream)) return;
+    stream.event(
+      "snapshot",
+      JSON.stringify({
+        // The server still sends its own copy of the Sandboxes on /live/threads. The page reads only
+        // /live/sandboxes, so this copy contradicts it.
+        sandboxes: pathname === "/live/threads" ? [inventorySandbox("Running")] : sandboxes,
+        ...(pathname === "/live/threads"
+          ? {
+              threads: threadRows ?? [
+                { ...THREAD, harness_state: "HARNESS_STATE_RUNNING", feed_status: sharedFeed, ...sharedThread },
+              ],
+              more: false,
+              archived_count: 0,
+              updates_connected: true,
+            }
+          : {}),
+        watch: {
+          healthy: inventoryFresh,
+          failing: inventoryFresh ? {} : { sandboxes: { error: "test-failure", since: "2026-10-30T12:00:00Z" } },
+        },
+      })
+    );
+    if (inventoryDrops) stream.drop();
+  });
 });
 
 afterEach(async () => {
@@ -493,12 +476,12 @@ it("counts down from the controller deadline on the UI clock without another str
   const container = await render();
   const hint = container.querySelector(".agentplane-composer-autosuspend");
   expect(hint?.textContent).toBe("Sandbox autosuspends in ~12m");
-  const streams = eventSourceUrls.length;
+  const streams = eventStreamUrls.length;
 
   await act(async () => vi.advanceTimersByTimeAsync(60_000));
 
   expect(hint?.textContent).toBe("Sandbox autosuspends in ~11m");
-  expect(eventSourceUrls).toHaveLength(streams);
+  expect(eventStreamUrls).toHaveLength(streams);
   expect(hint?.getAttribute("title")).toContain("Next suspension attempt: 2026-01-01T12:12:00.000Z");
 });
 
@@ -524,7 +507,7 @@ it("explains every runner blocker and links sessions outside the loaded thread l
     },
   ];
   const container = await render();
-  const streams = eventSourceUrls.length;
+  const streams = eventStreamUrls.length;
   const hint = container.querySelector(".agentplane-composer-autosuspend");
   expect(hint?.textContent).toBe("Sandbox in active use by Session 00000000 · Details");
   expect(hint?.querySelector("a")?.getAttribute("href")).toBe(`/threads/${unlistedSession}`);
@@ -536,7 +519,7 @@ it("explains every runner blocker and links sessions outside the loaded thread l
   expect(details?.textContent).toContain("Command being admitted");
   expect(details?.querySelector(`a[href="/threads/${THREAD.id}"]`)?.textContent).toBe(THREAD.name);
   expect(details?.querySelector(`a[href="/threads/${unlistedSession}"]`)?.textContent).toBe("Session 00000000");
-  expect(eventSourceUrls).toHaveLength(streams);
+  expect(eventStreamUrls).toHaveLength(streams);
 });
 
 it.each([null, "2026-01-01T12:12:00Z"])(
@@ -864,6 +847,14 @@ it.each([
   expect(indicator?.getAttribute("data-status")).toBe(kind);
 });
 
+it("reads the Sandbox for the topbar and the composer from the one inventory stream", async () => {
+  sandboxes = [{ ...inventorySandbox("Suspended", true), suspended_by: "Requested" }];
+  const container = await render();
+  const indicator = mounted.at(-1)?.topbarTitle?.querySelector(".agentplane-thread-status-indicator");
+  expect(indicator?.getAttribute("data-status")).toBe("suspended");
+  expect(composer(container).placeholder).toMatch(/^Sandbox is suspended \(on request\)\./);
+});
+
 it("shows the thread's unprocessed notification count in its topbar status indicator", async () => {
   noticeInboxes = [{ inboxId: "inbox-1", sessionId: THREAD.id, queued: 2, unacknowledged: 1 }];
   await render();
@@ -1083,7 +1074,7 @@ it("keeps one sandbox inventory stream mounted across thread route remounts", as
     );
   });
 
-  expect(eventSourceUrls.filter((url) => url === "/live/sandboxes")).toHaveLength(1);
+  expect(eventStreamUrls.filter((url) => url === "/live/sandboxes")).toHaveLength(1);
 });
 
 it("mounts the thread from the live snapshot without fetching its metadata again", async () => {
@@ -1540,10 +1531,11 @@ it("moves a local control into chronological history once projected and retains 
   projected.entityId = "inline-model";
   projected.cursor = "2";
   await rerender(container, threadState({ rows: [viewState(), projected] }));
-  expect(container.querySelectorAll('[data-command-id="inline-model"]')).toHaveLength(0);
-  const [historyEntry] = await renderHistory([projected], false);
-  const settled = historyEntry.querySelector<HTMLElement>('[data-command-id="inline-model"]')!;
+  expect(container.querySelectorAll('[data-command-id="inline-model"]')).toHaveLength(1);
+  const settled = pendingRow(container, "inline-model");
   expect(settled).not.toBeNull();
+  expect(settled.closest("[data-history-row-key]")).not.toBeNull();
+  expect(settled.querySelector('[data-stage="local"]')).toBeNull();
   expect(settled.querySelector(".agentplane-command-check")).not.toBeNull();
   expect(settled.textContent).toContain("Change model to next-model");
   expect(new LocalCommands(THREAD.id).getSnapshot().commands).toHaveLength(0);

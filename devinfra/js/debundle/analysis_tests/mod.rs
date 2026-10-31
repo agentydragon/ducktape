@@ -1172,3 +1172,52 @@ fn repeated_declaration_is_refused_unless_every_site_is_var() {
         );
     }
 }
+
+/// Regression for the plain-array at-init fallback: a call-free `map`
+/// callback that reads an element member can run that element's getter, so
+/// the array stays a fallback root. Elements proven primitive, or used only
+/// by identity, keep it out.
+#[test]
+fn plain_array_fallback_keeps_arrays_whose_callbacks_touch_element_members() {
+    let facts = analyze_facts(&parse(
+        "let later = 0; \
+         const items = [{ get label() { return later; } }]; \
+         const labels = items.map((item) => item.label); \
+         const kept = items.filter((item) => item); \
+         const ids = ['a', 'b']; \
+         const sizes = ids.map((id) => id.length + `${id}`);",
+    ));
+    assert!(
+        facts[2]
+            .at_init_unresolved_sources
+            .contains(&test_id("items"))
+    );
+    assert!(
+        !facts[3]
+            .at_init_unresolved_sources
+            .contains(&test_id("items"))
+    );
+    assert!(
+        !facts[5]
+            .at_init_unresolved_sources
+            .contains(&test_id("ids"))
+    );
+}
+
+/// Regression for plain-array exposure: a `forEach` callback receives the
+/// array as its third argument and can replace a primitive element with an
+/// accessor, so the array no longer counts as primitive-only.
+#[test]
+fn plain_array_written_through_a_callback_argument_stays_a_fallback_root() {
+    let facts = analyze_facts(&parse(
+        "let later = 0; \
+         const values = [1]; \
+         values.forEach((value, index, array) => { array[index] = { get label() { return later; } }; }); \
+         const labels = values.map((value) => value.label);",
+    ));
+    assert!(
+        facts[3]
+            .at_init_unresolved_sources
+            .contains(&test_id("values"))
+    );
+}

@@ -76,15 +76,22 @@ message GetHealthRequest {}
 
 // The body of `/healthz`, with its status code as `ready`.
 message GetHealthResponse {
-  // Whether the proxy can enforce on a complete, current index: the 200 or 503 of `/healthz`.
+  // Whether the proxy can enforce on a synced index none of whose kinds is failing: the 200 or 503 of
+  // `/healthz`.
   bool ready = 1;
   bool synced = 2;
   bool draining = 3;
   DecisionHistoryHealth decision_history = 4;
-  // How old a resource kind's last refresh may be before the index counts as stale.
-  double stale_after_seconds = 5;
-  // Seconds since each resource kind was last refreshed, to a tenth.
-  map<string, double> refreshed_seconds_ago = 6;
+  reserved 5, 6;
+  reserved "stale_after_seconds", "refreshed_seconds_ago";
+  // Each resource kind whose last list or watch failed, by kind.
+  map<string, KindFailure> failing = 7;
+}
+
+// Why a resource kind is failing, since its first failure after its last successful list or watch.
+message KindFailure {
+  string error = 1;
+  google.protobuf.Timestamp since = 2;
 }
 
 // The decision writer's counters. Accepted and acknowledged count producer events, and a lost event

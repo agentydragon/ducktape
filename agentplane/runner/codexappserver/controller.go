@@ -14,8 +14,6 @@ import (
 	"go.uber.org/zap"
 )
 
-const dependencyBudget = 30 * time.Second
-
 type LifecycleController struct{ host *Host }
 
 func (*LifecycleController) Name() string { return ControllerName }
@@ -271,7 +269,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		if !current.ExecServerReadyDeadline.IsZero() && !now.Before(current.ExecServerReadyDeadline) {
 			current.Phase = Stopped
 			current.Attempt = input.Demand
-			current.Error = fmt.Sprintf("Codex exec-server did not become ready within %s", dependencyBudget)
+			current.Error = fmt.Sprintf("Codex exec-server did not become ready within %s", server.deps.Readiness.ExecServerDependencyTimeout)
 			current.ExecServerReadyDeadline = time.Time{}
 			return write()
 		}
@@ -281,11 +279,11 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			current.ProcessID = ""
 			if current.ExecServerReadyDeadline.IsZero() {
 				current.Error = ""
-				current.ExecServerReadyDeadline = now.Add(dependencyBudget)
+				current.ExecServerReadyDeadline = now.Add(server.deps.Readiness.ExecServerDependencyTimeout)
 				if err := write(); err != nil {
 					return err
 				}
-				return controller.NewRequeueError(nil, dependencyBudget)
+				return controller.NewRequeueError(nil, server.deps.Readiness.ExecServerDependencyTimeout)
 			}
 			return controller.NewRequeueError(nil, current.ExecServerReadyDeadline.Sub(now))
 		}

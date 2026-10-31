@@ -24,6 +24,7 @@
 //! export, an unresolved re-export) simply gets no entry, so the call stays
 //! `unknown_call` exactly as before. Pinned assertions remain trusted axioms.
 
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
@@ -34,16 +35,16 @@ use swc_ecma_ast::{Id, ModuleItem};
 
 use crate::SourceLocation;
 use crate::analysis_inputs::{
-    CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments, DeferredRecordMember,
-    DescriptorCopyFactorySummary, NamespaceWrapperSummary, NativeInputKind, NativeIntegrity,
-    ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
-    ReturnedRecordSummary, SelectedBindingValueInput, SelectedNativeOperationInput,
+    BundleGlobalNames, CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments,
+    DeferredRecordMember, DescriptorCopyFactorySummary, ForeignCallSummary,
+    NamespaceWrapperSummary, NativeInputKind, NativeIntegrity, ProofDependencies,
+    ResolvedBindingValueInput, ResolvedNativeOperationInput, ReturnedRecordSummary,
+    SelectedBindingValueInput, SelectedNativeOperationInput,
 };
-use crate::facts::{TopLevelItemView, top_level_item_views};
+use crate::facts::abstract_domain::value::{PrimKinds, Value};
+use crate::facts::{ChunkValueFlow, TopLevelItemView, top_level_item_views};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
-use crate::purity::{
-    ChunkCodeGraph, Purity, PurityEffectRules, PurityMode, collect_plain_array_bindings,
-};
+use crate::purity::{ChunkCodeGraph, Purity, PurityEffectRules, PurityMode};
 
 /// Stable key identifying a module in the program (the chunk name).
 pub type ModuleKey = String;
@@ -61,6 +62,68 @@ pub struct ResolvedImport {
     pub export: String,
 }
 
+/// A stable direct ESM export's primitive value before import resolution.
+/// Canonical shallow-scan facts; never serialized or author asserted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StableExportValue {
+    /// The types the exported binding's history computes itself, joined with
+    /// the values of the named/default import bindings it copies.
+    Local {
+        kinds: PrimKinds,
+        imports: BTreeSet<String>,
+    },
+    /// `export { export as name } from source`.
+    ReExport { source: String, export: String },
+}
+
+/// A stable export after its imports resolved: its own types and the exports
+/// it copies.
+pub struct ExportValueSource {
+    pub kinds: PrimKinds,
+    pub copies: Vec<ResolvedImport>,
+}
+
+/// Close export values over resolved imports and re-exports. An export's
+/// value is known once every export it copies is; unsupported cycles have no
+/// seed and stay unknown. The closure neither interprets values nor certifies
+/// that evaluating an initializer is pure.
+pub fn resolve_export_values(
+    sources: BTreeMap<(ModuleKey, String), ExportValueSource>,
+) -> BTreeMap<(ModuleKey, String), Value> {
+    let rules = ExportValueRules(sources.into_iter().collect());
+    let count = rules.0.len();
+    IterativeInference::new(rules)
+        .solve_values(0..count)
+        .into_iter()
+        .map(|(export, kinds)| (export, Value::Prim(kinds)))
+        .collect()
+}
+
+struct ExportValueRules(Vec<((ModuleKey, String), ExportValueSource)>);
+
+impl IterativeRules for ExportValueRules {
+    type Key = (ModuleKey, String);
+    type Fact = PrimKinds;
+    type Rule = usize;
+
+    fn evaluate(&self, rule: &usize, context: &mut impl FactContext<Self::Key, PrimKinds>) {
+        let (export, source) = &self.0[*rule];
+        let mut kinds = source.kinds;
+        for copy in &source.copies {
+            let Some(copied) = context.read((copy.module.clone(), copy.export.clone())) else {
+                return;
+            };
+            kinds = kinds.union(*copied);
+        }
+        context.propose(export.clone(), kinds);
+    }
+
+    fn merge(_: &Self::Key, current: &mut PrimKinds, contribution: PrimKinds) -> bool {
+        let joined = current.union(contribution);
+        std::mem::replace(current, joined) != joined
+    }
+}
+
 /// One module's purity-relevant surface for the oracle.
 pub struct ModulePurityFacts<'a> {
     /// The module entry's top-level items (caller-owned parsed AST).
@@ -72,6 +135,11 @@ pub struct ModulePurityFacts<'a> {
     /// Origin of direct function-body reasons, if the caller retained the
     /// source line index. Imports reuse these locations unchanged.
     pub source: Option<(String, SourceLineIndex)>,
+    /// Export name → the package a vendor swap replaces it with. Facts derived
+    /// from this body still hold for those exports under the swap's
+    /// equivalence promise (SPEC.md § Vendor swap equivalence); summaries
+    /// name the package so an author can audit them against it.
+    pub replacement_packages: BTreeMap<String, String>,
 }
 
 struct PreparedModulePurityFacts<'a> {
@@ -86,16 +154,27 @@ struct PreparedModulePurityFacts<'a> {
 }
 
 impl<'a> ModulePurityFacts<'a> {
+    /// `structural_flow` is this body's flow under the same inputs, when the
+    /// summary pass already solved it.
     fn prepare(
         &self,
         inputs: &crate::analysis_inputs::AnalysisInputs,
+        structural_flow: Option<ChunkValueFlow>,
     ) -> PreparedModulePurityFacts<'a> {
-        let structural = crate::facts::complete_chunk_structural_with_inputs(
-            crate::facts::collect_chunk_source_facts_from_items(self.body, None, |_| None),
-            &inputs.assumptions.native_operation_inputs,
-            &inputs.stable_set_spreads,
-            &inputs.assumptions.argument_inputs,
-        );
+        let source = crate::facts::collect_chunk_source_facts_from_items(self.body, None, |_| None);
+        let structural = match structural_flow {
+            Some(flow) => crate::facts::complete_chunk_structural_with_flow(
+                source,
+                &inputs.assumptions.argument_inputs,
+                flow,
+            ),
+            None => crate::facts::complete_chunk_structural_with_inputs(
+                source,
+                &inputs.assumptions.native_operation_inputs,
+                &inputs.stable_set_spreads,
+                &inputs.assumptions.argument_inputs,
+            ),
+        };
         let views = structural.body;
         let shadowed = structural.shadowed;
         let value_flow = structural.value_flow;
@@ -104,7 +183,8 @@ impl<'a> ModulePurityFacts<'a> {
         let plain_data_inference_uses = structural.plain_data_inference_uses;
         let source_semantic_facts = structural.source_semantic_facts;
         let stable_array_spread_shapes = structural.stable_array_spread_shapes;
-        let plain_array_bindings = collect_plain_array_bindings(&views, &shadowed);
+        let plain_array_bindings =
+            crate::facts::abstract_domain::heap::plain_array_bindings(&views, &shadowed);
         let set_iterable_proof = structural.set_iterable_shapes;
         let local_class_construction_proof = structural.local_class_shapes;
         let prepared_sync_index =
@@ -178,6 +258,20 @@ impl<'a> ModulePurityFacts<'a> {
     /// program-wide export verdicts: each local import bound to a *function*
     /// export of an analyzed module gets that export's verdict; anything
     /// unresolved is omitted (stays `unknown_call`).
+    /// Each local import's value under the program-wide export values.
+    pub fn imported_values(
+        &self,
+        export_values: &BTreeMap<(ModuleKey, String), Value>,
+    ) -> BTreeMap<String, Value> {
+        self.imports
+            .iter()
+            .filter_map(|(local, target)| {
+                let value = export_values.get(&(target.module.clone(), target.export.clone()))?;
+                Some((local.clone(), *value))
+            })
+            .collect()
+    }
+
     fn imported_purities(
         &self,
         export_purity: &BTreeMap<(ModuleKey, String), Arc<Purity>>,
@@ -207,7 +301,7 @@ impl<'a> ModulePurityFacts<'a> {
 pub fn resolve_imported_purities(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted_pure: &BTreeMap<ModuleKey, BTreeSet<String>>,
-    callable_summaries: &ResolvedCallableSummaries,
+    callable_summaries: &mut ResolvedCallableSummaries,
 ) -> BTreeMap<ModuleKey, BTreeMap<String, Arc<Purity>>> {
     // Only exported verdicts read by a named/default import can affect the
     // returned maps or another module's closure. Namespace member calls are
@@ -312,7 +406,8 @@ pub fn resolve_imported_purities(
                 .unwrap_or_default(),
             ..Default::default()
         };
-        let facts_prepared = facts.prepare(&inputs);
+        let facts_prepared =
+            facts.prepare(&inputs, callable_summaries.structural_flows.remove(key));
         prepared.insert(key.clone(), facts_prepared);
         if progress {
             eprintln!(
@@ -408,6 +503,12 @@ pub struct ResolvedCallableSummaries {
     pub stable_set_spreads:
         BTreeMap<ModuleKey, BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>>,
     pub argument_inputs: BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
+    /// The whole-program bundle-owned globals the census used.
+    pub bundle_globals: BundleGlobalNames,
+    /// Structural value flows already solved while deriving summaries, which
+    /// the purity oracle's census of the same body takes instead of solving
+    /// again.
+    pub(crate) structural_flows: BTreeMap<ModuleKey, ChunkValueFlow>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -561,6 +662,18 @@ fn solve_callable_import_projections(
         .collect()
 }
 
+/// The author inputs and host claims `resolve_imported_callable_summaries`
+/// checks the providers against.
+pub struct CallableSummaryInputs<'a> {
+    pub selected_value_inputs: &'a BTreeMap<ModuleKey, Vec<SelectedBindingValueInput>>,
+    pub selected_native_operation_inputs:
+        &'a BTreeMap<ModuleKey, Vec<SelectedNativeOperationInput>>,
+    pub explicit_binding_destinations: &'a BTreeMap<ModuleKey, HashMap<Id, usize>>,
+    pub argument_inputs:
+        &'a BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
+    pub predefined_globals: spec::PredefinedGlobals,
+}
+
 pub fn resolve_imported_callable_summaries(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted: &BTreeMap<ModuleKey, BTreeSet<String>>,
@@ -568,11 +681,15 @@ pub fn resolve_imported_callable_summaries(
         ModuleKey,
         BTreeMap<String, Vec<spec::DescriptorCopyFactorySignature>>,
     >,
-    selected_value_inputs: &BTreeMap<ModuleKey, Vec<SelectedBindingValueInput>>,
-    selected_native_operation_inputs: &BTreeMap<ModuleKey, Vec<SelectedNativeOperationInput>>,
-    explicit_binding_destinations: &BTreeMap<ModuleKey, HashMap<Id, usize>>,
-    argument_inputs: &BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
+    inputs: CallableSummaryInputs<'_>,
 ) -> Result<ResolvedCallableSummaries> {
+    let CallableSummaryInputs {
+        selected_value_inputs,
+        selected_native_operation_inputs,
+        explicit_binding_destinations,
+        argument_inputs,
+        predefined_globals,
+    } = inputs;
     let required: BTreeSet<_> = modules
         .values()
         .flat_map(|facts| facts.imports.values())
@@ -610,70 +727,112 @@ pub fn resolve_imported_callable_summaries(
             }
         }
     }
-    let mut prepared = BTreeMap::new();
-    let mut resolved_value_inputs = BTreeMap::new();
-    let mut resolved_native_operation_inputs = BTreeMap::new();
-    for (module, facts) in modules {
-        let locals = facts
-            .exports
-            .iter()
-            .filter(|(export, _)| {
-                required.contains(&CallableExportKey {
-                    module: module.clone(),
-                    export: (*export).clone(),
+    // The bundle-owned globals are a whole-program greatest fixed point over
+    // every module's writes; a second preparation reads them.
+    let prepare = |bundle_globals: &BundleGlobalNames| -> Result<_> {
+        let mut prepared = BTreeMap::new();
+        let mut resolved_value_inputs = BTreeMap::new();
+        let mut resolved_native_operation_inputs = BTreeMap::new();
+        for (module, facts) in modules {
+            let locals = facts
+                .exports
+                .iter()
+                .filter(|(export, _)| {
+                    required.contains(&CallableExportKey {
+                        module: module.clone(),
+                        export: (*export).clone(),
+                    })
                 })
-            })
-            .map(|(_, local)| local.clone())
-            .collect();
-        let views = top_level_item_views(facts.body);
-        let mut prepared_module =
-            crate::facts::sync_effects::execution_index::prepare_callable_capabilities(
-                &views,
-                crate::facts::StableArraySpreadShapes::collect(facts.body, &views),
-                locals,
-                selected_value_inputs
-                    .get(module)
-                    .cloned()
-                    .unwrap_or_default(),
-                selected_native_operation_inputs
-                    .get(module)
-                    .cloned()
-                    .unwrap_or_default(),
-            );
-        if !prepared_module.value_input_errors().is_empty() {
-            bail!(
-                "invalid captured value input for provider {module}: {}",
-                prepared_module.value_input_errors().join("; ")
-            );
+                .map(|(_, local)| local.clone())
+                .collect();
+            let views = top_level_item_views(facts.body);
+            let mut prepared_module =
+                crate::facts::sync_effects::execution_index::prepare_callable_capabilities(
+                    &views,
+                    crate::facts::StableArraySpreadShapes::collect(facts.body, &views),
+                    locals,
+                    selected_value_inputs
+                        .get(module)
+                        .cloned()
+                        .unwrap_or_default(),
+                    selected_native_operation_inputs
+                        .get(module)
+                        .cloned()
+                        .unwrap_or_default(),
+                    predefined_globals,
+                    bundle_globals.clone(),
+                );
+            if !prepared_module.value_input_errors().is_empty() {
+                bail!(
+                    "invalid captured value input for provider {module}: {}",
+                    prepared_module.value_input_errors().join("; ")
+                );
+            }
+            prepared_module.locate_value_inputs(facts.source.as_ref());
+            let module_inputs = prepared_module.resolved_value_inputs();
+            if !module_inputs.is_empty() && facts.source.is_none() {
+                bail!(
+                    "captured value input for provider {module} has no retained parser source locations"
+                );
+            }
+            if !module_inputs.is_empty() {
+                resolved_value_inputs.insert(module.clone(), module_inputs);
+            }
+            if !prepared_module.native_operation_input_errors().is_empty() {
+                bail!(
+                    "invalid native operation input for provider {module}: {}",
+                    prepared_module.native_operation_input_errors().join("; ")
+                );
+            }
+            prepared_module.locate_native_operation_inputs(facts.source.as_ref());
+            let module_native_inputs = prepared_module.resolved_native_operation_inputs();
+            if !module_native_inputs.is_empty() && facts.source.is_none() {
+                bail!(
+                    "native operation input for provider {module} has no retained parser source locations"
+                );
+            }
+            if !module_native_inputs.is_empty() {
+                resolved_native_operation_inputs.insert(module.clone(), module_native_inputs);
+            }
+            prepared_module.locate_native_writes(module, facts.source.as_ref());
+            prepared.insert(module, prepared_module);
         }
-        prepared_module.locate_value_inputs(facts.source.as_ref());
-        let module_inputs = prepared_module.resolved_value_inputs();
-        if !module_inputs.is_empty() && facts.source.is_none() {
-            bail!(
-                "captured value input for provider {module} has no retained parser source locations"
-            );
+        Ok((
+            prepared,
+            resolved_value_inputs,
+            resolved_native_operation_inputs,
+        ))
+    };
+    let (mut prepared, mut resolved_value_inputs, mut resolved_native_operation_inputs) =
+        prepare(&BundleGlobalNames::default())?;
+    let mut bundle_globals = BundleGlobalNames::default();
+    if predefined_globals == spec::PredefinedGlobals::Standard {
+        bundle_globals.fresh_collections = true;
+        for module in prepared.values() {
+            let candidates = module.bundle_global_candidates();
+            bundle_globals.names.extend(candidates.names);
+            bundle_globals.registered_symbols |= candidates.registered_symbols;
         }
-        if !module_inputs.is_empty() {
-            resolved_value_inputs.insert(module.clone(), module_inputs);
+        loop {
+            let mut next = bundle_globals.clone();
+            for module in prepared.values() {
+                let survivors = module.bundle_global_survivors(&bundle_globals);
+                next.names.retain(|name| survivors.names.contains(name));
+                next.registered_symbols &= survivors.registered_symbols;
+                next.fresh_collections &= survivors.fresh_collections;
+            }
+            if next == bundle_globals {
+                break;
+            }
+            bundle_globals = next;
         }
-        if !prepared_module.native_operation_input_errors().is_empty() {
-            bail!(
-                "invalid native operation input for provider {module}: {}",
-                prepared_module.native_operation_input_errors().join("; ")
-            );
+        if bundle_globals != BundleGlobalNames::default() {
+            (
+                prepared,
+                resolved_value_inputs,
+                resolved_native_operation_inputs,
+            ) = prepare(&bundle_globals)?;
         }
-        prepared_module.locate_native_operation_inputs(facts.source.as_ref());
-        let module_native_inputs = prepared_module.resolved_native_operation_inputs();
-        if !module_native_inputs.is_empty() && facts.source.is_none() {
-            bail!(
-                "native operation input for provider {module} has no retained parser source locations"
-            );
-        }
-        if !module_native_inputs.is_empty() {
-            resolved_native_operation_inputs.insert(module.clone(), module_native_inputs);
-        }
-        prepared_module.locate_native_writes(module, facts.source.as_ref());
-        prepared.insert(module, prepared_module);
     }
     for input in selected_native_operation_inputs
         .values()
@@ -783,6 +942,7 @@ pub fn resolve_imported_callable_summaries(
         );
     }
     let mut stable_set_spreads = BTreeMap::new();
+    let no_spreads = BTreeMap::new();
     let empty_destinations = HashMap::new();
     for (module, inputs) in &resolved_native_operation_inputs {
         let destinations = explicit_binding_destinations
@@ -875,11 +1035,29 @@ pub fn resolve_imported_callable_summaries(
             }
         }
     }
+    // At most one structural flow per module, solved on first need and kept
+    // for the purity oracle (`ModulePurityFacts::prepare`).
+    let structural_flows: BTreeMap<&ModuleKey, OnceCell<ChunkValueFlow>> = modules
+        .keys()
+        .map(|module| (module, OnceCell::new()))
+        .collect();
+    let structural_flow = |module: &ModuleKey, views: &[TopLevelItemView<'_>]| {
+        structural_flows[module].get_or_init(|| {
+            crate::facts::structural_value_flow(
+                views,
+                resolved_native_operation_inputs
+                    .get(module)
+                    .map_or(&[][..], Vec::as_slice),
+                stable_set_spreads.get(module).unwrap_or(&no_spreads),
+            )
+        })
+    };
     // Argument/entry coverage is structural and independent of the native
     // integrity that it can refine. Author timing assertions cannot supply it.
     for (module, facts) in modules {
         let views = top_level_item_views(facts.body);
-        let arguments = prepared[module].callback_object_arguments(&views);
+        let arguments =
+            prepared[module].callback_object_arguments(&views, || structural_flow(module, &views));
         for (export, local) in &facts.exports {
             let Some((start, objects)) = arguments.get(local) else {
                 continue;
@@ -1036,6 +1214,13 @@ pub fn resolve_imported_callable_summaries(
                     prepared,
                     &native_integrity,
                     &required_stable_providers,
+                    modules[module].exports.keys().any(|export| {
+                        required.contains(&CallableExportKey {
+                            module: module.clone(),
+                            export: export.clone(),
+                        })
+                    }),
+                    || structural_flow(module, &views),
                 ),
             )
         })
@@ -1073,11 +1258,22 @@ pub fn resolve_imported_callable_summaries(
             );
         }
     }
+    // A construction premise must hold in every analyzed chunk's census,
+    // including the importer's.
+    let intact_collections = inferred
+        .values()
+        .map(|capabilities| &capabilities.intact_collections)
+        .fold(None::<BTreeSet<_>>, |all, module| {
+            Some(match all {
+                None => module.clone(),
+                Some(all) => all.intersection(module).copied().collect(),
+            })
+        })
+        .unwrap_or_default();
     for (module, facts) in modules {
         let Some(capabilities) = inferred.get(module) else {
             continue;
         };
-        let callback_factories = &capabilities.callback_factories;
         for (export, local) in &facts.exports {
             let key = CallableExportKey {
                 module: module.clone(),
@@ -1086,7 +1282,13 @@ pub fn resolve_imported_callable_summaries(
             if !required.contains(&key) || export_summaries.contains_key(&key) {
                 continue;
             }
-            let Some(factory) = callback_factories.get(local) else {
+            let Some(factory) = capabilities.foreign_calls.get(local).filter(|call| {
+                call.callback_factory
+                    && call
+                        .derived
+                        .native_constructions
+                        .is_subset(&intact_collections)
+            }) else {
                 continue;
             };
             export_summaries.entry(key).or_default().add(
@@ -1096,8 +1298,8 @@ pub fn resolve_imported_callable_summaries(
                         export: export.clone(),
                         local: local.clone(),
                         source_location: facts.source.as_ref().and_then(|(path, index)| {
-                            let (line, column) =
-                                index.line_and_column_for_pos(BytePos(factory.function_start))?;
+                            let (line, column) = index
+                                .line_and_column_for_pos(BytePos(factory.declaration_start))?;
                             Some(SourceLocation {
                                 source_path: path.clone(),
                                 start_line: line,
@@ -1111,18 +1313,31 @@ pub fn resolve_imported_callable_summaries(
             );
         }
     }
-    let needs_map_integrity = inferred
-        .values()
-        .any(|summary| !summary.returned_records.is_empty());
-    // A source-composed native premise must survive every analyzed chunk's
-    // canonical intrinsic-write census, including the importing chunk.
-    if needs_map_integrity
-        && inferred
-            .values()
-            .all(|capabilities| capabilities.map_integrity)
-    {
-        for (module, facts) in modules {
-            let records = &inferred[module].returned_records;
+    for (module, facts) in modules {
+        let Some(capabilities) = inferred.get(module) else {
+            continue;
+        };
+        for (export, local) in &facts.exports {
+            let key = CallableExportKey {
+                module: module.clone(),
+                export: export.clone(),
+            };
+            // An initializer may not have run when the importer calls it.
+            let Some(call) = capabilities
+                .foreign_calls
+                .get(local)
+                .filter(|call| call.hoisted)
+            else {
+                continue;
+            };
+            if !required.contains(&key)
+                || !call
+                    .derived
+                    .native_constructions
+                    .is_subset(&intact_collections)
+            {
+                continue;
+            }
             let locate = |start| {
                 facts.source.as_ref().and_then(|(path, index)| {
                     let (line, column) = index.line_and_column_for_pos(BytePos(start))?;
@@ -1134,25 +1349,14 @@ pub fn resolve_imported_callable_summaries(
                     })
                 })
             };
-            for (export, local) in &facts.exports {
-                let key = CallableExportKey {
-                    module: module.clone(),
-                    export: export.clone(),
-                };
-                if !required.contains(&key) {
-                    continue;
-                }
-                let Some(record) = records.get(local) else {
-                    continue;
-                };
-                export_summaries.entry(key).or_default().add(
+            if let Some(record) = &call.record {
+                export_summaries.entry(key.clone()).or_default().add(
                     CallableSummary::returned_record(ReturnedRecordSummary {
                         defining_module: module.clone(),
                         export: export.clone(),
                         local: local.clone(),
-                        source_location: locate(record.facts.function_start),
+                        source_location: locate(call.declaration_start),
                         members: record
-                            .facts
                             .members
                             .iter()
                             .map(|(name, start, captures)| DeferredRecordMember {
@@ -1162,10 +1366,26 @@ pub fn resolve_imported_callable_summaries(
                             })
                             .collect(),
                         inference: record.inference.clone(),
+                        replacement_package: facts.replacement_packages.get(export).cloned(),
                     }),
-                    record.dependencies.clone(),
+                    call.dependencies.clone(),
                 );
             }
+            export_summaries.entry(key).or_default().add(
+                CallableSummary::foreign_call(ForeignCallSummary {
+                    defining_module: module.clone(),
+                    export: export.clone(),
+                    local: local.clone(),
+                    source_location: locate(call.declaration_start),
+                    invocation: call.derived.invocation,
+                    returns: call.derived.returns.clone(),
+                    retained_arguments: call.derived.retained_arguments.clone(),
+                    native_constructions: call.derived.native_constructions.clone(),
+                    replacement_package: facts.replacement_packages.get(export).cloned(),
+                    dependencies: call.dependencies.clone(),
+                }),
+                call.dependencies.clone(),
+            );
         }
     }
     for (module, facts) in modules {
@@ -1204,13 +1424,19 @@ pub fn resolve_imported_callable_summaries(
         }
     }
     let imported_callables = solve_callable_import_projections(modules, export_summaries);
+    let structural_flows = structural_flows
+        .into_iter()
+        .filter_map(|(module, flow)| Some((module.clone(), flow.into_inner()?)))
+        .collect();
     Ok(ResolvedCallableSummaries {
+        bundle_globals,
         imported_callables,
         native_integrity: Some(native_integrity),
         value_inputs: resolved_value_inputs,
         native_operation_inputs: resolved_native_operation_inputs,
         stable_set_spreads,
         argument_inputs: argument_inputs.clone(),
+        structural_flows,
     })
 }
 
@@ -1489,6 +1715,7 @@ mod tests {
                 .map(|(name, local)| ((*name).to_string(), (*local).to_string()))
                 .collect(),
             source: None,
+            replacement_packages: BTreeMap::new(),
         }
     }
 
@@ -1499,7 +1726,7 @@ mod tests {
     ) -> Purity {
         let module = parse(source);
         let facts = facts(&module, &[], &[("out", local)]);
-        let prepared = facts.prepare(&crate::analysis_inputs::AnalysisInputs::default());
+        let prepared = facts.prepare(&crate::analysis_inputs::AnalysisInputs::default(), None);
         facts
             .build_graph(&prepared, imported)
             .function_purity(local)
@@ -1553,6 +1780,7 @@ mod tests {
                 argument_input_spec_locations: BTreeSet::new(),
                 native_operation_input_refs: BTreeSet::new(),
             },
+            replacement_package: None,
         });
         let trusted_dependencies = value_input_dependencies("provider-values.js", 0);
         let mut export = CallableExportProof::default();
@@ -1600,7 +1828,7 @@ mod tests {
         let resolved = resolve_imported_purities(
             &modules,
             &BTreeMap::new(),
-            &ResolvedCallableSummaries::default(),
+            &mut ResolvedCallableSummaries::default(),
         );
         assert!(!resolved["a"]["wrap"].is_pure());
     }
@@ -1623,7 +1851,7 @@ mod tests {
         let resolved = resolve_imported_purities(
             &modules,
             &BTreeMap::new(),
-            &ResolvedCallableSummaries::default(),
+            &mut ResolvedCallableSummaries::default(),
         );
 
         assert!(resolved["a"]["right"].is_pure());
@@ -1649,7 +1877,7 @@ mod tests {
         let resolved = resolve_imported_purities(
             &modules,
             &BTreeMap::new(),
-            &ResolvedCallableSummaries::default(),
+            &mut ResolvedCallableSummaries::default(),
         );
 
         let right = &resolved["a"]["right"];
@@ -1699,7 +1927,7 @@ mod tests {
         let resolved = resolve_imported_purities(
             &modules,
             &BTreeMap::new(),
-            &ResolvedCallableSummaries::default(),
+            &mut ResolvedCallableSummaries::default(),
         );
         assert!(!resolved["app"].contains_key("ext"));
     }
@@ -1719,7 +1947,7 @@ mod tests {
         let resolved = resolve_imported_purities(
             &modules,
             &BTreeMap::new(),
-            &ResolvedCallableSummaries::default(),
+            &mut ResolvedCallableSummaries::default(),
         );
         assert!(!resolved["app"].contains_key("table"));
     }
@@ -1729,8 +1957,8 @@ mod tests {
         let module = parse(
             "const values = [1]; Set.prototype.add = function add(value) {}; new Set(values);",
         );
-        let prepared =
-            facts(&module, &[], &[]).prepare(&crate::analysis_inputs::AnalysisInputs::default());
+        let prepared = facts(&module, &[], &[])
+            .prepare(&crate::analysis_inputs::AnalysisInputs::default(), None);
 
         struct SetConstructors(Vec<Span>);
         impl Visit for SetConstructors {
@@ -1776,15 +2004,18 @@ mod tests {
             !resolve_imported_purities(
                 &modules,
                 &BTreeMap::new(),
-                &ResolvedCallableSummaries::default()
+                &mut ResolvedCallableSummaries::default()
             )["app"]["observer"]
                 .is_pure()
         );
         // With the assertion on the defining chunk: pure, at every importer.
         let asserted =
             BTreeMap::from([("lib".to_string(), BTreeSet::from(["observer".to_string()]))]);
-        let resolved =
-            resolve_imported_purities(&modules, &asserted, &ResolvedCallableSummaries::default());
+        let resolved = resolve_imported_purities(
+            &modules,
+            &asserted,
+            &mut ResolvedCallableSummaries::default(),
+        );
         assert!(resolved["app"]["observer"].is_pure());
         assert_eq!(
             resolved["app"]["observer"].dependencies(),
@@ -1829,7 +2060,7 @@ mod tests {
             !resolve_imported_purities(
                 &modules,
                 &BTreeMap::new(),
-                &ResolvedCallableSummaries::default()
+                &mut ResolvedCallableSummaries::default()
             )["app"]
                 .contains_key("forwardRef")
         );
@@ -1838,7 +2069,12 @@ mod tests {
             BTreeSet::from(["forwardRef".to_string()]),
         )]);
         assert!(
-            resolve_imported_purities(&modules, &asserted, &ResolvedCallableSummaries::default())["app"]["forwardRef"].is_pure()
+            resolve_imported_purities(
+                &modules,
+                &asserted,
+                &mut ResolvedCallableSummaries::default()
+            )["app"]["forwardRef"]
+                .is_pure()
         );
     }
 
@@ -1878,10 +2114,13 @@ mod tests {
             &modules,
             &asserted,
             &BTreeMap::new(),
-            &BTreeMap::new(),
-            &BTreeMap::new(),
-            &BTreeMap::new(),
-            &BTreeMap::new(),
+            CallableSummaryInputs {
+                selected_value_inputs: &BTreeMap::new(),
+                selected_native_operation_inputs: &BTreeMap::new(),
+                explicit_binding_destinations: &BTreeMap::new(),
+                argument_inputs: &BTreeMap::new(),
+                predefined_globals: spec::PredefinedGlobals::Unknown,
+            },
         )
         .unwrap()
         .imported_callables;

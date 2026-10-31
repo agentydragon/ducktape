@@ -133,6 +133,16 @@ creation_rules:
           - *agent-box-codex-user
           - *haku
 
+  # Gaffer's private-repository fetch PAT is read only by Flux and the
+  # github-secrets-sync Workspace; the GitHub Actions consumer receives it from
+  # OpenTofu instead of decrypting the source file.
+  - path_regex: cluster/k8s/external-creds/gaffer-repo-fetch-pat\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+
   # BuildBuddy org-admin API key for managing encrypted BuildBuddy secrets.
   # Flux applies it only for the litellm-keys Terraform runner; admin and
   # personal machine user keys derived from ~/.ssh/id_ed25519 can also decrypt it.
@@ -342,8 +352,8 @@ creation_rules:
   # ducktape-automation GitHub App private key (RSA PEM, SOPS binary).
   # Decryptable by admin, in-cluster Flux, and CI. Ducktape and gaffer-private
   # currently share the CI age key, so either repository can decrypt the
-  # remaining gaffer writer file and this App key. TODO: split CI recipients
-  # by repository and encrypt each credential only to its actual consumers.
+  # App key. TODO: retire the shared CI recipient after all remaining
+  # CI decryption consumers have migrated.
   - path_regex: secrets/ducktape-automation\..*\.private-key\.sops\.pem$
     store_type: binary
     key_groups:

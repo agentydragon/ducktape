@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/google/uuid"
 )
 
@@ -31,21 +32,21 @@ const viewImageInvalidMessage = "unable to process image: invalid or unsupported
 
 // Codex rust-v0.162.1 core/src/tools/handlers/view_image_spec.rs create_view_image_tool with
 // ViewImageToolOptions all false: the sampler has no model catalog to enable original detail.
-func viewImageToolDefinition() ResponsesCodeToolDefinition {
+func viewImageToolDefinition() protocol.CodeToolDefinition {
 	closed := false
 	detail := schemaString("Image detail hint returned by view_image. Returns `high` for default resized behavior or `original` when original resolution is preserved.")
 	detail.Enum = []string{"high", "original"}
-	return ResponsesCodeToolDefinition{
-		Name: "view_image", ToolName: ResponsesToolName{Name: "view_image"},
+	return protocol.CodeToolDefinition{
+		Name: "view_image", ToolName: protocol.ToolName{Name: "view_image"},
 		Description: "View a local image file from the filesystem when visual inspection is needed. Use this for images already available on disk.",
 		Kind:        "function",
-		InputSchema: &ResponsesJSONSchema{
+		InputSchema: &protocol.JSONSchema{
 			Type: "object", Required: []string{"path"}, AdditionalProperties: &closed,
-			Properties: map[string]ResponsesJSONSchema{"path": schemaString("Local filesystem path to an image file.")},
+			Properties: map[string]protocol.JSONSchema{"path": schemaString("Local filesystem path to an image file.")},
 		},
-		OutputSchema: &ResponsesJSONSchema{
+		OutputSchema: &protocol.JSONSchema{
 			Type: "object", Required: []string{"image_url", "detail"}, AdditionalProperties: &closed,
-			Properties: map[string]ResponsesJSONSchema{"image_url": schemaString("Data URL for the loaded image."), "detail": detail},
+			Properties: map[string]protocol.JSONSchema{"image_url": schemaString("Data URL for the loaded image."), "detail": detail},
 		},
 	}
 }
