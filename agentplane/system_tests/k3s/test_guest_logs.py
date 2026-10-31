@@ -155,7 +155,7 @@ def test_session_failures_disable_validation_at_teardown(tmp_path: Path) -> None
     assert [path.read_text() for path in outputs.rglob("*.log")] == ["FAILED_GUEST\n"]
 
 
-def test_retains_only_scoped_console_compute_and_handler_logs(tmp_path: Path) -> None:
+def test_retains_only_scoped_console_compute_relay_and_handler_logs(tmp_path: Path) -> None:
     logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
     contents = {
         "systest_virt-launcher-test_uid-one/guest-console-log/0.log": MARKER,
@@ -163,7 +163,8 @@ def test_retains_only_scoped_console_compute_and_handler_logs(tmp_path: Path) ->
         "kubevirt_virt-handler-test_uid-two/virt-handler/0.log": "HANDLER\n",
         "other_virt-launcher-test_uid-three/compute/0.log": "FOREIGN_LAUNCHER\n",
         "other_virt-handler-test_uid-four/virt-handler/0.log": "FOREIGN_HANDLER\n",
-        "systest_virt-launcher-test_uid-one/egress/0.log": "SIDECAR\n",
+        "systest_virt-launcher-test_uid-one/egress-sidecar/0.log": "RELAY\n",
+        "other_virt-launcher-test_uid-three/egress-sidecar/0.log": "FOREIGN_RELAY\n",
         "kubevirt_virt-controller-test_uid-five/virt-controller/0.log": "CONTROLLER\n",
     }
     for relative, content in contents.items():
@@ -178,10 +179,13 @@ def test_retains_only_scoped_console_compute_and_handler_logs(tmp_path: Path) ->
         validate_shutdown=lambda: True,
     ):
         pass
-    assert sorted(path.read_text() for path in outputs.rglob("*.log")) == sorted([MARKER, "COMPUTE\n", "HANDLER\n"])
+    assert sorted(path.read_text() for path in outputs.rglob("*.log")) == sorted(
+        [MARKER, "COMPUTE\n", "HANDLER\n", "RELAY\n"]
+    )
     assert {path.parts[0] for path in (path.relative_to(outputs) for path in outputs.rglob("*.log"))} == {
         "consoles",
         "launchers",
+        "relays",
         "handlers",
     }
 

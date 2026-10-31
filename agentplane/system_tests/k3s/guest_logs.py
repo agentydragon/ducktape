@@ -106,7 +106,7 @@ def _require_shutdown(consoles: Path) -> None:
 def capture(
     *, log_root: Path, namespace: str, kubevirt_namespace: str, destination: Path, validate_shutdown: Callable[[], bool]
 ) -> Iterator[None]:
-    """Retain consoles, launcher compute and virt-handler logs; validate only successful teardown.
+    """Retain guest, launcher relay, and virt-handler logs; validate only successful teardown.
 
     A pytest session fixture exits normally even when its tests failed, so its caller supplies a
     teardown-time predicate in addition to the exception-unwind protection here.
@@ -114,6 +114,7 @@ def capture(
     scopes = {
         f"{namespace}_virt-launcher-*/guest-console-log/*.log*": destination / "consoles",
         f"{namespace}_virt-launcher-*/compute/*.log*": destination / "launchers",
+        f"{namespace}_virt-launcher-*/egress-sidecar/*.log*": destination / "relays",
         f"{kubevirt_namespace}_virt-handler-*/virt-handler/*.log*": destination / "handlers",
     }
     stop = threading.Event()
