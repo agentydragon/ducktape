@@ -18,17 +18,33 @@
   gap: var(--mantine-spacing-sm);
 }
 
-.session-browser-related-sessions {
-  max-height: min(20dvh, 156px);
+.session-browser-events {
+  flex: 1;
   min-height: 0;
+}
+
+.session-browser-related-trigger {
+  flex: 0 0 auto;
+}
+
+.session-browser-related-dropdown {
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(60dvh, 520px);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
 
-.session-browser-related-sessions:focus-visible {
-  outline: 2px solid var(--mantine-primary-color-filled);
-  outline-offset: -2px;
+.session-browser-relation-badge {
+  max-width: 100%;
+  height: auto;
+}
+
+.session-browser-relation-badge .mantine-Badge-label {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .session-browser-resize-handle {
@@ -63,7 +79,7 @@
 }
 
 .session-browser-related-children {
-  max-height: min(12dvh, 96px);
+  max-height: min(24dvh, 192px);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
@@ -74,7 +90,6 @@
 }
 
 .session-browser-mobile-toggle,
-.session-browser-mobile-related-toggle,
 .session-browser-mobile-toolbar,
 .session-browser-mobile-sidebar-heading,
 .session-browser-mobile-backdrop {
@@ -112,7 +127,6 @@
   }
 
   .session-browser-mobile-toggle,
-  .session-browser-mobile-related-toggle,
   .session-browser-mobile-toolbar,
   .session-browser-mobile-sidebar-heading {
     display: flex;
@@ -126,8 +140,8 @@
     max-height: min(28dvh, 236px);
   }
 
-  .session-browser-related-sessions {
-    max-height: min(48dvh, 400px);
+  .session-browser-related-dropdown {
+    max-height: min(45dvh, 360px);
   }
 
   .session-import-progress-machines {

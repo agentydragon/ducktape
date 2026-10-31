@@ -47,6 +47,20 @@ async function flush(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
+async function openRelatedSessions(view: HTMLElement): Promise<HTMLElement> {
+  const trigger = view.querySelector<HTMLButtonElement>(".session-browser-related-trigger");
+  if (trigger === null) throw new Error("Could not find the related sessions trigger");
+  await act(async () => {
+    trigger.click();
+    await flush();
+  });
+  const related = document.body.querySelector<HTMLElement>(
+    '#session-browser-related-dropdown[aria-label="Related sessions"]'
+  );
+  if (related === null) throw new Error("Could not find the related sessions panel");
+  return related;
+}
+
 function findControl(view: HTMLElement, text: string): HTMLButtonElement | HTMLAnchorElement {
   const control = [...view.querySelectorAll<HTMLButtonElement | HTMLAnchorElement>("button, a")].find(
     (item) => item.textContent?.includes(text) || item.getAttribute("aria-label") === text
@@ -128,24 +142,22 @@ it("opens and closes the mobile session list with Escape", async () => {
   expect(sidebar?.classList.contains("session-browser-sidebar-open")).toBe(false);
 });
 
-it("opens the mobile drawer at related sessions from the transcript control", async () => {
+it("opens related sessions from the title and counts the represented parent", async () => {
   const view = await renderViewer(sessionFixtureApi, "/sessions/claude-session-1");
   await act(async () => {
     await flush();
     await flush();
   });
 
-  const toggle = view.querySelector<HTMLButtonElement>('button[aria-label^="Related sessions ("]');
-  const sidebar = view.querySelector<HTMLElement>('[aria-label="Session list"]');
-  const related = view.querySelector<HTMLElement>('[aria-label="Related sessions"]:not(button)');
-  expect(toggle).not.toBeNull();
-  expect(sidebar).not.toBeNull();
-  expect(related).not.toBeNull();
-  expect(toggle?.getAttribute("aria-label")).toMatch(/^Related sessions \(\d+ child sessions\)$/);
+  const toggle = view.querySelector<HTMLButtonElement>(".session-browser-related-trigger");
+  expect(toggle?.getAttribute("aria-label")).toBe("Related sessions (1 shown)");
+  expect(toggle?.querySelector(".session-browser-related-count")?.textContent).toBe("1");
+  expect(toggle?.getAttribute("aria-expanded")).toBe("false");
 
-  await act(async () => toggle!.click());
-  expect(sidebar?.classList.contains("session-browser-sidebar-open")).toBe(true);
-  expect(document.activeElement).toBe(related);
+  const related = await openRelatedSessions(view);
+  expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+  expect(related.textContent).toContain("Parent inferred from Claude subagent path");
+  expect(related.textContent).toContain("Inferred Claude parent · session 12ab");
 });
 
 it("opens a direct session link outside the first page and restores the requested version and filters", async () => {
@@ -238,9 +250,10 @@ it("renders session and related-session navigation as shareable links without ca
     sessionFixtureApi,
     "/sessions/claude-session-1?machine=atlas&harness=claude&version=claude-version-1"
   );
+  await openRelatedSessions(view);
   const sidebar = view.querySelector('[aria-label="Session list"]');
-  const parentLink = [...view.querySelectorAll<HTMLAnchorElement>('[aria-label="Related sessions"] a')].find((link) =>
-    link.textContent?.includes("Inferred Claude parent")
+  const parentLink = [...document.body.querySelectorAll<HTMLAnchorElement>('[aria-label="Related sessions"] a')].find(
+    (link) => link.textContent?.includes("Inferred Claude parent")
   );
   const sidebarParentLink = [...(sidebar?.querySelectorAll<HTMLAnchorElement>("a") ?? [])].find((link) =>
     link.textContent?.includes("Inferred Claude parent")
@@ -256,8 +269,12 @@ it("renders session and related-session navigation as shareable links without ca
     parentLink!.click();
     await flush();
   });
-  const childLink = [...view.querySelectorAll<HTMLAnchorElement>('[aria-label="Related sessions"] a')].find((link) =>
-    link.textContent?.includes("Inspect a local transcript")
+  expect(view.querySelector<HTMLButtonElement>(".session-browser-related-trigger")?.getAttribute("aria-expanded")).toBe(
+    "false"
+  );
+  await openRelatedSessions(view);
+  const childLink = [...document.body.querySelectorAll<HTMLAnchorElement>('[aria-label="Related sessions"] a')].find(
+    (link) => link.textContent?.includes("Inspect a local transcript")
   );
   expect(childLink?.getAttribute("href")).toBe("/sessions/claude-session-1?machine=atlas&harness=claude");
 });
@@ -569,21 +586,24 @@ it("shows inferred subagent links and navigates to a placeholder parent", async 
     findControl(view, "Inspect a local transcript").click();
     await flush();
   });
-  expect(view.textContent).toContain("Parent inferred from Claude subagent path");
-  expect(view.textContent).toContain("Inferred Claude parent · session 12ab");
+  const related = await openRelatedSessions(view);
+  expect(related.textContent).toContain("Parent inferred from Claude subagent path");
+  expect(related.textContent).toContain("Inferred Claude parent · session 12ab");
 
   await act(async () => {
-    findControl(view, "Inferred Claude parent · session 12ab").click();
+    findControl(related, "Inferred Claude parent · session 12ab").click();
     await flush();
   });
+  const parentRelated = await openRelatedSessions(view);
   expect(view.textContent).toContain("No transcript version is available. Inventory alone does not establish");
-  expect(view.textContent).toContain("Parent inferred from Claude subagent path");
-  expect(view.textContent).toContain("Inspect a local transcript");
+  expect(parentRelated.textContent).toContain("Inspect a local transcript");
 
   await act(async () => {
-    findControl(view, "Inspect a local transcript").click();
+    findControl(parentRelated, "Inspect a local transcript").click();
     await flush();
   });
+  const childRelated = await openRelatedSessions(view);
+  expect(childRelated.textContent).toContain("Parent inferred from Claude subagent path");
   expect(view.textContent).toContain("Review this local conversation.");
 });
 
@@ -613,10 +633,92 @@ it("shows unresolved native parent metadata without inventing a session link", a
     },
   };
   const view = await renderViewer(api);
+  expect(view.querySelector<HTMLButtonElement>(".session-browser-related-trigger")?.getAttribute("aria-label")).toBe(
+    "Related sessions (0 shown)"
+  );
+  const related = await openRelatedSessions(view);
 
-  expect(view.textContent).toContain("Codex parent_thread_id is unresolved");
-  expect(view.textContent).toContain("Native parent ID: thread-parent-123");
-  expect(view.textContent).toContain("Parent session could not be resolved to a captured session.");
+  expect(related.textContent).toContain("Codex parent_thread_id is unresolved");
+  expect(related.textContent).toContain("Native parent ID: thread-parent-123");
+  expect(related.textContent).toContain("Parent session could not be resolved to a captured session.");
+});
+
+it("keeps native parent metadata reachable without counting an uncaptured parent relation", async () => {
+  const metadataOnlySession: SessionSummary = {
+    id: "codex-child-metadata-only",
+    machine_id: "thinkpad",
+    harness: "codex",
+    title: "Inspect native metadata without a parent link",
+    cwd: null,
+    started_at: null,
+    last_activity_at: null,
+    latest_version_id: null,
+    version_count: 0,
+    latest_version_record_count: null,
+    transcript_status: "unavailable",
+    parent_session_id: null,
+    parent_link_kind: null,
+    parent_native_session_id: "thread-parent-unlinked",
+    parent_native_session_id_conflict: true,
+    parent_native_session_id_candidates: ["thread-parent-unlinked", "thread-parent-candidate"],
+    identity_inferred: false,
+  };
+  const api: SessionBrowserApi = {
+    ...sessionFixtureApi,
+    listSessions(query) {
+      if (query.parentSessionId !== undefined) return Promise.resolve({ data: [], next_cursor: null });
+      return Promise.resolve({ data: [metadataOnlySession], next_cursor: null });
+    },
+  };
+  const view = await renderViewer(api, `/sessions/${metadataOnlySession.id}`);
+  const toggle = view.querySelector<HTMLButtonElement>(".session-browser-related-trigger");
+  expect(toggle?.getAttribute("aria-label")).toBe("Related sessions (0 shown)");
+  const related = await openRelatedSessions(view);
+
+  expect(related.textContent).toContain("Native parent ID: thread-parent-unlinked");
+  expect(related.textContent).toContain(
+    "Conflicting native parent ID candidates: thread-parent-unlinked, thread-parent-candidate"
+  );
+  expect(related.textContent).toContain("Parent session could not be resolved to a captured session.");
+  expect(related.querySelector("a")).toBeNull();
+});
+
+it("shows parent and child lookup failures instead of leaving loading indicators active", async () => {
+  const session: SessionSummary = {
+    id: "codex-child-unavailable-parent",
+    machine_id: "thinkpad",
+    harness: "codex",
+    title: "Inspect a child with unavailable relations",
+    cwd: null,
+    started_at: null,
+    last_activity_at: null,
+    latest_version_id: null,
+    version_count: 0,
+    latest_version_record_count: null,
+    transcript_status: "unavailable",
+    parent_session_id: "missing-parent",
+    parent_link_kind: "codex_parent_thread_id",
+    parent_native_session_id: "thread-parent-missing",
+    identity_inferred: false,
+  };
+  const api: SessionBrowserApi = {
+    ...sessionFixtureApi,
+    listSessions(query) {
+      if (query.parentSessionId !== undefined) return Promise.reject(new Error("child lookup failed"));
+      return Promise.resolve({ data: [session], next_cursor: null });
+    },
+    getSession(sessionId) {
+      if (sessionId === "missing-parent") return Promise.reject(new Error("parent lookup failed"));
+      return sessionFixtureApi.getSession(sessionId);
+    },
+  };
+  const view = await renderViewer(api, `/sessions/${session.id}`);
+  const related = await openRelatedSessions(view);
+
+  expect(related.textContent).toContain("Could not load parent session: parent lookup failed");
+  expect(related.textContent).toContain("Could not load child sessions: child lookup failed");
+  expect(related.querySelector('[aria-label="Loading parent session"]')).toBeNull();
+  expect(related.querySelector('[aria-label="Loading child sessions"]')).toBeNull();
 });
 
 it("shows conflicting Codex native and parent IDs without inventing a parent link", async () => {
@@ -649,12 +751,13 @@ it("shows conflicting Codex native and parent IDs without inventing a parent lin
     },
   };
   const view = await renderViewer(api);
+  const related = await openRelatedSessions(view);
 
   expect(view.textContent).toContain("Conflicting native session IDs");
   expect(view.textContent).toContain("Native session ID candidates: thread-child-a, thread-child-b");
-  expect(view.textContent).toContain("Conflicting Codex parent_thread_id values");
-  expect(view.textContent).toContain("Conflicting native parent ID candidates: thread-parent-a, thread-parent-b");
-  expect(view.textContent).toContain("Parent session could not be resolved to a captured session.");
+  expect(related.textContent).toContain("Conflicting Codex parent_thread_id values");
+  expect(related.textContent).toContain("Conflicting native parent ID candidates: thread-parent-a, thread-parent-b");
+  expect(related.textContent).toContain("Parent session could not be resolved to a captured session.");
 });
 
 it("labels a resolved Codex parent_thread_id link and navigates to the captured parent", async () => {
@@ -695,15 +798,16 @@ it("labels a resolved Codex parent_thread_id link and navigates to the captured 
     },
   };
   const view = await renderViewer(api);
+  const related = await openRelatedSessions(view);
 
-  expect(view.textContent).toContain("Parent linked from Codex parent_thread_id");
-  expect(view.textContent).toContain("Native parent ID: thread-parent-123");
+  expect(related.textContent).toContain("Parent linked from Codex parent_thread_id");
+  expect(related.textContent).toContain("Native parent ID: thread-parent-123");
   await act(async () => {
-    findControl(view, "Captured Codex parent").click();
+    findControl(related, "Captured Codex parent").click();
     await flush();
   });
   expect(view.textContent).toContain("Captured Codex parent");
-  expect(view.querySelector('[aria-label="Related sessions"]')).toBeNull();
+  expect(view.querySelector(".session-browser-related-trigger")).toBeNull();
 });
 
 it("does not prepend an older event page after switching sessions", async () => {

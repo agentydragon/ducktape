@@ -145,12 +145,48 @@ async def test_inferred_subagent_parent_link(visual: VisualHarness, capture_name
     ) as view:
         page = view.page
         await page.get_by_role("link", name="Inspect a local transcript").click()
-        related = page.locator('#session-browser-sidebar [aria-label="Related sessions"]')
+        related_toggle = page.get_by_role("button", name="Related sessions (1 shown)")
+        await related_toggle.click()
+        related = page.get_by_role("region", name="Related sessions")
         await expect(related).to_contain_text("Parent inferred from Claude subagent path")
         await expect(related).to_contain_text("Inferred Claude parent · session 12ab")
         await expect(page.get_by_role("button", name="Conversation options", exact=True)).to_be_visible()
         await view.check(context="child transcript and inferred parent link are visible")
-        await view.capture(target=page.locator("#root"))
+        await view.capture(target=page.locator("body"))
+
+
+@pytest.mark.parametrize(
+    "viewport", [Viewport(width=1440, height=1000), Viewport(width=390, height=844)], ids=["desktop", "mobile"]
+)
+async def test_related_sessions_menu_stays_with_title(
+    visual: VisualHarness, capture_name: str, viewport: Viewport
+) -> None:
+    async with visual.open(
+        "long-child-list", viewport=viewport, color_scheme="light", capture_name=capture_name
+    ) as view:
+        page = view.page
+        if viewport.width <= 760:
+            await page.get_by_role("button", name="Session list").click()
+        await page.get_by_role("link", name="Inspect a local transcript").click()
+        toggle = page.locator(".session-browser-related-trigger")
+        await expect(toggle).to_have_attribute("aria-label", "Related sessions (51 shown, more available)")
+        await expect(toggle.locator(".session-browser-related-count")).to_have_text("51+")
+        await expect(toggle).to_be_visible()
+        await toggle.click()
+
+        related = page.get_by_role("region", name="Related sessions")
+        dropdown = page.locator(".session-browser-related-dropdown")
+        await expect(related).to_contain_text("Inferred Claude parent · session 12ab")
+        await expect(related).to_contain_text("Inspect module 01")
+        dropdown_bounds = await dropdown.bounding_box()
+        assert dropdown_bounds is not None
+        assert dropdown_bounds["x"] >= 0
+        assert dropdown_bounds["x"] + dropdown_bounds["width"] <= viewport.width
+        assert dropdown_bounds["y"] >= 0
+        assert dropdown_bounds["y"] + dropdown_bounds["height"] <= viewport.height
+
+        await view.check(context="related-session count and links remain visible beside the selected title")
+        await view.capture(target=page.locator("body"))
 
 
 @pytest.mark.parametrize(
@@ -166,10 +202,12 @@ async def test_long_child_list_stays_scrollable_without_covering_transcript(
         if viewport.width <= 760:
             await page.get_by_role("button", name="Session list").click()
         await page.get_by_role("link", name="Inspect a local transcript").click()
-        if viewport.width <= 760:
-            await page.get_by_role("button", name=re.compile(r"^Related sessions \(\d+ child sessions\)$")).click()
+        related_toggle = page.locator(".session-browser-related-trigger")
+        await expect(related_toggle).to_have_attribute("aria-label", "Related sessions (51 shown, more available)")
+        await expect(related_toggle.locator(".session-browser-related-count")).to_have_text("51+")
+        await related_toggle.click()
 
-        related = page.locator('#session-browser-sidebar [aria-label="Related sessions"]')
+        related = page.get_by_role("region", name="Related sessions")
         children = page.get_by_role("region", name="Child sessions")
         transcript = page.get_by_role("region", name="Session transcript")
         await expect(related).to_contain_text("Inferred Claude parent · session 12ab")
@@ -179,6 +217,7 @@ async def test_long_child_list_stays_scrollable_without_covering_transcript(
 
         await related.get_by_role("button", name="Load more child sessions").click()
         await expect(children).to_contain_text("Inspect module 63")
+        await expect(related_toggle).to_have_attribute("aria-label", "Related sessions (64 shown)")
         await related.evaluate(
             "element => { element.scrollIntoView({ block: 'nearest' }); element.scrollTop = element.scrollHeight; }"
         )
@@ -213,23 +252,7 @@ async def test_long_child_list_stays_scrollable_without_covering_transcript(
             f"{last_child_visibility}"
         )
         await expect(transcript).to_contain_text("The capture preserves the original JSONL records.")
-        if viewport.width <= 760:
-            drawer = page.get_by_role("dialog", name="Session list")
-            transcript_is_covered = await drawer.evaluate(
-                """drawer => {
-                    const history = document.querySelector('[aria-label="Conversation records"]');
-                    const viewport = history.getBoundingClientRect();
-                    const points = [...history.querySelectorAll('[aria-expanded]')].map(control => {
-                        const rect = control.getBoundingClientRect();
-                        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-                    }).filter(({ x, y }) => x >= viewport.left && x <= viewport.right && y >= viewport.top && y <= viewport.bottom);
-                    return points.length > 0 && points.every(({ x, y }) => drawer.contains(document.elementFromPoint(x, y)));
-                }"""
-            )
-            assert transcript_is_covered, "transcript controls must not paint or receive clicks above the drawer"
-            await view.check(context="related children remain reachable in the mobile session-list drawer")
-            await view.capture(target=page.locator("#root"), name=f"{capture_name}_related_drawer")
-            await page.get_by_role("dialog", name="Session list").get_by_role("button", name="Close").click()
+        await related_toggle.click()
 
         events = page.get_by_role("region", name="Conversation records")
         geometry = await events.evaluate(
@@ -243,7 +266,7 @@ async def test_long_child_list_stays_scrollable_without_covering_transcript(
         assert await events.evaluate(
             "element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop) <= 1"
         )
-        await view.check(context="child sessions scroll independently and the conversation stays visible")
+        await view.check(context="child sessions scroll independently while the conversation remains available")
         await view.capture(target=page.locator("#root"), name=f"{capture_name}_child_list_end")
 
 
