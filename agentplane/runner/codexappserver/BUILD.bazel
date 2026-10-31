@@ -15,6 +15,7 @@ go_library(
         "//agentplane/runner/session:__pkg__",
     ],
     deps = [
+        "//agentplane/observability",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/runner/codex",
         "//agentplane/runner/codexexecserver",
@@ -30,6 +31,8 @@ go_library(
         "@com_github_cosi_project_runtime//pkg/safe",
         "@com_github_cosi_project_runtime//pkg/state",
         "@com_github_siderolabs_gen//optional",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_trace//:trace",
         "@org_uber_go_zap//:zap",
     ],
 )

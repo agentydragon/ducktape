@@ -14,11 +14,14 @@ go_library(
         "//agentplane/runner:__subpackages__",
     ],
     deps = [
+        "//agentplane/observability",
         "//agentplane/proto:event_go_proto",
         "//agentplane/runner/codex/protocol",
         "//agentplane/runner/harness",
         "//agentplane/runner/jsonrpc",
         "@com_github_google_uuid//:uuid",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_trace//:trace",
     ],
 )
 

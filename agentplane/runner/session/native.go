@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
@@ -17,18 +18,24 @@ import (
 	harness "github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type interruptTargetKey struct{}
 
 // Run read-only reconciliation off the stdout reader, which must deliver its RPC replies.
-func (s *Session) startHarness(ctx context.Context) error {
+func (s *Session) startHarness(ctx context.Context) (resultErr error) {
 	s.mu.Lock()
 	s.processState = runnerpb.ProcessState_PROCESS_STATE_STARTING
 	s.nativeStop = stopNone
 	harnessKind := s.record.Harness
 	s.mu.Unlock()
+	ctx, span := observability.Start(ctx, "agentplane.runner.harness.start", trace.WithAttributes(
+		attribute.String("session.id", s.id), attribute.String("harness", harnessKind.String()),
+	))
+	defer func() { observability.End(span, resultErr) }()
 	switch {
 	case harnessKind == runnerpb.Harness_HARNESS_CLAUDE && s.deps.claude != nil:
 		return s.startProcess(ctx, claude.New(s, *s.deps.claude))
@@ -177,7 +184,9 @@ func (s *Session) appServerAttachment() *codexappserver.Attachment {
 
 // prepare starts or resumes the native conversation on a started harness and reconciles the turns a
 // lost harness left.
-func (s *Session) prepare(ctx context.Context, adapter harness.Adapter, pid int) error {
+func (s *Session) prepare(ctx context.Context, adapter harness.Adapter, pid int) (resultErr error) {
+	ctx, span := observability.Start(ctx, "agentplane.runner.harness.handshake", trace.WithAttributes(attribute.String("session.id", s.id)))
+	defer func() { observability.End(span, resultErr) }()
 	native, err := adapter.Handshake(ctx)
 	if err != nil {
 		return err
