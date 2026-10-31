@@ -82,6 +82,32 @@ continuation stays in the sampler. Interrupting one Session does not stop the
 shared process. A host failure fails pending work for every attached Session. Future opens can start
 a new host, but failed in-flight provider or executor work is never replayed.
 
+### Session residency and work wakeups
+
+A replica retains one authoritative database ownership lease for each Session whose JavaScript
+state lives in its local host, including across idle turns. A lightweight local driver and lease
+heartbeat remain resident until drain or actual ownership loss; an idle turn does not release or
+move the lease. The lease token and generation fence owner writes and effects. The upstream
+protocol-session ID and recorded host instance stay stable across ordinary idle turns and are
+separate from lease generation. `max_live_sessions` limits concurrent active-execution slots; idle
+resident Sessions do not consume those slots. `store()` / `load()` values remain volatile and are not
+restored after host loss.
+
+Any replica may authenticate and durably admit a command. In the same database transaction as a
+new admission, it emits a payloadless `NOTIFY` on `central_sampler_work`. The existing PostgreSQL
+wakeups Hub listens on both `central_sampler_work` and `central_sampler_outbox`: the work channel
+signals the runtime to query all pending work for Sessions whose lease tokens it holds locally,
+including setup, accepted commands and live handles. The separate outbox channel wakes History
+export. Notifications are only wakeups, not durable work or routing information. The committed
+command row remains authoritative, and the two channels remain separate. An owner never receives
+a command by direct replica or Pod RPC. Independently, a replica
+may claim pending work only when the Session lease is unowned or expired.
+
+The listener subscribes before the initial ownership/work scan. Reconnection triggers a durable
+catch-up scan, and periodic reconciliation remains enabled, so missed or coalesced notifications do
+not strand work. `central_sampler_work` uses the existing database and adds no migration, durable
+notification row, deployment resource, or Session setting.
+
 Pod CPU and memory limits are aggregate bounds for the Go service and the shared host, so container
 exhaustion can interrupt all live Sessions. `store()` / `load()` values and live JavaScript cells
 remain process memory and cannot be restored after host exit. Completed-cell outcomes and provider
@@ -246,11 +272,15 @@ Compaction requests carry the same summary and context but no effort.
 Database-clock leases and generations fence stale sampler writes. They cannot atomically fence an
 external shell effect: a dispatched operation with no observed result is uncertain. The persisted
 intent/result journal distinguishes this from an operation known not to have been dispatched.
-On service shutdown, the runtime stops new Session claims and lets each active top-level effect
-reach its durable result before releasing ownership. A live JavaScript cell may continue its own
-nested executor calls until that cell settles. The owner keeps renewing its lease during drain;
-the next owner can then claim immediately and resume the retained command from its committed
-conversation. `shutdown_drain_seconds` defaults to 40 and `shutdown_budget_seconds` to 55;
+On service shutdown, the runtime stops starting Session work and claiming unowned or expired work,
+wakes idle resident drivers to release their leases, and lets active top-level effects reach their
+durable result within the existing drain window. The gRPC server can continue durably admitting
+commands until graceful stop; other replicas continue admitting commands throughout. A live
+JavaScript cell may continue its own nested executor calls until that cell settles. Active owners
+keep renewing their leases during drain. The runtime joins resident drivers and completes
+ownership release before shutting down the shared host;
+the next replica can then claim the released Session and resume its committed command.
+`shutdown_drain_seconds` defaults to 40 and `shutdown_budget_seconds` to 55;
 the latter must fit within the Pod's 60-second termination grace and leave at least 15 seconds
 after the drain deadline for cancellation and cleanup. At the drain deadline, the runtime cancels active work
 and retains any unresolved intent and partial evidence; the next owner blocks rather than
@@ -446,9 +476,12 @@ Raw records use at most 1 MiB byte fragments with a shared record ID, zero-based
 and total count. Concatenating payload bytes in index order reconstructs the full UTF-8 JSON
 record; derived Events reference every fragment sequence. Normalized display strings cap at
 256 KiB with an explicit truncation marker. Exact full content remains in raw evidence and
-continuation. Recovery selects only queued work/live handles and caps concurrent active Session
-drivers at the configured Session limit; it releases completed driver tasks. Idle logical Sessions
-may exceed that active-driver cap. Those Sessions share the one lazy Codex host process.
+continuation. At startup and during periodic reconciliation, a replica queries pending commands
+for locally held lease tokens and scans pending work whose Session lease is unowned or expired.
+One lightweight driver and heartbeat remain for each locally owned Session, including while idle;
+resident count may exceed `max_live_sessions`, which caps concurrent active-execution slots. An
+idle resident waits for a work wakeup or reconciliation without occupying a slot. All Sessions on
+a replica share its one lazy Codex host process.
 
 The exporter uses existing `RunnerIngress.Push` with an explicitly authorized sampler announcement,
 then replays original immutable entries. Any sampler replica can export any Session, independently
@@ -472,10 +505,13 @@ seal its Sessions' logical journals. History export never retries model/tool ope
 
 Bounded pages and concurrent send/ack handling apply backpressure independently of sampling.
 The exporter reuses its connection and drains pending pages without an unconditional timer delay.
-Bounded scheduling quanta share capacity between Sessions. Committed outbox notifications from any
-writer wake the idle exporter, and listener reconnection triggers durable catch-up. Only failures
-incur retry backoff, per Session, exponential, and reset by progress. Caught-up archives retain no
-streams or tasks. History unavailability delays display while the sampler retains its outbox.
+Bounded exporter scheduling quanta share exporter capacity between Sessions, independently of
+active-execution slots. The shared PostgreSQL wakeups Hub dispatches `central_sampler_work` signals
+to resident Session drivers and `central_sampler_outbox` signals to the idle exporter. Listener
+reconnection triggers durable catch-up scans for both paths; periodic reconciliation also remains
+enabled for Session work. Only export failures incur retry backoff, per Session, exponential, and reset by progress. Caught-up
+archives retain no streams or tasks. History unavailability delays display while the sampler
+retains its outbox.
 
 Public Session ID is the inference correlation key. Executor Sandbox/incarnation are distinct
 metadata. Explicitly trusted LLM ingress callers may claim a canonical Session UUID for Langfuse;

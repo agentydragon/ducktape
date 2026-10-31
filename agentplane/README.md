@@ -135,7 +135,9 @@ flowchart LR
     app -->|browser trace relay: OTLP/HTTP| alloy
 
     gw -->|central Session commands: Sampler gRPC| sampler
-    sampler --> samplerdb
+    sampler -->|continuation, commands and ownership leases| samplerdb
+    samplerdb -->|NOTIFY: central_sampler_work| sampler
+    samplerdb -->|NOTIFY: central_sampler_outbox| sampler
     sampler -->|typed execution: Executor gRPC| gw
     sampler -->|RunnerIngress.Push| hs
     sampler -->|Responses API| llm -->|model API| responses
@@ -196,7 +198,9 @@ embeds files through an embedding endpoint and owns its own PostgreSQL database
   the sidecar's local telemetry route; VM guest spans use the launcher relay's guest gateway route.
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`, `sandbox_service`
   (Session history, owned by the History Service), `actions`, `egress`, `notifications` and
-  `session_dispatcher` (also the Gateway's queue; the Gateway has no registry database).
+  `session_dispatcher` (also the Gateway's queue; the Gateway has no registry database). The
+  optional central sampler owns its separate continuation database and uses PostgreSQL notifications
+  for resident Session work and History export wakeups.
 - **Sandbox lifecycle and runner control.** The app writes requested Sandbox state and operator
   grants to Kubernetes; the Sandbox Controller reconciles them, owns `Sandbox.status`, and holds
   deletion until the runner has sealed its Sessions through the Gateway. Notifications and the

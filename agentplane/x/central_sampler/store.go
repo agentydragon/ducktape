@@ -26,7 +26,12 @@ import (
 
 const (
 	OutboxChannel  = "central_sampler_outbox"
+	WorkChannel    = "central_sampler_work"
 	processColumns = `id,conversation_id::text,generation,after_seq,status,tty,exit_code,buffered_output,model_session_id,omitted_bytes`
+	sessionWork    = `(ss.setup_state=$2
+		OR EXISTS(SELECT 1 FROM sampler_command cmd WHERE cmd.session_id=ss.id AND cmd.outcome=$3)
+		OR EXISTS(SELECT 1 FROM sampler_cell cell WHERE cell.conversation_id=c.id AND cell.status='live')
+		OR EXISTS(SELECT 1 FROM sampler_process proc WHERE proc.conversation_id=c.id AND proc.status NOT IN ('exited','exited_unread','abandoned')))`
 )
 
 type rowScanner interface {
@@ -50,6 +55,10 @@ func (s *Store) transaction(ctx context.Context, f func(*sql.Tx) error) error {
 
 func notify(ctx context.Context, tx *sql.Tx) error {
 	return postgres.Notify(ctx, tx, OutboxChannel, "")
+}
+
+func notifyWork(ctx context.Context, tx *sql.Tx) error {
+	return postgres.Notify(ctx, tx, WorkChannel, "")
 }
 
 func marshal(value any) (string, error) {
@@ -401,6 +410,8 @@ func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionR
 			if _, err := appendEvent(ctx, tx, opened, &eventpb.Event{Observation: &eventpb.Event_HarnessStarted{HarnessStarted: &eventpb.HarnessStarted{}}}); err != nil {
 				return err
 			}
+		} else {
+			return notifyWork(ctx, tx)
 		}
 		return nil
 	})
@@ -928,7 +939,10 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 				return err
 			}
 			admission = &eventlogpb.EventEntry{}
-			return proto.Unmarshal(entryBytes, admission)
+			if err := proto.Unmarshal(entryBytes, admission); err != nil {
+				return err
+			}
+			return notifyWork(ctx, tx)
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
@@ -988,7 +1002,10 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 		_, err = tx.ExecContext(ctx, `INSERT INTO sampler_command(session_id,id,payload,admission,outcome,failure_reason)
 			VALUES($1,$2,$3,$4,$5,NULL)`, id, command.CommandId, wire, admission.Cursor,
 			int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED))
-		return err
+		if err != nil {
+			return err
+		}
+		return notifyWork(ctx, tx)
 	})
 	return admission, err
 }
@@ -1099,13 +1116,34 @@ func (s *Store) RecoverableSessions(ctx context.Context, exclude []string, limit
 		exclude = []string{}
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT ss.id FROM sampler_session ss JOIN sampler_conversation c ON c.id=ss.conversation_id
-		WHERE ss.blocked=FALSE AND (c.owner IS NULL OR c.lease_until IS NULL OR c.lease_until<=clock_timestamp())
-		AND NOT (ss.id=ANY($1::varchar[])) AND (
-		ss.setup_state=$2 OR EXISTS(SELECT 1 FROM sampler_command cmd WHERE cmd.session_id=ss.id AND cmd.outcome=$3)
-		OR EXISTS(SELECT 1 FROM sampler_cell cell WHERE cell.conversation_id=c.id AND cell.status='live')
-		OR EXISTS(SELECT 1 FROM sampler_process proc WHERE proc.conversation_id=c.id AND proc.status NOT IN ('exited','exited_unread','abandoned')))
+		WHERE ss.blocked=FALSE AND NOT c.stopped AND (c.owner IS NULL OR c.lease_until IS NULL OR c.lease_until<=clock_timestamp())
+		AND NOT (ss.id=ANY($1::varchar[])) AND `+sessionWork+`
 		ORDER BY ss.id LIMIT $4`, pq.Array(exclude), int32(runnerpb.SetupState_SETUP_STATE_RUNNING),
 		int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// OwnedWork returns pending work for the leases held by this runtime, including idle residents.
+func (s *Store) OwnedWork(ctx context.Context, tokens []string) ([]string, error) {
+	if len(tokens) == 0 {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT ss.id FROM sampler_session ss JOIN sampler_conversation c ON c.id=ss.conversation_id
+		WHERE ss.blocked=FALSE AND NOT c.stopped AND c.owner=ANY($1::uuid[])
+		AND c.lease_until>clock_timestamp() AND `+sessionWork+` ORDER BY ss.id`, pq.Array(tokens),
+		int32(runnerpb.SetupState_SETUP_STATE_RUNNING), int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED))
 	if err != nil {
 		return nil, err
 	}
@@ -1174,7 +1212,10 @@ func (s *Store) Release(ctx context.Context, owner Owner) error {
 		}
 		_, err := tx.ExecContext(ctx, `UPDATE sampler_interrupt SET result=$3 WHERE conversation_id=$1 AND generation=$2 AND result IS NULL`,
 			owner.ConversationID, owner.Generation, `{"status":"not_applied","reason":"owner completed before observing request"}`)
-		return err
+		if err != nil {
+			return err
+		}
+		return notifyWork(ctx, tx)
 	})
 }
 

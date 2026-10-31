@@ -32,29 +32,49 @@ type Runtime struct {
 	stopping         bool
 	draining         chan struct{}
 	shutdownDeadline time.Time
-	tasks            map[string]struct{}
+	tasks            map[string]*residentSession
+	executing        chan struct{}
 	changed          chan struct{}
 	drivers          sync.WaitGroup
 	codeHost         *CodeModeHost
 }
 
+type residentSession struct {
+	// owner and busy are guarded by Runtime.mu; wake carries no authoritative work.
+	wake  chan struct{}
+	owner *Owner
+	busy  bool
+}
+
+func (s *residentSession) signal() {
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+}
+
 func NewRuntime(store *Store, settings Settings) *Runtime {
 	return &Runtime{
 		store: store, settings: settings, claimLease: store.Claim, releaseLease: store.Release,
-		tasks: map[string]struct{}{}, changed: make(chan struct{}, 1), draining: make(chan struct{}),
+		tasks: map[string]*residentSession{}, executing: make(chan struct{}, settings.MaxLiveSessions),
+		changed: make(chan struct{}, 1), draining: make(chan struct{}),
 	}
 }
 
 func (r *Runtime) Wake(sessionID string) {
+	r.wake(sessionID)
+	r.signal()
+}
+
+func (r *Runtime) wake(sessionID string) {
 	r.mu.Lock()
 	if r.runCtx != nil && !r.stopping {
 		r.launchLocked(sessionID)
 	}
 	r.mu.Unlock()
-	r.signal()
 }
 
-func (r *Runtime) Run(ctx context.Context) error {
+func (r *Runtime) Run(ctx context.Context, work <-chan struct{}) error {
 	r.mu.Lock()
 	if r.started {
 		r.mu.Unlock()
@@ -72,7 +92,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 	recoveryCtx, stopRecovery := context.WithCancel(r.runCtx)
 	go func() {
 		defer close(recoveryDone)
-		r.recover(recoveryCtx)
+		r.recover(recoveryCtx, work)
 	}()
 	<-ctx.Done()
 	shutdownAt := time.Now()
@@ -116,16 +136,30 @@ func (r *Runtime) Run(ctx context.Context) error {
 	return nil
 }
 
-func (r *Runtime) recover(ctx context.Context) {
+func (r *Runtime) recover(ctx context.Context, work <-chan struct{}) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
 		r.mu.Lock()
-		capacity := r.settings.MaxLiveSessions - len(r.tasks)
 		excluded := make([]string, 0, len(r.tasks))
-		for sessionID := range r.tasks {
+		tokens := make([]string, 0, len(r.tasks))
+		for sessionID, task := range r.tasks {
 			excluded = append(excluded, sessionID)
+			if task.owner != nil {
+				tokens = append(tokens, task.owner.Token)
+			}
 		}
+		r.mu.Unlock()
+		owned, err := r.store.OwnedWork(ctx, tokens)
+		if err != nil && ctx.Err() == nil {
+			slog.Error("central sampler owned work scan failed", "error", err)
+		} else {
+			for _, sessionID := range owned {
+				r.wake(sessionID)
+			}
+		}
+		r.mu.Lock()
+		capacity := r.settings.MaxLiveSessions - r.busyLocked()
 		r.mu.Unlock()
 		if capacity > 0 {
 			sessions, err := r.store.RecoverableSessions(ctx, excluded, capacity)
@@ -133,7 +167,7 @@ func (r *Runtime) recover(ctx context.Context) {
 				slog.Error("central sampler recovery scan failed", "error", err)
 			} else {
 				for _, sessionID := range sessions {
-					r.Wake(sessionID)
+					r.wake(sessionID)
 				}
 			}
 		}
@@ -141,28 +175,67 @@ func (r *Runtime) recover(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-r.changed:
+		case <-work:
 		case <-ticker.C:
 		}
 	}
 }
 
 func (r *Runtime) launchLocked(sessionID string) {
-	if sessionID == "" || r.runCtx == nil || r.stopping || len(r.tasks) >= r.settings.MaxLiveSessions {
+	if sessionID == "" || r.runCtx == nil || r.stopping {
 		return
 	}
-	if _, exists := r.tasks[sessionID]; exists {
+	if task, exists := r.tasks[sessionID]; exists {
+		task.busy = true
+		task.signal()
 		return
 	}
-	r.tasks[sessionID] = struct{}{}
+	if r.busyLocked() >= r.settings.MaxLiveSessions {
+		return
+	}
+	task := &residentSession{wake: make(chan struct{}, 1), busy: true}
+	r.tasks[sessionID] = task
 	r.drivers.Add(1)
 	go func() {
 		defer r.drivers.Done()
-		r.drive(r.runCtx, sessionID)
+		r.drive(r.runCtx, sessionID, task)
 		r.mu.Lock()
 		delete(r.tasks, sessionID)
 		r.mu.Unlock()
 		r.signal()
 	}()
+}
+
+func (r *Runtime) busyLocked() int {
+	count := 0
+	for _, task := range r.tasks {
+		if task.busy {
+			count++
+		}
+	}
+	return count
+}
+
+func (r *Runtime) acquireExecution(ctx context.Context, task *residentSession) bool {
+	r.mu.Lock()
+	task.busy = true
+	r.mu.Unlock()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-r.draining:
+		return false
+	case r.executing <- struct{}{}:
+		return true
+	}
+}
+
+func (r *Runtime) releaseExecution(task *residentSession) {
+	<-r.executing
+	r.mu.Lock()
+	task.busy = false
+	r.mu.Unlock()
+	r.signal()
 }
 
 func (r *Runtime) signal() {
@@ -172,7 +245,7 @@ func (r *Runtime) signal() {
 	}
 }
 
-func (r *Runtime) drive(runtimeCtx context.Context, sessionID string) {
+func (r *Runtime) drive(runtimeCtx context.Context, sessionID string, task *residentSession) {
 	loadCtx, cancelLoad := context.WithTimeout(context.Background(), time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
 	session, err := r.store.GetSession(loadCtx, sessionID, "")
 	cancelLoad()
@@ -201,6 +274,9 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string) {
 		r.release(owner)
 		return
 	}
+	r.mu.Lock()
+	task.owner = &owner
+	r.mu.Unlock()
 	executionCtx, cancelExecution := context.WithCancel(runtimeCtx)
 	heartbeatDone := make(chan error, 1)
 	go func() {
@@ -210,7 +286,7 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string) {
 		}
 		heartbeatDone <- err
 	}()
-	activeCommand, executionErr := r.execute(executionCtx, sessionID, owner)
+	activeCommand, executionErr := r.execute(executionCtx, sessionID, owner, task)
 	cancelExecution()
 	heartbeatErr := <-heartbeatDone
 	if executionErr != nil && runtimeCtx.Err() == nil && heartbeatErr == nil {
@@ -289,7 +365,16 @@ func (r *Runtime) isDraining() bool {
 	}
 }
 
-func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*string, error) {
+func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, task *residentSession) (*string, error) {
+	if !r.acquireExecution(ctx, task) {
+		return nil, nil
+	}
+	held := true
+	defer func() {
+		if held {
+			r.releaseExecution(task)
+		}
+	}()
 	if r.isDraining() {
 		return nil, nil
 	}
@@ -360,7 +445,29 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 				}
 			}
 			if len(state.Cells) == 0 && !runningProcess {
-				return nil, nil
+				if live != nil {
+					closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					closeErr := live.Close(closeCtx)
+					cancel()
+					live = nil
+					if closeErr != nil {
+						return nil, closeErr
+					}
+				}
+				r.releaseExecution(task)
+				held = false
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-r.draining:
+					return nil, nil
+				case <-task.wake:
+				}
+				if !r.acquireExecution(ctx, task) {
+					return nil, nil
+				}
+				held = true
+				continue
 			}
 			if live == nil {
 				live, err = r.connectHost(ctx, sessionID, owner)
@@ -389,7 +496,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 					return activeCommand, err
 				}
 				return activeCommand, errors.New("code-mode session detached while remote effects were live")
-			case <-r.changed:
+			case <-task.wake:
 				timer.Stop()
 			case <-timer.C:
 			}
