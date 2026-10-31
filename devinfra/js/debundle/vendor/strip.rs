@@ -1221,8 +1221,34 @@ fn item_declares_code_or_primitive(item: &ModuleItem) -> bool {
             is_shareable_literal_var(var)
                 || is_shareable_function_var(var)
                 || is_shareable_intrinsic_alias_var(var)
+                || is_symbol_var(var)
         }),
     }
+}
+
+/// `var key = Symbol("description")` (or `Symbol.for(...)`): a primitive.
+fn is_symbol_var(var: &VarDecl) -> bool {
+    var.decls.iter().all(|decl| {
+        let Some(Expr::Call(call)) = decl.init.as_deref().map(Expr::unwrap_parens) else {
+            return false;
+        };
+        let Callee::Expr(callee) = &call.callee else {
+            return false;
+        };
+        let is_symbol = |expr: &Expr| matches!(expr, Expr::Ident(ident) if ident.sym == *"Symbol");
+        let symbol_callee = match callee.unwrap_parens() {
+            Expr::Member(member) => {
+                is_symbol(&member.obj)
+                    && matches!(&member.prop, MemberProp::Ident(prop) if prop.sym == *"for")
+            }
+            expr => is_symbol(expr),
+        };
+        symbol_callee
+            && call
+                .args
+                .iter()
+                .all(|arg| arg.spread.is_none() && is_primitive_literal_expr(&arg.expr))
+    })
 }
 
 fn item_is_vite_preload_dependency_cell(item: &ModuleItem) -> bool {
