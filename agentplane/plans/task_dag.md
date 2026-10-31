@@ -106,11 +106,11 @@ not dispatched.
 Remaining work, checked against GitHub on 2026-10-31 UTC. These are review and rollout states,
 not reports of active workers; confirm ownership before dispatching follow-up implementation.
 
-| Scope                               | Current state                                                                                                                                                                |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CENTRAL_SAMPLER_REPLICA_ROLLOUT`   | Rollout verification: [#13243](https://github.com/agentydragon/ducktape/pull/13243) is merged; confirm ordered exporter cutover, History catch-up and two-replica activation |
-| `CENTRAL_SAMPLER_SAMPLING_RECOVERY` | In review: [#13217](https://github.com/agentydragon/ducktape/pull/13217), explicit abandonment of uncertain provider sampling                                                |
-| `CENTRAL_SAMPLER_TOOL_RECOVERY`     | In review: [#13182](https://github.com/agentydragon/ducktape/pull/13182), truthful pre-dispatch exec failures; remaining agent-workflow acceptance below                     |
+| Scope                               | Current state                                                                                                                                                                   |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CENTRAL_SAMPLER_REPLICA_ROLLOUT`   | Remaining: bounded same-Session continuation evidence; deployed exporter reconciliation is recorded in the [acceptance record](../x/central_sampler/docs/rollout_acceptance.md) |
+| `CENTRAL_SAMPLER_SAMPLING_RECOVERY` | In review: [#13217](https://github.com/agentydragon/ducktape/pull/13217), explicit abandonment of uncertain provider sampling                                                   |
+| `CENTRAL_SAMPLER_TOOL_RECOVERY`     | In review: [#13182](https://github.com/agentydragon/ducktape/pull/13182), truthful pre-dispatch exec failures; remaining agent-workflow acceptance below                        |
 
 File conflicts do not block independent PRs. Required system checks and a documented rollback
 precede staging changes; source merge is not deployment evidence. The
@@ -146,7 +146,7 @@ its old ordering does not give it precedence over the selected tracks.
 ```mermaid
 flowchart LR
     subgraph PRIORITY_ZERO[P0: reliable long-running Sessions]
-        CENTRAL_SAMPLER_REPLICA_ROLLOUT[Verify: exporter cutover and two rolling replicas]
+        CENTRAL_SAMPLER_REPLICA_ROLLOUT[Remaining: same-Session rollout continuation]
         CENTRAL_SAMPLER_SAMPLING_RECOVERY[In review: uncertain provider sampling recovery]
         CENTRAL_SAMPLER_TOOL_RECOVERY[In review: pre-dispatch exec failures]
     end
@@ -740,7 +740,7 @@ flowchart LR
     AGENT_AUTHORED_CONVERSATIONS_DESIGN[Decision, unscheduled: conversations agents act on through tools]
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
-    CENTRAL_SAMPLER_REPLICA_ROLLOUT[P0 verification: exporter cutover and two rolling replicas]
+    CENTRAL_SAMPLER_REPLICA_ROLLOUT[P0 acceptance: same-Session rollout continuation]
     CENTRAL_SAMPLER_SAMPLING_RECOVERY[In-review P0: uncertain provider sampling recovery]
     CENTRAL_SAMPLER_TOOL_RECOVERY[In-review P0: pre-dispatch exec failures and agent acceptance]
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check for standard-mode routes]
@@ -844,31 +844,21 @@ cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
 
 ### `CENTRAL_SAMPLER_REPLICA_ROLLOUT` — multiple replicas and rolls that preserve active agents
 
-**P0 rollout verification; the two-replica profile is merged.**
-The [runtime contract](../x/central_sampler/SPEC.md#runtime-and-effects) owns bounded
-drain, lease fencing and lost-host behavior; the
-[History contract](../x/central_sampler/SPEC.md#evidence-and-continuation) owns concurrent export and
-completed-snapshot checkpoints. Verify deployment evidence for the required activation order:
+**P0 acceptance.** The [deployed acceptance record](../x/central_sampler/docs/rollout_acceptance.md)
+owns migration, replica and History-delivery evidence, including reconciliation after the
+mixed-version exporter interval. The [runtime contract](../x/central_sampler/SPEC.md#runtime-and-effects)
+owns bounded drain, lease fencing and lost-host behavior.
 
-1. Verify the old exporter was replaced using the singleton `Recreate` profile, the deployed image
-   contains `a9190914` or later, migration 9 completed, and retained Sessions caught up to History.
-   The migration clears only rebuildable delivery markers. Old exporters must stop before writers
-   with the new checkpoint semantics start; no Session, source journal or retained History deletion.
-2. Verify two-replica activation followed that cutover, with the image pin and replica profile
-   ordered to prevent two old exporters from starting.
-3. Observe the staging roll and useful continuation in the same Session with retained history and
-   environment identity. Reuse deterministic shared-PostgreSQL/History coverage for concurrent
-   exporters, competing owners, drain expiry, stale-owner writes and no replay of external effects.
+Remaining: bounded evidence of useful continuation in the same Session through a sampler roll,
+with retained history and environment identity. Reuse deterministic shared-PostgreSQL/History
+coverage for concurrent exporters, competing owners, drain expiry, stale-owner writes and no replay
+of external effects. The nested K3s fixture stays at one replica; its optional two-replica scenario
+and RBE kernel limitation are not prerequisites.
 
-The nested K3s fixture stays at one replica independently of staging. Its optional draft
-[#13246](https://github.com/agentydragon/ducktape/pull/13246) and the Firecracker kernel limitation
-are not rollout prerequisites; the earlier failed fixture run provides no continuity evidence.
-No RBE kernel work is scheduled for this outcome.
-
-Exit: ordered exporter cutover, two Ready rolling sampler replicas and bounded same-Session
-continuation evidence. Preserve the database, environments and History on rollback to singleton
-`Recreate`. Uncertain provider recovery is the independent review item below; it is required for
-the sprint's deadline-recovery outcome, not a new prerequisite for starting unrelated P1 work.
+Exit: same-Session continuation evidence with no duplicate external execution. Preserve the
+database, environments and History on rollback to singleton `Recreate`. Uncertain provider
+recovery is the independent review item below; it is required for the sprint's deadline-recovery
+outcome, not a new prerequisite for starting unrelated P1 work.
 
 ### `CENTRAL_SAMPLER_SAMPLING_RECOVERY` — explicitly recover uncertain provider sampling
 
