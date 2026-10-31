@@ -59,6 +59,7 @@ py_library(
     name = "dcr",
     srcs = ["dcr.py"],
     deps = [
+        "//agentplane/system_tests:tracing",
         "@pypi//httpx",
         "@pypi//pytest",
     ],
