@@ -37,10 +37,11 @@ pub use spec::{
     ArgumentInputContract, BunModule, CapturedValueContract, CapturedValueKind, ChunkExportPurity,
     CommutingStatementsContract, HostBehavior, InitializerPurity, LoaderResultForEvaluatingModule,
     MemberEffect, MemberPurity, NativeCallIdentityInputContract, NativeCallIdentityKind,
-    NativeOperationInputContract, NativeOperationKind, NodeBuiltinModule, PredefinedGlobals,
-    ReentryFreeOperation, ResolvedMemberSelector, SourceUnitSelector,
-    SynchronousLoadDrainsMicrotasks, SynchronousLoadRunsAppCallbacks, SynchronousModuleLoader,
-    ValueInputContract, VendorLevel, VendorMark,
+    NativeOperationInputContract, NativeOperationKind, NodeBuiltinModule, NonLiteralLoaderCalls,
+    PredefinedGlobals, ProcessPrototypeChainAccessors, ProgramPremises, ReentryFreeOperation,
+    ResolvedMemberSelector, SourceUnitSelector, SynchronousLoadDrainsMicrotasks,
+    SynchronousLoadRunsAppCallbacks, SynchronousModuleLoader, ValueInputContract, VendorLevel,
+    VendorMark,
 };
 
 use std::collections::BTreeSet;

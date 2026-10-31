@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::analysis_inputs::HostBehaviorKey;
+use analysis::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey};
 use analysis::loader_closure::{
     ChunkLoaderSurface, LoaderClosure, LoaderClosureFailureKind, LoaderClosureWitness,
     LoaderRequest, LoaderRequestTarget,
@@ -29,6 +29,9 @@ pub enum ExportReentryLoaderDerivation {
         /// Host keys the closed certificate consumed.
         #[serde(skip_serializing_if = "BTreeSet::is_empty")]
         host_keys: BTreeSet<HostBehaviorKey>,
+        /// Program premises the closed certificate consumed.
+        #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+        premise_keys: BTreeSet<ProgramPremiseKey>,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         requests: Vec<ExportReentryLoaderRequest>,
         /// Chunks a loader request can evaluate, with their closures.
@@ -37,6 +40,9 @@ pub enum ExportReentryLoaderDerivation {
         /// Mandatorily suspended sites excluded from the closure.
         #[serde(skip_serializing_if = "is_zero")]
         suspended_sites: usize,
+        /// Non-literal loader calls excluded under the program premise.
+        #[serde(skip_serializing_if = "is_zero")]
+        premised_sites: usize,
         /// Loader sites no reachable code can enter, excluded from the closure.
         #[serde(skip_serializing_if = "is_zero")]
         unreachable_sites: usize,
@@ -62,6 +68,7 @@ impl ExportReentryLoaderDerivation {
         Self::LoaderClosure {
             closed: closure.is_closed(),
             host_keys: closure.dependencies.host_behavior.clone(),
+            premise_keys: closure.dependencies.program_premises.clone(),
             requests: surfaces.requests.clone(),
             loaded_chunks: closure
                 .loaded_chunks
@@ -69,6 +76,7 @@ impl ExportReentryLoaderDerivation {
                 .map(|chunk| artifact.chunk_table.name(*chunk).to_string())
                 .collect(),
             suspended_sites: closure.suspended_sites,
+            premised_sites: closure.premised_sites,
             unreachable_sites: surfaces.unreachable_sites,
             failures: closure
                 .failures
@@ -211,6 +219,8 @@ enum LoaderUse<'s> {
         specifier: &'s str,
         resolve_from: ChunkId,
     },
+    /// A direct call whose argument is not one string literal.
+    NonLiteralCall,
     Opaque,
 }
 
@@ -219,6 +229,7 @@ struct Classifier<'a> {
     artifact: &'a ChunkBundle,
     indexes: &'a ArtifactIndexes,
     host_behavior: &'a spec::HostBehavior,
+    program_premises: &'a spec::ProgramPremises,
     /// Chunks exporting a loader alias: any request exposing their namespace
     /// exposes the loader.
     alias_chunks: BTreeSet<ChunkId>,
@@ -282,15 +293,24 @@ impl Classifier<'_> {
             }
             SitePhase::MandatorilySuspended | SitePhase::Synchronous => {}
         }
-        let LoaderUse::Literal {
-            specifier,
-            resolve_from,
-        } = loader_use
-        else {
-            surface
-                .site_failures
-                .push((LoaderClosureFailureKind::OpaqueLoaderSite, witness(None)));
-            return Ok(());
+        let (specifier, resolve_from) = match loader_use {
+            LoaderUse::Literal {
+                specifier,
+                resolve_from,
+            } => (specifier, resolve_from),
+            LoaderUse::NonLiteralCall
+                if self.program_premises.non_literal_loader_calls
+                    == spec::NonLiteralLoaderCalls::NativeAddonsOnly =>
+            {
+                surface.premised_sites.push(witness(None));
+                return Ok(());
+            }
+            LoaderUse::NonLiteralCall | LoaderUse::Opaque => {
+                surface
+                    .site_failures
+                    .push((LoaderClosureFailureKind::OpaqueLoaderSite, witness(None)));
+                return Ok(());
+            }
         };
         let resolved = self.resolve(specifier, resolve_from)?;
         let resolved_target = resolved
@@ -362,6 +382,7 @@ pub(super) fn loader_surfaces(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
     host_behavior: &spec::HostBehavior,
+    program_premises: &spec::ProgramPremises,
 ) -> Result<LoaderSurfaces> {
     // Exported loader aliases by defining chunk and export name.
     let mut aliases = BTreeSet::<(ChunkId, String)>::new();
@@ -384,6 +405,7 @@ pub(super) fn loader_surfaces(
         artifact,
         indexes,
         host_behavior,
+        program_premises,
         alias_chunks: aliases.iter().map(|(chunk, _)| *chunk).collect(),
         request_counts: BTreeMap::new(),
         unreachable_sites: 0,
@@ -403,6 +425,7 @@ pub(super) fn loader_surfaces(
             site_failures: Vec::new(),
             load_failures: Vec::new(),
             suspended_sites: Vec::new(),
+            premised_sites: Vec::new(),
         };
         if runtime.has_top_level_await {
             surface.load_failures.push((
@@ -513,6 +536,7 @@ pub(super) fn loader_surfaces(
                     }
                     continue;
                 }
+                InteropUseKind::ImportMetaRequireDynamicCall => LoaderUse::NonLiteralCall,
                 kind if !is_loader_site(kind) => continue,
                 _ => LoaderUse::Opaque,
             };
@@ -562,6 +586,7 @@ pub(super) fn loader_surfaces(
                         specifier,
                         resolve_from,
                     },
+                    None if loader_use.call => LoaderUse::NonLiteralCall,
                     None => LoaderUse::Opaque,
                 };
                 classifier.classify(

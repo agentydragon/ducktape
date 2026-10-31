@@ -398,6 +398,17 @@ pub struct ProofDependencies {
     pub argument_inputs: BTreeSet<ArgumentInputRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub host_behavior: BTreeSet<HostBehaviorKey>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub program_premises: BTreeSet<ProgramPremiseKey>,
+}
+
+/// One `program_premises` assertion consumed by a proof (SPEC.md § Program
+/// premises).
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProgramPremiseKey {
+    ProcessPrototypeChainAccessors,
+    NonLiteralLoaderCalls,
 }
 
 /// Global properties that hold only fresh ordinary objects created by
@@ -443,6 +454,7 @@ impl ProofDependencies {
             && self.descriptor_copy_authors.is_empty()
             && self.argument_inputs.is_empty()
             && self.host_behavior.is_empty()
+            && self.program_premises.is_empty()
     }
 
     pub fn extend(&mut self, other: &Self) {
@@ -455,6 +467,8 @@ impl ProofDependencies {
             .extend(other.argument_inputs.iter().cloned());
         self.host_behavior
             .extend(other.host_behavior.iter().copied());
+        self.program_premises
+            .extend(other.program_premises.iter().copied());
     }
 }
 

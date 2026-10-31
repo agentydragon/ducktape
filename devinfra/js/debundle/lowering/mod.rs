@@ -141,6 +141,9 @@ pub struct RequestedLogicalModule {
 pub struct ExportReentryReport {
     /// The declared host behavior the policy was derived under, echoed as read.
     pub host_behavior: spec::HostBehavior,
+    /// The declared program premises, echoed as read.
+    #[serde(skip_serializing_if = "is_default_premises")]
+    pub program_premises: spec::ProgramPremises,
     pub policy: ExportReentryPolicy,
     pub loader: ExportReentryLoaderDerivation,
     pub global_blockers: Vec<ExportReentryGlobalBlocker>,
@@ -284,6 +287,7 @@ pub struct MaterializeLogicalModulesOptions {
 /// chunk id.
 pub struct MaterializeSpecInputs<'a> {
     pub host_behavior: &'a spec::HostBehavior,
+    pub program_premises: &'a spec::ProgramPremises,
     pub logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
     pub chunk_renames: &'a BTreeMap<String, ChunkRenames>,
     pub unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
@@ -299,6 +303,7 @@ pub fn materialize_logical_modules(
 ) -> Result<MaterializeLogicalModulesResult> {
     let MaterializeSpecInputs {
         host_behavior,
+        program_premises,
         logical_modules,
         chunk_renames,
         unassigned_mode,
@@ -334,6 +339,7 @@ pub fn materialize_logical_modules(
         &artifact,
         &artifact_indexes,
         host_behavior,
+        program_premises,
         vendor_plan,
         &selected_chunk_ids,
         options.report_emission.rejection_dir().is_some(),
@@ -509,6 +515,7 @@ fn export_reentry_reports(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
     host_behavior: &spec::HostBehavior,
+    program_premises: &spec::ProgramPremises,
     vendor_plan: &vendor::VendorResolutionPlan,
     selected_chunk_names: &[String],
     include_closure_diagnostics: bool,
@@ -547,7 +554,8 @@ fn export_reentry_reports(
         .iter()
         .filter_map(|name| artifact.chunk_table.get(name))
         .collect();
-    let mut loader_derivations = loader_derivations(artifact, indexes, host_behavior, &targets)?;
+    let mut loader_derivations =
+        loader_derivations(artifact, indexes, host_behavior, program_premises, &targets)?;
     let mut reports = BTreeMap::new();
     for name in selected_chunk_names {
         let Some(target) = artifact.chunk_table.get(name) else {
@@ -575,6 +583,7 @@ fn export_reentry_reports(
             target,
             ExportReentryReport {
                 host_behavior: host_behavior.clone(),
+                program_premises: program_premises.clone(),
                 policy,
                 loader,
                 global_blockers: global_blockers.clone(),
@@ -591,6 +600,7 @@ fn loader_derivations(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
     host_behavior: &spec::HostBehavior,
+    program_premises: &spec::ProgramPremises,
     targets: &BTreeSet<ChunkId>,
 ) -> Result<BTreeMap<ChunkId, ExportReentryLoaderDerivation>> {
     let uniform = |derivation: ExportReentryLoaderDerivation| {
@@ -602,7 +612,8 @@ fn loader_derivations(
     if host_behavior.synchronous_module_loader == spec::SynchronousModuleLoader::None {
         return Ok(uniform(ExportReentryLoaderDerivation::NoSynchronousLoader));
     }
-    let surfaces = loader_surface::loader_surfaces(artifact, indexes, host_behavior)?;
+    let surfaces =
+        loader_surface::loader_surfaces(artifact, indexes, host_behavior, program_premises)?;
     if !surfaces.has_loader_sites() {
         return Ok(uniform(ExportReentryLoaderDerivation::NoHostLoaderSites));
     }
@@ -617,6 +628,10 @@ fn loader_derivations(
             })
             .collect(),
     )
+}
+
+fn is_default_premises(premises: &spec::ProgramPremises) -> bool {
+    *premises == spec::ProgramPremises::default()
 }
 
 fn collect_closure_blockers(

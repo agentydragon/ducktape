@@ -427,6 +427,7 @@ fn run_prepared_transform(
             source_program.into_artifact(),
             MaterializeSpecInputs {
                 host_behavior: &spec.host_behavior,
+                program_premises: &spec.program_premises,
                 logical_modules: &spec.logical_modules,
                 chunk_renames: &spec.chunk_renames,
                 unassigned_mode: &spec.unassigned_mode,
@@ -766,6 +767,17 @@ fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
             anyhow::ensure!(
                 !given,
                 "host_behavior.{key} requires host_behavior.synchronous_module_loader: present"
+            );
+        }
+    }
+    if spec.program_premises.process_prototype_chain_accessors
+        != spec::ProcessPrototypeChainAccessors::None
+    {
+        for builtin in &spec.host_behavior.reentry_free_builtin_modules {
+            anyhow::ensure!(
+                !builtin.reads_process_accessors(),
+                "host_behavior.reentry_free_builtin_modules entry {builtin:?} requires \
+                 program_premises.process_prototype_chain_accessors: none"
             );
         }
     }
@@ -1247,6 +1259,7 @@ mod tests {
     fn empty_transform_spec() -> TransformSpec {
         TransformSpec {
             host_behavior: spec::HostBehavior::default(),
+            program_premises: spec::ProgramPremises::default(),
             inputs: spec::LoadJsChunksArgs {
                 input_root: PathBuf::from("."),
                 js_list_path: PathBuf::from("js-files.txt"),
