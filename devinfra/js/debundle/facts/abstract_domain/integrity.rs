@@ -11,6 +11,7 @@ use crate::reports::schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativeReceiverPath,
 };
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 /// One intrinsic slot. Each belongs to a census family. `Global` and `Static`
 /// slots are own data properties, unknown only when a census write can reach
@@ -63,6 +64,144 @@ impl IntrinsicSlot {
             Self::Global(family) | Self::Static(family, _) | Self::Prototype(family) => family,
             Self::ArrayIteratorPrototype => NativeIntrinsic::Array,
             Self::SetIteratorPrototype => NativeIntrinsic::Set,
+        }
+    }
+}
+
+impl fmt::Display for IntrinsicSlot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        SlotName::from(*self).fmt(f)
+    }
+}
+
+/// An [`IntrinsicSlot`] whose static property name is owned, as reports and
+/// queries spell it: `%Set%`, `%Object.freeze%`, `%Array.prototype%`,
+/// `%ArrayIteratorPrototype%`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SlotName {
+    Global(NativeIntrinsic),
+    Static(NativeIntrinsic, String),
+    Prototype(NativeIntrinsic),
+    ArrayIteratorPrototype,
+    SetIteratorPrototype,
+}
+
+impl SlotName {
+    pub fn family(&self) -> NativeIntrinsic {
+        match self {
+            Self::Global(family) | Self::Static(family, _) | Self::Prototype(family) => *family,
+            Self::ArrayIteratorPrototype => NativeIntrinsic::Array,
+            Self::SetIteratorPrototype => NativeIntrinsic::Set,
+        }
+    }
+
+    fn own(&self) -> Option<OwnSlot<'_>> {
+        match self {
+            Self::Global(family) => Some(OwnSlot::Global(*family)),
+            Self::Static(family, property) => Some(OwnSlot::Static(*family, property)),
+            _ => None,
+        }
+    }
+
+    /// The census receiver path naming this prototype slot's object.
+    fn prototype_receiver(&self) -> Option<NativeReceiverPath> {
+        match self {
+            Self::Prototype(family) => Some(NativeReceiverPath::Prototype(*family)),
+            Self::ArrayIteratorPrototype => Some(NativeReceiverPath::ArrayIteratorPrototype),
+            Self::SetIteratorPrototype => Some(NativeReceiverPath::SetIteratorPrototype),
+            Self::Global(_) | Self::Static(..) => None,
+        }
+    }
+}
+
+impl From<IntrinsicSlot> for SlotName {
+    fn from(slot: IntrinsicSlot) -> Self {
+        match slot {
+            IntrinsicSlot::Global(family) => Self::Global(family),
+            IntrinsicSlot::Static(family, property) => Self::Static(family, property.to_owned()),
+            IntrinsicSlot::Prototype(family) => Self::Prototype(family),
+            IntrinsicSlot::ArrayIteratorPrototype => Self::ArrayIteratorPrototype,
+            IntrinsicSlot::SetIteratorPrototype => Self::SetIteratorPrototype,
+        }
+    }
+}
+
+impl fmt::Display for SlotName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = |family: &NativeIntrinsic| family.global_binding().unwrap_or("?");
+        match self {
+            Self::Global(family) => write!(f, "%{}%", name(family)),
+            Self::Static(family, property) => write!(f, "%{}.{property}%", name(family)),
+            Self::Prototype(family) => write!(f, "%{}.prototype%", name(family)),
+            Self::ArrayIteratorPrototype => f.write_str("%ArrayIteratorPrototype%"),
+            Self::SetIteratorPrototype => f.write_str("%SetIteratorPrototype%"),
+        }
+    }
+}
+
+impl std::str::FromStr for SlotName {
+    type Err = String;
+
+    /// Accepts the display form with or without `%`; a member of a prototype
+    /// (`Set.prototype.add`) names its prototype slot.
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let name = text.trim().trim_matches('%');
+        match name {
+            "ArrayIteratorPrototype" => return Ok(Self::ArrayIteratorPrototype),
+            "SetIteratorPrototype" => return Ok(Self::SetIteratorPrototype),
+            _ => {}
+        }
+        let (global, member) = match name.split_once('.') {
+            Some((global, member)) => (global, Some(member)),
+            None => (name, None),
+        };
+        let family = NativeIntrinsic::for_global_binding(global)
+            .filter(|family| family.global_binding().is_some())
+            .ok_or_else(|| {
+                format!(
+                    "{text:?} names no intrinsic slot; expected Family, Family.member, \
+                     Family.prototype, ArrayIteratorPrototype or SetIteratorPrototype \
+                     for a census family ({})",
+                    NativeIntrinsic::GLOBAL_BINDINGS
+                        .iter()
+                        .filter(|binding| NativeIntrinsic::for_global_binding(binding)
+                            .is_some_and(|family| family.global_binding().is_some()))
+                        .copied()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })?;
+        Ok(match member {
+            None => Self::Global(family),
+            Some(member) if member == "prototype" || member.starts_with("prototype.") => {
+                Self::Prototype(family)
+            }
+            Some(member) => Self::Static(family, member.to_owned()),
+        })
+    }
+}
+
+/// A `Global` or `Static` slot with a borrowed property name.
+#[derive(Debug, Clone, Copy)]
+enum OwnSlot<'a> {
+    Global(NativeIntrinsic),
+    Static(NativeIntrinsic, &'a str),
+}
+
+impl OwnSlot<'static> {
+    fn of(slot: IntrinsicSlot) -> Self {
+        match slot {
+            IntrinsicSlot::Global(family) => Self::Global(family),
+            IntrinsicSlot::Static(family, property) => Self::Static(family, property),
+            _ => unreachable!("own-slot query for {slot:?}"),
+        }
+    }
+}
+
+impl OwnSlot<'_> {
+    fn family(self) -> NativeIntrinsic {
+        match self {
+            Self::Global(family) | Self::Static(family, _) => family,
         }
     }
 }
@@ -281,44 +420,86 @@ impl OwnSlotWrites {
 
     /// Whether no write reaches this `Global` or `Static` slot.
     fn intact(&self, slot: IntrinsicSlot) -> bool {
+        self.own_intact(OwnSlot::of(slot))
+    }
+
+    fn own_intact(&self, slot: OwnSlot<'_>) -> bool {
         !self.every_slot && !self.reached_by_key(slot, true)
+    }
+
+    /// The recorded keys on the slot's exact receiver and on any receiver
+    /// that may name it.
+    fn keys_naming<'s>(
+        &'s self,
+        slot: OwnSlot<'s>,
+    ) -> (
+        impl Iterator<Item = &'s NativePropertyKey>,
+        impl Iterator<Item = &'s NativePropertyKey>,
+    ) {
+        let name = match slot {
+            OwnSlot::Global(family) => family.global_binding(),
+            OwnSlot::Static(_, property) => Some(property),
+        };
+        let may_name =
+            move |key: &NativePropertyKey| name.is_none_or(|name| key.may_be_string(name));
+        let exact = self
+            .global_keys
+            .iter()
+            .filter(move |_| matches!(slot, OwnSlot::Global(_)))
+            .chain(
+                self.static_keys
+                    .iter()
+                    .filter(move |(owner, _)| {
+                        matches!(slot, OwnSlot::Static(family, _) if *owner == family)
+                    })
+                    .map(|(_, key)| key),
+            )
+            .filter(move |key| may_name(key));
+        let any = self
+            .any_receiver_keys
+            .iter()
+            .filter(move |key| may_name(key));
+        (exact, any)
     }
 
     /// Whether a recorded key may name `slot`, counting writes on exact
     /// receivers only with `exact_receivers`.
-    fn reached_by_key(&self, slot: IntrinsicSlot, exact_receivers: bool) -> bool {
-        let (name, exact) = match slot {
-            IntrinsicSlot::Global(family) => {
-                let Some(name) = family.global_binding() else {
-                    return true;
-                };
-                (
-                    name,
-                    self.global_keys.iter().any(|key| key.may_be_string(name)),
-                )
-            }
-            IntrinsicSlot::Static(family, property) => (
-                property,
-                self.static_keys
-                    .iter()
-                    .any(|(owner, key)| *owner == family && key.may_be_string(property)),
-            ),
-            _ => unreachable!("own-slot query for {slot:?}"),
-        };
-        (exact_receivers && exact)
-            || self
-                .any_receiver_keys
-                .iter()
-                .any(|key| key.may_be_string(name))
+    fn reached_by_key(&self, slot: OwnSlot<'_>, exact_receivers: bool) -> bool {
+        if let OwnSlot::Global(family) = slot
+            && family.global_binding().is_none()
+        {
+            return true;
+        }
+        let (mut exact, mut any) = self.keys_naming(slot);
+        (exact_receivers && exact.next().is_some()) || any.next().is_some()
     }
 
     /// Whether the slot is unknown through a write whose receiver may be any
     /// native object, or an unknown key on the global object.
-    fn reached_through_global(&self, slot: IntrinsicSlot) -> bool {
+    fn reached_through_global(&self, slot: OwnSlot<'_>) -> bool {
         self.every_slot
             || self.reached_by_key(slot, false)
-            || matches!(slot, IntrinsicSlot::Global(_))
+            || matches!(slot, OwnSlot::Global(_))
                 && self.global_keys.contains(&NativePropertyKey::Unknown)
+    }
+
+    /// How this one witness's writes reach `slot`, if they do.
+    fn reach(&self, slot: OwnSlot<'_>) -> Option<SlotReach> {
+        if self.every_slot {
+            return Some(SlotReach::UnknownReceiver);
+        }
+        let (exact, mut any) = self.keys_naming(slot);
+        let exact: Vec<_> = exact.collect();
+        if exact
+            .iter()
+            .any(|key| matches!(key, NativePropertyKey::String(_)))
+        {
+            Some(SlotReach::NamedWrite)
+        } else if !exact.is_empty() {
+            Some(SlotReach::UnknownKey)
+        } else {
+            any.next().map(|_| SlotReach::UnknownReceiver)
+        }
     }
 }
 
@@ -407,26 +588,149 @@ impl IntegrityFlags {
 
     /// The census families (and the global object) that make `slots` unknown.
     pub(crate) fn mutated_roots(&self, slots: &[IntrinsicSlot]) -> BTreeSet<NativeIntrinsic> {
-        let mut roots = BTreeSet::new();
-        for slot in slots {
-            match slot {
-                IntrinsicSlot::Global(_) | IntrinsicSlot::Static(..) => {
-                    if !self.own_slot_writes.intact(*slot) {
-                        roots.insert(if self.own_slot_writes.reached_through_global(*slot) {
-                            NativeIntrinsic::GlobalObject
-                        } else {
-                            slot.family()
-                        });
-                    }
-                }
-                _ => roots.extend(
-                    [slot.family(), NativeIntrinsic::GlobalObject]
-                        .into_iter()
-                        .filter(|root| self.mutated.contains(root)),
-                ),
-            }
+        slots
+            .iter()
+            .flat_map(|slot| {
+                slot_mutated_roots(&self.mutated, &self.own_slot_writes, &SlotName::from(*slot))
+            })
+            .collect()
+    }
+}
+
+/// The families (and the global object) that make one slot unknown.
+fn slot_mutated_roots(
+    mutated: &BTreeSet<NativeIntrinsic>,
+    own_slot_writes: &OwnSlotWrites,
+    slot: &SlotName,
+) -> BTreeSet<NativeIntrinsic> {
+    match slot.own() {
+        Some(own) if own_slot_writes.own_intact(own) => BTreeSet::new(),
+        Some(own) => BTreeSet::from([if own_slot_writes.reached_through_global(own) {
+            NativeIntrinsic::GlobalObject
+        } else {
+            own.family()
+        }]),
+        None => [slot.family(), NativeIntrinsic::GlobalObject]
+            .into_iter()
+            .filter(|root| mutated.contains(root))
+            .collect(),
+    }
+}
+
+/// Why one census witness makes a slot unknown (`debundle explain-integrity`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SlotReach {
+    /// The write's receiver and string key name the slot, or it assigns the
+    /// slot's global binding.
+    NamedWrite,
+    /// A prototype slot is family-level: any write to its family makes it
+    /// unknown, whatever the receiver and key.
+    FamilyCoupling,
+    /// A write to the global object, which makes every prototype slot unknown.
+    GlobalObjectCoupling,
+    /// An exact receiver with a key that may name the slot: unknown, affixed,
+    /// or derived through slots the census cannot keep intact.
+    UnknownKey,
+    /// The receiver may be any native object, or a global-object alias was
+    /// rebound.
+    UnknownReceiver,
+}
+
+/// A completed whole-program census, as `program_graph.json` records it,
+/// queried slot by slot. It mirrors [`IntegrityFlags`] without author axioms.
+pub struct CensusExplanation<'a> {
+    witnesses: &'a [NativeMutationWitness],
+    dynamic_scope: bool,
+    mutated: BTreeSet<NativeIntrinsic>,
+    own_slot_writes: OwnSlotWrites,
+}
+
+/// One slot's census verdict and every witness reaching it, by index.
+pub struct SlotExplanation {
+    pub intact: bool,
+    pub affected_roots: BTreeSet<NativeIntrinsic>,
+    pub reaches: Vec<(usize, SlotReach)>,
+}
+
+impl<'a> CensusExplanation<'a> {
+    /// `dynamic_scope`: a direct `eval` or `with` leaves the census open and
+    /// the global object mutated without a witness.
+    pub fn new(witnesses: &'a [NativeMutationWitness], dynamic_scope: bool) -> Self {
+        let mut mutated: BTreeSet<_> = witnesses
+            .iter()
+            .filter(|witness| witness.unreachable_branch.is_none())
+            .flat_map(|witness| witness.affected_roots.iter().copied())
+            .collect();
+        if dynamic_scope {
+            mutated.insert(NativeIntrinsic::GlobalObject);
         }
-        roots
+        let own_slot_writes = OwnSlotWrites::resolve(witnesses, &mutated, |slot| {
+            prototype_slot_intact(&mutated, slot)
+        });
+        Self {
+            witnesses,
+            dynamic_scope,
+            mutated,
+            own_slot_writes,
+        }
+    }
+
+    pub fn explain(&self, slot: &SlotName) -> SlotExplanation {
+        let affected_roots = slot_mutated_roots(&self.mutated, &self.own_slot_writes, slot);
+        let reaches = self
+            .witnesses
+            .iter()
+            .enumerate()
+            .filter(|(_, witness)| {
+                witness.unreachable_branch.is_none() && !witness.affected_roots.is_empty()
+            })
+            .filter_map(|(index, witness)| Some((index, self.reach(witness, slot)?)))
+            .collect();
+        SlotExplanation {
+            intact: !self.dynamic_scope && affected_roots.is_empty(),
+            affected_roots,
+            reaches,
+        }
+    }
+
+    fn reach(&self, witness: &NativeMutationWitness, slot: &SlotName) -> Option<SlotReach> {
+        if let Some(own) = slot.own() {
+            let mut single = OwnSlotWrites::default();
+            single.add(witness, &self.own_slot_writes, |slot| {
+                prototype_slot_intact(&self.mutated, slot)
+            });
+            return single.reach(own);
+        }
+        let family = slot.family();
+        if !witness.affected_roots.contains(&family)
+            && !witness
+                .affected_roots
+                .contains(&NativeIntrinsic::GlobalObject)
+        {
+            return None;
+        }
+        let receiver = slot.prototype_receiver();
+        Some(
+            if witness
+                .target_slots
+                .iter()
+                .any(|target| Some(&target.receiver) == receiver.as_ref())
+            {
+                SlotReach::NamedWrite
+            } else if witness.affected_roots.contains(&family) {
+                SlotReach::FamilyCoupling
+            } else if !witness.target_slots.is_empty()
+                && witness
+                    .target_slots
+                    .iter()
+                    .all(|target| target.receiver != NativeReceiverPath::Unknown)
+            {
+                SlotReach::GlobalObjectCoupling
+            } else {
+                SlotReach::UnknownReceiver
+            },
+        )
     }
 }
 
@@ -541,6 +845,7 @@ mod tests {
             operation: NativeMutationOperation::PropertyAssignment,
             receiver_roots: BTreeSet::from([root]),
             through_local_alias: false,
+            receiver_global: None,
             affected_roots: BTreeSet::from([root]),
             target_slots: BTreeSet::from([crate::reports::schema::NativeWriteSlot {
                 receiver,
@@ -756,5 +1061,100 @@ mod tests {
             intact(&[rebind], PROBES),
             [OBJECT, KEYS, ENTRIES, SYMBOL_FOR, OBJECT_PROTOTYPE]
         );
+    }
+
+    #[test]
+    fn slot_names_parse_their_display_and_member_forms() {
+        for (text, slot) in [
+            (
+                "%Array.prototype%",
+                SlotName::Prototype(NativeIntrinsic::Array),
+            ),
+            (
+                "Set.prototype.add",
+                SlotName::Prototype(NativeIntrinsic::Set),
+            ),
+            (
+                "Object.defineProperty",
+                SlotName::Static(NativeIntrinsic::Object, "defineProperty".to_owned()),
+            ),
+            ("Set", SlotName::Global(NativeIntrinsic::Set)),
+            ("%ArrayIteratorPrototype%", SlotName::ArrayIteratorPrototype),
+        ] {
+            assert_eq!(text.parse::<SlotName>(), Ok(slot.clone()), "{text}");
+            assert_eq!(slot.to_string().parse::<SlotName>(), Ok(slot));
+        }
+        for text in ["globalThis", "Foo.bar", ""] {
+            assert!(text.parse::<SlotName>().is_err(), "{text}");
+        }
+    }
+
+    #[test]
+    fn each_witness_reaches_a_slot_by_how_its_receiver_and_key_name_it() {
+        let census = [
+            witness(
+                NativeIntrinsic::Object,
+                NativeReceiverPath::Constructor(NativeIntrinsic::Object),
+                string("entries"),
+                &[],
+            ),
+            witness(
+                NativeIntrinsic::Object,
+                NativeReceiverPath::Constructor(NativeIntrinsic::Object),
+                NativePropertyKey::Unknown,
+                &[],
+            ),
+            witness(
+                NativeIntrinsic::GlobalObject,
+                NativeReceiverPath::Unknown,
+                string("keys"),
+                &[],
+            ),
+            witness(
+                NativeIntrinsic::GlobalObject,
+                NativeReceiverPath::GlobalObject,
+                string("flag"),
+                &[],
+            ),
+            witness(
+                NativeIntrinsic::Object,
+                NativeReceiverPath::Prototype(NativeIntrinsic::Object),
+                NativePropertyKey::Unknown,
+                &[],
+            ),
+        ];
+        let explanation = CensusExplanation::new(&census, false);
+        let reaches = |slot: SlotName| explanation.explain(&slot).reaches;
+        use SlotReach::*;
+        assert_eq!(
+            reaches(SlotName::Static(
+                NativeIntrinsic::Object,
+                "entries".to_owned()
+            )),
+            [(0, NamedWrite), (1, UnknownKey)]
+        );
+        assert_eq!(
+            reaches(SlotName::Static(NativeIntrinsic::Object, "keys".to_owned())),
+            [(1, UnknownKey), (2, UnknownReceiver)]
+        );
+        assert_eq!(
+            reaches(SlotName::Prototype(NativeIntrinsic::Object)),
+            [
+                (0, FamilyCoupling),
+                (1, FamilyCoupling),
+                (2, UnknownReceiver),
+                (3, GlobalObjectCoupling),
+                (4, NamedWrite)
+            ]
+        );
+        assert_eq!(
+            reaches(SlotName::Prototype(NativeIntrinsic::Array)),
+            [(2, UnknownReceiver), (3, GlobalObjectCoupling)]
+        );
+        let set = SlotName::Global(NativeIntrinsic::Set);
+        assert!(explanation.explain(&set).intact);
+        assert!(reaches(set.clone()).is_empty());
+        // Dynamic scope leaves the census open without a witness.
+        assert!(!CensusExplanation::new(&census, true).explain(&set).intact);
     }
 }

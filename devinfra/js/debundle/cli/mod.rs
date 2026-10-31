@@ -12,6 +12,7 @@ pub mod validate;
 mod bindings_commands;
 mod contract_audit;
 mod inspection_commands;
+mod integrity_explanation;
 mod modules_commands;
 mod propose_commutations;
 mod selector_explanation;
@@ -377,6 +378,10 @@ enum DebundleCommand {
     /// Inspect source by graph ID, binding, or numbered top-level item.
     #[command(name = "inspect-source")]
     InspectSource(InspectSourceArgs),
+    /// Explain which native-integrity guards a source unit failed and which
+    /// census witnesses leave each required intrinsic slot unknown.
+    #[command(name = "explain-integrity")]
+    ExplainIntegrity(integrity_explanation::ExplainIntegrityArgs),
     /// Query original chunks' resolved ordinary static ESM import paths.
     #[command(name = "static-imports")]
     StaticImports(static_imports::StaticImportsArgs),
@@ -511,6 +516,14 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
             inspection_commands::run_inspect_source(args, source_context.as_ref())
         }
         DebundleCommand::StaticImports(args) => static_imports::run(args),
+        DebundleCommand::ExplainIntegrity(explain_args) => integrity_explanation::run(
+            explain_args,
+            graph_provenance::CurrentRoots {
+                spec: args.spec_root.clone(),
+                source: args.graph_source_root.clone(),
+                packages: graph_package_roots.clone(),
+            },
+        ),
         DebundleCommand::Scc(args) => run_scc(args),
         DebundleCommand::Cluster(args) => run_cluster(args),
         DebundleCommand::Spec(args) => spec_commands::run(args, source_context.as_ref()),
@@ -552,6 +565,7 @@ fn command_output_format(command: &DebundleCommand) -> OutputFormat {
         DebundleCommand::Describe(args) => args.format,
         DebundleCommand::InspectSource(args) => args.format,
         DebundleCommand::StaticImports(args) => args.format,
+        DebundleCommand::ExplainIntegrity(args) => args.format,
         _ => None,
     };
     OutputFormat::resolve(format)
@@ -669,6 +683,7 @@ fn top_level_query_format(command: &DebundleCommand) -> Option<OutputFormat> {
         DebundleCommand::Describe(args) => Some(OutputFormat::resolve(args.format)),
         DebundleCommand::InspectSource(args) => Some(OutputFormat::resolve(args.format)),
         DebundleCommand::StaticImports(args) => Some(OutputFormat::resolve(args.format)),
+        DebundleCommand::ExplainIntegrity(args) => Some(OutputFormat::resolve(args.format)),
         DebundleCommand::Scc(args) => Some(OutputFormat::resolve(args.format)),
         DebundleCommand::Cluster(args) => Some(OutputFormat::resolve(args.format)),
         DebundleCommand::Spec(args) => args.query_format(),
