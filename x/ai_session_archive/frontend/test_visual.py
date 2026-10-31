@@ -254,7 +254,7 @@ async def test_shared_transcript_disclosures(visual: VisualHarness, capture_name
         raw = user.get_by_role("button", name="Raw JSONL record", exact=True)
         assert await raw.evaluate("element => getComputedStyle(element).position === 'absolute'")
         await expect(user.get_by_role("region", name="Raw JSONL record")).to_have_count(0)
-        await user.hover()
+        await user.locator(".transcript-user-bubble").hover()
         await expect(raw).to_be_visible()
         await raw.click()
         raw_panel = user.get_by_role("region", name="Raw JSONL record", exact=True)
