@@ -135,7 +135,9 @@ def add_service_workload(
         # Independent of the ServiceAccount's own automount_token, and also False by default.
         automount_service_account_token=automount_service_account_token,
         docker_registry_auth=(
-            Secret.from_secret_name(scope, "images-creds", registry_secret_name) if registry_secret_name else None
+            Secret.from_secret_name(scope, "images-creds", registry_secret_name)
+            if registry_secret_name is not None
+            else None
         ),
         security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
     )

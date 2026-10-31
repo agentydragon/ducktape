@@ -83,8 +83,8 @@ The app’s History watch reconnects on its own, and Sessions recorded meanwhile
   Native service RPCs use generated app-side HTTP gateways with request-bound credentials.
 - `go/auth/` and `go/federation/`: PostgreSQL browser sessions, signed OIDC login and operator token
   exchange. Logout, expiry and replica notifications end browser streams.
-- `go/migrations/` and `go/migrate/`: embedded Goose schema and the init-container executable.
-  The API itself never creates tables at startup.
+- `go/migrations/` and `go/migrate/`: embedded Goose schema and the service-startup migration
+  lifecycle. The serving binary applies migrations before opening the API.
 - `settings.py`, `presets.py`, `model_catalog.py`, `action_federation_settings.py`, `oidc.py` and
   `sandbox_models.py`: deployment configuration schema used by cdk8s.
 - `testing/`: Go process fixtures, real service peers and test-only HTTP DTOs checked against Go's
