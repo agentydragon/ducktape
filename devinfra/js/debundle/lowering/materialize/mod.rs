@@ -515,6 +515,11 @@ pub(super) fn finish_logical_chunk(
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
+        inputs.assumptions.application_object_writes = cross_module_purities
+            .application_object_writes
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
         inputs.assumptions.commuting_statements = cross_module_purities
             .commuting_statements
             .get(chunk_id)

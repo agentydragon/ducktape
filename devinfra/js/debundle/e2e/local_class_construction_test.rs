@@ -632,6 +632,7 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
             guard: NativeIntegrityGuard::SetIterable,
             value_input_refs: captured_input_refs(),
             no_accessor_install_refs: BTreeSet::new(),
+            application_object_write_refs: BTreeSet::new(),
         }]
     );
 
@@ -661,6 +662,7 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
             guard: NativeIntegrityGuard::LocalClassConstruction,
             value_input_refs: captured_input_refs(),
             no_accessor_install_refs: BTreeSet::new(),
+            application_object_write_refs: BTreeSet::new(),
         }]
     );
 

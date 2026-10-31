@@ -674,6 +674,8 @@ pub struct CallableSummaryInputs<'a> {
     pub predefined_globals: spec::PredefinedGlobals,
     pub no_accessor_install_callables:
         &'a BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedNoAccessorInstall>>,
+    pub application_object_writes:
+        &'a BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedApplicationObjectWrite>>,
 }
 
 pub fn resolve_imported_callable_summaries(
@@ -692,6 +694,7 @@ pub fn resolve_imported_callable_summaries(
         argument_inputs,
         predefined_globals,
         no_accessor_install_callables,
+        application_object_writes,
     } = inputs;
     let required: BTreeSet<_> = modules
         .values()
@@ -762,9 +765,22 @@ pub fn resolve_imported_callable_summaries(
                         .get(module)
                         .cloned()
                         .unwrap_or_default(),
-                    predefined_globals,
-                    bundle_globals.clone(),
+                    crate::analysis_inputs::AnalysisAssumptions {
+                        predefined_globals,
+                        bundle_globals: bundle_globals.clone(),
+                        application_object_writes: application_object_writes
+                            .get(module)
+                            .cloned()
+                            .unwrap_or_default(),
+                        ..Default::default()
+                    },
                 );
+            if !prepared_module.application_object_write_errors().is_empty() {
+                bail!(
+                    "invalid application-object write premise for provider {module}: {}",
+                    prepared_module.application_object_write_errors().join("; ")
+                );
+            }
             if !prepared_module.value_input_errors().is_empty() {
                 bail!(
                     "invalid captured value input for provider {module}: {}",
@@ -2132,6 +2148,7 @@ mod tests {
                 argument_inputs: &BTreeMap::new(),
                 predefined_globals: spec::PredefinedGlobals::Unknown,
                 no_accessor_install_callables: &BTreeMap::new(),
+                application_object_writes: &BTreeMap::new(),
             },
         )
         .unwrap()

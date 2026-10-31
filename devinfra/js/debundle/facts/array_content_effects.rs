@@ -504,6 +504,9 @@ impl Visit for ArrayContentCollector<'_> {
                         no_accessor_install_refs: dependencies
                             .no_accessor_install_callables
                             .clone(),
+                        application_object_write_refs: dependencies
+                            .application_object_writes
+                            .clone(),
                     },
                 );
             }

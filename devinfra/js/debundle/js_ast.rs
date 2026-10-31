@@ -7,7 +7,7 @@ use swc_atoms::Atom;
 use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComments};
 use swc_common::sync::Lrc;
 use swc_common::{
-    BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned,
+    BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Span, Spanned,
 };
 use swc_ecma_ast::{
     ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr, Ident,
@@ -61,6 +61,29 @@ pub struct ParsedJsModule {
 impl ParsedJsModule {
     pub fn line_index(&self) -> SourceLineIndex {
         SourceLineIndex::for_source_map(&self.cm)
+    }
+
+    /// The span of non-empty `text` in the parser input, or how many times it
+    /// occurs when that is not exactly once. Overlapping occurrences count.
+    pub fn unique_text_span(&self, text: &str) -> std::result::Result<Span, usize> {
+        let file = &self.cm.files()[0];
+        let source = file.src.as_str();
+        let mut offsets = Vec::new();
+        let mut from = 0;
+        while let Some(found) = source[from..].find(text) {
+            offsets.push(from + found);
+            let Some(next) = source[from + found..].chars().next() else {
+                break;
+            };
+            from += found + next.len_utf8();
+        }
+        let [offset] = offsets[..] else {
+            return Err(offsets.len());
+        };
+        Ok(Span::new(
+            file.start_pos + BytePos(offset as u32),
+            file.start_pos + BytePos((offset + text.len()) as u32),
+        ))
     }
 
     /// Clone the source text stored in the SourceMap. Returns the full

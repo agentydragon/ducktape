@@ -192,6 +192,9 @@ pub(super) struct CrossModulePurities {
     pub(super) argument_inputs: BTreeMap<String, Vec<ResolvedArgumentInput>>,
     /// Source-resolved commuting source-unit pairs, keyed by their chunk.
     pub(super) commuting_statements: BTreeMap<String, Vec<ResolvedCommutingStatements>>,
+    /// Source-resolved application-object write premises, keyed by chunk.
+    pub(super) application_object_writes:
+        BTreeMap<String, Vec<analysis::analysis_inputs::ResolvedApplicationObjectWrite>>,
     pub(super) inline_callback_factories: BTreeMap<String, BTreeSet<String>>,
     pub(super) callback_factory_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     pub(super) retained_callback_factories:
@@ -348,6 +351,7 @@ pub(super) fn collect_cross_module_imported_purities(
     // Pass 2: assemble each chunk's oracle inputs from whichever body is
     // available (retained AST or re-parsed entry).
     let mut modules = BTreeMap::new();
+    let mut application_object_writes = BTreeMap::new();
     let mut local_export_values =
         BTreeMap::<(String, String), (PrimKinds, BTreeSet<String>)>::new();
     let mut export_value_sources = BTreeMap::<(String, String), ExportValueSource>::new();
@@ -474,6 +478,18 @@ pub(super) fn collect_cross_module_imported_purities(
                 }
             }
         }
+        if let Some(options) = chunk_analysis_options.get(chunk_name)
+            && !options.application_object_writes.is_empty()
+        {
+            application_object_writes.insert(
+                chunk_name.to_string(),
+                resolve_application_object_writes(
+                    chunk_name,
+                    parsed,
+                    &options.application_object_writes,
+                )?,
+            );
+        }
         modules.insert(
             chunk_name.to_string(),
             ModulePurityFacts {
@@ -530,6 +546,13 @@ pub(super) fn collect_cross_module_imported_purities(
         graph_provenance,
         chunk_filter,
     )?;
+    for (chunk_name, options) in chunk_analysis_options {
+        ensure!(
+            options.application_object_writes.is_empty()
+                || application_object_writes.contains_key(chunk_name),
+            "chunk_analysis_options.{chunk_name}.application_object_writes names no analyzed provider chunk"
+        );
+    }
     let no_accessor_install_callables = resolve_no_accessor_install_callables(
         artifact,
         &modules,
@@ -658,6 +681,7 @@ pub(super) fn collect_cross_module_imported_purities(
             argument_inputs: &argument_inputs,
             predefined_globals,
             no_accessor_install_callables: &no_accessor_install_callables,
+            application_object_writes: &application_object_writes,
         },
     )?;
     Ok(CrossModulePurities {
@@ -722,6 +746,7 @@ pub(super) fn collect_cross_module_imported_purities(
         stable_set_spreads: callable_summaries.stable_set_spreads,
         argument_inputs: callable_summaries.argument_inputs,
         commuting_statements,
+        application_object_writes,
         inline_callback_factories: resolve_asserted_inline_callback_factories(
             &modules,
             &asserted_inline_callback_factories,
@@ -1450,6 +1475,39 @@ fn resolve_argument_inputs(
         resolved.insert(chunk_name.clone(), selected);
     }
     Ok(resolved)
+}
+
+fn resolve_application_object_writes(
+    chunk_name: &str,
+    parsed: &ParsedJsModule,
+    contracts: &[spec::ApplicationObjectWriteContract],
+) -> Result<Vec<analysis::analysis_inputs::ResolvedApplicationObjectWrite>> {
+    contracts
+        .iter()
+        .enumerate()
+        .map(|(input_index, contract)| {
+            let request_id =
+                format!("chunk_analysis_options.{chunk_name}.application_object_writes[{input_index}]");
+            ensure!(
+                !contract.source_text.trim().is_empty(),
+                "{request_id}.source_text is empty"
+            );
+            let span = parsed
+                .unique_text_span(&contract.source_text)
+                .map_err(|count| {
+                    anyhow::anyhow!(
+                        "{request_id}.source_text must occur exactly once in the parser input, found {count}"
+                    )
+                })?;
+            Ok(analysis::analysis_inputs::ResolvedApplicationObjectWrite {
+                reference: analysis::analysis_inputs::ApplicationObjectWriteRef {
+                    defining_chunk: chunk_name.to_owned(),
+                    input_index,
+                },
+                span,
+            })
+        })
+        .collect()
 }
 
 fn resolve_no_accessor_install_callables(

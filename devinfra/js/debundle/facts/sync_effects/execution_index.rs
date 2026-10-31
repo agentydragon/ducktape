@@ -1536,6 +1536,22 @@ enum NativeReceiverRoot {
     BundleGlobal,
 }
 
+impl NativeReceiverRoot {
+    /// A root naming a specific intrinsic object, not an unresolved value.
+    fn is_known_intrinsic(&self) -> bool {
+        match self {
+            Self::Intrinsic(root) => *root != NativeIntrinsic::UnknownGlobalValue,
+            Self::IntrinsicPrototype(_)
+            | Self::ArrayIteratorPrototype
+            | Self::SetIteratorPrototype => true,
+            Self::IntrinsicDescendant(_)
+            | Self::OrdinaryDirect { .. }
+            | Self::OrdinaryDescendant { .. }
+            | Self::BundleGlobal => false,
+        }
+    }
+}
+
 type NativeReceiverRoots = BTreeSet<NativeReceiverRoot>;
 
 /// Global-object names the native census resolves.
@@ -4089,8 +4105,8 @@ fn intrinsic_write_target(
 #[derive(Clone, Default)]
 pub(crate) struct NativeWriteCensus {
     unconditional: IntrinsicRoots,
-    /// Host claims a receiver discharge consumed.
-    host_behavior: BTreeSet<HostBehaviorKey>,
+    /// Host claims and author premises a discharge consumed.
+    dependencies: ProofDependencies,
     prototype_mutations: Arc<Vec<NativePrototypeMutation>>,
     witnesses: Arc<Vec<NativeMutationWitness>>,
     conditional: Vec<ConditionalIntrinsicWrite>,
@@ -4254,10 +4270,13 @@ pub(crate) fn resolve_native_integrity<'a>(
         witnesses: Arc::new(witnesses),
         value_input_evidence,
         consumed_value_inputs,
-        consumed_host_behavior: censuses
-            .iter()
-            .flat_map(|census| census.host_behavior.iter().copied())
-            .collect(),
+        consumed_dependencies: censuses.iter().fold(
+            ProofDependencies::default(),
+            |mut dependencies, census| {
+                dependencies.extend(&census.dependencies);
+                dependencies
+            },
+        ),
     }
 }
 
@@ -5486,9 +5505,11 @@ struct ExecutionIndex {
     resolved_native_operation_inputs: Vec<ResolvedNativeOperationInput>,
     native_operation_input_evidence: BTreeMap<CallSite, NativeOperationInputEvidence>,
     native_operation_input_errors: Vec<String>,
+    application_object_write_errors: Vec<String>,
     primitive_native_symbol_calls: BTreeSet<CallSite>,
     native_integrity_value_input_refs: BTreeSet<ValueInputRef>,
-    native_integrity_host_behavior: BTreeSet<HostBehaviorKey>,
+    /// Host claims and author premises the whole-program census consumed.
+    native_integrity_consumed: ProofDependencies,
     destructuring_source: Option<ValueExpr>,
     /// Visiting an assignment target: its identifiers are assigned, not
     /// declared.
@@ -5662,9 +5683,10 @@ impl Default for ExecutionIndex {
             resolved_native_operation_inputs: Vec::new(),
             native_operation_input_evidence: BTreeMap::new(),
             native_operation_input_errors: Vec::new(),
+            application_object_write_errors: Vec::new(),
             primitive_native_symbol_calls: BTreeSet::new(),
             native_integrity_value_input_refs: BTreeSet::new(),
-            native_integrity_host_behavior: BTreeSet::new(),
+            native_integrity_consumed: ProofDependencies::default(),
             destructuring_source: None,
             assignment_target: false,
             destructuring_member_writes: Vec::new(),
@@ -6251,11 +6273,16 @@ impl ExecutionIndex {
     /// The author and host premises the completed census consumed.
     pub(super) fn native_integrity_dependencies(&self) -> ProofDependencies {
         let bundle_globals = self
-            .native_integrity_host_behavior
+            .native_integrity_consumed
+            .host_behavior
             .contains(&HostBehaviorKey::PredefinedGlobals);
         ProofDependencies {
             value_inputs: self.native_integrity_value_input_refs.clone(),
-            host_behavior: self.native_integrity_host_behavior.clone(),
+            host_behavior: self.native_integrity_consumed.host_behavior.clone(),
+            application_object_writes: self
+                .native_integrity_consumed
+                .application_object_writes
+                .clone(),
             no_accessor_install_callables: if bundle_globals {
                 self.census_globals
                     .bundle
@@ -8060,10 +8087,10 @@ impl ExecutionIndex {
                 .as_ref()
                 .map(|integrity| integrity.consumed_value_inputs.clone())
                 .unwrap_or_default(),
-            native_integrity_host_behavior: hints
+            native_integrity_consumed: hints
                 .native_integrity
                 .as_ref()
-                .map(|integrity| integrity.consumed_host_behavior.clone())
+                .map(|integrity| integrity.consumed_dependencies.clone())
                 .unwrap_or_default(),
             ..Self::default()
         };
@@ -8527,6 +8554,8 @@ impl ExecutionIndex {
         }
         index.native_write_census.unconditional = mutated_intrinsics;
         index.native_write_census.witnesses = Arc::new(unconditional_witnesses);
+        let application_writes = &hints.assumptions.application_object_writes;
+        let mut covered_application_writes = BTreeSet::new();
         for write in &index.intrinsic_writes {
             // Slot evidence is source-only: author-conditioned receiver
             // refinements may narrow family roots, but cannot certify that
@@ -8539,6 +8568,30 @@ impl ExecutionIndex {
                 &BTreeMap::new(),
                 &CallableReturnInputs::default(),
             );
+            // An author-certified application-object write reaches no intrinsic
+            // unless the source already shows it may.
+            if let Some(premise) = application_writes
+                .iter()
+                .find(|premise| premise.span.contains(write.span))
+            {
+                covered_application_writes.insert(premise.reference.clone());
+                if source_roots
+                    .iter()
+                    .any(NativeReceiverRoot::is_known_intrinsic)
+                {
+                    index.application_object_write_errors.push(format!(
+                        "chunk_analysis_options.{}.application_object_writes[{}] covers a write whose receiver may be {source_roots:?}",
+                        premise.reference.defining_chunk, premise.reference.input_index
+                    ));
+                } else {
+                    index
+                        .native_write_census
+                        .dependencies
+                        .application_object_writes
+                        .insert(premise.reference.clone());
+                    continue;
+                }
+            }
             let key_evidence = write
                 .key
                 .as_ref()
@@ -8571,6 +8624,7 @@ impl ExecutionIndex {
             if projection.bundle_global {
                 index
                     .native_write_census
+                    .dependencies
                     .host_behavior
                     .insert(HostBehaviorKey::PredefinedGlobals);
             }
@@ -8680,6 +8734,14 @@ impl ExecutionIndex {
                     dependencies: evidence.dependencies,
                 });
         }
+        for premise in application_writes {
+            if !covered_application_writes.contains(&premise.reference) {
+                index.application_object_write_errors.push(format!(
+                    "chunk_analysis_options.{}.application_object_writes[{}] covers no native-census write",
+                    premise.reference.defining_chunk, premise.reference.input_index
+                ));
+            }
+        }
         index.native_write_census.prototype_mutations =
             Arc::new(index.collect_prototype_mutations(
                 &raw_intrinsic_aliases,
@@ -8692,10 +8754,10 @@ impl ExecutionIndex {
         }
         let mut censuses = vec![&index.native_write_census];
         let external = NativeWriteCensus {
-            host_behavior: hints
+            dependencies: hints
                 .native_integrity
                 .as_ref()
-                .map(|integrity| integrity.consumed_host_behavior.clone())
+                .map(|integrity| integrity.consumed_dependencies.clone())
                 .unwrap_or_default(),
             prototype_mutations: hints
                 .native_integrity
@@ -8721,7 +8783,7 @@ impl ExecutionIndex {
             resolve_native_integrity_roots(&censuses)
         } else {
             let integrity = resolve_native_integrity(censuses);
-            index.native_integrity_host_behavior = integrity.consumed_host_behavior;
+            index.native_integrity_consumed = integrity.consumed_dependencies;
             index.native_integrity_witnesses = integrity.witnesses;
             index.native_prototype_mutations = integrity.prototype_mutations;
             integrity.mutated
@@ -12213,6 +12275,10 @@ impl PreparedCallableCapabilities {
         self.index.resolved_value_inputs.clone()
     }
 
+    pub(crate) fn application_object_write_errors(&self) -> &[String] {
+        &self.index.application_object_write_errors
+    }
+
     pub(crate) fn native_operation_input_errors(&self) -> &[String] {
         &self.index.native_operation_input_errors
     }
@@ -12440,8 +12506,7 @@ pub(crate) fn prepare_callable_capabilities(
     exported_locals: BTreeSet<String>,
     selected_value_inputs: Vec<SelectedBindingValueInput>,
     selected_native_operation_inputs: Vec<SelectedNativeOperationInput>,
-    predefined_globals: spec::PredefinedGlobals,
-    bundle_globals: BundleGlobalNames,
+    assumptions: crate::analysis_inputs::AnalysisAssumptions,
 ) -> PreparedCallableCapabilities {
     let flow = (!selected_value_inputs.is_empty()).then(|| ChunkValueFlow::analyze(body));
     PreparedCallableCapabilities {
@@ -12450,11 +12515,7 @@ pub(crate) fn prepare_callable_capabilities(
             &AnalysisInputs {
                 selected_value_inputs,
                 selected_native_operation_inputs,
-                assumptions: crate::analysis_inputs::AnalysisAssumptions {
-                    predefined_globals,
-                    bundle_globals,
-                    ..Default::default()
-                },
+                assumptions,
                 ..AnalysisInputs::default()
             },
             flow.as_ref(),
@@ -12484,7 +12545,7 @@ pub(crate) fn infer_callable_capabilities<'f>(
     index.mutated_intrinsic_roots = integrity.mutated.clone();
     index.native_integrity_witnesses = integrity.witnesses.clone();
     index.native_integrity_value_input_refs = integrity.consumed_value_inputs.clone();
-    index.native_integrity_host_behavior = integrity.consumed_host_behavior.clone();
+    index.native_integrity_consumed = integrity.consumed_dependencies.clone();
     index.integrity = index.integrity_flags();
     let mut result = InferredCallableCapabilities {
         foreign_calls: BTreeMap::new(),

@@ -474,6 +474,8 @@ pub struct NativeIntegrityUse {
     pub value_input_refs: BTreeSet<crate::analysis_inputs::ValueInputRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub no_accessor_install_refs: BTreeSet<crate::analysis_inputs::NoAccessorInstallRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub application_object_write_refs: BTreeSet<crate::analysis_inputs::ApplicationObjectWriteRef>,
 }
 
 /// Positive rules participating in a consumed construction certificate.

@@ -1380,6 +1380,34 @@ reaches none. A11 remains an author obligation for hidden
 native-alias paths, including a descriptor method called through an alias.
 Key precision grants no call, purity, throw or return summary.
 
+## Application-object writes
+
+`chunk_analysis_options.<chunk>.application_object_writes` certifies native-census
+write sites whose receiver is an object the application creates:
+
+```yaml
+chunk_analysis_options:
+  static/app:
+    application_object_writes:
+      - source_text: 'Object.defineProperty(r,"toString",{configurable:!0,enumerable:!1,get(){return a.toString()}})'
+        note: r is the prototype of a class zod's $constructor creates.
+```
+
+`source_text` must occur exactly once in the chunk's parser input, overlapping
+occurrences counted. The entry covers every census write whose source range
+lies inside that text, nested functions included, and must cover at least one.
+A covered write reaches no intrinsic slot: the census drops it and every proof
+that consumes the census records the entry. The engine rejects an entry
+covering a write whose receiver the source already resolves to a specific
+intrinsic object or prototype; an unresolved, descendant or ordinary receiver
+is the author's to audit.
+
+The author audits every activation of each covered write: its receiver is
+never an intrinsic object, the global object, or an object whose properties an
+intrinsic slot reads, under every input the analyzed program and host can
+supply. This is A11-level evidence about one site; it grants no key precision,
+purity, throw or reentry guarantee, and the write keeps its ordinary effects.
+
 ## Captured ordinary-object values
 
 `chunk_analysis_options.<defining chunk>.value_inputs` can attach a typed

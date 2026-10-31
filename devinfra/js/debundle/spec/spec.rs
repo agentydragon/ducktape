@@ -669,6 +669,11 @@ pub struct DependencyGraphOptions {
     /// globals.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub no_accessor_install_callables: Vec<NoAccessorInstallCallableContract>,
+    /// Author-certified native-census write sites whose receiver is an object
+    /// the application creates, never an intrinsic. See SPEC.md §
+    /// Application-object writes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub application_object_writes: Vec<ApplicationObjectWriteContract>,
     /// Author-certified browser-global data slots whose writes publish a
     /// callback only for use after synchronous chunk initialization. The
     /// slot must be an ordinary inert own data property, or an absent slot
@@ -943,6 +948,18 @@ pub struct NoAccessorInstallCallableContract {
     /// Selects one declaration whose statement contains exactly one outermost
     /// function.
     pub source_match: SourceMatchClaim,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// One census write site, selected by source text, whose receiver the author
+/// audited as an application-created object.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ApplicationObjectWriteContract {
+    /// Exact text occurring once in the chunk's parser input; every census
+    /// write inside it is covered.
+    pub source_text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
 }

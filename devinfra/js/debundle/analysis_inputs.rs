@@ -402,6 +402,22 @@ pub struct ProofDependencies {
     pub program_premises: BTreeSet<ProgramPremiseKey>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub no_accessor_install_callables: BTreeSet<NoAccessorInstallRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub application_object_writes: BTreeSet<ApplicationObjectWriteRef>,
+}
+
+/// Stable reference to one `application_object_writes` entry.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct ApplicationObjectWriteRef {
+    pub defining_chunk: String,
+    pub input_index: usize,
+}
+
+/// An `application_object_writes` entry resolved to its source range.
+#[derive(Debug, Clone)]
+pub struct ResolvedApplicationObjectWrite {
+    pub reference: ApplicationObjectWriteRef,
+    pub span: Span,
 }
 
 /// One `program_premises` assertion consumed by a proof (SPEC.md § Program
@@ -477,6 +493,7 @@ impl ProofDependencies {
             && self.host_behavior.is_empty()
             && self.program_premises.is_empty()
             && self.no_accessor_install_callables.is_empty()
+            && self.application_object_writes.is_empty()
     }
 
     pub fn extend(&mut self, other: &Self) {
@@ -493,6 +510,8 @@ impl ProofDependencies {
             .extend(other.program_premises.iter().copied());
         self.no_accessor_install_callables
             .extend(other.no_accessor_install_callables.iter().cloned());
+        self.application_object_writes
+            .extend(other.application_object_writes.iter().cloned());
     }
 }
 
@@ -704,8 +723,8 @@ pub struct NativeIntegrity {
     /// when a receiver refinement was actually used.
     pub value_input_evidence: BTreeMap<ValueInputRef, ValueInputEvidence>,
     pub consumed_value_inputs: BTreeSet<ValueInputRef>,
-    /// Host claims a receiver discharge consumed.
-    pub consumed_host_behavior: BTreeSet<HostBehaviorKey>,
+    /// Host claims and author premises a census discharge consumed.
+    pub consumed_dependencies: ProofDependencies,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -721,6 +740,9 @@ pub struct AnalysisAssumptions {
     pub native_operation_inputs: Vec<ResolvedNativeOperationInput>,
     /// Source-selected author premises for one exact local helper parameter.
     pub argument_inputs: Vec<ResolvedArgumentInput>,
+    /// Census write sites the author certified as targeting application
+    /// objects (SPEC.md § Application-object writes).
+    pub application_object_writes: Vec<ResolvedApplicationObjectWrite>,
     /// Source-resolved author premises that two of this chunk's source units
     /// commute during initialization. The dependency-graph build inerts the
     /// `Sequenced` edges between each pair and rejects a pair the facts

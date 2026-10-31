@@ -44,6 +44,11 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "application_object_writes_test",
+    deps = ["@crates//:serde_json"],
+)
+
+debundle_e2e_test(
     name = "argument_input_test",
     deps = [
         "@crates//:serde_json",
