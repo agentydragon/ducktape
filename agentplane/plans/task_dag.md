@@ -29,7 +29,8 @@ Independent ready work may proceed alongside the main track; priority is not a n
 Preserve existing in-flight ownership and explicit holds. Nodes not selected above, component-plan
 follow-ups, inline TODOs and open PRs are not automatically next work merely because they exist.
 Recheck their current state before dispatch: some old PRs overlap shipped changes. Actual failure
-cases can justify pulling a narrower fix forward. No runtime work is dispatched by this planning edit.
+cases can justify pulling a narrower fix forward. The sprint dispatch below scopes the currently
+authorized work; the priority list does not dispatch the other tracks.
 
 **Quality bar for every selected outcome:** sound domain models, clear ownership/lifetimes and
 maintainability are acceptance criteria. Review the affected domain contract before implementing
@@ -71,6 +72,35 @@ A **capstone** closes an integrated contract, not another implementation. Solid 
 prerequisites; dashed arrows explicitly label scheduling holds or conditional choices. All service
 contracts remain multi-replica unless a reviewed temporary restriction says otherwise.
 
+### Dispatched sprint: keep existing agents usable
+
+**Two-week timebox; operator dispatch, 2026-10-30 PDT (2026-10-31 04:22 UTC).** Central-sampler
+Sessions should remain usable through planned sampler rolls and the reported JS/exec faults,
+with preserved history, partial output and external-effect evidence, supported recovery and
+generation fencing. Same-privilege Session spawning remains under stakeholder discussion and is
+not dispatched.
+
+| Owner                     | Scope                                                                             | Current state                                                                                 |
+| ------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `/root/usable_rollout`    | Planned drain implementation; broader ownership and sampling-recovery contract    | In flight: bounded drain selected; sampling-abandonment contract under review                 |
+| `/root/usable_tools`      | `CENTRAL_SAMPLER_TOOL_RECOVERY`: tool failures and agent-visible partial output   | In flight: adopt #13033 maintenance and repair the observed-output error boundary             |
+| `/root/usable_acceptance` | Assembled-system acceptance for the selected rollout and tool contracts           | In flight: prepare provider-barrier roll scenario; reuse existing host-loss recovery coverage |
+| `/root`                   | Cross-lane domain-contract review, integration, DAG status and rollout sequencing | In flight                                                                                     |
+
+Start with the rollout deadline/recovery decision and the tool-failure evidence inventory. Review
+existing work in [#13033](https://github.com/agentydragon/ducktape/pull/13033),
+[#13182](https://github.com/agentydragon/ducktape/pull/13182) and
+[#12933](https://github.com/agentydragon/ducktape/pull/12933) before adopting or assigning overlapping
+work. File conflicts do not block independent PRs. Required system checks and a documented rollback
+precede staging changes; a PR or a passing unit test is not deployment evidence.
+
+Completion includes a continued useful Session through the supported failure/recovery cases,
+meaningful agent-visible failures and lost-state notices, no replay of uncertain mutations, and
+late-owner fencing. Deadline expiry is part of the rollout contract. The operator subsequently
+selected rolling updates with at least two replicas as the Agentplane control-plane deployment
+target. Include that target and multi-replica ownership/routing in sampler acceptance. Arbitrary
+JS-state restoration and the broader runtime redesign remain outside this sprint.
+
 ### Dispatch order and prerequisites
 
 Give P0 reliability work first attention. Sampler-roll/ownership and JS/exec recovery can proceed
@@ -92,7 +122,9 @@ its old ordering does not give it precedence over the selected tracks.
 flowchart LR
     subgraph PRIORITY_ZERO[P0: reliable long-running Sessions]
         CENTRAL_SAMPLER_REPLICA_ROLLOUT[Roll and owner-loss contract]
+        CENTRAL_SAMPLER_PLANNED_DRAIN[In flight: selected planned-roll drain]
         CENTRAL_SAMPLER_TOOL_RECOVERY[JS and exec recovery]
+        CONTROL_PLANE_ROLLING_SERVICES[Rolling control-plane deployment review]
     end
     subgraph PRIORITY_ONE[P1: useful daily-agent workflow]
         THREAD_CREATE_POLICY[Caller-privilege create contract] --> THREAD_CREATE_AUTHORIZATION[Session creation and cooperation]
@@ -675,8 +707,10 @@ flowchart LR
     AGENT_AUTHORED_CONVERSATIONS_DESIGN[Decision, unscheduled: conversations agents act on through tools]
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
-    CENTRAL_SAMPLER_REPLICA_ROLLOUT[Selected P0 decision: rolls and owner loss that preserve agents]
-    CENTRAL_SAMPLER_TOOL_RECOVERY[Selected P0: JS and exec faults leave Sessions recoverable]
+    CENTRAL_SAMPLER_REPLICA_ROLLOUT[In-flight P0 decision: rolls and owner loss that preserve agents]
+    CENTRAL_SAMPLER_PLANNED_DRAIN[In-flight P0: selected planned-roll drain]
+    CENTRAL_SAMPLER_TOOL_RECOVERY[In-flight P0: JS and exec faults leave Sessions recoverable]
+    CONTROL_PLANE_ROLLING_SERVICES[In-flight review: rolling control-plane services]
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check for standard-mode routes]
     CENTRAL_SAMPLER_PROMPT_COMPACTION[Unscheduled: client-side compaction prompt for routes without server compaction]
     CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
@@ -778,7 +812,7 @@ cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
 
 ### `CENTRAL_SAMPLER_REPLICA_ROLLOUT` — multiple replicas and rolls that preserve active agents
 
-**Selected P0 decision; operator priority review, 2026-10-30 PDT.** An ordinary sampler
+**In-flight P0 decision; `/root/usable_rollout`, dispatched by the operator, 2026-10-30 PDT.** An ordinary sampler
 rollout interrupted an active Session's provider-response ingestion and left it durably blocked
 on a sampling intent ([incident evidence](../debug/2026_10_30_sampler_rollout_aborts_sampling.md)).
 The provider had completed; the sampler had persisted only a prefix. Existing explicit recovery
@@ -796,12 +830,34 @@ replaying external effects or discarding conversation/workspace history.
 Exit: reviewed ownership, shutdown and recovery contracts; bounded drain/deadline behavior; and an
 acceptance plan covering two competing replicas, a roll during provider ingestion and a live cell,
 owner loss and late-owner writes, preserved continuation, and no duplicate external execution.
-Create implementation and rollout nodes after that design is selected. No worker is assigned;
-priority does not authorize live recovery or deployment during this planning review.
+The bounded planned-drain contract below was selected by `/root` after reviewing the runtime/store
+evidence on 2026-10-30 PDT. The operator then selected rolling updates with at least two replicas.
+Review shared-DB admission, ownership, command routing and migration overlap before the deployment
+change; retain drain as an independently finishable improvement. Sampling-abandonment decisions
+also remain here. Create implementation and rollout nodes after their contracts are selected.
+
+### `CENTRAL_SAMPLER_PLANNED_DRAIN` — drain planned rolls to a durable continuation boundary
+
+**In flight; `/root/usable_rollout`, contract selected by `/root`, 2026-10-30 PDT.** On shutdown,
+stop new admission, claims and top-level execution steps while renewing existing leases. Let each
+current provider request or live cell finish through its fenced durable commit, allowing the
+nested calls needed by an admitted cell, then stop before the next top-level step and release
+ownership. A successor continues the same command/Session with explicit handling of lost volatile
+JavaScript state. This runtime slice precedes the selected rolling multi-replica deployment change.
+
+Bound drain within the Pod termination deadline. At expiry, cancel execution, retain unresolved
+intent/evidence and release only after the driver exits, or let the lease expire on forced death.
+An unresolved provider intent remains blocked under the current recovery API: extending supported
+recovery is a separate decision above and is required before declaring the sprint's deadline
+usability outcome complete.
+
+Exit: focused PR with the shutdown contract in `SPEC.md`, deterministic current-effect/next-effect
+ordering, expiry and stale-owner coverage, plus the selected assembled-system roll scenario.
 
 ### `CENTRAL_SAMPLER_TOOL_RECOVERY` — JS and exec faults leave Sessions recoverable
 
-**Selected P0; operator reports JS/exec bugs irrecoverably breaking Sessions, 2026-10-30 PDT.**
+**In-flight P0; `/root/usable_tools`, dispatched by the operator, 2026-10-30 PDT.**
+The operator reports JS/exec bugs irrecoverably breaking Sessions.
 Inventory representative affected Sessions and their durable evidence, and distinguish remaining
 failures from already-merged transport/recovery work. Address the supported-tool path and its
 failure semantics: ordinary tool errors, lost executor observation, live JS host/cell loss and
@@ -818,6 +874,25 @@ Exit: the named incident classes have focused regression coverage and a continue
 without lost authored history or duplicate external work. Exercise the affected JS/exec workflow
 with an agent, including partial output and meaningful failures. Related to planned-roll ownership,
 but the tool/runtime failure outcome is independently finishable.
+
+### `CONTROL_PLANE_ROLLING_SERVICES` — rolling Agentplane control-plane deployments
+
+**In-flight review; `/root`, operator direction, 2026-10-30 PDT.** Use rolling updates with at least
+two replicas as the control-plane deployment target. Treat that as deployment policy, not an
+intrinsic minimum in service or environment APIs. Select component changes after reviewing their
+coordination, state, migration overlap and client reconnect behavior; preserve data and identities.
+
+Source and committed staging manifests currently show singleton `Recreate` deployments for the
+sampler, MCP edge and Electric. Actions and Notifications already have two replicas but still use
+`Recreate` for migration sequencing. The general staging profile is two replicas with rolling
+updates, and egress uses three. These are configuration observations, not a live-cluster audit.
+
+The sampler belongs to `CENTRAL_SAMPLER_REPLICA_ROLLOUT`; keep the other service changes independent.
+For Electric, review replication-slot/stream identity and shape-state behavior before choosing a
+multi-instance topology. For Actions and Notifications, resolve old/new writer migration overlap
+before removing the `Recreate` policy. Record concrete per-service implementation and acceptance
+nodes once their contracts are selected; existing singleton exceptions must have an owner and an
+explicit reason to remain.
 
 ### `CENTRAL_SAMPLER_MODEL_CAPABILITIES` — live route check for standard-mode routes
 
