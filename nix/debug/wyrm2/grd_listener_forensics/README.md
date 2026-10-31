@@ -1,6 +1,7 @@
 # gnome-remote-desktop listener — why it never binds on wyrm2 (NixOS)
 
-Live forensic investigation (2026-07-19), `root@wyrm2`. This file has been
+Forensic investigation recorded on 2026-07-19, `root@wyrm2`.
+Current remote desktop remains unverified; see the [display guide](../../../docs/wyrm2_display.md). This file has been
 **rewritten** after several wrong claims below were refuted by direct checks —
 see **"Errors made during this investigation"**. Treat only the _Verified_ lines
 as fact; anything under _Open_ is not yet confirmed.
@@ -69,11 +70,11 @@ journalctl -u gnome-remote-desktop.service -f | grep -iE 'ready|handover|dispatc
 (Optional: stop xrdp first to also see an actual bind attempt, not just readiness.)
 The override is ephemeral (wiped on next `nixos-rebuild`), so no cleanup needed.
 
-## Why xrdp works where GRD doesn't (still true)
+## Why the July xrdp session avoided the GRD gate
 
 xrdp spawns its own X server and runs Xfce in it — no `is_daemon_ready` gate, no
-GDM handover, no read-only-`/etc` enable dance. That is why it's the working
-remote-desktop path on wyrm2.
+GDM handover, no read-only-`/etc` enable dance. This explains the July result; it does not prove
+a usable remote desktop on the current generation.
 
 ## Errors made during this investigation (corrected above)
 
