@@ -16,7 +16,7 @@ unprofiled wall-clock predictions.
 
 | Cumulative interval         | Work seen                                  | Relevant cumulative function time                                                                                                                                |
 | --------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Start to first dump, 44.5 s | Catch-up metadata and two transcript files | Codex SQLite metadata read 14.6 s (10.6 s in SQLite), title projection 10.0 s, `_process_file` 11.7 s                                                            |
+| Start to first dump, 44.5 s | Catch-up metadata and two transcript files | Codex metadata read 14.6 s (10.6 s extracting and validating the SQLite image), title projection 10.0 s, `_process_file` 11.7 s                                  |
 | First to second, 63.9 s     | One snapshot, ten transcript files         | `_process_file` 54.3 s; `restic.dump_to` 22.7 s; `_store_version` 29.0 s; `_get_payloads` 11.75 s in 112 batches; `_effective_payload_ids` 5.95 s in 108 batches |
 | Second to third, 57.4 s     | Twenty-two transcript files                | `restic.dump_to` 40.9 s; `_previous_version` 6.89 s in 23 calls; `_get_payloads` 3.2 s in 29 batches                                                             |
 
