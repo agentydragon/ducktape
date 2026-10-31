@@ -249,30 +249,43 @@ pub enum SourceUnitSelectorSynthesis {
     },
 }
 
-/// Synthesize one proven `source_match` per request against the chunk whose
-/// parser identity is `source_name` and whose bytes are `source`, with the
-/// name-binding codemod's indexed synthesis for declared bindings and the
-/// exact statement for anonymous ones; every selector is proven with the
-/// shared resolve on its own. Must run inside an SWC `GLOBALS` scope.
-pub fn synthesize_source_unit_selectors(
+/// Run `body` with a [`SourceUnitSelectorSynthesizer`] over the chunk whose
+/// parser identity is `source_name` and whose bytes are `source`. The chunk is
+/// parsed and indexed once for every request `body` makes. Must run inside an
+/// SWC `GLOBALS` scope.
+pub fn with_source_unit_selector_synthesizer<T>(
     source_name: &str,
     source: String,
-    requests: &[SourceUnitSelectorRequest],
-) -> Result<Vec<SourceUnitSelectorSynthesis>> {
+    body: impl FnOnce(&SourceUnitSelectorSynthesizer<'_>) -> Result<T>,
+) -> Result<T> {
     let parsed = js_ast::parse_js_module_consuming(source_name, source)
         .with_context(|| format!("parsing source {source_name}"))?;
     let index = ChunkSelectorIndex::new(&parsed.module);
-    requests
-        .iter()
-        .map(|request| match request {
+    body(&SourceUnitSelectorSynthesizer { index: &index })
+}
+
+/// Synthesizes one proven `source_match` per request, with the name-binding
+/// codemod's indexed synthesis for declared bindings and the exact statement
+/// for anonymous ones; every selector is proven with the shared resolve on
+/// its own.
+pub struct SourceUnitSelectorSynthesizer<'a> {
+    index: &'a ChunkSelectorIndex<'a>,
+}
+
+impl SourceUnitSelectorSynthesizer<'_> {
+    pub fn synthesize(
+        &self,
+        request: &SourceUnitSelectorRequest,
+    ) -> Result<SourceUnitSelectorSynthesis> {
+        match request {
             SourceUnitSelectorRequest::DeclaredBinding { binding } => {
-                synthesize_declared_binding_selector(&index, binding)
+                synthesize_declared_binding_selector(self.index, binding)
             }
             SourceUnitSelectorRequest::AnonymousStatement { body_index } => {
-                synthesize_anonymous_statement_selector(&index, *body_index)
+                synthesize_anonymous_statement_selector(self.index, *body_index)
             }
-        })
-        .collect()
+        }
+    }
 }
 
 fn synthesize_declared_binding_selector(

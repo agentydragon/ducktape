@@ -1279,16 +1279,28 @@ debundle spec propose-commutations \
 - lists `eager_use` and other non-`sequenced` cut edges under
   `needs_co_location`: an at-init read is a dataflow dependence no premise
   inerts;
-- synthesizes one proven selector per endpoint with the selector codemod and
-  the shared resolve: `resolved_member` for a logical member when `--modules`
-  names the chunk's tree (its authored module spelling comes from the tree),
-  otherwise a `source_match` claiming the declared binding, or the exact
-  statement for an anonymous one. An endpoint with no uniquely proving
-  selector is reported as `no_unique_selector` with the resolve's nearest
-  miss, and the pair is not emitted;
-- ranks proposals: `single_pair_cut` (inerting this pair alone leaves the
-  SCC's constraining subgraph acyclic, every parallel unit edge counted) before
-  `partial_cut`, then by `remaining_module_pair_edges`;
+- ranks the candidates by effect, each pair once in the SCC where it ranks
+  best (`also_in_sccs` names nested SCCs it also lies in): a `single_pair_cut`
+  (inerting this pair alone leaves the SCC's constraining subgraph acyclic,
+  every parallel unit edge counted), then one that empties its module-pair
+  arc (`remaining_module_pair_edges` 0), then more inerted edges, then one the
+  gate's cut names;
+- emits the best `--limit` (default 50; `--all` for every one) proposals,
+  proving one selector per endpoint with the selector codemod and the shared
+  resolve: `resolved_member` for a logical member when `--modules` names the
+  chunk's tree (its authored module spelling comes from the tree), otherwise
+  a `source_match` claiming the declared binding, or the exact statement for
+  an anonymous one. An endpoint with no uniquely proving selector is reported
+  as `no_unique_selector` with the resolve's nearest miss, and the pair is not
+  emitted. Past the limit an anonymous endpoint is still proven (one resolve),
+  but a declared-binding endpoint (a minimizing search) is assumed
+  selectable; each SCC row's `unproven_endpoints` counts those. A failed
+  selector would only keep its pair's edges constraining, so
+  `pairs_cannot_break` holds regardless, with its counts a lower bound, and
+  `pairs_break` is conditional on them. `--all` proves every endpoint (about
+  75 s on canonical Tana web without `--modules`). `--limit` also caps
+  `rejected` and `needs_co_location`, and `totals` gives each list's full
+  size;
 - inerts every proposal of the SCC together and writes one `sccs` row per
   SCC (its `modules` and a `verdict`): `pairs_break`, or `pairs_cannot_break`
   with `residual_modules` (the modules still on a constraining cycle) and

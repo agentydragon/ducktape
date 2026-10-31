@@ -140,7 +140,8 @@ enum SpecNsCommand {
     /// (`resolved_member` for a logical member when `--modules` names the
     /// chunk's tree, else a synthesized `source_match`), the inerted
     /// edge's explanation, both source locations and which SCC it breaks,
-    /// ranked single-pair cuts first. `eager_use` cut edges are reported
+    /// ranked by effect, single-pair cuts first; `--limit` (default 50)
+    /// bounds every list and `totals` counts it. `eager_use` cut edges are reported
     /// as needing co-location; a pair the gate would reject (a known
     /// conflict, an unused premise) or an endpoint without a unique
     /// selector is reported, not emitted. Each SCC gets a verdict: whether

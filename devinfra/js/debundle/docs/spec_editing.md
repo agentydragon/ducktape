@@ -264,7 +264,8 @@ the two source units are order-independent during initialization.
 --source-root <root> [--modules <chunk tree>] --out commutations.yaml`
    ([cli.md § Proposing commutations](cli.md#proposing-commutations-spec-propose-commutations)).
    It proposes one entry per `sequenced` source-unit pair inside the SCC that
-   the gate would accept, ranked single-pair cuts first (the pair that alone
+   the gate would accept, the best 50 by default (`--all` for every one),
+   ranked single-pair cuts first (the pair that alone
    breaks the SCC may sit on an arc the gate's cut did not pick), and reports
    separately the pairs the gate would
    reject, the endpoints without a unique selector, and the `eager_use` edges
