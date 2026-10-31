@@ -12,7 +12,6 @@ from typing import Any
 from uuid import UUID
 
 from opentelemetry import trace
-from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
 from agentplane.app.testing.models import NewSandbox, SandboxView, sandbox_is_ready
@@ -112,7 +111,7 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
             with phase_tracer.start_as_current_span(
                 "vm.sandbox.ready", attributes={"sandbox.name": view.name, "sandbox.uid": str(view.uid)}
             ) as ready_span:
-                ready = await wait_until_running(client, view.name)
+                ready = await wait_until_running(client, view.name, expected_uid=view.uid)
                 record_launch_transitions(ready_span, ready)
                 return ready
 
@@ -120,12 +119,7 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
 
 
 def record_launch_transitions(span: trace.Span, view: SandboxView) -> None:
-    """Mark when the controller and kubelet reached each launch step, so a slow Ready can be split.
-
-    Each True condition of the Sandbox and its Pod, and each running container's start, becomes a
-    span event at the time the cluster recorded it. The span ends when the test saw Ready, so the gap
-    after the last event is the readiness poll. Status is the API server's untyped payload.
-    """
+    """Mark controller and kubelet launch steps before the watch consumer observes Ready."""
     pod_status = view.pod.status if view.pod else None
     for source, status in (("sandbox", view.status), ("pod", pod_status)):
         for condition in _dicts((status or {}).get("conditions")):
@@ -151,18 +145,35 @@ def _nanoseconds(timestamp: str) -> int:
 
 
 class SandboxNotReadyError(Exception):
-    """The sandbox did not reach Running with a Pod address in time."""
+    """A lifecycle wait ended before the expected Sandbox state was observed."""
 
 
-async def wait_until_running(client: Client, name: str) -> SandboxView:
-    """Wait for the Sandbox's own `Ready` condition — the condition, not a delay."""
-    async for attempt in AsyncRetrying(stop=stop_after_delay(SANDBOX_READY_SECONDS), wait=wait_fixed(2), reraise=True):
-        with attempt:
-            view = await client.sandbox(name)
-            if not sandbox_is_ready(view):
-                raise SandboxNotReadyError(f"{name} is not Ready: {view.status}")
-            return view
-    raise AssertionError("unreachable: reraise=True either returns the view or raises")
+async def wait_until_running(client: Client, name: str, *, expected_uid: UUID) -> SandboxView:
+    """Wait for the named Sandbox incarnation to report its own Ready condition."""
+    deadline = asyncio.timeout(SANDBOX_READY_SECONDS)
+    last_status: dict[str, object] | None = None
+    try:
+        async with deadline, aclosing(client.sandbox_snapshots()) as snapshots:
+            async for snapshot in snapshots:
+                if not snapshot.watch.healthy:
+                    continue
+                view = next((view for view in snapshot.sandboxes if view.name == name), None)
+                if view is None:
+                    continue
+                if view.uid != expected_uid:
+                    raise SandboxNotReadyError(
+                        f"{name} has been replaced: expected {expected_uid}, observed {view.uid}"
+                    )
+                last_status = view.status
+                if sandbox_is_ready(view):
+                    return view
+            raise SandboxNotReadyError(f"{name}'s Sandbox inventory stream ended before observing Ready")
+    except TimeoutError as error:
+        if not deadline.expired():
+            raise
+        raise SandboxNotReadyError(
+            f"{name} did not reach Ready within {SANDBOX_READY_SECONDS}s: {last_status}"
+        ) from error
 
 
 async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: UUID) -> None:

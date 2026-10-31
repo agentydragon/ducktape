@@ -51,7 +51,8 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
         client.__aexit__.side_effect = close
         return cast(Client, client)
 
-    async def ready(client: Client, name: str) -> SandboxView:
+    async def ready(client: Client, name: str, *, expected_uid: UUID) -> SandboxView:
+        assert expected_uid == views[name].uid
         return views[name]
 
     async def capture(client: Client, *, sandbox_uid: UUID) -> None:
@@ -114,10 +115,10 @@ async def test_failure_still_releases_every_created_guest_and_closes_client(
     if failure == "readiness":
         original_ready = sandbox.wait_until_running
 
-        async def ready(client: Client, name: str) -> SandboxView:
+        async def ready(client: Client, name: str, *, expected_uid: UUID) -> SandboxView:
             if name == "second":
                 raise RuntimeError("readiness")
-            return await original_ready(client, name)
+            return await original_ready(client, name, expected_uid=expected_uid)
 
         monkeypatch.setattr(sandbox, "wait_until_running", ready)
     elif failure == "diagnostics":
