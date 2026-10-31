@@ -1271,19 +1271,8 @@ fn unrelated_global_write_preserves_exact_symbol_input() {
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     assert_eq!(native_input_uses(&graph).len(), 1);
-    assert!(
-        program_graph["native_integrity_witnesses"]
-            .as_array()
-            .expect("native mutation witnesses")
-            .iter()
-            .any(
-                |witness| witness["target_slots"]
-                    .as_array()
-                    .is_some_and(|slots| slots.iter().any(|slot| {
-                        slot["receiver"] == "global_object" && slot["key"]["string"] == "unrelated"
-                    }))
-            )
-    );
+    // A literal source names only `unrelated`, which holds no intrinsic.
+    assert!(program_graph["native_integrity_witnesses"].is_null(), "{program_graph}");
 }
 
 #[test]

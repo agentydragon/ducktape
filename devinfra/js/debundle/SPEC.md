@@ -1367,6 +1367,12 @@ affixed key may name exactly the strings at least as long as its affixes that
 start and end with them. Mutation directly on a native object still invalidates that
 family's prototype slots, regardless of key domain.
 
+`Object.assign(target, ...sources)` writes finite string keys when every source
+is an object literal of data properties and methods with static keys (no
+spread, getter, setter or `__proto__` in any spelling): it copies exactly those
+own enumerable keys, as successive assignments. Any other source makes the
+write keyless.
+
 A11 supplies initial native identity. All analyzed chunks contribute their
 canonical mutation facts, including deferred writes, before resolving a closed
 write invariant and propagating invalidated operation dependencies to a fixed
