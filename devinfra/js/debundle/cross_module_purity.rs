@@ -360,61 +360,76 @@ pub fn resolve_imported_purities(
     // one effects closure starts. Declared chunk-local purity hints remain
     // absent from export mode, as before.
     let progress = std::env::var_os("DUCKTAPE_DEBUNDLE_PROGRESS").is_some();
-    let mut prepared = BTreeMap::new();
-    for (key, facts) in modules {
-        if !inferred_export_keys.keys().any(|(module, _)| module == key) {
-            continue;
-        }
-        if progress {
-            eprintln!(
-                "[debundle progress] chunk={key} phase=prepare_cross_module_purity state=start"
-            );
-        }
-        // Rebuilding a provider's execution index must retain the same captured
-        // receiver and imported-call facts that established the program census.
-        // A native-integrity result alone cannot refine the provider's local
-        // mutation census, which would otherwise reintroduce unknown aliases.
-        let inputs = crate::analysis_inputs::AnalysisInputs {
-            native_integrity: callable_summaries.native_integrity.clone(),
-            stable_set_spreads: callable_summaries
-                .stable_set_spreads
-                .get(key)
-                .cloned()
-                .unwrap_or_default(),
-            assumptions: crate::analysis_inputs::AnalysisAssumptions {
-                captured_value_inputs: callable_summaries
-                    .value_inputs
+    let jobs: Vec<_> = modules
+        .iter()
+        .filter(|(key, _)| {
+            inferred_export_keys
+                .keys()
+                .any(|(module, _)| module == *key)
+        })
+        .map(|(key, facts)| {
+            // Rebuilding a provider's execution index must retain the same captured
+            // receiver and imported-call facts that established the program census.
+            // A native-integrity result alone cannot refine the provider's local
+            // mutation census, which would otherwise reintroduce unknown aliases.
+            let inputs = crate::analysis_inputs::AnalysisInputs {
+                native_integrity: callable_summaries.native_integrity.clone(),
+                stable_set_spreads: callable_summaries
+                    .stable_set_spreads
                     .get(key)
                     .cloned()
                     .unwrap_or_default(),
-                native_operation_inputs: callable_summaries
-                    .native_operation_inputs
-                    .get(key)
-                    .cloned()
-                    .unwrap_or_default(),
-                argument_inputs: callable_summaries
-                    .argument_inputs
+                assumptions: crate::analysis_inputs::AnalysisAssumptions {
+                    captured_value_inputs: callable_summaries
+                        .value_inputs
+                        .get(key)
+                        .cloned()
+                        .unwrap_or_default(),
+                    native_operation_inputs: callable_summaries
+                        .native_operation_inputs
+                        .get(key)
+                        .cloned()
+                        .unwrap_or_default(),
+                    argument_inputs: callable_summaries
+                        .argument_inputs
+                        .get(key)
+                        .cloned()
+                        .unwrap_or_default(),
+                    ..Default::default()
+                },
+                imported_callables: callable_summaries
+                    .imported_callables
                     .get(key)
                     .cloned()
                     .unwrap_or_default(),
                 ..Default::default()
-            },
-            imported_callables: callable_summaries
-                .imported_callables
-                .get(key)
-                .cloned()
-                .unwrap_or_default(),
-            ..Default::default()
-        };
-        let facts_prepared =
-            facts.prepare(&inputs, callable_summaries.structural_flows.remove(key));
-        prepared.insert(key.clone(), facts_prepared);
-        if progress {
-            eprintln!(
-                "[debundle progress] chunk={key} phase=prepare_cross_module_purity state=end"
-            );
-        }
-    }
+            };
+            (
+                key,
+                facts,
+                inputs,
+                callable_summaries.structural_flows.remove(key),
+            )
+        })
+        .collect();
+    // Each provider prepares from its own body and inputs alone.
+    let prepared: BTreeMap<_, _> =
+        crate::swc_parallel::map_with_swc_globals(jobs, |(key, facts, inputs, flow)| {
+            if progress {
+                eprintln!(
+                    "[debundle progress] chunk={key} phase=prepare_cross_module_purity state=start"
+                );
+            }
+            let facts_prepared = facts.prepare(&inputs, flow);
+            if progress {
+                eprintln!(
+                    "[debundle progress] chunk={key} phase=prepare_cross_module_purity state=end"
+                );
+            }
+            (key.clone(), facts_prepared)
+        })
+        .into_iter()
+        .collect();
 
     let mut bodies = BTreeMap::new();
     let no_declared_pure = BTreeSet::new();

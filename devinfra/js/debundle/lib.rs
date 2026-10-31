@@ -28,6 +28,7 @@ pub mod loader_closure;
 pub mod module_assignment;
 pub mod purity;
 pub mod reports;
+mod swc_parallel;
 
 pub use analysis_inputs::{
     AnalysisAssumptions, AnalysisInputs, CallableSummary, CallbackFactoryEvidence,
