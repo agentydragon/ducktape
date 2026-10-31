@@ -83,6 +83,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert settings["http_listen_address"] == f"0.0.0.0:{http.pod_port}"
     assert settings["dispatcher_audience"] == session_dispatcher.TOKEN_AUDIENCE
     assert settings["gateway_audience"] == runner_gateway.TOKEN_AUDIENCE
+    assert settings["kubernetes_client_qps"] == "-1"
     assert settings["runner_security"] == {
         "mode": "mtls",
         "tls": {

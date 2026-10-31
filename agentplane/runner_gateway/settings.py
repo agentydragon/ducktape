@@ -9,7 +9,7 @@ from collections.abc import Set
 from pathlib import Path
 from typing import Annotated, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, field_validator
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.runner_transport.configuration import Security
@@ -41,6 +41,12 @@ class Settings(YamlFileSettings):
     pod_ip: str = Field(min_length=1, description="Address advertised in each Sandbox control EndpointSlice.")
     runner_token_file: Path = Field(description="Projected Gateway-audience token for cross-replica Runner calls.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
+    kubernetes_client_qps: float = Field(
+        default=0.0,
+        allow_inf_nan=False,
+        description="Kubernetes client requests per second; zero uses client-go's default, -1 disables its limiter.",
+    )
+
     listen_address: str = Field(
         default=":8080", min_length=1, description="gRPC listen address for authenticated platform callers."
     )
@@ -86,3 +92,10 @@ class Settings(YamlFileSettings):
     executor_callers: Set[ServiceAccountName] = Field(
         default_factory=frozenset, description="ServiceAccounts allowed to open fixed exec-server streams."
     )
+
+    @field_validator("kubernetes_client_qps")
+    @classmethod
+    def validate_kubernetes_client_qps(cls, value: float) -> float:
+        if value < 0 and value != -1:
+            raise ValueError("kubernetes_client_qps must be -1 or nonnegative")
+        return value

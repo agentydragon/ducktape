@@ -58,6 +58,7 @@ func kubernetesConfig(c config) (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	kubeConfig.QPS = c.KubernetesClientQPS
 	kubeConfig.WrapTransport = observability.WrapHTTPTransport(kubeConfig.WrapTransport)
 	return kubeConfig, nil
 }
