@@ -103,8 +103,8 @@ fn host_contract_uses(graph: &Value) -> Vec<Value> {
         .collect()
 }
 
-fn unknown_receiver_witness(graph: &Value) -> &Value {
-    graph["native_integrity_witnesses"]
+fn unknown_receiver_witness(program_graph: &Value) -> &Value {
+    program_graph["native_integrity_witnesses"]
         .as_array()
         .expect("native mutation witnesses")
         .iter()
@@ -115,7 +115,9 @@ fn unknown_receiver_witness(graph: &Value) -> &Value {
                     .is_some_and(|roots| roots.iter().any(|root| root == "unknown_global_value"))
                 && witness["source_location"]["source_path"] == "static/reflect.js"
         })
-        .unwrap_or_else(|| panic!("reflective helper's unknown receiver is absent: {graph}"))
+        .unwrap_or_else(|| {
+            panic!("reflective helper's unknown receiver is absent: {program_graph}")
+        })
 }
 
 fn node_for_binding<'a>(graph: &'a Value, binding: &str) -> &'a Value {
@@ -346,7 +348,7 @@ console.log(Boolean(store), later);
 fn promise_native_input_and_host_timing_are_both_required_at_the_selected_site() {
     let control = run_rejection_fixture(promise_reentry_split());
     let control_graph = serde_json::to_value(control.dependency_graph()).unwrap();
-    unknown_receiver_witness(&control_graph);
+    unknown_receiver_witness(&serde_json::to_value(control.program_graph()).unwrap());
     assert!(
         control.atomic_group_conflicts().iter().any(|conflict| {
             let claims = conflict["claims"].as_array().expect("conflict claims");
@@ -407,6 +409,7 @@ fn promise_native_input_and_host_timing_are_both_required_at_the_selected_site()
     );
 
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     let native_uses = native_input_uses(&graph);
     assert_eq!(
         native_uses.len(),
@@ -423,7 +426,7 @@ fn promise_native_input_and_host_timing_are_both_required_at_the_selected_site()
     assert_eq!(host_uses.len(), 1, "the timing assertion is consumed once");
     assert_eq!(host_uses[0]["operation"], "promise_resolve");
 
-    let witness = unknown_receiver_witness(&graph);
+    let witness = unknown_receiver_witness(&program_graph);
     assert!(
         witness["affected_roots"]
             .as_array()

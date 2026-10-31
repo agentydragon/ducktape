@@ -229,13 +229,9 @@ pub(crate) struct SynchronousCalls {
     pub native_integrity_checks: Vec<crate::reports::schema::NativeIntegrityCheck>,
     pub native_prototype_property_checks: Vec<crate::reports::schema::NativePrototypePropertyCheck>,
     pub native_prefix_observations: Vec<crate::reports::schema::NativePrefixObservation>,
-    pub native_prototype_mutations:
-        std::sync::Arc<Vec<crate::reports::schema::NativePrototypeMutation>>,
     pub native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
     pub native_operation_input_uses: Vec<crate::reports::schema::NativeOperationInputUse>,
     pub inference_uses: Vec<crate::reports::schema::InferenceUse>,
-    pub native_integrity_witnesses:
-        std::sync::Arc<Vec<crate::reports::schema::NativeMutationWitness>>,
     pub callback_factory_uses: Vec<CallbackFactoryUseFact>,
     pub returned_record_uses: Vec<ReturnedRecordUseFact>,
     pub author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
@@ -308,6 +304,25 @@ pub struct ReturnedRecordUseFact {
 }
 
 impl StatementFacts {
+    /// Top-level bindings this statement's synchronous callees read or rebind:
+    /// the roots of any state a callee may mutate in place. `None` when
+    /// synchronous execution was not analyzed or could not summarize every
+    /// callee.
+    pub fn synchronous_callee_bindings(&self) -> Option<BTreeSet<Id>> {
+        let calls = self
+            .synchronous_calls
+            .as_ref()
+            .filter(|calls| calls.complete)?;
+        Some(
+            calls
+                .reads
+                .iter()
+                .chain(&calls.rebinds)
+                .map(|(id, _)| id.clone())
+                .collect(),
+        )
+    }
+
     /// Per-statement (writes, reads) cell summary used by the
     /// dataflow-aware S-chain emission in `graph/` and the vendor
     /// strip's swap-privacy gate. Derived on demand: the

@@ -51,10 +51,22 @@ def vitest_config(name, environment, setup_files = [], data = []):
     test = {"environment": environment, "include": ["**/*.test.js"]}
     if setup_files:
         setup_paths = []
+        package = native.package_name()
+        depth = len(package.split("/")) if package else 0
         for setup_file in setup_files:
             label = native.package_relative_label(setup_file)
-            setup_paths.append("./" + paths.relativize(label.package + "/" + label.name, native.package_name()))
-        test["setupFiles"] = setup_paths
+            setup_paths.append("./" + "../" * depth + paths.join(label.package, label.name))
+
+        # Keep Vitest's setup entry beneath its config root. Shared setup modules can
+        # live outside it, but direct setupFiles paths there become unresolvable /@fs URLs.
+        write_file(
+            name = name + "_setup_file",
+            out = name + "_setup.mjs",
+            content = ["import %s;" % json.encode(path) for path in setup_paths],
+            testonly = True,
+            visibility = ["//visibility:private"],
+        )
+        test["setupFiles"] = ["./" + name + "_setup.mjs"]
     write_file(
         name = name + "_file",
         out = name + ".mjs",
@@ -68,7 +80,7 @@ def vitest_config(name, environment, setup_files = [], data = []):
     js_library(
         name = name,
         testonly = True,
-        srcs = [":" + name + "_file"] + setup_files,
+        srcs = [":" + name + "_file"] + setup_files + ([":" + name + "_setup_file"] if setup_files else []),
         deps = ["//:node_modules/vitest"] + _ENVIRONMENT_PACKAGES[environment] + data,
         visibility = ["//%s:__subpackages__" % native.package_name()],
     )

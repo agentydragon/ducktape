@@ -398,6 +398,188 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
     assert client.get(f"/api/sessions/{uuid4()}/versions/{uuid4()}/events").status_code == 404
 
 
+def test_event_backward_pagination_reads_delta_version_lineage() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    session_id, checkpoint_id, delta_id = (uuid4() for _ in range(3))
+    checkpoint_snapshot_id = "a" * 64
+    delta_snapshot_id = "b" * 64
+    captured_at = datetime(2026, 1, 1, tzinfo=UTC)
+    with make_session_factory(engine)() as db:
+        db.add(MachineRow(id="fake-host", display_name="Fake host"))
+        db.flush()
+        db.add(
+            SessionRow(
+                id=session_id,
+                machine_id="fake-host",
+                harness="claude",
+                source_path="/fake/pagination.jsonl",
+                source_relative_path="pagination.jsonl",
+            )
+        )
+        db.add_all(
+            [
+                ResticSnapshotRow(
+                    machine_id="fake-host",
+                    snapshot_id=checkpoint_snapshot_id,
+                    captured_at=captured_at,
+                    paths=["/fake"],
+                    inventory_status="complete",
+                    processing_status="complete",
+                    codex_metadata_status="complete",
+                ),
+                ResticSnapshotRow(
+                    machine_id="fake-host",
+                    snapshot_id=delta_snapshot_id,
+                    captured_at=captured_at,
+                    parent_snapshot_id=checkpoint_snapshot_id,
+                    paths=["/fake"],
+                    inventory_status="complete",
+                    processing_status="complete",
+                    codex_metadata_status="complete",
+                ),
+            ]
+        )
+        db.flush()
+        db.add(
+            FileVersionRow(
+                id=checkpoint_id,
+                session_id=session_id,
+                sha256="c" * 64,
+                byte_size=80,
+                source_path="/fake/pagination.jsonl",
+                first_seen_at=captured_at,
+                last_seen_at=captured_at,
+                first_snapshot_id=checkpoint_snapshot_id,
+                complete=True,
+                parse_issue_count=0,
+                record_count=4,
+                is_checkpoint=True,
+                delta_depth=0,
+                parser_version="jsonl-v1",
+            )
+        )
+        db.flush()
+        db.add(
+            FileVersionRow(
+                id=delta_id,
+                session_id=session_id,
+                sha256="d" * 64,
+                byte_size=140,
+                source_path="/fake/pagination.jsonl",
+                first_seen_at=captured_at,
+                last_seen_at=captured_at,
+                first_snapshot_id=delta_snapshot_id,
+                complete=True,
+                parse_issue_count=0,
+                record_count=7,
+                parent_version_id=checkpoint_id,
+                shared_prefix_record_count=4,
+                is_checkpoint=False,
+                delta_depth=1,
+                parser_version="jsonl-v1",
+            )
+        )
+        db.flush()
+        payloads = []
+        records = []
+        for ordinal in range(7):
+            payload_id = uuid4()
+            raw_bytes = f'{{"ordinal":{ordinal}}}\n'.encode()
+            payloads.append(
+                RecordPayloadRow(
+                    id=payload_id,
+                    sha256=f"{ordinal + 1:064x}",
+                    parser_version="jsonl-v1",
+                    raw_bytes=raw_bytes,
+                    kind="test",
+                )
+            )
+            records.append(
+                FileVersionRecordRow(
+                    file_version_id=checkpoint_id if ordinal < 4 else delta_id,
+                    ordinal=ordinal,
+                    byte_offset=ordinal * 16,
+                    payload_id=payload_id,
+                )
+            )
+        db.add_all(payloads)
+        db.add_all(records)
+        db.add_all(
+            [
+                SnapshotFileRow(
+                    machine_id="fake-host",
+                    snapshot_id=checkpoint_snapshot_id,
+                    path="/fake/pagination.jsonl",
+                    session_id=session_id,
+                    change_kind="added",
+                    file_type="file",
+                    byte_size=80,
+                    status="complete",
+                    file_version_id=checkpoint_id,
+                ),
+                SnapshotFileRow(
+                    machine_id="fake-host",
+                    snapshot_id=delta_snapshot_id,
+                    path="/fake/pagination.jsonl",
+                    session_id=session_id,
+                    change_kind="modified",
+                    file_type="file",
+                    byte_size=140,
+                    status="complete",
+                    file_version_id=delta_id,
+                ),
+            ]
+        )
+        db.commit()
+
+    settings = WebSettings(
+        database_url="sqlite://",
+        frontend_dir="/fake/frontend",
+        public_base_url="http://testserver",
+        oidc_issuer="https://idp.example.invalid",
+        oidc_client_id="fake-client",
+        oidc_client_secret="fake-client-secret",
+        oidc_session_secret="fake-session-secret",
+        oidc_allowed_subject="fake-owner",
+    )
+    client = TestClient(create_app(engine=engine, settings=settings))
+    session = {
+        "user": {
+            "issuer": settings.oidc_issuer,
+            "subject": settings.oidc_allowed_subject,
+            "username": "fake-user",
+            "expires_at": time.time() + 600,
+        }
+    }
+    payload = base64.b64encode(json.dumps(session).encode())
+    client.cookies.set("ai-session-archive", TimestampSigner("fake-session-secret").sign(payload).decode())
+    events_url = f"/api/sessions/{session_id}/versions/{delta_id}/events"
+
+    first_forward = client.get(events_url, params={"limit": 2}).json()
+    assert [event["ordinal"] for event in first_forward["data"]] == [0, 1]
+    assert first_forward["next_cursor"] == 1
+    second_forward = client.get(events_url, params={"cursor": 1, "limit": 2}).json()
+    assert [event["ordinal"] for event in second_forward["data"]] == [2, 3]
+    assert second_forward["next_cursor"] == 3
+
+    first_backward = client.get(events_url, params={"direction": "backward", "limit": 2}).json()
+    assert [event["ordinal"] for event in first_backward["data"]] == [5, 6]
+    assert first_backward["next_cursor"] == 5
+    middle_backward = client.get(events_url, params={"direction": "backward", "cursor": 5, "limit": 2}).json()
+    assert [event["ordinal"] for event in middle_backward["data"]] == [3, 4]
+    assert [event["parsed"]["ordinal"] for event in middle_backward["data"]] == [3, 4]
+    assert middle_backward["next_cursor"] == 3
+    final_backward = client.get(events_url, params={"direction": "backward", "cursor": 3, "limit": 2}).json()
+    assert [event["ordinal"] for event in final_backward["data"]] == [1, 2]
+    assert final_backward["next_cursor"] == 1
+    exhausted_backward = client.get(events_url, params={"direction": "backward", "cursor": 1, "limit": 2}).json()
+    assert [event["ordinal"] for event in exhausted_backward["data"]] == [0]
+    assert exhausted_backward["next_cursor"] is None
+    empty_backward = client.get(events_url, params={"direction": "backward", "cursor": 0, "limit": 2}).json()
+    assert empty_backward == {"data": [], "next_cursor": None}
+
+
 def test_login_routes_are_reachable_with_the_frontend_mounted(tmp_path: Path) -> None:
     frontend = tmp_path / "frontend"
     assets = frontend / "assets"

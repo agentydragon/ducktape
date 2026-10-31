@@ -26,8 +26,8 @@ fn source_wrapper_arguments_discharge_only_the_unreachable_native_write() {
     ];
     let fixture = run_fixture(opts(&chunks));
     assert_preserved_entry_output(&fixture, "0 Later\n");
-    let graph = fixture.dependency_graph();
-    let witness = graph
+    let program_graph = fixture.program_graph();
+    let witness = program_graph
         .native_integrity_witnesses
         .iter()
         .find(|witness| {

@@ -104,7 +104,8 @@ fn unmaterialized_provider_value_input_restores_only_the_captured_receiver() {
     assert_preserved_entry_output(&fixture, "0 Later 0 2 capture,getter\n");
 
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let witness = graph["native_integrity_witnesses"]
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+    let witness = program_graph["native_integrity_witnesses"]
         .as_array()
         .unwrap()
         .iter()
@@ -236,8 +237,9 @@ fn captured_primitive_predicate_return_preserves_cli_runtime() {
     assert_preserved_entry_output(&fixture, "false capture\n");
 
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     assert!(
-        graph["native_integrity_witnesses"]
+        program_graph["native_integrity_witnesses"]
             .as_array()
             .unwrap()
             .iter()
@@ -276,8 +278,9 @@ fn captured_member_return_runs_through_the_real_cli_without_derived_writes() {
     assert_preserved_entry_output(&fixture, "0 capture,key,child\n");
 
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     assert!(
-        graph["native_integrity_witnesses"]
+        program_graph["native_integrity_witnesses"]
             .as_array()
             .unwrap()
             .iter()
@@ -292,7 +295,7 @@ fn captured_member_return_runs_through_the_real_cli_without_derived_writes() {
         "the exact captured receiver remains refined while its returned child is read: {graph}"
     );
     assert!(
-        graph["native_integrity_witnesses"]
+        program_graph["native_integrity_witnesses"]
             .as_array()
             .unwrap()
             .iter()
@@ -308,7 +311,7 @@ fn captured_member_return_runs_through_the_real_cli_without_derived_writes() {
         "a stable direct alias retains ordinary input identity: {graph}"
     );
     assert!(
-        !graph["native_integrity_witnesses"]
+        !program_graph["native_integrity_witnesses"]
             .as_array()
             .unwrap()
             .iter()
@@ -345,6 +348,7 @@ fn captured_fluent_and_derived_array_values_share_cli_analysis() {
     assert_preserved_entry_output(&fixture, "2 true false capture\n");
 
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     let schema = graph["nodes"]
         .as_array()
         .unwrap()
@@ -361,7 +365,7 @@ fn captured_fluent_and_derived_array_values_share_cli_analysis() {
         .expect("schema source-unit node");
     assert_eq!(schema["purity"]["kind"], "pure", "{schema}");
     assert!(
-        graph["native_integrity_witnesses"]
+        program_graph["native_integrity_witnesses"]
             .as_array()
             .is_some_and(|witnesses| {
                 witnesses.iter().any(|witness| {
@@ -547,16 +551,16 @@ fn unrelated_object_literal_native_fields_do_not_create_no_input_aliases() {
     assert_preserved_entry_output(&fixture, "ready\n");
 
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let invented_native_alias =
-        graph["native_integrity_witnesses"]
-            .as_array()
-            .is_some_and(|witnesses| {
-                witnesses.iter().any(|witness| {
-                    witness["operation"] == "property_assignment"
-                        && witness["source_location"]["start_line"] == 2
-                        && witness["receiver_roots"] == serde_json::json!(["unknown_global_value"])
-                })
-            });
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+    let invented_native_alias = program_graph["native_integrity_witnesses"]
+        .as_array()
+        .is_some_and(|witnesses| {
+            witnesses.iter().any(|witness| {
+                witness["operation"] == "property_assignment"
+                    && witness["source_location"]["start_line"] == 2
+                    && witness["receiver_roots"] == serde_json::json!(["unknown_global_value"])
+            })
+        });
     assert!(
         !invented_native_alias,
         "an intrinsic-valued field does not make its fresh container a native alias: {graph}"
@@ -576,8 +580,9 @@ fn returned_descendant_alias_wrapper_and_container_keep_array_iterator_barriers(
         // `queue` still splits from `later`; the barrier lands on the spread.
         let fixture = run_array_descendant_mutation(flow_source);
         let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+        let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
         assert!(
-            graph["native_integrity_witnesses"]
+            program_graph["native_integrity_witnesses"]
                 .as_array()
                 .unwrap()
                 .iter()
@@ -665,7 +670,8 @@ fn descendants_and_early_alias_observations_keep_unknown_global_barriers() {
         })
     }));
     let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
-    let retained_barriers = graph["native_integrity_witnesses"]
+    let program_graph = serde_json::to_value(rejected.program_graph()).unwrap();
+    let retained_barriers = program_graph["native_integrity_witnesses"]
         .as_array()
         .unwrap()
         .iter()
@@ -682,7 +688,7 @@ fn descendants_and_early_alias_observations_keep_unknown_global_barriers() {
         "member and direct-return call descendants must retain unknown-global barriers: {graph}"
     );
     assert!(
-        graph["native_integrity_witnesses"]
+        program_graph["native_integrity_witnesses"]
             .as_array()
             .unwrap()
             .iter()
@@ -720,8 +726,9 @@ fn descendants_and_early_alias_observations_keep_unknown_global_barriers() {
         })
     }));
     let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(rejected.program_graph()).unwrap();
     assert!(
-        graph["native_integrity_witnesses"]
+        program_graph["native_integrity_witnesses"]
             .as_array()
             .unwrap()
             .iter()
@@ -750,9 +757,9 @@ fn native_constructor_instance_does_not_inherit_constructor_root() {
     );
     assert_preserved_entry_output(&fixture, "ready\n");
 
-    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     assert!(
-        !graph["native_integrity_witnesses"]
+        !program_graph["native_integrity_witnesses"]
             .as_array()
             .cloned()
             .unwrap_or_default()
@@ -794,8 +801,9 @@ fn actual_native_mutation_in_another_chunk_still_blocks_map_capability() {
         })
     }));
     let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(rejected.program_graph()).unwrap();
     assert!(
-        graph["native_integrity_witnesses"]
+        program_graph["native_integrity_witnesses"]
             .as_array()
             .unwrap()
             .iter()

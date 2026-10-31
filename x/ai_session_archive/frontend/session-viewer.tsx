@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type JSX } from "react";
 import {
+  ActionIcon,
   Alert,
   Badge,
   Box,
@@ -7,6 +8,7 @@ import {
   Center,
   Group,
   Loader,
+  Menu,
   NativeSelect,
   Paper,
   ScrollArea,
@@ -16,9 +18,10 @@ import {
   Title,
 } from "@mantine/core";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
+import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 
 import { harnessLabel, httpApi, type SessionBrowserApi } from "./api";
-import { recordLabel, RecordContent, rawRecordText } from "./event-content";
+import { ArchiveTranscript } from "./transcript";
 import { MachineImportProgressSummary, useMachineImportProgress } from "./import-progress";
 import type { EventRecord, Harness, Machine, SessionSummary, SessionVersion } from "./schema";
 import { ResizeHandle, usePaneSize, type PaneSize } from "../../../util/frontend/resize_handle";
@@ -80,6 +83,15 @@ function transcriptStatusColor(session: SessionSummary): string {
     case "unavailable":
       return "gray";
   }
+}
+
+function TranscriptStatusBadge({ session, size }: { session: SessionSummary; size: "xs" | "sm" }): JSX.Element | null {
+  if (session.transcript_status === "captured" && session.latest_version_record_count !== 0) return null;
+  return (
+    <Badge size={size} color={transcriptStatusColor(session)} variant="light">
+      {transcriptStatusLabel(session)}
+    </Badge>
+  );
 }
 
 function noVersionExplanation(status: SessionSummary["transcript_status"]): string {
@@ -149,7 +161,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   const [loadingMoreSessions, setLoadingMoreSessions] = useState(false);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [loadingEvents, setLoadingEvents] = useState(false);
-  const [loadingMoreEvents, setLoadingMoreEvents] = useState(false);
+  const [loadingEarlierEvents, setLoadingEarlierEvents] = useState(false);
   const [loadingRelatedSessions, setLoadingRelatedSessions] = useState(false);
   const [loadingMoreRelatedSessions, setLoadingMoreRelatedSessions] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -185,6 +197,11 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     versionsSessionId === selectedSession?.id
       ? (versions.find((version) => version.id === selectedVersionId) ?? null)
       : null;
+  const selectedVersionIsEarlierCapture =
+    selectedVersion !== null &&
+    selectedSession !== null &&
+    selectedSession.latest_version_id !== null &&
+    selectedVersion.id !== selectedSession.latest_version_id;
   const hasRelatedSessions =
     selectedSession !== null &&
     (selectedSession.parent_session_id !== null ||
@@ -340,7 +357,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   useEffect(() => {
     eventPageRequest.current?.abort();
     eventPageRequest.current = null;
-    setLoadingMoreEvents(false);
+    setLoadingEarlierEvents(false);
     if (selectedSession === null) {
       setVersions([]);
       setVersionsSessionId(null);
@@ -374,7 +391,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   useEffect(() => {
     eventPageRequest.current?.abort();
     eventPageRequest.current = null;
-    setLoadingMoreEvents(false);
+    setLoadingEarlierEvents(false);
     if (selectedSession === null || selectedVersionId === null || versionsSessionId !== selectedSession.id) {
       setEvents([]);
       setEventCursor(null);
@@ -479,13 +496,13 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     }
   };
 
-  const loadMoreEvents = async (): Promise<void> => {
-    if (selectedSession === null || selectedVersionId === null || eventCursor === null || loadingMoreEvents) return;
+  const loadEarlierEvents = async (): Promise<void> => {
+    if (selectedSession === null || selectedVersionId === null || eventCursor === null || loadingEarlierEvents) return;
     const requestedScope = eventScope;
     const controller = new AbortController();
     eventPageRequest.current?.abort();
     eventPageRequest.current = controller;
-    setLoadingMoreEvents(true);
+    setLoadingEarlierEvents(true);
     setError(null);
     try {
       const page = await api.listEvents(selectedSession.id, selectedVersionId, eventCursor, controller.signal);
@@ -498,7 +515,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     } finally {
       if (eventPageRequest.current === controller) {
         eventPageRequest.current = null;
-        setLoadingMoreEvents(false);
+        setLoadingEarlierEvents(false);
       }
     }
   };
@@ -548,7 +565,9 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   const changeVersion = (versionId: string): void => {
     if (versionId) search.set("version", versionId);
     else search.delete("version");
-    navigate(`${location.pathname}?${search.toString()}`);
+    const query = search.toString();
+    const nextPath = `${location.pathname}${query ? `?${query}` : ""}`;
+    if (nextPath !== `${location.pathname}${location.search}`) navigate(nextPath);
   };
 
   const openMobileRelatedSessions = (): void => {
@@ -558,7 +577,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
 
   return (
     <Stack gap="sm" style={{ height: "100%", minHeight: 0 }}>
-      <Group justify="space-between" align="end" wrap="wrap">
+      <Box component="header" className="session-browser-header">
         <Box>
           <Title order={1} size="h3">
             Local agent sessions
@@ -567,21 +586,18 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
             Captured Claude Code and Codex CLI conversations
           </Text>
         </Box>
-        <Text size="xs" c="dimmed">
-          Sorted by last activity
-        </Text>
-      </Group>
+        <MachineImportProgressSummary
+          progress={importProgress}
+          loading={loadingImportProgress}
+          error={importProgressError}
+          returnTo={`${location.pathname}${location.search}`}
+        />
+      </Box>
       {error !== null && (
         <Alert color="red" title="Session data unavailable">
           {error}
         </Alert>
       )}
-      <MachineImportProgressSummary
-        progress={importProgress}
-        loading={loadingImportProgress}
-        error={importProgressError}
-        returnTo={`${location.pathname}${location.search}`}
-      />
       <Box
         ref={layoutRef}
         className="session-browser-layout"
@@ -869,8 +885,8 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
             </Center>
           ) : (
             <Stack gap="md" style={{ flex: 1, minHeight: 0 }}>
-              <Group justify="space-between" align="start" wrap="wrap">
-                <Box style={{ minWidth: 240, flex: 1 }}>
+              <Group justify="space-between" align="start" wrap="nowrap">
+                <Box style={{ minWidth: 0, flex: 1 }}>
                   <Group gap="xs" mb={4}>
                     <Badge variant="light">{harnessLabel(selectedSession.harness)}</Badge>
                     <Text size="sm" c="dimmed">
@@ -881,9 +897,18 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                         Identity inferred
                       </Badge>
                     )}
-                    <Badge color={transcriptStatusColor(selectedSession)} variant="light">
-                      {transcriptStatusLabel(selectedSession)}
-                    </Badge>
+                    <TranscriptStatusBadge session={selectedSession} size="sm" />
+                    {selectedVersionIsEarlierCapture && (
+                      <Badge size="xs" color="orange" variant="light">
+                        Earlier capture
+                      </Badge>
+                    )}
+                    {selectedVersion !== null && selectedVersion.parse_issue_count > 0 && (
+                      <Badge size="xs" color="orange" variant="light">
+                        {selectedVersion.parse_issue_count} parse warning
+                        {selectedVersion.parse_issue_count === 1 ? "" : "s"}
+                      </Badge>
+                    )}
                     {selectedSession.native_session_id_conflict && (
                       <Badge color="red" variant="light">
                         Conflicting native session IDs
@@ -909,37 +934,65 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                     </Text>
                   )}
                 </Box>
-                <Box style={{ width: "min(100%, 360px)" }}>
-                  <NativeSelect
-                    label="Captured version"
-                    aria-label="Captured version"
-                    value={requestedVersionUnavailable ? (requestedVersionId ?? "") : (selectedVersionId ?? "")}
-                    onChange={(event) => changeVersion(event.currentTarget.value)}
-                    disabled={loadingVersions || (versions.length === 0 && !requestedVersionUnavailable)}
-                    data={
-                      loadingVersions
-                        ? [{ value: "", label: "Loading versions…" }]
-                        : [
-                            ...(requestedVersionUnavailable
-                              ? [{ value: requestedVersionId ?? "", label: "Requested capture unavailable" }]
-                              : []),
-                            ...versions.map((version) => ({
-                              value: version.id,
-                              label: `${version.id === selectedSession.latest_version_id ? "Latest captured · " : ""}${formatDateTime(version.captured_at)} · ${formatBytes(version.byte_size)}`,
-                            })),
-                            ...(versions.length === 0 && !requestedVersionUnavailable
-                              ? [{ value: "", label: "No captured versions" }]
-                              : []),
-                          ]
-                    }
-                  />
-                  {selectedVersion !== null && (
-                    <Text size="xs" c="dimmed" mt={4} style={{ overflowWrap: "anywhere" }}>
-                      {selectedVersion.complete ? "All JSONL lines parsed" : "Some JSONL lines did not parse"} ·{" "}
-                      {selectedVersion.parse_issue_count} parse issues · SHA-256 {selectedVersion.sha256.slice(0, 12)}
-                    </Text>
-                  )}
-                </Box>
+                <Group gap="xs" wrap="nowrap" style={{ flex: "0 0 auto" }}>
+                  <Menu position="bottom-end" width="min(90vw, 420px)" withinPortal>
+                    <Menu.Target>
+                      <ActionIcon
+                        size="sm"
+                        variant="subtle"
+                        color="gray"
+                        aria-label="Conversation options"
+                        title="Conversation options"
+                      >
+                        <IconDotsVertical size={16} />
+                      </ActionIcon>
+                    </Menu.Target>
+                    <Menu.Dropdown style={{ maxHeight: "min(70dvh, 480px)", overflowY: "auto" }}>
+                      <Menu.Label>Captured versions</Menu.Label>
+                      {loadingVersions ? (
+                        <Menu.Item disabled>Loading versions…</Menu.Item>
+                      ) : (
+                        <>
+                          {requestedVersionUnavailable && <Menu.Item disabled>Requested capture unavailable</Menu.Item>}
+                          {versions.map((version) => (
+                            <Menu.RadioItem
+                              key={version.id}
+                              value={version.id}
+                              data-version-id={version.id}
+                              checked={selectedVersionId === version.id}
+                              closeMenuOnClick
+                              style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                              onClick={() =>
+                                changeVersion(version.id === selectedSession.latest_version_id ? "" : version.id)
+                              }
+                            >
+                              {`${version.id === selectedSession.latest_version_id ? "Latest captured · " : ""}${formatDateTime(version.captured_at)} · ${formatBytes(version.byte_size)}`}
+                            </Menu.RadioItem>
+                          ))}
+                          {versions.length === 0 && !requestedVersionUnavailable && (
+                            <Menu.Item disabled>No captured versions</Menu.Item>
+                          )}
+                        </>
+                      )}
+                      {selectedVersion !== null && (
+                        <>
+                          <Menu.Divider />
+                          <Menu.Label>
+                            <Stack gap={2}>
+                              <Text size="xs">
+                                {selectedVersion.complete ? "All JSONL lines parsed" : "Some JSONL lines did not parse"}
+                              </Text>
+                              <Text size="xs" c="dimmed">
+                                {selectedVersion.parse_issue_count} parse issues · SHA-256{" "}
+                                {selectedVersion.sha256.slice(0, 12)}
+                              </Text>
+                            </Stack>
+                          </Menu.Label>
+                        </>
+                      )}
+                    </Menu.Dropdown>
+                  </Menu>
+                </Group>
               </Group>
               {requestedVersionUnavailable ? (
                 <Center h={180}>
@@ -972,23 +1025,24 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                   <Loader size="sm" aria-label="Loading conversation records" />
                 </Center>
               ) : (
-                <ScrollArea className="session-browser-events" type="auto">
-                  <Stack gap="sm" pb="md">
-                    {events.map((record) => (
-                      <EventRow key={`${record.ordinal}`} record={record} />
-                    ))}
-                    {events.length === 0 && !loadingEvents && (
-                      <Text size="sm" c="dimmed">
-                        This captured version contains no JSONL records.
-                      </Text>
-                    )}
-                    {eventCursor !== null && (
-                      <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>
-                        Load more records
-                      </Button>
-                    )}
-                  </Stack>
-                </ScrollArea>
+                <ArchiveTranscript
+                  scopeId={eventScope}
+                  records={events}
+                  earlier={{
+                    available: eventCursor !== null,
+                    loading: loadingEarlierEvents,
+                    load: () => void loadEarlierEvents(),
+                  }}
+                  tail={
+                    <>
+                      {events.length === 0 && !loadingEvents && (
+                        <Text size="sm" c="dimmed">
+                          This captured version contains no JSONL records.
+                        </Text>
+                      )}
+                    </>
+                  }
+                />
               )}
             </Stack>
           )}
@@ -1042,74 +1096,10 @@ function SessionRow({
           <Text size="xs" c="dimmed">
             {harnessLabel(session.harness)}
           </Text>
-          <Group gap={6} wrap="wrap" justify="flex-end">
-            <Badge size="xs" color={transcriptStatusColor(session)} variant="light">
-              {transcriptStatusLabel(session)}
-            </Badge>
-            <Text size="xs" c="dimmed">
-              {session.version_count} {session.version_count === 1 ? "version" : "versions"}
-            </Text>
-          </Group>
+          <TranscriptStatusBadge session={session} size="xs" />
         </Group>
       </Stack>
     </Button>
-  );
-}
-
-function EventRow({ record }: { record: EventRecord }): JSX.Element {
-  return (
-    <Paper withBorder radius="sm" p="sm" data-event-ordinal={record.ordinal}>
-      <Stack gap="xs">
-        <Group justify="space-between" align="start" gap="xs">
-          <Group gap="xs">
-            <Badge variant="light">{recordLabel(record)}</Badge>
-            <Text size="xs" c="dimmed">
-              Line {record.ordinal}
-            </Text>
-            {record.parse_error != null && (
-              <Badge color="orange" variant="light">
-                Malformed JSONL
-              </Badge>
-            )}
-          </Group>
-          <Text size="xs" c="dimmed">
-            {formatDateTime(record.timestamp)}
-          </Text>
-        </Group>
-        <RecordContent record={record} />
-        <details>
-          <summary style={{ cursor: "pointer", fontSize: "var(--mantine-font-size-xs)" }}>Raw JSONL record</summary>
-          <Box
-            component="pre"
-            mt="xs"
-            p="xs"
-            style={{
-              background: "var(--mantine-color-default-hover)",
-              borderRadius: "var(--mantine-radius-sm)",
-              maxHeight: 360,
-              overflow: "auto",
-              whiteSpace: "pre-wrap",
-              overflowWrap: "anywhere",
-              fontSize: "var(--mantine-font-size-xs)",
-            }}
-          >
-            {rawRecordText(record.raw_base64)}
-          </Box>
-          <details>
-            <summary style={{ cursor: "pointer", fontSize: "var(--mantine-font-size-xs)" }}>
-              Exact line bytes (base64)
-            </summary>
-            <Box
-              component="pre"
-              mt="xs"
-              style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: "var(--mantine-font-size-xs)" }}
-            >
-              {record.raw_base64}
-            </Box>
-          </details>
-        </details>
-      </Stack>
-    </Paper>
   );
 }
 

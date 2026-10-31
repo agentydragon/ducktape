@@ -50,7 +50,7 @@ const LANGUAGE_EXTENSIONS: Record<Language, () => Extension> = {
 
 const REGISTERED_LANGUAGES: ReadonlySet<string> = new Set(Object.keys(LANGUAGE_EXTENSIONS));
 
-// Which colour each kind of token takes, `--agentplane-code-<token>` in code_block.css. One table
+// Which colour each kind of token takes, `--ui-code-<token>` in code_block.css. One table
 // serves the editor view (as CSS-variable colours) and the inline rendering (as classes).
 const CODE_TOKENS: ReadonlyArray<{ tag: Tag | readonly Tag[]; token: string }> = [
   { tag: tags.propertyName, token: "key" },
@@ -67,14 +67,12 @@ const CODE_TOKENS: ReadonlyArray<{ tag: Tag | readonly Tag[]; token: string }> =
 const CODE_HIGHLIGHT = HighlightStyle.define(
   CODE_TOKENS.map(({ tag, token }) => ({
     tag,
-    color: `var(--agentplane-code-${token})`,
+    color: `var(--ui-code-${token})`,
     ...(token === "comment" && { fontStyle: "italic" }),
   }))
 );
 
-const INLINE_HIGHLIGHT = tagHighlighter(
-  CODE_TOKENS.map(({ tag, token }) => ({ tag, class: `agentplane-tok-${token}` }))
-);
+const INLINE_HIGHLIGHT = tagHighlighter(CODE_TOKENS.map(({ tag, token }) => ({ tag, class: `ui-tok-${token}` })));
 
 /** Whether `language` names one of the grammars this widget can highlight. */
 export function isRegisteredLanguage(language: string): language is Language {
@@ -166,7 +164,7 @@ function specialCharMarker(code: number, description: string | null): SpecialCha
           : "default-ignorable character";
   const label = codePointLabel(code);
   return {
-    className: `cm-agentplane-special-char ${isBidi ? "cm-agentplane-special-char-bidi" : isControl ? "cm-agentplane-special-char-control" : "cm-agentplane-special-char-ignorable"}`,
+    className: `cm-ui-special-char ${isBidi ? "cm-ui-special-char-bidi" : isControl ? "cm-ui-special-char-control" : "cm-ui-special-char-ignorable"}`,
     ariaLabel: `${kind}: ${description ?? label}, ${codePoint}`,
     title: `${kind}: ${label} (${codePoint})`,
     text: `⟦${label}⟧`,
@@ -189,7 +187,7 @@ class StreamingCursor extends WidgetType {
   }
   toDOM(): HTMLElement {
     const cursor = document.createElement("span");
-    cursor.className = "agentplane-streaming-cursor";
+    cursor.className = "ui-streaming-cursor";
     cursor.setAttribute("role", "img");
     cursor.setAttribute("aria-label", "Streaming");
     cursor.setAttribute("data-character", "|");
@@ -209,15 +207,15 @@ function streamingCursorDecoration(offset: number): Extension {
 
 const CODE_BLOCK_THEME = EditorView.theme({
   "&": {
-    backgroundColor: "var(--agentplane-code-surface-background)",
-    border: "var(--agentplane-code-surface-border)",
-    borderRadius: "var(--agentplane-code-surface-radius)",
+    backgroundColor: "var(--ui-code-surface-background)",
+    border: "var(--ui-code-surface-border)",
+    borderRadius: "var(--ui-code-surface-radius)",
     color: "var(--mantine-color-text)",
     fontSize: "var(--mantine-font-size-sm)",
   },
   ".cm-content": {
-    fontFamily: "var(--agentplane-code-font-family, var(--mantine-font-family-monospace))",
-    padding: "var(--agentplane-code-surface-padding)",
+    fontFamily: "var(--ui-code-font-family, var(--mantine-font-family-monospace))",
+    padding: "var(--ui-code-surface-padding)",
   },
   ".cm-scroller": { fontFamily: "inherit" },
   "&.cm-focused": { outline: "none" },
@@ -326,7 +324,7 @@ function MountedCodeBlock({
 
   return (
     <CodeMirror
-      className={`agentplane-code-block agentplane-code-block-${presentation}${presentation === "block" ? ` agentplane-code-surface-${surface}${font === "prose" ? " agentplane-code-font-prose" : ""}` : ""}`}
+      className={`ui-code-block ui-code-block-${presentation}${presentation === "block" ? ` ui-code-surface-${surface}${font === "prose" ? " ui-code-font-prose" : ""}` : ""}`}
       value={text}
       theme="none"
       readOnly
@@ -361,14 +359,14 @@ export function CodeBlock({
   releaseWhenFar?: boolean;
 }): JSX.Element {
   const { ref, near, measuredHeight } = useNearViewport(releaseWhenFar);
-  const surfaceClass = presentation === "block" ? ` agentplane-code-surface-${surface}` : "";
-  const fontClass = presentation === "block" && font === "prose" ? " agentplane-code-font-prose" : "";
+  const surfaceClass = presentation === "block" ? ` ui-code-surface-${surface}` : "";
+  const fontClass = presentation === "block" && font === "prose" ? " ui-code-font-prose" : "";
   if (!near) {
     const lineCount = Math.max(1, text.split("\n").length);
     return (
       <div
         ref={ref}
-        className={`agentplane-code-block-placeholder${presentation !== "block" ? ` agentplane-code-block-placeholder-${presentation}` : ""}${surfaceClass}${fontClass}`}
+        className={`ui-code-block-placeholder${presentation !== "block" ? ` ui-code-block-placeholder-${presentation}` : ""}${surfaceClass}${fontClass}`}
         style={{ height: measuredHeight ?? `${lineCount * PLACEHOLDER_LINE_REM}rem` }}
       />
     );
@@ -386,7 +384,7 @@ export function CodeBlock({
     );
   }
   return (
-    <div ref={ref} className={`agentplane-code-block-container${fontClass}`}>
+    <div ref={ref} className={`ui-code-block-container${fontClass}`}>
       <MountedCodeBlock
         text={text}
         language={language}
@@ -452,7 +450,7 @@ export function InlineCode({
 }): JSX.Element {
   const runs = useMemo(() => highlightInlineCode(text, language), [text, language]);
   return (
-    <code className="agentplane-code-inline">
+    <code className="ui-code-inline">
       {runs.map((run, index) => (
         <span key={index} className={run.classes}>
           {withMarkers(run.text)}
@@ -460,8 +458,8 @@ export function InlineCode({
       ))}
       {streamingCursor && (
         <span
-          key="agentplane-streaming-cursor"
-          className="agentplane-streaming-cursor"
+          key="ui-streaming-cursor"
+          className="ui-streaming-cursor"
           role="img"
           aria-label="Streaming"
           data-character="|"

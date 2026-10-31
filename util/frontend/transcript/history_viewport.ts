@@ -1,10 +1,5 @@
 import { type CommittedPlan, type HistoryGeometry, type LayoutPlan, mountedRange } from "./history_geometry";
-import {
-  markThreadViewEvent,
-  threadViewRecorder,
-  type FollowReason,
-  type ThreadViewLayout,
-} from "./thread_view_recorder";
+import type { FollowReason, HistoryDiagnostics, HistoryLayout } from "./history_diagnostics";
 
 type Anchor = {
   readonly entity: string;
@@ -63,11 +58,12 @@ export class HistoryViewport {
   endVisible = true;
 
   constructor(
-    private readonly threadId: string,
+    private readonly scopeId: string,
     private readonly viewId: string,
     private readonly geometry: HistoryGeometry,
     private readonly render: (synchronous: boolean) => void,
-    private readonly loadOlder: () => void
+    private readonly loadOlder: () => void,
+    private readonly diagnostics: HistoryDiagnostics | undefined
   ) {}
 
   mount(element: HTMLDivElement, content: HTMLDivElement, tail: HTMLDivElement): void {
@@ -204,7 +200,7 @@ export class HistoryViewport {
         const row = plan.rows.find((candidate) => candidate.key === observation.key);
         if (!row) throw new Error(`Mounted history row is absent from committed plan: ${observation.key}`);
         if (row.height.kind === "estimate" || row.height.pixels !== observation.height) {
-          markThreadViewEvent({
+          this.diagnostics?.mark({
             kind: "measure",
             key: row.key,
             estimate: row.height.pixels,
@@ -230,7 +226,7 @@ export class HistoryViewport {
         throw new Error("History geometry did not admit the current committed measurements");
       }
       if (plan.total !== this.lastTotal) {
-        markThreadViewEvent({
+        this.diagnostics?.mark({
           kind: "virtual-size",
           before: this.lastTotal,
           after: plan.total,
@@ -238,9 +234,9 @@ export class HistoryViewport {
           following: this.intent.kind === "following",
         });
         this.lastTotal = plan.total;
-        threadViewRecorder.snapshotView("virtual-change", this.viewId, "committed-size");
+        this.diagnostics?.snapshotView("virtual-change", this.viewId, "committed-size");
       }
-      threadViewRecorder.snapshotView("commit", this.viewId, "layout-verified");
+      this.diagnostics?.snapshotView("commit", this.viewId, "layout-verified");
       const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
       this.acceptMovement(maximum);
       this.reconcile({ committed: this.committed, intentRevision: this.intentRevision, maximum });
@@ -286,7 +282,7 @@ export class HistoryViewport {
     this.intentRevision++;
     this.pending = null;
     if (wasFollowing !== (intent.kind === "following")) {
-      markThreadViewEvent({ kind: "follow", following: intent.kind === "following", reason });
+      this.diagnostics?.mark({ kind: "follow", following: intent.kind === "following", reason });
     }
     this.publish();
   }
@@ -374,11 +370,11 @@ export class HistoryViewport {
     }
     const reachable = clamp(target, layout.maximum);
     if (!close(reachable, element.scrollTop)) {
-      threadViewRecorder.snapshotView("scroll-before", this.viewId, reason);
+      this.diagnostics?.snapshotView("scroll-before", this.viewId, reason);
       element.scrollTop = reachable;
       this.pending = { intentRevision: this.intentRevision, top: element.scrollTop };
       this.lastTop = element.scrollTop;
-      threadViewRecorder.snapshotView("scroll-after", this.viewId, reason);
+      this.diagnostics?.snapshotView("scroll-after", this.viewId, reason);
     }
     if (this.intent.kind !== "following") {
       if (!close(target, reachable)) this.rebaseAnchor();
@@ -399,7 +395,7 @@ export class HistoryViewport {
   input(source: "wheel" | "key" | "touch", direction: "up" | "down", canScroll: boolean): void {
     const element = this.element;
     if (!element) return;
-    markThreadViewEvent({ kind: "input", source, direction, scrollTop: element.scrollTop });
+    this.diagnostics?.mark({ kind: "input", source, direction, scrollTop: element.scrollTop });
     if (!canScroll) return;
     this.acceptMovement(Math.max(0, element.scrollHeight - element.clientHeight));
     // A new input can arrive after a DOM resize and before its new plan commits. Continue
@@ -415,7 +411,7 @@ export class HistoryViewport {
     this.pending = null;
     this.intentRevision++;
     if (this.element)
-      markThreadViewEvent({
+      this.diagnostics?.mark({
         kind: "input",
         source: "pointer",
         direction: "unknown",
@@ -460,9 +456,9 @@ export class HistoryViewport {
     const anchor = this.currentAnchor(target);
     if (anchor && element.scrollHeight > element.clientHeight) {
       this.setIntent({ kind: "reading", anchor }, "disclosure-click");
-      markThreadViewEvent({ kind: "anchor", key: anchor.entity, offset: anchor.offset });
+      this.diagnostics?.mark({ kind: "anchor", key: anchor.entity, offset: anchor.offset });
     }
-    markThreadViewEvent({
+    this.diagnostics?.mark({
       kind: "click",
       scrollTop: element.scrollTop,
       scrollHeight: element.scrollHeight,
@@ -475,7 +471,7 @@ export class HistoryViewport {
     if (!element) return;
     const previous = this.lastTop;
     const followed = this.acceptMovement(Math.max(0, element.scrollHeight - element.clientHeight));
-    markThreadViewEvent({
+    this.diagnostics?.mark({
       kind: "scroll",
       scrollTop: element.scrollTop,
       previousTop: previous,
@@ -488,7 +484,7 @@ export class HistoryViewport {
   }
 
   private scrollEnded = (): void => {
-    markThreadViewEvent({ kind: "scrollend", restoring: false, capturing: this.intent.kind === "gesture" });
+    this.diagnostics?.mark({ kind: "scrollend", restoring: false, capturing: this.intent.kind === "gesture" });
     if (this.intent.kind === "gesture") {
       this.intent = { kind: "reading", anchor: this.intent.anchor };
       this.publish();
@@ -521,7 +517,7 @@ export class HistoryViewport {
   }
 
   private setSettled(settled: boolean): void {
-    if (this.settled !== settled) markThreadViewEvent({ kind: "settled", settled });
+    if (this.settled !== settled) this.diagnostics?.mark({ kind: "settled", settled });
     this.settled = settled;
     this.publish();
   }
@@ -532,14 +528,14 @@ export class HistoryViewport {
     this.element.dataset.layoutSettled = String(this.settled);
   }
 
-  snapshot(): ThreadViewLayout | null {
+  snapshot(): HistoryLayout | null {
     const element = this.element;
     const content = this.content;
     const plan = this.committed?.plan;
     if (!element || !content || !plan) return null;
     const top = element.getBoundingClientRect().top;
     return {
-      threadId: this.threadId,
+      scopeId: this.scopeId,
       viewId: this.viewId,
       following: this.intent.kind === "following",
       restoring: false,

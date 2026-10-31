@@ -284,7 +284,7 @@ async def test_mobile_drawer_covers_jump_to_latest(view: VisualPage, app: Agentp
     await expect(history).to_have_attribute("data-layout-settled", "true")
     # The fixture's folded run is short; open it to create real scroll distance
     # before the reader leaves the bottom of this still-running thread.
-    await history.locator(".agentplane-disclosure-summary").filter(has_text="32 tool calls").first.click()
+    await history.locator(".ui-disclosure-summary").filter(has_text="32 tool calls").first.click()
     await history.hover()
     await page.mouse.wheel(0, -2500)
     jump = page.get_by_role("button", name="Jump to latest")

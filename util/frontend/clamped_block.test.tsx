@@ -1,9 +1,22 @@
 // @vitest-environment happy-dom
+import { MantineProvider } from "@mantine/core";
 import { act, type JSX, useState } from "react";
+import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { mount } from "./actions/testing/harness";
 import { ClampedBlock, lineCount } from "./clamped_block";
+
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+const roots: ReturnType<typeof createRoot>[] = [];
+
+async function mount(node: JSX.Element): Promise<HTMLDivElement> {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  roots.push(root);
+  await act(async () => root.render(<MantineProvider env="test">{node}</MantineProvider>));
+  return container;
+}
 
 // happy-dom does no layout, so the content's height is whatever a test says it is.
 function contentHeight(pixels: number): void {
@@ -14,7 +27,11 @@ function control(container: HTMLElement, label: string): HTMLElement | undefined
   return [...container.querySelectorAll<HTMLElement>("button")].find((button) => button.textContent === label);
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(async () => {
+  for (const root of roots.splice(0)) await act(async () => root.unmount());
+  document.body.replaceChildren();
+  vi.restoreAllMocks();
+});
 
 describe("ClampedBlock", () => {
   it("tracks content size through expansion and collapse", async () => {
@@ -34,7 +51,7 @@ describe("ClampedBlock", () => {
     const container = await mount(<ClampedBlock maxHeightRem={10}>test-content</ClampedBlock>);
     expect(container.querySelector('[data-clamped="true"]')).toBeNull();
     expect(control(container, "Show all")).toBeUndefined();
-    expect(container.querySelector('.agentplane-clamped-block[data-expanded="true"]')).toBeNull();
+    expect(container.querySelector('.ui-clamped-block[data-expanded="true"]')).toBeNull();
   });
 
   it("keeps expanded content collapsible when its height shrinks", async () => {
@@ -45,7 +62,7 @@ describe("ClampedBlock", () => {
     await act(async () => control(container, "Show all")?.click());
     expect(control(container, "Expanded content")).toBeDefined();
     await act(async () => control(container, "Expanded content")?.click());
-    expect(container.querySelector('.agentplane-clamped-block[data-expanded="true"]')).toBeNull();
+    expect(container.querySelector('.ui-clamped-block[data-expanded="true"]')).toBeNull();
   });
 
   it("clips content past its cap, keeping all of it in the document, until the bottom is clicked", async () => {
@@ -60,7 +77,7 @@ describe("ClampedBlock", () => {
     expect(control(container, "Show all")).toBeUndefined();
 
     expect(control(container, "Expanded content")?.getAttribute("aria-expanded")).toBe("true");
-    expect(container.querySelector(".agentplane-clamped-disclosure")?.textContent).toContain("test-content");
+    expect(container.querySelector(".ui-clamped-disclosure")?.textContent).toContain("test-content");
     await act(async () => control(container, "Expanded content")?.click());
     expect(container.querySelector('[data-clamped="true"]')).not.toBeNull();
   });
@@ -68,20 +85,16 @@ describe("ClampedBlock", () => {
   it("keeps an existing heading in normal flow until it becomes a sticky collapse row", async () => {
     contentHeight(1000);
     const container = await mount(
-      <ClampedBlock maxHeightRem={10} label="Output" header={<span className="agentplane-output-label">Output</span>}>
+      <ClampedBlock maxHeightRem={10} label="Output" header={<span className="test-output-label">Output</span>}>
         test-content
       </ClampedBlock>
     );
-    expect(container.querySelector(".agentplane-output-label")?.textContent).toBe("Output");
-    expect(container.querySelector(".agentplane-clamped-disclosure")).not.toBeNull();
-    expect(container.querySelector(".agentplane-clamped-disclosure .agentplane-output-label")?.textContent).toBe(
-      "Output"
-    );
+    expect(container.querySelector(".test-output-label")?.textContent).toBe("Output");
+    expect(container.querySelector(".ui-clamped-disclosure")).not.toBeNull();
+    expect(container.querySelector(".ui-clamped-disclosure .test-output-label")?.textContent).toBe("Output");
     await act(async () => control(container, "Show all")?.click());
-    expect(container.querySelector(".agentplane-clamped-disclosure .agentplane-output-label")?.textContent).toBe(
-      "Output"
-    );
-    const heading = container.querySelector(".agentplane-clamped-disclosure .agentplane-disclosure-heading");
+    expect(container.querySelector(".ui-clamped-disclosure .test-output-label")?.textContent).toBe("Output");
+    const heading = container.querySelector(".ui-clamped-disclosure .ui-disclosure-heading");
     expect(heading?.querySelectorAll("button")).toHaveLength(1);
     expect(control(container, "Output")?.getAttribute("aria-expanded")).toBe("true");
     await act(async () => control(container, "Output")?.click());

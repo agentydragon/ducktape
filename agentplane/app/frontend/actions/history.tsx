@@ -15,13 +15,13 @@ import {
 
 import { Link, useLocation, useSearchParams } from "react-router";
 
-import { Disclosure, DisclosureBody } from "../disclosure";
+import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
 import { durationLabel } from "../format_time";
 import { IconArrowRight } from "../icons";
 import { RawSwitch } from "../raw_switch";
 import { TimeAgo } from "../time_ago";
 import { displayableError } from "../client";
-import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../clamped_block";
+import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../../../../util/frontend/clamped_block";
 import { JsonBlock } from "../text_block";
 import { useOptionalStreamStatus } from "../stream_status";
 import type { StreamConnection } from "../stream_reader";

@@ -13,19 +13,19 @@ from util.testing.visual_capture import VisualPage
 _SCROLL = "[data-disclosure-demo-scroll]"
 
 
-_HEADING = ".agentplane-disclosure-heading"
+_HEADING = ".ui-disclosure-heading"
 
 
-_MAIN = f".demo-main .agentplane-disclosure-item > {_HEADING}"
+_MAIN = f".demo-main .ui-disclosure-item > {_HEADING}"
 
 
-_OUTER = f".demo-outer > .agentplane-disclosure-item > {_HEADING}"
+_OUTER = f".demo-outer > .ui-disclosure-item > {_HEADING}"
 
 
-_INNER = f".demo-inner > .agentplane-disclosure-item > {_HEADING}"
+_INNER = f".demo-inner > .ui-disclosure-item > {_HEADING}"
 
 
-_OUTPUT = f".demo-output > .agentplane-disclosure-item > {_HEADING}"
+_OUTPUT = f".demo-output > .ui-disclosure-item > {_HEADING}"
 
 
 async def _in_viewport(target: Locator) -> None:
@@ -69,7 +69,7 @@ async def _select_reconnect(page: Page) -> None:
 
 async def _open_run(page: Page) -> None:
     run = (
-        page.locator(".agentplane-disclosure-summary[aria-expanded='false']")
+        page.locator(".ui-disclosure-summary[aria-expanded='false']")
         .filter(has_text=re.compile("tool call", re.IGNORECASE))
         .first
     )
@@ -221,10 +221,10 @@ async def _expand_tool_steps(page: Page) -> None:
     count = await tool_steps.count()
     assert count > 0, "tool run contained no call lines"
     for index in range(count):
-        control = tool_steps.nth(index).locator(".agentplane-disclosure-summary").first
+        control = tool_steps.nth(index).locator(".ui-disclosure-summary").first
         if await control.get_attribute("aria-expanded") == "false":
             await control.click()
-    await expect(page.locator(".agentplane-step-details .agentplane-code-block .cm-content").first).to_be_attached()
+    await expect(page.locator(".agentplane-step-details .ui-code-block .cm-content").first).to_be_attached()
     await wait_for_stable(page)
 
 
@@ -258,8 +258,8 @@ def _tool_steps(page: Page) -> Locator:
 async def _open_standalone_reasoning(page: Page) -> Locator:
     """Open the reasoning step at thread anchor 20 and wait for its body to render."""
     reasoning = page.locator('[data-thread-anchor="20"] .agentplane-step-details')
-    summary = reasoning.locator(".agentplane-disclosure-summary").first
+    summary = reasoning.locator(".ui-disclosure-summary").first
     await summary.click()
     await expect(summary).to_have_attribute("aria-expanded", "true")
-    await expect(reasoning.locator(".agentplane-disclosure-panel .agentplane-markdown")).to_be_visible()
+    await expect(reasoning.locator(".ui-disclosure-panel .ui-markdown")).to_be_visible()
     return reasoning

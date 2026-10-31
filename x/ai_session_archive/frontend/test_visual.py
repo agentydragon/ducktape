@@ -26,8 +26,8 @@ async def test_session_list_and_compact_import_progress(visual: VisualHarness, c
         await expect(progress).to_contain_text("ThinkPad")
         await expect(progress).to_contain_text("Atlas")
         await expect(progress).to_contain_text("Rugged")
-        await expect(progress).to_contain_text("Syncing ThinkPad")
-        await expect(progress).to_contain_text("42/53 inventoried file entries processed · 2 failed")
+        await expect(progress).to_contain_text("ThinkPad")
+        await expect(progress).to_contain_text("42/53 · 2 failed")
         await expect(progress).not_to_contain_text("Complete fixture machine")
         await expect(progress).not_to_contain_text("Snapshots: 3 of 5 registered complete")
         rugged_progress = page.get_by_role("progressbar", name="Rugged file-entry progress")
@@ -36,16 +36,30 @@ async def test_session_list_and_compact_import_progress(visual: VisualHarness, c
         await expect(rugged_progress).to_have_attribute(
             "aria-valuetext", "42 processed, 9 pending, 2 failed of 53 inventoried file entries"
         )
+        heading = await page.get_by_role("heading", name="Local agent sessions").bounding_box()
+        import_bounds = await progress.bounding_box()
+        assert heading is not None
+        assert import_bounds is not None
+        assert import_bounds["x"] > heading["x"] + heading["width"]
+        assert abs(import_bounds["y"] - heading["y"]) < 30
         await expect(page.get_by_text("ThinkPad", exact=True).first).to_be_visible()
         await expect(page.get_by_role("heading", name="Compare two captured versions")).to_be_visible()
         await expect(page.locator('[aria-label="Session transcript"]')).to_contain_text(
             "I found two snapshots for this session."
         )
-        await expect(
-            page.locator('[aria-label="Session transcript"] select[aria-label="Captured version"]')
-        ).to_contain_text("Latest captured")
-        await view.check(context="machine list and captured version are visible")
+        options = page.get_by_role("button", name="Conversation options", exact=True)
+        await expect(options).to_be_visible()
+        await expect(page.locator('select[aria-label="Captured version"]')).to_have_count(0)
+        await view.check(context="machine list and latest capture are visible with compact conversation controls")
         await view.capture(target=page.locator("#root"))
+        await options.click()
+        await expect(page.get_by_role("menu")).to_have_css("opacity", "1")
+        await expect(page.locator('[role="menuitemradio"][data-version-id="codex-version-2"]')).to_have_attribute(
+            "aria-checked", "true"
+        )
+        await expect(page.get_by_role("menuitemradio", name=re.compile("Latest captured"))).to_be_visible()
+        await view.capture(name=f"{capture_name}_conversation_options")
+        await page.keyboard.press("Escape")
 
 
 async def test_import_progress_details(visual: VisualHarness, capture_name: str) -> None:
@@ -81,7 +95,7 @@ async def test_compact_import_progress_on_mobile(visual: VisualHarness, capture_
         progress = page.get_by_role("region", name="Import progress by machine")
         thinkpad_progress = page.get_by_role("progressbar", name="ThinkPad file-entry progress")
         session_list_toggle = page.get_by_role("button", name="Session list")
-        await expect(progress).to_contain_text("27/31 inventoried file entries processed")
+        await expect(progress).to_contain_text("27/31")
         await expect(progress).not_to_contain_text("Complete fixture machine")
         await expect(thinkpad_progress).to_have_attribute("aria-valuemax", "31")
         await expect(session_list_toggle).to_be_visible()
@@ -96,6 +110,17 @@ async def test_compact_import_progress_on_mobile(visual: VisualHarness, capture_
 
         await view.check(context="compact import progress and the session-list button fit the mobile viewport")
         await view.capture(target=page.locator("#root"))
+
+        await page.get_by_role("button", name="Conversation options", exact=True).click()
+        menu = page.get_by_role("menu")
+        await expect(menu).to_be_visible()
+        await expect(menu).to_have_css("opacity", "1")
+        menu_bounds = await menu.bounding_box()
+        assert menu_bounds is not None
+        assert menu_bounds["x"] >= 0
+        assert menu_bounds["x"] + menu_bounds["width"] <= 390
+        await view.capture(name=f"{capture_name}_conversation_options")
+        await page.keyboard.press("Escape")
 
         await session_list_toggle.click()
         sidebar = page.get_by_role("dialog", name="Session list")
@@ -123,9 +148,7 @@ async def test_inferred_subagent_parent_link(visual: VisualHarness, capture_name
         related = page.locator('#session-browser-sidebar [aria-label="Related sessions"]')
         await expect(related).to_contain_text("Parent inferred from Claude subagent path")
         await expect(related).to_contain_text("Inferred Claude parent · session 12ab")
-        await expect(
-            page.locator('[aria-label="Session transcript"] select[aria-label="Captured version"]')
-        ).to_be_visible()
+        await expect(page.get_by_role("button", name="Conversation options", exact=True)).to_be_visible()
         await view.check(context="child transcript and inferred parent link are visible")
         await view.capture(target=page.locator("#root"))
 
@@ -191,11 +214,24 @@ async def test_long_child_list_stays_scrollable_without_covering_transcript(
         )
         await expect(transcript).to_contain_text("The capture preserves the original JSONL records.")
         if viewport.width <= 760:
+            drawer = page.get_by_role("dialog", name="Session list")
+            transcript_is_covered = await drawer.evaluate(
+                """drawer => {
+                    const history = document.querySelector('[aria-label="Conversation records"]');
+                    const viewport = history.getBoundingClientRect();
+                    const points = [...history.querySelectorAll('[aria-expanded]')].map(control => {
+                        const rect = control.getBoundingClientRect();
+                        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+                    }).filter(({ x, y }) => x >= viewport.left && x <= viewport.right && y >= viewport.top && y <= viewport.bottom);
+                    return points.length > 0 && points.every(({ x, y }) => drawer.contains(document.elementFromPoint(x, y)));
+                }"""
+            )
+            assert transcript_is_covered, "transcript controls must not paint or receive clicks above the drawer"
             await view.check(context="related children remain reachable in the mobile session-list drawer")
             await view.capture(target=page.locator("#root"), name=f"{capture_name}_related_drawer")
             await page.get_by_role("dialog", name="Session list").get_by_role("button", name="Close").click()
 
-        events = page.locator(".session-browser-events")
+        events = page.get_by_role("region", name="Conversation records")
         geometry = await events.evaluate(
             "element => { const rect = element.getBoundingClientRect(); return { height: element.clientHeight, top: rect.top, bottom: rect.bottom, viewport: window.innerHeight }; }"
         )
@@ -203,11 +239,61 @@ async def test_long_child_list_stays_scrollable_without_covering_transcript(
             geometry["height"] >= 150 and geometry["top"] >= 0 and geometry["bottom"] <= geometry["viewport"]
         )
         assert transcript_viewport_is_usable, f"conversation viewport is too small or outside the viewport: {geometry}"
-        assert await events.locator('[data-event-ordinal="1"]').evaluate(
-            "element => { const parent = element.closest('.session-browser-events'); const row = element.getBoundingClientRect(); const viewport = parent.getBoundingClientRect(); return row.top >= viewport.top && row.bottom <= viewport.bottom; }"
+        await expect(events).to_have_attribute("data-layout-settled", "true")
+        assert await events.evaluate(
+            "element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop) <= 1"
         )
         await view.check(context="child sessions scroll independently and the conversation stays visible")
         await view.capture(target=page.locator("#root"), name=f"{capture_name}_child_list_end")
+
+
+@pytest.mark.parametrize("width", [1440, 390], ids=["desktop", "mobile"])
+async def test_shared_transcript_disclosures(visual: VisualHarness, capture_name: str, width: int) -> None:
+    async with visual.open(
+        "shared-transcript-disclosures",
+        viewport=Viewport(width=width, height=1000),
+        color_scheme="light",
+        capture_name=capture_name,
+    ) as view:
+        page = view.page
+        await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
+        if width < 600:
+            await page.get_by_role("button", name="Session list", exact=True).click()
+        await page.get_by_role("link", name=re.compile("Tools and reasoning fixture")).click()
+        history = page.get_by_role("region", name="Conversation records")
+        await expect(history).to_have_attribute("data-layout-settled", "true")
+        group = history.get_by_role("button", name="Tools and reasoning · 5 records", exact=True)
+        await expect(group).to_have_attribute("aria-expanded", "false")
+        await expect(history).to_contain_text("missing test configuration")
+        await expect(history.get_by_text("I will inspect the build log.", exact=True)).not_to_be_visible()
+        await view.capture(name=f"{capture_name}_folded")
+        user = history.locator('[data-event-ordinal="2"]')
+        raw = user.get_by_role("button", name="Raw JSONL record", exact=True)
+        assert await raw.evaluate("element => getComputedStyle(element).position === 'absolute'")
+        await expect(user.get_by_role("region", name="Raw JSONL record")).to_have_count(0)
+        await user.locator(".transcript-user-bubble").hover()
+        await expect(raw).to_be_visible()
+        await raw.click()
+        raw_panel = user.get_by_role("region", name="Raw JSONL record", exact=True)
+        await expect(raw_panel).to_contain_text("Inspect the archived build failure")
+        await raw_panel.get_by_role("button", name="Exact line bytes (base64)").click()
+        await expect(raw_panel.locator("pre")).to_have_count(2)
+        await expect(history).to_have_attribute("data-layout-settled", "true")
+        await view.capture(name=f"{capture_name}_raw_inspection")
+        await raw.click()
+        await expect(raw_panel).to_have_count(0)
+        await group.click()
+        await expect(history).to_have_attribute("data-layout-settled", "true")
+        await expect(group).to_have_attribute("aria-expanded", "true")
+        await expect(history.get_by_text("I will inspect the build log.", exact=True)).to_be_visible()
+        tool = history.locator('[data-event-ordinal="5"]')
+        await tool.scroll_into_view_if_needed()
+        await expect(history).to_have_attribute("data-layout-settled", "true")
+        await expect(tool).to_be_in_viewport()
+        await view.capture(name=f"{capture_name}_expanded")
+        await group.click()
+        await expect(history).to_have_attribute("data-layout-settled", "true")
+        await expect(group).to_have_attribute("aria-expanded", "false")
 
 
 if __name__ == "__main__":

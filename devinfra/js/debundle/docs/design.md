@@ -522,8 +522,8 @@ The dependency graph is the right abstraction for tooling:
 Native-integrity diagnostics retain the write census produced during the shared
 AST analysis, including source chunk, statement, operation, and location. The
 receiver roots precede unknown-global-value widening; `through_local_alias`
-distinguishes an alias path from a direct receiver. Graph-level
-`native_integrity_witnesses` stores each census site once. Source units reference
+distinguishes an alias path from a direct receiver. `program_graph.json`'s
+`native_integrity_witnesses` stores each census site once for the run. Source units reference
 its affected native families through `synchronous_execution.native_integrity_checks`
 when the ordinary-object-prototype or array-intrinsics guard is evaluated and
 fails. These are failed premises, not claims that a write executed or that it
@@ -3409,10 +3409,14 @@ The residual strip analyzes its post-rewrite module with the shared
 structural, value-flow, purity, and `VendorPrune` local-effect facts.
 Value-flow call augmentation is required for its island reachability;
 `StatementFacts::effects()` supplies its observable binding and global-cell
-writes. The strip does not build an dependency graph or consume
-`synchronous_calls`, so this analysis entry point omits only synchronous
-call-effect annotation. The split-brain and swap-privacy gates still use the
-same augmented calls, local effects, and cell-write summaries.
+writes. Those cells cover a statement's own writes only, so the swap-privacy
+gate also asks which retained state the statement's callees may mutate in
+place: the bindings synchronous execution reports its callees reading or
+rebinding, or, when a callee was not summarized, the lexical reads reachable
+through dropped items and retained functions. A dropped statement reaching a
+retained non-function, non-primitive binding is not swap-private. Array and
+Set contents born in a dropped item are private: the residual never allocates
+them.
 
 ### Swap equivalence is an author promise
 

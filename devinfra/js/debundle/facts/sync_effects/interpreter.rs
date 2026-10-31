@@ -8728,7 +8728,6 @@ impl Executor<'_, '_> {
                 .collect();
         outcome.effects.native_prefix_observations =
             std::mem::take(self.state.native_prefix_observations.get_mut());
-        outcome.effects.native_prototype_mutations = index.native_prototype_mutations.clone();
         outcome.effects.native_integrity_uses =
             std::mem::take(self.state.native_integrity_uses.get_mut())
                 .into_iter()
@@ -8755,7 +8754,6 @@ impl Executor<'_, '_> {
                     dependencies,
                 });
         }
-        outcome.effects.native_integrity_witnesses = index.native_integrity_witnesses.clone();
         self.state.top_env = top_env;
         self.state.top_captures = top_captures;
         self.clear_invocation_memos();

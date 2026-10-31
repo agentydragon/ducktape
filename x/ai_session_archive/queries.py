@@ -20,6 +20,7 @@ from x.ai_session_archive.database import (
 )
 from x.ai_session_archive.models import (
     Event,
+    EventDirection,
     EventPage,
     Harness,
     Machine,
@@ -324,7 +325,13 @@ def _version_lineage(session: DbSession, version: FileVersionRow) -> list[FileVe
 
 
 def list_events(
-    session: DbSession, *, session_id: UUID, version_id: UUID, cursor: int | None, limit: int
+    session: DbSession,
+    *,
+    session_id: UUID,
+    version_id: UUID,
+    cursor: int | None,
+    limit: int,
+    direction: EventDirection = EventDirection.FORWARD,
 ) -> EventPage | None:
     if not 1 <= limit <= MAX_EVENT_PAGE_SIZE:
         raise ValueError(f"limit must be between 1 and {MAX_EVENT_PAGE_SIZE}")
@@ -336,8 +343,13 @@ def list_events(
 
     if cursor is not None and cursor < 0:
         raise ValueError("cursor must be a non-negative record ordinal")
-    start = 0 if cursor is None else cursor + 1
-    end = min(version.record_count, start + limit + 1)
+
+    if direction is EventDirection.BACKWARD:
+        end = version.record_count if cursor is None else min(cursor, version.record_count)
+        start = max(0, end - limit - 1)
+    else:
+        start = 0 if cursor is None else cursor + 1
+        end = min(version.record_count, start + limit + 1)
     if start >= end:
         return EventPage(data=[], next_cursor=None)
 
@@ -361,12 +373,11 @@ def list_events(
             resolved[record.ordinal] = (rank, record, payload)
 
     result_rows = [resolved[ordinal] for ordinal in range(start, end) if ordinal in resolved]
-    expected_count = min(limit + 1, version.record_count - start)
-    if len(result_rows) != expected_count:
+    if len(result_rows) != end - start:
         raise RuntimeError(f"file version {version_id} is missing stored records in ordinals {start}:{end}")
 
     has_more = len(result_rows) > limit
-    page_rows = result_rows[:limit]
+    page_rows = result_rows[-limit:] if direction is EventDirection.BACKWARD else result_rows[:limit]
     events = []
     for _, record, payload in page_rows:
         parsed = parse_record_json(payload.raw_bytes)
@@ -382,5 +393,8 @@ def list_events(
                 raw_base64=base64.b64encode(payload.raw_bytes).decode("ascii"),
             )
         )
-    next_cursor = events[-1].ordinal if has_more and events else None
+    if has_more and events:
+        next_cursor = events[0].ordinal if direction is EventDirection.BACKWARD else events[-1].ordinal
+    else:
+        next_cursor = None
     return EventPage(data=events, next_cursor=next_cursor)

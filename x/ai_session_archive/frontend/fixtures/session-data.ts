@@ -122,9 +122,38 @@ const sessions: SessionSummary[] = [
     parent_native_session_id: null,
     identity_inferred: true,
   },
+  {
+    id: "mixed-transcript-fixture",
+    machine_id: "thinkpad",
+    harness: "codex",
+    title: "Tools and reasoning fixture",
+    cwd: "/fixture/project",
+    started_at: "2026-10-28T16:00:00Z",
+    last_activity_at: "2026-10-28T16:25:00Z",
+    latest_version_id: "mixed-version",
+    version_count: 1,
+    latest_version_record_count: 9,
+    transcript_status: "captured",
+    parent_session_id: null,
+    parent_link_kind: null,
+    parent_native_session_id: null,
+    identity_inferred: false,
+  },
 ];
 
 const versions: Record<string, SessionVersion[]> = {
+  "mixed-transcript-fixture": [
+    {
+      id: "mixed-version",
+      captured_at: "2026-10-28T16:26:00Z",
+      sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      byte_size: 5000,
+      source_path: "/fixture/session.jsonl",
+      complete: true,
+      parse_issue_count: 0,
+    },
+  ],
+
   "codex-thread-1": [
     {
       id: "codex-version-2",
@@ -157,6 +186,85 @@ const versions: Record<string, SessionVersion[]> = {
     },
   ],
 };
+
+const mixedEvents: EventRecord[] = [
+  record(1, { type: "session_meta", payload: { id: "fixture-thread", cwd: "/fixture/project" } }, "session_meta"),
+  record(
+    2,
+    {
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "Inspect the archived build failure and explain the result." }],
+      },
+    },
+    "response_item"
+  ),
+  record(
+    3,
+    {
+      type: "response_item",
+      payload: {
+        type: "reasoning",
+        summary: [{ type: "summary_text", text: "Check the failing target and its captured log." }],
+      },
+    },
+    "response_item"
+  ),
+  record(
+    4,
+    {
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "assistant",
+        phase: "commentary",
+        content: [{ type: "output_text", text: "I will inspect the build log." }],
+      },
+    },
+    "response_item"
+  ),
+  record(
+    5,
+    {
+      type: "response_item",
+      payload: { type: "function_call", name: "read_build_log", arguments: '{"target":"//fixture:test"}' },
+    },
+    "response_item"
+  ),
+  record(6, { type: "event_msg", payload: { type: "token_count", info: { total: 128 } } }, "event_msg"),
+  record(
+    7,
+    {
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        output: "Fixture build output: missing configuration for the test environment.",
+      },
+    },
+    "response_item"
+  ),
+  record(
+    8,
+    {
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "assistant",
+        phase: "final_answer",
+        content: [
+          {
+            type: "output_text",
+            text: "The archived failure comes from **missing test configuration**.\n\n```yaml\nfixture_enabled: true\n```\n\nThe captured output identifies the missing setting; the transcript does not show a subsequent rerun.",
+          },
+        ],
+      },
+    },
+    "response_item"
+  ),
+  record(9, { type: "event_msg", payload: { type: "task_complete" } }, "event_msg"),
+];
 
 const codexLatestEvents: EventRecord[] = [
   record(
@@ -257,17 +365,20 @@ export const sessionFixtureApi: SessionBrowserApi = {
   async listEvents(sessionId, versionId, cursor) {
     if (sessionId === "inferred-claude-parent") return { data: [], next_cursor: null };
     const selected =
-      sessionId === "codex-thread-1"
-        ? versionId === "codex-version-1"
-          ? codexOlderEvents
-          : codexLatestEvents
-        : claudeEvents;
-    const after = cursor ?? 0;
-    const data = selected.filter((record) => record.ordinal > after).slice(0, 3);
-    const last = data.at(-1)?.ordinal ?? null;
+      sessionId === "mixed-transcript-fixture"
+        ? mixedEvents
+        : sessionId === "codex-thread-1"
+          ? versionId === "codex-version-1"
+            ? codexOlderEvents
+            : codexLatestEvents
+          : claudeEvents;
+    const data = selected
+      .filter((record) => cursor === undefined || record.ordinal < cursor)
+      .slice(-(sessionId === "mixed-transcript-fixture" ? 50 : 3));
+    const first = data.at(0)?.ordinal ?? null;
     return {
       data,
-      next_cursor: last !== null && selected.some((record) => record.ordinal > last) ? last : null,
+      next_cursor: first !== null && selected.some((record) => record.ordinal < first) ? first : null,
     };
   },
 };

@@ -23,7 +23,7 @@ pub use fixture_spec::{
 };
 pub use fixture_spec::{ChunkRenameEntry, chunk_rename, chunk_rename_with_purity, chunk_renames};
 
-use analysis::DependencyGraphReport;
+use analysis::{DependencyGraphReport, ProgramGraphReport};
 use artifact::reports::PackageManifest;
 use output_layout::{APP_DIR, GATE_REJECTED_MARKER};
 use runfiles::{Runfiles, rlocation};
@@ -95,11 +95,24 @@ impl Fixture {
     pub fn dependency_graph(&self) -> DependencyGraphReport {
         read_dependency_graph(&self.report_root, &self.chunk_id)
     }
+
+    pub fn program_graph(&self) -> ProgramGraphReport {
+        read_program_graph(
+            &self
+                .report_root
+                .join(&self.chunk_id)
+                .join("dependency_graph.json"),
+        )
+    }
 }
 
 impl RejectedFixture {
     pub fn dependency_graph(&self) -> DependencyGraphReport {
         self.read_report("dependency_graph.json")
+    }
+
+    pub fn program_graph(&self) -> ProgramGraphReport {
+        read_program_graph(&self.report_path("dependency_graph.json"))
     }
 
     /// Where `--emit-on-rejection` writes the logical-module tree.
@@ -147,6 +160,16 @@ impl RejectedFixture {
 
 fn read_dependency_graph(report_root: &Path, chunk_id: &str) -> DependencyGraphReport {
     read_json(&report_root.join(chunk_id).join("dependency_graph.json"))
+}
+
+/// The `program_graph.json` that the graph at `graph_path` references.
+pub fn program_graph_path(graph_path: &Path) -> PathBuf {
+    let graph: DependencyGraphReport = read_json(graph_path);
+    graph_provenance::program_graph_path(graph_path, &graph.program_graph)
+}
+
+fn read_program_graph(graph_path: &Path) -> ProgramGraphReport {
+    read_json(&program_graph_path(graph_path))
 }
 
 pub struct DryRunFixture {

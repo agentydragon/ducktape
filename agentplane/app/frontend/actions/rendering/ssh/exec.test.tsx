@@ -26,7 +26,7 @@ async function drawn(node: ReactNode | null): Promise<HTMLDivElement> {
 
 /** The labels of the output streams shown, in order, with each one's text. */
 function streams(container: HTMLElement): Array<[string, string]> {
-  return [...container.querySelectorAll(".agentplane-code-block-block")].map((block) => [
+  return [...container.querySelectorAll(".ui-code-block-block")].map((block) => [
     block.closest(".agentplane-output-disclosure")?.querySelector(".agentplane-output-label")?.textContent?.trim() ??
       "",
     [...block.querySelectorAll(".cm-line")].map((line) => line.textContent ?? "").join("\n"),
@@ -72,7 +72,7 @@ describe("ssh exec summary", () => {
     const command = "if true; then echo test-output; fi";
     const container = await drawn(renderPreview(execCollapsedPreview, { ...ARGUMENTS, command }));
     expect(container.textContent).toContain(command);
-    expect([...container.querySelectorAll(".agentplane-tok-keyword")].map((node) => node.textContent)).toEqual(
+    expect([...container.querySelectorAll(".ui-tok-keyword")].map((node) => node.textContent)).toEqual(
       expect.arrayContaining(["if", "then", "fi"])
     );
   });
@@ -113,7 +113,7 @@ describe("ssh exec result", () => {
     await act(async () => showAll?.click());
     expect(container.querySelector('[data-clamped="true"]')).toBeNull();
     const outputDisclosure = container.querySelector<HTMLButtonElement>(
-      ".agentplane-output-disclosure .agentplane-disclosure-summary"
+      ".agentplane-output-disclosure .ui-disclosure-summary"
     );
     expect(outputDisclosure?.getAttribute("aria-expanded")).toBe("true");
     await act(async () => outputDisclosure?.click());

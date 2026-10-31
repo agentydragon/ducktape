@@ -154,7 +154,8 @@ class ViewportRig {
       `view-${this.threadId}`,
       this.geometry,
       (synchronous) => this.renderRequests.push(synchronous),
-      loadOlder
+      loadOlder,
+      undefined
     );
     activeRigs.add(this);
   }

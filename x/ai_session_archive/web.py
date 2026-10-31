@@ -16,6 +16,7 @@ from util.oidc_login import LoginConfig, install_login
 from x.ai_session_archive import queries
 from x.ai_session_archive.database import make_session_factory
 from x.ai_session_archive.models import (
+    EventDirection,
     EventPage,
     Harness,
     Machine,
@@ -106,9 +107,12 @@ def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | No
         version_id: UUID,
         cursor: Annotated[int | None, Query(ge=0)] = None,
         limit: Annotated[int, Query(ge=1, le=500)] = 100,
+        direction: EventDirection = EventDirection.FORWARD,
     ) -> EventPage:
         with factory() as db:
-            page = queries.list_events(db, session_id=session_id, version_id=version_id, cursor=cursor, limit=limit)
+            page = queries.list_events(
+                db, session_id=session_id, version_id=version_id, cursor=cursor, limit=limit, direction=direction
+            )
             if page is None:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "Session version not found")
             return page

@@ -6,7 +6,7 @@ import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 import type { ModelCatalog, SessionDefaultsView } from "../schema";
 import { harnessOptions, modelsForHarness, type Harness } from "../model_catalog";
 import { api, displayableError } from "../client";
-import { Disclosure, DisclosureBody } from "../disclosure";
+import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
 import { SessionSpecSchema, type SessionSpec } from "../../../proto/runner_pb";
 
 type LoadedPresetDefaults = { preset: string | null; defaults: Partial<SessionDefaultsView> | null };

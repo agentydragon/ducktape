@@ -43,7 +43,7 @@ async def mount(view: VisualPage, app: AgentplaneFixture, *attached: str, **disc
 
 @MOBILE_ONLY
 async def test_collapsed_disclosure(view: VisualPage, app: AgentplaneFixture) -> None:
-    page = await mount(view, app, ".demo-main .agentplane-disclosure-summary[aria-expanded='false']", open=False)
+    page = await mount(view, app, ".demo-main .ui-disclosure-summary[aria-expanded='false']", open=False)
     await expect(page.locator(_MAIN)).to_have_attribute("data-expanded", "false")
     assert await page.locator(_SCROLL).evaluate("element => element.scrollTop") == 0
     await view.capture()
@@ -51,7 +51,7 @@ async def test_collapsed_disclosure(view: VisualPage, app: AgentplaneFixture) ->
 
 @MOBILE_ONLY
 async def test_short_disclosure_fits(view: VisualPage, app: AgentplaneFixture) -> None:
-    page = await mount(view, app, ".demo-main .agentplane-disclosure-summary[aria-expanded='true']", short=True)
+    page = await mount(view, app, ".demo-main .ui-disclosure-summary[aria-expanded='true']", short=True)
     assert not await page.locator(_SCROLL).evaluate("element => element.scrollHeight > element.clientHeight")
     await expect(page.locator(_MAIN)).to_have_attribute("data-expanded", "true")
     await view.capture()
@@ -59,7 +59,7 @@ async def test_short_disclosure_fits(view: VisualPage, app: AgentplaneFixture) -
 
 @MOBILE_ONLY
 async def test_long_disclosure_before_sticking(view: VisualPage, app: AgentplaneFixture) -> None:
-    page = await mount(view, app, ".demo-main .agentplane-disclosure-summary[aria-expanded='true']")
+    page = await mount(view, app, ".demo-main .ui-disclosure-summary[aria-expanded='true']")
     assert await page.locator(_SCROLL).evaluate("element => element.scrollHeight > element.clientHeight")
     assert await page.locator(_SCROLL).evaluate("element => element.scrollTop") == 0
     top = await _heading_top(page, _MAIN)
@@ -70,7 +70,7 @@ async def test_long_disclosure_before_sticking(view: VisualPage, app: Agentplane
 
 @MOBILE_ONLY
 async def test_long_disclosure_sticks(view: VisualPage, app: AgentplaneFixture) -> None:
-    page = await mount(view, app, ".demo-main .agentplane-disclosure-heading[data-expanded='true']")
+    page = await mount(view, app, ".demo-main .ui-disclosure-heading[data-expanded='true']")
     await _scroll_to_copy(page, "long-paragraph", 64)
     await _expect_at(page, _MAIN, 0)
     await view.capture()
@@ -242,11 +242,11 @@ async def test_disclosure_control_reaches_card_edges(shell_calls: VisualPage, st
         control = (
             page.locator(".agentplane-step-details")
             .filter(has=page.locator(".agentplane-step-title:text-is('Bash')"))
-            .locator(".agentplane-disclosure-summary")
+            .locator(".ui-disclosure-summary")
             .first
         )
     else:
-        control = page.locator(".agentplane-disclosure-summary").filter(has_text="tool calls").first
+        control = page.locator(".ui-disclosure-summary").filter(has_text="tool calls").first
     if state == "tool-hover":
         await _focus(page, control)
     else:
@@ -287,10 +287,10 @@ async def test_disclosure_control_reaches_card_edges(shell_calls: VisualPage, st
 @pytest.mark.parametrize("color_scheme", ["light", "dark"])
 async def test_run_summary_keeps_horizontal_position(shell_calls: VisualPage) -> None:
     page = shell_calls.page
-    control = page.locator(".agentplane-disclosure-summary").filter(has_text="tool calls").first
+    control = page.locator(".ui-disclosure-summary").filter(has_text="tool calls").first
     await page.get_by_role("region", name="Thread history").evaluate("el => { el.scrollTop = 0; }")
     await wait_for_stable(page)
-    label = control.locator(".agentplane-disclosure-summary-content")
+    label = control.locator(".ui-disclosure-summary-content")
     chevron = control.locator(".mantine-Accordion-chevron")
     before = [await label.bounding_box(), await chevron.bounding_box()]
     await control.click()
