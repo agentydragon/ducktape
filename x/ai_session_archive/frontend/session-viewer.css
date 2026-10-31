@@ -179,6 +179,30 @@
   flex: 0 0 auto;
 }
 
+.session-import-machine-progress-pending {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgb(255 255 255 / 0.24) 0,
+    rgb(255 255 255 / 0.24) 3px,
+    transparent 3px,
+    transparent 6px
+  );
+  background-size: 200% 100%;
+  animation: session-import-progress-stripes 1s linear infinite;
+}
+
+@keyframes session-import-progress-stripes {
+  to {
+    background-position: 12px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-import-machine-progress-pending {
+    animation: none;
+  }
+}
+
 .session-import-machine-counts {
   white-space: nowrap;
 }
@@ -234,6 +258,10 @@
 
 .session-browser-header .session-import-summary {
   flex: 0 1 auto;
+}
+
+.session-browser-header .session-import-machine-name {
+  max-width: 7rem;
 }
 
 .session-browser-header > :first-child {

@@ -16,6 +16,7 @@ import {
   Title,
 } from "@mantine/core";
 import { Link, useLocation } from "react-router";
+import IconCheck from "@tabler/icons-react/dist/esm/icons/IconCheck.mjs";
 
 import { httpApi, type SessionBrowserApi } from "./api";
 import type { MachineImportProgress, SnapshotImportState } from "./schema";
@@ -114,7 +115,6 @@ export function MachineImportProgressSummary({
   error: string | null;
   returnTo: string;
 }): JSX.Element {
-  const incompleteMachines = progress.filter(machineImportIsIncomplete);
   return (
     <Group
       component="section"
@@ -134,16 +134,30 @@ export function MachineImportProgressSummary({
         <Text size="xs" c="dimmed">
           No machines registered
         </Text>
-      ) : incompleteMachines.length === 0 ? (
-        <Text size="xs" c="dimmed">
-          All imports complete
-        </Text>
       ) : (
-        incompleteMachines.map((machine) => {
+        progress.map((machine) => {
           const totalFileCount = machine.processed_file_count + machine.pending_file_count + machine.failed_file_count;
-          const processedPercentage = totalFileCount === 0 ? 0 : (machine.processed_file_count / totalFileCount) * 100;
-          const pendingPercentage = totalFileCount === 0 ? 0 : (machine.pending_file_count / totalFileCount) * 100;
-          const failedPercentage = totalFileCount === 0 ? 0 : (machine.failed_file_count / totalFileCount) * 100;
+          const pendingSnapshotCount = Math.max(
+            0,
+            machine.known_snapshot_count - machine.completed_snapshot_count - machine.failed_snapshot_count
+          );
+          const useSnapshotProgress =
+            machine.pending_file_count === 0 && pendingSnapshotCount > 0 && machine.known_snapshot_count > 0;
+          const totalProgressCount = useSnapshotProgress ? machine.known_snapshot_count : totalFileCount;
+          const completedProgressCount = useSnapshotProgress
+            ? machine.completed_snapshot_count
+            : machine.processed_file_count;
+          const pendingProgressCount = useSnapshotProgress ? pendingSnapshotCount : machine.pending_file_count;
+          const failedProgressCount = useSnapshotProgress ? machine.failed_snapshot_count : machine.failed_file_count;
+          const progressActive = machineImportIsActive(machine);
+          const completedPercentage =
+            totalProgressCount === 0 ? 0 : (completedProgressCount / totalProgressCount) * 100;
+          const pendingPercentage = totalProgressCount === 0 ? 0 : (pendingProgressCount / totalProgressCount) * 100;
+          const failedPercentage = totalProgressCount === 0 ? 0 : (failedProgressCount / totalProgressCount) * 100;
+          const progressLabel = useSnapshotProgress
+            ? `${machine.display_name} snapshot progress`
+            : `${machine.display_name} file-entry progress`;
+          const isSynced = !machineImportIsIncomplete(machine);
 
           return (
             <Box
@@ -155,43 +169,61 @@ export function MachineImportProgressSummary({
               <Text size="xs" fw={500} className="session-import-machine-name" title={machine.display_name}>
                 {machine.display_name}
               </Text>
-              {machineImportIsActive(machine) ? (
-                <Loader
-                  size={12}
+              {isSynced ? (
+                <Text
+                  size="xs"
+                  c="green"
                   role="status"
-                  aria-label={`Syncing ${machine.display_name}`}
+                  aria-label={`${machine.display_name} synced`}
                   className="session-import-machine-state"
-                />
-              ) : (
-                <Badge size="xs" variant="light" color="red" className="session-import-machine-state">
-                  Needs attention
-                </Badge>
-              )}
-              {totalFileCount > 0 ? (
-                <>
-                  <Progress.Root
-                    role="progressbar"
-                    aria-label={`${machine.display_name} file-entry progress`}
-                    aria-valuemin={0}
-                    aria-valuemax={totalFileCount}
-                    aria-valuenow={machine.processed_file_count}
-                    aria-valuetext={`${machine.processed_file_count} processed, ${machine.pending_file_count} pending, ${machine.failed_file_count} failed of ${totalFileCount} inventoried file entries`}
-                    size="xs"
-                    className="session-import-machine-progress"
-                  >
-                    {processedPercentage > 0 && <Progress.Section value={processedPercentage} color="blue" />}
-                    {pendingPercentage > 0 && <Progress.Section value={pendingPercentage} color="yellow" />}
-                    {failedPercentage > 0 && <Progress.Section value={failedPercentage} color="red" />}
-                  </Progress.Root>
-                  <Text size="xs" c="dimmed" className="session-import-machine-counts">
-                    {machine.processed_file_count}/{totalFileCount}
-                    {machine.failed_file_count > 0 ? ` · ${machine.failed_file_count} failed` : ""}
-                  </Text>
-                </>
-              ) : (
-                <Text size="xs" c="dimmed" className="session-import-machine-counts">
-                  {snapshotStateLabel(machine.oldest_unfinished_snapshot_state)}
+                >
+                  <IconCheck aria-hidden="true" size={12} /> Synced
                 </Text>
+              ) : (
+                <>
+                  {!progressActive && (
+                    <Badge size="xs" variant="light" color="red" className="session-import-machine-state">
+                      Needs attention
+                    </Badge>
+                  )}
+                  {totalProgressCount > 0 ? (
+                    <>
+                      <Progress.Root
+                        role="progressbar"
+                        aria-label={progressLabel}
+                        aria-valuemin={0}
+                        aria-valuemax={totalProgressCount}
+                        aria-valuenow={completedProgressCount}
+                        aria-valuetext={
+                          useSnapshotProgress
+                            ? `${completedProgressCount} of ${totalProgressCount} registered snapshots complete, ${failedProgressCount} failed`
+                            : `${completedProgressCount} processed, ${pendingProgressCount} pending, ${failedProgressCount} failed of ${totalProgressCount} inventoried file entries`
+                        }
+                        size="xs"
+                        className={`session-import-machine-progress${progressActive ? " session-import-machine-progress-active" : ""}`}
+                      >
+                        {completedPercentage > 0 && <Progress.Section value={completedPercentage} color="blue" />}
+                        {pendingPercentage > 0 && (
+                          <Progress.Section
+                            value={pendingPercentage}
+                            color="yellow"
+                            className={progressActive ? "session-import-machine-progress-pending" : undefined}
+                          />
+                        )}
+                        {failedPercentage > 0 && <Progress.Section value={failedPercentage} color="red" />}
+                      </Progress.Root>
+                      <Text size="xs" c="dimmed" className="session-import-machine-counts">
+                        {useSnapshotProgress
+                          ? `${pendingSnapshotCount}/${machine.known_snapshot_count} snapshots remaining${machine.failed_snapshot_count > 0 ? ` · ${machine.failed_snapshot_count} failed` : ""}`
+                          : `${machine.processed_file_count}/${totalFileCount}${machine.failed_file_count > 0 ? ` · ${machine.failed_file_count} failed` : ""}`}
+                      </Text>
+                    </>
+                  ) : (
+                    <Text size="xs" c="dimmed" className="session-import-machine-counts">
+                      {snapshotStateLabel(machine.oldest_unfinished_snapshot_state)}
+                    </Text>
+                  )}
+                </>
               )}
             </Box>
           );
