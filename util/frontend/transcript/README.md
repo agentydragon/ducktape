@@ -37,6 +37,9 @@ own decoding, grouping, fetching, loading/error UI and any provisional tail.
   remount.
 - History opens at the bottom and follows the tail until the reader scrolls up.
   `showJumpToLatest` controls the explicit return-to-tail button.
+  Expanding content preserves the disclosure's position; subsequent native scrolling
+  releases that pinned target, including any nested-landmark lookup, so anchor
+  restoration cannot undo the reader's movement.
 - `earlier` offers optional prepend loading near the start; `tail` holds provisional
   content or an empty state. The library owns neither API nor cursor semantics.
 - `diagnostics` optionally receives geometry and interaction events. Applications can pass a
