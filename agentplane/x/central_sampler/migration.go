@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 
-	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
 )
@@ -15,10 +14,8 @@ import (
 //go:embed schema/*.sql
 var migrationFiles embed.FS
 
-// Migrate applies the sampler-owned Goose SQL migrations, converts retained conversations to
-// their native API representation, and verifies the resulting schema. modelAPIs explicitly maps
-// configured public model routes to their provider API for legacy sessions without request evidence.
-func Migrate(ctx context.Context, db *sql.DB, modelAPIs map[string]protocol.APIStyle) error {
+// Migrate applies the sampler-owned Goose SQL migrations and verifies the native schema.
+func Migrate(ctx context.Context, db *sql.DB) error {
 	files, err := fs.Sub(migrationFiles, "schema")
 	if err != nil {
 		return err
@@ -36,15 +33,12 @@ func Migrate(ctx context.Context, db *sql.DB, modelAPIs map[string]protocol.APIS
 	if _, err := provider.Up(ctx); err != nil {
 		return err
 	}
-	if err := migrateNativeConversations(ctx, db, modelAPIs); err != nil {
-		return fmt.Errorf("migrate native sampler conversations: %w", err)
-	}
 	return verifySchema(ctx, db)
 }
 
 func verifySchema(ctx context.Context, db *sql.DB) error {
 	expected := map[string]map[string]string{
-		"sampler_conversation":      {"api": "text", "code_session_epoch": "integer", "id": "uuid", "generation": "integer", "owner": "uuid", "lease_until": "timestamp with time zone", "pending": "jsonb", "stopped": "boolean", "executor_session": "character varying", "context": "jsonb", "instructions": "text", "context_tokens": "integer", "executor_shell": "character varying", "environment_context": "jsonb"},
+		"sampler_conversation":      {"api": "text", "code_session_epoch": "integer", "code_host_instance": "uuid", "id": "uuid", "generation": "integer", "owner": "uuid", "lease_until": "timestamp with time zone", "pending": "jsonb", "stopped": "boolean", "executor_session": "character varying", "context": "jsonb", "instructions": "text", "context_tokens": "integer", "executor_shell": "character varying", "environment_context": "jsonb"},
 		"sampler_conversation_item": {"conversation_id": "uuid", "ordinal": "bigint", "record": "jsonb"},
 		"sampler_intent":            {"id": "uuid", "conversation_id": "uuid", "generation": "integer", "request": "jsonb", "result": "jsonb"},
 		"sampler_process":           {"id": "character varying", "conversation_id": "uuid", "generation": "integer", "after_seq": "integer", "status": "character varying", "tty": "boolean", "exit_code": "integer", "buffered_output": "bytea", "model_session_id": "integer", "omitted_bytes": "bigint"},

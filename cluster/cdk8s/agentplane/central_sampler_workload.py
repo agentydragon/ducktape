@@ -8,13 +8,11 @@ from urllib.parse import urlsplit
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
-    ContainerProps,
     ContainerResources,
     Cpu,
     CpuResources,
     DeploymentStrategy,
     EnvValue,
-    ImagePullPolicy,
     MemoryResources,
     PathMapping,
     Secret,
@@ -117,6 +115,9 @@ class CentralSampler(Construct):
             env_variables={config_env: EnvValue.from_value(_CONFIG_PATH), database_env: database_url},
             readiness=grpc_probe(port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=grpc_probe(port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30),
+            startup=grpc_probe(
+                port=self.service.pod_port, initial_delay_seconds=0, period_seconds=5, failure_threshold=60
+            ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(100), limit=Cpu.millis(2000)),
                 memory=MemoryResources(request=Size.mebibytes(512), limit=Size.gibibytes(4)),
@@ -127,22 +128,10 @@ class CentralSampler(Construct):
             replica_profile=replace(
                 env.replicas, count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None
             ),
-            migrate=ContainerProps(
-                name="initialize-database",
-                image=_IMAGE,
-                image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-                args=["--initialize"],
-                env_variables={config_env: EnvValue.from_value(_CONFIG_PATH), database_env: database_url},
-                resources=ContainerResources(
-                    cpu=CpuResources(request=Cpu.millis(25)),
-                    memory=MemoryResources(request=Size.mebibytes(64), limit=Size.mebibytes(256)),
-                ),
-            ),
             placement=placement,
             registry_secret_name=registry_secret_name,
         )
         workload.container.mount(str(Path(_CONFIG_PATH).parent), settings_volume, read_only=True)
-        workload.deployment.init_containers[0].mount(str(Path(_CONFIG_PATH).parent), settings_volume, read_only=True)
         workload.container.mount(_LOGS_PATH, Volume.from_empty_dir(self, "logs-volume", "logs"))
         for connection_name, secret_key in props.connection_credentials.items():
             connection = props.connections.get(connection_name)

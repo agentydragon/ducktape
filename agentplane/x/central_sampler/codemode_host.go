@@ -30,16 +30,18 @@ type CodeModeHost struct {
 	cancelHost   context.CancelFunc
 	rpcTimeout   time.Duration
 
-	connectMu    sync.Mutex
-	mu           sync.Mutex
-	closed       bool
-	stopping     bool
-	starting     chan struct{}
-	retiring     chan struct{}
-	host         *Host
-	failed       error
-	startProcess func(context.Context, string, string) (*Host, error)
-	closeProcess func(*Host) error
+	connectMu         sync.Mutex
+	mu                sync.Mutex
+	closed            bool
+	stopping          bool
+	starting          chan struct{}
+	retiring          chan struct{}
+	host              *Host
+	instanceID        string
+	failed            error
+	startProcess      func(context.Context, string, string) (*Host, error)
+	closeProcess      func(*Host) error
+	stampHostInstance func(context.Context, Owner, string) error
 
 	nextID         int64
 	pending        map[int64]*codePending
@@ -66,7 +68,16 @@ func NewCodeModeHost(parent context.Context, settings Settings, store *Store) *C
 		sessionIDs: map[string]string{}, openedSessions: map[string]struct{}{},
 		writeGate:    make(chan struct{}, 1),
 		startProcess: StartHost, closeProcess: func(host *Host) error { return host.Close() },
+		instanceID: uuid.NewString(),
 	}
+}
+
+// InstanceID identifies this host process generation, including a restart within one sampler Pod.
+// It is recorded for a conversation only after that conversation opens a host session.
+func (m *CodeModeHost) InstanceID() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.instanceID
 }
 
 func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, owner Owner, executor *Executor) (*CodeMode, error) {
@@ -107,6 +118,7 @@ func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, o
 	}
 	_, opened := m.openedSessions[sessionID]
 	host := m.host
+	instanceID := m.instanceID
 	runtime := newCodeModeBinding(ctx, m, host, m.store, owner, executor, sessionID)
 	m.active[sessionID] = runtime
 	m.mu.Unlock()
@@ -133,6 +145,20 @@ func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, o
 			m.openedSessions[sessionID] = struct{}{}
 		}
 		m.mu.Unlock()
+	}
+	if m.store != nil {
+		stamp := m.store.StampCodeHostInstance
+		if m.stampHostInstance != nil {
+			stamp = m.stampHostInstance
+		}
+		if err := stamp(ctx, owner, instanceID); err != nil {
+			_ = runtime.Detach(context.Background())
+			return nil, err
+		}
+	}
+	if runtime.Err() != nil {
+		_ = runtime.Detach(context.Background())
+		return nil, errCodeHostInstanceChanged
 	}
 	return runtime, nil
 }
@@ -581,6 +607,7 @@ func (m *CodeModeHost) fail(host *Host, err error) {
 	}
 	m.failed = err
 	m.host = nil
+	m.instanceID = uuid.NewString()
 	retiring := make(chan struct{})
 	m.retiring = retiring
 	m.sessionIDs = map[string]string{}

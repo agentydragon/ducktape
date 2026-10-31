@@ -297,6 +297,11 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 	if err != nil || !setupOK {
 		return nil, err
 	}
+	sessionForHost, err := r.store.GetSession(ctx, sessionID, "")
+	if err != nil {
+		return nil, err
+	}
+	encoding := r.settings.Models[sessionForHost.Model].ExecEncoding
 	if r.isDraining() {
 		return nil, nil
 	}
@@ -315,6 +320,19 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 	for {
 		if ctx.Err() != nil {
 			return activeCommand, ctx.Err()
+		}
+		if live != nil && live.code.Err() != nil {
+			closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = live.Close(closeCtx)
+			closeCancel()
+			live = nil
+		}
+		changed, err := r.store.ReconcileCodeHostLoss(ctx, owner, r.codeHost.InstanceID(), encoding)
+		if err != nil {
+			return activeCommand, err
+		}
+		if changed {
+			continue
 		}
 		if r.isDraining() {
 			return activeCommand, nil
@@ -346,6 +364,9 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 			}
 			if live == nil {
 				live, err = r.connectHost(ctx, sessionID, owner)
+				if errors.Is(err, errCodeHostInstanceChanged) {
+					continue
+				}
 				if err != nil {
 					return activeCommand, err
 				}
@@ -400,6 +421,20 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 			result = TurnCompact
 		} else {
 			for {
+				if live != nil && live.code.Err() != nil {
+					closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+					_ = live.Close(closeCtx)
+					closeCancel()
+					live = nil
+				}
+				changed, reconcileErr := r.store.ReconcileCodeHostLoss(turnCtx, owner, r.codeHost.InstanceID(), encoding)
+				if reconcileErr != nil {
+					err = reconcileErr
+					break
+				}
+				if changed {
+					continue
+				}
 				if r.isDraining() {
 					cancel()
 					return activeCommand, nil
@@ -429,6 +464,9 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 						}
 						if len(interrupts) == 0 || len(state.Cells) > 0 {
 							live, err = r.connectHost(ctx, sessionID, owner)
+							if errors.Is(err, errCodeHostInstanceChanged) {
+								continue
+							}
 							if err != nil {
 								break
 							}
