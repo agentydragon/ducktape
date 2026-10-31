@@ -13,9 +13,9 @@ pytest_plugins = ("util.testing.visual_fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
-async def test_session_list_and_captured_version(visual: VisualHarness, capture_name: str) -> None:
+async def test_session_list_and_compact_import_progress(visual: VisualHarness, capture_name: str) -> None:
     async with visual.open(
-        "session-list-and-captured-version",
+        "session-list-and-compact-import-progress",
         viewport=Viewport(width=1440, height=1000),
         color_scheme="light",
         capture_name=capture_name,
@@ -26,12 +26,10 @@ async def test_session_list_and_captured_version(visual: VisualHarness, capture_
         await expect(progress).to_contain_text("ThinkPad")
         await expect(progress).to_contain_text("Atlas")
         await expect(progress).to_contain_text("Rugged")
-        await expect(progress).to_contain_text("Snapshots: 3 of 5 registered complete")
-        await expect(progress).to_contain_text("Codex metadata: 3 pending · 0 failed · 1 partial")
-        await expect(progress).to_contain_text("Codex metadata failed")
-        await expect(progress).to_contain_text("File entries: 42 processed · 9 pending · 2 failed")
-        await expect(progress).to_contain_text("File entries processed: 42 of 53 inventoried")
-        await expect(progress).to_contain_text("Snapshot counts include registered snapshots")
+        await expect(progress).to_contain_text("Syncing ThinkPad")
+        await expect(progress).to_contain_text("42/53 inventoried file entries processed · 2 failed")
+        await expect(progress).not_to_contain_text("Complete fixture machine")
+        await expect(progress).not_to_contain_text("Snapshots: 3 of 5 registered complete")
         rugged_progress = page.get_by_role("progressbar", name="Rugged file-entry progress")
         await expect(rugged_progress).to_have_attribute("aria-valuenow", "42")
         await expect(rugged_progress).to_have_attribute("aria-valuemax", "53")
@@ -50,9 +48,31 @@ async def test_session_list_and_captured_version(visual: VisualHarness, capture_
         await view.capture(target=page.locator("#root"))
 
 
-async def test_import_progress_on_mobile(visual: VisualHarness, capture_name: str) -> None:
+async def test_import_progress_details(visual: VisualHarness, capture_name: str) -> None:
     async with visual.open(
-        "import-progress-mobile",
+        "import-progress-details",
+        viewport=Viewport(width=1440, height=1000),
+        color_scheme="light",
+        capture_name=capture_name,
+    ) as view:
+        page = view.page
+        await page.get_by_role("link", name="Import details").click()
+        await expect(page.get_by_role("heading", name="Import progress details")).to_be_visible()
+        details = page.get_by_role("region", name="Import progress by machine")
+        await expect(details).to_contain_text("Snapshots: 3 of 5 registered complete")
+        await expect(details).to_contain_text("Codex metadata: 0 pending · 0 failed · 1 partial")
+        await expect(details).to_contain_text("Complete fixture machine")
+        await expect(details).to_contain_text("File counts cover entries inventoried so far")
+        await view.check(context="full progress breakdown is visible for every registered machine")
+        await view.capture(target=page.locator("#root"))
+
+        await page.get_by_role("link", name="Back to sessions").click()
+        await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
+
+
+async def test_compact_import_progress_on_mobile(visual: VisualHarness, capture_name: str) -> None:
+    async with visual.open(
+        "compact-import-progress-mobile",
         viewport=Viewport(width=390, height=844),
         color_scheme="light",
         capture_name=capture_name,
@@ -61,13 +81,11 @@ async def test_import_progress_on_mobile(visual: VisualHarness, capture_name: st
         progress = page.get_by_role("region", name="Import progress by machine")
         thinkpad_progress = page.get_by_role("progressbar", name="ThinkPad file-entry progress")
         session_list_toggle = page.get_by_role("button", name="Session list")
-        progress_explanation = page.locator(".session-import-progress-explanation-mobile")
-        await expect(progress).to_contain_text("File entries: 27 processed · 4 pending · 0 failed")
+        await expect(progress).to_contain_text("27/31 inventoried file entries processed")
+        await expect(progress).not_to_contain_text("Complete fixture machine")
         await expect(thinkpad_progress).to_have_attribute("aria-valuemax", "31")
         await expect(session_list_toggle).to_be_visible()
-        await expect(progress_explanation.locator("summary")).to_contain_text(
-            "Denominator: inventoried entries so far; can grow"
-        )
+        await expect(progress.get_by_role("link", name="Import details")).to_be_visible()
 
         progress_bounds = await thinkpad_progress.bounding_box()
         assert progress_bounds is not None
@@ -76,7 +94,7 @@ async def test_import_progress_on_mobile(visual: VisualHarness, capture_name: st
         assert progress_bounds["y"] >= 0
         assert progress_bounds["y"] + progress_bounds["height"] <= 844
 
-        await view.check(context="the first machine progress bar and session-list button fit the mobile viewport")
+        await view.check(context="compact import progress and the session-list button fit the mobile viewport")
         await view.capture(target=page.locator("#root"))
 
         await session_list_toggle.click()

@@ -53,6 +53,21 @@ const importProgress: MachineImportProgress[] = [
     pending_file_count: 9,
     failed_file_count: 2,
   },
+  {
+    machine_id: "completed-fixture",
+    display_name: "Complete fixture machine",
+    known_snapshot_count: 2,
+    completed_snapshot_count: 2,
+    failed_snapshot_count: 0,
+    codex_metadata_pending_snapshot_count: 0,
+    codex_metadata_failed_snapshot_count: 0,
+    codex_metadata_partial_snapshot_count: 1,
+    oldest_unfinished_snapshot_at: null,
+    oldest_unfinished_snapshot_state: null,
+    processed_file_count: 16,
+    pending_file_count: 0,
+    failed_file_count: 0,
+  },
 ];
 
 const sessions: SessionSummary[] = [
