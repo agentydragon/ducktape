@@ -157,9 +157,7 @@ async def test_thread_view_recording_contains_thread_layouts(view: VisualPage, a
     # Make a real scroll correction necessary; compact histories need no scroll write.
     await _open_standalone_reasoning(page)
     await expect(history).to_have_attribute("data-layout-settled", "true")
-    await history.hover()
-    await page.mouse.wheel(0, -300)
-    await page.get_by_role("button", name="Jump to latest", exact=True).click()
+    assert await history.evaluate("area => area.scrollHeight > area.clientHeight && area.scrollTop > 0")
     await page.get_by_role("button", name="Thread view recorder (recording)", exact=True).click()
     async with page.expect_download() as downloaded:
         await page.get_by_role("menuitem", name="Stop and download recording", exact=True).click()

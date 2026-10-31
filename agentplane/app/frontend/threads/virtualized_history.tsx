@@ -1,16 +1,29 @@
 import { Button, Paper, Text } from "@mantine/core";
-import { type JSX, type ReactNode, useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from "react";
+import {
+  type JSX,
+  type ReactNode,
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import { flushSync } from "react-dom";
 
 import { IconArrowDown } from "../icons";
 import { DISCLOSURE_STICKY_Z_INDEX } from "../disclosure";
-import { type ThreadWindow } from "./thread_sync";
+import { type ThreadEntity, type ThreadWindow } from "./thread_sync";
 import { rowKey, type HistoryRow } from "./history_rows";
 import { HistoryRowView } from "./history_row_views";
 import { HistoryGeometry } from "./history_geometry";
 import { HistoryViewport } from "./history_viewport";
 import { revealEvidenceOnTap } from "./thread_evidence";
 import { threadViewRecorder, markThreadViewEvent } from "./thread_view_recorder";
+
+const MemoizedHistoryRowView = memo(HistoryRowView);
 
 export interface VirtualizedHistoryProps {
   threadId: string;
@@ -77,6 +90,7 @@ function HistoryViewportView({
     )
   );
   const mounted = controller.range(plan, entities);
+  const live = useCallback((entity: ThreadEntity) => running && entity.turnId === activeTurn, [running, activeTurn]);
   useLayoutEffect(() => {
     controller.mount(viewport.current!, contents.current!, tailContent.current!);
     const unregister = threadViewRecorder.register(viewId, () => controller.snapshot());
@@ -172,10 +186,10 @@ function HistoryViewportView({
                 paddingBottom: "var(--mantine-spacing-xs)",
               }}
             >
-              <HistoryRowView
+              <MemoizedHistoryRowView
                 threadId={threadId}
                 row={row}
-                live={(entity) => running && entity.turnId === activeTurn}
+                live={live}
                 inputEchoes={inputEchoes}
                 onInputEchoLoaded={onInputEchoLoaded}
               />

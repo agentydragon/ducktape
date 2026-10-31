@@ -30,6 +30,7 @@ interface PendingWrite {
 
 const close = (left: number, right: number): boolean => Math.abs(left - right) <= 1;
 const clamp = (value: number, maximum: number): number => Math.max(0, Math.min(value, maximum));
+const OVERSCAN_PIXELS = 256;
 
 /** The DOM boundary: observers report changes; only reconcile() can move the viewport. */
 export class HistoryViewport {
@@ -156,7 +157,7 @@ export class HistoryViewport {
         top = Math.max(0, row.start + this.intent.anchor.inset - this.intent.anchor.offset);
       }
     }
-    return mountedRange(plan, top, height, height, retained);
+    return mountedRange(plan, top, height, OVERSCAN_PIXELS, retained);
   }
 
   /** A React commit is acknowledged only after its current boxes have been read. */

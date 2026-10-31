@@ -84,6 +84,12 @@ profiler (a Playwright trace or Chrome's performance timeline) — not ad hoc ti
 a placeholder past any thread length observed so far; revisit against real staging data if it
 turns out to matter.
 
+`bbr test //agentplane/app/frontend:profile_history --runs_per_test=3 --nocache_test_results`
+explicitly runs the Chromium CPU profiler at both sizes. It loads the entire window through
+pagination, traverses to the actual head and tail, checks bounded mounted rows, and saves
+`.cpuprofile` files and sampled-time summaries in undeclared outputs. The target is manual so
+routine visual review does not pay for profiling every unchanged scene.
+
 Report, for any candidate: lines changed in `virtualized_history.tsx`, ref/state count before and
 after, and the bundled JS size delta — the same shape agentydragon/ducktape#7841 reported for
 `react-virtuoso`. These inform the decision but don't override it.
