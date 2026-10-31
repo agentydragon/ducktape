@@ -94,3 +94,22 @@ fn a_selector_must_occur_exactly_once() {
         );
     }
 }
+
+/// A bundle-owned registry beside the certified write: without the premise its
+/// unknown key on an unknown receiver drops every bundle-owned global.
+const REGISTRY: &str = "const root = globalThis;\nfunction getInstance(name) { root.instances || (root.instances = {}); root.instances[name] || (root.instances[name] = { name }); return root.instances[name]; }\n";
+
+#[test]
+fn a_certified_write_keeps_bundle_owned_globals() {
+    let source = source(REGISTRY);
+    let members = ["install", "root", "getInstance"];
+    for (writes, accepted) in [(&[INSTALL][..], true), (&[][..], false)] {
+        let mut opts = opts(&source, &members, writes);
+        opts.host_behavior.predefined_globals = PredefinedGlobals::Standard;
+        if accepted {
+            assert_preserved_entry_output(&run_fixture(opts), "0 42\n");
+        } else {
+            expect_atomic_conflict_rejection(opts, &["values/native", "values/later"], &[]);
+        }
+    }
+}

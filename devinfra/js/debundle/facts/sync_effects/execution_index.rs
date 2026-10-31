@@ -5506,6 +5506,8 @@ struct ExecutionIndex {
     native_operation_input_evidence: BTreeMap<CallSite, NativeOperationInputEvidence>,
     native_operation_input_errors: Vec<String>,
     application_object_write_errors: Vec<String>,
+    /// Census write sites certified as targeting application objects.
+    application_object_writes: Vec<crate::analysis_inputs::ResolvedApplicationObjectWrite>,
     primitive_native_symbol_calls: BTreeSet<CallSite>,
     native_integrity_value_input_refs: BTreeSet<ValueInputRef>,
     /// Host claims and author premises the whole-program census consumed.
@@ -5684,6 +5686,7 @@ impl Default for ExecutionIndex {
             native_operation_input_evidence: BTreeMap::new(),
             native_operation_input_errors: Vec::new(),
             application_object_write_errors: Vec::new(),
+            application_object_writes: Vec::new(),
             primitive_native_symbol_calls: BTreeSet::new(),
             native_integrity_value_input_refs: BTreeSet::new(),
             native_integrity_consumed: ProofDependencies::default(),
@@ -6080,6 +6083,14 @@ impl ExecutionIndex {
             next.no_accessor_install_callables.clear();
             let mut next_symbol_for_intact = true;
             for write in &self.intrinsic_writes {
+                // A certified application-object write stores into no global.
+                if self
+                    .application_object_writes
+                    .iter()
+                    .any(|premise| premise.span.contains(write.span))
+                {
+                    continue;
+                }
                 let roots = context.roots(&write.receiver);
                 if roots
                     .iter()
@@ -8554,6 +8565,7 @@ impl ExecutionIndex {
         }
         index.native_write_census.unconditional = mutated_intrinsics;
         index.native_write_census.witnesses = Arc::new(unconditional_witnesses);
+        index.application_object_writes = hints.assumptions.application_object_writes.clone();
         let application_writes = &hints.assumptions.application_object_writes;
         let mut covered_application_writes = BTreeSet::new();
         for write in &index.intrinsic_writes {

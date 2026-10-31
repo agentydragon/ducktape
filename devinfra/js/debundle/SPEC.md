@@ -1396,8 +1396,9 @@ chunk_analysis_options:
 `source_text` must occur exactly once in the chunk's parser input, overlapping
 occurrences counted. The entry covers every census write whose source range
 lies inside that text, nested functions included, and must cover at least one.
-A covered write reaches no intrinsic slot: the census drops it and every proof
-that consumes the census records the entry. The engine rejects an entry
+A covered write reaches no intrinsic slot and stores into no global property:
+the census and the bundle-owned fixed point (§ Bundle-owned globals) drop it,
+and every proof that consumes the census records the entry. The engine rejects an entry
 covering a write whose receiver the source already resolves to a specific
 intrinsic object or prototype; an unresolved, descendant or ordinary receiver
 is the author's to audit.
