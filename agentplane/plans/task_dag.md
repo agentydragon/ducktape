@@ -368,6 +368,11 @@ Do not equate creating a resource, reading history, sending a message or receivi
 selects service-enforced Session-access `PolicySet` rules assigned through existing `PolicyBinding`s.
 Resource-owning backends share evaluation code and enforce their own APIs. Native RBAC variants
 remain alternatives if implementation reveals a poor fit; comparing or building them is not a gate.
+**Operator clarification, 2026-10-30 PDT:** inbox tags and history tags are the current direction
+for cross-ServiceAccount sends and reads, and may be reconsidered. Their presence in implementation
+or existing plans does not make them a permanent domain constraint. Use the realistic workflow
+examples to evaluate the mechanism; an alternative may require backend work and replanning.
+Existing authorization continues to apply until a replacement contract is selected and implemented.
 SA-level caller attribution, configurable topology and live shared bundles are agreed constraints.
 Replacing the authorization machinery across services is a separate deferred evaluation, not a
 multiagent prerequisite. Preserve existing auth semantics; a concrete limitation must justify any
