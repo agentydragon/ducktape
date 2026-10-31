@@ -467,6 +467,8 @@ go_test(
         "//agentplane/x/central_sampler/responses",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
+        "@com_github_pressly_goose_v3//:goose",
+        "@com_github_pressly_goose_v3//lock",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_client_go//util/workqueue",

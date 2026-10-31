@@ -3,11 +3,16 @@ package centralsampler
 import (
 	"context"
 	"database/sql"
+	"io/fs"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
+
+	"github.com/pressly/goose/v3"
+	"github.com/pressly/goose/v3/lock"
 )
 
 func migrationExec(t *testing.T, db *sql.DB, query string, args ...any) {
@@ -28,9 +33,29 @@ func migrationCount(t *testing.T, db *sql.DB, query string, args ...any) int {
 
 func seedCompletedNativeSeven(t *testing.T, db *sql.DB) {
 	t.Helper()
-	migrationExec(t, db, `DELETE FROM central_sampler_goose_version WHERE version_id=8`)
+	migrationExec(t, db, `DELETE FROM central_sampler_goose_version WHERE version_id IN (8,9)`)
 	migrationExec(t, db, `INSERT INTO central_sampler_goose_version(version_id,is_applied)
 		SELECT version_id,true FROM generate_series(1,7) AS version_id`)
+}
+
+func migrateBaselineEight(ctx context.Context, db *sql.DB) error {
+	contents, err := fs.ReadFile(migrationFiles, "schema/0008_final_schema.sql")
+	if err != nil {
+		return err
+	}
+	files := fstest.MapFS{"0008_final_schema.sql": &fstest.MapFile{Data: contents}}
+	locker, err := lock.NewPostgresSessionLocker(lock.WithLockID(7241821))
+	if err != nil {
+		return err
+	}
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, files,
+		goose.WithTableName("central_sampler_goose_version"), goose.WithSessionLocker(locker),
+		goose.WithDisableGlobalRegistry(true))
+	if err != nil {
+		return err
+	}
+	_, err = provider.Up(ctx)
+	return err
 }
 
 func samplerRelationNodes(t *testing.T, db *sql.DB) map[string]int64 {
@@ -87,7 +112,7 @@ func TestNativeBaselineAdoptsSevenWithoutLockingServingRows(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	if err := Migrate(ctx, store.DB()); err != nil {
+	if err := migrateBaselineEight(ctx, store.DB()); err != nil {
 		t.Fatalf("adopt native version 7 while a conversation is serving: %v", err)
 	}
 	if got := migrationCount(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version
@@ -108,7 +133,7 @@ func TestNativeBaselineAdoptsSevenWithoutLockingServingRows(t *testing.T) {
 		WHERE conversation_id=$1 AND record->>'provider_id'='9007199254740993'`, session.ConversationID); got != 1 {
 		t.Fatalf("retained provider record rows = %d, want 1", got)
 	}
-	if err := Migrate(t.Context(), store.DB()); err != nil {
+	if err := migrateBaselineEight(t.Context(), store.DB()); err != nil {
 		t.Fatalf("repeat baseline initialization: %v", err)
 	}
 }
@@ -125,7 +150,7 @@ func TestNativeBaselineRejectsIncompleteSevenWithoutMarkingAdopted(t *testing.T)
 			seedCompletedNativeSeven(t, store.DB())
 			migrationExec(t, store.DB(), tc.change)
 			beforeNodes := samplerRelationNodes(t, store.DB())
-			err := Migrate(t.Context(), store.DB())
+			err := migrateBaselineEight(t.Context(), store.DB())
 			if err == nil || !strings.Contains(err.Error(), "Sampler") {
 				t.Fatalf("Migrate error = %v, want incomplete native schema rejection", err)
 			}
@@ -142,8 +167,8 @@ func TestNativeBaselineRejectsIncompleteSevenWithoutMarkingAdopted(t *testing.T)
 
 func TestNativeBaselineRejectsUnmarkedExistingSchema(t *testing.T) {
 	store := newTestStore(t)
-	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id=8`)
-	if err := Migrate(t.Context(), store.DB()); err == nil || !strings.Contains(err.Error(), "without completed version 7 history") {
+	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id IN (8,9)`)
+	if err := migrateBaselineEight(t.Context(), store.DB()); err == nil || !strings.Contains(err.Error(), "without completed version 7 history") {
 		t.Fatalf("Migrate error = %v, want unmarked schema rejection", err)
 	}
 }
@@ -158,7 +183,7 @@ func TestNativeBaselineConcurrentAdoption(t *testing.T) {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			errors <- Migrate(t.Context(), store.DB())
+			errors <- migrateBaselineEight(t.Context(), store.DB())
 		}()
 	}
 	workers.Wait()
@@ -174,5 +199,20 @@ func TestNativeBaselineConcurrentAdoption(t *testing.T) {
 	}
 	if after := samplerRelationNodes(t, store.DB()); !reflect.DeepEqual(beforeNodes, after) {
 		t.Fatalf("concurrent adoption rewrote sampler tables: before %v, after %v", beforeNodes, after)
+	}
+}
+
+func TestPriorBaselineProviderStartsAfterHostMarkerMigration(t *testing.T) {
+	store := newTestStore(t)
+	if err := migrateBaselineEight(t.Context(), store.DB()); err != nil {
+		t.Fatalf("prior baseline image cannot start after nullable host marker migration: %v", err)
+	}
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Read(t.Context(), owner); err != nil {
+		t.Fatalf("conversation read changed with host marker: %v", err)
 	}
 }
