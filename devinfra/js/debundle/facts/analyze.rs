@@ -407,7 +407,34 @@ pub fn analyze_chunk_with_policy<F>(
     hints: &AnalysisInputs,
     export_reentry_policy: &ExportReentryPolicy,
     source_path: Option<&str>,
+    line_range_for_span: F,
+) -> ChunkFactAnalysis
+where
+    F: FnMut(Span) -> Option<(usize, usize, usize)>,
+{
+    analyze_chunk_with_policy_and_sync(
+        structural,
+        hints,
+        export_reentry_policy,
+        source_path,
+        line_range_for_span,
+        SynchronousCallAnalysis::Include,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum SynchronousCallAnalysis {
+    Include,
+    Omit,
+}
+
+fn analyze_chunk_with_policy_and_sync<F>(
+    structural: StructuralChunkAnalysis<'_>,
+    hints: &AnalysisInputs,
+    export_reentry_policy: &ExportReentryPolicy,
+    source_path: Option<&str>,
     mut line_range_for_span: F,
+    synchronous_calls: SynchronousCallAnalysis,
 ) -> ChunkFactAnalysis
 where
     F: FnMut(Span) -> Option<(usize, usize, usize)>,
@@ -590,21 +617,30 @@ where
         native_own_data_reads: &native_own_data_reads,
     };
     // Statement purity is computed at each statement's program point inside
-    // synchronous execution, which consumes it there.
-    let purities = super::sync_effects::execution_index::interpreter::annotate_synchronous_calls(
-        &body,
-        &value_flow,
-        super::sync_effects::execution_index::interpreter::SynchronousCallProofs {
-            set_iterable: &set_iterable_proof,
-            graph: &graph,
-            purity: &purity_context,
-            index: prepared_sync_index,
-        },
-        &shadowed,
-        hints,
-        export_reentry_policy,
-        &mut facts,
-    );
+    // synchronous execution, which consumes it there. The vendor-prune path
+    // runs the same transfer without execution.
+    let purities = match synchronous_calls {
+        SynchronousCallAnalysis::Include => {
+            super::sync_effects::execution_index::interpreter::annotate_synchronous_calls(
+                &body,
+                &value_flow,
+                super::sync_effects::execution_index::interpreter::SynchronousCallProofs {
+                    set_iterable: &set_iterable_proof,
+                    graph: &graph,
+                    purity: &purity_context,
+                    index: prepared_sync_index,
+                },
+                &shadowed,
+                hints,
+                export_reentry_policy,
+                &mut facts,
+            )
+        }
+        SynchronousCallAnalysis::Omit => facts
+            .iter()
+            .map(|fact| SettledPurity::unrefined(purity_context.statement_effects(fact)))
+            .collect(),
+    };
     for ((fact, purity), item_view) in facts.iter_mut().zip(purities).zip(&body) {
         settle_statement_purity(
             fact,
@@ -741,8 +777,8 @@ where
 }
 
 /// Facts needed by vendor pruning after its own AST mutations. Vendor pruning
-/// builds no dependency graph; its swap-privacy gate reads the synchronous
-/// callee summaries ([`StatementFacts::synchronous_callee_bindings`]).
+/// consumes the structural, value-flow, purity and local-effect fields, but
+/// builds no dependency graph and never reads `StatementFacts::synchronous_calls`.
 /// Keep value-flow call augmentation; it is part of vendor reachability.
 pub fn analyze_vendor_prune_chunk(module: &Module) -> ChunkFactAnalysis {
     let hints = AnalysisInputs {
@@ -750,12 +786,13 @@ pub fn analyze_vendor_prune_chunk(module: &Module) -> ChunkFactAnalysis {
         ..AnalysisInputs::default()
     };
     let structural = analyze_chunk_structural(module, None, |_| None);
-    analyze_chunk_with_policy(
+    analyze_chunk_with_policy_and_sync(
         structural,
         &hints,
         &ExportReentryPolicy::Conservative,
         None,
         |_| None,
+        SynchronousCallAnalysis::Omit,
     )
 }
 

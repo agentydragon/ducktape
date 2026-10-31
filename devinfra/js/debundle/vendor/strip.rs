@@ -540,11 +540,13 @@ fn sweep_unreachable_top_level(
         }
     };
     // Retained state the statement or its callees may mutate in place: a
-    // binding they read that a retained item declares, unless its value is code
-    // or a primitive (shareable `{}` cells are state). With every
-    // callee summarized, synchronous execution names the bindings they reach.
-    // Otherwise follow lexical reads through dropped items and retained
-    // helpers, whose bodies an unsummarized callee may run.
+    // binding they reach that a retained item declares, unless its value is
+    // code or a primitive (shareable `{}` cells are state). Callees follow
+    // at-init call promotion: a direct, never-rebound chunk function runs its
+    // first-order body; nested closures run only when handed to an unresolved
+    // call. What an unresolved call receives, and a chunk callee that is not
+    // a direct function, are followed through lexical reads instead.
+    let rebound: BTreeSet<&Id> = analyses.iter().flat_map(|an| &an.rebinds).collect();
     let shared_roots = |an: &ItemAnalysis| -> BTreeSet<Id> {
         let retained_state = |id: &Id| {
             !replacement_import_locals.contains(id)
@@ -552,26 +554,48 @@ fn sweep_unreachable_top_level(
                     .get(id)
                     .is_some_and(|&j| live[j] && !item_declares_code_or_primitive(&module.body[j]))
         };
-        if let Some(callee_bindings) = &an.callee_bindings {
-            return an
-                .reads
-                .iter()
-                .chain(callee_bindings)
-                .filter(|id| retained_state(id))
-                .cloned()
-                .collect();
+        let mut reached: Vec<&Id> = an.reads.iter().collect();
+        let mut lexical: Vec<&Id> = an.at_init.unresolved_sources.iter().collect();
+        let mut callees: Vec<&Id> = an.at_init.calls.iter().collect();
+        if an.at_init.unresolved_inline_fn {
+            callees.extend(&an.lazy_calls);
         }
-        let mut roots = BTreeSet::new();
+        let mut entered = BTreeSet::new();
+        while let Some(callee) = callees.pop() {
+            let Some(&j) = declarer.get(callee) else {
+                continue;
+            };
+            let body = &analyses[j];
+            if !body.direct_function || rebound.contains(callee) {
+                lexical.push(callee);
+                continue;
+            }
+            if !entered.insert(j) {
+                continue;
+            }
+            let first_order = &body.first_order;
+            reached.extend(&body.first_order_bindings);
+            lexical.extend(&first_order.unresolved_sources);
+            callees.extend(&first_order.calls);
+            if first_order.unresolved_inline_fn {
+                reached.extend(&body.reads);
+                callees.extend(&body.lazy_calls);
+            }
+        }
+        let mut roots: BTreeSet<Id> = reached
+            .into_iter()
+            .filter(|id| retained_state(id))
+            .cloned()
+            .collect();
         let mut seen = BTreeSet::new();
-        let mut queue: Vec<&Id> = an.reads.iter().collect();
-        while let Some(id) = queue.pop() {
+        while let Some(id) = lexical.pop() {
             if !seen.insert(id) {
                 continue;
             }
             if retained_state(id) {
                 roots.insert(id.clone());
             } else if let Some(&j) = declarer.get(id) {
-                queue.extend(&analyses[j].reads);
+                lexical.extend(&analyses[j].reads);
             }
         }
         roots
@@ -1096,9 +1120,26 @@ struct ItemAnalysis {
     /// set is unreliable and the statement must be treated as touching
     /// every observable cell.
     effects_summarizable: bool,
-    /// Top-level bindings the statement's synchronous callees read or
-    /// rebind; `None` when a callee could not be summarized.
-    callee_bindings: Option<BTreeSet<Id>>,
+    /// Rebound bindings, eager or lazy.
+    rebinds: BTreeSet<Id>,
+    /// The statement's own at-init calls.
+    at_init: CallSites,
+    /// Identifier callees anywhere in the statement, closures included.
+    lazy_calls: BTreeSet<Id>,
+    /// Declares a function value directly (`function f`, `const f = () => …`).
+    direct_function: bool,
+    /// What one call of the declared function or class runs first-order.
+    first_order: CallSites,
+    /// Bindings that first-order body reads or rebinds.
+    first_order_bindings: BTreeSet<Id>,
+}
+
+/// Calls one code position makes: identifier callees, plus the bindings and
+/// inline closures handed to calls that do not resolve to an identifier.
+struct CallSites {
+    calls: BTreeSet<Id>,
+    unresolved_sources: BTreeSet<Id>,
+    unresolved_inline_fn: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1157,7 +1198,31 @@ fn item_analysis_from_fact(item: &ModuleItem, fact: &StatementFacts) -> ItemAnal
         shareable_helper: item_is_shareable_helper(item),
         observable_writes: fact.effects().writes,
         effects_summarizable: fact.cell_writes_summarizable,
-        callee_bindings: fact.synchronous_callee_bindings(),
+        rebinds: fact
+            .rebinds
+            .eager
+            .iter()
+            .chain(&fact.rebinds.lazy)
+            .cloned()
+            .collect(),
+        at_init: CallSites {
+            calls: fact.calls.eager.clone(),
+            unresolved_sources: fact.at_init_unresolved_sources.clone(),
+            unresolved_inline_fn: fact.at_init_unresolved_inline_fn,
+        },
+        lazy_calls: fact.calls.lazy.clone(),
+        direct_function: fact.declares_direct_function,
+        first_order: CallSites {
+            calls: fact.first_order_calls().clone(),
+            unresolved_sources: fact.first_order_unresolved_sources().clone(),
+            unresolved_inline_fn: fact.first_order_unresolved_inline_fn(),
+        },
+        first_order_bindings: fact
+            .first_order_reads()
+            .iter()
+            .chain(fact.first_order_rebinds())
+            .cloned()
+            .collect(),
     }
 }
 

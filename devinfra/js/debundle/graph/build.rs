@@ -1433,53 +1433,6 @@ fn emit_cell_order_events(
     }
 }
 
-/// Promote function-body lazy reads/rebinds to eager source unit edges from
-/// every statement that at-init-calls the function. Transitive over
-/// the call graph among chunk-declared functions: a top-level
-/// `f()` whose `f` calls `g` in its body promotes through `g`'s lazy
-/// reads/rebinds too. See docs/design.md "At-init call promotion".
-///
-/// Per-statement dedup: at most one promoted eager edge per
-/// (caller, target-source unit) pair. Rebind targets are also promoted as
-/// eager order edges; the write site's direct rebind edge enforces
-/// write legality. Without dedup, a single at-init call to a
-/// function with N transitive lazy reads would emit N edges from the
-/// caller, and multiple at-init calls in the same statement would
-/// multiply that further.
-fn first_order_reads(stmt: &StatementFacts) -> &BTreeSet<Id> {
-    stmt.constructor
-        .as_ref()
-        .map_or(&stmt.reads.first_order_lazy, |ctor| &ctor.reads)
-}
-
-fn first_order_rebinds(stmt: &StatementFacts) -> &BTreeSet<Id> {
-    stmt.constructor
-        .as_ref()
-        .map_or(&stmt.rebinds.first_order_lazy, |ctor| &ctor.rebinds)
-}
-
-fn first_order_calls(stmt: &StatementFacts) -> &BTreeSet<Id> {
-    stmt.constructor
-        .as_ref()
-        .map_or(&stmt.calls.first_order_lazy, |ctor| &ctor.calls)
-}
-
-fn first_order_unresolved_sources(stmt: &StatementFacts) -> &BTreeSet<Id> {
-    stmt.constructor
-        .as_ref()
-        .map_or(&stmt.first_order_unresolved_sources, |ctor| {
-            &ctor.unresolved_sources
-        })
-}
-
-fn first_order_unresolved_inline_fn(stmt: &StatementFacts) -> bool {
-    stmt.constructor
-        .as_ref()
-        .map_or(stmt.first_order_unresolved_inline_fn, |ctor| {
-            ctor.unresolved_inline_fn
-        })
-}
-
 /// Binding-ordering `Sequenced` edges of one `promote_at_init_calls` pass,
 /// one per `(from, to)` pair. A pair several rules order keeps the first
 /// cause offered, unless a later one is derived on both sides and the kept one
@@ -1605,6 +1558,20 @@ fn offer_binding_timeline(
     }
 }
 
+/// Promote function-body lazy reads/rebinds to eager source unit edges from
+/// every statement that at-init-calls the function. Transitive over
+/// the call graph among chunk-declared functions: a top-level
+/// `f()` whose `f` calls `g` in its body promotes through `g`'s lazy
+/// reads/rebinds too. See docs/design.md "At-init call promotion".
+///
+/// Per-statement dedup: at most one promoted eager edge per
+/// (caller, target-source unit) pair. Rebind targets are also promoted as
+/// eager order edges; the write site's direct rebind edge enforces
+/// write legality. Without dedup, a single at-init call to a
+/// function with N transitive lazy reads would emit N edges from the
+/// caller, and multiple at-init calls in the same statement would
+/// multiply that further.
+///
 /// Promote at-init call effects into the graph. Returns the raw-edge index
 /// of every promoted `EagerUse` whose read or rebind only a conservative path
 /// contributed, with that path (the shared-`var` access order reads it).
@@ -1829,11 +1796,11 @@ fn promote_at_init_calls(
     let source_unit_first_order_roots = |stmt: &StatementFacts| -> BTreeSet<SourceUnitId> {
         let source_unit = SourceUnitId(stmt.ordinal.0);
         let mut roots = fallback_roots_of(
-            first_order_unresolved_sources(stmt),
-            first_order_unresolved_inline_fn(stmt),
+            stmt.first_order_unresolved_sources(),
+            stmt.first_order_unresolved_inline_fn(),
             source_unit,
         );
-        for callee_id in first_order_calls(stmt) {
+        for callee_id in stmt.first_order_calls() {
             if resolvable_callee(callee_id).is_none()
                 && let Some(&callee_source_unit) = binding_source_unit.get(callee_id)
             {
@@ -1845,21 +1812,21 @@ fn promote_at_init_calls(
     let mut call_graph: DiGraphMap<SourceUnitId, ()> = DiGraphMap::new();
     for stmt in facts {
         let source_unit = SourceUnitId(stmt.ordinal.0);
-        if !first_order_calls(stmt).is_empty()
-            || !first_order_reads(stmt).is_empty()
-            || !first_order_rebinds(stmt).is_empty()
-            || !first_order_unresolved_sources(stmt).is_empty()
-            || first_order_unresolved_inline_fn(stmt)
+        if !stmt.first_order_calls().is_empty()
+            || !stmt.first_order_reads().is_empty()
+            || !stmt.first_order_rebinds().is_empty()
+            || !stmt.first_order_unresolved_sources().is_empty()
+            || stmt.first_order_unresolved_inline_fn()
         {
             call_graph.add_node(source_unit);
         }
     }
     for stmt in facts {
-        if first_order_calls(stmt).is_empty() {
+        if stmt.first_order_calls().is_empty() {
             continue;
         }
         let caller = SourceUnitId(stmt.ordinal.0);
-        for callee_id in first_order_calls(stmt) {
+        for callee_id in stmt.first_order_calls() {
             let Some(callee_source_unit) = resolvable_callee(callee_id) else {
                 continue;
             };
@@ -1924,18 +1891,19 @@ fn promote_at_init_calls(
                 continue;
             };
             roots.extend(source_unit_first_order_roots(stmt));
-            needs_caller_values |= first_order_unresolved_sources(stmt)
+            needs_caller_values |= stmt
+                .first_order_unresolved_sources()
                 .iter()
-                .chain(first_order_calls(stmt).iter())
+                .chain(stmt.first_order_calls().iter())
                 .any(|id| {
                     stmt.local_bindings.contains(id) && !binding_source_unit.contains_key(id)
                 });
-            for id in first_order_reads(stmt) {
+            for id in stmt.first_order_reads() {
                 if binding_source_unit.contains_key(id) && !target_is_hoisted(id) {
                     reads.insert(id.clone());
                 }
             }
-            for id in first_order_rebinds(stmt) {
+            for id in stmt.first_order_rebinds() {
                 if binding_source_unit.contains_key(id) {
                     rebinds.insert(id.clone());
                 }
