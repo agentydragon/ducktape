@@ -102,7 +102,7 @@ const sourceRecords: unknown[] = [
       ).join("\n"),
     },
   },
-  { type: "compacted", payload: { summary: "[omitted compaction context]" } },
+  { type: "compacted" },
   {
     type: "response_item",
     payload: {

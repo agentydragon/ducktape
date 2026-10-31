@@ -46,7 +46,8 @@ export function RecordContent({ record }: { record: EventRecord }): JSX.Element 
   const attachment = parsed.type === "attachment" ? object(parsed.attachment) : null;
   if (attachment !== null) return <TextBlock label="Details" text={formatValue(attachment)} language="json" />;
 
-  const content = claudeContent(parsed) ?? codexContent(parsed) ?? [];
+  const codex = parsed.type === "response_item" ? codexContent(parsed) : null;
+  const content = claudeContent(parsed) ?? codex ?? [];
   if (content.length > 0) {
     return (
       <Stack gap="xs">
@@ -57,9 +58,7 @@ export function RecordContent({ record }: { record: EventRecord }): JSX.Element 
     );
   }
 
-  const payload = object(parsed.payload);
-  const summary = payload === null ? null : (text(payload.message) ?? text(payload.summary) ?? text(payload.output));
-  return summary === null ? null : <Markdown source={summary} />;
+  return null;
 }
 
 type Part = { kind: string; text?: string; value?: unknown };
@@ -90,6 +89,7 @@ function ContentPart({ part, id }: { part: Part; id: string }): JSX.Element {
 }
 
 function claudeContent(parsed: Record<string, unknown>): Part[] | null {
+  if (parsed.type !== "user" && parsed.type !== "assistant") return null;
   const message = object(parsed.message);
   if (message === null) return null;
   const content = message.content;
@@ -107,24 +107,29 @@ function codexContent(parsed: Record<string, unknown>): Part[] | null {
   if (payload === null) return null;
   if (payload.type === "message") {
     return parts(payload.content, (part) => {
-      if (["input_text", "output_text", "text"].includes(text(part.type) ?? "") && typeof part.text === "string") {
+      if (["input_text", "output_text"].includes(text(part.type) ?? "") && typeof part.text === "string") {
         return { kind: "text", text: part.text };
       }
       return { kind: text(part.type) ?? "Content block", value: part };
     });
   }
   if (payload.type === "reasoning") {
-    return parts(payload.summary, (part) => ({
-      kind: "thinking",
-      text: text(part.text) ?? "Reasoning details unavailable",
-    }));
+    if (!Array.isArray(payload.summary)) {
+      return payload.summary === undefined ? [] : [{ kind: "Unrecognized reasoning summary", value: payload.summary }];
+    }
+    return payload.summary.map((value) => {
+      const part = object(value);
+      if (part?.type === "summary_text" && typeof part.text === "string") return { kind: "thinking", text: part.text };
+      return { kind: text(part?.type) ?? "Unrecognized reasoning part", value };
+    });
   }
   if (payload.type === "function_call" || payload.type === "custom_tool_call") {
     const name = text(payload.name) ?? text(payload.type)?.replaceAll("_", " ") ?? "Tool call";
-    return [{ kind: `Tool call · ${name}`, value: payload.arguments ?? payload.input ?? payload }];
+    const input = payload.type === "function_call" ? payload.arguments : payload.input;
+    return [{ kind: `Tool call · ${name}`, value: input === undefined ? payload : input }];
   }
   if (payload.type === "function_call_output" || payload.type === "custom_tool_call_output") {
-    return [{ kind: "Tool result", value: payload.output ?? payload }];
+    return [{ kind: "Tool result", value: payload.output === undefined ? payload : payload.output }];
   }
   return null;
 }
