@@ -722,7 +722,7 @@ mod tests {
             &[],
         );
         rebind.operation = NativeMutationOperation::BindingAssignment;
-        // The census leaves an assignment's target slot empty.
+        // A binding declared in the chunk has no global target slot.
         rebind.target_slots.clear();
         assert_eq!(
             intact(&[rebind], PROBES),

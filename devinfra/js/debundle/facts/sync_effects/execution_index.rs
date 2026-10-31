@@ -5278,6 +5278,9 @@ struct ExecutionIndex {
     primitive_native_symbol_calls: BTreeSet<CallSite>,
     native_integrity_value_input_refs: BTreeSet<ValueInputRef>,
     destructuring_source: Option<ValueExpr>,
+    /// Visiting an assignment target: its identifiers are assigned, not
+    /// declared.
+    assignment_target: bool,
     destructuring_member_writes: Vec<DestructuringMemberWrite>,
     setter_owners: BTreeMap<Option<String>, BTreeSet<SourceUnitOrdinal>>,
     hoisted_nested_functions: BTreeSet<u32>,
@@ -5443,6 +5446,7 @@ impl Default for ExecutionIndex {
             primitive_native_symbol_calls: BTreeSet::new(),
             native_integrity_value_input_refs: BTreeSet::new(),
             destructuring_source: None,
+            assignment_target: false,
             destructuring_member_writes: Vec::new(),
             setter_owners: BTreeMap::new(),
             hoisted_nested_functions: BTreeSet::new(),
@@ -8946,6 +8950,7 @@ impl ExecutionIndex {
         let saved_await = std::mem::replace(&mut self.past_await, false);
         let saved_may_skip = std::mem::replace(&mut self.may_skip_await_depth, 0);
         let saved_conditional = std::mem::replace(&mut self.conditional_depth, 0);
+        let saved_assignment_target = std::mem::replace(&mut self.assignment_target, false);
         let opaque_params = params.iter().any(|param| param.binding.is_none());
         self.callables.entry(key).or_insert_with(|| Callable {
             owner: self.owner,
@@ -8961,6 +8966,7 @@ impl ExecutionIndex {
         self.past_await = saved_await;
         self.may_skip_await_depth = saved_may_skip;
         self.conditional_depth = saved_conditional;
+        self.assignment_target = saved_assignment_target;
     }
 
     fn record_call(&mut self, call: Call) {
@@ -10198,8 +10204,16 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_binding_ident(&mut self, binding: &BindingIdent) {
-        self.property_key_declarations.insert(binding.id.to_id());
+        if !self.assignment_target {
+            self.property_key_declarations.insert(binding.id.to_id());
+        }
         self.namespace_privacy.record_ident(&binding.id);
+    }
+
+    fn visit_assign_target(&mut self, target: &AssignTarget) {
+        let saved = std::mem::replace(&mut self.assignment_target, true);
+        target.visit_children_with(self);
+        self.assignment_target = saved;
     }
 
     fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
@@ -10468,7 +10482,9 @@ impl Visit for ExecutionIndex {
             self.destructuring_source = Some(ValueExpr::Unknown);
         }
         self.namespace_privacy.target_depth += 1;
+        let saved = std::mem::replace(&mut self.assignment_target, matches!(head, ForHead::Pat(_)));
         head.visit_children_with(self);
+        self.assignment_target = saved;
         self.namespace_privacy.target_depth -= 1;
         self.destructuring_source = previous_source;
     }
