@@ -366,5 +366,5 @@ func (p *SystemdLauncher) parentUnit() string {
 	if p.lifetimeUnit != "" {
 		return p.lifetimeUnit
 	}
-	return runnerUnit
+	return runtimeUnit
 }
