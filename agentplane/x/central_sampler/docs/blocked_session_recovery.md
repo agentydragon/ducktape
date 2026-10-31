@@ -8,7 +8,9 @@ operation.
 
 The Code Mode host binding is independent of executor reachability. Attaching JavaScript does not
 open an executor stream or prepare the workspace; the sampler acquires execution when a command,
-patch, configured setup script, or other executor RPC needs it. A failed initial connection or
+patch, configured setup script, or other executor RPC needs it. Restoring live process handles
+retains their exact native session ID; a new binding with no live remote handles may initialize a
+fresh session. Live JavaScript cells alone do not require an executor session. A failed initial connection or
 reconnect rejects the current nested tool promise, records the initialization attempt separately,
 and leaves the Session and JavaScript host available. The failed command was not dispatched. If no
 native session ID was retained, a later explicit tool call may open a new empty native session; an

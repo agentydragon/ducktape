@@ -45,7 +45,9 @@ The executor `OpenSession` initialization handshake has its own positive
 attaching the JavaScript host does not open an executor stream. The sampler lazily acquires or
 resumes that stream when a command, patch, configured setup script, or other executor RPC needs it.
 Workspace creation is likewise deferred until `exec_command`, `apply_patch`, or configured setup
-needs the working directory.
+needs the working directory. Restoring live process handles retains their exact native session ID;
+a new executor binding with no live remote handles may start a fresh native session. Live JS cells
+alone do not require a native executor session.
 
 An attempted executor-session initialization or reconnect is recorded as its own intent. If it fails,
 the requested nested operation is returned as a catchable JavaScript tool error when it was not
@@ -54,8 +56,9 @@ block the Session or poison the Code Mode host binding. A later explicit executo
 open a new empty native session if no ID was retained, or retry a resume if one was retained. An
 uncertain first open may leave an empty native session until Codex's normal 30-second
 detached-session expiry; no requested command was sent by that failed call. When a native session ID
-is retained, reconnect must resume that exact ID under the original Sandbox incarnation fence. The sampler never substitutes a fresh native
-session for a failed or ambiguous resume. Fresh-session substitution is allowed only after the
+is retained by the binding, reconnect must resume that exact ID under the original Sandbox
+incarnation fence. The sampler never substitutes a fresh native session for a failed or ambiguous
+resume. Fresh-session substitution is allowed only after the
 documented definitive-loss rejection and complete native evidence are durably recorded; the
 operation that found the lost session is not dispatched, affected process handles are abandoned,
 and the model is notified before later operations can use the fresh session.
