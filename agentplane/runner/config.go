@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
@@ -18,7 +19,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 )
 
 type Config struct {
@@ -28,7 +28,7 @@ type Config struct {
 	Launch                           configuration.SandboxLaunch
 	HarnessEnvironment               map[string]string
 	Claude, Codex                    *harness.LaunchConfig
-	VMProcessPolicy                  *supervision.SystemdPolicy
+	VMProcessLauncher                *supervision.SystemdLauncher
 	PodPID1                          bool
 	CodexExecServer                  *codexexecserver.Config
 	CodexAppServerReadiness          codexappserver.Readiness

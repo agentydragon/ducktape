@@ -466,8 +466,8 @@ py_test(
     name = "test_pid1_container",
     srcs = ["test_pid1_container.py"],
     data = [
+        "//agentplane/env/supervision:runner_pid1_fixture",
         "//agentplane/runner/cmd:agentplane-runner",
-        "//agentplane/runner/supervision:runner_pid1_fixture",
     ],
     env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
@@ -556,6 +556,7 @@ go_library(
     ),
     importpath = "github.com/agentydragon/ducktape/agentplane/runner",
     deps = [
+        "//agentplane/env/supervision",
         "//agentplane/executor:executor_go_proto",
         "//agentplane/observability",
         "//agentplane/proto:command_go_proto",
@@ -580,7 +581,6 @@ go_library(
         "//agentplane/runner/retained",
         "//agentplane/runner/scripts",
         "//agentplane/runner/session",
-        "//agentplane/runner/supervision",
         "//agentplane/runner/workspace",
         "//agentplane/runner_transport",
         "@com_github_cosi_project_runtime//pkg/controller",
@@ -614,6 +614,7 @@ go_test(
     exec_properties = {"test.dockerUser": "0:0"},
     race = "on",
     deps = [
+        "//agentplane/env/supervision",
         "//agentplane/executor:executor_go_proto",
         "//agentplane/history_service:runner_ingress_go_proto",
         "//agentplane/proto:event_go_proto",
@@ -634,7 +635,6 @@ go_test(
         "//agentplane/runner/retained",
         "//agentplane/runner/scripts",
         "//agentplane/runner/session",
-        "//agentplane/runner/supervision",
         "//agentplane/runner/workspace",
         "//agentplane/runner_transport",
         "//agentplane/runner_transport/testing",

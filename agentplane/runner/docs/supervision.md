@@ -3,7 +3,7 @@
 COSI controllers own demand, readiness, restart backoff, quiesce and sealing. They schedule
 asynchronous operations whose completion wakes reconciliation. Harness and server code builds
 `supervision.ProcessConfig` values containing command, working directory and explicit environment.
-The reusable process-lifetime controller, its resources and `Host` registry live in `supervision/`.
+The reusable process-lifetime controller, its resources and `Host` registry live in `agentplane/env/supervision/`.
 Runner injects the lifecycle context, state, namespace, shared worker tracking and error callback into
 the host, then registers `Host.Controller()` in the same COSI engine as its other lifecycle
 controllers. The host does not start a second runtime. Runner's `launchProcess` adapter in
@@ -167,7 +167,7 @@ The Pod system tests exercise the selected production backend through the shared
 This adds neither privileges nor a production service or endpoint.
 
 The system-test guest boots real systemd and a system bus with the same static runner/slice units.
-Before Runner starts, `//agentplane/runner/supervision:runner_systemd_fixture` exercises credentials, separate streams, kernel
+Before Runner starts, `//agentplane/env/supervision:runner_systemd_fixture` exercises credentials, separate streams, kernel
 resource limits, lost/canceled launch replies, detached descendants, parent-unit death, ordinary
 stop and scoped startup fencing. Existing VM scenarios then exercise storage, actual harnesses,
 tool OOM and suspend/resume through the platform. The fixture's test wrapper and read-only observer

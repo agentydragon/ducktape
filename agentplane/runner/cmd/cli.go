@@ -34,7 +34,7 @@ func runService(ctx context.Context, args []string) error {
 		HarnessEnvironment:          settings.HarnessEnvironment,
 		Claude:                      settings.Claude,
 		Codex:                       settings.Codex,
-		VMProcessPolicy:             settings.VMProcessPolicy,
+		VMProcessLauncher:           settings.VMProcessLauncher,
 		PodPID1:                     settings.PodPID1,
 		CodexExecServer:             settings.CodexExecServer,
 		CodexAppServerReadiness:     settings.CodexAppServerReadiness,

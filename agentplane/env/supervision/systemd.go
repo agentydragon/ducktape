@@ -19,8 +19,8 @@ import (
 // Its unit name is allocated before StartTransientUnit so uncertain launch retries
 // always reconcile the same UUID.
 type systemdBackend struct {
-	config ProcessConfig
-	policy *SystemdPolicy
+	config   ProcessConfig
+	launcher *SystemdLauncher
 
 	conn         *systemd.Conn
 	cancel       context.CancelFunc
@@ -42,11 +42,11 @@ func (b *systemdBackend) start(ctx context.Context, p *Process) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if b.policy.scope == "" {
-		return errors.New("VM process policy has not fenced its owner scope")
+	if b.launcher.scope == "" {
+		return errors.New("VM process launcher has not fenced its owner scope")
 	}
-	if b.policy.lifetimeMarker == "" {
-		return errors.New("VM process policy has no Runner invocation guard")
+	if b.launcher.lifetimeMarker == "" {
+		return errors.New("VM process launcher has no Runner invocation guard")
 	}
 	conn, cancelConnection, err := openSystemdConnection()
 	if err != nil {
@@ -54,7 +54,7 @@ func (b *systemdBackend) start(ctx context.Context, p *Process) error {
 	}
 	b.conn = conn
 	b.cancel = cancelConnection
-	b.name = b.policy.scope + uuid.NewString() + ".service"
+	b.name = b.launcher.scope + uuid.NewString() + ".service"
 	b.updates = make(chan *systemd.PropertiesUpdate, 32)
 	b.updateErrors = make(chan error, 1)
 	// Direct peers are already subscribed. Use the upstream typed notification
@@ -81,7 +81,7 @@ func (b *systemdBackend) start(ctx context.Context, p *Process) error {
 		return err
 	}
 	defer closeFiles(stdinReader, stdoutWriter, stderrWriter)
-	props, err := b.policy.properties(b.policy.ProcessLimits)
+	props, err := b.launcher.properties(b.launcher.ProcessLimits)
 	if err != nil {
 		closeFiles(stdinWriter, stdoutReader, stderrReader)
 		conn.Close()
@@ -99,14 +99,14 @@ func (b *systemdBackend) start(ctx context.Context, p *Process) error {
 	}
 	// ExecStartEx disables manager-side $ expansion. Native argv (including shell
 	// programs) must be delivered verbatim, with expansion owned by the native process.
-	props = append(props, b.policy.identityProperties()...)
+	props = append(props, b.launcher.identityProperties()...)
 	// AddRef requires the API bus and cannot be used on the private manager peer.
 	// Lifecycle retention preserves status until we consume it before Stop.
 	props = append(
 		props,
-		property("Description", "Agentplane native launch "+b.name), property("Type", "exec"), property("Restart", "no"), property("Slice", b.policy.Slice),
-		property("BindsTo", []string{b.policy.parentUnit()}), property("After", []string{b.policy.parentUnit()}), property("RemainAfterExit", true), property("CollectMode", "inactive"),
-		property("Conditions", []systemdCondition{{Type: "ConditionPathExists", Parameter: b.policy.lifetimeMarker}}),
+		property("Description", "Agentplane native launch "+b.name), property("Type", "exec"), property("Restart", "no"), property("Slice", b.launcher.Slice),
+		property("BindsTo", []string{b.launcher.parentUnit()}), property("After", []string{b.launcher.parentUnit()}), property("RemainAfterExit", true), property("CollectMode", "inactive"),
+		property("Conditions", []systemdCondition{{Type: "ConditionPathExists", Parameter: b.launcher.lifetimeMarker}}),
 		property("ExecStartEx", []systemdExec{{executable, command, []string{"no-env-expand"}}}), property("Environment", environment(b.config.Env)), property("WorkingDirectory", b.config.Dir),
 		property("StandardInputFileDescriptor", dbus.UnixFD(stdinReader.Fd())), property("StandardOutputFileDescriptor", dbus.UnixFD(stdoutWriter.Fd())), property("StandardErrorFileDescriptor", dbus.UnixFD(stderrWriter.Fd())),
 		property("PrivateTmp", false), property("ProtectSystem", "strict"), property("ReadWritePaths", []string{"/state", "/tmp"}), property("UMask", uint32(7)), property("LockPersonality", true), property("ProtectKernelModules", true), property("ProtectKernelLogs", true),
@@ -117,7 +117,7 @@ func (b *systemdBackend) start(ctx context.Context, p *Process) error {
 	// request on this same connection observes the manager after this message.
 	launchCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	completion := make(chan string, 1)
-	start := b.policy.startTransient
+	start := b.launcher.startTransient
 	if start == nil {
 		start = func(c context.Context, bus *systemd.Conn, name string, properties []systemd.Property, completed chan<- string) (int, error) {
 			return bus.StartTransientUnitContext(c, name, "fail", properties, completed)
@@ -272,7 +272,7 @@ func (b *systemdBackend) reap(p *Process) {
 }
 
 func (b *systemdBackend) readServiceProperties(ctx context.Context) (map[string]any, error) {
-	if read := b.policy.reapServiceProperties; read != nil {
+	if read := b.launcher.reapServiceProperties; read != nil {
 		return read(ctx, b.conn, b.name)
 	}
 	return b.conn.GetUnitTypePropertiesContext(ctx, b.name, "Service")

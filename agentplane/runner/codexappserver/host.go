@@ -14,12 +14,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/runner/codex"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
-	"github.com/agentydragon/ducktape/agentplane/runner/operation"
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
@@ -99,8 +99,8 @@ type Host struct {
 	current                     *Process
 	initializingOwner           *Attachment
 	initializingOwnerGeneration uint64
-	initializing                *operation.Operation
-	draining                    *operation.Operation
+	initializing                *oneoff.Operation
+	draining                    *oneoff.Operation
 	initializationGeneration    uint64
 	drainEffect                 func(context.Context) error
 	changeMu                    sync.Mutex

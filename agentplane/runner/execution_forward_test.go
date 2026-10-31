@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 	"github.com/agentydragon/ducktape/agentplane/runner/control"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"

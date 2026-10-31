@@ -9,11 +9,11 @@ import (
 	"io"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
 )
 
@@ -66,7 +66,7 @@ type Resolved struct {
 	Launch                           SandboxLaunch
 	HarnessEnvironment               map[string]string
 	Claude, Codex                    *harness.LaunchConfig
-	VMProcessPolicy                  *supervision.SystemdPolicy
+	VMProcessLauncher                *supervision.SystemdLauncher
 	PodPID1                          bool
 	CodexExecServer                  *codexexecserver.Config
 	CodexAppServerReadiness          codexappserver.Readiness

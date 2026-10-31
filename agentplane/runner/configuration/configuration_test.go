@@ -91,16 +91,16 @@ func TestConfigurationComposesBothIsolationModesWithoutOpeningState(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			if config.VMProcessPolicy != nil {
+			if config.VMProcessLauncher != nil {
 				resources, err := guestResourcesFromMap(value["environment"].(map[string]any)["resources"].(map[string]any))
 				if err != nil {
 					t.Fatal(err)
 				}
-				if config.VMProcessPolicy.AggregateLimits != resources.Aggregate || config.VMProcessPolicy.ProcessLimits != resources.Process {
-					t.Fatal("harness limits differ from VM resource policy")
+				if config.VMProcessLauncher.AggregateLimits != resources.Aggregate || config.VMProcessLauncher.ProcessLimits != resources.Process {
+					t.Fatal("harness limits differ from VM process launcher")
 				}
-				if resources.Executor != nil && (config.CodexExecServer.Isolation.AggregateLimits != *resources.Executor || config.CodexExecServer.Isolation.ProcessLimits != *resources.Executor) {
-					t.Fatal("executor limits differ from VM resource policy")
+				if resources.Executor != nil && (config.CodexExecServer.Launcher.AggregateLimits != *resources.Executor || config.CodexExecServer.Launcher.ProcessLimits != *resources.Executor) {
+					t.Fatal("executor limits differ from VM process launcher")
 				}
 			}
 			if config.Control.ListenAddress != "127.0.0.1:8090" || ingress.Target != "history.test:8081" {
@@ -122,7 +122,7 @@ func TestConfigurationComposesBothIsolationModesWithoutOpeningState(t *testing.T
 			if _, err := os.Stat(config.StateDir); !os.IsNotExist(err) {
 				t.Fatalf("configuration opened state: %v", err)
 			}
-			if (config.CodexExecServer == nil) != (kind == "pod-local" || kind == "vm-local") || (config.VMProcessPolicy != nil) != (kind == "vm-local" || kind == "vm-executor") {
+			if (config.CodexExecServer == nil) != (kind == "pod-local" || kind == "vm-local") || (config.VMProcessLauncher != nil) != (kind == "vm-local" || kind == "vm-executor") {
 				t.Fatalf("incorrect isolation for %s", kind)
 			}
 		})
@@ -163,10 +163,10 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 		{"partial container executor", func(v map[string]any) {
 			v["environment"] = map[string]any{"kind": "pod", "supervision": "subprocess", "executor": map[string]any{"url": "ws://127.0.0.1:4501"}}
 		}},
-		{"VM policy in Pod", func(v map[string]any) {
+		{"VM launcher in Pod", func(v map[string]any) {
 			v["environment"] = map[string]any{"kind": "pod", "supervision": "subprocess", "resources": validGuestResources()}
 		}},
-		{"container policy in VM", func(v map[string]any) {
+		{"container executor in VM", func(v map[string]any) {
 			env := configurationVMEnvironment()
 			configurationVMExecutor(env)
 			env["executor"].(map[string]any)["socket"] = "/test/socket"

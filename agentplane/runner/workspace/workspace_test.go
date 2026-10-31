@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 )
 
 func TestMain(m *testing.M) {

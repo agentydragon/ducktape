@@ -55,7 +55,7 @@ it reads lifecycle state directly instead of reaching through Runner. Runner reg
 controller before starting the runtime. After aggregate shutdown and controller termination,
 `Manager.Close` joins Session operations and closes their journals.
 
-Controller roles cover Runner, Session, native process lifetime, Codex exec-server, Codex app-server, and Sandbox bootstrap. The reusable process-lifetime controller is supplied by `supervision/` and registered in the Runner's lifecycle engine. The `lifecycle/` package defines only the Runner-wide desired-state and aggregate-status resources, with typed COSI readers and writers shared by these controllers. The `bootstrap/` package owns its input, runtime, operation result, log, and one-shot effect while receiving the Runner's admission guard and shared process facilities explicitly.
+Controller roles cover Runner, Session, native process lifetime, Codex exec-server, Codex app-server, and Sandbox bootstrap. The reusable process-lifetime controller is supplied by `agentplane/env/supervision/` and registered in the Runner's lifecycle engine. The `lifecycle/` package defines only the Runner-wide desired-state and aggregate-status resources, with typed COSI readers and writers shared by these controllers. The `bootstrap/` package owns its input, runtime, operation result, log, and one-shot effect while receiving the Runner's admission guard and shared process facilities explicitly.
 The renamed resource kinds are `RunnerDesiredStates.agentplane`,
 `CodexExecServerInputs.agentplane`, `CodexExecServerRuntimes.agentplane`,
 `CodexAppServerInputs.agentplane`, and `CodexAppServerRuntimes.agentplane`.
@@ -86,7 +86,7 @@ the native execution domain is fenced. Failed fencing retains the finalizer and 
 Runner runtime wiring, Runner-specific typed resources and host input publication stay in
 `lifecycle_runtime.go`, `lifecycle_resources.go`, and `lifecycle_inputs.go`. Session resources,
 controller, operation results and journal effects live in `session/`. The generic native-process controller, its resources, host registry,
-and `ManagedProcess` wrapper live in `supervision/controller.go`, `process_resources.go`, `host.go`,
+and `ManagedProcess` wrapper live in `agentplane/env/supervision/controller.go`, `process_resources.go`, `host.go`,
 and `managed_process.go`. The host keeps launch callbacks and native handles; COSI resources contain
 only comparable lifecycle values, never streams or environment values. Runner's `launchProcess` method
 in `lifecycle_runtime.go` supplies the admitted owner and generation to `Host.Launch`. The same file
@@ -137,7 +137,7 @@ useful for direct resource transformations; these state machines instead coordin
 and asynchronous effects. Individual process attempts use resource teardown and finalizers for
 the cleanup barrier; Session and Runner inputs live for the runtime lifetime.
 
-`operation.Operation` shares slot ownership, cancellation, completion publication ordering and
+`oneoff.Operation` shares slot ownership, cancellation, completion publication ordering and
 worker accounting across Session, bootstrap and the Codex app-server. Each component owns its typed
 COSI result publisher and deleter. A failed initial publication clears the slot and skips the effect;
 a failed completion publication remains in the operation error, closes the local completion channel
@@ -255,7 +255,7 @@ incarnation's ingress acknowledgement.
 
 ## Validation and rollback
 
-`bbr test //agentplane/runner/supervision:supervision_test` runs the generic process-controller cases
+`bbr test //agentplane/env/supervision:supervision_test` runs the generic process-controller cases
 against an in-memory COSI engine. `bbr test //agentplane/runner:runner_test` runs with the race
 detector and covers Runner lifecycle behavior and its integration with supervision. Validate public
 quiesce and status behavior

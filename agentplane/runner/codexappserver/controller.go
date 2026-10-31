@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/runner/operation"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/siderolabs/gen/optional"
@@ -145,7 +145,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			current.StopError = op.Err().Error()
 		}
 	}
-	var initializing, draining *operation.Operation
+	var initializing, draining *oneoff.Operation
 	var p *Process
 	server.mu.Lock()
 	initializing = server.initializing

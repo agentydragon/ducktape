@@ -22,9 +22,22 @@ const (
 	runnerLifetimeDirectory = "/run/agentplane-runner-lifetime"
 )
 
-// SystemdPolicy describes systemd-owned containment, independently of a launch.
+// SystemdScopeID selects the process namespace used for stale-unit fencing.
+type SystemdScopeID string
+
+// SystemdRunnerScopeID preserves Runner's existing native process scope.
+const SystemdRunnerScopeID SystemdScopeID = "runner"
+
+// SystemdOwner identifies the service whose lifetime bounds native processes.
+type SystemdOwner struct {
+	Unit              string
+	LifetimeDirectory string
+	ScopeID           SystemdScopeID
+}
+
+// SystemdLauncher describes systemd-owned containment, independently of a launch.
 // Prepare assigns scope from durable owner identity before any Session store opens.
-type SystemdPolicy struct {
+type SystemdLauncher struct {
 	Slice                          string
 	AgentUID, AgentGID             uint32
 	BlockDevices                   []string
@@ -37,7 +50,7 @@ type SystemdPolicy struct {
 }
 
 // ValidateProcessLimits checks values and ensures one process remains within its aggregate budget.
-func (p *SystemdPolicy) ValidateProcessLimits(limits ResourceLimits) error {
+func (p *SystemdLauncher) ValidateProcessLimits(limits ResourceLimits) error {
 	if err := limits.Validate(); err != nil {
 		return err
 	}
@@ -68,7 +81,7 @@ func property(name string, value any) systemd.Property {
 	return systemd.Property{Name: name, Value: dbus.MakeVariant(value)}
 }
 
-func (p *SystemdPolicy) properties(limits ResourceLimits) ([]systemd.Property, error) {
+func (p *SystemdLauncher) properties(limits ResourceLimits) ([]systemd.Property, error) {
 	if err := p.ValidateProcessLimits(limits); err != nil {
 		return nil, err
 	}
@@ -123,11 +136,21 @@ func systemdMissing(err error) bool {
 	return errors.As(err, &e) && (e.Name == "org.freedesktop.systemd1.NoSuchUnit" || e.Name == "org.freedesktop.systemd1.LoadFailed" || e.Name == "org.freedesktop.DBus.Error.UnknownObject")
 }
 
-// Prepare validates and applies the owner scope, fences units left by a prior
-// Runner incarnation, and returns a factory for processes in that scope.
-func (p *SystemdPolicy) Prepare(stateDir, sandboxUID string) (*Supervisor, error) {
+// Prepare preserves the Runner's systemd owner and lifetime directory.
+func (p *SystemdLauncher) Prepare(stateDir, sandboxUID string) (*Supervisor, error) {
+	return p.PrepareForOwner(stateDir, sandboxUID, SystemdOwner{
+		Unit: runnerUnit, LifetimeDirectory: runnerLifetimeDirectory, ScopeID: SystemdRunnerScopeID,
+	})
+}
+
+// PrepareForOwner validates and applies the owner scope, fences units left by a
+// prior owner incarnation, and returns a factory for processes in that scope.
+func (p *SystemdLauncher) PrepareForOwner(stateDir, sandboxUID string, owner SystemdOwner) (*Supervisor, error) {
 	if p == nil {
-		return nil, errors.New("VM process policy is required")
+		return nil, errors.New("VM process launcher is required")
+	}
+	if err := owner.validate(); err != nil {
+		return nil, err
 	}
 	if sandboxUID == "" {
 		return nil, errors.New("VM supervision requires a Sandbox owner UID")
@@ -144,12 +167,10 @@ func (p *SystemdPolicy) Prepare(stateDir, sandboxUID string) (*Supervisor, error
 	if err := p.ValidateProcessLimits(p.ProcessLimits); err != nil {
 		return nil, err
 	}
-	marker, err := prepareRunnerLifetime()
-	if err != nil {
+	if err := p.prepareOwner(owner); err != nil {
 		return nil, err
 	}
-	p.lifetimeMarker = marker
-	sum := sha256.Sum256([]byte(stateDir + "\x00" + sandboxUID))
+	sum := sha256.Sum256([]byte(systemdScopeIdentity(stateDir, sandboxUID, owner)))
 	p.scope = fmt.Sprintf("agentplane-native-%x-", sum[:8])
 	conn, cancelConnection, err := openSystemdConnection()
 	if err != nil {
@@ -186,20 +207,51 @@ func (p *SystemdPolicy) Prepare(stateDir, sandboxUID string) (*Supervisor, error
 	return p.newSupervisor(), nil
 }
 
-// newSupervisor creates a factory from an immutable snapshot of prepared policy state.
-func (p *SystemdPolicy) newSupervisor() *Supervisor {
+func systemdScopeIdentity(stateDir, sandboxUID string, owner SystemdOwner) string {
+	identity := stateDir + "\x00" + sandboxUID
+	if owner.ScopeID != SystemdRunnerScopeID {
+		identity += "\x00" + string(owner.ScopeID)
+	}
+	return identity
+}
+
+func (owner SystemdOwner) validate() error {
+	if owner.Unit == "" {
+		return errors.New("VM supervision requires a systemd owner unit")
+	}
+	if !filepath.IsAbs(owner.LifetimeDirectory) {
+		return errors.New("systemd owner lifetime directory must be absolute")
+	}
+	if owner.ScopeID == "" || strings.ContainsRune(string(owner.ScopeID), '\x00') {
+		return errors.New("systemd owner scope ID is required and must not contain NUL")
+	}
+	return nil
+}
+
+func (p *SystemdLauncher) prepareOwner(owner SystemdOwner) error {
+	marker, err := prepareSystemdLifetime(owner.LifetimeDirectory)
+	if err != nil {
+		return err
+	}
+	p.lifetimeUnit = owner.Unit
+	p.lifetimeMarker = marker
+	return nil
+}
+
+// newSupervisor creates a factory from an immutable snapshot of prepared launcher state.
+func (p *SystemdLauncher) newSupervisor() *Supervisor {
 	prepared := *p
 	prepared.BlockDevices = append([]string(nil), p.BlockDevices...)
 	return &Supervisor{makeBackend: func(config ProcessConfig) processBackend {
-		policy := prepared
-		policy.BlockDevices = append([]string(nil), prepared.BlockDevices...)
-		return &systemdBackend{config: config, policy: &policy}
+		launcher := prepared
+		launcher.BlockDevices = append([]string(nil), prepared.BlockDevices...)
+		return &systemdBackend{config: config, launcher: &launcher}
 	}}
 }
 
-// systemd removes this directory synchronously when the Runner service dies.
-// An old queued launch therefore cannot cross exec after a successor starts.
-func prepareRunnerLifetime() (string, error) {
+// systemd removes the owner directory synchronously when the service dies. An
+// old queued launch therefore cannot cross exec after a successor starts.
+func prepareSystemdLifetime(directory string) (string, error) {
 	invocation := os.Getenv("INVOCATION_ID")
 	if len(invocation) != 32 {
 		return "", errors.New("VM supervision requires a systemd INVOCATION_ID")
@@ -207,31 +259,31 @@ func prepareRunnerLifetime() (string, error) {
 	if _, err := hex.DecodeString(invocation); err != nil {
 		return "", fmt.Errorf("invalid systemd INVOCATION_ID: %w", err)
 	}
-	directory, err := os.Lstat(runnerLifetimeDirectory)
+	directoryInfo, err := os.Lstat(directory)
 	if err != nil {
-		return "", fmt.Errorf("inspect systemd Runner lifetime directory: %w", err)
+		return "", fmt.Errorf("inspect systemd owner lifetime directory: %w", err)
 	}
-	owner, ok := directory.Sys().(*syscall.Stat_t)
-	if !directory.IsDir() || !ok || owner.Uid != 0 || directory.Mode().Perm()&0022 != 0 {
-		return "", errors.New("systemd Runner lifetime directory must be owned and writable only by root")
+	directoryOwner, ok := directoryInfo.Sys().(*syscall.Stat_t)
+	if !directoryInfo.IsDir() || !ok || directoryOwner.Uid != 0 || directoryInfo.Mode().Perm()&0022 != 0 {
+		return "", errors.New("systemd owner lifetime directory must be owned and writable only by root")
 	}
-	marker := filepath.Join(runnerLifetimeDirectory, invocation)
+	marker := filepath.Join(directory, invocation)
 	file, err := os.OpenFile(marker, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0444)
 	if err == nil {
 		err = errors.Join(file.Chmod(0444), file.Close())
 		if err != nil {
-			return "", fmt.Errorf("create Runner lifetime marker: %w", err)
+			return "", fmt.Errorf("create systemd owner lifetime marker: %w", err)
 		}
 	} else if !errors.Is(err, os.ErrExist) {
-		return "", fmt.Errorf("create Runner lifetime marker: %w", err)
+		return "", fmt.Errorf("create systemd owner lifetime marker: %w", err)
 	}
 	info, err := os.Lstat(marker)
 	if err != nil {
 		return "", err
 	}
-	owner, ok = info.Sys().(*syscall.Stat_t)
-	if !info.Mode().IsRegular() || !ok || owner.Uid != 0 || info.Mode().Perm() != 0444 {
-		return "", errors.New("Runner lifetime marker must be a root-owned read-only regular file")
+	markerOwner, ok := info.Sys().(*syscall.Stat_t)
+	if !info.Mode().IsRegular() || !ok || markerOwner.Uid != 0 || info.Mode().Perm() != 0444 {
+		return "", errors.New("systemd owner lifetime marker must be a root-owned read-only regular file")
 	}
 	return marker, nil
 }
@@ -306,11 +358,11 @@ func systemdGroupEmpty(group string) (bool, error) {
 	return false, errors.New("native cgroup.events has no populated state")
 }
 
-func (p *SystemdPolicy) identityProperties() []systemd.Property {
+func (p *SystemdLauncher) identityProperties() []systemd.Property {
 	return []systemd.Property{property("User", strconv.FormatUint(uint64(p.AgentUID), 10)), property("Group", strconv.FormatUint(uint64(p.AgentGID), 10)), property("SetLoginEnvironment", false), property("NoNewPrivileges", true), property("CapabilityBoundingSet", uint64(0)), property("AmbientCapabilities", uint64(0))}
 }
 
-func (p *SystemdPolicy) parentUnit() string {
+func (p *SystemdLauncher) parentUnit() string {
 	if p.lifetimeUnit != "" {
 		return p.lifetimeUnit
 	}

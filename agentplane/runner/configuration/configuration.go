@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"go.uber.org/zap"
 )
 
@@ -202,19 +202,19 @@ type VMEnvironmentConfiguration struct {
 	Executor         *VMExecutorConfiguration `json:"executor"`
 }
 
-func (v VMEnvironmentConfiguration) policy(slice string, aggregate, process supervision.ResourceLimits) *supervision.SystemdPolicy {
-	return &supervision.SystemdPolicy{Slice: slice, AgentUID: v.AgentUID, AgentGID: v.AgentGID, BlockDevices: v.BlockDevices, AggregateLimits: aggregate, ProcessLimits: process}
+func (v VMEnvironmentConfiguration) launcher(slice string, aggregate, process supervision.ResourceLimits) *supervision.SystemdLauncher {
+	return &supervision.SystemdLauncher{Slice: slice, AgentUID: v.AgentUID, AgentGID: v.AgentGID, BlockDevices: v.BlockDevices, AggregateLimits: aggregate, ProcessLimits: process}
 }
 
 // The environment selects resource ownership and executor transport together.
-func (f Configuration) resolveEnvironment() (*supervision.SystemdPolicy, *codexexecserver.Config, *VMEnvironmentConfiguration, bool, error) {
+func (f Configuration) resolveEnvironment() (*supervision.SystemdLauncher, *codexexecserver.Config, *VMEnvironmentConfiguration, bool, error) {
 	var tag struct {
 		Kind string `json:"kind"`
 	}
 	if err := json.Unmarshal(f.Environment, &tag); err != nil {
 		return nil, nil, nil, false, fmt.Errorf("environment is required: %w", err)
 	}
-	var isolation *supervision.SystemdPolicy
+	var launcher *supervision.SystemdLauncher
 	var executor *codexexecserver.Config
 	var vm *VMEnvironmentConfiguration
 	var podPID1 bool
@@ -250,12 +250,12 @@ func (f Configuration) resolveEnvironment() (*supervision.SystemdPolicy, *codexe
 				return nil, nil, nil, false, errors.New("block device path must be absolute")
 			}
 		}
-		isolation = vm.policy(supervision.WorkloadSlice, vm.Resources.Aggregate, vm.Resources.Process)
+		launcher = vm.launcher(supervision.WorkloadSlice, vm.Resources.Aggregate, vm.Resources.Process)
 		if (vm.Executor == nil) != (vm.Resources.Executor == nil) {
 			return nil, nil, nil, false, errors.New("executor endpoint and resource budget must be supplied together")
 		}
 		if vm.Executor != nil {
-			executor = &codexexecserver.Config{URL: vm.Executor.URL, Isolation: vm.policy(supervision.ExecutorSlice, *vm.Resources.Executor, *vm.Resources.Executor)}
+			executor = &codexexecserver.Config{URL: vm.Executor.URL, Launcher: vm.launcher(supervision.ExecutorSlice, *vm.Resources.Executor, *vm.Resources.Executor)}
 		}
 	default:
 		return nil, nil, nil, false, fmt.Errorf("unknown environment kind %q", tag.Kind)
@@ -264,11 +264,11 @@ func (f Configuration) resolveEnvironment() (*supervision.SystemdPolicy, *codexe
 		if f.Codex == nil {
 			return nil, nil, nil, false, errors.New("executor requires Codex")
 		}
-		if err := executor.Validate(isolation); err != nil {
+		if err := executor.Validate(launcher); err != nil {
 			return nil, nil, nil, false, err
 		}
 	}
-	return isolation, executor, vm, podPID1, nil
+	return launcher, executor, vm, podPID1, nil
 }
 
 func readConfiguration(path string) (Configuration, error) {
@@ -380,7 +380,7 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 	if err != nil {
 		return Resolved{}, nil, err
 	}
-	isolation, executor, _, podPID1, err := f.resolveEnvironment()
+	launcher, executor, _, podPID1, err := f.resolveEnvironment()
 	if err != nil {
 		return Resolved{}, nil, err
 	}
@@ -412,7 +412,7 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 		HarnessEnvironment:          child,
 		Claude:                      claude,
 		Codex:                       codex,
-		VMProcessPolicy:             isolation,
+		VMProcessLauncher:           launcher,
 		PodPID1:                     podPID1,
 		CodexExecServer:             executor,
 		CodexAppServerReadiness:     appReadiness,

@@ -200,9 +200,9 @@ pkg_tar(
 pkg_files(
     # Test data for the selected boot; ordinary guests never execute this binary.
     name = "root_supervision_fixture_file",
-    srcs = ["//agentplane/runner/supervision:runner_systemd_fixture"],
+    srcs = ["//agentplane/env/supervision:runner_systemd_fixture"],
     attributes = pkg_attributes(mode = "0755"),
-    renames = {"//agentplane/runner/supervision:runner_systemd_fixture": "runner-systemd-fixture"},
+    renames = {"//agentplane/env/supervision:runner_systemd_fixture": "runner-systemd-fixture"},
 )
 
 pkg_tar(

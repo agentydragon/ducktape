@@ -3,8 +3,8 @@ package session
 import (
 	"context"
 
+	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/runner/operation"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 )
@@ -22,7 +22,7 @@ func (m *Manager) publishOperation(sessionID, operationID string, done bool) err
 	return publish(m.ctx, m.state, operationID, operationResult{Session: sessionID, Controller: ControllerName, Done: done})
 }
 
-func (m *Manager) forgetOperation(op *operation.Operation) {
+func (m *Manager) forgetOperation(op *oneoff.Operation) {
 	if op == nil {
 		return
 	}
@@ -32,14 +32,14 @@ func (m *Manager) forgetOperation(op *operation.Operation) {
 	}
 }
 
-func (s *Session) startOperation(slot **operation.Operation, work func(context.Context) error) (*operation.Operation, error) {
+func (s *Session) startOperation(slot **oneoff.Operation, work func(context.Context) error) (*oneoff.Operation, error) {
 	s.mu.Lock()
 	if *slot != nil {
 		op := *slot
 		s.mu.Unlock()
 		return op, nil
 	}
-	op := operation.New(s.deps.ctx)
+	op := oneoff.New(s.deps.ctx)
 	op.Register(&s.work)
 	*slot = op
 	s.mu.Unlock()
@@ -66,8 +66,8 @@ func (s *Session) startOperation(slot **operation.Operation, work func(context.C
 	return op, err
 }
 
-func (s *Session) takeOperation(slot **operation.Operation) (*operation.Operation, bool) {
-	op, done := operation.Consume(&s.mu, slot)
+func (s *Session) takeOperation(slot **oneoff.Operation) (*oneoff.Operation, bool) {
+	op, done := oneoff.Consume(&s.mu, slot)
 	if done {
 		s.wake()
 	}

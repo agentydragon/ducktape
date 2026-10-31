@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/scripts"
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 )
 
 func TestCodexJoinedStartupOverlapsTransientExecutorFailure(t *testing.T) {

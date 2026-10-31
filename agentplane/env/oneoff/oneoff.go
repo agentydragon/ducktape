@@ -1,5 +1,5 @@
-// Package operation owns a host's asynchronous one-shot operation lifecycle.
-package operation
+// Package oneoff owns a host's asynchronous one-shot operation lifecycle.
+package oneoff
 
 import (
 	"context"

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 )
 
 type guestResources struct {
@@ -40,11 +40,11 @@ func (r guestResources) Validate() error {
 	if r.ServicePidsMax <= 0 {
 		return errors.New("service PID max must be positive")
 	}
-	groups := supervision.SystemdPolicy{AggregateLimits: r.Aggregate, ProcessLimits: r.Process}
-	if err := groups.AggregateLimits.Validate(); err != nil {
+	launcher := supervision.SystemdLauncher{AggregateLimits: r.Aggregate, ProcessLimits: r.Process}
+	if err := launcher.AggregateLimits.Validate(); err != nil {
 		return fmt.Errorf("invalid aggregate limits: %w", err)
 	}
-	if err := groups.ValidateProcessLimits(groups.ProcessLimits); err != nil {
+	if err := launcher.ValidateProcessLimits(launcher.ProcessLimits); err != nil {
 		return fmt.Errorf("invalid process limits: %w", err)
 	}
 	if r.Aggregate.MemoryMaxBytes > r.ServiceMemoryHighBytes || r.Aggregate.PidsMax > r.ServicePidsMax || r.Aggregate.CPUQuotaMicros > r.ServiceCPUQuotaMicros {

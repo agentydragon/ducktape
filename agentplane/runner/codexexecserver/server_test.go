@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/coder/websocket"
 )
 
@@ -65,7 +65,7 @@ func TestProbeRequiresValidRPCAndBoundsUnresponsiveServer(t *testing.T) {
 	}
 }
 
-func TestConfigurationRejectsPartialOrOverlappingIsolation(t *testing.T) {
+func TestConfigurationRejectsPartialOrOverlappingLaunchers(t *testing.T) {
 	for _, endpoint := range []string{"", "ws://0.0.0.0:4501", "ws://127.0.0.1:0", "wss://127.0.0.1:4501", "ws://127.0.0.1:4501/path", "ws://user@127.0.0.1:4501"} {
 		if err := (Config{URL: endpoint}).Validate(nil); err == nil {
 			t.Fatalf("accepted %q", endpoint)
@@ -76,23 +76,23 @@ func TestConfigurationRejectsPartialOrOverlappingIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	limits := supervision.ResourceLimits{CPUQuotaMicros: 100000, MemoryMaxBytes: 64 * 1024 * 1024, PidsMax: 32, ReadBPS: 1, WriteBPS: 1, ReadIOPS: 1, WriteIOPS: 1}
-	harnessGroups := &supervision.SystemdPolicy{Slice: supervision.WorkloadSlice, AggregateLimits: limits, ProcessLimits: limits}
-	executorGroups := *harnessGroups
-	executorGroups.Slice = supervision.ExecutorSlice
-	if err := (Config{URL: endpoint, Isolation: &executorGroups}).Validate(harnessGroups); err != nil {
+	harnessLauncher := &supervision.SystemdLauncher{Slice: supervision.WorkloadSlice, AggregateLimits: limits, ProcessLimits: limits}
+	executorLauncher := *harnessLauncher
+	executorLauncher.Slice = supervision.ExecutorSlice
+	if err := (Config{URL: endpoint, Launcher: &executorLauncher}).Validate(harnessLauncher); err != nil {
 		t.Fatal(err)
 	}
-	invalid := executorGroups
-	invalid.ProcessLimits.MemoryMaxBytes++
+	invalidLauncher := executorLauncher
+	invalidLauncher.ProcessLimits.MemoryMaxBytes++
 	for _, config := range []Config{
 		{URL: endpoint},
 		{URL: endpoint, ContainerSocket: "relative"},
-		{URL: endpoint, ContainerSocket: "/run/test.sock", Isolation: harnessGroups},
-		{URL: endpoint, Isolation: harnessGroups},
-		{URL: endpoint, Isolation: &supervision.SystemdPolicy{Slice: "invalid.slice"}},
-		{URL: endpoint, Isolation: &invalid},
+		{URL: endpoint, ContainerSocket: "/run/test.sock", Launcher: harnessLauncher},
+		{URL: endpoint, Launcher: harnessLauncher},
+		{URL: endpoint, Launcher: &supervision.SystemdLauncher{Slice: "invalid.slice"}},
+		{URL: endpoint, Launcher: &invalidLauncher},
 	} {
-		if err := config.Validate(harnessGroups); err == nil {
+		if err := config.Validate(harnessLauncher); err == nil {
 			t.Fatalf("accepted %+v", config)
 		}
 	}

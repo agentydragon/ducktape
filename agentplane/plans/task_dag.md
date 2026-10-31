@@ -796,12 +796,12 @@ optional queue policy, a replacement JS host, or the complete 0..N-environment A
 ### `RUNNER_SHARED_RUNTIME_PACKAGES` — place shared runtime support under env
 
 **Candidate.** Move reusable process supervision (`runner/supervision`) to
-`agentplane/env/supervision` and shared one-shot operation support (`runner/operation`) to
-`agentplane/env/operation`. The Environment Runtime, Execution service and Environment Harness Host
+`agentplane/env/supervision` and shared one-shot lifecycle support (`runner/operation`) to
+`agentplane/env/oneoff`. The Environment Runtime, Execution service and Environment Harness Host
 are the runtime consumers. Keep component-specific controllers/resources with their owners. Update
 all consumers, BUILD targets, helper-entrypoint references and docs atomically; retain one
 process-lifetime owner and the existing Pod/VM fencing behavior. This is a package-boundary refactor
-with no new service or runtime policy.
+with no new service or process-launch behavior.
 
 Exit: the shared libraries have no dependency on the Environment Runtime composition root or a
 sibling binary's implementation, callers use the new locations, and existing lifecycle coverage

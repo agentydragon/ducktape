@@ -14,10 +14,10 @@ go_library(
         "//agentplane/runner/session:__pkg__",
     ],
     deps = [
+        "//agentplane/env/oneoff",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/runner/cosi",
         "//agentplane/runner/lifecycle",
-        "//agentplane/runner/operation",
         "//agentplane/runner/retained",
         "//agentplane/runner/scripts",
         "@com_github_cosi_project_runtime//pkg/controller",
@@ -41,9 +41,9 @@ go_test(
     embed = [":bootstrap"],
     race = "on",
     deps = [
+        "//agentplane/env/supervision",
         "//agentplane/runner/lifecycle",
         "//agentplane/runner/scripts",
-        "//agentplane/runner/supervision",
         "@com_github_cosi_project_runtime//pkg/controller/runtime",
         "@com_github_cosi_project_runtime//pkg/safe",
         "@com_github_cosi_project_runtime//pkg/state",

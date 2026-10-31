@@ -12,7 +12,7 @@ go_library(
         "//agentplane/runner/session:__pkg__",
     ],
     deps = [
-        "//agentplane/runner/supervision",
+        "//agentplane/env/supervision",
         "@org_golang_x_sys//unix",
     ],
 )
@@ -22,5 +22,5 @@ go_test(
     srcs = ["workspace_test.go"],
     embed = [":workspace"],
     race = "on",
-    deps = ["//agentplane/runner/supervision"],
+    deps = ["//agentplane/env/supervision"],
 )

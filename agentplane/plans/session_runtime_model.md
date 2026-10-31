@@ -98,7 +98,7 @@ agentplane/
     execution/             # execution service, API/protocol and clients
     harnesshost/           # environment-bound host and native Codex/Claude adapters
     images/                # Pod/VM runtime packaging
-    operation/             # shared one-shot operation support
+    oneoff/                # shared one-shot work lifecycle support
     supervision/           # shared process supervision
   x/central_sampler/       # independent control-plane sampler; not an environment host
 ```
@@ -106,8 +106,9 @@ agentplane/
 `env/` groups software specific to operating execution environments. The native Harness Host runs
 inside an environment; the central sampler owns the LLM loop outside environments and may use the
 Execution service API as a client. Keep the Executor protocol and client with `env/execution`, whose
-API is consumed by the central sampler and Gateway. Shared supervision and one-shot operation
-support serve the Environment Runtime, Execution service and Harness Host; they create no services.
+API is consumed by the central sampler and Gateway. Shared supervision and one-shot work
+coordination serve the Environment Runtime, Execution service and Harness Host; they create no
+services.
 Use “execution environment” in APIs/docs to distinguish it from a deployment such as staging.
 Existing experimental implementations retain their status when relocated.
 

@@ -18,8 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/agentydragon/ducktape/agentplane/runner/executor/control"
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )

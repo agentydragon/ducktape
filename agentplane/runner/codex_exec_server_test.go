@@ -16,13 +16,13 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	executorcontrol "github.com/agentydragon/ducktape/agentplane/runner/executor/control"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
