@@ -581,10 +581,14 @@ and execution attachments without choosing their storage or forcing a global cre
 external placement when capabilities are otherwise equal, for isolation and independent lifetimes.
 Characterize complete per-feature placement; OpenClaw's historical partial remote support is a
 counterexample to equating remote shell forwarding with a fully separated harness.
-Support the design cases of Sandbox-first native CLI use, Session-first central use, no Sandbox
-(external MCP tools only), and later attachment/detachment. Central Session data must survive
-execution-Sandbox deletion. Decide cardinality, capabilities, lifecycle, authority and attribution;
-reuse the existing versioned Codex environment API evidence without claiming unsupported modes work.
+Support Sandbox-first native CLI use and Session-first central use with 0..N environments and later
+attachment/detachment. Central Session data must survive execution-Sandbox deletion. The 2026-10-30
+discussion adds durable harness stores versus running hosts, dispatcher/gateway role boundaries,
+caller-SA provisioning, agent-facing environment context and unresolved skills delivery, programmatic
+environment access, partial-output failures and recovery after JS host loss. Resource visibility,
+rightsizing and Claude workload placement are independent follow-ups in the brief. Decide concrete
+capabilities, lifecycle, authority and attribution; reuse the existing versioned Codex environment
+API evidence without claiming unsupported modes work.
 Exit: reviewed vocabulary, lifecycle/API examples and a data-preserving transition proposal covering
 these cases. This authorizes no implementation, deployment or native-state migration.
 
