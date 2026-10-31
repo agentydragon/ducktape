@@ -286,9 +286,8 @@ descriptions and input schemas; `GET /v1/action-groups/{group}/actions/{action}`
 directly and 404s clearly on an unknown group or action. Both are workload-authenticated reads with
 no owner-scoping, since the catalog is the same for every caller.
 
-Group bindings are reviewed runtime configuration, not a dynamic registry: `action_groups` is read
-from the Action Service settings file and applied at startup ([configuration](config.go)). Both
-environments deploy the service with `Recreate`.
+Group bindings are reviewed runtime configuration, not a dynamic registry: each Action Service
+replica reads `action_groups` from the settings file when it starts ([configuration](config.go)).
 `catalog.MCPBinding.config` is never exposed by discovery; only the human-authored executor description is.
 
 The catalog is also the admission and routing authority: `ActionService` resolves the submitted
@@ -454,9 +453,9 @@ authentication performs no Thread or Agent lookup.
 Operator/BFF calls use the separate `/v1/operator/...` surface, gated by the configured OIDC
 verifier. Without `operator_oidc`, operator requests are refused.
 
-The Deployment uses the same `//agentplane/action_service:service_image` for its server and
-migration init container, which explicitly executes `/usr/local/bin/actions-migrate`. Each deployed
-environment gives the service its own `actions` database and login role on the namespace's shared
+The service image runs Goose migrations before opening listeners or starting workers. Its
+`--migrate-only` mode uses the same code path for fixture checks. Each deployed environment gives
+the service its own `actions` database and login role on the namespace's shared
 CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`),
 separate from the integration app's database.
 
@@ -466,13 +465,14 @@ Goose version 7 creates the final typed schema on an empty database. A database 
 version 6 is adopted in place: the migration validates its history and schema, then records version
 7 without replaying DDL or rewriting Action rows. Existing Goose versions 1–6 and Alembic history
 remain intact. Databases behind version 6, or with a partial or unmarked schema, must first be
-repaired with the previous migration-capable image. Do not renumber this baseline; subsequent schema
+repaired with the earlier migration-capable image. Do not renumber this baseline; subsequent schema
 changes use later Goose versions.
 
 Action identities use `action_group`/`action_name` columns, event actors use binary `Principal`
 messages, and decision policy evidence uses binary `PolicyEvidence` messages. Arguments, results and
-errors retain JSONB. The `Recreate` Deployment stops old writers before the image-coupled migration
-init container runs; Goose's session lock serializes concurrent starts. A database with historical
+errors retain JSONB. The rolling Deployment keeps the existing replica serving while replacements
+apply migrations. Goose's session lock serializes concurrent starts; every schema change must
+remain compatible with the old and new service versions during that overlap. A database with historical
 versions 1–6 retains its rollback path to a typed-storage-compatible version 6 image. A fresh
 version 7 database requires a rollback image that understands the version 7 baseline, or a
 coordinated database restore. See the
