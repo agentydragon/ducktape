@@ -2,10 +2,12 @@ package centralsampler
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 	"time"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"
 )
 
@@ -65,7 +67,7 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 		t.Fatal(err)
 	}
 	replacement := &responses.Context{Items: []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "opaque"}}}
-	intentID, err := store.BeginCompaction(t.Context(), owner, map[string]any{"kind": "compaction"}, conversation.Context())
+	intentID, err := store.BeginCompaction(t.Context(), owner, IntentRequest{Kind: PendingIntentCompaction}, conversation.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +112,7 @@ func TestBlockedReasonNamesUnresolvedIntentInGetSession(t *testing.T) {
 	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 		t.Fatal(err)
 	}
-	intentID, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling"})
+	intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,5 +135,34 @@ func TestBlockedReasonNamesUnresolvedIntentInGetSession(t *testing.T) {
 	}
 	if described.GetBlockedReason() != *blocked.BlockedReason {
 		t.Fatalf("GetSession response blocked_reason=%q, want %q", described.GetBlockedReason(), *blocked.BlockedReason)
+	}
+}
+
+func TestStoreRejectsUnknownStatusesAndTurnResults(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RegisterProcess(t.Context(), owner, "known-process", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ProcessResult(t.Context(), owner, "known-process", nil, "not-a-status", nil, false); !errors.Is(err, protocol.ErrInvalid) {
+		t.Errorf("ProcessResult with unknown status = %v, want ErrInvalid", err)
+	}
+	if err := store.CellResult(t.Context(), owner, "known-cell", "not-a-status"); !errors.Is(err, protocol.ErrInvalid) {
+		t.Errorf("CellResult with unknown status = %v, want ErrInvalid", err)
+	}
+	if err := store.FinishCommand(t.Context(), owner, session.ID, "turn", TurnCell); !errors.Is(err, protocol.ErrInvalid) {
+		t.Errorf("FinishCommand with continuing turn result = %v, want ErrInvalid", err)
+	}
+	// The migration constraints hold even for writers that bypass the typed store API.
+	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_process SET status='not-a-status' WHERE id='known-process'`); err == nil {
+		t.Error("database accepted an unknown process status")
+	}
+	if _, err := store.DB().ExecContext(t.Context(), `INSERT INTO sampler_cell(id,conversation_id,generation,status) VALUES('c',$1,$2,'not-a-status')`,
+		owner.ConversationID, owner.Generation); err == nil {
+		t.Error("database accepted an unknown cell status")
 	}
 }

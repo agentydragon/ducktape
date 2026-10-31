@@ -11,6 +11,7 @@ go_library(
         "evidence.go",
         "instructions.go",
         "json.go",
+        "status.go",
         "tool_definitions.go",
         "tool_invocation.go",
         "tool_surface.go",

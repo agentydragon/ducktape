@@ -8,7 +8,7 @@ import (
 
 // ValidateCompaction validates provider records before the caller commits them as the active
 // context. The append-only transcript remains owned by the caller.
-func ValidateCompaction(original *Context, records []json.RawMessage, audit map[string]any, environmentText string) (*Context, error) {
+func ValidateCompaction(original *Context, records []json.RawMessage, audit *Audit, environmentText string) (*Context, error) {
 	if original == nil {
 		return nil, protocol.ErrInvalid
 	}

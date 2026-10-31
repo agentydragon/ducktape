@@ -32,7 +32,7 @@ func testToolSurface() protocol.ToolSurface {
 	}
 }
 
-func testBuildRequest(params RequestParams, config Config, previousMessageID string) (map[string]any, error) {
+func testBuildRequest(params RequestParams, config Config, previousMessageID string) (Request, error) {
 	if params.Model == "" {
 		params.Model = "claude-test"
 	}
@@ -166,7 +166,7 @@ func TestBuildAnthropicRequestAcceptsStoredTextMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	message := body["messages"].([]json.RawMessage)[0]
+	message := body.Messages[0]
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(message, &fields); err != nil {
 		t.Fatal(err)
@@ -192,7 +192,7 @@ func TestBuildAnthropicRequestReplaysSignedThinkingBlockUnchanged(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	replayedMessage := body["messages"].([]json.RawMessage)[0]
+	replayedMessage := body.Messages[0]
 	var replayFields map[string]json.RawMessage
 	if err := json.Unmarshal(replayedMessage, &replayFields); err != nil {
 		t.Fatal(err)
@@ -212,8 +212,8 @@ func TestBuildAnthropicRequestReplaysSignedThinkingBlockUnchanged(t *testing.T) 
 		!bytes.Contains(stored[0], []byte(`"provider_usage":{"fixture":true}`)) {
 		t.Fatalf("unknown native response metadata was not retained in storage: records=%s err=%v", protocol.MustJSON(stored), err)
 	}
-	if body["diagnostics"].(map[string]any)["previous_message_id"] != "msg_signed" {
-		t.Fatalf("previous message diagnostics were lost: %+v", body["diagnostics"])
+	if body.Diagnostics == nil || body.Diagnostics.PreviousMessageID == nil || *body.Diagnostics.PreviousMessageID != "msg_signed" {
+		t.Fatalf("previous message diagnostics were lost: %+v", body.Diagnostics)
 	}
 }
 
@@ -345,7 +345,7 @@ func TestAnthropicContextRejectsUnsupportedAndDuplicateNativeCalls(t *testing.T)
 
 func TestAnthropicExecutionStateAppendsOnlyChangedSnapshots(t *testing.T) {
 	context := &Context{}
-	state := &protocol.ExecutionState{Cells: []protocol.ActiveCell{{ID: "cell-1", Status: "running"}}}
+	state := &protocol.ExecutionState{Cells: []protocol.ActiveCell{{ID: "cell-1", Status: protocol.CellLive}}}
 	for range 2 {
 		if err := context.AppendExecutionState(state); err != nil {
 			t.Fatal(err)
@@ -354,7 +354,7 @@ func TestAnthropicExecutionStateAppendsOnlyChangedSnapshots(t *testing.T) {
 	if len(context.Messages) != 1 {
 		t.Fatalf("identical execution snapshots appended %d messages", len(context.Messages))
 	}
-	state.Cells[0].Status = "completed"
+	state.Cells[0].Status = protocol.CellCompleted
 	if err := context.AppendExecutionState(state); err != nil {
 		t.Fatal(err)
 	}
@@ -440,6 +440,71 @@ func TestAnthropicCompactionRequiresContentAndSignature(t *testing.T) {
 			var known *protocol.KnownFailureError
 			if response != nil || !errors.As(err, &known) {
 				t.Fatalf("invalid compaction outcome=%+v err=%v; want known rejection", response, err)
+			}
+		})
+	}
+}
+
+// TestAnthropicRequestWireBytes pins the exact request and compaction bodies; prompt caching keys
+// on the rendered prefix, so a serialization change invalidates cached prefixes.
+func TestAnthropicRequestWireBytes(t *testing.T) {
+	conversation := &Context{}
+	if err := conversation.ChangeEffort("low"); err != nil {
+		t.Fatal(err)
+	}
+	image := json.RawMessage(`{"type":"input_image","image_url":"data:image/png;base64,aGVsbG8="}`)
+	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "inspect this"}, {Type: "input_image", Raw: image}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := conversation.AppendRecords([]json.RawMessage{json.RawMessage(`{"id":"msg_tool","type":"message","role":"assistant","content":[{"type":"tool_use","id":"call_wire","name":"exec","input":{"code":"text(1)"}}],"stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1}}`)}); err != nil {
+		t.Fatal(err)
+	}
+	calls, err := conversation.PendingCalls()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := conversation.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "1"}}); err != nil {
+		t.Fatal(err)
+	}
+	for index, text := range []string{"first answer", "second answer"} {
+		if index > 0 {
+			if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "again"}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		record := fmt.Sprintf(`{"id":"msg_%d","type":"message","role":"assistant","content":[{"type":"text","text":%q}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`, index, text)
+		if err := conversation.AppendRecords([]json.RawMessage{json.RawMessage(record)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	instructions := "Follow the fixture rules."
+	params := RequestParams{Context: conversation, Model: "claude-test", Effort: "high", Instructions: &instructions, Tools: testToolSurface()}
+	config := testConfig()
+	config.Compaction = &CompactionConfig{MaxTokens: 2048, KeepRecentTurns: 1}
+	system := string(protocol.MustJSON(protocol.BaseInstructions + "\n\n" + instructions))
+	for _, test := range []struct {
+		name string
+		body func() (any, error)
+		want string
+	}{
+		{name: "request", body: func() (any, error) { return BuildRequest(params, config, "msg_1") }, want: `{"cache_control":{"ttl":"1h","type":"ephemeral"},"diagnostics":{"previous_message_id":"msg_1"},"max_tokens":4096,"messages":[{"content":[],"output_config":{"effort":"low"},"role":"system"},{"content":[{"text":"inspect this","type":"text"},{"source":{"data":"aGVsbG8=","media_type":"image/png","type":"base64"},"type":"image"}],"role":"user"},{"content":[{"type":"tool_use","id":"call_wire","name":"exec","input":{"code":"text(1)"}}],"role":"assistant"},{"content":[{"content":[{"text":"1","type":"text"}],"tool_use_id":"call_wire","type":"tool_result"}],"role":"user"},{"content":[{"type":"text","text":"first answer"}],"role":"assistant"},{"content":[{"text":"again","type":"text"}],"role":"user"},{"content":[{"type":"text","text":"second answer"}],"role":"assistant"}],"model":"claude-test","output_config":{"effort":"high"},"stream":true,"system":"<system>","thinking":{"type":"adaptive","block_binding":{"prefix_mismatch_behavior":"error"}},"tools":[{"description":"Execute code in the sampler-owned environment.","eager_input_streaming":true,"input_schema":{"additionalProperties":false,"properties":{"cell_id":{"type":"string"},"code":{"type":"string"},"yield_time_ms":{"type":"integer"}},"type":"object"},"name":"exec","strict":true}]}`},
+		{name: "request without previous message", body: func() (any, error) { return BuildRequest(params, config, "") }, want: `{"cache_control":{"ttl":"1h","type":"ephemeral"},"diagnostics":{"previous_message_id":null},"max_tokens":4096,"messages":[{"content":[],"output_config":{"effort":"low"},"role":"system"},{"content":[{"text":"inspect this","type":"text"},{"source":{"data":"aGVsbG8=","media_type":"image/png","type":"base64"},"type":"image"}],"role":"user"},{"content":[{"type":"tool_use","id":"call_wire","name":"exec","input":{"code":"text(1)"}}],"role":"assistant"},{"content":[{"content":[{"text":"1","type":"text"}],"tool_use_id":"call_wire","type":"tool_result"}],"role":"user"},{"content":[{"type":"text","text":"first answer"}],"role":"assistant"},{"content":[{"text":"again","type":"text"}],"role":"user"},{"content":[{"type":"text","text":"second answer"}],"role":"assistant"}],"model":"claude-test","output_config":{"effort":"high"},"stream":true,"system":"<system>","thinking":{"type":"adaptive","block_binding":{"prefix_mismatch_behavior":"error"}},"tools":[{"description":"Execute code in the sampler-owned environment.","eager_input_streaming":true,"input_schema":{"additionalProperties":false,"properties":{"cell_id":{"type":"string"},"code":{"type":"string"},"yield_time_ms":{"type":"integer"}},"type":"object"},"name":"exec","strict":true}]}`},
+		{name: "compaction", body: func() (any, error) {
+			plan, err := PrepareCompaction(params, config, "msg_1", "high")
+			if err != nil {
+				return nil, err
+			}
+			return plan.Body, nil
+		}, want: `{"cache_control":{"ttl":"1h","type":"ephemeral"},"compaction":{"type":"summarize"},"diagnostics":{"previous_message_id":"msg_1"},"max_tokens":2048,"messages":[{"content":[],"output_config":{"effort":"low"},"role":"system"},{"content":[{"text":"inspect this","type":"text"},{"source":{"data":"aGVsbG8=","media_type":"image/png","type":"base64"},"type":"image"}],"role":"user"},{"content":[{"type":"tool_use","id":"call_wire","name":"exec","input":{"code":"text(1)"}}],"role":"assistant"},{"content":[{"content":[{"text":"1","type":"text"}],"tool_use_id":"call_wire","type":"tool_result"}],"role":"user"},{"content":[{"type":"text","text":"first answer"}],"role":"assistant"}],"model":"claude-test","output_config":{"effort":"high"},"stream":true,"system":"<system>","thinking":{"type":"adaptive","block_binding":{"prefix_mismatch_behavior":"error"}},"tools":[{"description":"Execute code in the sampler-owned environment.","eager_input_streaming":true,"input_schema":{"additionalProperties":false,"properties":{"cell_id":{"type":"string"},"code":{"type":"string"},"yield_time_ms":{"type":"integer"}},"type":"object"},"name":"exec","strict":true}]}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body, err := test.body()
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := strings.Replace(string(protocol.MustJSON(body)), system, `"<system>"`, 1)
+			if got != test.want {
+				t.Fatalf("wire body changed:\ngot  %s\nwant %s", got, test.want)
 			}
 		})
 	}

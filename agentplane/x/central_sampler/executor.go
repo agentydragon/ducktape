@@ -111,7 +111,7 @@ func ConnectExecutor(ctx context.Context, store *Store, owner Owner, session *Se
 	}
 	needsRemote := len(state.Cells) > 0
 	for _, process := range state.Processes {
-		if process.Status != "exited_unread" && process.Status != "abandoned" {
+		if process.Status != protocol.ProcessExitedUnread && process.Status != protocol.ProcessAbandoned {
 			needsRemote = true
 		}
 	}
@@ -198,7 +198,7 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 			if processErr != nil {
 				return fmt.Errorf("inspect process %s after failed executor reconnect: %w", notDispatched.processID, processErr)
 			}
-			if process.Status == "starting" {
+			if process.Status == protocol.ProcessStarting {
 				outcome = "not_dispatched"
 			}
 			if abandonErr := e.store.AbandonProcess(ctx, e.owner, notDispatched.processID, process.AfterSequence, nil, outcome, notDispatched.retainedSession); abandonErr != nil {
@@ -304,12 +304,12 @@ func (e *Executor) startProcess(ctx context.Context, argv []string, cwd string, 
 		var rejected *executorRejectedError
 		if errors.As(err, &rejected) {
 			// No process exists; release its session number.
-			err = errors.Join(err, e.store.ProcessResult(ctx, e.owner, processID, nil, "exited", nil, true))
+			err = errors.Join(err, e.store.ProcessResult(ctx, e.owner, processID, nil, protocol.ProcessExited, nil, true))
 		}
 		lock.Unlock()
 		return "", 0, nil, err
 	}
-	if err := e.store.ProcessResult(ctx, e.owner, processID, nil, "running", nil, false); err != nil {
+	if err := e.store.ProcessResult(ctx, e.owner, processID, nil, protocol.ProcessRunning, nil, false); err != nil {
 		lock.Unlock()
 		return "", 0, nil, err
 	}
@@ -338,7 +338,7 @@ func (e *Executor) Setup(ctx context.Context, script string, output func(string,
 	if _, err := executorRPC[executorStarted](ctx, e, "process/start", executorStart{ProcessID: processID, Argv: []string{"/bin/sh", "-eu", "-c", script}, Cwd: fileURI(e.cwd), EnvPolicy: e.envPolicy(), Env: e.environment}); err != nil {
 		return 0, err
 	}
-	if err := e.store.ProcessResult(ctx, e.owner, processID, nil, "running", nil, false); err != nil {
+	if err := e.store.ProcessResult(ctx, e.owner, processID, nil, protocol.ProcessRunning, nil, false); err != nil {
 		return 0, err
 	}
 	var after *uint64
@@ -360,7 +360,7 @@ func (e *Executor) Setup(ctx context.Context, script string, output func(string,
 			after = &sequence
 		}
 		if result.uncertain() {
-			_ = e.store.ProcessResult(ctx, e.owner, processID, after, "unknown", nil, false)
+			_ = e.store.ProcessResult(ctx, e.owner, processID, after, protocol.ProcessUnknown, nil, false)
 			return 0, fmt.Errorf("setup process outcome unknown: %v", result.Failure)
 		}
 		if result.drained() {
@@ -368,7 +368,7 @@ func (e *Executor) Setup(ctx context.Context, script string, output func(string,
 			if exitCode == nil {
 				return 0, errors.New("setup process exited without an exit code")
 			}
-			if err := e.store.ProcessResult(ctx, e.owner, processID, after, "exited", exitCode, false); err != nil {
+			if err := e.store.ProcessResult(ctx, e.owner, processID, after, protocol.ProcessExited, exitCode, false); err != nil {
 				return 0, err
 			}
 			return *exitCode, nil
@@ -401,8 +401,8 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 	if err != nil {
 		return nil, err
 	}
-	if process.Status != "running" && process.Status != "exited_unread" {
-		if process.Status == "abandoned" {
+	if process.Status != protocol.ProcessRunning && process.Status != protocol.ProcessExitedUnread {
+		if process.Status == protocol.ProcessAbandoned {
 			return nil, &toolError{fmt.Sprintf("write_stdin failed: process %d has an unknown remote outcome and its handle is abandoned; no input was sent", plan.sessionID)}
 		}
 		return nil, fmt.Errorf("session %d is %s; its remote outcome is unknown", plan.sessionID, process.Status)
@@ -412,7 +412,7 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 			if plan.chars != interruptInput {
 				return nil, &toolError{"write_stdin failed: " + stdinClosedMessage}
 			}
-			if process.Status == "running" {
+			if process.Status == protocol.ProcessRunning {
 				if err := e.dispatchInput(ctx, func() error {
 					_, err := executorRPC[executorEmpty](ctx, e, "process/signal", executorSignal{ProcessID: process.ID, Signal: "interrupt"})
 					return err
@@ -420,7 +420,7 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 					return nil, err
 				}
 			}
-		} else if process.Status == "running" {
+		} else if process.Status == protocol.ProcessRunning {
 			// A write to an exited terminal is moot; the poll below reports the exit.
 			if err := e.dispatchInput(ctx, func() error {
 				result, err := executorRPC[executorWriteResult](ctx, e, "process/write", executorWrite{ProcessID: process.ID, Chunk: []byte(plan.chars), WriteID: uuid.NewString()})
@@ -470,8 +470,8 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 		return nil, err
 	}
 	after := process.AfterSequence
-	if process.Status == "exited_unread" {
-		if err := e.store.ProcessResult(ctx, e.owner, processID, after, "exited", process.ExitCode, true); err != nil {
+	if process.Status == protocol.ProcessExitedUnread {
+		if err := e.store.ProcessResult(ctx, e.owner, processID, after, protocol.ProcessExited, process.ExitCode, true); err != nil {
 			return nil, err
 		}
 		return &processObservation{output: output, exitCode: process.ExitCode, exited: true}, nil
@@ -498,17 +498,17 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 			after = &seq
 		}
 		if result.uncertain() {
-			_ = e.store.ProcessResult(ctx, e.owner, processID, after, "unknown", nil, false)
+			_ = e.store.ProcessResult(ctx, e.owner, processID, after, protocol.ProcessUnknown, nil, false)
 			return nil, fmt.Errorf("remote process outcome unknown: %v", result.Failure)
 		}
 		if result.drained() {
-			if err := e.store.ProcessResult(ctx, e.owner, processID, after, "exited", result.ExitCode, true); err != nil {
+			if err := e.store.ProcessResult(ctx, e.owner, processID, after, protocol.ProcessExited, result.ExitCode, true); err != nil {
 				return nil, err
 			}
 			return &processObservation{output: output, exitCode: result.ExitCode, exited: true, wallTime: time.Since(start).Seconds()}, nil
 		}
 		if !result.Exited && !time.Now().Before(deadline) {
-			if err := e.store.ProcessResult(ctx, e.owner, processID, after, "running", nil, true); err != nil {
+			if err := e.store.ProcessResult(ctx, e.owner, processID, after, protocol.ProcessRunning, nil, true); err != nil {
 				return nil, err
 			}
 			return &processObservation{output: output, wallTime: time.Since(start).Seconds()}, nil
@@ -525,7 +525,7 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 	}
 	progressed := false
 	for _, process := range state.Processes {
-		if process.Status == "exited" || process.Status == "exited_unread" {
+		if process.Status == protocol.ProcessExited || process.Status == protocol.ProcessExitedUnread {
 			continue
 		}
 		lock := e.processLock(process.ID)
@@ -537,11 +537,11 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 			lock.Unlock()
 			return progressed, err
 		}
-		if row.Status == "abandoned" || row.Status == "exited" || row.Status == "exited_unread" {
+		if row.Status == protocol.ProcessAbandoned || row.Status == protocol.ProcessExited || row.Status == protocol.ProcessExitedUnread {
 			lock.Unlock()
 			continue
 		}
-		if row.Status != "running" {
+		if row.Status != protocol.ProcessRunning {
 			lock.Unlock()
 			return progressed, fmt.Errorf("cannot reconcile remote process in state %s", row.Status)
 		}
@@ -568,7 +568,7 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 			return progressed, rpcErr
 		}
 		if result.uncertain() {
-			_ = e.store.ProcessResult(ctx, e.owner, row.ID, row.AfterSequence, "unknown", nil, false)
+			_ = e.store.ProcessResult(ctx, e.owner, row.ID, row.AfterSequence, protocol.ProcessUnknown, nil, false)
 			lock.Unlock()
 			return progressed, fmt.Errorf("remote process outcome unknown: %v", result.Failure)
 		}
@@ -602,10 +602,10 @@ func (e *Executor) InterruptAll(ctx context.Context) (map[string]any, error) {
 	}
 	outcomes := map[string]any{}
 	for _, process := range state.Processes {
-		if process.Status == "exited_unread" || process.Status == "exited" {
+		if process.Status == protocol.ProcessExitedUnread || process.Status == protocol.ProcessExited {
 			continue
 		}
-		intent, err := e.store.RecordNested(ctx, e.owner, map[string]any{"kind": "interrupt_process", "session_id": process.ID})
+		intent, err := e.store.RecordNested(ctx, e.owner, IntentInterruptProcess, map[string]any{"session_id": process.ID})
 		if err != nil {
 			return outcomes, err
 		}

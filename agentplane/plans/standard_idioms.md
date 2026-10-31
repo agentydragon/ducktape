@@ -37,14 +37,6 @@ payload-free notifications through `wakeups.Hub`, and `WHERE version > last` res
 
 ## Central sampler
 
-### `SAMPLER_TYPED_STATE`
-
-The turn loop returns bare strings (`"done"`, `"cell"`, `"steer"`, …) dispatched by string compares;
-`FinishCommand` re-derives the proto outcome from them; process and cell statuses are strings compared
-about 80 times with no DB CHECK; intent payloads are `map[string]any` probed by key, beside the typed
-`PendingIntentKind` in the same package. Use named types with constants, typed intent payloads and
-CHECK constraints.
-
 ### `SAMPLER_JOURNAL_DIET` (decision)
 
 Operator to weigh in. Every sampling intent stores the full Responses request body

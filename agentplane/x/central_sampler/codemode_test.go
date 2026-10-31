@@ -825,7 +825,7 @@ func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*Sto
 
 func appendModelToolCall(t *testing.T, store *Store, owner Owner, call protocol.ToolInvocation) {
 	t.Helper()
-	intentID, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling", "response_id": call.CallID})
+	intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -852,16 +852,16 @@ func advanceWithFakeOperation(
 	peer *fakeCodeModePeer,
 	wantMethod string,
 	respond func(int64),
-) (string, error) {
+) (TurnResult, error) {
 	t.Helper()
 	done := make(chan struct {
-		result string
+		result TurnResult
 		err    error
 	}, 1)
 	go func() {
 		result, err := runtime.advance(t.Context(), code.owner, live, nil, &Session{Model: "fixture-model"})
 		done <- struct {
-			result string
+			result TurnResult
 			err    error
 		}{result: result, err: err}
 	}()

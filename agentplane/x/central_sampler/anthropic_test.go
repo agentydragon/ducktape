@@ -44,7 +44,7 @@ func TestAnthropicStreamPersistsNativeHistoryObservationsWithSourceLinks(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	intentID, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling"})
+	intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	intent, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling"})
+	intent, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +294,7 @@ func TestAnthropicInvalidBlockStartIsPersistedWithoutHistoryObservation(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	intentID, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling"})
+	intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
 	if err != nil {
 		t.Fatal(err)
 	}

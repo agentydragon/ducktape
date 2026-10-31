@@ -1866,7 +1866,6 @@ accepted; `SAMPLER_JOURNAL_DIET` and `ACTION_SERVICE_PORT_SHARING` await the ope
 ```mermaid
 flowchart LR
     KUBERNETES_NATIVE_WATCH_HEALTH[Staging check: informer health after #13060]
-    SAMPLER_TYPED_STATE[In review: typed sampler states, #13073]
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
     ACTION_SERVICE_PORT_SHARING[Decision: a simpler single Action Service address]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: Dispatcher and Gateway merge] --> DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
@@ -1882,11 +1881,6 @@ now go unavailable on any list or watch failure until client-go's next success, 
 staging's RBAC and API server behaviour. Check once Flux applies it: those Pods and the app become
 Ready and stay Ready without readiness flapping, egress admin `GetHealth` reports `available` with an
 empty `failing` map, and the app shows no watch warning. Delete this node once observed.
-
-### In review
-
-Each is one independently finishable PR; see the plan section of the same name:
-`SAMPLER_TYPED_STATE`.
 
 ### `SAMPLER_JOURNAL_DIET` — what the sampler journals
 

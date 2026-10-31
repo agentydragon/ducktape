@@ -147,8 +147,7 @@ func (c typedExecutorClient) OpenSession(ctx context.Context, req *executorpb.Op
 func (e *Executor) openSession(ctx context.Context, resume *string) error {
 	handshakeCtx, cancelHandshake := context.WithTimeout(ctx, e.initializeTimeout)
 	defer cancelHandshake()
-	request := map[string]any{"kind": "executor", "method": "initialize", "resume_session_id": resume}
-	intent, err := e.store.RecordNested(ctx, e.owner, request)
+	intent, err := e.store.RecordNested(ctx, e.owner, IntentExecutor, map[string]any{"method": "initialize", "resume_session_id": resume})
 	if err != nil {
 		return err
 	}
@@ -197,7 +196,7 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 	if opened == nil {
 		cancel()
 		err := errors.New("executor OpenSession returned an empty response")
-		finishErr := e.finishUnknownIntent(ctx, intent, map[string]any{"outcome": "unknown", "request_id": intent, "reason": err.Error()})
+		finishErr := e.finishUnknownIntent(ctx, intent, map[string]any{"outcome": NestedUnknown, "request_id": intent, "reason": err.Error()})
 		return errors.Join(err, finishErr)
 	}
 	frameErr := e.recordNativeFrames(ctx, intent, opened.ExecutionSessionId, "initialize", opened.NativeFrames)
@@ -208,7 +207,7 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 	if opened.ExecutionSessionId == "" || resume != nil && opened.ExecutionSessionId != *resume {
 		cancel()
 		mismatch := errors.New("executor resumed a different or empty execution session")
-		finishErr := e.finishUnknownIntent(ctx, intent, map[string]any{"outcome": "unknown", "request_id": intent, "execution_session_id": opened.ExecutionSessionId, "reason": mismatch.Error()})
+		finishErr := e.finishUnknownIntent(ctx, intent, map[string]any{"outcome": NestedUnknown, "request_id": intent, "execution_session_id": opened.ExecutionSessionId, "reason": mismatch.Error()})
 		return errors.Join(frameErr, mismatch, finishErr)
 	}
 	var shellName *string
@@ -225,7 +224,7 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 		return err
 	}
 	if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{
-		"outcome": "completed", "request_id": intent, "execution_session_id": opened.ExecutionSessionId,
+		"outcome": NestedCompleted, "request_id": intent, "execution_session_id": opened.ExecutionSessionId,
 		"sessionId": opened.ExecutionSessionId, "environmentInfo": environmentInfo,
 	}); err != nil {
 		cancel()
@@ -257,7 +256,7 @@ func (e *Executor) finishOpenFailure(ctx context.Context, intent string, respons
 		}
 		rejectedError := &executorRejectedError{method: "initialize", code: int(response.Status.GetUpstreamCode()), message: message}
 		rejected := map[string]any{"code": response.Status.UpstreamCode, "message": message}
-		if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": "rejected", "request_id": intent, "rejected": rejected}); err != nil {
+		if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedRejected, "request_id": intent, "rejected": rejected}); err != nil {
 			return errors.Join(nativeEvidenceErr, rejectedError, err)
 		}
 		// A typed rejection alone is insufficient if accompanying native frames failed to
@@ -269,7 +268,7 @@ func (e *Executor) finishOpenFailure(ctx context.Context, intent string, respons
 	if response.Status != nil && response.Status.Message != "" {
 		message = response.Status.Message
 	}
-	if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": "unknown", "request_id": intent, "message": message}); err != nil {
+	if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedUnknown, "request_id": intent, "message": message}); err != nil {
 		return errors.Join(nativeEvidenceErr, errors.New(message), fmt.Errorf("record unknown OpenSession outcome: %w", err))
 	}
 	return errors.Join(nativeEvidenceErr, &executorTransportError{method: "initialize", phase: "response", intentID: intent, cause: errors.New(message)})
@@ -361,17 +360,17 @@ func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvi
 			return nil, &executorNotDispatchedError{method: method, processID: executorProcessID(params), retainedSession: e.retainedSessionID(ctx), cause: err}
 		}
 	}
-	requestJSON, err := protocolObject(map[string]any{"kind": "executor", "method": method, "params": params})
+	requestJSON, err := protocolObject(map[string]any{"method": method, "params": params})
 	if err != nil {
 		return nil, err
 	}
-	intent, err := e.store.RecordNested(ctx, e.owner, requestJSON)
+	intent, err := e.store.RecordNested(ctx, e.owner, IntentExecutor, requestJSON)
 	if err != nil {
 		return nil, err
 	}
 	request, err := e.typedRequest(method, params, intent)
 	if err != nil {
-		finishErr := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": "not_dispatched", "request_id": intent, "method": method, "reason": err.Error()})
+		finishErr := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedNotDispatched, "request_id": intent, "method": method, "reason": err.Error()})
 		return nil, errors.Join(err, finishErr)
 	}
 	response, err := e.call(ctx, method, request)
@@ -443,7 +442,7 @@ func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvi
 			message = "request rejected"
 		}
 		rejected := map[string]any{"code": statusValue.UpstreamCode, "message": message}
-		if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": "rejected", "request_id": intent, "execution_session_id": e.sessionID, "rejected": rejected}); err != nil {
+		if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedRejected, "request_id": intent, "execution_session_id": e.sessionID, "rejected": rejected}); err != nil {
 			return nil, errors.Join(&executorRejectedError{method: method, code: int(statusValue.GetUpstreamCode()), message: message}, frameJournalErr, err)
 		}
 		rejection := &executorRejectedError{method: method, code: int(statusValue.GetUpstreamCode()), message: message}
@@ -463,12 +462,12 @@ func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvi
 	}
 	result, err := responseObject(method, response)
 	if err != nil {
-		finishErr := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": "completed", "request_id": intent, "execution_session_id": e.sessionID, "result_decode_error": err.Error()})
+		finishErr := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedCompleted, "request_id": intent, "execution_session_id": e.sessionID, "result_decode_error": err.Error()})
 		return nil, errors.Join(frameJournalErr, err, finishErr)
 	}
 	encoded, err := json.Marshal(result)
 	if err != nil {
-		finishErr := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": "completed", "request_id": intent, "execution_session_id": e.sessionID, "result_encoding_error": err.Error()})
+		finishErr := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedCompleted, "request_id": intent, "execution_session_id": e.sessionID, "result_encoding_error": err.Error()})
 		return nil, errors.Join(frameJournalErr, err, finishErr)
 	}
 	evidenceResult := make(map[string]any, len(result))
@@ -479,7 +478,7 @@ func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvi
 		evidenceResult = resultEvidence(result)
 	}
 	evidence := evidenceResult
-	evidence["outcome"] = "completed"
+	evidence["outcome"] = NestedCompleted
 	evidence["request_id"] = intent
 	evidence["execution_session_id"] = e.sessionID
 	if err := e.store.FinishNested(ctx, e.owner, intent, evidence); err != nil {
@@ -589,7 +588,7 @@ func (e *executorTransportError) Error() string {
 }
 func (e *executorTransportError) Unwrap() error { return e.cause }
 func (e *executorTransportError) evidence(retainedSession string) map[string]any {
-	result := map[string]any{"status": "abandoned", "remote_outcome": "unknown", "automatic_replay": false, "method": e.method, "phase": e.phase, "intent_id": e.intentID, "transport_error": e.cause.Error()}
+	result := map[string]any{"status": IntentResultAbandoned, "remote_outcome": NestedUnknown, "automatic_replay": false, "method": e.method, "phase": e.phase, "intent_id": e.intentID, "transport_error": e.cause.Error()}
 	if e.processID != "" {
 		result["process_id"] = e.processID
 	}
@@ -616,7 +615,7 @@ func (e *executorNotDispatchedError) Error() string {
 }
 func (e *executorNotDispatchedError) Unwrap() error { return e.cause }
 func (e *executorNotDispatchedError) evidence() map[string]any {
-	result := map[string]any{"status": "abandoned", "remote_outcome": "not_dispatched", "automatic_replay": false, "method": e.method, "transport_error": e.cause.Error()}
+	result := map[string]any{"status": IntentResultAbandoned, "remote_outcome": "not_dispatched", "automatic_replay": false, "method": e.method, "transport_error": e.cause.Error()}
 	if e.processID != "" {
 		result["process_id"] = e.processID
 	}
