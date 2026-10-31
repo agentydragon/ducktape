@@ -21,7 +21,7 @@ function stopThreadViewMarks(): number {
   return dropped;
 }
 
-export function markHistoryEvent(event: HistoryEvent): void {
+export function markThreadViewEvent(event: HistoryEvent): void {
   if (!capture && !window.__agentplaneThreadViewMarksEnabled) return;
   if (capture && capture.recorded++ >= MAX_CAPTURE_MARKS) {
     capture.dropped++;

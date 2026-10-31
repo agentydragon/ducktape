@@ -152,15 +152,27 @@ ts_library(
     visibility = ["//agentplane/app/frontend:__subpackages__"],
 )
 
+ts_library(
+    name = "test_setup",
+    testonly = True,
+    srcs = ["test_setup.ts"],
+    tsconfig = ":tsconfig",
+    visibility = [
+        "//agentplane/app/frontend:__pkg__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
+    deps = [":test_intersection_observer"],
+)
+
 vitest_config(
     name = "vitest_config",
     data = [
-        ":test_intersection_observer",
+        ":test_setup",
         "//:node_modules/happy-dom",
         "//:node_modules/jsdom",
     ],
     environment = "node",
-    setup_files = ["test_setup.ts"],
+    setup_files = ["test_setup.js"],
 )
 
 vitest_test(

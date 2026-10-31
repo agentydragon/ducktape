@@ -852,10 +852,10 @@ vitest_config(
     # Specs that need a DOM select a suite-specific environment.
     data = [
         "//:node_modules/happy-dom",
-        "//util/frontend:test_intersection_observer",
+        "//util/frontend:test_setup",
     ],
     environment = "node",
-    setup_files = ["//agentplane/app/frontend/testing:setup.js"],
+    setup_files = ["//util/frontend:test_setup.js"],
 )
 
 # Python visual tests mount the app against canned inventory and runner events.

@@ -173,8 +173,12 @@ ts_library(
 
 vitest_config(
     name = "vitest_config",
-    data = ["//:node_modules/happy-dom"],
+    data = [
+        "//:node_modules/happy-dom",
+        "//util/frontend:test_setup",
+    ],
     environment = "node",
+    setup_files = ["//util/frontend:test_setup.js"],
 )
 
 vitest_test(

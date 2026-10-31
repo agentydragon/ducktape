@@ -11,6 +11,7 @@ const roots: ReturnType<typeof createRoot>[] = [];
 
 async function mount(node: JSX.Element): Promise<HTMLDivElement> {
   const container = document.createElement("div");
+  document.body.append(container);
   const root = createRoot(container);
   roots.push(root);
   await act(async () => root.render(<MantineProvider env="test">{node}</MantineProvider>));
@@ -28,6 +29,7 @@ function control(container: HTMLElement, label: string): HTMLElement | undefined
 
 afterEach(async () => {
   for (const root of roots.splice(0)) await act(async () => root.unmount());
+  document.body.replaceChildren();
   vi.restoreAllMocks();
 });
 
