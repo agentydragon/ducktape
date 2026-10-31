@@ -158,8 +158,12 @@ interchangeable. Preserve existing Action authorization and outcomes rather than
 execution owner.
 
 An Agentplane-owned Code Mode executor and execution server are possible future implementations.
-Reducing Codex WebSocket/gRPC adaptation is a motivation, not a prerequisite or an implementation
-decision. Preserve sandbox-hosted app-server plus separate execution-container operation.
+Owning the JS host would also let Agentplane design its agent-facing APIs as ordinary libraries:
+structured errors and results, environment references across cells, direct Action calls, and
+explicit cancellation, waiting and state lifetimes. Translate transport quirks at the adapter
+boundary. Evaluate host ownership against concrete workflow ergonomics as well as the cost of
+Codex WebSocket/gRPC adaptation; no implementation choice is selected here. Preserve sandbox-hosted
+app-server plus separate execution-container operation.
 
 ## Resource visibility and placement
 
