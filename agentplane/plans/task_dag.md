@@ -18,7 +18,7 @@ remain useful but do not provide independently addressable Agentplane Sessions.
 
 | Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                                                     |
 | --------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | `CENTRAL_SAMPLER_HISTORY_EXPORT`, `CENTRAL_SAMPLER_REPLICA_ROLLOUT`, `CENTRAL_SAMPLER_TOOL_RECOVERY`; include compaction/route gaps when they prevent the chosen long-running workflow                             |
+| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | `CENTRAL_SAMPLER_REPLICA_ROLLOUT`, `CENTRAL_SAMPLER_SAMPLING_RECOVERY`, `CENTRAL_SAMPLER_TOOL_RECOVERY`; include compaction/route gaps when they prevent the chosen long-running workflow                          |
 | P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE`, `THREAD_CREATE_POLICY`, `THREAD_CREATE_AUTHORIZATION`, then the `DAILY_CI_AGENT` product milestone                                                                                         |
 | Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                                                          |
 | Next      | Faster fresh VMs and a usable Bazel client inside a VM                                                                | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select image/layering changes when measurements show they address startup or needed resource headroom                                                                         |
@@ -103,27 +103,28 @@ with preserved history, partial output and external-effect evidence, supported r
 generation fencing. Same-privilege Session spawning remains under stakeholder discussion and is
 not dispatched.
 
-| Owner                              | Scope                                                                             | Current state                                                                              |
-| ---------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `/root/usable_rollout`             | Planned drain implementation; broader ownership and sampling-recovery contract    | In flight: bounded drain selected; sampling-abandonment contract under review              |
-| `/root/usable_tools`               | `CENTRAL_SAMPLER_TOOL_RECOVERY`: tool failures and agent-visible partial output   | In flight: adopt #13033 maintenance and repair the observed-output error boundary          |
-| `/root/usable_acceptance`          | Assembled-system acceptance for the selected rollout and tool contracts           | Prior draft #13246 remains optional; nested K3s two-replica roll gate is waived            |
-| `/root/history_export_integration` | Concurrent History export correctness                                             | In flight, 2026-10-31 PDT: two independent exporters on shared PostgreSQL and real History |
-| `/root`                            | Cross-lane domain-contract review, integration, DAG status and rollout sequencing | In flight                                                                                  |
+Remaining work, checked against GitHub on 2026-10-31 UTC. These are review and rollout states,
+not reports of active workers; confirm ownership before dispatching follow-up implementation.
 
-Start with the rollout deadline/recovery decision and the tool-failure evidence inventory. Review
-existing work in [#13033](https://github.com/agentydragon/ducktape/pull/13033),
-[#13182](https://github.com/agentydragon/ducktape/pull/13182) and
-[#12933](https://github.com/agentydragon/ducktape/pull/12933) before adopting or assigning overlapping
-work. File conflicts do not block independent PRs. Required system checks and a documented rollback
-precede staging changes; a PR or a passing unit test is not deployment evidence.
+| Scope                               | Current state                                                                                                                                                                |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CENTRAL_SAMPLER_REPLICA_ROLLOUT`   | Rollout verification: [#13243](https://github.com/agentydragon/ducktape/pull/13243) is merged; confirm ordered exporter cutover, History catch-up and two-replica activation |
+| `CENTRAL_SAMPLER_SAMPLING_RECOVERY` | In review: [#13217](https://github.com/agentydragon/ducktape/pull/13217), explicit abandonment of uncertain provider sampling                                                |
+| `CENTRAL_SAMPLER_TOOL_RECOVERY`     | In review: [#13182](https://github.com/agentydragon/ducktape/pull/13182), truthful pre-dispatch exec failures; remaining agent-workflow acceptance below                     |
+
+File conflicts do not block independent PRs. Required system checks and a documented rollback
+precede staging changes; source merge is not deployment evidence. The
+[delegation proposal](https://github.com/agentydragon/ducktape/pull/13229) awaits stakeholder review;
+its implementation remains outside the current dispatch.
 
 Completion includes a continued useful Session through the supported failure/recovery cases,
 meaningful agent-visible failures and lost-state notices, no replay of uncertain mutations, and
 late-owner fencing. Deadline expiry is part of the rollout contract. The operator subsequently
 selected rolling updates with at least two replicas as the Agentplane control-plane deployment
-target. Include that target and multi-replica ownership/routing in sampler acceptance. Arbitrary
-JS-state restoration and the broader runtime redesign remain outside this sprint.
+target, with the accepted [Electric exception](electric_ha.md). Include multi-replica
+ownership/routing in sampler acceptance. K3s fixtures remain explicitly single-replica; neither a
+two-replica nested K3s roll nor the associated RBE kernel change is required. Arbitrary JS-state
+restoration and the broader runtime redesign remain outside this sprint.
 
 ### Dispatch order and prerequisites
 
@@ -145,13 +146,9 @@ its old ordering does not give it precedence over the selected tracks.
 ```mermaid
 flowchart LR
     subgraph PRIORITY_ZERO[P0: reliable long-running Sessions]
-        CENTRAL_SAMPLER_HISTORY_EXPORT[Required: async History cumulative-ACK exporter correctness]
-        CENTRAL_SAMPLER_REPLICA_ROLLOUT[Roll and owner-loss contract]
-        CENTRAL_SAMPLER_PLANNED_DRAIN[In flight: selected planned-roll drain]
-        CENTRAL_SAMPLER_TOOL_RECOVERY[JS and exec recovery]
-        CONTROL_PLANE_ROLLING_SERVICES[In review: control-plane deployment target]
-        CENTRAL_SAMPLER_HISTORY_EXPORT --> CENTRAL_SAMPLER_REPLICA_ROLLOUT
-        CENTRAL_SAMPLER_PLANNED_DRAIN --> CENTRAL_SAMPLER_REPLICA_ROLLOUT
+        CENTRAL_SAMPLER_REPLICA_ROLLOUT[Verify: exporter cutover and two rolling replicas]
+        CENTRAL_SAMPLER_SAMPLING_RECOVERY[In review: uncertain provider sampling recovery]
+        CENTRAL_SAMPLER_TOOL_RECOVERY[In review: pre-dispatch exec failures]
     end
     subgraph PRIORITY_ONE[P1: useful daily-agent workflow]
         THREAD_CREATE_POLICY[Caller-privilege create contract] --> THREAD_CREATE_AUTHORIZATION[Session creation and cooperation]
@@ -489,7 +486,8 @@ decision.
 
 ### `THREAD_CREATE_POLICY` — authorize session creation separately
 
-**Selected P1 decision; scope narrowed by the operator, 2026-10-30 PDT.** Start independently
+**Selected P1 decision; draft [#13229](https://github.com/agentydragon/ducktape/pull/13229)
+awaits stakeholder review.** Start independently
 addressable Agentplane child Sessions at the caller's privilege level, using its ServiceAccount.
 Reusing an environment with a separate working directory is acceptable. Different-privilege
 workers and generic delegation can wait; native harness subagents remain available independently.
@@ -742,13 +740,9 @@ flowchart LR
     AGENT_AUTHORED_CONVERSATIONS_DESIGN[Decision, unscheduled: conversations agents act on through tools]
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
-    CENTRAL_SAMPLER_REPLICA_ROLLOUT[In-flight P0 decision: rolls and owner loss that preserve agents]
-    CENTRAL_SAMPLER_HISTORY_EXPORT[Required P0: async History cumulative-ACK exporter correctness]
-    CENTRAL_SAMPLER_PLANNED_DRAIN[In-flight P0: selected planned-roll drain]
-    CENTRAL_SAMPLER_TOOL_RECOVERY[In-flight P0: JS and exec faults leave Sessions recoverable]
-    CONTROL_PLANE_ROLLING_SERVICES[In review: control-plane deployment target]
-    CENTRAL_SAMPLER_HISTORY_EXPORT --> CENTRAL_SAMPLER_REPLICA_ROLLOUT
-    CENTRAL_SAMPLER_PLANNED_DRAIN --> CENTRAL_SAMPLER_REPLICA_ROLLOUT
+    CENTRAL_SAMPLER_REPLICA_ROLLOUT[P0 verification: exporter cutover and two rolling replicas]
+    CENTRAL_SAMPLER_SAMPLING_RECOVERY[In-review P0: uncertain provider sampling recovery]
+    CENTRAL_SAMPLER_TOOL_RECOVERY[In-review P0: pre-dispatch exec failures and agent acceptance]
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check for standard-mode routes]
     CENTRAL_SAMPLER_PROMPT_COMPACTION[Unscheduled: client-side compaction prompt for routes without server compaction]
     CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
@@ -848,145 +842,70 @@ script and what it emitted) as runner items. Codex app-server has no `ThreadItem
 only the nested `commandExecution`. Needs upstream support, or reading the rollout or the native frames. Multi-block
 cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
 
-### `CENTRAL_SAMPLER_HISTORY_EXPORT` — async History export with cumulative acknowledgements
-
-**Required predecessor to sampler rollout; protocol selected by the operator, 2026-10-31 PDT.**
-Keep History export asynchronous to provider and executor work. Treat History's acknowledgement as a
-cumulative durable prefix: an acknowledgement through cursor `N` means every entry through `N` is
-committed, including entries sent by another replica. Exporters may replay overlapping entries;
-History's idempotent append and monotonic cursor are the authority. Do not reject a valid cumulative
-acknowledgement merely because it is beyond the current stream's page boundary. It must still be at
-or below the shared sampler journal's committed cursor; never advance a local checkpoint beyond
-History's durable contiguous prefix.
-
-First replace the current singleton writer with the new exporter semantics while the Deployment
-still uses its singleton `Recreate` profile. Do not overlap old and new exporter writers. As part of
-that cutover, use a one-time migration to clear only the rebuildable `sampler_export_checkpoint`
-rows: legacy markers can record an event acknowledgement before the announced metadata snapshot is
-complete. Preserve sampler conversation, event, effect and History data. Enable rolling two replicas
-only after the new singleton writer and exporter correctness gate are in place.
-
-The completed-snapshot checkpoint means both that History has cumulatively acknowledged the
-announced event prefix and that the History RPC successfully completed its final metadata update.
-A page acknowledgement alone does not mark the snapshot complete.
-
-Exit: automated concurrency coverage runs two independent exporter instances against shared
-sampler PostgreSQL and the real History service, with overlapping appends and delayed, reordered or
-lost acknowledgements. It proves no skipped History entry, no checkpoint regression or advance past
-the durably committed prefix, no snapshot completion before successful metadata/RPC completion, and
-safe reconnect/replay. No separate live gate is required when this proof and the planned-drain/
-fencing coverage leave no deployment-specific uncertainty.
-
 ### `CENTRAL_SAMPLER_REPLICA_ROLLOUT` — multiple replicas and rolls that preserve active agents
 
-**In-flight P0 decision; `/root/usable_rollout`, dispatched by the operator, 2026-10-30 PDT.** An ordinary sampler
-rollout interrupted an active Session's provider-response ingestion and left it durably blocked
-on a sampling intent ([incident evidence](../debug/2026_10_30_sampler_rollout_aborts_sampling.md)).
-The provider had completed; the sampler had persisted only a prefix. Existing explicit recovery
-excludes sampling uncertainty, and draining inbound gRPC does not drain the independent agent loop.
+**P0 rollout verification; the two-replica profile is merged.**
+The [runtime contract](../x/central_sampler/SPEC.md#runtime-and-effects) owns bounded
+drain, lease fencing and lost-host behavior; the
+[History contract](../x/central_sampler/SPEC.md#evidence-and-continuation) owns concurrent export and
+completed-snapshot checkpoints. Verify deployment evidence for the required activation order:
 
-Async History export and cumulative acknowledgements are tracked in
-`CENTRAL_SAMPLER_HISTORY_EXPORT`. This is a required predecessor to rolling two sampler replicas;
-it does not block the other seven PostgreSQL service conversions.
+1. Verify the old exporter was replaced using the singleton `Recreate` profile, the deployed image
+   contains `a9190914` or later, migration 9 completed, and retained Sessions caught up to History.
+   The migration clears only rebuildable delivery markers. Old exporters must stop before writers
+   with the new checkpoint semantics start; no Session, source journal or retained History deletion.
+2. Verify two-replica activation followed that cutover, with the image pin and replica profile
+   ordered to prevent two old exporters from starting.
+3. Observe the staging roll and useful continuation in the same Session with retained history and
+   environment identity. Reuse deterministic shared-PostgreSQL/History coverage for concurrent
+   exporters, competing owners, drain expiry, stale-owner writes and no replay of external effects.
 
-Design how multiple sampler replicas admit and own Sessions, transfer or drain ownership during
-rolls, and survive replica loss without duplicate sampling or executor effects. Include provider
-streams and durable completion, JavaScript host/cell state, retained executor bindings, lease renewal
-and generation fencing, and routing commands to the current owner. Compare finishing in-flight work
-under the old owner with durable handoff/adoption; recommend draining to a durable continuation
-boundary for planned rolls, with an explicit recovery contract when the owner dies before one.
-Decide how an already-blocked sampling intent can be reconciled or explicitly abandoned without
-replaying external effects or discarding conversation/workspace history.
+The nested K3s fixture stays at one replica independently of staging. Its optional draft
+[#13246](https://github.com/agentydragon/ducktape/pull/13246) and the Firecracker kernel limitation
+are not rollout prerequisites; the earlier failed fixture run provides no continuity evidence.
+No RBE kernel work is scheduled for this outcome.
 
-Exit: reviewed ownership, shutdown and recovery contracts; bounded drain/deadline behavior; and
-automated assembled acceptance covering competing sampler runtimes on shared PostgreSQL and
-History, a roll during provider ingestion and a live cell, owner loss and late-owner writes,
-preserved continuation, and no duplicate external execution. Reuse the planned-drain and
-generation-fencing coverage. The operator selected staging with two rolling sampler replicas; this remains the target.
-The K3s fixture remains explicitly one sampler replica independent of staging configuration. A
-nested two-replica rolling test inside RBE/K3s is waived; the K3s Firecracker
-`CONFIG_NETFILTER_XT_MATCH_STATISTIC` limitation is fixture-only and is not a sampler-roll
-prerequisite. Review shared-DB admission, ownership, command routing and migration overlap before
-deployment. Sampling-abandonment decisions also remain here; current recovery still does not resolve
-an uncertain sampling intent.
+Exit: ordered exporter cutover, two Ready rolling sampler replicas and bounded same-Session
+continuation evidence. Preserve the database, environments and History on rollback to singleton
+`Recreate`. Uncertain provider recovery is the independent review item below; it is required for
+the sprint's deadline-recovery outcome, not a new prerequisite for starting unrelated P1 work.
 
-### `CENTRAL_SAMPLER_PLANNED_DRAIN` — drain planned rolls to a durable continuation boundary
+### `CENTRAL_SAMPLER_SAMPLING_RECOVERY` — explicitly recover uncertain provider sampling
 
-**In flight; `/root/usable_rollout`, contract selected by `/root`, 2026-10-30 PDT.** On shutdown,
-stop new admission, claims and top-level execution steps while renewing existing leases. Let each
-current provider request or live cell finish through its fenced durable commit, allowing the
-nested calls needed by an admitted cell, then stop before the next top-level step and release
-ownership. A successor continues the same command/Session with explicit handling of lost volatile
-JavaScript state. This runtime slice precedes the selected rolling multi-replica deployment change.
+**In review, P0; [#13217](https://github.com/agentydragon/ducktape/pull/13217).** Finish the explicit
+recovery path for a provider request interrupted before its durable result, including drain expiry.
+Retain partial response and effect evidence, require authorized review at the current cursor, and
+continue the same Session without replaying the uncertain request. Fence the previous owner and
+tell the model what was abandoned and which volatile state was lost.
 
-Bound drain within the Pod termination deadline. At expiry, cancel execution, retain unresolved
-intent/evidence and release only after the driver exits, or let the lease expire on forced death.
-An unresolved provider intent remains blocked under the current recovery API: extending supported
-recovery is a separate decision above and is required before declaring the sprint's deadline
-usability outcome complete.
-
-Exit: focused PR with the shutdown contract in `SPEC.md` and deterministic current-effect/next-effect
-ordering, expiry and stale-owner coverage. Assembled rolling acceptance belongs to
-`CENTRAL_SAMPLER_REPLICA_ROLLOUT`. A nested RBE/K3s two-replica live roll is not required.
+Exit: reviewed recovery contract and merged implementation with stale-review/owner rejection,
+retained partial evidence and continued useful input after explicit recovery. Update the
+[recovery guide](../x/central_sampler/docs/blocked_session_recovery.md); do not clear blocked flags
+or silently retry a provider operation.
 
 ### `CENTRAL_SAMPLER_TOOL_RECOVERY` — JS and exec faults leave Sessions recoverable
 
-**In-flight P0; `/root/usable_tools`, dispatched by the operator, 2026-10-30 PDT.**
-The operator reports JS/exec bugs irrecoverably breaking Sessions.
-Inventory representative affected Sessions and their durable evidence, and distinguish remaining
-failures from already-merged transport/recovery work. Address the supported-tool path and its
-failure semantics: ordinary tool errors, lost executor observation, live JS host/cell loss and
-provider/context boundaries must not become an unexplained permanently unusable conversation.
+**In review, P0; [#13182](https://github.com/agentydragon/ducktape/pull/13182).** Finish classification
+of Gateway-proven pre-dispatch exec initialization rejection so it fails the call/turn without
+permanently blocking the Session. Generic transport loss and independent unresolved effects must
+retain their uncertainty. Settle model tool calls with matching failed outputs when non-dispatch
+is proven; later input must have valid continuation context.
 
-Review ownership, effect/admission evidence and continuation invariants before implementation;
-repair the responsible boundary rather than adding blind retries or clearing blocked flags.
-Preserve observed output, files and history as applicable. Tell the agent which runtime state was
-lost and allow safe continuation/recovery; retain uncertain effects without replaying them.
-Where evidence cannot establish an outcome, expose that uncertainty and define an explicit usable
-recovery transition. Do not promise exactly-once arbitrary external effects.
+The [runtime contract](../x/central_sampler/SPEC.md#runtime-and-effects) and
+[recovery guide](../x/central_sampler/docs/blocked_session_recovery.md) own nested tool errors,
+observed output, lost exec handles and host-generation recovery. Do not redispatch those
+implementations. Finish the agent-facing JS/exec workflow check against those contracts: useful
+continuation, meaningful partial-output failures and lost-state notices, without lost authored
+history or duplicated external work. Reuse existing regression coverage; add work only for a
+concrete uncovered failure.
 
-Exit: the named incident classes have focused regression coverage and a continued useful Session
-without lost authored history or duplicate external work. Exercise the affected JS/exec workflow
-with an agent, including partial output and meaningful failures. Related to planned-roll ownership,
-but the tool/runtime failure outcome is independently finishable.
+Review the overlapping blocked-Session UI [#12933](https://github.com/agentydragon/ducktape/pull/12933)
+before adding recovery affordances; it remains unmerged and is not a backend prerequisite.
 
-The desired JS error surface has native structured properties such as `error.observed_output.text`
-and `cause`. Current pinned-host string rejections are an explicit compatibility limitation;
-review central normalization when changing its host/delegate adapter, without making a host
-replacement prerequisite for the current fixes. See the [runtime direction](session_runtime_model.md#tool-access-disconnects-and-recovery).
-
-### `CONTROL_PLANE_ROLLING_SERVICES` — rolling Agentplane control-plane deployments
-
-**In review; `/root`, operator direction, 2026-10-30 PDT.** The control-plane deployment target is
-at least two replicas with rolling updates for eight PostgreSQL-backed service deployments: App,
-Actions, Notifications, History, MCP edge, Runner Gateway/Dispatcher, Egress, and the central
-sampler. This is a deployment target, not an intrinsic minimum in service or environment APIs.
-
-The shared startup migration contract from [#13240](https://github.com/agentydragon/ducktape/pull/13240)
-is merged. Each service embeds Goose migrations in its serving binary and runs them during normal
-startup before listeners or workers; the same binary's `--migrate-only` mode remains for fixture and
-CLI initialization. A migration failure keeps that replica from becoming ready. Schema ownership
-and service-specific migration behavior remain with each service.
-
-The eight service conversions are independent review items. Each converts its serving binary to run
-its own embedded migrations during startup. The shared `migrate_container.py` helper, its BUILD
-target and dependencies, and the `service_workload` init-container parameter can be removed after
-all callers convert. Verify that active services, fixtures, generators and operator instructions no
-longer rely on that path; preserve dated incident and handoff evidence.
-
-The sampler's two-replica profile is gated by async History exporter correctness and assembled
-rollout acceptance in `CENTRAL_SAMPLER_HISTORY_EXPORT` and `CENTRAL_SAMPLER_REPLICA_ROLLOUT`; this
-sampler-specific gate does not block the other seven service conversions. The K3s fixture remains
-one sampler replica independent of staging configuration. A nested two-replica RBE/K3s roll test is
-not required; the Firecracker `CONFIG_NETFILTER_XT_MATCH_STATISTIC` limitation is fixture-only and
-does not block sampler rollout.
-
-Electric remains an accepted single-replica `Recreate` exception, as selected in [#13250](https://github.com/agentydragon/ducktape/pull/13250). The operator accepts a brief sync interruption, refetch, or page reload during replacement; no Electric rollout change is scheduled. Its fixed replication stream permits one active writer, while each Pod has its own empty shape store and the App proxy has no stable backend routing. The [Electric audit](electric_ha.md) explains why a replica-setting change alone is unsound and records optional, unscheduled rolling and multi-active HA designs. This exception is independent of the eight PostgreSQL service conversions.
-
-Exit: all eight service conversions and shared-helper cleanup are merged; regenerated manifests
-show the selected deployment profiles, startup probes and absence of migration init containers;
-focused existing service and fixture checks pass. This records source and acceptance status only,
-not deployment or live-cluster proof. Other replica exceptions require an explicit owner and reason.
+Exit: merged pre-dispatch rejection handling with denial/spoofing and unknown-outcome coverage,
+plus proportional agent-workflow evidence. Native Error properties and a replacement JS host
+remain future [runtime design](session_runtime_model.md#tool-access-disconnects-and-recovery),
+not prerequisites for the current recovery outcome.
 
 ### `CENTRAL_SAMPLER_MODEL_CAPABILITIES` — live route check for standard-mode routes
 
