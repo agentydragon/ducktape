@@ -1006,7 +1006,7 @@ func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Migrate(t.Context(), store.DB(), map[string]protocol.APIStyle{"fixture-model": protocol.APIStyleResponses}); err != nil {
+	if err := Migrate(t.Context(), store.DB()); err != nil {
 		t.Fatal(err)
 	}
 	afterSession, err := store.GetSession(t.Context(), session.ID, "")

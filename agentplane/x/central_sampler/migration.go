@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 
-	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
 )
@@ -15,10 +14,8 @@ import (
 //go:embed schema/*.sql
 var migrationFiles embed.FS
 
-// Migrate applies the sampler-owned Goose SQL migrations, converts retained conversations to
-// their native API representation, and verifies the resulting schema. modelAPIs explicitly maps
-// configured public model routes to their provider API for legacy sessions without request evidence.
-func Migrate(ctx context.Context, db *sql.DB, modelAPIs map[string]protocol.APIStyle) error {
+// Migrate applies the sampler-owned Goose SQL migrations and verifies the native schema.
+func Migrate(ctx context.Context, db *sql.DB) error {
 	files, err := fs.Sub(migrationFiles, "schema")
 	if err != nil {
 		return err
@@ -35,9 +32,6 @@ func Migrate(ctx context.Context, db *sql.DB, modelAPIs map[string]protocol.APIS
 	}
 	if _, err := provider.Up(ctx); err != nil {
 		return err
-	}
-	if err := migrateNativeConversations(ctx, db, modelAPIs); err != nil {
-		return fmt.Errorf("migrate native sampler conversations: %w", err)
 	}
 	return verifySchema(ctx, db)
 }

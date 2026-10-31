@@ -17,7 +17,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	centralsampler "github.com/agentydragon/ducktape/agentplane/x/central_sampler"
-	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
 	"github.com/agentydragon/ducktape/util/netlistener"
 	"golang.org/x/sync/errgroup"
@@ -38,11 +37,7 @@ func run(ctx context.Context, settings centralsampler.Settings, initialize bool)
 	}
 	defer db.Close()
 	if initialize {
-		modelAPIs := make(map[string]protocol.APIStyle, len(settings.Models))
-		for model, config := range settings.Models {
-			modelAPIs[model] = config.API
-		}
-		return centralsampler.Migrate(ctx, db, modelAPIs)
+		return centralsampler.Migrate(ctx, db)
 	}
 	if err := os.MkdirAll(settings.Logs, 0700); err != nil {
 		return err

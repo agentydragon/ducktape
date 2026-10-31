@@ -431,11 +431,12 @@ restoration for Anthropic). With no replacement context, the archive is the acti
 Compaction atomically verifies the expected active context and lease before replacing it and
 settling its intent/command. It never rewrites the archive. New responses append only new records.
 
-The native-format migration preserves Session identities, provider payloads, raw exchange evidence,
-commands, events, and unresolved-effect state. It unwraps legacy Anthropic messages, validates and
-removes their redundant execution projections, and renders old shared inputs into native messages.
-The API is determined from recorded exchanges or an explicit configured model-route mapping;
-ambiguous classification or invalid conversion fails initialization. A live conversation lease
-prevents conversion. The sampler Deployment uses Recreate, so the old writer exits before the new
-initializer changes the schema. Schema rollback requires restoring the pre-migration database
-backup together with the old service image.
+Migration 8 is the final native-schema baseline. A fresh, empty sampler database creates native
+tables directly. An existing database is adopted only with complete Goose version-7 history and
+the native API, status constraints, columns, and indexes already installed. Adoption preserves all
+prior Goose rows, Session identities, provider payloads, raw exchange evidence, commands, events,
+and unresolved-effect state without copying data or locking serving conversation rows. A partial
+version-7 conversion or older database fails initialization and requires the previous image or
+explicit repair; initialization no longer classifies or converts legacy provider records. Later
+schema changes use new additive Goose migrations. Schema rollback requires restoring the
+pre-migration database backup together with the old service image.
