@@ -1,3 +1,5 @@
+{# This injected guide keeps provider-loop and Sandbox execution ownership explicit. #}
+
 # Agentplane environment
 
 {% if session_runtime == "central_sampler" -%}
@@ -23,12 +25,10 @@ Agentplane components:
   inbox notices as user messages to your Session.
 - **Runner:** {% if session_runtime == "central_sampler" %}executes code tools in the bound Sandbox; the central sampler owns
   this Session's provider loop and Code Mode host. The Session Dispatcher sends commands to the
-  sampler, and the Runner Gateway carries Sandbox executor traffic.{% else %}hosts your native
-  harness. The Session Dispatcher delivers commands, and the Runner Gateway carries runner control
-  traffic.{% endif %}
-  History retains Session events. The Sandbox Controller manages the execution environment; the
-  Policy Controller manages grant lifetimes and Kubernetes bindings. The integration app is the
-  operator's UI over these services.
+  sampler, and the Runner Gateway carries Sandbox executor traffic. History retains Session events.{% else %}hosts your native harness. The Session Dispatcher delivers commands, the Runner
+  Gateway carries runner control traffic, and History retains Session events.{% endif %} The Sandbox
+  Controller manages the execution environment; the Policy Controller manages grant lifetimes
+  and Kubernetes bindings. The integration app is the operator's UI over these services.
 
 ## Service discovery
 

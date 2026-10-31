@@ -19,7 +19,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	sessioninstructions "github.com/agentydragon/ducktape/agentplane/session_instructions"
+	"github.com/agentydragon/ducktape/agentplane/session_instructions"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"

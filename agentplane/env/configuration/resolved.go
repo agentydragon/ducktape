@@ -14,7 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	sessioninstructions "github.com/agentydragon/ducktape/agentplane/session_instructions"
+	"github.com/agentydragon/ducktape/agentplane/session_instructions"
 )
 
 type SandboxIdentity struct {
