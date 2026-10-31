@@ -42,6 +42,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -314,8 +315,9 @@ func newRoutes(httpFacade http.Handler) (*http.ServeMux, error) {
 
 // serve answers on listener, runs the dispatch worker, supervises the MCP groups' sessions, refreshes the linked
 // tokens, delivers Web Push and keeps the policy index until ctx ends or the listener fails. gRPC and the HTTP routes
-// share the listener. The worker, the MCP groups, the refreshes and Web Push delivery drain from then on, beside the
-// listener's shutdown, and serve returns once they have and the policy watches have stopped.
+// share the listener, each served natively (graceful.Shared), so a sandbox reaches both at one address. The worker,
+// the MCP groups, the refreshes and Web Push delivery drain from then on, beside the listener's shutdown, and serve
+// returns once they have and the policy watches have stopped.
 func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	policy := informer.NewIndex(c.CallerServiceAccountNamespaces)
 	admission, err := gate(c, d, policy)
@@ -436,7 +438,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	action_servicepb.RegisterActionServiceServer(grpcServer, actionAPI)
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, api.NewOperatorService(requests, hub, admission, linkages))
 	web_push_servicepb.RegisterWebPushServiceServer(grpcServer, api.NewPushService(push.NewSubscriptions(db), pushIdentity, hub, admission))
-	// The facade is the listener's own client: its gRPC calls come back to the gRPC server mounted on it, so the
+	// The facade is the listener's own client: its gRPC calls come back to the gRPC server sharing it, so the
 	// Gate admits every request. It outlives the termination signal, so that calls admitted before it finish
 	// while draining.
 	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
@@ -458,7 +460,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	// bearer, so they are plain HTTP beside the facade.
 	linkages.Mount(routes)
 	server := &http.Server{Handler: observability.HTTPHandler(routes), ReadHeaderTimeout: readHeaderTimeout}
-	facade.MountGRPC(server, grpcServer)
+	shared := graceful.NewShared(listener, grpcServer, server)
 
 	working, drain := context.WithCancel(ctx)
 	var supervising sync.WaitGroup
@@ -506,8 +508,8 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		defer close(worked)
 		dispatcher.Run(working, wakeups)
 	}()
-	failed := make(chan error, 1)
-	go func() { failed <- fmt.Errorf("listener: %w", server.Serve(listener)) }()
+	failed := make(chan error, 3)
+	shared.Serve(failed)
 	var result error
 	select {
 	case result = <-failed:
@@ -519,9 +521,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	drain()
 	stopped, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 	defer cancel()
-	if err := server.Shutdown(stopped); err != nil {
-		server.Close()
-	}
+	shared.Shutdown(stopped)
 	<-worked
 	supervising.Wait()
 	return result

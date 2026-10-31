@@ -141,12 +141,13 @@ class ServiceUrls:
 
 def service_urls(env: Environment, *, egress_api_service: ServiceRef | None = None) -> ServiceUrls:
     actions_service = actions.service(env.namespace)
+    notifications_http = notifications.http_service(env.namespace)
     egress_api = egress_api_service or egress.agent_api(env.namespace)
     egress_port = f":{egress_api.port.number}" if egress_api.port.number != 80 else ""
     return ServiceUrls(
         egress=f"http://{egress_api.fqdn}{egress_port}",
         actions=f"http://{actions_service.fqdn}:{actions_service.port.number}",
-        notifications=f"http://{notifications.service(env.namespace).fqdn}:8080",
+        notifications=f"http://{notifications_http.fqdn}:{notifications_http.port.number}",
     )
 
 

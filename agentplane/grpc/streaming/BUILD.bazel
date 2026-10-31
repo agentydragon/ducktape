@@ -14,7 +14,6 @@ go_test(
     embed = [":streaming"],
     race = "on",
     deps = [
-        "//agentplane/grpc/facade",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials/insecure",

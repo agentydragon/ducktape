@@ -454,7 +454,10 @@ func newSystemStatus(config Config, httpClient *http.Client) (*status.Checker, [
 		}
 	}
 	for _, endpoint := range []struct{ name, raw string }{
-		{"Connection Service", config.ConnectionServiceURL}, {"Notification Service", config.NotificationsURL}, {"Egress proxy", config.EgressAdminURL},
+		{"Action Service", config.ActionFederation.ServiceURL},
+		{"Connection Service", config.ConnectionServiceURL},
+		{"Notification Service", config.NotificationsURL},
+		{"Egress proxy", config.EgressAdminURL},
 	} {
 		target, err := grpcTargetFromHTTPURL(endpoint.raw)
 		if err != nil {
@@ -466,7 +469,6 @@ func newSystemStatus(config Config, httpClient *http.Client) (*status.Checker, [
 			return nil, nil, err
 		}
 	}
-	probes = append(probes, status.HTTPHealthProbe("Action Service", httpClient, healthURL(config.ActionFederation.ServiceURL, "/healthz")))
 	if config.ElectricURL != "" {
 		probes = append(probes, status.HTTPHealthProbe("Electric", httpClient, healthURL(config.ElectricURL, "/v1/health")))
 	}

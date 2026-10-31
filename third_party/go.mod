@@ -67,6 +67,9 @@ require github.com/danielgtaylor/huma/v2 v2.39.1
 // Direct dependencies for the generated HTTP facades of agentplane services
 require github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0
 
+// Direct dependencies for the Action Service's one listener shared by gRPC and HTTP
+require github.com/soheilhy/cmux v0.1.5
+
 // Direct dependencies for Agentplane YAML consumers
 require gopkg.in/yaml.v3 v3.0.1
 

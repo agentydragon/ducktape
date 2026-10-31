@@ -53,7 +53,9 @@ type config struct {
 	// MessageBodyLimitBytes is the most UTF-8 bytes a message body may hold, at most store.MessageBodyCeiling.
 	MessageBodyLimitBytes int    `mapstructure:"message_body_limit_bytes"`
 	Host                  string `mapstructure:"host"`
-	Port                  int    `mapstructure:"port"`
+	// Port is the gRPC listener's, and HTTPPort the HTTP listener's: the facade, its documentation and the webhook.
+	Port     int `mapstructure:"port"`
+	HTTPPort int `mapstructure:"http_port"`
 }
 
 // runnerGateway is how the service reaches a Sandbox's runner through the Runner Gateway's proxy.
@@ -136,6 +138,7 @@ func defaultConfig() config {
 		MessageBodyLimitBytes: 32 * 1024,
 		Host:                  "0.0.0.0",
 		Port:                  8080,
+		HTTPPort:              8081,
 	}
 }
 
@@ -202,8 +205,13 @@ func (c *config) validate() error {
 	if _, err := c.Actions.grpcEndpoint(); err != nil {
 		return err
 	}
-	if c.Port < 1 || c.Port > 65535 {
-		return errors.New("port must be between 1 and 65535")
+	for name, port := range map[string]int{"port": c.Port, "http_port": c.HTTPPort} {
+		if port < 1 || port > 65535 {
+			return errors.New(name + " must be between 1 and 65535")
+		}
+	}
+	if c.Port == c.HTTPPort {
+		return errors.New("port and http_port must differ")
 	}
 	for _, quota := range []struct {
 		name  string

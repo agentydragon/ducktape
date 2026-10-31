@@ -71,25 +71,30 @@ func servePush(t *testing.T, s *served, configured bool) *pushServed {
 	t.Cleanup(func() { updates.Close() })
 	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(s.gate.UnaryInterceptor), grpc.ChainStreamInterceptor(s.gate.StreamInterceptor))
 	web_push_servicepb.RegisterWebPushServiceServer(grpcServer, NewPushService(push.NewSubscriptions(s.db), identity, updates, s.gate))
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	httpFacade, err := facade.NewHandler(t.Context(), listener.Addr().String(), 0, web_push_servicepb.RegisterWebPushServiceHandlerFromEndpoint)
+	httpListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpFacade, err := facade.NewHandler(t.Context(), grpcListener.Addr().String(), 0, web_push_servicepb.RegisterWebPushServiceHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := &http.Server{Handler: httpFacade, ReadHeaderTimeout: callDeadline}
-	facade.MountGRPC(server, grpcServer)
-	go func() { _ = server.Serve(listener) }()
+	go func() { _ = grpcServer.Serve(grpcListener) }()
+	t.Cleanup(grpcServer.Stop)
+	go func() { _ = server.Serve(httpListener) }()
 	t.Cleanup(func() { server.Close() })
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := grpc.NewClient(grpcListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { connection.Close() })
 	p.push = web_push_servicepb.NewWebPushServiceClient(connection)
-	p.pushURL = "http://" + listener.Addr().String()
+	p.pushURL = "http://" + httpListener.Addr().String()
 	return p
 }
 

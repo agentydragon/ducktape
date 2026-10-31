@@ -351,12 +351,16 @@ func serveWithPolicy(
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, NewOperatorService(s.store, updates, s.gate, s.linkages))
 	// The standalone MCP edge reuses this Gate; a stub keeps its method behind the auth interceptor here.
 	connection_servicepb.RegisterConnectionServiceServer(grpcServer, connection_servicepb.UnimplementedConnectionServiceServer{})
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	httpFacade, err := facade.NewHandler(
-		t.Context(), listener.Addr().String(), 0,
+		t.Context(), grpcListener.Addr().String(), 0,
 		action_servicepb.RegisterActionServiceHandlerFromEndpoint,
 		operator_action_servicepb.RegisterOperatorActionServiceHandlerFromEndpoint,
 	)
@@ -364,10 +368,11 @@ func serveWithPolicy(
 		t.Fatal(err)
 	}
 	server := &http.Server{Handler: httpFacade, ReadHeaderTimeout: callDeadline}
-	facade.MountGRPC(server, grpcServer)
-	go func() { _ = server.Serve(listener) }()
+	go func() { _ = grpcServer.Serve(grpcListener) }()
+	t.Cleanup(grpcServer.Stop)
+	go func() { _ = server.Serve(httpListener) }()
 	t.Cleanup(func() { server.Close() })
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := grpc.NewClient(grpcListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +380,7 @@ func serveWithPolicy(
 	s.client = action_servicepb.NewActionServiceClient(connection)
 	s.operators = operator_action_servicepb.NewOperatorActionServiceClient(connection)
 	s.connections = connection_servicepb.NewConnectionServiceClient(connection)
-	s.url = "http://" + listener.Addr().String()
+	s.url = "http://" + httpListener.Addr().String()
 	return s
 }
 

@@ -23,10 +23,13 @@ const settingPrefix = "AGENTPLANE_MCP_EDGE_"
 
 // config is the standalone edge's deployment contract. Secret values come from environment variables.
 type config struct {
-	DatabaseURL                    string   `mapstructure:"database_url" yaml:"database_url"`
-	ActionsTarget                  string   `mapstructure:"actions_target" yaml:"actions_target"`
-	Host                           string   `mapstructure:"host" yaml:"host"`
+	DatabaseURL   string `mapstructure:"database_url" yaml:"database_url"`
+	ActionsTarget string `mapstructure:"actions_target" yaml:"actions_target"`
+	Host          string `mapstructure:"host" yaml:"host"`
+	// Port is the gRPC listener's: ConnectionService and health. HTTPPort is the HTTP listener's: the facade, /mcp,
+	// OAuth and the metrics.
 	Port                           int      `mapstructure:"port" yaml:"port"`
+	HTTPPort                       int      `mapstructure:"http_port" yaml:"http_port"`
 	CallerServiceAccountNamespaces []string `mapstructure:"caller_service_account_namespaces" yaml:"caller_service_account_namespaces"`
 	// MintableAccounts is the explicit ownership scope granted to this edge's TokenRequest RBAC.
 	MintableAccounts  []auth.Account           `mapstructure:"mintable_accounts" yaml:"mintable_accounts"`
@@ -56,7 +59,7 @@ type oauthSettings struct {
 
 func loadConfig() (config, error) {
 	c := config{
-		Host: "0.0.0.0", Port: 8080, MaxWaitSeconds: 30, DirectWaitSeconds: 30,
+		Host: "0.0.0.0", Port: 8080, HTTPPort: 8081, MaxWaitSeconds: 30, DirectWaitSeconds: 30,
 		OperatorOIDC: api.DefaultOperatorOIDCSettings(),
 	}
 	settings := viper.NewWithOptions(viper.ExperimentalBindStruct(), viper.EnvKeyReplacer(strings.NewReplacer(".", "__")))
@@ -113,8 +116,13 @@ func (c config) validate() error {
 			return errors.New(required.name + " is required")
 		}
 	}
-	if c.Port < 1 || c.Port > 65535 {
-		return errors.New("port must be between 1 and 65535")
+	for name, port := range map[string]int{"port": c.Port, "http_port": c.HTTPPort} {
+		if port < 1 || port > 65535 {
+			return errors.New(name + " must be between 1 and 65535")
+		}
+	}
+	if c.Port == c.HTTPPort {
+		return errors.New("port and http_port must differ")
 	}
 	if len(c.CallerServiceAccountNamespaces) == 0 {
 		return errors.New("caller_service_account_namespaces must list at least one namespace")
@@ -165,4 +173,6 @@ func (c config) validate() error {
 	return nil
 }
 
-func (c config) address() string { return fmt.Sprintf("%s:%d", c.Host, c.Port) }
+func (c config) grpcAddress() string { return fmt.Sprintf("%s:%d", c.Host, c.Port) }
+
+func (c config) httpAddress() string { return fmt.Sprintf("%s:%d", c.Host, c.HTTPPort) }

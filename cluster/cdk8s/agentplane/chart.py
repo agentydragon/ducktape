@@ -264,7 +264,8 @@ def environment_chart(
         history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=session_dispatcher.service(env.namespace),
         dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
-        callers=[egress.proxy(env.namespace).pods, app_component.service(env.namespace).pods],
+        callers=[app_component.service(env.namespace).pods],
+        http_callers=[egress.proxy(env.namespace).pods],
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()

@@ -33,8 +33,9 @@ arrays in the environment; `mintable_accounts` entries are `namespace/name`. `op
 requires the issuer, audience, JWKS URI and token profile used by the app's operator tokens.
 `oauth` is an optional JSON object in the environment, using the current OAuth Secret's keys; when
 absent, the Connection API remains available and the external protocol routes are absent. The
-secret's `upstream_client_secret_file` must be mounted at the path it names. The listener defaults
-to `0.0.0.0:8080` and multiplexes gRPC and HTTP. gRPC health uses the empty service for readiness
+secret's `upstream_client_secret_file` must be mounted at the path it names. The gRPC listener
+(`port`) defaults to `0.0.0.0:8080`; the HTTP listener (`http_port`: the facade, `/mcp`, OAuth and metrics) to
+`0.0.0.0:8081`. gRPC health uses the empty service for readiness
 and `livez` for liveness. Readiness requires PostgreSQL, its notification listener and a fresh
 caller label watch.
 

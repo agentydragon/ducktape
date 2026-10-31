@@ -1870,7 +1870,6 @@ accepted; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
 flowchart LR
     KUBERNETES_NATIVE_WATCH_HEALTH[Staging check: informer health after #13060]
     SAMPLER_TYPED_STATE[In review: typed sampler states, #13073]
-    GRPC_NATIVE_LISTENER[In review: gRPC on its own listener, #13138]
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: Dispatcher and Gateway merge] --> DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_WATCH_VERSIONS[Blocked: versioned dispatch watch]
@@ -1889,7 +1888,7 @@ empty `failing` map, and the app shows no watch warning. Delete this node once o
 ### In review
 
 Each is one independently finishable PR; see the plan section of the same name:
-`SAMPLER_TYPED_STATE`, `GRPC_NATIVE_LISTENER`.
+`SAMPLER_TYPED_STATE`.
 
 ### `SAMPLER_JOURNAL_DIET` — what the sampler journals
 

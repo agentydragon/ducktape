@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"net"
-	"net/http"
 	"os"
 	"testing"
 	"time"
@@ -68,12 +67,9 @@ type idleHistory struct{}
 
 func (idleHistory) Health() history.Health { return history.Health{} }
 
-func TestAdminListenerServesHTTPAndGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
+func TestAdminListenerServesGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
 	c := config{AdminGRPCAudience: testAudience, AdminGRPCCallers: []string{"test-ns/test-app"}}
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /test-live", func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "alive") })
-	adminServer := &http.Server{Handler: mux}
-	shutdown, err := mountAdminGRPC(adminServer, c, api.TokenReviews(), admin.ServiceOptions{
+	server, err := newAdminServer(c, api.TokenReviews(), admin.ServiceOptions{
 		Decisions: noDecisions{}, Changes: quietChanges{}, HistoryHealth: idleHistory{}, Index: readyIndex{},
 	})
 	if err != nil {
@@ -84,24 +80,7 @@ func TestAdminListenerServesHTTPAndGRPCAndShutsDownWithAnOpenWatch(t *testing.T)
 		t.Fatal(err)
 	}
 	served := make(chan error, 1)
-	go func() { served <- serving("admin", adminServer.Serve(listener)) }()
-
-	// HTTP/1.1 and cleartext HTTP/2 that is not gRPC reach the HTTP handler.
-	var h2c http.Protocols
-	h2c.SetUnencryptedHTTP2(true)
-	for name, client := range map[string]*http.Client{
-		"HTTP/1.1": http.DefaultClient, "h2c": {Transport: &http.Transport{Protocols: &h2c}},
-	} {
-		response, err := client.Get("http://" + listener.Addr().String() + "/test-live")
-		if err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		body, err := io.ReadAll(response.Body)
-		_ = response.Body.Close()
-		if err != nil || string(body) != "alive" {
-			t.Fatalf("%s: %q, %v", name, body, err)
-		}
-	}
+	go func() { served <- serving("admin", server.Serve(listener)) }()
 
 	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -132,7 +111,7 @@ func TestAdminListenerServesHTTPAndGRPCAndShutsDownWithAnOpenWatch(t *testing.T)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := shutdown.Shutdown(ctx); err != nil {
+	if err := server.Shutdown(ctx); err != nil {
 		t.Fatalf("shutdown with a watch open: %v", err)
 	}
 	if err := <-served; err != nil {
@@ -146,8 +125,7 @@ func TestAdminListenerServesHTTPAndGRPCAndShutsDownWithAnOpenWatch(t *testing.T)
 // Kubernetes' native grpc probes send no bearer, so health is served whether or not the EgressAdmin
 // API is configured.
 func TestAdminListenerServesHealthWithoutTheAdminGRPCAPI(t *testing.T) {
-	adminServer := &http.Server{Handler: http.NewServeMux()}
-	shutdown, err := mountAdminGRPC(adminServer, config{}, api.TokenReviews(), admin.ServiceOptions{Index: readyIndex{}})
+	server, err := newAdminServer(config{}, api.TokenReviews(), admin.ServiceOptions{Index: readyIndex{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,8 +133,8 @@ func TestAdminListenerServesHealthWithoutTheAdminGRPCAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go func() { _ = adminServer.Serve(listener) }()
-	defer func() { _ = shutdown.Shutdown(context.Background()) }()
+	go func() { _ = server.Serve(listener) }()
+	defer func() { _ = server.Shutdown(context.Background()) }()
 
 	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {

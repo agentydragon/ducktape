@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/history_service/api"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/ingress"
@@ -226,20 +227,12 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 	// Let the fold hand back its leases while in-flight RPCs finish draining. Committed ingress history
 	// remains available for the next fold even when it has not yet been projected.
 	stopFold()
-	stopped := make(chan struct{})
-	go func() {
-		defer close(stopped)
-		ingressStopped := make(chan struct{})
-		go func() { ingressServer.GracefulStop(); close(ingressStopped) }()
-		server.GracefulStop()
-		<-ingressStopped
-	}()
-	select {
-	case <-stopped:
-	case <-time.After(shutdownGrace):
-		server.Stop()
-		ingressServer.Stop()
-	}
+	stopping, release := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
+	defer release()
+	ingressStopped := make(chan struct{})
+	go func() { graceful.Stop(stopping, ingressServer); close(ingressStopped) }()
+	graceful.Stop(stopping, server)
+	<-ingressStopped
 	<-folded
 	return result
 }

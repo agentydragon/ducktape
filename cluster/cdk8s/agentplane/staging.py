@@ -657,7 +657,7 @@ def chart(app: App) -> Chart:
         key=_BUILDBUDDY_KEY.file_name,
         store=EXTERNAL_CREDS_STORE,
     )
-    notification_service = notifications.service(STAGING_NAMESPACE)
+    notification_service = notifications.http_service(STAGING_NAMESPACE)
     https_route(
         chart,
         "notifications-github-webhook-route",

@@ -10,15 +10,6 @@ validation, the Policy Controller and gRPC health.
 
 File references are to `devel` at the time of the audit; re-check before starting.
 
-## gRPC
-
-### `GRPC_NATIVE_LISTENER`
-
-`grpc/facade/mount.go` serves gRPC through `grpc.Server.ServeHTTP`, which grpc-go marks experimental,
-which `GracefulStop` cannot drain, and which forces the abort-write hook in `grpc/streaming`. Used by
-the Action Service and egress. Serve gRPC on its own listener, as the Runner Gateway does. Exit: drain
-on shutdown covered by a test; the abort-write hook removed if nothing else needs it.
-
 ## Work queues
 
 Hand-rolled full-scan loops where a keyed, rate-limited work queue (client-go `workqueue`, or a

@@ -99,6 +99,7 @@ go_library(
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/api",
         "//agentplane/grpc/facade",
+        "//agentplane/grpc/graceful",
         "//agentplane/mcp_edge/authserver",
         "//agentplane/mcp_edge/connections",
         "//agentplane/mcp_edge/mcpserver",
