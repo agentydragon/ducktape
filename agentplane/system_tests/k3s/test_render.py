@@ -113,7 +113,6 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     assert not any(doc["kind"] == "Deployment" and doc["metadata"]["name"] == "electric" for doc in docs)
     for workload, migration in {
         "actions": "agentplane-action-service",
-        "app": "agentplane-app-migrate",
         "egress": "agentplane-egress-history-migrate",
         "history-service": "agentplane-history-migrate",
         "mcp-edge": "agentplane-mcp-edge-migrate",
@@ -126,6 +125,10 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         assert init["imagePullPolicy"] == "IfNotPresent"
         if workload == "actions":
             assert init["command"] == ["/usr/local/bin/actions-migrate"]
+    app_pod = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]
+    assert not app_pod.get("initContainers")
+    app_container = app_pod["containers"][0]
+    assert app_container["startupProbe"]["httpGet"]["path"] == "/healthz"
     assert (
         _resource(docs, "Deployment", "actions")["spec"]["template"]["spec"]["containers"][0]["imagePullPolicy"]
         == "IfNotPresent"

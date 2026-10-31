@@ -38,7 +38,6 @@ IMAGES = (
     # keep-sorted start
     "agentplane-action-service",
     "agentplane-app",
-    "agentplane-app-migrate",
     "agentplane-central-sampler",
     "agentplane-egress-history-migrate",
     "agentplane-egress-proxy",

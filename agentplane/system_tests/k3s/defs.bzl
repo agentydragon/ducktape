@@ -47,7 +47,6 @@ K3S_VM_ENV = {
 K3S_SERVICE_IMAGES = {
     "action_service": "//agentplane/action_service:service_image",
     "app": "//agentplane/app:image",
-    "app_migrate": "//agentplane/app:migration_image",
     "egress_proxy": "//agentplane/egress/cmd:image",
     "egress_history_migrate": "//agentplane/egress/history_migrations:image",
     "egress_sidecar": "//agentplane/egress:sidecar_image",
