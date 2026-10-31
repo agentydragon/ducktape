@@ -55,7 +55,7 @@ ts_library(
     name = "thread_view_recorder",
     srcs = ["thread_view_recorder.ts"],
     tsconfig = TSCONFIG,
-    deps = ["//util/frontend:history_diagnostics"],
+    deps = ["//util/frontend/transcript:history_diagnostics"],
 )
 
 agentplane_vitest_test(
@@ -163,7 +163,7 @@ ts_library(
         "//agentplane/app/frontend:client",
         "//util/frontend:disclosure",
         "//util/frontend:markdown",
-        "//util/frontend:retained_disclosures",
+        "//util/frontend/transcript:retained_disclosures",
     ],
 )
 
@@ -179,8 +179,8 @@ ts_library(
         ":thread_view_recorder",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//util/frontend:history_diagnostics",
-        "//util/frontend:virtualized_history",
+        "//util/frontend/transcript:history_diagnostics",
+        "//util/frontend/transcript:virtualized_history",
     ],
 )
 
@@ -246,7 +246,7 @@ ts_library(
         "//agentplane/app/frontend:trace_search",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/sandboxes:live",
-        "//util/frontend:retained_disclosures",
+        "//util/frontend/transcript:retained_disclosures",
     ],
 )
 
@@ -333,7 +333,7 @@ agentplane_vitest_test(
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:event_pb",
-        "//util/frontend:retained_disclosures",
+        "//util/frontend/transcript:retained_disclosures",
     ],
 )
 
@@ -391,8 +391,8 @@ ts_library(
         "//util/frontend:code_block",
         "//util/frontend:disclosure",
         "//util/frontend:markdown",
-        "//util/frontend:message",
-        "//util/frontend:retained_disclosures",
+        "//util/frontend/transcript:message",
+        "//util/frontend/transcript:retained_disclosures",
     ],
 )
 
@@ -412,7 +412,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/threads/testing:entity",
         "//agentplane/app/frontend/threads/testing:state",
         "//agentplane/proto:event_pb",
-        "//util/frontend:retained_disclosures",
+        "//util/frontend/transcript:retained_disclosures",
     ],
 )
 
@@ -488,7 +488,7 @@ ts_library(
         "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:schema",
-        "//util/frontend:retained_disclosures",
+        "//util/frontend/transcript:retained_disclosures",
     ],
 )
 

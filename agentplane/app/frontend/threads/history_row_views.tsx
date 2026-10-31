@@ -11,7 +11,7 @@ import {
   type HistoryRow,
   type RunContent,
 } from "./history_rows";
-import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/retained_disclosures";
+import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/transcript/retained_disclosures";
 import { EntityCard, itemStatus, pendingSentMessage } from "./thread_cards";
 import { StepLine } from "./step_line";
 import { ProjectedControlCommand } from "./thread_commands";

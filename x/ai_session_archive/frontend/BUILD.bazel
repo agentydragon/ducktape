@@ -71,7 +71,7 @@ ts_library(
         "//:node_modules/react",
         "//util/frontend:disclosure",
         "//util/frontend:markdown",
-        "//util/frontend:retained_disclosures",
+        "//util/frontend/transcript:retained_disclosures",
     ],
 )
 
@@ -294,9 +294,9 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//util/frontend:disclosure",
-        "//util/frontend:message",
-        "//util/frontend:retained_disclosures",
-        "//util/frontend:virtualized_history",
+        "//util/frontend/transcript:message",
+        "//util/frontend/transcript:retained_disclosures",
+        "//util/frontend/transcript:virtualized_history",
     ],
 )
 

@@ -3,7 +3,7 @@
 The reader-facing contract is [`../SPEC.md`](../SPEC.md). This document records
 implementation context and how to assess changes against that contract.
 
-`virtualized_history.tsx` adapts the Electric-backed store to `util/frontend/virtualized_history.tsx`,
+`virtualized_history.tsx` adapts the Electric-backed store to `util/frontend/transcript/virtualized_history.tsx`,
 which renders immutable plans from the shared `history_geometry.ts`. The shared `history_viewport.ts` owns the DOM boundary:
 it reads current mounted boxes after commit, promotes observations separately from estimates,
 and reconciles reader intent only after those boxes agree with the committed plan. Its reconciler

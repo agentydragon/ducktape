@@ -1,4 +1,8 @@
-import type { HistoryEvent, HistoryLayout, SnapshotPhase } from "../../../../util/frontend/history_diagnostics";
+import type {
+  HistoryEvent,
+  HistoryLayout,
+  SnapshotPhase,
+} from "../../../../util/frontend/transcript/history_diagnostics";
 
 declare global {
   interface Window {

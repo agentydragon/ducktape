@@ -5,11 +5,11 @@ import { type CSSProperties, type JSX, type ReactNode, useEffect, useLayoutEffec
 import { ClampedBlock, lineCount } from "../../../../util/frontend/clamped_block";
 import { InlineCode } from "../../../../util/frontend/code_block";
 import { DisclosureBody, DisclosureCard } from "../../../../util/frontend/disclosure";
-import { UserMessage, VerbatimText } from "../../../../util/frontend/message";
+import { UserMessage, VerbatimText } from "../../../../util/frontend/transcript/message";
 import { SHELL_COMMAND_MAX_HEIGHT_REM, ShellCommandView, OutputBlock } from "../shell_command_view";
 import { HighlightedText } from "../json_view";
 import { Markdown } from "../../../../util/frontend/markdown";
-import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/retained_disclosures";
+import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/transcript/retained_disclosures";
 import { RawSwitch } from "../raw_switch";
 import { oneLine, parseShellCall, type ShellCall } from "./shell_calls";
 import { CommandProgress } from "./command_progress";

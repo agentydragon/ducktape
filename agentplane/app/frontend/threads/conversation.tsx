@@ -15,7 +15,7 @@ import { historyRows } from "./history_rows";
 import { useRequiredThreadsLive } from "./live";
 import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
 import { useOptionalStreamStatus } from "../stream_status";
-import { RetainedDisclosureProvider } from "../../../../util/frontend/retained_disclosures";
+import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";
 import { pendingSentMessage } from "./thread_cards";
 import { PendingInputMessages, LocalControlCommands } from "./thread_commands";
 import { useThreadCommands } from "./command_delivery";

@@ -911,7 +911,7 @@ ts_library(
         "//agentplane/proto:runner_pb",
         "//util/frontend:clamped_block",
         "//util/frontend:disclosure",
-        "//util/frontend:history_sizes",
+        "//util/frontend/transcript:history_sizes",
     ],
 )
 

@@ -28,7 +28,7 @@ import { LocalCommands } from "./local_commands";
 import { STREAMING_CURSOR } from "../../../../util/frontend/markdown";
 import { ThreadPage } from "./page";
 import { HistoryRowView } from "./history_row_views";
-import { RetainedDisclosureProvider } from "../../../../util/frontend/retained_disclosures";
+import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";
 import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../stream_status";
 import { THREAD_STATUS_MARKS } from "../status_mark";
 import { testItem } from "./testing/entity";

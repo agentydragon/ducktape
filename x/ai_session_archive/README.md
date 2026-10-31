@@ -65,8 +65,8 @@ The API lists machines and sessions, supports filtering child sessions by `paren
 
 ## Transcript presentation
 
-The browser uses the shared `util/frontend` message, disclosure and virtualized
-history components. Archive-owned heuristics leave prompts and final assistant
+The browser uses the shared `util/frontend/transcript` message and virtualized history
+components, with disclosures from `util/frontend`. Archive-owned heuristics leave prompts and final assistant
 answers visible, fold consecutive tool/reasoning activity (including interleaved
 bookkeeping), and fold known standalone metadata into Session details. Claude
 `user` records containing only tool results are activity; mixed text/content stays

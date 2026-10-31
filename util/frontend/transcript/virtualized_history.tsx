@@ -3,7 +3,7 @@ import { type JSX, type ReactNode, useEffect, useId, useLayoutEffect, useReducer
 import { flushSync } from "react-dom";
 
 import IconArrowDown from "@tabler/icons-react/dist/esm/icons/IconArrowDown.mjs";
-import { DISCLOSURE_STICKY_Z_INDEX } from "./disclosure";
+import { DISCLOSURE_STICKY_Z_INDEX } from "../disclosure";
 import { HistoryGeometry, type RowDescriptor } from "./history_geometry";
 import { HistoryViewport } from "./history_viewport";
 import type { HistoryDiagnostics } from "./history_diagnostics";

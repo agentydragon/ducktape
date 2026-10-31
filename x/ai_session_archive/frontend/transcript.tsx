@@ -1,13 +1,13 @@
 import { Badge, Box, Group, Paper, Stack, Text } from "@mantine/core";
 import type { JSX, ReactNode } from "react";
-import { VirtualizedHistory } from "../../../util/frontend/virtualized_history";
+import { VirtualizedHistory } from "../../../util/frontend/transcript/virtualized_history";
 import { DisclosureBody, DisclosureCard } from "../../../util/frontend/disclosure";
 import {
   RetainedDisclosure,
   RetainedDisclosureProvider,
   useRetainedDisclosure,
-} from "../../../util/frontend/retained_disclosures";
-import { UserMessage } from "../../../util/frontend/message";
+} from "../../../util/frontend/transcript/retained_disclosures";
+import { UserMessage } from "../../../util/frontend/transcript/message";
 import { recordLabel, RecordContent, rawRecordText } from "./event-content";
 import { recordPresentation, transcriptRows, type TranscriptRow } from "./transcript-rows";
 import type { EventRecord } from "./schema";

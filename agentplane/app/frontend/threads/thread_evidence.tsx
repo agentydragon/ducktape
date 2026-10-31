@@ -8,7 +8,7 @@ import { threadEvidence, threadNativeFrames } from "./client";
 import { DisclosureBody } from "../../../../util/frontend/disclosure";
 import { JsonView } from "../json_view";
 import { ChronologicalDebugIcon } from "./chronological_debug";
-import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/retained_disclosures";
+import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/transcript/retained_disclosures";
 import type { ThreadEntity } from "./thread_sync";
 import "./thread_evidence.css";
 

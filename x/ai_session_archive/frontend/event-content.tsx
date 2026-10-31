@@ -3,7 +3,7 @@ import type { JSX } from "react";
 
 import { Markdown } from "../../../util/frontend/markdown";
 import { DisclosureBody } from "../../../util/frontend/disclosure";
-import { RetainedDisclosure } from "../../../util/frontend/retained_disclosures";
+import { RetainedDisclosure } from "../../../util/frontend/transcript/retained_disclosures";
 import type { EventRecord } from "./schema";
 
 export function recordLabel(record: EventRecord): string {
