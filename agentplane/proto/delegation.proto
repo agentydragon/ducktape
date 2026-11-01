@@ -11,7 +11,10 @@ message ServiceAccountIdentity {
   string uid = 2;
 }
 
-// The initial Action-backed delegation profile. IDs are correlation data, not authority.
+// Payload of agentplane-delegation-bin gRPC metadata: the authenticated service
+// asserts this RPC serves the caller's Action request/execution. The receiver
+// must trust that service to delegate and authorize caller normally; the IDs
+// provide audit correlation, not approval proof.
 message Delegation {
   ServiceAccountIdentity caller = 1;
   string action_request_id = 2;
