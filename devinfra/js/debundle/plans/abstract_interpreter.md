@@ -538,10 +538,9 @@ ArgumentNoEscape, DescriptorCopy*}` → the
   array's element state settled at the statement (`SettledElements`): object
   elements admit static reads of keys every element holds a primitive under
   (purity_soundness § Plain-array at-init fallback). Its soundness is the
-  settled heap-taint invariant (purity_soundness § Settled heap taint); a
-  tainted function taints what its body reads. Remaining: the invariant's
-  known gap for code an unmodelled operation runs on its operands. On the Tana replay `lV.forEach` (`index-DI2GynTv.js` line 69846) loses 372
-  promoted edges. `pee` (line 69850) stays: its elements reach
+  settled heap-taint invariant (purity_soundness § Settled heap taint).
+  Remaining: the invariant's known gap for code an unmodelled operation runs
+  on its operands. On the Tana replay `lV.forEach` (`index-DI2GynTv.js` line 69846) loses 372 promoted edges. `pee` (line 69850) stays: its elements reach
   `_Me(jWe, uee)`, an unknown call, the statement before. `eet` (line 109391)
   is an array literal of command constructors iterated in a lazy method, not
   an at-init plain-array chain, so this rule never applied to it.

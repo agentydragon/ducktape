@@ -742,11 +742,13 @@ to an unknown or incomplete call, is stored into a container that escapes
 code the interpreter does not follow may run, is returned to such code, or
 reaches `Object.defineProperty`, `Object.setPrototypeOf`, `Reflect` or a
 `Proxy`, is in `tainted_objects` at `Prefix(n)`. Tainting follows stored
-references, so a tainted container taints what it holds, and a tainted
-function exposes every value of the top-level bindings its body reads, so
-code the interpreter does not follow reaches nothing through a closure that
-stays untainted. `facts/at_init_fallback_tests.rs` pins each route against
-the plain-array element state.
+references, so a tainted container taints what it holds. A callback the
+interpreter runs on behalf of unknown code taints what it passes onward like
+any other call, and its return value is tainted. A body a bounded fallback
+summarizes without running taints every value it passes, writes through,
+stores, assigns or returns, and the same for each function it can reach
+through a binding it reads. `facts/at_init_fallback_tests.rs` pins each route
+against the plain-array element state.
 
 Known gap: an operation the interpreter does not model (an unsupported member
 read, iteration or coercion protocol) can run accessor, iterator or
