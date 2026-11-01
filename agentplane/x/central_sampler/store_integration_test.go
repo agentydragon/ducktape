@@ -1308,6 +1308,72 @@ func TestKnownRejectionPreservesOtherEffectUncertainty(t *testing.T) {
 	}
 }
 
+func TestWorkScansRetainAcceptedInputAfterKnownRejection(t *testing.T) {
+	for _, ownership := range []string{"owned", "released", "expired"} {
+		t.Run(ownership, func(t *testing.T) {
+			store := newTestStore(t)
+			session := openSessionForStore(t, store, "")
+			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			admit := func(id string) {
+				t.Helper()
+				if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
+					CommandId: id,
+					Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: id}},
+				}, "fixture-account", nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+			admit("first")
+			if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
+				t.Fatal(err)
+			}
+			intent, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Reject(t.Context(), owner, intent, &protocol.KnownFailureError{Evidence: map[string]any{"http_status": 429}}); err != nil {
+				t.Fatal(err)
+			}
+			if ids, err := store.OwnedWork(t.Context(), []string{owner.Token}); err != nil || len(ids) != 0 {
+				t.Fatalf("settled rejection has pending work: %v err=%v", ids, err)
+			}
+			admit("second")
+			conversation, err := store.Read(t.Context(), owner)
+			if err != nil || !conversation.Stopped {
+				t.Fatalf("admission changed previous turn's stopped state: %+v err=%v", conversation, err)
+			}
+			switch ownership {
+			case "released":
+				if err := store.Release(t.Context(), owner); err != nil {
+					t.Fatal(err)
+				}
+			case "expired":
+				if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			owned, err := store.OwnedWork(t.Context(), []string{owner.Token})
+			if err != nil {
+				t.Fatal(err)
+			}
+			recoverable, err := store.RecoverableSessions(t.Context(), nil, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ownership == "owned" {
+				if len(owned) != 1 || owned[0] != session.ID || len(recoverable) != 0 {
+					t.Fatalf("live owner's queued input: owned=%v recoverable=%v", owned, recoverable)
+				}
+			} else if len(owned) != 0 || len(recoverable) != 1 || recoverable[0] != session.ID {
+				t.Fatalf("unowned queued input: owned=%v recoverable=%v", owned, recoverable)
+			}
+		})
+	}
+}
+
 func TestRecoverableSessionsUsesBoundedRotatingPages(t *testing.T) {
 	store := newTestStore(t)
 	var sessions []*Session
