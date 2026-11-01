@@ -28,10 +28,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, defer, mapped_column
 from sqlalchemy.sql import Select
 
+from agentplane.indexing.vector_type import HalfVector
 from agentplane.x.indexing.chunking import ChunkBudget, chunk_text, git_chunker_key
 from agentplane.x.indexing.content import content_sha
 from agentplane.x.indexing.embedder import Embedder
-from agentplane.indexing.vector_type import HalfVector
 
 SCHEMA = "agentplane_index"
 LOCK_ID = 785409112349
