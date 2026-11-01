@@ -90,17 +90,17 @@ ducktapePkgs
   # Load:  docker load < result
   nix-rbe-container-image = import ../../devinfra/buildbuddy/images/rbe/x/nix { inherit pkgs; };
   # agentplane's sandbox image: a box's command-line tools, as one list
-  # (agentplane/images/sandbox.nix).
+  # (agentplane/env/images/sandbox.nix).
   # Build: nix build .#agentplane-sandbox-image
   # Load:  docker load < result
-  agentplane-sandbox-image = import ../../agentplane/images/sandbox.nix {
+  agentplane-sandbox-image = import ../../agentplane/env/images/sandbox.nix {
     inherit pkgs;
     agentplaneCli = self.packages.${system}.agentplane-cli;
   };
-  # The build box's image: the sandbox image plus Bazel and its toolchain (agentplane/images/build.nix).
+  # The build box's image: the sandbox image plus Bazel and its toolchain (agentplane/env/images/build.nix).
   # Build: nix build .#agentplane-sandbox-build-image
   # Load:  docker load < result
-  agentplane-sandbox-build-image = import ../../agentplane/images/build.nix {
+  agentplane-sandbox-build-image = import ../../agentplane/env/images/build.nix {
     inherit pkgs;
     agentplaneCli = self.packages.${system}.agentplane-cli;
   };

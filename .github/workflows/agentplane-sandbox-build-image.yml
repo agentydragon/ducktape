@@ -1,4 +1,4 @@
-# Build agentplane's Nix build-box image (agentplane/images/build.nix: the sandbox image plus Bazel
+# Build agentplane's Nix build-box image (agentplane/env/images/build.nix: the sandbox image plus Bazel
 # and its toolchain) and push it to the Forgejo registry, through nix-image.yml. The archive also
 # goes to the Attic cache. Fork PRs use pull_request_target with the trusted-fork review gate; the
 # reusable workflow never publishes from that event.
@@ -13,9 +13,9 @@ on:
       - ".github/workflows/agentplane-sandbox-build-image.yml"
       - ".github/workflows/nix-image.yml"
       - "agentplane/cli/package.nix"
-      - "agentplane/images/build.nix"
-      - "agentplane/images/sandbox.nix"
-      - "agentplane/images/tools.nix"
+      - "agentplane/env/images/build.nix"
+      - "agentplane/env/images/sandbox.nix"
+      - "agentplane/env/images/tools.nix"
       - "devinfra/ci/pr_mergeability.py"
       - "flake.lock"
       - "nix/artifact-pins.json"
@@ -31,9 +31,9 @@ on:
       - ".github/workflows/agentplane-sandbox-build-image.yml"
       - ".github/workflows/nix-image.yml"
       - "agentplane/cli/package.nix"
-      - "agentplane/images/build.nix"
-      - "agentplane/images/sandbox.nix"
-      - "agentplane/images/tools.nix"
+      - "agentplane/env/images/build.nix"
+      - "agentplane/env/images/sandbox.nix"
+      - "agentplane/env/images/tools.nix"
       - "devinfra/ci/pr_mergeability.py"
       - "flake.lock"
       - "nix/artifact-pins.json"
@@ -51,9 +51,9 @@ on:
       - ".github/workflows/nix-image.yml"
       - ".github/workflows/trusted-fork-pr-context.yml"
       - "agentplane/cli/package.nix"
-      - "agentplane/images/build.nix"
-      - "agentplane/images/sandbox.nix"
-      - "agentplane/images/tools.nix"
+      - "agentplane/env/images/build.nix"
+      - "agentplane/env/images/sandbox.nix"
+      - "agentplane/env/images/tools.nix"
       - "devinfra/ci/pr_mergeability.py"
       - "flake.lock"
       - "nix/artifact-pins.json"
