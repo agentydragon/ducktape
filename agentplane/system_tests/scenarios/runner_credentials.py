@@ -76,7 +76,13 @@ async def _wait_suspended(client: Client, name: str) -> None:
 
 
 async def _open_agent(
-    client: Client, dispatcher: SessionDispatcherClient, view: SandboxView, harness: runner_pb2.Harness, model_name: str, *, cwd: str = WORKING_DIRECTORY
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    view: SandboxView,
+    harness: runner_pb2.Harness,
+    model_name: str,
+    *,
+    cwd: str = WORKING_DIRECTORY,
 ) -> Agent:
     agent = await Agent.open(
         client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model_name, cwd=cwd

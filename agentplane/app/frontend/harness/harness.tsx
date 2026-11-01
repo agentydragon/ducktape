@@ -49,7 +49,6 @@ import { sampleConnection } from "../connections/testing/fixture";
 import type { Connection } from "../connections/models";
 
 import { dispatchFromJson } from "../threads/client";
-const COMMAND_TARGET = { sandbox: "ready-sandbox", sandboxUid: "0f9c1d2e-0000-4000-8000-00000000a1b2" };
 import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { McpLinkageView } from "../mcp_linkage_client";
 import type {
@@ -71,6 +70,8 @@ import { streamRegistry } from "../stream_status";
 import { ThemeProvider } from "../theme";
 import rollout from "./realistic_rollout.json";
 import reportedRollout from "./reported_rollout.json";
+
+const COMMAND_TARGET = { sandbox: "ready-sandbox", sandboxUid: "0f9c1d2e-0000-4000-8000-00000000a1b2" };
 
 // Each test owns its local-command fixtures.
 localStorage.clear();

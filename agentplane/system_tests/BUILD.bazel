@@ -15,7 +15,6 @@ py_library(
         ":tracing",
         "//agentplane/app/testing:client",
         "//agentplane/app/testing:models",
-        "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",

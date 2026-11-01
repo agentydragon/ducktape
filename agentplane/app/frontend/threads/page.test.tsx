@@ -13,12 +13,13 @@ import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import type * as ThreadClientModule from "./client";
-import type { CommandSubmission, CommandTarget } from "./client";
 import type * as ModelCatalogModule from "../model_catalog";
 import type * as SandboxClientModule from "../sandboxes/client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import { api } from "../client";
 import {
+  type CommandSubmission,
+  type CommandTarget,
   dispatchFromJson,
   submitInput,
   changeModel,
