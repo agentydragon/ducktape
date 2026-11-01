@@ -456,7 +456,7 @@ func cloneTurn(turn TurnView) TurnView {
 	clone := turn
 	clone.Input = append([]TurnInput(nil), turn.Input...)
 	for i := range clone.Input {
-		clone.Input[i].CommandIDs = append([]uuid.UUID(nil), turn.Input[i].CommandIDs...)
+		clone.Input[i].CommandIDs = append([]OpaqueID(nil), turn.Input[i].CommandIDs...)
 	}
 	clone.ToolCalls = append([]TurnToolCall(nil), turn.ToolCalls...)
 	if turn.Status != nil {
