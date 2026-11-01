@@ -14,6 +14,7 @@ const (
 	RunnerLeaseSuffix             = "-runner"
 	ConnectionLabel               = "agentplane.allegedly.works/runner-connection"
 	ConnectionEpochAnnotation     = "agentplane.allegedly.works/connection-epoch"
+	ConnectionLeaseUIDAnnotation  = "agentplane.allegedly.works/connection-lease-uid"
 	PodUIDAnnotation              = "agentplane.allegedly.works/pod-uid"
 	LastConnectedPodUIDAnnotation = "agentplane.allegedly.works/last-connected-pod-uid"
 	RunnerBootIDAnnotation        = "agentplane.allegedly.works/runner-boot-id"

@@ -198,17 +198,33 @@ The Sandbox Controller owns the headless, selector-less control Service. All rec
 the exact Sandbox API, kind, name and UID, with no other owners, and must not be deleting. Foreign
 records, including those of a deleted Sandbox whose name was reused, block connection acceptance.
 
-The Lease's `holderIdentity` is the Gateway Pod name, `leaseTransitions` the monotonically increasing
-epoch, `renewTime` the last authenticated state snapshot and `leaseDurationSeconds` 30. Its
+The Lease's `holderIdentity` is the Gateway Pod name, `leaseTransitions` the transition count within
+that Lease object's lifetime, `renewTime` the last authenticated state snapshot and
+`leaseDurationSeconds` 30. Its
 `agentplane.allegedly.works/pod-uid` and `agentplane.allegedly.works/runner-boot-id` annotations bind
 the workload incarnation and runner process. Runner facts replace the corresponding Lease annotations.
 Readers trust them only while the Lease is live and names the current incarnation.
 
 Claiming the Lease uses resource-version conflict retries and refuses takeover of another live
-holder. The holder writes an EndpointSlice naming its own Pod IP and proxy port, annotated with
-`agentplane.allegedly.works/connection-epoch`; a write cannot replace a newer epoch. It records the
+holder. The Gateway assigns a Sandbox-lifetime route epoch above both the retained EndpointSlice
+epoch and the current Lease transition count. This keeps the route epoch increasing when a Lease is
+deleted and recreated, whose Kubernetes UID changes and transition count may restart. The holder
+writes an EndpointSlice naming its own Pod IP and proxy port, annotated with
+`agentplane.allegedly.works/connection-epoch` and the exact Lease UID in
+`agentplane.allegedly.works/connection-lease-uid`; a write cannot replace a newer epoch. Every
+EndpointSlice conflict retry re-reads the Lease and requires the exact Sandbox owner UID, Lease UID,
+holder name and transition count that authorized the publication. Missing epoch annotations are a
+legacy zero baseline; malformed present epochs and exhausted counters fail closed. It records the
 boot ID only after a valid `WatchState` response. Renewals that find another holder or a newer
 epoch fail the observation. A new claim clears old facts until the runner publishes them again.
+
+Lease and EndpointSlice are separate Kubernetes objects, so their read and write cannot be atomic.
+An old publication that validated immediately before a Lease replacement can briefly land; a
+successful publication for the new Lease uses a higher route epoch and becomes the advertised
+route. If publishing the slice fails after claiming the Lease, the runner observer retries the claim
+and publication through its existing retry loop. This provides convergence under successful
+reconciliation, without a wall-clock bound; the stale route can remain advertised while Kubernetes
+rejects the writes.
 
 Each replica watches Leases and rejects proxy calls superseded by a newer epoch. No Kubernetes read
 is needed for that epoch check on each RPC. EndpointSlices route callers; they do not prove
