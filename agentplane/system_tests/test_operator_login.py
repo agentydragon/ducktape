@@ -14,6 +14,7 @@ from pydantic import JsonValue, SecretStr
 
 from agentplane.app.oidc import SECURE_COOKIE
 from agentplane.system_tests.cluster import Cluster
+from agentplane.system_tests.mcp_connection import ExternalMCPSession
 from agentplane.system_tests.operator_login import (
     K3S_FIXTURE_API,
     LoginBlockedError,
@@ -34,6 +35,14 @@ CREDENTIALS = OperatorCredentials(
     issuer=SecretStr(f"{DEX}/dex"),
     subject=SecretStr("test-subject"),
 )
+
+
+class _FailedMcpSession:
+    async def list_tools(self) -> None:
+        raise httpx.ConnectError("must-not-appear-in-error-output")
+
+    async def call_tool(self, _name: str, *, arguments: dict[str, object] | None = None) -> None:
+        raise httpx.ConnectError("must-not-appear-in-error-output")
 
 
 def _missing_action_error(request: httpx.Request, *, python_bff: bool = False) -> dict[str, JsonValue]:
@@ -318,6 +327,18 @@ async def test_dex_authorization_rejects_unowned_callback_path_without_request()
     assert requests == 0
 
 
+@pytest.mark.parametrize("method", ["list_tools", "call_tool"])
+async def test_external_mcp_client_withholds_sdk_transport_errors(
+    method: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    session = ExternalMCPSession(_FailedMcpSession())
+    request = session.list_tools() if method == "list_tools" else session.call_tool("get_action_policy", arguments={})
+    with pytest.raises(LoginBlockedError) as caught:
+        await request
+    assert "must-not-appear-in-error-output" not in str(caught.value)
+    assert capsys.readouterr() == ("", "")
+
+
 async def test_dex_linkage_refuses_nonlocal_form_targets_without_sending_credentials() -> None:
     marker = "must-not-appear-in-error"
     posts = 0
@@ -458,7 +479,7 @@ def test_origin_normalization() -> None:
 
 def test_http_reaches_only_a_cluster_internal_name() -> None:
     assert app_origin("http://app.test-namespace.svc:8080") == httpx.URL("http://app.test-namespace.svc:8080/")
-    with pytest.raises(LoginBlockedError, match="HTTPS app origin"):
+    with pytest.raises(LoginBlockedError, match="allowed transport"):
         app_origin("http://app.test.invalid")
 
 

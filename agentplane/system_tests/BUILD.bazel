@@ -187,6 +187,7 @@ py_test(
     deps = [
         ":cluster",
         ":conftest",
+        ":mcp_connection",
         ":operator_login",
         "//:conftest",
         "//agentplane/app:oidc",
