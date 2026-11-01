@@ -41,6 +41,7 @@ from agentplane.env.config import (
 )
 from agentplane.environment_runtime_transport.config import MTLS, TLS
 from agentplane.sandboxes.runtimeconfig.model_catalog import WORKSPACE_ROOT
+from agentplane.session_instructions.platform_instructions import SessionRuntime
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import (
     egress,
@@ -53,12 +54,7 @@ from cluster.cdk8s.agentplane import (
     telemetry,
 )
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.platform_instructions import (
-    SessionRuntime,
-    agent_cli_environment,
-    platform_instructions,
-    service_urls,
-)
+from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate_ingress
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
