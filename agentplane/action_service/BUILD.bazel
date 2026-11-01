@@ -299,7 +299,7 @@ go_library(
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
-        "//agentplane/postgres:postgres",
+        "//agentplane/postgres",
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/probes",
         "//agentplane/postgres/wakeups",

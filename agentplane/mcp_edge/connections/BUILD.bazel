@@ -15,7 +15,7 @@ go_library(
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/grpc/streaming",
         "//agentplane/mcp_edge:connection_service_go_proto",
-        "//agentplane/postgres:postgres",
+        "//agentplane/postgres",
         "//agentplane/postgres/wakeups",
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/workload_auth/auth",

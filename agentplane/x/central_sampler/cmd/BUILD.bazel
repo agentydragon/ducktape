@@ -13,7 +13,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//agentplane/grpc/graceful",
-        "//agentplane/postgres:postgres",
+        "//agentplane/postgres",
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/wakeups",
         "//agentplane/workload_auth/auth",

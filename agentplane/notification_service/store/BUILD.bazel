@@ -31,7 +31,7 @@ go_library(
         "//agentplane/notification_service:storage_go_proto",
         "//agentplane/notification_service/internal/storagecodec",
         "//agentplane/notification_service/model",
-        "//agentplane/postgres:postgres",
+        "//agentplane/postgres",
         "//agentplane/postgres/lease",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:sandboxes_go_proto",

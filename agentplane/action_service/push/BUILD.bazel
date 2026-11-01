@@ -14,7 +14,7 @@ go_library(
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/store",
         "//agentplane/observability",
-        "//agentplane/postgres:postgres",
+        "//agentplane/postgres",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
         "@com_github_sherclockholmes_webpush_go//:webpush-go",

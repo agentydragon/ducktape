@@ -29,7 +29,7 @@ go_library(
         "//agentplane/grpc/bearer",
         "//agentplane/grpc/streaming",
         "//agentplane/observability",
-        "//agentplane/postgres:postgres",
+        "//agentplane/postgres",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",

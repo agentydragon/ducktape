@@ -155,7 +155,7 @@ go_library(
         "//agentplane/notification_service/webhook",
         "//agentplane/notification_service/worker",
         "//agentplane/observability",
-        "//agentplane/postgres:postgres",
+        "//agentplane/postgres",
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/probes",
         "//agentplane/postgres/wakeups",

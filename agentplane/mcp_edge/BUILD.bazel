@@ -106,7 +106,7 @@ go_library(
         "//agentplane/mcp_edge/migrations",
         "//agentplane/observability",
         "//agentplane/policy/reader",
-        "//agentplane/postgres:postgres",
+        "//agentplane/postgres",
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/probes",
         "//agentplane/postgres/wakeups",

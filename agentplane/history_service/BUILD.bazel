@@ -93,7 +93,7 @@ go_library(
         "//agentplane/history_service/reads",
         "//agentplane/history_service/storage",
         "//agentplane/observability",
-        "//agentplane/postgres:postgres",
+        "//agentplane/postgres",
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/wakeups",
         "//agentplane/workload_auth/auth",
