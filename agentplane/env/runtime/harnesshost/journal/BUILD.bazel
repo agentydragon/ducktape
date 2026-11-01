@@ -1,0 +1,46 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "journal",
+    srcs = [
+        "journal.go",
+        "migrations.go",
+        "native_requests.go",
+        "recovery.go",
+    ],
+    embedsrcs = glob(["migrations/*.sql"]),
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/journal",
+    visibility = ["//agentplane/env:__subpackages__"],
+    deps = [
+        "//agentplane/env/runtime/harnesshost/harness",
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "@com_github_pressly_goose_v3//:goose",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+        "@org_modernc_sqlite//:sqlite",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
+go_test(
+    name = "journal_test",
+    srcs = [
+        "journal_test.go",
+        "native_requests_test.go",
+        "recovery_test.go",
+    ],
+    embed = [":journal"],
+    race = "on",
+    deps = [
+        "//agentplane/env/runtime/harnesshost/harness",
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "@com_github_pressly_goose_v3//:goose",
+        "@org_golang_google_protobuf//proto",
+        "@org_modernc_sqlite//:sqlite",
+        "@org_modernc_sqlite//lib",
+    ],
+)

@@ -1,0 +1,45 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+js_binary(
+    name = "generate",
+    data = ["//:node_modules/quicktype-core"],
+    entry_point = "generate.mjs",
+)
+
+js_run_binary(
+    name = "generate_types",
+    srcs = [":schema"],
+    outs = ["protocol.gen.go"],
+    args = [
+        "codex_app_server_protocol.v2.schemas.json",
+        "protocol.gen.go",
+    ],
+    chdir = package_name(),
+    tool = ":generate",
+)
+
+# quicktype-generated union decoders trigger SA4006 on unused object results.
+go_library(
+    name = "protocol",
+    srcs = [":generate_types"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codex/protocol",
+    tags = ["no-nogo"],
+    visibility = [
+        "//agentplane/env:__subpackages__",
+    ],
+)
+
+genrule(
+    name = "schema",
+    outs = ["codex_app_server_protocol.v2.schemas.json"],
+    cmd = """
+        schema_dir="$(@D)/schema.tmp"
+        $(location @agentplane_codex_cli_linux_x64//:codex_binary) app-server generate-json-schema --experimental --out "$$schema_dir"
+        cp "$$schema_dir/codex_app_server_protocol.v2.schemas.json" "$(@D)/"
+    """,
+    tools = ["@agentplane_codex_cli_linux_x64//:codex_binary"],
+    visibility = [
+        "//agentplane/env:__subpackages__",
+    ],
+)

@@ -102,7 +102,7 @@ The existing Sandbox UID/incarnation binding is fixed; v1 requires the bound San
 The separate, default-empty `executor_callers` policy enables typed `Executor` RPCs for
 trusted samplers. The Gateway checks destination and incarnation, then forwards process and file
 operations to the Runner's authenticated `Executor` service using the same
-[sandbox-owned contract](../env/execution/executor.proto). The Runner alone translates the
+[sandbox-owned contract](../env/runtime/execution/executor.proto). The Runner alone translates the
 local Codex JSON-RPC protocol. A server-streaming `OpenSession` owns each adapter connection and
 returns native-frame evidence; execution operations use unary RPCs with that session ID. Closing
 the stream releases the adapter connection and detaches the native Codex session. Codex's

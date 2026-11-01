@@ -11,9 +11,9 @@ pkg_tar(
     name = "disk_bin",
     srcs = [
         "//agentplane/cli:agentplane",
-        "//agentplane/env/execution/cmd:agentplane-execution-service",
-        "//agentplane/env/harnesshost/cmd:agentplane-harness-host",
         "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
+        "//agentplane/env/runtime/execution/cmd:agentplane-execution-service",
+        "//agentplane/env/runtime/harnesshost/cmd:agentplane-harness-host",
     ],
     mode = "0755",
     package_dir = "/bin",

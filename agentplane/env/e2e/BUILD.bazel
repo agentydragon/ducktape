@@ -18,7 +18,7 @@ py_library(
         "//agentplane/env/e2e/testing:failure_journal",
         "//agentplane/env/e2e/testing:fixtures",
         "//agentplane/env/e2e/testing:process_fixtures",
-        "//agentplane/env/execution/testing:codex_exec_server_container",
+        "//agentplane/env/runtime/execution/testing:codex_exec_server_container",
         "//agentplane/history_service/testing:fixtures",
         "//agentplane/testing:kubernetes_apiserver_fixtures",
         "//util/testing:postgres_fixtures",
@@ -97,9 +97,9 @@ py_test(
     size = "large",
     srcs = ["test_restart.py"],
     data = [
-        "//agentplane/env/execution/cmd:agentplane-execution-service",
-        "//agentplane/env/harnesshost/cmd:agentplane-harness-host",
         "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
+        "//agentplane/env/runtime/execution/cmd:agentplane-execution-service",
+        "//agentplane/env/runtime/harnesshost/cmd:agentplane-harness-host",
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
         "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
     ],
@@ -361,7 +361,7 @@ py_test(
     size = "medium",
     srcs = ["test_executor_container.py"],
     data = [
-        "//agentplane/env/execution/cmd:agentplane-execution-service",  # keep: the companion PID-1 process
+        "//agentplane/env/runtime/execution/cmd:agentplane-execution-service",  # keep: the companion PID-1 process
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned Codex executor
     ],
     env = NATIVE_RUNNER_DOCKER_ENV,
@@ -381,7 +381,7 @@ py_test(
         "//agentplane/env/e2e/testing:launches",
         "//agentplane/env/e2e/testing:process",
         "//agentplane/env/e2e/testing:process_fixtures",
-        "//agentplane/env/execution/testing:codex_exec_server_container",
+        "//agentplane/env/runtime/execution/testing:codex_exec_server_container",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/testing:scripted_model",
@@ -399,9 +399,9 @@ py_test(
     name = "test_pid1_container",
     srcs = ["test_pid1_container.py"],
     data = [
-        "//agentplane/env/execution/cmd:agentplane-execution-service",
-        "//agentplane/env/harnesshost/cmd:agentplane-harness-host",
         "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
+        "//agentplane/env/runtime/execution/cmd:agentplane-execution-service",
+        "//agentplane/env/runtime/harnesshost/cmd:agentplane-harness-host",
         "//agentplane/env/runtime/supervision:runner_pid1_fixture",
     ],
     env = NATIVE_RUNNER_DOCKER_ENV,

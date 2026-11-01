@@ -139,7 +139,7 @@ Only the app-server's client changes it: `cwd` on `thread/start`, `thread/resume
 ([turn.rs][cwd-turn]), and `thread/settings/update` ([thread.rs][cwd-settings]). A `cd` inside a command,
 the paths of an `apply_patch` or a file a cell reads leave it alone. The Runner sends the Session spec's
 `cwd` once, on `thread/start` (`runner/codex/adapter.go`), and a Session's spec never changes
-([Harness Host session protocol](../env/harnesshost/docs/session_protocol.md)), so each Session has one cwd and one chain for its whole life.
+([Harness Host session protocol](../env/runtime/harnesshost/docs/session_protocol.md)), so each Session has one cwd and one chain for its whole life.
 
 Before every sampling step Codex re-reads the global file, but re-reads the project chain only when the
 environment selection (ids, cwds, roots) or project trust changed ([agents_md_manager.rs][agents-cache],
@@ -238,7 +238,7 @@ harness needs to account for each feature it retains, beyond where it runs:
 - **Multi-agent v2, auto-review, skills and plugins, the MCP client with OAuth, hooks, approvals and
   exec policy.**
 - **Rollouts, resume, fork and `thread/items/list`**, which the Runner's recovery reconciliation reads
-  ([retained-state contract](../env/harnesshost/docs/retained_state.md#native-continuation-evidence)).
+  ([retained-state contract](../env/runtime/harnesshost/docs/retained_state.md#native-continuation-evidence)).
 
 Central placement and persistence ownership are independent choices. Upstream Codex centrally
 retains its native store plus Agentplane's command/Event journal. A fork or custom sampler could

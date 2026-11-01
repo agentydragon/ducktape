@@ -148,7 +148,7 @@ none of this is reachable — while leaving driver-hosted servers working. The s
 The declare/call round trip below is scripted-test-pinned against the pinned binary and a mocked
 model endpoint: `native/codex/testing/dynamic_tools.py`'s `DynamicToolServer` and
 `native/codex/test_dynamic_tools.py`. This is native-driver evidence, not a runner
-capability — nothing in `env/harnesshost/codex/adapter.go` declares `dynamicTools` or answers `item/tool/call` today.
+capability — nothing in `env/runtime/harnesshost/codex/adapter.go` declares `dynamicTools` or answers `item/tool/call` today.
 
 "Dynamic" here means **client-supplied**: definitions the driver hands the app-server at
 `thread/start`, as against the built-in tools compiled into Codex. It does not mean the set mutates.

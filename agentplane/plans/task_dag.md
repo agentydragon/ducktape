@@ -33,7 +33,7 @@ cases can justify pulling a narrower fix forward. The sprint dispatch below scop
 authorized work; the priority list does not dispatch the other tracks.
 
 **Component boundaries:** the [Environment Runtime](../env/runtime/SPEC.md),
-[Harness Host](../env/harnesshost/SPEC.md) and [Execution service](../env/execution/SPEC.md)
+[Harness Host](../env/runtime/harnesshost/SPEC.md) and [Execution service](../env/runtime/execution/SPEC.md)
 have distinct lifecycle responsibilities. Preserve those logical owners in the selected work;
 their executable packaging and process grouping remain subject to
 `ENV_MANAGEMENT_PROCESS_CONSOLIDATION_DESIGN` and explicit operator review. Session and

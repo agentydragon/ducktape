@@ -1,0 +1,31 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/env/runtime/execution/companion:__subpackages__"])
+
+go_library(
+    name = "executor",
+    srcs = ["main.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion",
+    visibility = [
+        "//agentplane/env/runtime/execution:__subpackages__",
+    ],
+    deps = [
+        "//agentplane/env/runtime/execution/companion/control",
+        "//agentplane/env/runtime/supervision",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_x_sync//errgroup",
+    ],
+)
+
+go_test(
+    name = "executor_test",
+    srcs = [
+        "health_test.go",
+        "main_test.go",
+    ],
+    embed = [":executor"],
+    deps = [
+        "//agentplane/env/runtime/execution/companion/control",
+        "//agentplane/env/runtime/supervision",
+    ],
+)

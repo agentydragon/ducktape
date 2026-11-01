@@ -1,0 +1,45 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "codex",
+    srcs = [
+        "adapter.go",
+        "history.go",
+        "router.go",
+        "server.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codex",
+    visibility = [
+        "//agentplane/env:__subpackages__",
+        "//agentplane/env/runtime/harnesshost:__pkg__",
+    ],
+    deps = [
+        "//agentplane/env/jsonrpc",
+        "//agentplane/env/runtime/harnesshost/codex/protocol",
+        "//agentplane/env/runtime/harnesshost/harness",
+        "//agentplane/observability",
+        "//agentplane/proto:event_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_test(
+    name = "codex_test",
+    srcs = [
+        "adapter_test.go",
+        "history_test.go",
+        "router_test.go",
+    ],
+    embed = [":codex"],
+    race = "on",
+    deps = [
+        "//agentplane/env/runtime/harnesshost/codex/protocol",
+        "//agentplane/env/runtime/harnesshost/harness",
+        "//agentplane/env/runtime/harnesshost/testing/adaptertest",
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+    ],
+)

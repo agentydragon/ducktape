@@ -47,7 +47,7 @@ reasoning item also omits `encrypted_content`; seeing a summary is not proof of 
 continuation payload. The runner compares observed item content, so that field difference alone does
 not establish that it needs private storage. The runner uses turn-scoped public history RPCs and
 reports unknown when those RPCs cannot establish continuation; see the
-[Harness Host recovery contract](../env/harnesshost/docs/session_protocol.md#interrupted-turns-and-continuation-recovery).
+[Harness Host recovery contract](../env/runtime/harnesshost/docs/session_protocol.md#interrupted-turns-and-continuation-recovery).
 
 ### Completed compaction
 

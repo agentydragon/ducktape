@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/execution/codexexecserver"
-	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

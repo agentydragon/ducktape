@@ -1,0 +1,13 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = [
+    "//agentplane/env/e2e:__pkg__",
+    "//agentplane/env/runtime/execution/codexexecserver:__pkg__",
+    "//agentplane/env/runtime/execution/companion:__pkg__",
+])
+
+go_library(
+    name = "control",
+    srcs = ["control.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control",
+)

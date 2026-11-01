@@ -10,7 +10,7 @@ import pytest_bazel
 
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.testing.client import Client
-from agentplane.env.harnesshost.harness import Harness
+from agentplane.env.runtime.harnesshost.harness import Harness
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.agent import Agent

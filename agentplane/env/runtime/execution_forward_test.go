@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
-	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc"

@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:private"])
+
+go_library(
+    name = "retained",
+    srcs = ["retained.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained",
+    visibility = ["//agentplane/env:__subpackages__"],
+    deps = [
+        "//agentplane/proto:delegation_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "@com_github_google_uuid//:uuid",
+    ],
+)
+
+go_test(
+    name = "retained_test",
+    srcs = ["retained_test.go"],
+    embed = [":retained"],
+    race = "on",
+    deps = ["//agentplane/proto:session_go_proto"],
+)

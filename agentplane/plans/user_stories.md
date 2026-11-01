@@ -154,7 +154,7 @@ Standing under it:
   egress proxy substitutes for Haku's identity. The shape is proven: staging's sandboxes reach
   GitHub's API and HTTPS git as `agentydragon-agent` with a PAT they never hold, and the acceptance
   suite checks it against the proxy's own record rather than the agent's account of it.
-- Standing instructions on the session (<../env/harnesshost/docs/session_protocol.md>): what a long-lived agent is for reaches
+- Standing instructions on the session (<../env/runtime/harnesshost/docs/session_protocol.md>): what a long-lived agent is for reaches
   the model on every turn, including a resumed one, without being written into the harness or into
   the first input. They are fixed for the session's life, which is the strongest promise both
   harnesses can keep — Codex accepts an override on resume and silently ignores it.

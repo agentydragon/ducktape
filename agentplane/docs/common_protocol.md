@@ -4,7 +4,7 @@ The shared generated messages are `Command`, `Event`, and `EventEntry`.
 The runner and app reuse them for command delivery and retained Event replay.
 
 The runner is the shared seam over Claude Code and Codex. Exact wire fields, replay,
-and journal recovery are in the [Harness Host session protocol](../env/harnesshost/docs/session_protocol.md). The
+and journal recovery are in the [Harness Host session protocol](../env/runtime/harnesshost/docs/session_protocol.md). The
 cross-layer identity, command, projection, and UI contract is
 [Thread, runner, and harness layering](thread_layering.md). That document is the
 authoritative design for Thread identity, Dispatcher-owned sender queueing, durability boundaries,

@@ -22,8 +22,8 @@ from google.protobuf.json_format import MessageToDict
 from agentplane.central_sampler import sampler_pb2, sampler_pb2_grpc
 from agentplane.central_sampler.testing import METADATA, Endpoint, open_request, service, settings
 from agentplane.central_sampler.testing_store import Store
-from agentplane.env.execution import executor_pb2, executor_pb2_grpc
 from agentplane.env.runtime.control import environment_runtime_pb2
+from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
 from agentplane.grpc.serving import serving
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, FunctionCall, Message, response_stream
 from agentplane.native.testing.model_endpoint import JsonResponse, SseEvent

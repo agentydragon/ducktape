@@ -17,7 +17,7 @@ the likely source of the widened mode.
 
 `service.lock` now opens the directory and owner file without following
 symlinks, restores mode `0700` through the directory file descriptor, and then
-takes the owner lock. `//agentplane/env/execution/service:service_test` passed
+takes the owner lock. `//agentplane/env/runtime/execution/service:service_test` passed
 in BuildBuddy invocation `f4026c82-8442-4ece-aa08-55abba5c81da`, including
 mode restoration and symlink rejection. The focused
 `//agentplane/system_tests/suites:test_mcp` rerun passed in 309.5 seconds in

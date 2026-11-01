@@ -53,7 +53,7 @@ def test_process_spans_are_exported_with_identity_and_parentage(tmp_path: Path) 
                                 trace_id=bytes.fromhex("01" * 16),
                                 span_id=bytes.fromhex("02" * 8),
                                 parent_span_id=bytes.fromhex("03" * 8),
-                                name="agentplane.env.harnesshost.session.open",
+                                name="agentplane.env.runtime.harnesshost.session.open",
                                 start_time_unix_nano=100,
                                 end_time_unix_nano=200,
                                 attributes=[

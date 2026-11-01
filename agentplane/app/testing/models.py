@@ -13,7 +13,7 @@ from agentplane.action_service.policy_view import EffectivePolicyView
 from agentplane.app.sandbox_models import MIN_IDLE_SUSPEND_AFTER_SECONDS, InboxTag
 from agentplane.egress.decisions import Decision
 from agentplane.egress.resources import Target
-from agentplane.env.harnesshost.harness import Harness
+from agentplane.env.runtime.harnesshost.harness import Harness
 from agentplane.policy_sets import ConditionStatus
 from agentplane.sandbox_resource import AutosuspendBlockerReason, OperatingMode, SuspendedBy
 from agentplane.subjects import ServiceAccountRef

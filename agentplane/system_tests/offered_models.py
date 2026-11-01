@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 
 from agentplane.app.testing.client import Client
-from agentplane.env.harnesshost.harness import Harness
+from agentplane.env.runtime.harnesshost.harness import Harness
 from agentplane.proto import session_pb2
 
 

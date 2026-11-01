@@ -13,7 +13,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.testing.client import Client
 from agentplane.app.testing.models import SandboxView
-from agentplane.env.harnesshost.harness import Harness
+from agentplane.env.runtime.harnesshost.harness import Harness
 from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient

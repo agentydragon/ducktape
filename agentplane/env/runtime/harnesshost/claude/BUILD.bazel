@@ -1,0 +1,36 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "claude",
+    srcs = [
+        "adapter.go",
+        "history.go",
+        "protocol.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/claude",
+    visibility = [
+        "//agentplane/env:__subpackages__",
+        "//agentplane/env/runtime/harnesshost:__pkg__",
+    ],
+    deps = [
+        "//agentplane/env/runtime/harnesshost/harness",
+        "//agentplane/proto:event_go_proto",
+        "@com_github_anthropics_anthropic_sdk_go//:anthropic-sdk-go",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_schlunsen_claude_agent_sdk_go//types",
+    ],
+)
+
+go_test(
+    name = "claude_test",
+    srcs = [
+        "adapter_test.go",
+        "protocol_test.go",
+    ],
+    embed = [":claude"],
+    deps = [
+        "//agentplane/env/runtime/harnesshost/harness",
+        "//agentplane/env/runtime/harnesshost/testing/adaptertest",
+        "@com_github_anthropics_anthropic_sdk_go//:anthropic-sdk-go",
+    ],
+)

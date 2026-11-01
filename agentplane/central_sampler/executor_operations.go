@@ -11,7 +11,7 @@ import (
 	"io"
 	"time"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

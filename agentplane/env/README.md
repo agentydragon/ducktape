@@ -7,15 +7,15 @@ control-plane service outside `env/`.
 
 ## Layout and entrypoints
 
-| Owner               | Executable target                                             | Main packages                                                                  |
-| ------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Environment Runtime | `//agentplane/env/runtime/cmd:agentplane-environment-runtime` | environment owner/state, private lifecycle protocol, bootstrap, public control |
-| Harness Host        | `//agentplane/env/harnesshost/cmd:agentplane-harness-host`    | Session, Claude/Codex adapters, app-server, retained records, journal, ingress |
-| Execution Service   | `//agentplane/env/execution/cmd:agentplane-execution-service` | execution adapter, native exec-server, companion                               |
+| Owner               | Executable target                                                     | Main packages                                                                  |
+| ------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Environment Runtime | `//agentplane/env/runtime/cmd:agentplane-environment-runtime`         | environment owner/state, private lifecycle protocol, bootstrap, public control |
+| Harness Host        | `//agentplane/env/runtime/harnesshost/cmd:agentplane-harness-host`    | Session, Claude/Codex adapters, app-server, retained records, journal, ingress |
+| Execution Service   | `//agentplane/env/runtime/execution/cmd:agentplane-execution-service` | execution adapter, native exec-server, companion                               |
 
 Shared process machinery is in `env/runtime/supervision`; one-shot operation bookkeeping is in
 `env/oneoff`, shell execution in `env/scripts`, and Go deployment parsing in `env/configuration`.
-Host owns workspace containment and helpers in `env/harnesshost/workspace`. The `env/e2e/` contains cross-service integration tests; image and VM packaging lives in `env/images/`.
+Host owns workspace containment and helpers in `env/runtime/harnesshost/workspace`. The `env/e2e/` contains cross-service integration tests; image and VM packaging lives in `env/images/`.
 
 Runtime and Host read the same `--config` and `--launch-file`. Runtime launches the Host with
 private lifecycle and Session socket paths and an explicit `--supervision subprocess|systemd`.
@@ -29,7 +29,7 @@ Host drains admitted work and native processes before reporting `native_stopped`
 Execution before acknowledging `execution_fenced`; only then may Host seal journals and report exact
 History acknowledgements. Losing the control stream closes native admission and drains Host without
 creating a seal. An abnormal Pod Host exit requires the outer container fence before replacement.
-See [Host contract](../env/harnesshost/SPEC.md) and [lifecycle](docs/lifecycle.md).
+See [Host contract](runtime/harnesshost/SPEC.md) and [lifecycle](runtime/docs/lifecycle.md).
 
 The three executables ship with the `agentplane` CLI in `//agentplane/env/images:disk_image`.
 Native Claude/Codex executables, workspace tools and CA certificates come from the runtime image.

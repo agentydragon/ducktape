@@ -33,7 +33,7 @@ const claudeBash = z.strictObject({
   dangerouslyDisableSandbox: z.boolean().optional(),
 });
 
-// What `agentplane/env/harnesshost/codex/adapter.go` records for a `commandExecution` item.
+// What `agentplane/env/runtime/harnesshost/codex/adapter.go` records for a `commandExecution` item.
 const codexCommand = z.strictObject({
   command: z.string().min(1),
   cwd: z.string(),

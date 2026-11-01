@@ -91,7 +91,7 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
-        "//agentplane/env/harnesshost:harness",
+        "//agentplane/env/runtime/harnesshost:harness",
         "@pypi//pydantic",
     ],
 )

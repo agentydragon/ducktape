@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
 
