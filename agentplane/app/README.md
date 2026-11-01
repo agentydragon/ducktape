@@ -126,7 +126,8 @@ with the app's rotating projected Dispatcher token. Unary routes return ProtoJSO
 bounded initial read before starting its streaming response and then relays frames until the operator
 session ends, the app drains or the browser goes. Reads carry no Thread check, so an operator can read
 the Dispatches of any Session id. Command writes no longer check the app's History feed state or model
-catalog before reaching the Dispatcher; the runner remains the authority for supported model choices.
+catalog before reaching the Dispatcher. The frontend model picker remains catalog-backed; the backend
+and executor report command failures after submission.
 
 The Sandbox page lists retained Sessions from History Thread summaries, so suspension or removal of a
 runner Pod does not clear the inventory. A row's status mark is derived from those last-observed History

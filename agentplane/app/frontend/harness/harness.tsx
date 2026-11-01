@@ -3430,10 +3430,10 @@ routes.push(
   // No runner here admits a command, so one the page delivers on load stays unadmitted.
   [
     "POST",
-    /^\/threads\/([0-9a-f-]+)\/(?:submit-input|change-model|change-reasoning-effort|interrupt-turn)$/,
+    /^\/upstream\/dispatcher\/v1\/sessions\/([0-9a-f-]+):(?:submitInput|changeModel|changeReasoningEffort|interruptTurn)$/,
     () =>
       flags.has("commandAdmissionTimedOut")
-        ? Response.json({ detail: "runner admission was not confirmed within 15 seconds" }, { status: 504 })
+        ? Response.json({ code: 4, message: "deadline exceeded" }, { status: 504 })
         : UNANSWERED,
   ]
 );
