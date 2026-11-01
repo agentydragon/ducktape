@@ -121,7 +121,8 @@ func succeededResult(stored *structpb.Value, executor pb.ExecutorKind) (*mcp.Cal
 			return nil, fmt.Errorf("stored MCP result: %w", err)
 		}
 		return &result, nil
-	case pb.ExecutorKind_EXECUTOR_KIND_POD, pb.ExecutorKind_EXECUTOR_KIND_ORCHESTRATION_V1:
+	case pb.ExecutorKind_EXECUTOR_KIND_POD, pb.ExecutorKind_EXECUTOR_KIND_ORCHESTRATION_V1,
+		pb.ExecutorKind_EXECUTOR_KIND_SESSION_DELEGATION:
 		fields := stored.GetStructValue()
 		if fields == nil {
 			return nil, fmt.Errorf("stored %v result is not an object: %v", executor, stored)

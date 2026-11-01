@@ -13,9 +13,10 @@ import (
 
 // executorKindNames are the stable values used in the catalog view contract.
 var executorKindNames = map[action_servicepb.ExecutorKind]string{
-	action_servicepb.ExecutorKind_EXECUTOR_KIND_MCP:              "mcp",
-	action_servicepb.ExecutorKind_EXECUTOR_KIND_POD:              "pod",
-	action_servicepb.ExecutorKind_EXECUTOR_KIND_ORCHESTRATION_V1: "orchestration_v1",
+	action_servicepb.ExecutorKind_EXECUTOR_KIND_MCP:                "mcp",
+	action_servicepb.ExecutorKind_EXECUTOR_KIND_POD:                "pod",
+	action_servicepb.ExecutorKind_EXECUTOR_KIND_ORCHESTRATION_V1:   "orchestration_v1",
+	action_servicepb.ExecutorKind_EXECUTOR_KIND_SESSION_DELEGATION: "session_delegation",
 }
 
 // The explicit view expectations cover settings accepted by both catalog construction and the API projection.

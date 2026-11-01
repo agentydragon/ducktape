@@ -48,6 +48,26 @@ func TestResolveFindsOnlyTheActionsOfAvailableGroups(t *testing.T) {
 	}
 }
 
+func TestSessionDelegationBindingIsStrictAndTyped(t *testing.T) {
+	c, err := parse(`{"sessions": {"title": "Sessions", "description": "delegated Sessions",
+		"executor": {"kind": "session_delegation", "description": "forward caller identity"},
+		"actions": {"open": {"description": "open a Session"}}}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, _, err := c.Resolve("sessions", "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binding, ok := group.Executor.(SessionDelegationBinding); !ok || binding.Description != "forward caller identity" {
+		t.Fatalf("executor = %#v, want a typed session delegation binding", group.Executor)
+	}
+	if _, err := parse(`{"sessions": {"title": "Sessions", "description": "delegated Sessions",
+		"executor": {"kind": "session_delegation", "description": "forward caller identity", "namespace": "unexpected"}}}`); err == nil {
+		t.Fatal("accepted an unsupported session_delegation executor field")
+	}
+}
+
 // New's own refusals of what yaml.v3 decodes; config_test holds yaml.v3's.
 func TestRefusalsDoNotEchoValues(t *testing.T) {
 	for name, document := range map[string]string{

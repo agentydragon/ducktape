@@ -38,13 +38,14 @@ from agentplane.action_service.orchestration_v1.binding import (
     PresetSession,
     PresetSessionSpec,
 )
+from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
 from agentplane.action_service.settings import ServicePeer, Settings
 from agentplane.crd_group import GROUP
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import database, notifications
-from cluster.cdk8s.agentplane.environment import Environment, OrchestrationProps
+from cluster.cdk8s.agentplane.environment import Environment, OrchestrationProps, SessionDelegationProps
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
@@ -67,6 +68,8 @@ _LABELS = {"app.kubernetes.io/name": NAME}
 MCP_OAUTH_DIR = "/etc/agentplane-mcp"
 # The orchestration_v1 group's key, which its launcher grants' rules name.
 ORCHESTRATION_GROUP = "orchestration_v1"
+ENVIRONMENTS_GROUP = "environments"
+SESSIONS_GROUP = "sessions"
 SANDBOX_GROUP = "sandbox"
 _PEER_TOKEN_DIR = "/var/run/secrets/actions"
 # The orchestration_v1 executor and its admission policy both name launcher grants `<sandbox>.launcher`.
@@ -83,6 +86,7 @@ _LAUNCHER_ACTIONS = (
     "wait_for_turn",
 )
 _PEER_TIMEOUT_SECONDS = 15
+_DELEGATED_PEER_TIMEOUT_SECONDS = 40
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
 
 
@@ -99,6 +103,38 @@ def orchestration_callers(env: Environment) -> dict[ServiceAccountRef, Pods]:
     if env.actions.orchestration_v1 is None:
         return {}
     return {ServiceAccountRef(namespace=env.namespace, name=NAME): service(env.namespace).pods}
+
+
+def session_delegation_callers(env: Environment) -> dict[ServiceAccountRef, Pods]:
+    """The Action Service's network identity when it uses same-principal Session delegation."""
+    if env.actions.session_delegation is None:
+        return {}
+    return {ServiceAccountRef(namespace=env.namespace, name=NAME): service(env.namespace).pods}
+
+
+def _session_delegation_groups(props: SessionDelegationProps) -> dict[str, ActionGroup]:
+    """Build only the existing-environment delegation groups, with their approved direct tools."""
+    executor = SessionDelegationExecutorBinding(
+        kind="session_delegation",
+        description="Forwards the authenticated caller's ServiceAccount identity to same-principal Session APIs.",
+    )
+    return {
+        ENVIRONMENTS_GROUP: ActionGroup(
+            title="Environments",
+            description="Find and refresh existing environments that the authenticated caller may use for Sessions.",
+            executor=executor,
+            direct_tools=props.direct_tools_by_group.get(ENVIRONMENTS_GROUP),
+        ),
+        SESSIONS_GROUP: ActionGroup(
+            title="Sessions",
+            description=(
+                "Open and control Sessions in an existing same-principal environment. Opening does not start a turn; "
+                "submit input separately."
+            ),
+            executor=executor,
+            direct_tools=props.direct_tools_by_group.get(SESSIONS_GROUP),
+        ),
+    }
 
 
 def _orchestration_group(env: Environment, props: OrchestrationProps) -> ActionGroup:
@@ -277,8 +313,8 @@ class Actions(Construct):
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
         container_env: Mapping[str, EnvValue] | None = None,
     ) -> None:
-        """`history` and `dispatcher` are the peers the orchestration_v1 group calls, in an environment
-        that has it."""
+        """`history` and `dispatcher` serve orchestration_v1 directly and session_delegation with forwarded
+        caller identity, when those groups are configured."""
         super().__init__(scope, id)
         self.env = env
         self.database_url = database_url
@@ -325,6 +361,18 @@ class Actions(Construct):
                 target=f"{history.fqdn}:{history.pod_port}",
                 token_file=f"{_PEER_TOKEN_DIR}/history",
                 request_timeout_s=_PEER_TIMEOUT_SECONDS,
+            )
+        if props.session_delegation is not None:
+            groups.update(_session_delegation_groups(props.session_delegation))
+            content["session_delegation_dispatcher"] = ServicePeer(
+                target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
+                token_file=f"{_PEER_TOKEN_DIR}/dispatcher",
+                request_timeout_s=_DELEGATED_PEER_TIMEOUT_SECONDS,
+            )
+            content["session_delegation_history"] = ServicePeer(
+                target=f"{history.fqdn}:{history.pod_port}",
+                token_file=f"{_PEER_TOKEN_DIR}/history",
+                request_timeout_s=_DELEGATED_PEER_TIMEOUT_SECONDS,
             )
         content["action_groups"] = groups
         settings = SettingsFile(
@@ -541,7 +589,7 @@ class Actions(Construct):
             # Its own directory: a subPath file cannot be mounted inside the read-only
             # settings volume (runc: "not a directory").
             container.mount(f"/run/secrets/{mount.name}", bearer_volume, read_only=True)
-        if self.env.actions.orchestration_v1 is not None:
+        if self.env.actions.orchestration_v1 is not None or self.env.actions.session_delegation is not None:
             workload.project_tokens(
                 "peer-tokens",
                 _PEER_TOKEN_DIR,
@@ -598,7 +646,7 @@ class Actions(Construct):
                 database.egress(namespace),
                 *(
                     [self.dispatcher.egress(), self.history.egress()]
-                    if self.env.actions.orchestration_v1 is not None
+                    if self.env.actions.orchestration_v1 is not None or self.env.actions.session_delegation is not None
                     else []
                 ),
                 *self.env.actions.extra_egress,

@@ -85,6 +85,11 @@ absent API field or null selected MCP field means its writer did not record the 
 MCP field is omitted. Never fill the UID from a current ServiceAccount lookup.
 Caller-delegating executors must refuse requests whose stored UID is absent.
 
+The `session_delegation` executor is the first caller-delegating Action surface. Its approved
+schemas, direct MCP name mapping, typed result shapes and unknown-outcome behavior are documented
+in [`session_delegation/README.md`](session_delegation/README.md); the shared backend trust contract
+is [delegated authorization](../docs/delegated_authorization.md).
+
 Ownership reads, PolicySet matching, and request idempotency continue using caller namespace and name.
 A ServiceAccount recreated under the same name can still read the older request and receives the
 existing idempotency conflict when reusing its key, but the receipt keeps the original UID and does

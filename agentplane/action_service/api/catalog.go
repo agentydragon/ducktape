@@ -58,6 +58,9 @@ func groupView(key string, group *catalog.Group, healthDetail bool) (*action_ser
 	case catalog.OrchestrationBinding:
 		view.ExecutorKind = action_servicepb.ExecutorKind_EXECUTOR_KIND_ORCHESTRATION_V1
 		view.ExecutorDescription = executor.Description
+	case catalog.SessionDelegationBinding:
+		view.ExecutorKind = action_servicepb.ExecutorKind_EXECUTOR_KIND_SESSION_DELEGATION
+		view.ExecutorDescription = executor.Description
 	}
 	if group.Health != nil {
 		view.Health = proto.CloneOf(group.Health)

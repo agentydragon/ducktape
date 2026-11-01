@@ -63,6 +63,10 @@ type config struct {
 	// Sessions; both are set exactly when one is configured.
 	SessionDispatcher *peer `mapstructure:"session_dispatcher"`
 	HistoryService    *peer `mapstructure:"history_service"`
+	// SessionDelegationDispatcher is the shared Discovery and Session Dispatcher listener called with forwarded
+	// caller identity; SessionDelegationHistory is the History Service listener with its own audience token.
+	SessionDelegationDispatcher *peer `mapstructure:"session_delegation_dispatcher"`
+	SessionDelegationHistory    *peer `mapstructure:"session_delegation_history"`
 }
 
 // peer is a gRPC service this one calls as its workload, with its projected token for the peer's audience.
@@ -192,8 +196,36 @@ func (c *config) validate() error {
 	if err := c.validateOrchestration(); err != nil {
 		return err
 	}
+	if err := c.validateSessionDelegation(); err != nil {
+		return err
+	}
 	if c.operatorsEnabled() {
 		return c.OperatorOIDC.Validate()
+	}
+	return nil
+}
+
+// validateSessionDelegation requires the delegated Discovery/Dispatcher and History peers exactly when a
+// session_delegation group calls them.
+func (c *config) validateSessionDelegation() error {
+	var delegated bool
+	for _, group := range c.ActionGroups.Groups() {
+		if _, ok := group.Executor.(catalog.SessionDelegationBinding); ok {
+			delegated = true
+		}
+	}
+	for _, called := range []struct {
+		key  string
+		peer *peer
+	}{{"session_delegation_dispatcher", c.SessionDelegationDispatcher}, {"session_delegation_history", c.SessionDelegationHistory}} {
+		switch p := called.peer; {
+		case delegated && p == nil:
+			return fmt.Errorf("%s is required by session_delegation groups", called.key)
+		case !delegated && p != nil:
+			return fmt.Errorf("%s is set, but no session_delegation group calls it", called.key)
+		case p != nil && (p.Target == "" || p.TokenFile == "" || !(p.RequestTimeoutSeconds > 0) || math.IsInf(p.RequestTimeoutSeconds, 0)):
+			return fmt.Errorf("%s requires target, token_file and a finite positive request_timeout_s", called.key)
+		}
 	}
 	return nil
 }

@@ -389,6 +389,7 @@ def serving_chart(app: App, *, env: Environment) -> Chart:
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods,
     }
     orchestration = actions.orchestration_callers(env)
+    session_delegation = actions.session_delegation_callers(env)
     dispatcher_database_url = (
         SecretRef(namespace=env.namespace, name="postgres-session-dispatcher")
         .key("uri")
@@ -399,10 +400,10 @@ def serving_chart(app: App, *, env: Environment) -> Chart:
         "runner-gateway",
         env,
         database_url=dispatcher_database_url,
-        dispatcher_callers=callers | orchestration,
+        dispatcher_callers=callers | orchestration | session_delegation,
         delegation_actor=(
             ServiceAccountRef(namespace=env.namespace, name=actions.NAME)
-            if env.actions.orchestration_v1 is not None
+            if env.actions.orchestration_v1 is not None or env.actions.session_delegation is not None
             else None
         ),
         gateway_callers=callers,
