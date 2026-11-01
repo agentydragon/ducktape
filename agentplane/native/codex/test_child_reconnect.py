@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -23,8 +24,7 @@ from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
 from agentplane.native.codex.testing.model import EFFORT, MODEL
 from agentplane.native.codex.testing.responses import OpenAIResponses
-from agentplane.native.testing.async_process import AsyncNativeProcess
-from util.net import async_wait_for_port
+from agentplane.native.testing.async_process import AsyncNativeProcess, TextRecord
 
 
 @dataclass
@@ -75,14 +75,28 @@ class Connection:
                 return params
 
 
+async def _websocket_address(process: AsyncNativeProcess) -> str:
+    # The pinned app-server prints the actual bound address in its startup banner.
+    async with asyncio.timeout(10):
+        while True:
+            path = process.logs / "stderr.jsonl"
+            if path.exists():
+                text = "".join(TextRecord.model_validate_json(line).text for line in path.read_text().splitlines())
+                if match := re.search(r"listening on:\s+(ws://127\.0\.0\.1:[0-9]+)\r?\n", text):
+                    return match[1]
+            if not process.alive():
+                raise RuntimeError(f"app-server exited before publishing its address: {process.logs}")
+            await asyncio.sleep(0.02)
+
+
 @pytest.mark.parametrize("v2", [False, True], ids=["v1", "v2"])
 @pytest.mark.parametrize("attach", [False, True], ids=["root-only", "child-resume"])
 async def test_live_child_survives_disconnect_and_history_joins_the_new_stream(
-    codex: CodexHarness, openai_responses: OpenAIResponses, unused_tcp_port: int, v2: bool, attach: bool
+    codex: CodexHarness, openai_responses: OpenAIResponses, v2: bool, attach: bool
 ) -> None:
     namespace = "collaboration" if v2 else "multi_agent_v1"
     endpoint = f"{openai_responses.origin}/v1"
-    address = f"ws://127.0.0.1:{unused_tcp_port}"
+    address = "ws://127.0.0.1:0"
     command = scenarios.command(codex.binary, endpoint=endpoint, max_retries=scenarios.MAX_RETRIES)
     command[-1] = address
     async with (
@@ -93,12 +107,13 @@ async def test_live_child_survives_disconnect_and_history_joins_the_new_stream(
             cwd=codex.workspace,
             environment={
                 **codex.base_environment,
+                "NO_COLOR": "1",
                 **scenarios.environment(endpoint=endpoint, token="test-key", codex_home=str(codex.codex_home)),
             },
         ) as process,
         ClientSession() as client,
     ):
-        await async_wait_for_port("127.0.0.1", unused_tcp_port)
+        address = await _websocket_address(process)
         async with client.ws_connect(address) as socket:
             initial = Connection(socket, codex.logs / "initial-peer")
             await initial.initialize()
