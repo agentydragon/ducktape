@@ -94,7 +94,7 @@ func TestWaitForHostQuiescedWakesForFinalReportPublishedAfterSnapshot(t *testing
 
 	r.lifecycleState = state.WrapCore(namespaced.NewState(inmem.Build))
 	publishAppliedHostIntent(t, r)
-	if err := r.acceptReport(host, report); err != nil {
+	if err := r.acceptReport(host, report, intentValue(r.intent)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -113,7 +113,7 @@ func TestWaitForHostQuiescedWakesForFinalReportPublishedAfterSnapshot(t *testing
 			QuiesceStage: environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED,
 		},
 	}
-	if err := r.acceptReport(host, finalReport); err != nil {
+	if err := r.acceptReport(host, finalReport, intentValue(r.intent)); err != nil {
 		t.Fatalf("accept final report: %v", err)
 	}
 	select {

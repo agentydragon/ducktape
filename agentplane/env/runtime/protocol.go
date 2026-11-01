@@ -71,7 +71,7 @@ func (r *Runtime) connectHost(ctx context.Context, client *harnesshost.Runner, p
 	}
 }
 
-func (r *Runtime) acceptReport(host *hostLink, report *runtimepb.HostReport) error {
+func (r *Runtime) acceptReport(host *hostLink, report *runtimepb.HostReport, sampledIntent hostIntent) error {
 	if report == nil || report.Binding == nil || report.Facts == nil {
 		return status.Error(codes.InvalidArgument, "HostReport requires a binding and EnvironmentRuntimeFacts")
 	}
@@ -86,20 +86,20 @@ func (r *Runtime) acceptReport(host *hostLink, report *runtimepb.HostReport) err
 		r.mu.Unlock()
 		return nil
 	}
-	if report.Error != "" {
-		r.mu.Unlock()
-		return status.Errorf(codes.FailedPrecondition, "Harness Host rejected lifecycle generation %d: %s", report.Binding.Generation, report.Error)
-	}
 	applied, _, err := cosi.Read(context.Background(), r.lifecycleState, hostIntentStatusResource(hostIntentStatus{}))
 	if err != nil {
 		r.mu.Unlock()
 		return err
 	}
-	if !applied.Applied || applied.Intent != intentValue(r.intent) {
+	if !applied.Applied || applied.Intent != sampledIntent || applied.Intent != intentValue(r.intent) {
 		// A same-generation fence update briefly closes Host admission. A
 		// report sampled before application cannot acknowledge that update.
 		r.mu.Unlock()
 		return nil
+	}
+	if report.Error != "" {
+		r.mu.Unlock()
+		return status.Errorf(codes.FailedPrecondition, "Harness Host rejected lifecycle generation %d: %s", report.Binding.Generation, report.Error)
 	}
 	previous, _, err := cosi.Read(context.Background(), r.lifecycleState, hostReportResource(hostReport{}))
 	if err != nil {

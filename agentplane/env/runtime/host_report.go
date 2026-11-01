@@ -66,15 +66,19 @@ func (c *hostReportController) Run(ctx context.Context, engine controller.Runtim
 			// Capture the notification before the snapshot so a concurrent Host update
 			// cannot be lost. Native Session activity also wakes this controller.
 			changed = host.peer.ChangesSince()
+			sampled, _, err := cosi.Read(ctx, engine, hostIntentStatusResource(hostIntentStatus{}))
+			if err != nil {
+				return err
+			}
 			report, err := host.peer.Report()
 			if err != nil {
 				r.fail(fmt.Errorf("observe Host lifecycle report: %w", err))
 				return nil
 			}
-			if report != nil {
+			if sampled.Applied && report != nil {
 				// Applied-intent updates must re-observe even a byte-identical report:
 				// publishing the same-generation fence invalidates Runtime's old sample.
-				if err := r.acceptReport(host, report); err != nil {
+				if err := r.acceptReport(host, report, sampled.Intent); err != nil {
 					r.fail(err)
 					return nil
 				}

@@ -117,6 +117,7 @@ func TestDirectHostFenceWaitsForHostToApplyIt(t *testing.T) {
 	}, "initial direct Host report")
 	r.mu.Lock()
 	binding := proto.Clone(r.intent.Binding).(*runtimepb.Binding)
+	sampledIntent := intentValue(r.intent)
 	r.mu.Unlock()
 	if err := r.setExecutionFenced(binding); err != nil {
 		t.Fatal(err)
@@ -135,7 +136,7 @@ func TestDirectHostFenceWaitsForHostToApplyIt(t *testing.T) {
 	r.mu.Lock()
 	host := r.host
 	r.mu.Unlock()
-	if err := r.acceptReport(host, oldReport); err != nil {
+	if err := r.acceptReport(host, oldReport, sampledIntent); err != nil {
 		t.Fatal(err)
 	}
 	r.mu.Lock()
@@ -161,6 +162,18 @@ func TestDirectHostFenceWaitsForHostToApplyIt(t *testing.T) {
 		defer r.mu.Unlock()
 		return r.host != nil && r.hostReportLocked() != nil && r.hostReportLocked().Ready && proto.Equal(r.hostReportLocked().Binding, binding)
 	}, "same-generation Host report after Execution fence")
+	// Application can also finish between sampling and accepting an old report.
+	// Its generation still matches, but its exact sampled intent must not be retagged.
+	oldReport.Ready = false
+	if err := r.acceptReport(host, oldReport, sampledIntent); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	after := r.hostReportLocked()
+	r.mu.Unlock()
+	if after == nil || !after.Ready {
+		t.Fatalf("delayed old report overwrote applied fence readiness: %v", after)
+	}
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatalf("coordinator exit = %v, want cancellation", err)
@@ -226,11 +239,11 @@ func TestDirectHostReportCopiesAndDropsStaleGeneration(t *testing.T) {
 		Binding: &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1},
 		Ready:   true, Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{},
 	}
-	if err := r.acceptReport(host, stale); err != nil || r.hostReportLocked() != nil {
+	if err := r.acceptReport(host, stale, intentValue(r.intent)); err != nil || r.hostReportLocked() != nil {
 		t.Fatalf("stale report accepted: report=%v err=%v", r.hostReportLocked(), err)
 	}
 	report := &runtimepb.HostReport{Binding: binding, Ready: true, Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{}}
-	if err := r.acceptReport(host, report); err != nil {
+	if err := r.acceptReport(host, report, intentValue(r.intent)); err != nil {
 		t.Fatal(err)
 	}
 	report.Binding.Generation = 3
