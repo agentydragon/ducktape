@@ -123,6 +123,7 @@ async def _capture_submit_boundary(
     target: dict[str, Any],
     configuration: dict[str, Any],
     submit_result: dict[str, Any],
+    observation: dict[str, Any] | None,
     model_request_count: int,
 ) -> dict[str, Any]:
     """Capture safe route, pod and proxy evidence when the scripted model gets no request."""
@@ -140,7 +141,8 @@ async def _capture_submit_boundary(
             for key in ("state", "session_id", "command_id", "turn_id", "request_id", "status", "kind")
             if isinstance(submit_result.get("dispatch"), dict) and key in submit_result["dispatch"]
         },
-        "scripted_model_request_count": model_request_count,
+        "observation": observation,
+        "scripted_model_wait_calls": model_request_count,
         "capture_errors": [],
     }
 
@@ -165,7 +167,11 @@ async def _capture_submit_boundary(
         def config_map_name(volume_name: str) -> str | None:
             for volume in pod.get("spec", {}).get("volumes", []):
                 if volume.get("name") == volume_name:
-                    return volume.get("configMap", {}).get("name")
+                    config_map = volume.get("configMap")
+                    if isinstance(config_map, dict):
+                        name = config_map.get("name")
+                        if isinstance(name, str):
+                            return name
             return None
 
         runtime_map_name = config_map_name("environment-runtime-config")
@@ -344,6 +350,12 @@ async def test_external_connection_delegates_without_the_integration_app(
                     for choice in configurations
                     if isinstance(choice, dict) and choice.get("harness") == "HARNESS_CODEX"
                 )
+                available_efforts = configuration.get("reasoning_efforts")
+                assert isinstance(available_efforts, list)
+                reasoning_effort: str | None = next(
+                    (effort for effort in available_efforts if isinstance(effort, str) and effort), None
+                )
+                assert reasoning_effort, "the advertised Codex configuration has no nonempty effort"
                 cwd = f"{workspace['root'].rstrip('/')}/external-delegation-{uuid4()}"
                 session_id = str(uuid4())
                 guidance_marker = f"EXTERNAL-SESSION-GUIDANCE-{uuid4()}"
@@ -357,6 +369,7 @@ async def test_external_connection_delegates_without_the_integration_app(
                             "harness": configuration["harness"],
                             "model": configuration["model"],
                             "cwd": cwd,
+                            "reasoning_effort": reasoning_effort,
                         },
                         "additional_instructions": guidance_marker,
                     },
@@ -377,6 +390,32 @@ async def test_external_connection_delegates_without_the_integration_app(
                     },
                 )
                 assert isinstance(submitted.get("dispatch"), dict)
+                preflight = await _tool(
+                    session,
+                    "sessions__observe_input",
+                    {"session_id": session_id, "command_id": first_command, "wait_seconds": 5},
+                )
+                preflight_observation = preflight.get("observation")
+                assert isinstance(preflight_observation, dict)
+                if preflight_observation.get("kind") in {"command_failed", "command_no_op"}:
+                    boundary_evidence = await _capture_submit_boundary(
+                        cluster,
+                        pod_name=view.pod.name,
+                        session_id=session_id,
+                        command_id=first_command,
+                        target=target,
+                        configuration=configuration,
+                        submit_result=submitted,
+                        observation=preflight_observation,
+                        model_request_count=0,
+                    )
+                    (undeclared_outputs_dir() / "delegation-submit-boundary.json").write_text(
+                        json.dumps(boundary_evidence, indent=2) + "\n"
+                    )
+                    raise AssertionError(
+                        "submitted input failed before model response; "
+                        "see test.outputs/delegation-submit-boundary.json"
+                    )
                 try:
                     async with asyncio.timeout(45):
                         first_request = await model.request()
@@ -389,6 +428,7 @@ async def test_external_connection_delegates_without_the_integration_app(
                         target=target,
                         configuration=configuration,
                         submit_result=submitted,
+                        observation=preflight_observation,
                         model_request_count=model.request_count,
                     )
                     (undeclared_outputs_dir() / "delegation-submit-boundary.json").write_text(
