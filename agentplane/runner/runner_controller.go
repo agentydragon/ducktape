@@ -5,11 +5,11 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/env/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/codexappserver"
+	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/session"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
-	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/runner/session"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"go.uber.org/zap"

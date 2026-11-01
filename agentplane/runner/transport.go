@@ -5,9 +5,9 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/ingress"
+	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
-	"github.com/agentydragon/ducktape/agentplane/runner/ingress"
-	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"google.golang.org/grpc"
 )
 

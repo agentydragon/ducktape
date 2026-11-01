@@ -167,9 +167,9 @@ default ACL and private `.home` directory.
 
 ## Tests
 
-`//agentplane/runner:runner_test` and `//agentplane/runner/codex:codex_test` run with Go's race detector. The
+`//agentplane/runner:runner_test` and `//agentplane/env/harnesshost/codex:codex_test` run with Go's race detector. The
 Codex router test drives parallel sessions through shared host, request, and thread routing state. The
-journal suite (`//agentplane/runner/journal:journal_test`) also runs with the race detector;
+journal suite (`//agentplane/env/harnesshost/journal:journal_test`) also runs with the race detector;
 the runner suite covers process and Session integration. The VM fixture runs the separate
 pure-Go `//agentplane/env/supervision:runner_systemd_fixture` test binary against its real systemd manager before starting
 Runner. It exercises direct argv/stream semantics, lost launch replies, Runner death, stop status,

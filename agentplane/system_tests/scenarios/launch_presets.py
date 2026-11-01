@@ -8,8 +8,8 @@ import time
 from uuid import uuid4
 
 from agentplane.app.testing.client import Client
+from agentplane.env.harnesshost.harness import Harness
 from agentplane.proto import runner_pb2
-from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests import launch_preset

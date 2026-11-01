@@ -5,9 +5,9 @@ import (
 	"os"
 
 	"github.com/agentydragon/ducktape/agentplane/env/execution/companion"
+	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/workspace"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
-	"github.com/agentydragon/ducktape/agentplane/runner/workspace"
 )
 
 const (

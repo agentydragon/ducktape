@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
+	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/journal"
+	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/cosi"
-	"github.com/agentydragon/ducktape/agentplane/runner/journal"
-	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"

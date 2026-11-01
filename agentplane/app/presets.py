@@ -9,7 +9,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.app.sandbox_models import InboxTag
-from agentplane.runner.harness import Harness
+from agentplane.env.harnesshost.harness import Harness
 
 
 class ThreadPreset(BaseModel):

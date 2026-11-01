@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-from agentplane.runner.harness import Harness
+from agentplane.env.harnesshost.harness import Harness
 
 
 class PresetLaunch(BaseModel):

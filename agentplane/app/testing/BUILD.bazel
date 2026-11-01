@@ -295,7 +295,7 @@ py_library(
         "//agentplane/app:sandbox_models",
         "//agentplane/egress:decisions",
         "//agentplane/egress:resources",
-        "//agentplane/runner:harness",
+        "//agentplane/env/harnesshost:harness",
         "@pypi//pydantic",
     ],
 )

@@ -12,11 +12,11 @@ go_binary(
     visibility = ["//visibility:public"],
     deps = [
         "//agentplane/env/execution/companion:executor",
+        "//agentplane/env/harnesshost/workspace",
         "//agentplane/env/supervision",
         "//agentplane/observability",
         "//agentplane/runner",
         "//agentplane/runner/configuration",
-        "//agentplane/runner/workspace",
         "@io_opentelemetry_go_otel//attribute",
         "@org_uber_go_zap//:zap",
         "@org_uber_go_zap//zapcore",

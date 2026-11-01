@@ -7,9 +7,9 @@ go_library(
     srcs = ["scripts.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/scripts",
     visibility = [
+        "//agentplane/env/harnesshost/session:__pkg__",
         "//agentplane/runner:__pkg__",
         "//agentplane/runner/bootstrap:__pkg__",
-        "//agentplane/runner/session:__pkg__",
     ],
     deps = [
         "//agentplane/env/supervision",
