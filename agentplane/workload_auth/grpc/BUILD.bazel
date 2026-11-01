@@ -5,11 +5,11 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 go_library(
     name = "grpc",
     srcs = ["client.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/workload_auth/go/grpc",
+    importpath = "github.com/agentydragon/ducktape/agentplane/workload_auth/grpc",
     deps = [
         "//agentplane/observability",
         "//agentplane/proto:delegation_go_proto",
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials",

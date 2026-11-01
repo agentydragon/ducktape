@@ -11,7 +11,7 @@ import (
 
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	workloadauth "github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth" // its name, auth, is go-sdk's
+	workloadauth "github.com/agentydragon/ducktape/agentplane/workload_auth/auth" // its name, auth, is go-sdk's
 )
 
 // connect connects go-sdk's MCP client to /mcp, which authorizes it through the handler.

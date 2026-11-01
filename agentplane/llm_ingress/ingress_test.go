@@ -26,7 +26,7 @@ import (
 	"go.opentelemetry.io/otel/baggage"
 
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"

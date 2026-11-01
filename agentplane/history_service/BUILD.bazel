@@ -96,7 +96,7 @@ go_library(
         "//agentplane/postgres/go:postgres",
         "//agentplane/postgres/go/migrate",
         "//agentplane/postgres/go/wakeups",
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
         "//util/netlistener",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",
@@ -138,7 +138,7 @@ go_test(
     name = "config_test",
     srcs = ["config_test.go"],
     embed = [":main_lib"],
-    deps = ["//agentplane/workload_auth/go/auth"],
+    deps = ["//agentplane/workload_auth/auth"],
 )
 
 go_test(
@@ -162,7 +162,7 @@ go_test(
         "//agentplane/sandboxes/api",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/testing/postgres",
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",

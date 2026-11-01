@@ -112,7 +112,7 @@ go_library(
         "//agentplane/postgres/go/wakeups",
         "//agentplane/settings:config",
         "//agentplane/watchhealth",
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",
         "@com_github_modelcontextprotocol_go_sdk//auth",
@@ -147,7 +147,7 @@ go_test(
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/watchhealth",
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
         "@com_github_modelcontextprotocol_go_sdk//auth",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",

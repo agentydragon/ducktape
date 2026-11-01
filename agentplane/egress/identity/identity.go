@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 )
 
 // Rejection is a bearer that does not prove a workload identity, or an identity that could not be

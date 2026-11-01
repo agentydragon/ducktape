@@ -11,7 +11,7 @@ import (
 	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 

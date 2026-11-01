@@ -24,7 +24,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	transformv1 "github.com/agentydragon/ducktape/agentplane/egress/x/iron_proxy/bridge/proto"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

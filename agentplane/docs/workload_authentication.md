@@ -41,7 +41,7 @@ blindly copies a raw `Proxy-Authorization` header, unconditionally appends `Auth
 new token, or introduces an LLM/Action service branch. Missing, stale, mismatched, or unbound context
 fails closed. Existing `secretRef` behavior remains unchanged.
 
-Destination services construct a Go `workload_auth/go/auth.Resolver` with their audience and
+Destination services construct a Go `workload_auth/auth.Resolver` with their audience and
 namespace allowlist. Pod-bound `ResolveToken` requires a reviewed ServiceAccount subject, UID, and
 one Pod name/UID claim pair. The API server validates the bound object in TokenReview, so a deleted
 or replaced Pod fails a fresh review; accepted verdicts are reused for up to 30 s

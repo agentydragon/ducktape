@@ -29,7 +29,7 @@ go_library(
         "//agentplane/grpc/graceful",
         "//agentplane/observability",
         "//agentplane/postgres/go/migrate",
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
         "//util/netlistener",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_spf13_viper//:viper",
@@ -66,7 +66,7 @@ go_test(
         "//agentplane/egress/policy",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/watchhealth",
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials/insecure",
@@ -81,7 +81,7 @@ go_test(
     name = "config_test",
     srcs = ["config_test.go"],
     embed = [":cmd"],
-    deps = ["//agentplane/workload_auth/go/auth"],
+    deps = ["//agentplane/workload_auth/auth"],
 )
 
 pkg_tar(

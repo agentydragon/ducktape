@@ -15,7 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 )
 
 var testAction = store.ActionIdentity{Group: "test-group", Name: "test-action"}

@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	workloadauth "github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	workloadauth "github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 	authenticationv1 "k8s.io/api/authentication/v1"

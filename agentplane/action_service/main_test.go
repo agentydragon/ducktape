@@ -29,7 +29,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/util/testing/nettest"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"

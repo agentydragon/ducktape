@@ -42,7 +42,7 @@ go_test(
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/testing/agentdocs",
         "//agentplane/testing/kubeapiserver",
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",

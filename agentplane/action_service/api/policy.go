@@ -7,7 +7,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/policyview"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 )
 
 // GetActionPolicy answers what an account's bindings auto-decide: the caller's own, or the named subject's. Any

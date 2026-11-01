@@ -29,7 +29,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/util/netlistener"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"

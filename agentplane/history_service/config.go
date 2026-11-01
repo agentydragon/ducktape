@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )

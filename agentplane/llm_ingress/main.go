@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	authenticationclient "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"

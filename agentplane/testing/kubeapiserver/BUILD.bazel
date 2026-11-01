@@ -14,7 +14,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
         "@io_bazel_rules_go//go/runfiles",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_api//core/v1:core",

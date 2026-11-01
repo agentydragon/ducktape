@@ -65,7 +65,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/llm_ingress",
     deps = [
         "//agentplane/observability",
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
         "@com_github_google_uuid//:uuid",
         "@com_github_spf13_viper//:viper",
         "@io_k8s_client_go//kubernetes/typed/authentication/v1:authentication",
@@ -92,7 +92,7 @@ go_test(
     embed = [":server_lib"],
     deps = [
         "//agentplane/testing/kubeapiserver",
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
         "@io_bazel_rules_go//go/runfiles",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_client_go//rest",

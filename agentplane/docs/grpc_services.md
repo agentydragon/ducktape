@@ -56,7 +56,7 @@ follows it; code that differs converges on it.
 - Direct callers send `authorization: Bearer <token>` metadata, reading the projected token file for every
   call: projected tokens rotate.
 - A Go server admits callers in one interceptor, `auth.Methods.ServerOptions`
-  (`agentplane/workload_auth/go/auth`): `auth.Methods` maps every served method's full name to a
+  (`agentplane/workload_auth/auth`): `auth.Methods` maps every served method's full name to a
   `Rule` (`Accounts` for an allowlist, `AnyAccount` for any account the `Resolver` serves, `Public`
   only for the health service via `auth.HealthMethods`). A method it does not list is refused before
   its bearer is read, so a new RPC is closed until its Rule is written. The package owning a servicer
@@ -73,7 +73,7 @@ adds that mode only to an authenticated `Rule` explicitly installed for the meth
 remains available. `Admitted` returns a typed direct or delegated admission, while
 `EffectiveCaller` returns only the SA identity handlers use for ordinary resource checks. The
 legacy `Caller` accessor stays Pod-bound and is not populated for delegated requests. The
-`workload_auth/go/grpc` client reads its destination token for each call and has no ordinary Bearer
+`workload_auth/grpc` client reads its destination token for each call and has no ordinary Bearer
 fallback. These shared primitives do not opt a production method or client into delegation by
 themselves; Action Service and SessionDispatcher integration remains a separate change.
 

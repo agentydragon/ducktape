@@ -12,7 +12,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"

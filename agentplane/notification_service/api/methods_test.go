@@ -7,7 +7,7 @@ import (
 	operatorpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

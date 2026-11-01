@@ -15,7 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 )
 

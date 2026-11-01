@@ -84,7 +84,7 @@ caller-token minting or new signing service is needed for this path.
 
 Sending ordinary `Bearer <Actions-token>` with optional caller metadata is unsafe during a roll:
 an older backend could ignore the metadata and use Actions' privileged authority. The distinct
-scheme prevents that downgrade. Today's [bearer parser](../workload_auth/go/auth/auth.go) rejects
+scheme prevents that downgrade. Today's [bearer parser](../workload_auth/auth/auth.go) rejects
 it, so an old replica refuses the call before effects. A delegated client never retries using
 ordinary `Bearer` authentication. Backends can gain support before clients start using it;
 mixed versions may refuse calls but must not elevate them.
@@ -95,7 +95,7 @@ permission restriction is invalid.
 
 ## Receiving a call
 
-Shared middleware in `workload_auth/go/auth`, composed with the existing per-method rules:
+Shared middleware in `workload_auth/auth`, composed with the existing per-method rules:
 
 1. Parse one authentication mode and its metadata with bounded input sizes.
 2. Verify the actor's token for the receiving service's audience and admitted namespaces. The

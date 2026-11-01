@@ -16,7 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"

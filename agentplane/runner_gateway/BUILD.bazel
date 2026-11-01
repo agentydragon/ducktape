@@ -161,7 +161,7 @@ go_library(
         "//agentplane/runner_transport",
         "//agentplane/sandboxes/api",
         "//agentplane/watchhealth",
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
         "//util/netlistener",
         "@com_github_go_logr_logr//:logr",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
@@ -199,7 +199,7 @@ go_test(
         "listener_test.go",
     ],
     embed = [":main_lib"],
-    deps = ["//agentplane/workload_auth/go/auth"],
+    deps = ["//agentplane/workload_auth/auth"],
 )
 
 py_library(

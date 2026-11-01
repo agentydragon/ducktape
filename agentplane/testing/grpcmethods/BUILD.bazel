@@ -7,7 +7,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/testing/grpcmethods",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_protobuf//types/known/emptypb",

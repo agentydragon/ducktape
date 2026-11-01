@@ -27,7 +27,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/util/netlistener"
 	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
