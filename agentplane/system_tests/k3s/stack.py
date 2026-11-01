@@ -13,11 +13,13 @@ their plain HTTP URLs satisfy the OAuth endpoint contract.
 
 import contextlib
 import contextvars
+import hashlib
 import io
 import json
 import logging
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -155,7 +157,7 @@ class K3s:
         )
 
     @tracer.start_as_current_span("system_test.k3s.start")
-    def start(self, *, layers_in_memory: bool) -> subprocess.Popen[bytes]:
+    def start(self, *, layers_in_memory: bool, detached: bool = False) -> subprocess.Popen[bytes]:
         _reset_previous_stack(self.data_dir)
         _shadow_kernel_sysctls()
         # Unpacking image layers is bound by writes to the executor's disk. The tmpfs default cap, half of
@@ -205,6 +207,7 @@ class K3s:
             ],
             stdout=log,
             stderr=subprocess.STDOUT,
+            start_new_session=detached,
         )
         bootstrap = Bootstrap(
             process=process,
@@ -286,6 +289,10 @@ class K3s:
         k3s instead would block containerd. Preserve its separate log before the cleanup process starts."""
         process.terminate()
         process.wait(timeout=STOP_TIMEOUT_SECONDS)
+        self.cleanup_stopped()
+
+    def cleanup_stopped(self) -> None:
+        """Remove Pods after an owned detached server has exited between test actions."""
         self._preserve_containerd_log()
         binaries = self.data_dir / "data/current/bin"
         crictl_config = self.work / "crictl.yaml"
@@ -506,6 +513,216 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
     }
 
 
+_SPIKE_ROOT = Path("/var/lib/k3s-persistence-pod-spike-v5")
+_SPIKE_MARKER = _SPIKE_ROOT / "server.json"
+
+
+def _spike_process_start(pid: int) -> str | None:
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text().rsplit(") ", 1)[1].split()
+    except OSError:
+        return None
+    return None if stat[0] == "Z" else stat[19]
+
+
+def _spike_identity(k3s: K3s, pid: int) -> dict[str, str | int]:
+    internal_ip = k3s.kubectl(
+        "get", "node", "env", "-o", "jsonpath={.status.addresses[?(@.type=='InternalIP')].address}"
+    )
+    if internal_ip != k3s.node_ip:
+        raise RuntimeError(f"retained node InternalIP {internal_ip} differs from current {k3s.node_ip}")
+    ticks = _spike_process_start(pid)
+    if ticks is None:
+        raise RuntimeError(f"k3s process {pid} exited")
+    return {
+        "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
+        "pid": pid,
+        "process_start_ticks": ticks,
+        "namespace_uid": k3s.kubectl("get", "namespace", "kube-system", "-o", "jsonpath={.metadata.uid}"),
+        "node_uid": k3s.kubectl("get", "node", "env", "-o", "jsonpath={.metadata.uid}"),
+        "node_internal_ip": internal_ip,
+    }
+
+
+def _spike_fingerprint(
+    inputs: StackInputs, crds: list[Path], pki: list[dict[str, Any]], pki_images: dict[str, Path]
+) -> str:
+    digest = hashlib.sha256(b"k3s-persistence-pod-spike-v5\0")
+    for path in (inputs.binary, Path(__file__), *crds):
+        digest.update(path.read_bytes())
+    digest.update(json.dumps(pki, sort_keys=True).encode())
+    for reference, rloc in sorted(pki_images.items()):
+        digest.update(reference.encode())
+        layout = get_required_path(rloc.read_text().strip())
+        # OCI index manifests bind the config and layer digests without hashing every layer tarball.
+        digest.update((layout / "index.json").read_bytes())
+    return digest.hexdigest()
+
+
+def _spike_write_marker(marker: dict[str, Any]) -> None:
+    temporary = _SPIKE_MARKER.with_suffix(".tmp")
+    temporary.write_text(json.dumps(marker))
+    temporary.replace(_SPIKE_MARKER)
+
+
+def _spike_stop_owned(k3s: K3s, previous: dict[str, Any]) -> None:
+    identity = previous["identity"]
+    current_boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+    if current_boot != identity["boot_id"]:
+        return
+    pid = int(identity["pid"])
+    ticks = _spike_process_start(pid)
+    if ticks is not None and ticks != identity["process_start_ticks"]:
+        raise RuntimeError("spike marker PID was reused; refusing to reset an unowned process")
+    if ticks is not None:
+        os.kill(pid, signal.SIGTERM)
+        for attempt in Retrying(
+            stop=stop_after_delay(STOP_TIMEOUT_SECONDS),
+            wait=wait_fixed(1),
+            retry=retry_if_exception_type(RuntimeError),
+            reraise=True,
+        ):
+            with attempt:
+                if _spike_process_start(pid) is not None:
+                    raise RuntimeError(f"owned k3s process {pid} is still alive")
+    k3s.log_path = _SPIKE_ROOT / "k3s.log"
+    k3s.cleanup_stopped()
+
+
+def _spike_open(inputs: StackInputs, fingerprint: str, *, layers_in_memory: bool) -> tuple[K3s, dict[str, Any], bool]:
+    _SPIKE_ROOT.mkdir(exist_ok=True)
+    binary = _SPIKE_ROOT / "k3s"
+    k3s = K3s(_SPIKE_ROOT, binary)
+    previous = json.loads(_SPIKE_MARKER.read_text()) if _SPIKE_MARKER.exists() else None
+    if previous is not None:
+        if previous.get("state") not in {"clean", "dirty"}:
+            raise RuntimeError("invalid persistence spike state marker")
+        if previous["fingerprint"] == fingerprint and previous["state"] == "clean":
+            try:
+                current = _spike_identity(k3s, int(previous["identity"]["pid"]))
+            except OSError, RuntimeError:
+                pass
+            else:
+                if current == previous["identity"]:
+                    previous["state"] = "dirty"
+                    _spike_write_marker(previous)
+                    return k3s, previous, True
+        _spike_stop_owned(k3s, previous)
+        _SPIKE_MARKER.unlink()
+    shutil.copy2(inputs.binary, binary)
+    previous_outputs = os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR")
+    os.environ["TEST_UNDECLARED_OUTPUTS_DIR"] = str(_SPIKE_ROOT)
+    try:
+        process = k3s.start(layers_in_memory=layers_in_memory, detached=True)
+    finally:
+        if previous_outputs is None:
+            os.environ.pop("TEST_UNDECLARED_OUTPUTS_DIR", None)
+        else:
+            os.environ["TEST_UNDECLARED_OUTPUTS_DIR"] = previous_outputs
+    marker = {"state": "dirty", "fingerprint": fingerprint, "identity": _spike_identity(k3s, process.pid)}
+    _spike_write_marker(marker)
+    return k3s, marker, False
+
+
+def _spike_evidence(
+    k3s: K3s,
+    fixture: rendered_fixture.RenderedFixture,
+    models: rendered_fixture.Models,
+    pki: list[dict[str, Any]],
+    marker: dict[str, Any],
+    warm: bool,
+) -> dict[str, Any]:
+    pods = json.loads(k3s.kubectl("get", "pods", "-n", fixture.namespace, "-o", "json"))["items"]
+    postgres = [pod for pod in pods if pod["metadata"]["name"].startswith("postgres-")]
+    if len(postgres) != 1:
+        raise RuntimeError(f"expected one fixture PostgreSQL Pod, found {len(postgres)}")
+    controllers = {
+        doc["metadata"]["name"]: k3s.kubectl(
+            "get", "deployment", doc["metadata"]["name"], "-n", "cert-manager", "-o", "jsonpath={.metadata.uid}"
+        )
+        for doc in pki
+        if doc["kind"] == "Deployment"
+    }
+    return {
+        "outcome": "warm" if warm else "cold",
+        "fingerprint": marker["fingerprint"],
+        "k3s": marker["identity"],
+        "namespace_uid": k3s.kubectl("get", "namespace", fixture.namespace, "-o", "jsonpath={.metadata.uid}"),
+        "postgres_pod_uid": postgres[0]["metadata"]["uid"],
+        "root_certificate_uid": k3s.kubectl(
+            "get", "certificate", "test-runner-root", "-n", "cert-manager", "-o", "jsonpath={.metadata.uid}"
+        ),
+        "root_secret_uid": k3s.kubectl(
+            "get", "secret", "test-runner-root", "-n", "cert-manager", "-o", "jsonpath={.metadata.uid}"
+        ),
+        "collector_namespace_uid": k3s.kubectl("get", "namespace", "monitoring", "-o", "jsonpath={.metadata.uid}"),
+        "pki_controller_uids": controllers,
+        "model_endpoint": models.url if isinstance(models, rendered_fixture.LocalModel) else None,
+    }
+
+
+def _spike_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture, marker: dict[str, Any]) -> None:
+    """Wait for fixture-owned resources to vanish, leaving only k3s and PKI controllers."""
+    namespaces = [doc["metadata"]["name"] for doc in fixture.objects if doc["kind"] == "Namespace"]
+    if set(namespaces) != {fixture.namespace, "systest-egress-credentials"}:
+        raise RuntimeError(f"unexpected fixture namespaces: {namespaces}")
+    sandboxes = json.loads(k3s.kubectl("get", "sandboxes", "-n", fixture.namespace, "-o", "json"))["items"]
+    if sandboxes:
+        raise RuntimeError(f"fixture left {len(sandboxes)} Sandboxes; refusing to recycle it")
+    owned_pvs = [
+        item["metadata"]["name"]
+        for item in json.loads(k3s.kubectl("get", "pv", "-o", "json"))["items"]
+        if item.get("spec", {}).get("claimRef", {}).get("namespace") in namespaces
+    ]
+    for namespace in namespaces:
+        k3s.kubectl("delete", "namespace", namespace, "--wait=true", "--timeout=60s")
+    for name in owned_pvs:
+        k3s.kubectl("delete", "pv", name, "--ignore-not-found=true", "--wait=true", "--timeout=60s")
+    k3s.kubectl("delete", "namespace", "monitoring", "--ignore-not-found=true", "--wait=true", "--timeout=60s")
+    root_certificate = json.loads(
+        k3s.kubectl("get", "certificate", "test-runner-root", "-n", "cert-manager", "-o", "json")
+    )
+    certificate_uid = root_certificate["metadata"]["uid"]
+    requests = json.loads(k3s.kubectl("get", "certificaterequests", "-n", "cert-manager", "-o", "json"))["items"]
+    owned_requests = [
+        item["metadata"]["name"]
+        for item in requests
+        if any(owner["uid"] == certificate_uid for owner in item["metadata"].get("ownerReferences", []))
+    ]
+    k3s.kubectl("delete", "certificate", "test-runner-root", "-n", "cert-manager", "--wait=true")
+    if owned_requests:
+        k3s.kubectl(
+            "delete", "certificaterequest", *owned_requests, "-n", "cert-manager",
+            "--ignore-not-found=true", "--wait=true",
+        )  # fmt: skip
+    k3s.kubectl("delete", "secret", "test-runner-root", "-n", "cert-manager", "--wait=true")
+    cluster_objects = [
+        doc for doc in fixture.objects if doc["kind"] != "Namespace" and not doc["metadata"].get("namespace")
+    ]
+    cluster_yaml = yaml.safe_dump_all(cluster_objects)
+    k3s.kubectl("delete", "-f", "-", "--ignore-not-found=true", "--wait=true", input_text=cluster_yaml)
+    if k3s.kubectl("get", "-f", "-", "--ignore-not-found=true", "-o", "name", input_text=cluster_yaml):
+        raise RuntimeError("fixture-owned cluster resources survived cleanup")
+    dynamic_selector = (
+        "app.kubernetes.io/managed-by=agentplane-policy-controller,"
+        "policy.agentplane.allegedly.works/policy-namespace=systest"
+    )
+    k3s.kubectl("delete", "clusterrolebindings", "-l", dynamic_selector, "--ignore-not-found=true", "--wait=true")
+    if k3s.kubectl("get", "clusterrolebindings", "-l", dynamic_selector, "-o", "name"):
+        raise RuntimeError("policy-controller ClusterRoleBindings survived cleanup")
+    for namespace in [*namespaces, "monitoring"]:
+        if k3s.kubectl("get", "namespace", namespace, "--ignore-not-found=true", "-o", "name"):
+            raise RuntimeError(f"namespace {namespace} still exists after cleanup")
+    for kind in ("certificate", "secret"):
+        if k3s.kubectl("get", kind, "test-runner-root", "-n", "cert-manager", "--ignore-not-found=true", "-o", "name"):
+            raise RuntimeError(f"fixture-owned root {kind} survived cleanup")
+    remaining_pvs = json.loads(k3s.kubectl("get", "pv", "-o", "json"))["items"]
+    if any(item.get("spec", {}).get("claimRef", {}).get("namespace") in namespaces for item in remaining_pvs):
+        raise RuntimeError("fixture-owned PersistentVolume survived cleanup")
+    marker["state"] = "clean"
+    _spike_write_marker(marker)
+
+
 @contextlib.contextmanager
 def running_stack(
     inputs: StackInputs, *, models: rendered_fixture.Models, validate_vm_shutdown: Callable[[], bool]
@@ -513,6 +730,9 @@ def running_stack(
     """The stack with every Deployment Available and LLM ingress forwarding to `models`."""
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = inputs.fixture
+    persistence_spike = os.environ.get("K3S_PERSISTENCE_SPIKE") == "1"
+    cert_manager, trust_manager = certificates.releases()
+    pki_images = certificates.images(cert_manager + trust_manager)
     fixture_images = {_ci_image(rloc): rloc for rloc in inputs.image_layouts}
     guest_images = {_ci_image(rloc): rloc for rloc in inputs.guest_image_layouts}
     if fixture.vm_sandboxes != bool(guest_images):
@@ -530,8 +750,17 @@ def running_stack(
                 process_traces.ProcessTraces(k3s.node_ip, undeclared_outputs_dir() / "process-spans.jsonl")
             )
             # A VM stack's layers would leave too little memory for its guests (README § Image layers in memory).
-            process = k3s.start(layers_in_memory=not fixture.vm_sandboxes)
-            cleanup.callback(k3s.stop, process)
+            if persistence_spike:
+                if fixture.vm_sandboxes:
+                    raise ValueError("the persistence spike only supports the Pod fixture")
+                k3s, spike_marker, spike_warm = _spike_open(
+                    inputs,
+                    _spike_fingerprint(inputs, crds, cert_manager + trust_manager, pki_images),
+                    layers_in_memory=True,
+                )
+            else:
+                process = k3s.start(layers_in_memory=not fixture.vm_sandboxes)
+                cleanup.callback(k3s.stop, process)
             setup.add_event("node Ready")
             cluster = Cluster(
                 kubeconfig=k3s.kubeconfig, namespace=fixture.namespace, kubectl_command=(str(k3s.binary), "kubectl")
@@ -585,21 +814,32 @@ def running_stack(
                 releases = vm_sandboxes.releases()
                 infrastructure_images = vm_sandboxes.images(releases)
                 k3s.import_images(infrastructure_images)
-            cert_manager, trust_manager = certificates.releases()
             cleanup.callback(certificates.report, k3s.kubectl, cert_manager + trust_manager)
             # Import the next group's images during apply/readiness work for the preceding group. A single
             # worker preserves blob deduplication and joins before k3s teardown, including on setup failure.
             with ThreadPoolExecutor(max_workers=1, thread_name_prefix="image-import") as importing:
-                pki_import = importing.submit(
-                    contextvars.copy_context().run, k3s.import_images, certificates.images(cert_manager + trust_manager)
+                install_pki = not (persistence_spike and spike_warm)
+                pki_import = (
+                    importing.submit(contextvars.copy_context().run, k3s.import_images, pki_images)
+                    if install_pki
+                    else None
                 )
                 if fixture.vm_sandboxes:
                     vm_sandboxes.install(k3s.kubectl, releases)
                     setup.add_event("KubeVirt and Kyverno applied")
                 # Applying a workload before its image is imported would pull it from the registry.
-                pki_import.result()
+                if pki_import is not None:
+                    pki_import.result()
                 fixture_import = importing.submit(contextvars.copy_context().run, k3s.import_images, fixture_images)
-                certificates.install(k3s.kubectl, cert_manager, trust_manager)
+                if install_pki:
+                    certificates.install(k3s.kubectl, cert_manager, trust_manager)
+                else:
+                    for doc in cert_manager + trust_manager:
+                        if doc["kind"] == "Deployment":
+                            k3s.kubectl(
+                                "-n", "cert-manager", "rollout", "status", f"deployment/{doc['metadata']['name']}",
+                                f"--timeout={certificates.READY_SECONDS}s",
+                            )  # fmt: skip
                 setup.add_event("cert-manager and trust-manager ready")
                 fixture_import.result()
                 setup.add_event("fixture images imported" if guest_images else "images imported")
@@ -701,6 +941,12 @@ def running_stack(
                         require_boot_evidence=os.environ.get("AGENTPLANE_VM_BOOT_EVIDENCE") == "1",
                     )
                 )
+        spike_output = undeclared_outputs_dir() / "persistence-suite.json"
+        if persistence_spike:
+            spike_evidence = _spike_evidence(
+                k3s, fixture, models, cert_manager + trust_manager, spike_marker, spike_warm
+            )
+            spike_output.write_text(json.dumps(spike_evidence))
         yield Stack(k3s=k3s, cluster=cluster, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
         with tracer.start_as_current_span("system_test.stack.diagnostics"):
             print(k3s.report(fixture.namespace))
@@ -708,3 +954,7 @@ def running_stack(
                 (undeclared_outputs_dir() / "vm-sandboxes.txt").write_text(
                     vm_sandboxes.report(k3s.kubectl, fixture.namespace)
                 )
+        if persistence_spike:
+            _spike_clean(k3s, fixture, spike_marker)
+            spike_evidence["cleanup"] = "complete"
+            spike_output.write_text(json.dumps(spike_evidence))

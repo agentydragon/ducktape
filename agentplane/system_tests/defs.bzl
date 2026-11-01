@@ -26,7 +26,7 @@ _STACKS = {
     "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = [_HARNESSES_LAYOUT]),
 }
 
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False):
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, persistence_spike = False):
     """Run a Python suite entrypoint against one session-scoped k3s stack."""
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
@@ -34,6 +34,8 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         fail("profile_guest requires the VM stack")
     if boot_evidence and stack != "vm":
         fail("boot_evidence requires the VM stack")
+    if persistence_spike and stack != "pod":
+        fail("the persistence spike requires the Pod stack")
     config = _STACKS[stack]
     layouts = K3S_SERVICE_LAYOUTS + config.images
     data = [config.fixture, K3S_BINARY, _CERT_MANAGER_INSTALL, _TRUST_MANAGER_INSTALL] + layouts
@@ -48,6 +50,9 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
     }
     properties = {}
     suite_tags = K3S_TAGS + tags
+    if persistence_spike:
+        env["K3S_PERSISTENCE_SPIKE"] = "1"
+        properties["test.runner-recycling-key"] = "k3s-persistence-pod-spike-v5"
     if config.vm:
         # Six 1.5 GiB guests boot alongside k3s services; request the 20 GB worker estimate.
         properties["EstimatedComputeUnits"] = "8"

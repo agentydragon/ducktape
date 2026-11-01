@@ -10,6 +10,25 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_testonly = True)
 
+py_test(
+    name = "test_persistence_spike",
+    srcs = ["test_persistence_spike.py"],
+    data = [K3S_BINARY],
+    env = {"K3S_BINARY_RLOCATION": "$(rlocationpath " + K3S_BINARY + ")"},
+    exec_properties = K3S_EXEC_PROPERTIES | {
+        "test.runner-recycling-key": "k3s-persistence-spike-v3",
+    },
+    tags = K3S_TAGS + ["manual"],
+    deps = [
+        ":stack",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # The runner Pod's tools image. It keeps Debian's shell utilities for bootstrap and process-lifecycle
 # fixtures, plus curl and git (the `trixie_e2e` package set) for scripted commands; the Nix-built
 # production image supplies the full toolset. As in production, the runner is not in it: the Pod runs
