@@ -1,6 +1,6 @@
 ---
 name: ci_latency
-description: Diagnose CI feedback time and compute from workflow queues through slow-test internals, fixtures and waits; test coverage-preserving improvements to implementation, setup, teardown and parallelism with reproducible evidence.
+description: Diagnose CI feedback time and compute; derive and test improvements across test internals, execution structure, environment lifecycle and resource organization, with reproducible evidence and explicit coverage tradeoffs.
 ---
 
 # CI latency analysis
@@ -21,9 +21,10 @@ release/pin currency and failed CI more broadly. No Mimir metric, Shapley
 calculation, or dashboard is required for a useful report; propose
 instrumentation only when it closes a decision-relevant evidence gap.
 
-Test implementations and test architecture are part of the optimization scope.
-Follow measured bottlenecks to whatever depth yields useful, coverage-preserving
-changes; workflow configuration and target-duration rankings are not the boundary.
+Test implementations, execution architecture and infrastructure are part of the
+optimization scope. Treat target boundaries, environment lifetimes, executor
+placement and hardware as design choices unless an actual requirement fixes them.
+Follow measured bottlenecks to useful changes while preserving the tested contract.
 
 ## Start from the previous investigation
 
@@ -51,6 +52,65 @@ changed before repeating an experiment or reviving a rejected recommendation.
 New incidents may change priorities; explicitly defer lower-priority prior work
 with a reason. If historical access is incomplete, state what was read and what is
 missing rather than claiming a complete baseline review.
+
+## Compare execution architectures before narrowing the search
+
+For an optimization investigation, state the workload classes, requested latency
+objective and actual constraints. Evaluate alternatives against the requested
+scale of improvement. Separate hard requirements from current implementation
+choices and resources that could be provisioned. A routine status refresh can
+reuse a still-valid comparison; revisit changed assumptions.
+
+Before committing the investigation to detailed profiling of the current design,
+derive architectural alternatives from the measured work and the system's actual
+degrees of freedom. Use these questions to discover relevant options:
+
+- **Execution structure:** what work must be serial, and what ordering comes from
+  current boundaries or scheduling? Could changing grouping, granularity or
+  placement expose useful parallelism or remove contention? Account for repeated
+  setup, dependencies, stragglers and resources per unit of work. Distinguish
+  concurrency within one execution unit from distribution across workers.
+- **State and lifetime:** which costs repeat, what state must be fresh, and what
+  can safely be retained or shared? Assess alternative ownership and lifetime
+  boundaries, including their initialization, reset and invalidation costs.
+  Preserve fresh-state and lifecycle behavior wherever it is part of the contract.
+- **Resource organization:** which limits follow from necessary capabilities or
+  capacity, and which belong to the current execution service or topology?
+  Consider changes to placement, isolation, resource mix or provisioning where
+  the evidence supports them. Include admission, transfer and queueing at realistic
+  concurrent load, recurring cost and maintenance ownership.
+- **Validation structure:** what guarantee does each costly operation establish?
+  Could equivalent validation require less work through different dependencies,
+  inputs or construction? Explain the assertions and real integration boundaries
+  preserved. Changes to coverage or when it runs require explicit tradeoffs.
+
+These are search dimensions, not prescribed solutions. Justify each concrete
+candidate from the inspected system's evidence and constraints; do not turn an
+example or a successful prior intervention into a default recommendation.
+
+For promising alternatives and combinations, sketch the changed dependency graph
+and estimate end-to-end feedback for representative PR classes. Include removed or
+amortized phases, remaining serial work, duplicated setup, resource/queue costs and
+the next bottleneck. Label measured inputs, assumptions and estimated ranges;
+do not add overlapping savings. Compare absolute latency benefit alongside
+engineering effort, recurring compute/idle cost and reliability. A larger change
+with a credible path to the objective must remain visible beside cheap local fixes.
+
+Choose experiments by which uncertainty can change that decision most. Test the
+weakest assumption of a promising architecture without first requiring a complete
+explanation of every internal delay in the current design. Preserve tested-input
+identity and relevant isolation guarantees. Modeling and bounded experiments do
+not imply authorization to change deployed infrastructure or validation policy.
+
+Keep negative results scoped to the hypothesis, arrangement and conditions
+actually tested. Record the constraint that defeated an option; reject a broader
+family of designs only when the failure mechanism applies to that family. Revisit
+an option when a proposed design changes the relevant constraint.
+
+When the objective remains unmet, report which architectural options were
+evaluated, rejected with evidence, or remain untested, and the next experiment
+with the highest decision value. Small local gains or the current graph's
+headroom alone do not establish that a larger speedup is unavailable.
 
 ## Investigate, don't just run a recipe
 
@@ -251,13 +311,12 @@ Do not stop at "this test takes seven minutes" or "setup is expensive," or let
 easy workflow tweaks substitute for investigating the dominant test work.
 
 When a selected test emits spans, use them as the primary phase evidence before
-adding instrumentation. [Agentplane's phase-tracing notes](https://github.com/agentydragon/ducktape/blob/devel/agentplane/system_tests/README.md#phase-tracing)
-document `test.outputs/vm-phases.jsonl`, the separate k3s timeline, and how the
-traces relate to fixture and scenario lifetimes. Follow the
-[BuildBuddy artifact recipe](https://github.com/agentydragon/ducktape/blob/devel/devinfra/buildbuddy/skill/buildbuddy_api/SKILL.md#three-kinds-of-file-three-commands):
-list the exact invocation's test artifacts first, then download the trace
-for the relevant target and shard/run/attempt. Tie it to the tested source SHA
-and a physical execution; do not infer a trace from a cached target summary.
+adding instrumentation. Consult the component's tracing documentation or producer
+code for artifact formats, clocks and fixture/scenario lifetimes. Use the execution
+system's artifact tooling (`buildbuddy_api` for BuildBuddy) to list the exact
+invocation's outputs before downloading the relevant target and shard/run/attempt.
+Tie the trace to the tested source and a physical execution; do not infer a trace
+from a cached target summary.
 
 Reconstruct parent/child span structure and concurrent intervals; identify a
 critical path only where event dependencies establish it. Never sum nested or
@@ -329,10 +388,9 @@ separate/censored observations:
   BuildBuddy invocation/target logs become _accessible_ to the relevant agent,
   not merely when a job ends or a log URL is advertised. Measure the observable
   hop(s) only; webhook creation, delivery, inbox read and harness receipt are
-  distinct clocks. Default PR subscriptions receive `check_run` completions and
-  `status` events, but coverage depends on App installation, subject matching,
-  and delivery health; see `agentplane/notification_service/docs/api.md`. Never
-  infer delivery from GitHub's check timestamp alone.
+  distinct clocks. Discover subscribed event types and routing from the current
+  notification system's configuration; account for installation, subject matching
+  and delivery health. Never infer delivery from a provider's check timestamp alone.
 
 Show a per-head timeline of these milestones and sample-size/p50/p90 for each
 relevant interval where timestamps exist. Declare polling/sampling resolution,
@@ -395,18 +453,17 @@ sum parallel step durations and call the result latency; label runner-minutes,
 worker-seconds and wall-clock separately. When GitHub/BuildBuddy data cannot resolve
 an interval, leave it unknown and identify the minimal additional trace needed.
 
-## Recommend changes using 80/20 reasoning
+## Prioritize by impact, cost and confidence
 
 Rank _concrete_ interventions by likely impact on required-check feedback for common
-PRs, engineering effort, operational/security risk and confidence. Prefer low-risk
-quick wins with directly observed recurring waste; distinguish fixes to the long
-tail from fixes to a typical PR. Estimate possible savings as a range, not a
-fabricated point value; test against matched PR classes and preserve required test
-coverage. Examples to evaluate rather than assume: tighter validation selection,
-shorter runner/VM startup or reuse, avoiding repeated Bazel analysis, test/action
-critical-path improvements, and concurrency changes. Say what evidence would
-falsify each recommendation and how to compare before/after. Put instrument-first
-items behind actionable fixes unless missing evidence actually blocks the choice.
+PRs, engineering effort, recurring infrastructure cost, operational/security risk
+and confidence. Pursue cheap demonstrated gains while evaluating architectural
+options against the requested objective; ease of implementation must not define
+the search space. Distinguish fixes to the long tail from fixes to a typical PR.
+Estimate savings as ranges, test against matched PR classes and preserve required
+coverage. Show both individual changes and combinations needed to reach the
+objective, including how the bottleneck moves. State what would falsify each
+proposal and choose instrumentation only when it can change a decision.
 
 ### Bound conditional gate headroom
 
@@ -426,6 +483,8 @@ Treat this as a conditional upper-bound sensitivity, not a treatment effect or
 measured improvement. It holds other gate clocks and dependency structure fixed;
 adjusted completion order may change. It uses only the supplied gate completion
 clocks and does not establish actual auto-merge readiness.
+This bounds the modeled change to the supplied graph; it is not a ceiling on
+changes that shorten several paths, decompose targets or change environment setup.
 `total_saved_wall_seconds` sums per-head savings across the sample; it is not one
 elapsed cohort wall clock. Do not add worker seconds or CPU seconds to gate offsets.
 Verify that offsets belong to the same exact PR head and a common labeled start
