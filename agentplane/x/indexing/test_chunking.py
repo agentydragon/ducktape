@@ -7,7 +7,7 @@ import itertools
 import pytest
 import pytest_bazel
 
-from agentplane.indexing.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, chunk_text, git_chunker_key
+from agentplane.x.indexing.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, chunk_text, git_chunker_key
 
 
 def test_offsets_slice_the_embedded_text_back_out() -> None:

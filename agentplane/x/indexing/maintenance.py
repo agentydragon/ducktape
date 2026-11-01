@@ -9,9 +9,9 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 
-from agentplane.indexing.embedder import Embedder
-from agentplane.indexing.source import GitSource
-from agentplane.indexing.store import Store
+from agentplane.x.indexing.embedder import Embedder
+from agentplane.x.indexing.source import GitSource
+from agentplane.x.indexing.store import Store
 
 logger = logging.getLogger(__name__)
 

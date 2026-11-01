@@ -13,7 +13,7 @@ way to leave a path out of a snapshot.
 
 The container is `git.allegedly.works/ducktape-ci/agentplane-index`, published by the image
 roster after its test gate passes. Use a pinned published tag. The Bazel binary is
-`//agentplane/indexing:main_bin`; the container target is `:image`.
+`//agentplane/x/indexing:main_bin`; the container target is `:image`.
 
 ## Configuration
 
@@ -55,14 +55,14 @@ requests outside a trusted internal network.
 
 ## Deployment
 
-[`cluster/cdk8s/agentplane_index/workers.py`](../../cluster/cdk8s/agentplane_index/workers.py)
+[`cluster/cdk8s/agentplane_index/workers.py`](../../../cluster/cdk8s/agentplane_index/workers.py)
 renders the `agentplane-index` namespace: one CNPG cluster with a pgvector database per
 indexed repository, a minted read token, and a worker Deployment and Service each for
 ducktape (`devel` on GitHub) and haku-state (`main` on the in-cluster Forgejo, with Git
 credentials from a Secret). The workers share a ConfigMap for the embedding endpoint
 (in-cluster Ollama), checkout path, and CA bundle, and clone into an `emptyDir`. The image tag
 there is a placeholder that Flux image automation overrides.
-It is not currently deployed ([parked](../../cluster/cdk8s/agentplane_index/README.md)).
+It is not currently deployed ([parked](../../../cluster/cdk8s/agentplane_index/README.md)).
 
 ## Read API
 
@@ -115,7 +115,7 @@ dimension; adding either needs no re-embedding.
 ## Verification
 
 ```sh
-bbr test //agentplane/indexing:all
+bbr test //agentplane/x/indexing:all
 ```
 
 The store/API tests use PostgreSQL with pgvector on RBE. They cover publication and provider

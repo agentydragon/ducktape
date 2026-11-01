@@ -407,7 +407,7 @@ oci.pull(
     tag = "v1.19.1",
 )
 
-# Test infrastructure: PostgreSQL with pgvector, for //agentplane/indexing and //haku/console
+# Test infrastructure: PostgreSQL with pgvector, for //agentplane/x/indexing and //haku/console
 # tests. The stock postgres image ships no `vector` extension, and the index's search is only
 # testable against the real operator.
 oci.pull(

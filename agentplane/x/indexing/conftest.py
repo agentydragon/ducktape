@@ -11,8 +11,8 @@ import pytest_asyncio
 from pygit2.enums import FileMode
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.indexing.chunking import DEFAULT_CHUNK_BUDGET
-from agentplane.indexing.store import Store
+from agentplane.x.indexing.chunking import DEFAULT_CHUNK_BUDGET
+from agentplane.x.indexing.store import Store
 from third_party.containers import pgvector_pg18
 from util.oci import OciImage
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate

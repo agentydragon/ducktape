@@ -7,7 +7,7 @@ calling `workers.agentplane_index` from `generate_manifests.py` again (Kustomiza
 (`external_secrets/config.py`) and the `haku-forgejo-git` mirror (`haku/workspaces.py`).
 
 `workers.py` deploys one single-repository index worker
-([service contract](../../../agentplane/indexing/SPEC.md)) per indexed branch into namespace
+([service contract](../../../agentplane/x/indexing/SPEC.md)) per indexed branch into namespace
 `agentplane-index`:
 
 | Service           | Database     | Remote                                                 | Branch  |

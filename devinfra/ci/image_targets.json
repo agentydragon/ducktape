@@ -1,8 +1,8 @@
 {
   "images": {
     "agentplane-index": {
-      "target": "//agentplane/indexing:image",
-      "test": "//agentplane/indexing/...",
+      "target": "//agentplane/x/indexing:image",
+      "test": "//agentplane/x/indexing/...",
       "registry": "forgejo"
     },
     "ai-session-archive-importer": {

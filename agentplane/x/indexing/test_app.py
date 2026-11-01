@@ -12,12 +12,12 @@ import pytest
 import pytest_bazel
 from pydantic import SecretStr
 
-from agentplane.indexing.app import create_app
-from agentplane.indexing.conftest import FakeEmbedder, Upstream
-from agentplane.indexing.maintenance import Maintenance
-from agentplane.indexing.settings import SnapshotLimits
-from agentplane.indexing.source import GitSource
-from agentplane.indexing.store import Store
+from agentplane.x.indexing.app import create_app
+from agentplane.x.indexing.conftest import FakeEmbedder, Upstream
+from agentplane.x.indexing.maintenance import Maintenance
+from agentplane.x.indexing.settings import SnapshotLimits
+from agentplane.x.indexing.source import GitSource
+from agentplane.x.indexing.store import Store
 
 
 @dataclass
