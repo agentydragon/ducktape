@@ -32,6 +32,7 @@ type uncertainCloseExecution struct{ fences atomic.Int32 }
 func (*uncertainCloseExecution) Executor() executorpb.ExecutorServer {
 	return &executorpb.UnimplementedExecutorServer{}
 }
+
 func (e *uncertainCloseExecution) StopAndFence(context.Context) error {
 	e.fences.Add(1)
 	return errors.New("uncertain Execution backend fence")
