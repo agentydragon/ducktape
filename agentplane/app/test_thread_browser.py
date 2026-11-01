@@ -480,7 +480,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
         finally:
             finished.set()
 
-    await page.route("**/evidence?*", hold_old_evidence)
+    await page.route("**/entity-evidence", hold_old_evidence)
     try:
         await click_evidence(page.locator('[data-thread-anchor="3"]'))
         async with asyncio.timeout(15):
@@ -538,7 +538,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
         if ready.is_set():
             async with asyncio.timeout(15):
                 await finished.wait()
-        await page.unroute("**/evidence?*", hold_old_evidence)
+        await page.unroute("**/entity-evidence", hold_old_evidence)
 
 
 async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily(
