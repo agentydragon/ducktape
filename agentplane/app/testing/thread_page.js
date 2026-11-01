@@ -27,6 +27,11 @@
         requestAnimationFrame(() => settle(sample(area)));
       }),
 
+    // `ended` resolves at the area's next scrollend event.
+    scrollEnded: (area) => ({
+      ended: new Promise((resolve) => area.addEventListener("scrollend", () => resolve(), { once: true })),
+    }),
+
     // `anchor` resolves with the reader's place as the next scrollend event sees it, sampled inside
     // the event, which is the instant the app adopts it.
     anchorAtScrollend: (area) => ({
