@@ -11,7 +11,7 @@ Pods and VMs start the same executable with the same configuration contract:
 Both arguments are required. Unknown flags, positional arguments, unknown JSON fields and unsupported
 versions fail before Runtime opens state. The executable name does not select a mode. The file schema
 is [`config.py`](../../config.py); [`configuration.go`](../../configuration/configuration.go) validates and
-composes it into the runtime configuration. The [protocol contract](SPEC.md) covers Session behavior.
+composes it into the runtime configuration. The [protocol contract](../SPEC.md) covers Session behavior.
 
 ## Ownership and composition
 
@@ -127,7 +127,7 @@ ceilings must fit the aggregate; harness and executor caps must fit the enclosin
 Omitting `environment.executor` selects local tools. An executor requires Codex, and its endpoint
 must be `ws://127.0.0.1:<nonzero port>`. `CODEX_EXEC_SERVER_URL` belongs to Environment Runtime and is rejected in
 the harness environment. Lifecycle, recovery and scope are documented in
-[Codex executor isolation](docs/codex_executor.md).
+[Codex executor isolation](../execution/docs/codex_executor.md).
 
 ## Shared layout
 

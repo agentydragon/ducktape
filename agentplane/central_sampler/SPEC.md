@@ -500,7 +500,7 @@ on live adapter connections, not Codex native sessions, sampler conversations, o
 require it; Runner drain or observer fencing closes it as well. The adapter introduces no durable
 session persistence or process policy. A stream loss leaves the native Codex session detached for up
 to 30 seconds, after which pinned Codex 0.166.0 expires it and terminates remaining processes. See
-the [Executor API resource and lifecycle contract](../executor/README.md) for connection budgets
+the [Executor API resource and lifecycle contract](../env/runtime/execution/SPEC.md) for connection budgets
 and ownership.
 
 Each unary operation carries the sampler's Sandbox scope, execution-session ID and durable nested
