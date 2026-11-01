@@ -745,12 +745,12 @@ Two readings the table supports:
 
 Subscriptions beat the API because they are sold below API cost. The size of that discount is the whole game, and it varies by an order of magnitude between vendors.
 
-| Plan                                |   $/mo | Included capacity       |           Value at API rates | Subsidy |
-| ----------------------------------- | -----: | ----------------------- | ---------------------------: | ------: |
-| Cerebras Code Max                   |    200 | 120M tok/day (~3.6B/mo) |                      ~$3,300 |    ~17x |
-| Z.ai GLM (any tier)                 | 18-168 | credits                 |     vendor states 15-30x fee |  15-30x |
-| Cerebras Code Pro                   |     50 | 24M tok/day (~720M/mo)  |                        ~$660 |    ~13x |
-| Claude Max 20x + ChatGPT Pro (pair) |    400 | opaque                  | displaced 4-figure API spend |  >=2.5x |
+| Plan                                |   $/mo | Published included capacity |           Value at API rates | Subsidy |
+| ----------------------------------- | -----: | --------------------------- | ---------------------------: | ------: |
+| Cerebras Code Max                   |    200 | 120M tok/day (~3.6B/mo)     |                      ~$3,300 |    ~17x |
+| Z.ai GLM (any tier)                 | 18-168 | credits                     |     vendor states 15-30x fee |  15-30x |
+| Cerebras Code Pro                   |     50 | 24M tok/day (~720M/mo)      |                        ~$660 |    ~13x |
+| Claude Max 20x + ChatGPT Pro (pair) |    400 | opaque                      | displaced 4-figure API spend |  >=2.5x |
 
 Cerebras figures use GLM-4.7 at Z.ai list ($0.60/$2.20) blended 80/20 input/output; Z.ai's multiple is [its own published figure](https://docs.z.ai/devpack/notice/usage-revision) ("approximately 15-30x the monthly subscription fee").
 
@@ -1025,15 +1025,14 @@ proxied total is the unproxied remainder. The difference must come out non-negat
 if it ever does not, the daily buckets are scoped more narrowly than account-wide, and
 that is worth knowing before anything else is built on them.
 
-**The same fact unblocks the ChatGPT capacity figure**, which the tables above can only
-record as `opaque`, because OpenAI publishes no quota. The Claude calibration below works by pairing a token
-count with a gauge that meters the same traffic; the ChatGPT side had the gauge
-(`wham/usage`, already polled) but no complete numerator, because Langfuse saw one
-route of several. `profiles/me` supplies it from the same account the gauge meters, so
-the conversion is the same arithmetic — and needs no window where only one client was
-running, which was the awkward part. Daily buckets are coarse, but the current day's
-bucket grows as work lands, so polling it hourly records the burn between readings of
-the weekly gauge (the only Codex window; see the gauge paragraph below).
+**The weekly gauge now supports conditional model-capacity estimates.** The dated
+[2026-10-31 snapshot](weekly_capacity_estimates_2026-10-31.md) fits provider-specific
+usage aggregates to their matching weekly gauges. OpenAI still publishes no token
+quota: these are measured conversions, not vendor-published entitlements. Each row
+estimates what one model could use if it consumed the full 100-point weekly gauge; the
+subscription budget is shared across models, so the rows cannot be added. Source
+coverage, payment attribution, cache and effort mix, and possible cross-source overlap
+remain material uncertainties described in the report.
 
 **Agent traffic is essentially all input — but the extreme is cache reuse, not ratio.**
 Counting cache reads as input gives 632:1, which looks like a far outlier against AA's
