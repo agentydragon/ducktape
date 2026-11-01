@@ -8,10 +8,17 @@ from pathlib import Path
 from pydantic import AnyHttpUrl
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
-from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.settings import AppSettingsConfig, FrontendConfig
 from agentplane.env.runtime.harnesshost.harness import Harness
+from agentplane.sandboxes.runtimeconfig.model_catalog import (
+    WORKSPACE_ROOT,
+    Catalog,
+    ModelCatalog,
+    ModelOption,
+    Provenance,
+    TemplateRuntimeConfig,
+)
 
 # The names of the objects other modules create. `settings()` below grants the public-coder
 # preset its baseline policies, so it refers to them; each comes from the module that creates the
@@ -95,11 +102,34 @@ def model_catalog(models: HarnessRoutes, *, central_sampler_enabled: bool = Fals
     )
 
 
+def runtime_catalog(
+    models: HarnessRoutes,
+    *,
+    templates: tuple[str, ...],
+    workspace_root_enforced_templates: tuple[str, ...] = (),
+    central_sampler_enabled: bool = False,
+) -> Catalog:
+    """Publish runtime choices and workspace guidance only for rendered templates."""
+    return Catalog(
+        models=model_catalog(models, central_sampler_enabled=central_sampler_enabled),
+        templates={
+            template: TemplateRuntimeConfig(
+                workspace_root=WORKSPACE_ROOT,
+                workspace_provenance=Provenance.DEPLOYMENT_CONFIG,
+                workspace_root_enforced=template in workspace_root_enforced_templates,
+                creates_missing_cwd=True,
+            )
+            for template in templates
+        },
+    )
+
+
 def settings(
     *,
     namespace: str,
     sandbox_template: str,
     models: HarnessRoutes,
+    runtime_catalog: Catalog | None = None,
     thread_preset_codex_model: Route,
     connection_service_url: HttpEndpointUrl,
     action_federation: ActionFederationSettings,
@@ -112,7 +142,11 @@ def settings(
     if frontend_config is not None:
         optional_configuration["frontend_config"] = frontend_config
     return AppSettingsConfig(
-        models=model_catalog(models, central_sampler_enabled=central_sampler_enabled),
+        models=(
+            runtime_catalog.models
+            if runtime_catalog is not None
+            else model_catalog(models, central_sampler_enabled=central_sampler_enabled)
+        ),
         default_policy_sets=default_policy_sets,
         connection_service_url=connection_service_url,
         # App-owned launch-form presets. The browser expands one into editable concrete
@@ -123,7 +157,7 @@ def settings(
                 title="Public coder / Codex",
                 harness=Harness.CODEX,
                 model=thread_preset_codex_model.id,
-                cwd="/state/workspaces/{session_id}",
+                cwd=f"{WORKSPACE_ROOT}/{{session_id}}",
                 reasoning_effort="medium",
                 instructions=_PUBLIC_CODER_INSTRUCTIONS,
             )

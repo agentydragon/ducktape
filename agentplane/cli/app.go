@@ -124,10 +124,12 @@ func (s *seconds) String() string { return s.d.String() }
 
 func (s *seconds) Type() string { return "seconds" }
 
-const rootHelp = `agentplane calls the Action Service and Session Dispatcher gRPC APIs, reads History for sessions observe-input,
-and calls the HTTP APIs a Sandbox already reaches through the egress proxy: the Notification Service (notifications) and the
-Egress rules API (egress). It adds no authority and keeps no state. Each group reads AGENTPLANE_<GROUP>_URL and AGENTPLANE_<GROUP>_CREDENTIAL
-(the placeholder bearer) and fails alone with exit 2 when they are missing.
+const rootHelp = `agentplane calls the Action Service and Session Dispatcher APIs, reads History for sessions observe-input,
+and calls the HTTP APIs a Sandbox already reaches through the egress proxy: the Notification Service (notifications)
+and the Egress rules API (egress). The environments group reads the co-hosted Runner Gateway discovery API. It adds
+no authority and keeps no state. Each group reads its AGENTPLANE_*_URL and AGENTPLANE_*_CREDENTIAL pair (the
+placeholder bearer) and fails alone with exit 2 when they are missing; environments uses AGENTPLANE_SESSIONS_URL
+and AGENTPLANE_SESSIONS_CREDENTIAL.
 
 With --json stdout is the service's own JSON, unmodified: one value, or one per line for a list. Text
 is for reading, not parsing. stdout is the answer and stderr the diagnostics; after exit 1-5 or 15
@@ -154,7 +156,7 @@ its result says (a script's exit code, an MCP isError).
 func (a *app) root() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "agentplane",
-		Short:         "Call Agentplane APIs from a Sandbox",
+		Short:         "Call Agentplane APIs and discover existing environments from a Sandbox",
 		Long:          rootHelp,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -166,7 +168,7 @@ func (a *app) root() *cobra.Command {
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.PersistentFlags().BoolVar(&a.asJSON, "json", false, "print the service's JSON unmodified; lists as JSON Lines")
 	root.PersistentFlags().Var(&a.timeout, "timeout", "deadline of the whole call in seconds; 0 sets none and waiting commands read once")
-	root.AddCommand(a.actionsCommand(), a.sessionsCommand(), a.notificationsCommand(), a.egressCommand())
+	root.AddCommand(a.actionsCommand(), a.sessionsCommand(), a.notificationsCommand(), a.egressCommand(), a.environmentsCommand())
 	return root
 }
 

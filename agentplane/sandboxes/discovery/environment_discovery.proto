@@ -1,0 +1,126 @@
+syntax = "proto3";
+
+package agentplane.sandboxes.discovery;
+
+option go_package = "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb;discoverypb";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+// EnvironmentDiscovery is a same-ServiceAccount, exact-incarnation view of existing managed Sandboxes.
+service EnvironmentDiscovery {
+  rpc ListEnvironments(ListEnvironmentsRequest) returns (ListEnvironmentsResponse) {
+    option (google.api.http) = {get: "/v1/environments"};
+  }
+  rpc GetEnvironment(GetEnvironmentRequest) returns (EnvironmentDescriptor) {
+    option (google.api.http) = {get: "/v1/environments/{target.namespace}/{target.name}"};
+  }
+}
+
+message TargetHandle {
+  string namespace = 1;
+  string name = 2;
+  string uid = 3;
+}
+
+message AccountHandle {
+  string namespace = 1;
+  string name = 2;
+  string uid = 3;
+}
+
+message ListEnvironmentsRequest {
+  // Required, bounded to 1..100. The server inspects at most this many Sandbox objects per page.
+  uint32 limit = 1;
+  // Reserved for opaque, caller-scoped continuation when account mapping requires paging. The
+  // current Sandbox-owned account mapping resolves one direct candidate and returns no cursor.
+  string page_token = 2;
+}
+
+message ListEnvironmentsResponse {
+  repeated EnvironmentDescriptor items = 1;
+  string next_page_token = 2;
+}
+
+message GetEnvironmentRequest {
+  // All three fields are required. A same-name replacement is not the requested target.
+  TargetHandle target = 1;
+}
+
+enum Availability {
+  AVAILABILITY_UNSPECIFIED = 0;
+  AVAILABILITY_CONFIGURED = 1;
+  AVAILABILITY_ABSENT = 2;
+  AVAILABILITY_UNAVAILABLE = 3;
+}
+
+enum Provenance {
+  PROVENANCE_UNSPECIFIED = 0;
+  PROVENANCE_DEPLOYMENT_CONFIG = 1;
+}
+
+enum ReadinessState {
+  READINESS_STATE_UNSPECIFIED = 0;
+  READINESS_STATE_READY = 1;
+  READINESS_STATE_NOT_READY = 2;
+}
+
+enum OperatingMode {
+  OPERATING_MODE_UNSPECIFIED = 0;
+  OPERATING_MODE_RUNNING = 1;
+  OPERATING_MODE_SUSPENDED = 2;
+}
+
+enum ResumeState {
+  RESUME_STATE_UNSPECIFIED = 0;
+  RESUME_STATE_AVAILABLE = 1;
+  RESUME_STATE_NOT_AVAILABLE = 2;
+  RESUME_STATE_NOT_REQUIRED = 3;
+}
+
+message Readiness {
+  ReadinessState state = 1;
+  string reason = 2;
+  string detail = 3;
+}
+
+message WorkspaceGuidance {
+  Availability availability = 1;
+  string root = 2;
+  Provenance provenance = 3;
+  // The Runner creates missing cwd directories when opening a Session.
+  bool creates_missing_cwd = 4;
+  // True only when the runtime itself enforces root as a cwd boundary for this template.
+  bool root_enforced = 5;
+}
+
+message TextFact {
+  Availability availability = 1;
+  string value = 2;
+}
+
+message RuntimeConfiguration {
+  string harness = 1;
+  string model = 2;
+  string display_name = 3;
+  repeated string reasoning_efforts = 4;
+  Provenance provenance = 5;
+}
+
+message EnvironmentDescriptor {
+  TargetHandle target = 1;
+  AccountHandle execution_account = 2;
+  Readiness readiness = 3;
+  WorkspaceGuidance workspace = 4;
+  TextFact instructions = 5;
+  repeated RuntimeConfiguration configurations = 6;
+  Availability configurations_availability = 7;
+  google.protobuf.Timestamp observed_at = 8;
+  string template = 9;
+  OperatingMode operating_mode = 10;
+  string stop_stage = 11;
+  bool wake_on_send = 12;
+  ResumeState resume = 13;
+  // The current Sandbox workload incarnation is not the Sandbox UID in target.
+  string runtime_incarnation_uid = 14;
+}

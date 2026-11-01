@@ -46,6 +46,7 @@ from agentplane.env.config import (
     VMExecutor,
 )
 from agentplane.environment_runtime_transport.config import MTLS, TLS
+from agentplane.sandboxes.runtimeconfig.model_catalog import WORKSPACE_ROOT
 from cluster.cdk8s.agentplane import launcher_relay, llm_ingress, platform_routes, sandbox_pod, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cert_manager.cluster_ca import BUNDLE_KEY as ENVIRONMENT_RUNTIME_TRUST_BUNDLE_KEY
@@ -110,8 +111,8 @@ class EnvironmentVmTemplate(Construct):
             session_reconcile_concurrency=session_reconcile_concurrency,
             codex_readiness=codex_readiness,
             state_dir="/state",
-            workspace_root="/state/workspaces",
-            initialization_cwd="/state/workspaces",
+            workspace_root=WORKSPACE_ROOT,
+            initialization_cwd=WORKSPACE_ROOT,
             control=EnvironmentRuntimeControl(
                 listen_address=f"0.0.0.0:{_ENVIRONMENT_RUNTIME_PORT}",
                 security=MTLS(

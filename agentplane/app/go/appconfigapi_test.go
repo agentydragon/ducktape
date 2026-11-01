@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -23,8 +24,8 @@ func TestAppConfigRoutesUseGeneratedProtoJSONAndCallerAuthentication(t *testing.
 	}
 
 	config := Config{
-		Models: ModelCatalog{
-			Models: []ModelOption{{Model: "model-a", DisplayName: "Model A", ReasoningEfforts: []string{"low", "high"}}},
+		Models: runtimeconfig.ModelCatalog{
+			Models: []runtimeconfig.ModelOption{{Model: "model-a", DisplayName: "Model A", ReasoningEfforts: []string{"low", "high"}}},
 			Harnesses: map[string][]string{
 				"HARNESS_CODEX":  {"model-a"},
 				"HARNESS_CLAUDE": {},

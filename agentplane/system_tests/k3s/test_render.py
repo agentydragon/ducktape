@@ -12,8 +12,6 @@ import pytest_bazel
 import yaml
 from pydantic import AnyHttpUrl, ValidationError
 
-from agentplane.app.model_catalog import ModelCatalog
-
 # Each service module exports `Settings`; aliases keep their separate config contracts explicit.
 from agentplane.app.settings import Settings as AppSettings
 from agentplane.central_sampler.settings import (
@@ -24,6 +22,7 @@ from agentplane.env.runtime.harnesshost.harness import Harness
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from agentplane.mcp_edge.settings import Settings as McpEdgeSettings
 from agentplane.runner_gateway.settings import Settings
+from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 from agentplane.system_tests.k3s import fixture_chart, fixture_database, rendered_fixture, vm_sandboxes
 from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
 from agentplane.system_tests.k3s.namespaces import NAMESPACE

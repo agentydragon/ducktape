@@ -88,8 +88,10 @@ get their Threads once it does.
   exchange. Logout, expiry and replica notifications end browser streams.
 - `go/migrations/` and `runtime.go`: embedded Goose schema and service startup. `runtime.go` uses
   the shared `agentplane/postgres/migrate` lifecycle before opening the API.
-- `settings.py`, `presets.py`, `model_catalog.py`, `action_federation_settings.py`, `oidc.py` and
+- `settings.py`, `presets.py`, `action_federation_settings.py`, `oidc.py` and
   `sandbox_models.py`: deployment configuration schema used by cdk8s.
+- `agentplane/sandboxes/runtimeconfig`: shared deployment-published model and harness offers read by
+  the app and existing-environment discovery.
 - `testing/`: Go process fixtures, real service peers and test-only HTTP DTOs checked against Go's
   OpenAPI schema. Browser and Electric tests use Chromium, PostgreSQL, History and Electric with
   the Go API process. k3s tests deploy the packaged Go image.

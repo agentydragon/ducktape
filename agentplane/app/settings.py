@@ -10,10 +10,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
-from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_models import NewSandboxDefaults
 from agentplane.log_levels import LogLevels
+from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 from util.urls import HttpEndpointUrl, HttpsEndpointUrl
 from util.yaml_file_settings import YamlFileSettings
 

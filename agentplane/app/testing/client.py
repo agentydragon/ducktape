@@ -21,7 +21,6 @@ import httpx
 from google.protobuf.json_format import ParseDict, ParseError
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.testing.models import (
     BindingView,
     DecisionsSnapshot,
@@ -39,6 +38,7 @@ from agentplane.app.testing.models import (
 from agentplane.egress.decisions import Decision
 from agentplane.proto import event_log_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 

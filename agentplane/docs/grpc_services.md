@@ -57,10 +57,12 @@ follows it; code that differs converges on it.
   call: projected tokens rotate.
 - A Go server admits callers in one interceptor, `auth.Methods.ServerOptions`
   (`agentplane/workload_auth/auth`): `auth.Methods` maps every served method's full name to a
-  `Rule` (`Accounts` for an allowlist, `AnyAccount` for any account the `Resolver` serves, `Public`
-  only for the health service via `auth.HealthMethods`). A method it does not list is refused before
-  its bearer is read, so a new RPC is closed until its Rule is written. The package owning a servicer
-  exports its `Methods`; the handler reads the admitted principal with `auth.Caller`. Tests iterate
+  `Rule` (`Accounts` for an allowlist, `AnyAccount` for any account the `Resolver` serves,
+  `ReviewedServiceAccount` when a handler needs a verified ServiceAccount UID with an optional Pod
+  proof, `Public` only for the health service via `auth.HealthMethods`). A method it does not list is
+  refused before its bearer is read, so a new RPC is closed until its Rule is written. The package
+  owning a servicer exports its `Methods`; the handler reads the admitted identity with
+  `auth.Caller` or `auth.AdmittedReviewedCaller` as appropriate. Tests iterate
   the generated `ServiceDesc` with `agentplane/testing/grpcmethods`.
 - A door that authorizes on more than the account calls `Resolver.Resolve` itself (the runner
   ingress binds a Session to its writer; runner control resolves the Sandbox Pod). Services never

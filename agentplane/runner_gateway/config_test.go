@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"math"
 	"os"
 	"path/filepath"
@@ -8,7 +9,16 @@ import (
 	"strings"
 	"testing"
 
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/discovery"
+	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 const databaseURLEnv = settingPrefix + "DISPATCHER_DATABASE_URL=postgres://user:never-print-this@queue/dispatcher"
@@ -68,6 +78,76 @@ func TestCallerListsComeFromTheFileAndKeepAuthAndWakePoliciesSeparate(t *testing
 		!slices.Equal(c.Delegation.CallerNamespaces, []string{"agentplane"}) ||
 		!slices.Equal(c.Delegation.Methods, []string{"/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput"}) {
 		t.Fatalf("policy boundaries were merged: %+v", c)
+	}
+}
+
+func TestConfiguredHarnessNamesRoundTripThroughEnvironmentDiscovery(t *testing.T) {
+	settings := requiredFile + `
+runtime_catalog:
+  models:
+    models:
+      - model: model-a
+        display_name: Model A
+        reasoning_efforts: [high]
+    harnesses:
+      HARNESS_CLAUDE: [model-a]
+  templates:
+    runner-vm:
+      workspace_root: /state/workspaces
+      workspace_provenance: DEPLOYMENT_CONFIG
+      workspace_root_enforced: false
+      creates_missing_cwd: true
+`
+	config, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+writeSettings(t, settings)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := config.RuntimeCatalog.Models.Harnesses; len(got) != 1 || len(got["HARNESS_CLAUDE"]) != 1 || got["HARNESS_CLAUDE"][0] != "model-a" {
+		t.Fatalf("loadConfig returned noncanonical harness catalog: %#v", got)
+	}
+
+	scheme := runtime.NewScheme()
+	if err := api.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	sandboxUID := types.UID("sandbox-uid")
+	controller := true
+	sandbox := &api.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "agentplane", Name: "workspace", UID: sandboxUID},
+		Spec:       api.SandboxSpec{Template: "runner-vm"},
+	}
+	executionAccount := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{
+		Namespace: "agentplane", Name: "workspace", UID: "execution-account-uid",
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: api.GroupVersion.String(), Kind: "Sandbox", Name: "workspace", UID: sandboxUID, Controller: &controller,
+		}},
+	}}
+	objects := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, executionAccount).Build()
+	service, err := discovery.New("agentplane", objects, config.RuntimeCatalog, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caller := auth.ReviewedCaller{ServiceAccount: auth.ServiceAccountPrincipal{
+		Account: auth.Account{Namespace: "agentplane", Name: "workspace"}, ServiceAccountUID: "execution-account-uid",
+	}}
+	response, err := service.ListEnvironments(auth.WithReviewedCaller(context.Background(), caller), &discoverypb.ListEnvironmentsRequest{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Items) != 1 || len(response.Items[0].Configurations) != 1 {
+		t.Fatalf("discovery response = %+v", response)
+	}
+	harnessName := response.Items[0].Configurations[0].Harness
+	harnessValue, ok := sessionpb.Harness_value[harnessName]
+	if !ok {
+		t.Fatalf("discovery returned harness %q, which does not decode as SessionSpec.Harness", harnessName)
+	}
+	spec := &sessionpb.SessionSpec{Harness: sessionpb.Harness(harnessValue)}
+	if spec.GetHarness() != sessionpb.Harness_HARNESS_CLAUDE {
+		t.Fatalf("discovery harness decoded to %s", spec.GetHarness())
 	}
 }
 

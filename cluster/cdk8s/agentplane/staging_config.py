@@ -14,6 +14,7 @@ from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_models import NewSandboxDefaults
 from agentplane.app.settings import AppSettingsConfig, FrontendConfig, LangfuseSearchSettings, TraceSearchSettings
 from agentplane.env.runtime.harnesshost.harness import Harness
+from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane.actions_staging_policies import (
     COMMON_GITHUB_READ_SET,
@@ -30,7 +31,7 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     SSH_READS_SET,
     TANA_READS_SET,
 )
-from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, settings
+from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, runtime_catalog, settings
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
@@ -104,12 +105,18 @@ def config(
     models: HarnessRoutes,
     action_federation: ActionFederationSettings,
     connection_service_url: HttpEndpointUrl,
+    runtime: Catalog | None = None,
     central_sampler_enabled: bool = False,
 ) -> AppSettingsConfig:
+    if runtime is None:
+        runtime = runtime_catalog(
+            models, templates=(sandbox_template,), central_sampler_enabled=central_sampler_enabled
+        )
     cfg = settings(
         namespace=namespace,
         sandbox_template=sandbox_template,
         models=models,
+        runtime_catalog=runtime,
         central_sampler_enabled=central_sampler_enabled,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,

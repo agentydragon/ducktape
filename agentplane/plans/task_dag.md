@@ -695,6 +695,9 @@ History association and public projections must agree on the actual account. Sha
 not create/label/own/delete that SA or manufacture grants/PolicyBindings for it. A recreated SA
 is a different account. A controller-only identity switch is incomplete while readers still
 assume account name equals Sandbox name; update every affected consumer in the same contract.
+`SESSION_TARGET_DISCOVERY` currently follows this Sandbox-owned account relation for its bounded
+same-SA lookup. When this node lands, discovery's list backend must expand to the explicit pinned
+account references while preserving the existing paged list contract.
 
 ### `ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN` — catalogue ownership and location
 

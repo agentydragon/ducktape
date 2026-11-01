@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
@@ -21,52 +22,41 @@ import (
 // Config mirrors the deployed integration app's AGENTPLANE_* and YAML settings contract.
 // OIDC relying-party settings are loaded separately by the auth package from AGENTPLANE_OIDC_*.
 type Config struct {
-	Models                              ModelCatalog             `mapstructure:"models"`
-	ThreadPresets                       map[string]ThreadPreset  `mapstructure:"thread_presets"`
-	SandboxPresets                      map[string]SandboxPreset `mapstructure:"sandbox_presets"`
-	DefaultPolicySets                   []string                 `mapstructure:"default_policy_sets"`
-	NewSandboxDefaults                  NewSandboxDefaults       `mapstructure:"new_sandbox_defaults"`
-	EgressAdminURL                      string                   `mapstructure:"egress_admin_url"`
-	ConnectionServiceURL                string                   `mapstructure:"connection_service_url"`
-	ActionFederation                    ActionFederationConfig   `mapstructure:"action_federation"`
-	FrontendConfig                      FrontendConfig           `mapstructure:"frontend_config"`
-	SandboxNamespace                    string                   `mapstructure:"sandbox_namespace"`
-	RunnerGatewayTarget                 string                   `mapstructure:"runner_gateway_target"`
-	SessionDispatcherTarget             string                   `mapstructure:"session_dispatcher_target"`
-	RunnerGatewayControlTarget          string                   `mapstructure:"runner_gateway_control_target"`
-	HistoryServiceTarget                string                   `mapstructure:"history_service_target"`
-	NotificationsURL                    string                   `mapstructure:"notifications_url"`
-	NotificationsTokenFile              string                   `mapstructure:"notifications_token_file"`
-	NotificationsRequestTimeoutSeconds  float64                  `mapstructure:"notifications_request_timeout_s"`
-	RunnerGatewayTokenFile              string                   `mapstructure:"runner_gateway_token_file"`
-	SessionDispatcherTokenFile          string                   `mapstructure:"session_dispatcher_token_file"`
-	SessionDispatcherRequestTimeoutSecs float64                  `mapstructure:"session_dispatcher_request_timeout_s"`
-	HistoryServiceTokenFile             string                   `mapstructure:"history_service_token_file"`
-	HistoryServiceRequestTimeoutSeconds float64                  `mapstructure:"history_service_request_timeout_s"`
-	RunnerGatewayRequestTimeoutSeconds  float64                  `mapstructure:"runner_gateway_request_timeout_s"`
-	RunnerGatewayLifecycleTimeoutSecs   float64                  `mapstructure:"runner_gateway_lifecycle_timeout_s"`
-	LogLevels                           map[string]string        `mapstructure:"log_levels"`
-	ListenAddress                       string                   `mapstructure:"listen_address"`
-	Kubeconfig                          string                   `mapstructure:"kubeconfig"`
-	DatabaseURL                         string                   `mapstructure:"database_url"`
-	ElectricURL                         string                   `mapstructure:"electric_url"`
-	EgressAdminTokenFile                string                   `mapstructure:"egress_admin_token_file"`
-	EgressAdminTimeoutSeconds           float64                  `mapstructure:"egress_admin_timeout"`
-	ShutdownTimeoutSeconds              int                      `mapstructure:"shutdown_timeout"`
-	TokenAudience                       string                   `mapstructure:"token_audience"`
-	TokenSubjects                       []string                 `mapstructure:"token_subjects"`
+	Models                              runtimeconfig.ModelCatalog `mapstructure:"models"`
+	ThreadPresets                       map[string]ThreadPreset    `mapstructure:"thread_presets"`
+	SandboxPresets                      map[string]SandboxPreset   `mapstructure:"sandbox_presets"`
+	DefaultPolicySets                   []string                   `mapstructure:"default_policy_sets"`
+	NewSandboxDefaults                  NewSandboxDefaults         `mapstructure:"new_sandbox_defaults"`
+	EgressAdminURL                      string                     `mapstructure:"egress_admin_url"`
+	ConnectionServiceURL                string                     `mapstructure:"connection_service_url"`
+	ActionFederation                    ActionFederationConfig     `mapstructure:"action_federation"`
+	FrontendConfig                      FrontendConfig             `mapstructure:"frontend_config"`
+	SandboxNamespace                    string                     `mapstructure:"sandbox_namespace"`
+	RunnerGatewayTarget                 string                     `mapstructure:"runner_gateway_target"`
+	SessionDispatcherTarget             string                     `mapstructure:"session_dispatcher_target"`
+	RunnerGatewayControlTarget          string                     `mapstructure:"runner_gateway_control_target"`
+	HistoryServiceTarget                string                     `mapstructure:"history_service_target"`
+	NotificationsURL                    string                     `mapstructure:"notifications_url"`
+	NotificationsTokenFile              string                     `mapstructure:"notifications_token_file"`
+	NotificationsRequestTimeoutSeconds  float64                    `mapstructure:"notifications_request_timeout_s"`
+	RunnerGatewayTokenFile              string                     `mapstructure:"runner_gateway_token_file"`
+	SessionDispatcherTokenFile          string                     `mapstructure:"session_dispatcher_token_file"`
+	SessionDispatcherRequestTimeoutSecs float64                    `mapstructure:"session_dispatcher_request_timeout_s"`
+	HistoryServiceTokenFile             string                     `mapstructure:"history_service_token_file"`
+	HistoryServiceRequestTimeoutSeconds float64                    `mapstructure:"history_service_request_timeout_s"`
+	RunnerGatewayRequestTimeoutSeconds  float64                    `mapstructure:"runner_gateway_request_timeout_s"`
+	RunnerGatewayLifecycleTimeoutSecs   float64                    `mapstructure:"runner_gateway_lifecycle_timeout_s"`
+	LogLevels                           map[string]string          `mapstructure:"log_levels"`
+	ListenAddress                       string                     `mapstructure:"listen_address"`
+	Kubeconfig                          string                     `mapstructure:"kubeconfig"`
+	DatabaseURL                         string                     `mapstructure:"database_url"`
+	ElectricURL                         string                     `mapstructure:"electric_url"`
+	EgressAdminTokenFile                string                     `mapstructure:"egress_admin_token_file"`
+	EgressAdminTimeoutSeconds           float64                    `mapstructure:"egress_admin_timeout"`
+	ShutdownTimeoutSeconds              int                        `mapstructure:"shutdown_timeout"`
+	TokenAudience                       string                     `mapstructure:"token_audience"`
+	TokenSubjects                       []string                   `mapstructure:"token_subjects"`
 	sandboxPresetOrder                  []string
-}
-
-type ModelCatalog struct {
-	Models    []ModelOption       `mapstructure:"models" json:"models"`
-	Harnesses map[string][]string `mapstructure:"harnesses" json:"harnesses"`
-}
-
-type ModelOption struct {
-	Model            string   `mapstructure:"model" json:"model"`
-	DisplayName      string   `mapstructure:"display_name" json:"display_name"`
-	ReasoningEfforts []string `mapstructure:"reasoning_efforts" json:"reasoning_efforts"`
 }
 
 type ThreadPreset struct {
@@ -426,11 +416,7 @@ func (c *Config) decodeCaseSensitiveSettings(raw map[string]any) error {
 			return fmt.Errorf("invalid frontend_config settings: %w", err)
 		}
 	}
-	normalized := make(map[string][]string, len(c.Models.Harnesses))
-	for harness, models := range c.Models.Harnesses {
-		normalized[strings.ToUpper(harness)] = models
-	}
-	c.Models.Harnesses = normalized
+	c.Models.NormalizeHarnessNames()
 	return nil
 }
 
@@ -489,7 +475,7 @@ func (c *Config) applyDefaults(raw map[string]any) {
 		}
 	}
 	if c.Models.Models == nil {
-		c.Models.Models = []ModelOption{}
+		c.Models.Models = []runtimeconfig.ModelOption{}
 	}
 	for i := range c.Models.Models {
 		if c.Models.Models[i].ReasoningEfforts == nil {
@@ -647,8 +633,8 @@ func validateHTTPSOrLoopbackURL(name, raw string) error {
 	return fmt.Errorf("%s must use HTTPS or a loopback HTTP host", name)
 }
 
-func validateCatalog(catalog ModelCatalog, threadPresets map[string]ThreadPreset, sandboxPresets map[string]SandboxPreset) error {
-	known := map[string]ModelOption{}
+func validateCatalog(catalog runtimeconfig.ModelCatalog, threadPresets map[string]ThreadPreset, sandboxPresets map[string]SandboxPreset) error {
+	known := map[string]runtimeconfig.ModelOption{}
 	for _, option := range catalog.Models {
 		if _, exists := known[option.Model]; exists {
 			return fmt.Errorf("duplicate model id %q", option.Model)
