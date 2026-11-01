@@ -1,13 +1,7 @@
 import { create, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
 
-import type {
-  EvidencePage,
-  NativeFramePage,
-  ObservationEntry,
-  ObservationPage,
-  ThreadView as ThreadViewSchema,
-} from "../schema";
+import type { ThreadView as ThreadViewSchema } from "../schema";
 import { api, displayableError, fetchWithLogin, HttpError, ok } from "../client";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { TurnStatusSchema } from "../../../proto/event_pb";
@@ -37,6 +31,24 @@ import {
 } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
 type ThreadView = ThreadViewSchema;
+export type ObservationEntry = { cursor: string; entry: JsonValue };
+export type ObservationPage = {
+  observations: Array<{ cursor: string; kind: string }>;
+  next_before_cursor: string | null;
+  next_after_cursor: string | null;
+};
+export type EvidencePage = {
+  observations: Array<{ observation_cursor: string; has_native: boolean }>;
+  next_after_cursor: string | null;
+};
+export type NativeFramePage = {
+  frames: Array<{
+    source_sequence: string;
+    availability: "present" | "unavailable";
+    entry: JsonValue;
+  }>;
+  next_after_sequence: string | null;
+};
 export type ThreadScope = { projection_epoch: string; through_cursor: string };
 export type ThreadPayloadRef = {
   projection_epoch: string;

@@ -1,9 +1,13 @@
 import { ActionIcon, Button, Drawer, Group, Stack, Text } from "@mantine/core";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
-import type { ObservationEntry as ArchivedObservationEntry, ObservationPage } from "../schema";
 import { IconHistory } from "../icons";
 
-import { threadObservationEntry, threadObservations } from "./client";
+import {
+  threadObservationEntry,
+  threadObservations,
+  type ObservationEntry as ArchivedObservationEntry,
+  type ObservationPage,
+} from "./client";
 import { displayableError } from "../client";
 import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
 import { JsonView } from "../../../../util/frontend/json_view";

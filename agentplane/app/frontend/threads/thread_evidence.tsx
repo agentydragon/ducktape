@@ -1,9 +1,8 @@
 import { Button, Group, Stack, Text } from "@mantine/core";
-import type { EvidencePage, NativeFramePage } from "../schema";
 import { type CSSProperties, type JSX, type MouseEvent, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { displayableError } from "../client";
-import { threadEvidence, threadNativeFrames } from "./client";
+import { threadEvidence, threadNativeFrames, type EvidencePage, type NativeFramePage } from "./client";
 import { DisclosureBody } from "../../../../util/frontend/disclosure";
 import { JsonView } from "../../../../util/frontend/json_view";
 import { ChronologicalDebugIcon } from "./chronological_debug";
