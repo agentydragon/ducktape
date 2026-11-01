@@ -76,8 +76,16 @@ func newLifecycleRunner(t *testing.T, config runtimeTestConfig) *Runtime {
 	t.Cleanup(func() {
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 		defer closeCancel()
-		if err := r.Close(closeCtx); (err != nil) != config.expectCloseError {
-			t.Errorf("Runtime close error=%v, expected error=%v", err, config.expectCloseError)
+		closeErr := r.Close(closeCtx)
+		if (closeErr != nil) != config.expectCloseError {
+			t.Errorf("Runtime close error=%v, expected error=%v", closeErr, config.expectCloseError)
+		}
+		if config.expectCloseError && closeErr != nil {
+			// An unproved fence deliberately retains the shared engine and owner.
+			// This fixture owns only temporary state, so stop the engine to join
+			// the remaining Host goroutines after the test's assertions.
+			r.lifecycleCancel()
+			<-r.lifecycleDone
 		}
 		cancel()
 		select {
