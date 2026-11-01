@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::BufWriter;
+use std::io::{BufWriter, Write};
 use std::path::Path;
 
 use analysis::DepKind;
@@ -23,12 +23,18 @@ pub fn write_json(path: impl AsRef<Path>, data: &impl Serialize) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
     }
-    let mut writer = BufWriter::new(
+    let writer = BufWriter::new(
         fs::File::create(path).with_context(|| format!("creating {}", path.display()))?,
     );
+    write_json_to(writer, path, data)
+}
+
+fn write_json_to(mut writer: impl Write, path: &Path, data: &impl Serialize) -> Result<()> {
     serde_json::to_writer(&mut writer, data)
         .with_context(|| format!("writing {}", path.display()))?;
-    Ok(())
+    writer
+        .flush()
+        .with_context(|| format!("flushing {}", path.display()))
 }
 
 /// Emission-set chunk records, serialized as `{ "chunks": [...] }` to the
@@ -434,4 +440,29 @@ pub enum TopLevelDeclarationKind {
     Function,
     Class,
     Variable,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io;
+
+    struct FlushFailure;
+
+    impl Write for FlushFailure {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::other("flush failed"))
+        }
+    }
+
+    #[test]
+    fn compact_report_propagates_final_flush_failure() {
+        let error =
+            write_json_to(FlushFailure, Path::new("full.json"), &Vec::<u8>::new()).unwrap_err();
+        assert!(error.to_string().contains("flushing full.json"));
+    }
 }

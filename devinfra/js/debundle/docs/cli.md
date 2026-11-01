@@ -467,6 +467,17 @@ exits 1. The contract is
 `translation_validation.json` keeps exact gate/TV verdicts and category totals,
 with at most twenty deterministic examples per category. Each evidence field
 has `total`, `examples` and `truncated`; use totals for comparisons.
+`debundle run --full-report export-reentry` writes the original complete
+export-reentry schema as compact `export_reentry.full.json`. The default
+`export_reentry.json` has exact collection and site counts, at most twenty
+deterministic examples per collection, and explicit truncation. The complete
+semantic report and staged payload still drive policy and checks. Full-file
+serialization and explicit flush finish before the summary; failures fail the
+run. Use `--full-report-chunk` to select sinks, independently of graph export.
+Bazel `full_reports = ["export-reentry"]` forwards the same request; both full
+report kinds can be requested together. See the
+[wire contract](wire_format.md#export-reentry-diagnostics).
+
 `debundle run --full-report translation-validation` writes complete checker rows
 in `translation_validation.full.jsonl`. Repeat `--full-report-chunk <chunk-id>`
 to select only those sinks; configured analysis, summaries, checks and verdicts

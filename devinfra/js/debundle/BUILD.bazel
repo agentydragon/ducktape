@@ -969,6 +969,7 @@ rust_library(
         "lowering/placement.rs",
         "lowering/plans.rs",
         "lowering/rebind_fold.rs",
+        "lowering/reentry_report.rs",
         "lowering/rename_ledger.rs",
         "lowering/rename_ledger_proptest.rs",
         "lowering/rewrite_runtime.rs",

@@ -3906,3 +3906,15 @@ read sampled-vector emptiness. An optional complete-evidence visitor on the same
 checker streams full TV rows; it does not add a second evaluator or change source
 scope. Full diagnostic evidence and graph export are independent sink policies.
 See [the wire contract](wire_format.md#translation-validation).
+
+### Bounded export-reentry presentation
+
+The complete `ExportReentryReport` remains the semantic and staged-analysis
+representation. Materialization borrows it through an output-only summary:
+exact collection/site counts, deterministic first twenty examples, explicit
+truncation, and complete existing failure-kind aggregates. The view is never
+deserialized or fed back into policy. Explicit `--full-report export-reentry`
+uses the shared compact JSON writer to stream the original complete schema and
+flush before summary completion. Sink filtering and full graph selection are
+independent; all source and proof work remains unchanged. See the
+[wire contract](wire_format.md#export-reentry-diagnostics).

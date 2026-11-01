@@ -35,6 +35,9 @@ pub(super) fn write_chunk_report_json<T: Serialize>(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
+    if filename == output_layout::EXPORT_REENTRY_FULL_REPORT {
+        return artifact::reports::write_json(path, value);
+    }
     if filename == DEPENDENCY_GRAPH_REPORT {
         report_io::write_json_gzip(&path, value)?;
     } else {
