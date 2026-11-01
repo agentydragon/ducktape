@@ -53,6 +53,28 @@ The bootstrap script executes a multi-phase deployment against a single TF root
 - Talos API → Bootstraps cluster, generates kubeconfig
 - Kubernetes API → Installs Cilium CNI, deploys SOPS age key to flux-system
 
+### Temporary CoreDNS placement
+
+The infrastructure phase pins the CoreDNS Deployment's Pod template to
+`topology.kubernetes.io/zone=hil-ovh` after the Kubernetes API is ready. Talos creates
+the CoreDNS addon but does not reconcile manifests already in its inventory, so the
+field survives later Talos reconciliations. A fresh cluster receives the same pin during
+bootstrap.
+
+For an existing cluster, validate and apply only this Pod-template patch without running
+Terraform or the bootstrap preflight:
+
+```bash
+bb run //cluster:bootstrap -- --pin-coredns-to-ovh --dry-run --kubeconfig /path/to/kubeconfig
+bb run //cluster:bootstrap -- --pin-coredns-to-ovh --kubeconfig /path/to/kubeconfig
+```
+
+The default kubeconfig is `cluster/terraform/main/kubeconfig`. The patch changes only the
+Pod template's zone selector; the Deployment controller performs its configured rolling
+replacement. Remove this temporary pin after [#9604](https://github.com/agentydragon/ducktape/issues/9604)
+is fixed and cold DNS probes from both home nodes and OVH workers pass, replacing it with
+explicit CoreDNS addon/topology ownership.
+
 ### Phase 3: Full Apply (`tofu apply`)
 
 - Flux Bootstrap → applies committed Flux manifests; the root `ducktape` source

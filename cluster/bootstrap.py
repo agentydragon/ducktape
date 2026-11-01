@@ -32,6 +32,10 @@ from util.bazel.runfiles import get_required_path
 from util.bazel.workspace import get_build_workspace_directory
 
 _TOFU_BIN = get_required_path("multitool/tools/tofu/tofu")
+_COREDNS_DEPLOYMENT = "coredns"
+_COREDNS_NAMESPACE = "kube-system"
+_COREDNS_ZONE_LABEL = "topology.kubernetes.io/zone"
+_COREDNS_ZONE = "hil-ovh"
 
 SCRIPT_DIR = get_build_workspace_directory() / "cluster"
 TF_DIR = SCRIPT_DIR / "terraform" / "main"
@@ -195,7 +199,25 @@ def deploy_infrastructure() -> None:
     wait_for_cilium_health(v1)
     verify_clusterip_routing(v1)
     restart_cilium_operator_gateway_controller(v1)
+    pin_coredns_to_ovh()
     log.info("Infrastructure ready")
+
+
+def pin_coredns_to_ovh(*, dry_run: bool = False) -> None:
+    """Pin newly admitted CoreDNS Pods to OVH without taking over its Deployment."""
+    # Talos's manifest apply controller creates this addon but does not reconcile an
+    # object already in its inventory, so this Pod-template field survives later runs.
+    # CLEANUP(added 2026-10-22): Remove after #9604 is fixed and cold DNS probes from
+    # both home nodes and OVH workers pass; replace this bootstrap pin with explicit
+    # CoreDNS addon/topology ownership so the placement policy has a durable owner.
+    client.AppsV1Api().patch_namespaced_deployment(
+        name=_COREDNS_DEPLOYMENT,
+        namespace=_COREDNS_NAMESPACE,
+        body={"spec": {"template": {"spec": {"nodeSelector": {_COREDNS_ZONE_LABEL: _COREDNS_ZONE}}}}},
+        _content_type="application/strategic-merge-patch+json",
+        dry_run="All" if dry_run else None,
+    )
+    log.info("CoreDNS OVH placement %s", "server-side dry-run validated" if dry_run else "applied")
 
 
 def deploy_services(*, excludes: list[str]) -> None:
@@ -226,7 +248,23 @@ def main() -> None:
     parser.add_argument(
         "--skip-preflight", action="store_true", help="Skip preflight validation (pre-commit, tofu validate)"
     )
+    parser.add_argument(
+        "--pin-coredns-to-ovh",
+        action="store_true",
+        help="Patch only the CoreDNS Pod-template node selector; do not run preflight or Terraform",
+    )
+    parser.add_argument("--dry-run", action="store_true", help="Server-side dry-run for --pin-coredns-to-ovh")
+    parser.add_argument("--kubeconfig", type=Path, help="Kubeconfig for --pin-coredns-to-ovh")
     args = parser.parse_args()
+
+    if args.pin_coredns_to_ovh:
+        if args.start_from or args.exclude:
+            parser.error("--pin-coredns-to-ovh cannot be combined with bootstrap phase options")
+        config.load_kube_config(str(args.kubeconfig or TF_DIR / "kubeconfig"))
+        pin_coredns_to_ovh(dry_run=args.dry_run)
+        return
+    if args.dry_run or args.kubeconfig:
+        parser.error("--dry-run and --kubeconfig require --pin-coredns-to-ovh")
 
     # Safety check: running on wyrm2 without excluding it will cause
     # tofu to apply pending VM config changes, rebooting the machine mid-bootstrap.
