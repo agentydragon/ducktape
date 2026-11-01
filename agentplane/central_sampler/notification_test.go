@@ -125,8 +125,11 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 			t.Run(name, func(t *testing.T) {
 				store := newTestStore(t)
 				request := &samplerpb.OpenSessionRequest{
-					SessionId:              uuid.NewString(),
-					Executor:               &sandboxpb.SandboxDestination{SandboxUid: "sandbox-uid"},
+					SessionId: uuid.NewString(),
+					Executor: &sandboxpb.SandboxDestination{
+						Owner:   &sandboxpb.ServiceAccount{Namespace: "fixture", Name: "fixture-sandbox"},
+						Sandbox: "fixture-sandbox", SandboxUid: "sandbox-uid",
+					},
 					ExpectedIncarnationUid: "original",
 					Spec:                   &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model"},
 				}

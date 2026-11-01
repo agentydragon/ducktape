@@ -22,6 +22,60 @@ func fixtureSettings() Settings {
 	}
 }
 
+func TestSettingsPlatformGuidanceAcceptsOldConfigurationAndRejectsEmptyGuide(t *testing.T) {
+	encoded, err := json.Marshal(fixtureSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	configured, empty, whitespace := "Fixture configured guide.", "", " \n\t"
+	for _, tc := range []struct {
+		name    string
+		guide   *string
+		invalid bool
+	}{
+		{name: "omitted"},
+		{name: "configured", guide: &configured},
+		{name: "empty", guide: &empty, invalid: true},
+		{name: "whitespace", guide: &whitespace, invalid: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(encoded, &fields); err != nil {
+				t.Fatal(err)
+			}
+			delete(fields, "platform_instructions")
+			if tc.guide != nil {
+				encodedGuide, err := json.Marshal(*tc.guide)
+				if err != nil {
+					t.Fatal(err)
+				}
+				fields["platform_instructions"] = encodedGuide
+			}
+			wire, err := json.Marshal(fields)
+			if err != nil {
+				t.Fatal(err)
+			}
+			settings, err := DecodeSettings(strings.NewReader(string(wire)))
+			if tc.invalid {
+				if err == nil {
+					t.Fatal("accepted an explicitly empty platform guide")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.guide == nil {
+				if settings.PlatformInstructions != nil {
+					t.Fatal("old configuration unexpectedly enabled platform guidance")
+				}
+			} else if settings.PlatformInstructions == nil || *settings.PlatformInstructions != *tc.guide {
+				t.Fatal("configuration did not retain the supplied platform guide")
+			}
+		})
+	}
+}
+
 func TestShutdownDrainTimeoutIsBoundedAndConfigurable(t *testing.T) {
 	settings := fixtureSettings()
 	if got := settings.ShutdownDrainTimeout(); got != 40*time.Second {
