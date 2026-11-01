@@ -110,7 +110,7 @@ go_library(
         "//agentplane/postgres/go/migrate",
         "//agentplane/postgres/go/probes",
         "//agentplane/postgres/go/wakeups",
-        "//agentplane/settings/go:config",
+        "//agentplane/settings:config",
         "//agentplane/watchhealth",
         "//agentplane/workload_auth/go/auth",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
