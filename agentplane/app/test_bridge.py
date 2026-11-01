@@ -775,6 +775,8 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
                 control_cursor = summary.last_cursor
         # Runner progress is visible through the control stream while the ingress transaction
         # waits on the History row; the app archive remains behind until the lock is released.
+        # This cursor is a controlled prefix, not a quiescence barrier: Claude can emit its native
+        # command_lifecycle completed frame after the result has already completed the turn.
         assert await event_logs.last_cursor(thread_id) == 0
 
     async for attempt in AsyncRetrying(
@@ -782,13 +784,32 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
     ):
         with attempt:
             (summary,) = await sandbox_runner.list_sessions()
-            assert summary.last_cursor == control_cursor
-            assert await event_logs.read_watermark(thread_id) == control_cursor
-            assert await event_logs.last_cursor(thread_id) == control_cursor
+            assert summary.last_cursor >= control_cursor
+            assert await event_logs.read_watermark(thread_id) >= control_cursor
+            assert await event_logs.last_cursor(thread_id) >= control_cursor
             archived = await event_logs.events(thread_id, limit=1000)
             assert seed.admission in archived
             assert receipt.admission in archived
-            assert len([entry for entry in archived if entry.event.HasField("turn_completed")]) == 2
+
+            dispatches = (seed, receipt)
+            confirmations = []
+            for dispatch in dispatches:
+                command_id = dispatch.admission.event.command_admitted.command.command_id
+                matched = [
+                    entry.event.harness_user_message_confirmed
+                    for entry in archived
+                    if entry.event.HasField("harness_user_message_confirmed")
+                    and command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+                ]
+                assert len(matched) == 1
+                confirmations.extend(matched)
+
+            completed_turn_ids = [
+                entry.event.turn_completed.turn_id for entry in archived if entry.event.HasField("turn_completed")
+            ]
+            assert len(completed_turn_ids) == 2
+            assert len(set(completed_turn_ids)) == 2
+            assert {confirmation.turn_id for confirmation in confirmations} == set(completed_turn_ids)
 
 
 if __name__ == "__main__":
