@@ -20,9 +20,9 @@ commands. They therefore missed legitimate queued input after a stopped turn.
 
 A direct wake can hide this defect by immediately launching a fresh driver. A wake delivered to a
 driver already retiring can be lost when that driver exits, leaving neither scan able to find the
-input. Admission on another replica also depends on `OwnedWork` waking an idle resident after an
-ordinary completed turn. Notifications and periodic reconciliation must use durable pending work,
-not whether the previous turn stopped.
+input. Admission on another replica likewise depends on the work scans discovering pending commands
+rather than on that replica's direct wake reaching the owner. Notifications and periodic
+reconciliation must use durable pending work, not whether the previous turn stopped.
 
 ## Deterministic check and repair
 
