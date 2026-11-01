@@ -84,6 +84,88 @@ func TestRuntimeCloseUncertainExecutionFenceRetainsOwner(t *testing.T) {
 	}
 }
 
+type heldCloseExecution struct {
+	fences  atomic.Int32
+	started chan struct{}
+	release chan struct{}
+}
+
+func (*heldCloseExecution) Executor() executorpb.ExecutorServer {
+	return &executorpb.UnimplementedExecutorServer{}
+}
+
+func (e *heldCloseExecution) StopAndFence(ctx context.Context) error {
+	if e.fences.Add(1) == 1 {
+		close(e.started)
+	}
+	select {
+	case <-e.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func TestRuntimeCloseJoinsInFlightAutomaticExecutionFence(t *testing.T) {
+	proxy := modelConfigServer(t)
+	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
+	execution := &heldCloseExecution{started: make(chan struct{}), release: make(chan struct{})}
+	config.CodexExecServer = &codexexecserver.Config{URL: "ws://unused"}
+	config.CodexBinary = "/bin/false"
+	config.HarnessEnvironment = map[string]string{}
+	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
+		return execution, nil
+	}
+	r := newLifecycleRunner(t, config)
+	defer func() {
+		select {
+		case <-execution.release:
+		default:
+			close(execution.release)
+		}
+	}()
+	if _, err := r.Quiesce(context.Background(), &sessionpb.QuiesceRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-execution.started:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("automatic Execution fence did not start")
+	}
+	r.mu.Lock()
+	binding := proto.Clone(r.intent.Binding).(*runtimepb.Binding)
+	r.mu.Unlock()
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- r.Close(context.Background()) }()
+	waitRuntime(t, r, func() bool {
+		status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
+		return err == nil && found && status.Stage == lifecycle.RuntimeCloseExecutionFencing
+	}, "Close to join in-flight Execution fence")
+	r.mu.Lock()
+	sameBinding := r.intent != nil && proto.Equal(r.intent.Binding, binding)
+	r.mu.Unlock()
+	if !sameBinding {
+		t.Fatal("Close replaced the draining Host generation")
+	}
+	select {
+	case err := <-closeDone:
+		t.Fatalf("Close returned before fence completed: %v", err)
+	default:
+	}
+	close(execution.release)
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("Close did not finish after the Execution fence")
+	}
+	if got := execution.fences.Load(); got != 1 {
+		t.Fatalf("Execution fence attempts = %d, want one", got)
+	}
+}
+
 func (h *failingCloseHostLifetime) Stop(ctx context.Context) error {
 	h.stops.Add(1)
 	return errors.Join(h.hostLifetime.Stop(ctx), errors.New("injected Host join failure"))
