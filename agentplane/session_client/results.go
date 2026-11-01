@@ -292,6 +292,7 @@ func ReadTurns(ctx context.Context, history historypb.HistoryServiceClient, requ
 	after := cursor.AfterCursor
 	lastComplete := cursor.AfterCursor
 	coveredThrough := cursor.AfterCursor
+	var contextErr error
 	for after < cursor.Through {
 		pageAfter := after
 		events, readErr := history.ReadSessionEvents(ctx, &historypb.ReadSessionEventsRequest{
@@ -299,7 +300,8 @@ func ReadTurns(ctx context.Context, history historypb.HistoryServiceClient, requ
 		})
 		if readErr != nil {
 			if ctx.Err() != nil {
-				return page, status.FromContextError(ctx.Err()).Err()
+				contextErr = status.FromContextError(ctx.Err()).Err()
+				readErr = contextErr
 			}
 			page.Error = sourceFailure(readErr)
 			break
@@ -388,7 +390,7 @@ func ReadTurns(ctx context.Context, history historypb.HistoryServiceClient, requ
 	if page.Error != nil || page.NextCursor == "" && after >= cursor.Through {
 		page.Turns = append(page.Turns, projection.finishPartial()...)
 	}
-	return page, nil
+	return page, contextErr
 }
 
 func validateTurnPageCursor(

@@ -322,6 +322,36 @@ func TestReadTurnsPreservesIncompleteFactsAndResumesAtTurnBoundaryOnSourceFailur
 	}
 }
 
+func TestReadTurnsCancellationPreservesAlreadyObservedFacts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	history := &resultHistoryStub{read: func(request *historypb.ReadSessionEventsRequest) (*historypb.ReadSessionEventsResponse, error) {
+		if request.GetAfterCursor() == turnEventPageSize {
+			cancel()
+			return nil, status.FromContextError(ctx.Err()).Err()
+		}
+		response := &historypb.ReadSessionEventsResponse{LastCursor: turnEventPageSize + 1}
+		for cursor := uint64(1); cursor <= turnEventPageSize && uint32(len(response.Entries)) < request.GetLimit(); cursor++ {
+			event := &eventpb.Event{Observation: &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{
+				ItemId: fmt.Sprintf("tool-%d", cursor), Kind: eventpb.ItemKind_ITEM_KIND_TOOL_CALL, ToolName: "exec",
+			}}}
+			if cursor == 1 {
+				event = &eventpb.Event{Observation: &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: "unfinished"}}}
+			}
+			response.Entries = append(response.Entries, turnEntry(cursor, event))
+		}
+		return response, nil
+	}}
+	page, err := ReadTurns(ctx, history, ReadTurnsRequest{SessionID: resultSessionID, Count: 1})
+	if status.Code(err) != codes.Canceled || page.Error == nil || page.Error.Code != codes.Canceled.String() ||
+		page.ThroughCursor != strconv.Itoa(turnEventPageSize) || page.NextCursor == "" || len(page.Turns) != 1 {
+		t.Fatalf("cancellation lost observed coverage or recovery cursor: page=%#v, err=%v", page, err)
+	}
+	if turn := page.Turns[0]; turn.TurnID != "unfinished" || turn.Status != nil || len(turn.ToolCalls) != turnEventPageSize-1 {
+		t.Fatalf("cancellation lost or finalized unfinished turn facts: %#v", turn)
+	}
+}
+
 func TestReadTurnsRejectsCursorForAnotherSessionBeforeReading(t *testing.T) {
 	cursor := encodeTurnPageCursor(turnPageCursor{Version: turnCursorVersion, SessionID: secondSessionID, AfterCursor: 4, Through: 8})
 	history := &resultHistoryStub{}
