@@ -17,16 +17,17 @@ from agentplane.app.testing.client import Client
 from agentplane.native.codex import wire
 from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.proto import runner_pb2
-from agentplane.system_tests.agent import TURN_SECONDS, Agent, Turn
+from agentplane.system_tests.agent import TURN_SECONDS, Agent, Turn, scripted_turn_with_admission_and_history
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.k3s.guest_logs import check_boot, systemd_supervision_passed
 from agentplane.system_tests.sandbox import VM_WORKING_DIRECTORY, Sandboxes
+from agentplane.system_tests.scenarios import runner_credentials
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.tracing import tracer
 from agentplane.system_tests.vm_configuration import OOM_TEMPLATE, SUPERVISION_TEMPLATE
 from agentplane.system_tests.vm_supervision import session_setup_is_supervised
 from agentplane.testing.codex_model import CodexModel
-from agentplane.testing.scripted_model import ShellCall, Text
+from agentplane.testing.scripted_model import Text
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 PING = "Run a shell command, then say exactly PING."
@@ -161,6 +162,7 @@ async def _command(
 
 
 async def vm_sandbox_turn(
+    cluster: Cluster,
     client: Client,
     sandbox: Sandboxes,
     harness: runner_pb2.Harness,
@@ -170,6 +172,7 @@ async def vm_sandbox_turn(
 ) -> None:
     view = await sandbox(f"systest-vm-{harness}", template=template)
     assert view.pod is not None
+    identity = await runner_credentials.check_vm_runner_certificate(cluster, view)
     if template == SUPERVISION_TEMPLATE:
         async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.1), reraise=True):
             with attempt:
@@ -181,35 +184,31 @@ async def vm_sandbox_turn(
     ):
         agent = await session_setup_is_supervised(client, view.name, view.uid, harness, offered_model)
     with tracer.start_as_current_span("system_test.turn"):
-        async with asyncio.TaskGroup() as turns:
-            turn = turns.create_task(agent.run(PING))
-            await model.reply(await model.request(), ShellCall("vm-supervision", VM_SUPERVISION_PROBE))
-            result = await model.request()
-            try:
-                (output,) = result.tool_outputs
-                assert output.call_id == "vm-supervision"
-                assert output.contains("VM_UID 107"), output.blocks
-                assert output.contains("VM_PID1 systemd"), output.blocks
-                output_text = "\n".join(output.blocks)
-                (cgroup_line,) = [line for line in output_text.splitlines() if line.startswith("VM_CGROUP ")]
-                cgroup = cgroup_line.removeprefix("VM_CGROUP ")
-                subtree = (
-                    "agentplane-executors.slice"
-                    if harness == runner_pb2.HARNESS_CODEX
-                    else "agentplane-workloads.slice"
-                )
-                _assert_native_service_cgroup(cgroup, subtree)
-                assert "VM_SYSTEMCTL_UNEXPECTED_SUCCESS" not in output_text, output.blocks
-                systemctl_denial = re.search(
-                    r"authentication|authorization|not authorized|access denied", output_text, re.IGNORECASE
-                )
-                assert systemctl_denial is not None, output.blocks
-            finally:
-                # Even a failed guest assertion should complete this scripted turn so endpoint
-                # teardown reports the actual assertion, not a second unsettled exchange.
-                await model.reply(result, Text("PING"))
-        # The scripted reply is the thread's answer: the guest's model traffic came back through the launcher.
-        assert "PING" in turn.result().answer, turn.result().transcript
+        turn, _, _ = await scripted_turn_with_admission_and_history(
+            client,
+            agent,
+            model=model,
+            command_id=f"vm-{view.uid}",
+            prompt=PING,
+            shell_command=VM_SUPERVISION_PROBE,
+            shell_call_id="vm-supervision",
+            response="PING",
+        )
+    assert len(turn.tool_outputs) == 1, turn.transcript
+    output_text = turn.tool_outputs[0]
+    assert "VM_UID 107" in output_text, turn.transcript
+    assert "VM_PID1 systemd" in output_text, turn.transcript
+    (cgroup_line,) = [line for line in output_text.splitlines() if line.startswith("VM_CGROUP ")]
+    cgroup = cgroup_line.removeprefix("VM_CGROUP ")
+    subtree = "agentplane-executors.slice" if harness == runner_pb2.HARNESS_CODEX else "agentplane-workloads.slice"
+    _assert_native_service_cgroup(cgroup, subtree)
+    assert "VM_SYSTEMCTL_UNEXPECTED_SUCCESS" not in output_text, turn.transcript
+    systemctl_denial = re.search(
+        r"authentication|authorization|not authorized|access denied", output_text, re.IGNORECASE
+    )
+    assert systemctl_denial is not None, turn.transcript
+    assert "PING" in turn.answer, turn.transcript
+    await runner_credentials.assert_vm_runner_identity_unchanged(cluster, view.pod.name, identity)
 
 
 async def _capture_native_profile(cluster: Cluster, sandbox_name: str, sandbox_uid: str) -> Path:

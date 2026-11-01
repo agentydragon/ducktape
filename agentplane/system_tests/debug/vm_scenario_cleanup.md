@@ -3,7 +3,8 @@
 [PR #12999](https://github.com/agentydragon/ducktape/pull/12999) gives each concurrent
 VM scenario its own client and Sandbox ownership scope. Diagnostics precede deletion;
 the finished scenario releases its guest while its peers continue. Both groups await
-teardown before advancing on the shared k3s stack.
+teardown before advancing on the shared k3s stack. These measurements describe the earlier
+six-guest layout, before the two credential scenarios moved into the turn guests.
 
 ## Measurements
 

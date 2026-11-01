@@ -60,16 +60,17 @@ The Dispatcher suite remains separate because replica coverage changes the share
 Deployment and deletes a recorded Pod while checking controller behavior.
 
 `test_vm` runs on a stack with KubeVirt emulating the guest CPU and the k3s test guest
-([VM Sandboxes](k3s/README.md#vm-sandboxes)). It starts six VM Sandboxes concurrently: one
-scripted turn per harness through the launcher's egress relay, plus Codex tool OOM containment and
-its successful follow-up command with the same Runner and app-server, two credential guests,
-and the VM central sampler. All six Sandboxes boot independently on an 8-unit executor with
-room for their 1.5 GiB guest allocations and the k3s services. Each harness scenario checks workspace ownership,
-streams, identity, security settings, resource budgets and detached-child cleanup through ordinary
-Session setup. Each concurrent VM scenario scopes its own client and Sandboxes, captures diagnostics
-before deletion, and starts cleanup when its assertions finish, overlapping its peers. The suite
-awaits all cleanup before stopping the shared stack; peer cancellation also waits for
-teardown. The scripted server remains shared and routes by Pod identity.
+([VM Sandboxes](k3s/README.md#vm-sandboxes)). It starts four VM Sandboxes concurrently: one
+credential-checked scripted turn per harness through the launcher's egress relay, Codex tool OOM
+containment and its successful follow-up command with the same Runner and app-server, and the VM
+central sampler. All four Sandboxes boot independently on an 8-unit executor with room for their
+1.5 GiB guest allocations and the k3s services. Each harness turn verifies its certificate and
+runner identity, authenticated session, command admission and retained history alongside workspace
+ownership, streams, security settings, resource budgets and detached-child cleanup. Each concurrent
+VM scenario scopes its own client and Sandboxes, captures diagnostics before deletion, and starts
+cleanup when its assertions finish, overlapping its peers. The suite awaits all cleanup before
+stopping the shared stack; peer cancellation also waits for teardown. The scripted server remains
+shared and routes by Pod identity.
 The Claude guest uses `runner-vm-supervision`, selecting the remaining private Go
 supervisor checks before Environment Runtime starts, on the same root image as every other guest. There is no
 additional supervision VM or root image. `test_vm_manual` covers

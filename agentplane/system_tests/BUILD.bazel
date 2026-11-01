@@ -14,8 +14,12 @@ py_library(
     deps = [
         ":tracing",
         "//agentplane/app/testing:client",
+        "//agentplane/app/testing:models",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "//agentplane/testing:scripted_model",
         "@pypi//httpx",
         "@pypi//protobuf",
@@ -162,7 +166,7 @@ py_test(
 py_test(
     name = "test_agent",
     srcs = ["test_agent.py"],
-    # The driver regression imports a scenario helper, but owns only these offline cases.
+    # The driver regression exercises the test driver, but owns only these offline cases.
     args = ["$(location test_agent.py)"],
     deps = [
         ":agent",
@@ -174,7 +178,6 @@ py_test(
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
-        "//agentplane/system_tests/scenarios:runner_credentials",
         "//agentplane/testing:scripted_model",
         "@pypi//httpx",
         "@pypi//protobuf",

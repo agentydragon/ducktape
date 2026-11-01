@@ -13,8 +13,7 @@ from agentplane.app.testing.client import Client
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.system_tests import agent as agent_module
-from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, Agent
-from agentplane.system_tests.scenarios.runner_credentials import _turn
+from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, Agent, scripted_turn_with_admission_and_history
 from agentplane.testing.scripted_model import ScriptedModel
 
 # gazelle:include_dep @pypi//protobuf
@@ -218,7 +217,9 @@ async def test_credentials_turn_cancels_model_wait_when_collection_fails() -> No
     agent = Agent(client, thread_id=uuid4(), cursor=0)
     async with asyncio.timeout(1):
         with pytest.raises(ExceptionGroup) as caught:
-            await _turn(client, agent, command_id=command_id, prompt="test prompt", model=model)
+            await scripted_turn_with_admission_and_history(
+                client, agent, command_id=command_id, prompt="test prompt", model=model
+            )
 
     assert request_cancelled.is_set()
     model.reply.assert_not_awaited()
