@@ -312,153 +312,893 @@
       .scope code {
         word-break: break-all;
       }
+      .runtime-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 19px;
+        margin: 15px 0;
+        font-size: 0.79rem;
+        color: var(--muted);
+      }
+      .runtime-legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .runtime-legend i {
+        display: inline-block;
+        width: 13px;
+        height: 13px;
+        border-radius: 3px;
+      }
+      .chart-frame {
+        border: 1px solid var(--line);
+        background: #fbfcfe;
+        border-radius: 9px;
+        padding: 15px 10px;
+        margin: 14px 0 24px;
+        overflow: auto;
+      }
+      .chart-frame svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        min-width: 0;
+      }
+      .chart-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px 22px;
+        margin: 20px 0 12px;
+      }
+      .chart-controls label {
+        font-size: 0.86rem;
+        font-weight: 650;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 9px;
+      }
+      .chart-controls select {
+        font: inherit;
+        color: var(--ink);
+        padding: 7px 9px;
+        border: 1px solid #9aafc2;
+        border-radius: 6px;
+        background: #fff;
+        max-width: 100%;
+      }
+      .chart-frame rect:focus {
+        outline: 3px solid #172b42;
+        outline-offset: 2px;
+      }
+      .report-status {
+        font-size: 0.8rem;
+        font-weight: 650;
+        color: #0c655e;
+        background: #e6f4ef;
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 5px;
+      }
+      @media (max-width: 650px) {
+        .chart-frame {
+          padding: 12px 4px;
+        }
+        .chart-controls label {
+          display: block;
+        }
+        .chart-controls select {
+          display: block;
+          margin-top: 6px;
+        }
+        .runtime-legend {
+          gap: 8px 15px;
+        }
+      }
     </style>
   </head>
   <body>
     <header>
       <div class="eyebrow">Ducktape · CI latency · 1 November 2026</div>
-      <h1>Queues and VM work delay feedback.</h1>
+      <span class="report-status"
+        >Updated: long poles, setup reuse and bounded concurrency</span
+      >
+      <h1>Pod concurrency helps. VM remains the long pole.</h1>
       <p class="lead">
-        In the latest slice (1 November, 01:00–02:30 UTC), green heads reach the
-        three CI job results in
-        <strong>558 seconds at the median and 677 seconds at p90</strong>. Bazel
-        finishes last on 29 of those 30 heads. In the busy historical slice, a
-        zero-target documentation PR waits
-        <strong>733 seconds for its artifact runner</strong>. Recent VM-critical
-        runs spend 324–354 seconds executing the VM suite.
+        Two Pod case slots overlap repeated guest startup on one stack. VM
+        checks can be consolidated from six guests to four, but those guests
+        already boot concurrently: fewer boots have not established a runtime
+        win. Cold stack setup and the remaining slow VM guest still limit
+        progress toward twice-as-fast CI.
       </p>
       <p>
-        <strong>Small concrete improvement:</strong> remove Nix installation
-        from visual announcement and cancellation jobs. A dependency-free
-        transport spike passed; those setup steps consumed 26.5 runner-minutes
-        in the latest slice. Stabilizing the Dispatcher diagnostic snapshot is a
-        separate reliability proposal. Native startup remains a measured
-        investigation, with the new scheduler result below.
+        <strong>Pod:</strong> Two-slot Pod runs passed all 13 scenarios in
+        238–239s versus 342–375s for serial controls; the case envelope was
+        33–35% shorter. This is a promising suite improvement, with worker/cache
+        confounding and full-gate impact still unmeasured.
+        <strong>VM:</strong> Four-guest VM consolidation passed its retained
+        checks, but both runs were slower than controls. Observed peak memory
+        was lower; a latency or CPU saving remains unproved.
       </p>
       <p class="scope">
-        Four fixed 90-minute arrival windows, 29 October–1 November UTC; six
-        sampled hours, with gaps. Core collection: 1 November 02:47:35–02:52:04
-        UTC. Inspected devel:
+        Runtime experiments inspect devel
         <a
-          href="https://github.com/agentydragon/ducktape/commit/58e4261128f61235dd354192a907447882284ceb"
-          >58e4261128f6</a
-        >. The three-job interval is a workflow-created proxy; complete
-        auto-merge readiness and agent delivery are unmeasured. No production
-        workflow or scanning policy changed.
+          href="https://github.com/agentydragon/ducktape/commit/55bdc1da22c84f3bcf0dff44567fb20159caad5b"
+          >55bdc1da22c8</a
+        >. The retained feedback cohort covers four fixed 90-minute arrival
+        windows, 29 October–1 November 02:30 UTC, from the previous snapshot. No
+        new fleet percentile, complete auto-merge-readiness or agent-delivery
+        claim is made. Manual experiments do not change production CI.
       </p>
       <div class="metrics">
         <div class="metric">
-          <strong>558 / 677 s</strong
-          ><span>Latest slice · proxy p50/p90 · 30 green of 55 heads</span>
-        </div>
-        <div class="metric">
-          <strong>14 / 74 s</strong
-          ><span>Latest Bazel job queue p50/p90 · 55 assigned attempts</span>
-        </div>
-        <div class="metric">
-          <strong>11 / 23 s earlier</strong
+          <strong>342–375 → 238–239 s</strong
           ><span
-            >Informational test-success status versus required job completion ·
-            30 green heads</span
+            >Pod fresh process wall · serial → two slots · image-store state
+            uncontrolled</span
+          >
+        </div>
+        <div class="metric">
+          <strong>233–241 → 156–157 s</strong
+          ><span
+            >Pod case envelope · includes owned startup and cleanup · all 13
+            scenarios</span
+          >
+        </div>
+        <div class="metric">
+          <strong>6 → 4 guests</strong
+          ><span
+            >VM consolidation passes its checks · runtime benefit remains
+            unestablished</span
           >
         </div>
       </div>
       <nav aria-label="Report sections">
-        <a href="#decisions">Decisions</a><a href="#feedback">PR feedback</a
+        <a href="#decisions">Decisions</a
+        ><a href="#runtimes">New runtime experiments</a
+        ><a href="#feedback">Retained PR feedback</a
         ><a href="#queues">Queues &amp; runner cost</a
         ><a href="#timelines">Linked timelines</a
-        ><a href="#vm">VM work &amp; profiles</a
+        ><a href="#vm">Retained VM profiles</a
         ><a href="#signals">Agent feedback</a><a href="#reruns">Reruns</a
         ><a href="#prior">Prior work</a><a href="#methods">Methods</a>
       </nav>
     </header>
     <main>
       <section id="decisions">
-        <div class="eyebrow">Ranked proposals</div>
-        <h2>Remove measured setup work; preserve real integration proofs.</h2>
+        <div class="eyebrow">
+          Next interventions · measured experiments below
+        </div>
+        <h2>
+          Adopt bounded Pod concurrency next; keep VM consolidation
+          experimental.
+        </h2>
         <ol>
           <li>
             <strong
-              >A · Make visual check announcements run with host Python and the
-              standard library.</strong
+              >A · Run two independent Pod cases on one owned stack.</strong
             >
-            Refactor <code>devinfra/pr_visuals/check_run.py</code> into one
-            host-compatible entrypoint and use it from the trusted-devel
-            <code>announce</code> and <code>cancel</code> jobs in
-            <code>pr-visuals-publish.yml</code>. Retain exact run/attempt
-            external IDs, pagination, duplicate detection, completed-result
-            ordering, summary limits, details links and error propagation. Keep
-            the artifact publisher on its released package. This removes a
-            measured median 20-second Nix setup from a 34–35-second job.
-            <strong
-              >Planning range: 15–25 runner-seconds per affected job; PR
-              feedback savings unmeasured.</strong
-            >
-            Effort small; confidence high that setup can be removed, moderate in
-            hosted integration. The
-            <a
-              href="https://app.buildbuddy.io/invocation/86a78a82-a72a-4f72-bf93-6be9ae6fe014"
-              >86a78a82</a
-            >
-            spike passed seven cases, including an actual standard-library
-            transport under Python <code>-S</code>, with the network boundary
-            simulated. It did not mutate a GitHub check or validate the hosted
-            credentials/source boundary. Validate those on a bounded source PR
-            before adopting.
+            Keep fresh case-owned guests, clients, model exchanges and cleanup;
+            run storage exclusively before the concurrent group. Two
+            policy-matched passes took 237.7/239.0s versus 341.5/375.0s for two
+            serial controls (about 30–36% less process time). The case envelope
+            fell from 232.6/240.6s to 156.6/155.8s: 76–85s, or 33–35%, of
+            observed case-wall reduction. All 13 scenarios passed, with storage
+            exclusive and at most two active case scopes. CPU was 580–587s
+            versus 714–799s. Shared setup was also faster (61–62s versus
+            68–98s), so the entire process delta is not attributed to
+            concurrency. Controls and candidates stayed on different recycled
+            workers; cache and host effects remain confounded, and this is a
+            small experiment rather than a fleet estimate. The spike invokes all
+            13 existing scenarios but reports one aggregate pytest item plus
+            individual case artifacts and spans. Preserve ordinary per-case
+            selection/results and failure cleanup before adopting it as the
+            production runner.
           </li>
           <li>
             <strong
-              >B · Give the Dispatcher archive proof an explicit filesystem
-              snapshot boundary.</strong
+              >B · Reduce cold setup without duplicating more stacks.</strong
             >
-            A fresh rerun failed when
-            <code>runner_data_archive.capture()</code> recursively visited a
-            native scratch Git directory that disappeared during traversal. The
-            online SQLite backups were already valid. In
-            <code>scenarios/dispatcher.py::_archive_runner_data</code>, take
-            those online backups first, then pause the owned container task
-            around full-mount traversal with guaranteed unpause on success,
-            error and cancellation. Verify post-resume writer and Runner
-            liveness, WAL preservation, all expected marker bytes and complete
-            archives. This keeps the strict data proof. It is a
-            <strong
-              >proposal requiring an actual container-runtime integration
-              spike</strong
-            >, not a validated freeze implementation. The first failure’s
-            observed recovery tail was 328 seconds; no fleet saving or failure
-            frequency is estimated from one event. Effort medium; confidence
-            high in the live-tree race mechanism, lower in the runtime ownership
-            change.
+            In the successful hosted MCP split, shared initialization took
+            172/210 seconds, 57%/69% of process time. Serial image imports took
+            113/157 seconds, including 35–59 seconds for the runner image.
+            Current workers already retain image blobs and overlap imports with
+            readiness. Further guest reuse for four protocol-only Pod cases
+            could remove roughly 37 seconds of initial provisioning in the
+            earlier control, before reset/isolation costs; this remains untested
+            and overlaps the new concurrency saving. Use the existing containerd
+            profiles to select a specific unpacking change; a versioned,
+            isolated immutable infrastructure baseline is a larger unvalidated
+            option. No RBE image repin or snapshot facility is presumed.
           </li>
           <li>
             <strong
-              >C · Retain execution policy and obtain provider-side kernel
-              evidence.</strong
+              >C · Keep the four-guest VM implementation as a measured
+              prototype.</strong
             >
-            Keep six independent boots, cold native startup, real
-            OOM/same-session recovery and cleanup assertions. Recent VM paths
-            are process-dominated, not remote-queue-dominated. The new CPU
-            recording includes a material kernel contribution; an exact
-            scheduler split is still unresolved. For the separate outer-VM
-            panic, give BuildBuddy the pinned invocation/physical execution and
-            retained VM-log digest, and request its exact 5.15 kernel build plus
-            core/host evidence for the invalid pointer in update_load_avg. That
-            evidence is outside this repository and session access; no matching
-            core or kernel revision is exposed. This is a concrete provider
-            triage packet, with no estimated fleet saving from one observed
-            crash. There is no tested basis for raising deadlines, changing
-            global jobs=50, enabling bytecode broadly, adding a second Pod stack
-            or buying capacity from this sample.
+            The prototype places each harness’s
+            certificate/identity/admission/history assertions on its existing
+            shell-turn guest. It retains real first native startup, supervision,
+            the dedicated OOM/same-session recovery guest, central sampler and
+            orderly shutdown/trace receipts. Four-guest VM consolidation passed
+            its retained checks, but both runs were slower than controls.
+            Observed peak memory was lower; a latency or CPU saving remains
+            unproved. The Claude credential proof moves to the supervision
+            template, which copies the normal template and adds the
+            supervisor-check boot argument; the ordinary-template-specific
+            Claude sample is no longer separate. Do not deploy this as a proven
+            latency improvement.
+          </li>
+          <li>
+            <strong>D · Accelerate the remaining VM and shutdown path.</strong>
+            These fixtures use QEMU software emulation with one-vCPU guests.
+            More outer worker units did not establish a benefit. A KVM-capable
+            pool using the existing backend is a separate hardware experiment.
+            The 27–40-second post-delete tail needs finalization evidence while
+            retaining guest shutdown and volume fencing. The outer-kernel panic
+            requires provider build/core evidence; ordinary unprofiled spikes at
+            both 8 and 16 outer units have reproduced it.
           </li>
         </ol>
         <div class="callout caution">
-          A removes runner occupancy. It does not directly subtract 20 seconds
-          from a required gate, and queue response is nonlinear. B prevents a
-          specific diagnostic failure if its snapshot boundary is implemented
-          correctly. Neither is a measured fleet-wide improvement.
+          <strong>Full-gate limit:</strong> No matched full-gate saving was
+          measured. In the representative integration run, VM was last and Pod
+          finished 46s earlier; accelerating Pod alone would not shorten that
+          observed gate. The hosted MCP split still took about 301–304s in its
+          colder run and may become the next floor if VM improves. Reaching
+          twice-as-fast feedback requires reducing the remaining VM path and
+          cold setup across selected suites, then measuring the complete
+          required checks together. The prior 558-second median is a retained
+          workflow-created feedback proxy, not a new treatment measurement.
+          Tests, image-cache state, worker CPU and required-gate wall time are
+          kept separate.
         </div>
       </section>
 
+      <section id="runtimes">
+        <div class="eyebrow">
+          New · suite internals and coverage-preserving experiments
+        </div>
+        <h2>VM is a long scenario; Pod is many repeated startups.</h2>
+        <p>
+          Earlier fresh controls on source <code>7d755083749b</code> took
+          338–352 seconds for VM and 319 seconds for Pod. The new comparisons
+          below use current source <code>55bdc1da22c8</code> and retain their
+          own worker/cache context. The
+          <a href="https://github.com/agentydragon/ducktape/pull/13447"
+            >merged MCP split</a
+          >
+          passed hosted integration, with 301/304-second actions in a colder
+          run. In a
+          <a
+            href="https://app.buildbuddy.io/invocation/00c70b10-45e4-51c6-b764-4c97222a0dff"
+            >broader devel sweep</a
+          >, VM took 530 seconds inside a 535-second computed critical path.
+          That sweep ran only VM and one browser action freshly; cached results
+          do not establish the other suites’ fresh cost. Frontend-only and
+          documentation-only changes have different paths.
+        </p>
+        <p>
+          <strong>Existing reuse:</strong> one k3s deployment per suite, blob
+          deduplication and image-store reuse, overlapped imports/readiness,
+          both harnesses concurrent within most cases, and six VM scenarios
+          concurrent. Shared suite teardown is only 7–9 seconds. The next action
+          rebuilds the cluster and mutable application state.
+        </p>
+        <div
+          id="runtime-legend"
+          class="runtime-legend"
+          aria-label="Chart phase legend"
+        ></div>
+        <h3>Earlier phase attribution and hosted MCP setup</h3>
+        <p class="small">
+          Seconds of fresh RBE process time, excluding queue/input/output
+          transfer. Case work includes its own guest startup and cleanup. Hover
+          or keyboard-focus a bar for exact values. Mobile charts use compact
+          rows; hover or focus a bar for its phase and value.
+        </p>
+        <div id="suite-budget-chart" class="chart-frame"></div>
+        <details>
+          <summary>Exact suite budgets and attribution rules</summary>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Execution</th>
+                  <th>Whole process, s</th>
+                  <th>Shared init, s</th>
+                  <th>Cases incl. own setup/cleanup, s</th>
+                  <th>Shared teardown, s</th>
+                  <th>Launch/other, s</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td data-label="Execution">VM control 1</td>
+                  <td data-label="Whole process, s">338.2</td>
+                  <td data-label="Shared init, s">106.3</td>
+                  <td data-label="Cases incl. own setup/cleanup, s">189.6</td>
+                  <td data-label="Shared teardown, s">6.6</td>
+                  <td data-label="Launch/other, s">35.7</td>
+                </tr>
+                <tr>
+                  <td data-label="Execution">VM control 2</td>
+                  <td data-label="Whole process, s">352.2</td>
+                  <td data-label="Shared init, s">109.0</td>
+                  <td data-label="Cases incl. own setup/cleanup, s">206.6</td>
+                  <td data-label="Shared teardown, s">8.7</td>
+                  <td data-label="Launch/other, s">27.8</td>
+                </tr>
+                <tr>
+                  <td data-label="Execution">Pod control</td>
+                  <td data-label="Whole process, s">318.9</td>
+                  <td data-label="Shared init, s">76.2</td>
+                  <td data-label="Cases incl. own setup/cleanup, s">221.1</td>
+                  <td data-label="Shared teardown, s">6.6</td>
+                  <td data-label="Launch/other, s">15.1</td>
+                </tr>
+                <tr>
+                  <td data-label="Execution">VM broad devel sweep</td>
+                  <td data-label="Whole process, s">530.2</td>
+                  <td data-label="Shared init, s">121.4</td>
+                  <td data-label="Cases incl. own setup/cleanup, s">351.5</td>
+                  <td data-label="Shared teardown, s">7.8</td>
+                  <td data-label="Launch/other, s">49.6</td>
+                </tr>
+                <tr>
+                  <td data-label="Execution">Hosted MCP actions</td>
+                  <td data-label="Whole process, s">301.3</td>
+                  <td data-label="Shared init, s">172.0</td>
+                  <td data-label="Cases incl. own setup/cleanup, s">100.0</td>
+                  <td data-label="Shared teardown, s">7.0</td>
+                  <td data-label="Launch/other, s">22.2</td>
+                </tr>
+                <tr>
+                  <td data-label="Execution">Hosted MCP services</td>
+                  <td data-label="Whole process, s">304.1</td>
+                  <td data-label="Shared init, s">210.4</td>
+                  <td data-label="Cases incl. own setup/cleanup, s">68.0</td>
+                  <td data-label="Shared teardown, s">6.8</td>
+                  <td data-label="Launch/other, s">18.9</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            Shared initialization = <code>system_test.stack.setup</code>. Cases
+            = <code>system_test.case</code>. Shared teardown = stack diagnostics
+            plus k3s stop. The residual is unattributed launch/other work.
+            Inclusive nested and concurrent spans are not added. The hosted MCP
+            pair’s process envelope was 304.9 seconds; its earlier spike pair
+            was 236.5 seconds with different worker/image-cache conditions. This
+            confirms integration, not a matched full-gate saving.
+          </p>
+        </details>
+        <h3>
+          Pod spends 138 seconds provisioning initial guests inside its cases.
+        </h3>
+        <p>
+          In the earlier 319-second Pod control, thirteen serial cases total 204
+          seconds in their bodies:
+          <strong
+            >138 seconds initial provisioning and 66 seconds remaining
+            work</strong
+          >, followed by 17 seconds of function-fixture cleanup.
+          Function-fixture setup itself totals 0.3 seconds. Provisioning is
+          about 68% of body time. The remaining work includes Session creation,
+          native startup, turns, lifecycle operations and assertions; it is not
+          pure CPU or assertion execution.
+        </p>
+        <div
+          id="pod-legend"
+          class="runtime-legend"
+          aria-label="Pod case phase legend"
+        ></div>
+        <div id="pod-case-chart" class="chart-frame"></div>
+        <details>
+          <summary>All 13 Pod cases and semantic phase boundaries</summary>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Pod case</th>
+                  <th>Initial provisioning, s</th>
+                  <th>Remaining body, s</th>
+                  <th>Fixture cleanup, s</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td data-label="Pod case">Agent messaging</td>
+                  <td data-label="Initial provisioning, s">18.1</td>
+                  <td data-label="Remaining body, s">4.4</td>
+                  <td data-label="Fixture cleanup, s">3.3</td>
+                </tr>
+                <tr>
+                  <td data-label="Pod case">Dynamic policy</td>
+                  <td data-label="Initial provisioning, s">17.5</td>
+                  <td data-label="Remaining body, s">1.1</td>
+                  <td data-label="Fixture cleanup, s">1.8</td>
+                </tr>
+                <tr>
+                  <td data-label="Pod case">Model proxy</td>
+                  <td data-label="Initial provisioning, s">14.2</td>
+                  <td data-label="Remaining body, s">0.8</td>
+                  <td data-label="Fixture cleanup, s">2.1</td>
+                </tr>
+                <tr>
+                  <td data-label="Pod case">Launch preset</td>
+                  <td data-label="Initial provisioning, s">10.2</td>
+                  <td data-label="Remaining body, s">8.1</td>
+                  <td data-label="Fixture cleanup, s">0.8</td>
+                </tr>
+                <tr>
+                  <td data-label="Pod case">Certificate reissue</td>
+                  <td data-label="Initial provisioning, s">0.0</td>
+                  <td data-label="Remaining body, s">0.8</td>
+                  <td data-label="Fixture cleanup, s">0.0</td>
+                </tr>
+                <tr>
+                  <td data-label="Pod case">mTLS replacement/history</td>
+                  <td data-label="Initial provisioning, s">12.0</td>
+                  <td data-label="Remaining body, s">9.6</td>
+                  <td data-label="Fixture cleanup, s">1.5</td>
+                </tr>
+                <tr>
+                  <td data-label="Pod case">Standing instructions</td>
+                  <td data-label="Initial provisioning, s">14.0</td>
+                  <td data-label="Remaining body, s">2.5</td>
+                  <td data-label="Fixture cleanup, s">1.5</td>
+                </tr>
+                <tr>
+                  <td data-label="Pod case">Workspace storage</td>
+                  <td data-label="Initial provisioning, s">11.1</td>
+                  <td data-label="Remaining body, s">12.4</td>
+                  <td data-label="Fixture cleanup, s">0.0</td>
+                </tr>
+                <tr>
+                  <td data-label="Pod case">Codex suspend/compact</td>
+                  <td data-label="Initial provisioning, s">8.7</td>
+                  <td data-label="Remaining body, s">10.2</td>
+                  <td data-label="Fixture cleanup, s">1.0</td>
+                </tr>
+                <tr>
+                  <td data-label="Pod case">Two harnesses suspend/resume</td>
+                  <td data-label="Initial provisioning, s">8.9</td>
+                  <td data-label="Remaining body, s">10.5</td>
+                  <td data-label="Fixture cleanup, s">1.4</td>
+                </tr>
+                <tr>
+                  <td data-label="Pod case">Unknown thread</td>
+                  <td data-label="Initial provisioning, s">0.0</td>
+                  <td data-label="Remaining body, s">0.0</td>
+                  <td data-label="Fixture cleanup, s">0.0</td>
+                </tr>
+                <tr>
+                  <td data-label="Pod case">Tabs/reconnect</td>
+                  <td data-label="Initial provisioning, s">11.2</td>
+                  <td data-label="Remaining body, s">1.9</td>
+                  <td data-label="Fixture cleanup, s">2.0</td>
+                </tr>
+                <tr>
+                  <td data-label="Pod case">Unwatched archive/failed turn</td>
+                  <td data-label="Initial provisioning, s">12.3</td>
+                  <td data-label="Remaining body, s">3.5</td>
+                  <td data-label="Fixture cleanup, s">1.5</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            For paired harnesses, the longest harness strand supplies the
+            initial-provisioning prefix. It ends when its initial guests are
+            Ready. Later readiness for a replacement/resumed guest remains
+            behavior under test. Workspace storage performs cleanup inside its
+            body. The 7.8–8.8-second suspend/resume spans are required behavior,
+            not generic setup to remove.
+          </p>
+        </details>
+        <h3>VM’s last guest contains startup and deletion work.</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Last Claude scenario stage</th>
+                <th>Control 1, s</th>
+                <th>Control 2, s</th>
+                <th>Broad sweep, s</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Last Claude scenario stage">
+                  Create guest → Ready
+                </td>
+                <td data-label="Control 1, s">103.9</td>
+                <td data-label="Control 2, s">120.3</td>
+                <td data-label="Broad sweep, s">203.3</td>
+              </tr>
+              <tr>
+                <td data-label="Last Claude scenario stage">
+                  Session setup / supervision
+                </td>
+                <td data-label="Control 1, s">20.4</td>
+                <td data-label="Control 2, s">23.0</td>
+                <td data-label="Broad sweep, s">28.7</td>
+              </tr>
+              <tr>
+                <td data-label="Last Claude scenario stage">
+                  Turn incl. native startup
+                </td>
+                <td data-label="Control 1, s">37.1</td>
+                <td data-label="Control 2, s">35.9</td>
+                <td data-label="Broad sweep, s">78.2</td>
+              </tr>
+              <tr>
+                <td data-label="Last Claude scenario stage">
+                  Diagnostics and final deletion
+                </td>
+                <td data-label="Control 1, s">28.0</td>
+                <td data-label="Control 2, s">26.9</td>
+                <td data-label="Broad sweep, s">40.5</td>
+              </tr>
+              <tr>
+                <td data-label="Last Claude scenario stage">Total scenario</td>
+                <td data-label="Control 1, s">189.3</td>
+                <td data-label="Control 2, s">206.1</td>
+                <td data-label="Broad sweep, s">350.8</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The 37-second control turn includes a 25-second native Claude start;
+          the broad sweep’s 78-second turn includes a 51-second native start. In
+          that slower run, WorkloadReady precedes RunnerConnected by roughly 166
+          seconds. Launcher readiness is not Runner readiness. Guest boot,
+          native initialization and finalization are measured boundaries; their
+          exact CPU/I/O/host-scheduling causes remain unresolved.
+        </p>
+        <p>
+          <strong>Why fewer VM guests may not shorten the suite:</strong> all
+          six original scenarios already overlap. Removing two credential guests
+          does not remove two serial boot intervals; the remaining slowest
+          shell-turn or OOM guest can still determine completion. Consolidation
+          is technically possible, but runtime and CPU benefit must come from
+          less contention or less work on the critical path and must be
+          measured.
+        </p>
+        <h3>Measured experiments: wall time, CPU and actual overlap</h3>
+        <p>
+          Both four-guest passes preserved the asserted checks, but took
+          571.9/448.8s versus 395.7/360.0s for six-guest controls. Case
+          envelopes also grew to 290.4/300.7s from 198.1/226.5s. Successful CPU
+          was 2463/1804s versus 2011/1787s; observed peak memory fell to
+          7.1–7.2GB from 9.8–10.2GB. Thus there is no demonstrated latency or
+          CPU win. Both controls used one recycled worker and both successful
+          candidates another, so this does not isolate a code regression. Trial
+          1 additionally lost a 221.1s physical attempt to an outer-worker
+          kernel panic; full invocation was 801.0s. Keep the prototype, but
+          require worker-controlled validation before adoption for speed. Two
+          policy-matched passes took 237.7/239.0s versus 341.5/375.0s for two
+          serial controls (about 30–36% less process time). The case envelope
+          fell from 232.6/240.6s to 156.6/155.8s: 76–85s, or 33–35%, of observed
+          case-wall reduction. All 13 scenarios passed, with storage exclusive
+          and at most two active case scopes. CPU was 580–587s versus 714–799s.
+          Shared setup was also faster (61–62s versus 68–98s), so the entire
+          process delta is not attributed to concurrency. Controls and
+          candidates stayed on different recycled workers; cache and host
+          effects remain confounded, and this is a small experiment rather than
+          a fleet estimate.
+        </p>
+        <div id="benchmark-panel">
+          <div class="chart-controls">
+            <label
+              >Compare suite
+              <select id="benchmark-suite">
+                <option value="vm">VM guest consolidation</option>
+                <option value="pod">Independent Pod cases</option>
+              </select></label
+            >
+          </div>
+          <p class="small">
+            Wall and CPU bars use independent scales and show the successful
+            physical attempt. Blue controls and green candidates match
+            diagnostic policy; amber pilots added native diagnostics.
+            Failed-attempt costs and full invocation time remain in the table
+            and failure notes below.
+          </p>
+          <div id="benchmark-chart" class="chart-frame"></div>
+          <div class="chart-controls">
+            <label
+              >Execution timeline
+              <select id="timeline-run"></select></label
+            ><a id="timeline-evidence" href="#runtimes">Invocation evidence</a>
+          </div>
+          <p id="timeline-note" class="small"></p>
+          <div
+            id="timeline-legend"
+            class="runtime-legend"
+            aria-label="Scenario timeline phase legend"
+          ></div>
+          <div id="case-timeline" class="chart-frame"></div>
+        </div>
+        <details>
+          <summary>
+            Every passing execution, source/cache context and coverage
+          </summary>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Execution</th>
+                  <th>Process, s</th>
+                  <th>Shared init, s</th>
+                  <th>Case envelope, s</th>
+                  <th>Successful CPU, s</th>
+                  <th>Full invocation, s</th>
+                  <th>Failed attempt wall, s</th>
+                  <th>Evidence</th>
+                  <th>Cache / source context</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td data-label="Execution">VM control · trial 1</td>
+                  <td data-label="Process, s">395.7</td>
+                  <td data-label="Shared init, s">173.0</td>
+                  <td data-label="Case envelope, s">198.1</td>
+                  <td data-label="Successful CPU, s">2010.8</td>
+                  <td data-label="Full invocation, s">401.2</td>
+                  <td data-label="Failed attempt wall, s">0.0</td>
+                  <td data-label="Evidence">
+                    <a
+                      href="https://app.buildbuddy.io/invocation/76505ccd-115d-495f-8451-6bd18c7707e8"
+                      >76505ccd</a
+                    >
+                  </td>
+                  <td data-label="Cache / source context">
+                    Fresh test; 173s stack setup; image-store state uncontrolled
+                  </td>
+                </tr>
+                <tr>
+                  <td data-label="Execution">Pod control · trial 1</td>
+                  <td data-label="Process, s">341.5</td>
+                  <td data-label="Shared init, s">68.4</td>
+                  <td data-label="Case envelope, s">232.6</td>
+                  <td data-label="Successful CPU, s">714.2</td>
+                  <td data-label="Full invocation, s">346.1</td>
+                  <td data-label="Failed attempt wall, s">0.0</td>
+                  <td data-label="Evidence">
+                    <a
+                      href="https://app.buildbuddy.io/invocation/0e2dd6a9-f2de-4fe7-90fa-033e8255f459"
+                      >0e2dd6a9</a
+                    >
+                  </td>
+                  <td data-label="Cache / source context">
+                    Fresh test; 68s stack setup; image-store state uncontrolled
+                  </td>
+                </tr>
+                <tr>
+                  <td data-label="Execution">
+                    Pod 2 slots + diagnostics · pilot
+                  </td>
+                  <td data-label="Process, s">301.0</td>
+                  <td data-label="Shared init, s">67.6</td>
+                  <td data-label="Case envelope, s">209.7</td>
+                  <td data-label="Successful CPU, s">632.0</td>
+                  <td data-label="Full invocation, s">304.8</td>
+                  <td data-label="Failed attempt wall, s">0.0</td>
+                  <td data-label="Evidence">
+                    <a
+                      href="https://app.buildbuddy.io/invocation/a0c39b2e-90dc-409b-8e00-02451cdb7487"
+                      >a0c39b2e</a
+                    >
+                  </td>
+                  <td data-label="Cache / source context">
+                    Pilot adds native captures absent from control; not
+                    policy-matched
+                  </td>
+                </tr>
+                <tr>
+                  <td data-label="Execution">VM four guests · trial 1</td>
+                  <td data-label="Process, s">571.9</td>
+                  <td data-label="Shared init, s">246.3</td>
+                  <td data-label="Case envelope, s">290.4</td>
+                  <td data-label="Successful CPU, s">2462.6</td>
+                  <td data-label="Full invocation, s">801.0</td>
+                  <td data-label="Failed attempt wall, s">221.1</td>
+                  <td data-label="Evidence">
+                    <a
+                      href="https://app.buildbuddy.io/invocation/773eca13-421a-47f5-958e-1a0201718f4e"
+                      >773eca13</a
+                    >
+                  </td>
+                  <td data-label="Cache / source context">
+                    246s stack setup; 221s failed physical attempt excluded from
+                    process bar
+                  </td>
+                </tr>
+                <tr>
+                  <td data-label="Execution">
+                    Pod 2 slots + diagnostics · pilot 2
+                  </td>
+                  <td data-label="Process, s">302.7</td>
+                  <td data-label="Shared init, s">68.9</td>
+                  <td data-label="Case envelope, s">209.3</td>
+                  <td data-label="Successful CPU, s">614.5</td>
+                  <td data-label="Full invocation, s">306.5</td>
+                  <td data-label="Failed attempt wall, s">0.0</td>
+                  <td data-label="Evidence">
+                    <a
+                      href="https://app.buildbuddy.io/invocation/2d6463d4-3c8d-4c6a-a821-3eb37a7d52c2"
+                      >2d6463d4</a
+                    >
+                  </td>
+                  <td data-label="Cache / source context">
+                    Pilot adds native captures absent from control; not
+                    policy-matched
+                  </td>
+                </tr>
+                <tr>
+                  <td data-label="Execution">VM control · trial 2</td>
+                  <td data-label="Process, s">360.0</td>
+                  <td data-label="Shared init, s">97.9</td>
+                  <td data-label="Case envelope, s">226.5</td>
+                  <td data-label="Successful CPU, s">1787.5</td>
+                  <td data-label="Full invocation, s">363.6</td>
+                  <td data-label="Failed attempt wall, s">0.0</td>
+                  <td data-label="Evidence">
+                    <a
+                      href="https://app.buildbuddy.io/invocation/7c073314-1d09-4e31-a5cf-4f59a6abf73a"
+                      >7c073314</a
+                    >
+                  </td>
+                  <td data-label="Cache / source context">
+                    98s stack setup; overlaps candidate trial 2 submission;
+                    cache state uncontrolled
+                  </td>
+                </tr>
+                <tr>
+                  <td data-label="Execution">Pod two slots · trial 1</td>
+                  <td data-label="Process, s">237.7</td>
+                  <td data-label="Shared init, s">62.1</td>
+                  <td data-label="Case envelope, s">156.6</td>
+                  <td data-label="Successful CPU, s">580.4</td>
+                  <td data-label="Full invocation, s">245.4</td>
+                  <td data-label="Failed attempt wall, s">0.0</td>
+                  <td data-label="Evidence">
+                    <a
+                      href="https://app.buildbuddy.io/invocation/26afde75-b3c1-497f-a3dc-38cdc8e26dae"
+                      >26afde75</a
+                    >
+                  </td>
+                  <td data-label="Cache / source context">
+                    Matched diagnostics; 62s init; image-store state
+                    uncontrolled
+                  </td>
+                </tr>
+                <tr>
+                  <td data-label="Execution">Pod control · trial 2</td>
+                  <td data-label="Process, s">375.0</td>
+                  <td data-label="Shared init, s">97.7</td>
+                  <td data-label="Case envelope, s">240.6</td>
+                  <td data-label="Successful CPU, s">798.7</td>
+                  <td data-label="Full invocation, s">378.5</td>
+                  <td data-label="Failed attempt wall, s">0.0</td>
+                  <td data-label="Evidence">
+                    <a
+                      href="https://app.buildbuddy.io/invocation/1eed61a0-50d6-431b-8e34-eb30b455cd07"
+                      >1eed61a0</a
+                    >
+                  </td>
+                  <td data-label="Cache / source context">
+                    98s init; overlaps matched candidate submission; cache
+                    uncontrolled
+                  </td>
+                </tr>
+                <tr>
+                  <td data-label="Execution">VM four guests · trial 2</td>
+                  <td data-label="Process, s">448.8</td>
+                  <td data-label="Shared init, s">105.3</td>
+                  <td data-label="Case envelope, s">300.7</td>
+                  <td data-label="Successful CPU, s">1804.1</td>
+                  <td data-label="Full invocation, s">452.0</td>
+                  <td data-label="Failed attempt wall, s">0.0</td>
+                  <td data-label="Evidence">
+                    <a
+                      href="https://app.buildbuddy.io/invocation/b1158edc-f4c2-44de-acaf-5d84ddcf0ca5"
+                      >b1158edc</a
+                    >
+                  </td>
+                  <td data-label="Cache / source context">
+                    Fresh test; no physical retry; worker/image-store state
+                    uncontrolled
+                  </td>
+                </tr>
+                <tr>
+                  <td data-label="Execution">Pod two slots · trial 2</td>
+                  <td data-label="Process, s">239.0</td>
+                  <td data-label="Shared init, s">61.1</td>
+                  <td data-label="Case envelope, s">155.8</td>
+                  <td data-label="Successful CPU, s">587.3</td>
+                  <td data-label="Full invocation, s">270.2</td>
+                  <td data-label="Failed attempt wall, s">0.0</td>
+                  <td data-label="Evidence">
+                    <a
+                      href="https://app.buildbuddy.io/invocation/e5df022b-809d-4427-98c2-416261d46329"
+                      >e5df022b</a
+                    >
+                  </td>
+                  <td data-label="Cache / source context">
+                    Matched diagnostics; unchanged repeat; image-store state
+                    uncontrolled
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            All comparisons use base
+            <code>55bdc1da22c84f3bcf0dff44567fb20159caad5b</code> plus the
+            pinned manual spike source. Control targets retain their scenario
+            implementations. Candidate source digests, command lines, case/guest
+            counts and physical execution identities are in
+            <a href="evidence.json">reviewed evidence</a>. Each test result is
+            fresh; image stores may be warm. The chart bars show the successful
+            physical attempt only. The table and failure notes separately retain
+            failed physical attempts and full Bazel submission time, including
+            retries; neither is erased by a later pass.
+          </p>
+          <p>
+            <strong>VM:</strong> six boots become four. Certificate
+            fields/issued request, launcher credential identity, admitted
+            command/history, Thread fold, shell UID/PID1/cgroup/systemd denial,
+            setup supervision, OOM recovery, sampler, trace stages and shutdown
+            receipts remain. Claude credential checks move from the ordinary
+            template to its supervision variant; the extra independent Claude
+            credential boot is deliberately consolidated.
+          </p>
+          <p>
+            <strong>Pod:</strong> all 13 scenario bodies remain; each owns
+            guests and cleanup. Storage is exclusive and other cases have two
+            slots. Model requests retain Pod/dialect routing and per-case
+            settlement checks. One aggregate pytest node is a spike reporting
+            limitation; production integration still needs individual case
+            reporting/filtering and failure/cancellation validation.
+          </p>
+        </details>
+        <h3>Excluded failures and repairs</h3>
+        <p>
+          VM candidate trial 1 passed after an automatic retry: 221.1s wall and
+          785.4 CPU seconds were lost to an outer Linux 5.15.0 kernel panic. The
+          successful physical attempt took 571.9s and 2462.6 CPU seconds;
+          complete Bazel invocation took 801.0s. The executor pause/socket
+          refusal was the symptom; retained VM server logs prove update_load_avg
+          GPF followed by a fatal exception in interrupt. This reproduced
+          without profiling at 8 worker compute units. Root cause below the
+          kernel boundary remains unproved; provider exact build/core evidence
+          is needed.
+          <a
+            href="https://app.buildbuddy.io/invocation/773eca13-421a-47f5-958e-1a0201718f4e"
+            >773eca13</a
+          >
+        </p>
+        <div class="callout">
+          No matched full-gate saving was measured. In the representative
+          integration run, VM was last and Pod finished 46s earlier;
+          accelerating Pod alone would not shorten that observed gate. The
+          hosted MCP split still took about 301–304s in its colder run and may
+          become the next floor if VM improves. Reaching twice-as-fast feedback
+          requires reducing the remaining VM path and cold setup across selected
+          suites, then measuring the complete required checks together. These
+          paired suite experiments do not establish a twofold improvement in
+          complete required-check feedback. Historical queue, cohort and
+          agent-signal findings remain below with their original windows.
+        </div>
+      </section>
       <section id="feedback">
         <h2>Head outcomes remain in the denominator.</h2>
         <p>
@@ -709,7 +1449,7 @@
           an account-wide capacity limit.
         </p>
         <p>
-          The latest slice has
+          The retained latest cohort slice has
           <strong>16.20 completed runner-hours and a peak of 19</strong> in the
           same selected scope. Its median Bazel queue is 14 seconds, versus 69
           in the busy slice. Push jobs have intentional serialization/coalescing
@@ -764,10 +1504,11 @@
             >73 successful Nix setup steps totaling 1,590 runner-seconds</strong
           >
           in announcement/cancellation jobs. Their API step medians are two and
-          three seconds. This isolates the operation A removes. The earlier busy
-          slice’s publication median was 135 seconds; the latest is 59 seconds,
-          after publisher changes landed. Different workload, failure and cache
-          mixes prevent attributing that distribution change to one patch.
+          three seconds. This isolates the setup operation measured by the
+          earlier announcement spike. The earlier busy slice’s publication
+          median was 135 seconds; the latest is 59 seconds, after publisher
+          changes landed. Different workload, failure and cache mixes prevent
+          attributing that distribution change to one patch.
         </p>
         <p>
           <strong>Old active records are not current runner demand.</strong> The
@@ -980,7 +1721,10 @@
       </section>
 
       <section id="vm">
-        <h2>VM work remains on two inspected integration paths.</h2>
+        <div class="eyebrow">
+          Retained evidence · original sources and windows
+        </div>
+        <h2>VM profiles and earlier critical paths remain useful context.</h2>
         <div class="table-wrap">
           <table>
             <thead>
@@ -1358,8 +2102,14 @@
           integrity checks pass. Current source recursively archives the live
           mounts with <code>tarfile.add</code>; admission readiness does not
           freeze native background filesystem activity. Treating partial data as
-          complete would weaken the proof. Proposal B establishes the needed
-          boundary and must retain the online-backup and resumed-writer checks.
+          complete would weaken the proof. The former container-freeze proposal
+          is withdrawn: both containers write state, and freezing the executor
+          can fail its two-second health check. Quiesce seals that Runner
+          permanently, so it cannot establish same-process resume. The snapshot
+          boundary remains paused as separate reliability work. Native plugin
+          disablement has landed, disabling plugin discovery, a likely source of
+          the scratch activity, without proving general live-tree archiving
+          safe.
         </p>
         <p>
           The second failure is curl exit 35 while downloading Nix 2.35.4,
@@ -1384,22 +2134,42 @@
       </section>
 
       <section id="prior">
+        <div class="callout">
+          <strong>Changes since the previous report:</strong> MCP partitioning
+          merged in
+          <a href="https://github.com/agentydragon/ducktape/pull/13447"
+            >#13447</a
+          >. Native plugin disablement and other opt-outs merged in
+          <a href="https://github.com/agentydragon/ducktape/pull/13434"
+            >#13434</a
+          >/<a href="https://github.com/agentydragon/ducktape/pull/13436"
+            >#13436</a
+          >; their latency effect is unmeasured. VM sharding did not shorten the
+          slow scenario; a larger outer worker did not establish a win. The new
+          VM consolidation and shared-stack Pod experiments change the work and
+          scheduling, so they are distinct from those rejected repeats. The
+          seven-case standard-library transport spike remains historical
+          evidence; standard-library-only visual tooling is no longer
+          recommended. Preserve packaged dependencies and revisit setup delivery
+          only if its cost becomes the priority.
+        </div>
         <h2>Prior experiments stay attached to their original scope.</h2>
         <p>
           The complete
           <a
-            href="https://github.com/agentydragon/ducktape/blob/5592d8e63b1147aabbdffe100fe42be8d7956d7d/latency/index.html"
+            href="https://github.com/agentydragon/ducktape/blob/33309b97ec13df3746ae17f4f1b035a96d9dd567/latency/index.html"
             >previous report</a
           >
           and
           <a
-            href="https://github.com/agentydragon/ducktape/blob/5592d8e63b1147aabbdffe100fe42be8d7956d7d/latency/evidence.json"
+            href="https://github.com/agentydragon/ducktape/blob/33309b97ec13df3746ae17f4f1b035a96d9dd567/latency/evidence.json"
             >evidence</a
           >
-          were read before selecting this sample. The prior report also retains
-          the 29–30 October investigation and its rejected experiments. This
-          refresh replaces its cohort, keeps its useful conclusions and updates
-          the final boot proof.
+          were read before selecting this sample. That earlier report also
+          retains the 29–30 October investigation and its rejected experiments.
+          This focused update retains that cohort and its original source
+          clocks, adds the suite-phase and concurrency experiments, and revises
+          stale recommendations.
         </p>
         <div class="table-wrap">
           <table>
@@ -1510,8 +2280,8 @@
                   Digest/concurrency/cancellation changes shipped #13253/#13264.
                   New occupancy measured here. Prior #13287 co-location probe
                   added a 19-second tail to one host; retain ordinary publisher
-                  separation. Announcement-only proposal A addresses a different
-                  operation.
+                  separation. Announcement setup remains a lower-priority
+                  packaging decision; dependencies are allowed.
                 </td>
               </tr>
               <tr>
@@ -1575,6 +2345,15 @@
       </section>
 
       <section id="methods">
+        <p>
+          <strong>Focused runtime update:</strong> fresh physical RBE TestRunner
+          records, existing driver/process spans, unchanged controls and manual
+          candidates. Inner and outer clocks remain separate. Current required
+          checks and landed PR states were re-read; historical cohort rows are
+          retained rather than recollected. Charts are self-contained
+          SVG/JavaScript, with exact-value tables and linked invocation
+          evidence.
+        </p>
         <h2>Reproducibility and limits.</h2>
         <p>
           The collector verified
@@ -1587,7 +2366,7 @@
           in evidence.
         </p>
         <p>
-          Required devel contexts were re-read live:
+          Required devel contexts were re-read for this update:
           <code>Build artifacts + imports check</code>,
           <code>Pre-commit checks</code>,
           <code>bazel-ci / Test &amp; Build</code>. Rules require zero ordinary
@@ -1658,5 +2437,3628 @@ bbapi tool-log cat 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 "critical path"</pre>
         after this report PR merges.
       </p>
     </footer>
+    <script id="runtime-data" type="application/json">
+      {
+        "historical_runs": [
+          {
+            "sample": "baseline-1",
+            "invocation_id": "6cc6abad-37bb-4613-8bec-125397bce4e4",
+            "target": "//agentplane/system_tests/suites:test_vm",
+            "cpu_seconds": 1553.303226,
+            "driver_sha256": "b66a6fd18eb4172edeb633bd28839a1e00fcbaef55796d5610d69cea001a2db3",
+            "process_seconds": 338.202,
+            "shared_initialization_seconds": 106.2878589630127,
+            "cases_seconds": 189.61349391937256,
+            "shared_teardown_seconds": 6.577796936035156,
+            "launch_and_other_seconds": 35.72285018157959,
+            "case_count": 1,
+            "short_label": "VM control 1"
+          },
+          {
+            "sample": "baseline-2",
+            "invocation_id": "36872bd7-57f4-469c-908a-f5d56cc6e435",
+            "target": "//agentplane/system_tests/suites:test_vm",
+            "cpu_seconds": 1711.060834,
+            "driver_sha256": "1a8133ff5b1919d7f05b18932fae44104c7ac10fd7667c7ff3130a7f8af6095b",
+            "process_seconds": 352.232,
+            "shared_initialization_seconds": 109.02294993400574,
+            "cases_seconds": 206.64203119277954,
+            "shared_teardown_seconds": 8.73142123222351,
+            "launch_and_other_seconds": 27.83559764099124,
+            "case_count": 1,
+            "short_label": "VM control 2"
+          },
+          {
+            "sample": "mcp-large-1",
+            "invocation_id": "3082b25b-3df3-4cb9-b5fc-f765e300cb27",
+            "target": "//agentplane/system_tests/suites:test_pod",
+            "cpu_seconds": 652.047494,
+            "driver_sha256": "89089c8ecf961d6112a5c0fa02eb8a2376b74cbe1dc122db18fe25548457a066",
+            "process_seconds": 318.948,
+            "shared_initialization_seconds": 76.19330191612244,
+            "cases_seconds": 221.1188199520111,
+            "shared_teardown_seconds": 6.555754899978638,
+            "launch_and_other_seconds": 15.080123231887796,
+            "case_count": 13,
+            "short_label": "Pod control"
+          },
+          {
+            "sample": "broad-develop",
+            "invocation_id": "00c70b10-45e4-51c6-b764-4c97222a0dff",
+            "target": "//agentplane/system_tests/suites:test_vm",
+            "origin": 1,
+            "cpu_seconds": 2855.463928,
+            "driver_sha256": "46f00ba2e79da5b2ded72b977a8673572bb9925751e4172e44da20909e972a2c",
+            "process_seconds": 530.2326240539551,
+            "shared_initialization_seconds": 121.3662760257721,
+            "cases_seconds": 351.48751401901245,
+            "shared_teardown_seconds": 7.766291856765747,
+            "launch_and_other_seconds": 49.612542152404785,
+            "case_count": 1,
+            "short_label": "VM broad devel sweep"
+          },
+          {
+            "sample": "hosted-actions",
+            "invocation_id": "cafe1704-105e-5148-8c88-e27dbaaf69ed",
+            "target": "//agentplane/system_tests/suites/mcp:test_actions",
+            "origin": 1,
+            "cpu_seconds": 768.047412,
+            "driver_sha256": "905235685e609f60681010bdfdfb3aeff4c582908bc95e1948aea263f16766da",
+            "process_seconds": 301.2735960483551,
+            "shared_initialization_seconds": 171.98147916793823,
+            "cases_seconds": 100.04693913459778,
+            "shared_teardown_seconds": 6.999557971954346,
+            "launch_and_other_seconds": 22.245619773864746,
+            "case_count": 5,
+            "short_label": "Hosted MCP actions"
+          },
+          {
+            "sample": "hosted-services",
+            "invocation_id": "cafe1704-105e-5148-8c88-e27dbaaf69ed",
+            "target": "//agentplane/system_tests/suites/mcp:test_services",
+            "origin": 1,
+            "cpu_seconds": 765.474644,
+            "driver_sha256": "20bcdf6b901119c3e020f9bffdceacd27bc53c7bfb90deb073dd72969ec8ddba",
+            "process_seconds": 304.12225699424744,
+            "shared_initialization_seconds": 210.4232120513916,
+            "cases_seconds": 67.98315405845642,
+            "shared_teardown_seconds": 6.802357912063599,
+            "launch_and_other_seconds": 18.913532972335815,
+            "case_count": 4,
+            "short_label": "Hosted MCP services"
+          }
+        ],
+        "pod_cases": [
+          {
+            "case": "test_an_agent_messages_another_which_reads_and_acknowledges_it",
+            "fixture_setup": 0.20288300514221191,
+            "initial_sandbox_provisioning": 18.067005157470703,
+            "remaining_body": 4.354361057281494,
+            "fixture_cleanup": 3.2510879039764404,
+            "body": 22.421366214752197,
+            "label": "Agent messaging"
+          },
+          {
+            "case": "test_a_policy_granted_after_the_sandbox_is_running_takes_effect",
+            "fixture_setup": 0.005378007888793945,
+            "initial_sandbox_provisioning": 17.49973702430725,
+            "remaining_body": 1.1287760734558105,
+            "fixture_cleanup": 1.7630109786987305,
+            "body": 18.62851309776306,
+            "label": "Dynamic policy"
+          },
+          {
+            "case": "test_the_model_call_itself_goes_through_the_proxy",
+            "fixture_setup": 0.00807499885559082,
+            "initial_sandbox_provisioning": 14.244809865951538,
+            "remaining_body": 0.8171601295471191,
+            "fixture_cleanup": 2.068192958831787,
+            "body": 15.061969995498657,
+            "label": "Model proxy"
+          },
+          {
+            "case": "test_a_preset_launches_an_initialized_editable_codex_thread",
+            "fixture_setup": 0.005232810974121094,
+            "initial_sandbox_provisioning": 10.194154024124146,
+            "remaining_body": 8.089905977249146,
+            "fixture_cleanup": 0.8169300556182861,
+            "body": 18.28406000137329,
+            "label": "Launch preset"
+          },
+          {
+            "case": "test_cert_manager_reissues_a_deleted_tls_secret",
+            "fixture_setup": 0.0003669261932373047,
+            "initial_sandbox_provisioning": 0,
+            "remaining_body": 0.8348140716552734,
+            "fixture_cleanup": 0.0008249282836914062,
+            "body": 0.8348140716552734,
+            "label": "Certificate reissue"
+          },
+          {
+            "case": "test_pod_mtls_session_survives_replacement_and_keeps_history",
+            "fixture_setup": 0.004277944564819336,
+            "initial_sandbox_provisioning": 12.040932178497314,
+            "remaining_body": 9.582215785980225,
+            "fixture_cleanup": 1.5059940814971924,
+            "body": 21.62314796447754,
+            "label": "mTLS replacement/history"
+          },
+          {
+            "case": "test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session",
+            "fixture_setup": 0.01789999008178711,
+            "initial_sandbox_provisioning": 14.007703065872192,
+            "remaining_body": 2.4697089195251465,
+            "fixture_cleanup": 1.5080928802490234,
+            "body": 16.47741198539734,
+            "label": "Standing instructions"
+          },
+          {
+            "case": "test_fresh_workspace_storage_survives_replacement",
+            "fixture_setup": 0.004382133483886719,
+            "initial_sandbox_provisioning": 11.125886917114258,
+            "remaining_body": 12.395348072052002,
+            "fixture_cleanup": 0.0015079975128173828,
+            "body": 23.52123498916626,
+            "label": "Workspace storage"
+          },
+          {
+            "case": "test_codex_standing_instructions_after_suspend_and_compact",
+            "fixture_setup": 0.005132913589477539,
+            "initial_sandbox_provisioning": 8.686954975128174,
+            "remaining_body": 10.192312955856323,
+            "fixture_cleanup": 1.0200490951538086,
+            "body": 18.879267930984497,
+            "label": "Codex suspend/compact"
+          },
+          {
+            "case": "test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume",
+            "fixture_setup": 0.006192922592163086,
+            "initial_sandbox_provisioning": 8.914200067520142,
+            "remaining_body": 10.528801918029785,
+            "fixture_cleanup": 1.3781380653381348,
+            "body": 19.443001985549927,
+            "label": "Two harnesses suspend/resume"
+          },
+          {
+            "case": "test_an_unknown_thread_is_not_found",
+            "fixture_setup": 0.0061130523681640625,
+            "initial_sandbox_provisioning": 0,
+            "remaining_body": 0.01522684097290039,
+            "fixture_cleanup": 0.0018270015716552734,
+            "body": 0.01522684097290039,
+            "label": "Unknown thread"
+          },
+          {
+            "case": "test_every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event",
+            "fixture_setup": 0.009020090103149414,
+            "initial_sandbox_provisioning": 11.174105882644653,
+            "remaining_body": 1.8648550510406494,
+            "fixture_cleanup": 2.0428390502929688,
+            "body": 13.038960933685303,
+            "label": "Tabs/reconnect"
+          },
+          {
+            "case": "test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn",
+            "fixture_setup": 0.0076830387115478516,
+            "initial_sandbox_provisioning": 12.253904104232788,
+            "remaining_body": 3.4633378982543945,
+            "fixture_cleanup": 1.5314691066741943,
+            "body": 15.717242002487183,
+            "label": "Unwatched archive/failed turn"
+          }
+        ],
+        "benchmark_runs": [
+          {
+            "id": "vm-control-ab",
+            "suite": "vm",
+            "variant": "control",
+            "trial": 1,
+            "label": "VM control · trial 1",
+            "invocation_id": "76505ccd-115d-495f-8451-6bd18c7707e8",
+            "target": "//agentplane/system_tests/suites:test_vm",
+            "cache_note": "Fresh test; 173s stack setup; image-store state uncontrolled",
+            "process_seconds": 395.65376806259155,
+            "cpu_seconds": 2010.755822,
+            "peak_memory_bytes": 9802432512,
+            "setup_seconds": 172.97820687294006,
+            "case_envelope_seconds": 198.11731481552124,
+            "shared_teardown_seconds": 6.7558252811431885,
+            "other_seconds": 17.80242109298706,
+            "timeline": [
+              {
+                "id": "runner-vm-mtls-harness_claude",
+                "label": "Claude credentials",
+                "start": 173.07125878334045,
+                "end": 345.7598419189453,
+                "phases": [
+                  {
+                    "start": 173.07125878334045,
+                    "end": 265.51264476776123,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 265.51264476776123,
+                    "end": 268.68984389305115,
+                    "kind": "session"
+                  },
+                  {
+                    "start": 268.68984389305115,
+                    "end": 315.15094780921936,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 315.15094780921936,
+                    "end": 345.7598419189453,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "runner-vm-mtls-harness_codex",
+                "label": "Codex credentials",
+                "start": 173.07574486732483,
+                "end": 325.70877385139465,
+                "phases": [
+                  {
+                    "start": 173.07574486732483,
+                    "end": 261.44493198394775,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 261.44493198394775,
+                    "end": 264.4051549434662,
+                    "kind": "session"
+                  },
+                  {
+                    "start": 264.4051549434662,
+                    "end": 297.6032907962799,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 297.6032907962799,
+                    "end": 325.70877385139465,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "central-sampler",
+                "label": "Central sampler",
+                "start": 173.07917594909668,
+                "end": 306.6274628639221,
+                "phases": [
+                  {
+                    "start": 173.07917594909668,
+                    "end": 264.7410078048706,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 264.7410078048706,
+                    "end": 281.16483879089355,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 281.16483879089355,
+                    "end": 306.6274628639221,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "vm-turn-harness_claude",
+                "label": "Claude turn / supervision",
+                "start": 173.08130288124084,
+                "end": 370.9204568862915,
+                "phases": [
+                  {
+                    "start": 173.08130288124084,
+                    "end": 284.9636287689209,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 284.9636287689209,
+                    "end": 303.2425048351288,
+                    "kind": "session"
+                  },
+                  {
+                    "start": 303.2425048351288,
+                    "end": 339.52546286582947,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 339.52546286582947,
+                    "end": 370.9204568862915,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "vm-turn-harness_codex",
+                "label": "Codex turn",
+                "start": 173.08478999137878,
+                "end": 343.8401699066162,
+                "phases": [
+                  {
+                    "start": 173.08478999137878,
+                    "end": 271.47793793678284,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 271.47793793678284,
+                    "end": 289.63293290138245,
+                    "kind": "session"
+                  },
+                  {
+                    "start": 289.63293290138245,
+                    "end": 313.4180209636688,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 313.4180209636688,
+                    "end": 343.8401699066162,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "codex-tool-oom",
+                "label": "Codex OOM / recovery",
+                "start": 173.0881907939911,
+                "end": 366.8631229400635,
+                "phases": [
+                  {
+                    "start": 173.0881907939911,
+                    "end": 274.19438099861145,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 274.19438099861145,
+                    "end": 276.38205790519714,
+                    "kind": "session"
+                  },
+                  {
+                    "start": 276.38205790519714,
+                    "end": 333.4994487762451,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 333.4994487762451,
+                    "end": 366.8631229400635,
+                    "kind": "cleanup"
+                  }
+                ]
+              }
+            ],
+            "physical_execution_id": "/uploads/86ba4367-098f-4610-a471-888a7af4f84b/blobs/92c0cc59e02de068903079843cd97c85e5bf86fc023390b31416e6bf09183b62/536",
+            "physical_execution_count": 1,
+            "failed_physical_attempts": [],
+            "invocation_seconds": 401.179,
+            "execution_start": "2026-11-01T06:00:06.594512Z",
+            "execution_end": "2026-11-01T06:06:42.248280Z",
+            "image_import_seconds": 146.12593388557434,
+            "worker": "ea26e36c-6a70-4833-ada0-6dbb28cd12f5",
+            "case_rows": 6,
+            "source_base": "55bdc1da22c84f3bcf0dff44567fb20159caad5b",
+            "candidate_source_patch_sha256": null,
+            "control_source_note": "Original control target/scenarios unchanged; unrelated manual candidate source may be present in the transported checkout. Invocation contains the exact transport patch.",
+            "fresh_result": "COMPLETED physical TestRunner, invocationLinkType=1; success; no test-result cache hit",
+            "span_artifact_sha256": "92689f2f69e227b1aa8975480e53cc16e25ad226b50980c30a92ae6d47ee8464"
+          },
+          {
+            "id": "pod-control-ab",
+            "suite": "pod",
+            "variant": "control",
+            "trial": 1,
+            "label": "Pod control · trial 1",
+            "invocation_id": "0e2dd6a9-f2de-4fe7-90fa-033e8255f459",
+            "target": "//agentplane/system_tests/suites:test_pod",
+            "cache_note": "Fresh test; 68s stack setup; image-store state uncontrolled",
+            "process_seconds": 341.52731490135193,
+            "cpu_seconds": 714.158826,
+            "peak_memory_bytes": 6242394112,
+            "setup_seconds": 68.4343810081482,
+            "case_envelope_seconds": 232.61905312538147,
+            "shared_teardown_seconds": 6.117095947265625,
+            "other_seconds": 34.35678482055664,
+            "timeline": [
+              {
+                "id": "test_an_agent_messages_another_which_reads_and_acknowledges_it",
+                "label": "Agent messaging",
+                "start": 68.43573594093323,
+                "end": 98.6698670387268,
+                "phases": [
+                  {
+                    "start": 68.43573594093323,
+                    "end": 84.68148708343506,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 84.68148708343506,
+                    "end": 95.01329398155212,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 95.01329398155212,
+                    "end": 98.6698670387268,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_a_policy_granted_after_the_sandbox_is_running_takes_effect",
+                "label": "Dynamic policy",
+                "start": 98.67199492454529,
+                "end": 117.98570203781128,
+                "phases": [
+                  {
+                    "start": 98.67199492454529,
+                    "end": 114.82695198059082,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 114.82695198059082,
+                    "end": 116.15192794799805,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 116.15192794799805,
+                    "end": 117.98570203781128,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_the_model_call_itself_goes_through_the_proxy",
+                "label": "Model proxy",
+                "start": 117.98749303817749,
+                "end": 138.25822401046753,
+                "phases": [
+                  {
+                    "start": 117.98749303817749,
+                    "end": 132.1503291130066,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 132.1503291130066,
+                    "end": 135.05471205711365,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 135.05471205711365,
+                    "end": 138.25822401046753,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_a_preset_launches_an_initialized_editable_codex_thread",
+                "label": "Launch preset",
+                "start": 138.27356910705566,
+                "end": 159.101881980896,
+                "phases": [
+                  {
+                    "start": 138.27356910705566,
+                    "end": 149.1978850364685,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 149.1978850364685,
+                    "end": 158.34294891357422,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 158.34294891357422,
+                    "end": 159.101881980896,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_cert_manager_reissues_a_deleted_tls_secret",
+                "label": "Certificate reissue",
+                "start": 159.10374808311462,
+                "end": 160.12387204170227,
+                "phases": [
+                  {
+                    "start": 159.10374808311462,
+                    "end": 160.1230809688568,
+                    "kind": "execution"
+                  }
+                ]
+              },
+              {
+                "id": "test_pod_mtls_session_survives_replacement_and_keeps_history",
+                "label": "mTLS replacement/history",
+                "start": 160.12485194206238,
+                "end": 183.35893297195435,
+                "phases": [
+                  {
+                    "start": 160.12485194206238,
+                    "end": 171.35165691375732,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 171.35165691375732,
+                    "end": 181.89869499206543,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 181.89869499206543,
+                    "end": 183.35893297195435,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session",
+                "label": "Standing instructions",
+                "start": 183.36041402816772,
+                "end": 202.47778391838074,
+                "phases": [
+                  {
+                    "start": 183.36041402816772,
+                    "end": 197.51211094856262,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 197.51211094856262,
+                    "end": 200.99912810325623,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 200.99912810325623,
+                    "end": 202.47778391838074,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_fresh_workspace_storage_survives_replacement",
+                "label": "Workspace storage",
+                "start": 202.47917890548706,
+                "end": 227.1345579624176,
+                "phases": [
+                  {
+                    "start": 202.47917890548706,
+                    "end": 213.70535707473755,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 213.70535707473755,
+                    "end": 227.1328899860382,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 227.1328899860382,
+                    "end": 227.1345579624176,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_codex_standing_instructions_after_suspend_and_compact",
+                "label": "Codex suspend/compact",
+                "start": 227.13563013076782,
+                "end": 245.63986802101135,
+                "phases": [
+                  {
+                    "start": 227.13563013076782,
+                    "end": 235.75889801979065,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 235.75889801979065,
+                    "end": 244.81215691566467,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 244.81215691566467,
+                    "end": 245.63986802101135,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume",
+                "label": "Two harnesses suspend/resume",
+                "start": 245.6413869857788,
+                "end": 265.74767303466797,
+                "phases": [
+                  {
+                    "start": 245.6413869857788,
+                    "end": 253.84468698501587,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 253.84468698501587,
+                    "end": 264.28880500793457,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 264.28880500793457,
+                    "end": 265.74767303466797,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_an_unknown_thread_is_not_found",
+                "label": "Unknown thread",
+                "start": 265.7491509914398,
+                "end": 265.7740080356598,
+                "phases": [
+                  {
+                    "start": 265.7491509914398,
+                    "end": 265.77251410484314,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 265.77251410484314,
+                    "end": 265.7740080356598,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event",
+                "label": "Tabs/reconnect",
+                "start": 265.7751770019531,
+                "end": 281.1528251171112,
+                "phases": [
+                  {
+                    "start": 265.7751770019531,
+                    "end": 278.06544399261475,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 278.06544399261475,
+                    "end": 279.6321370601654,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 279.6321370601654,
+                    "end": 281.1528251171112,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn",
+                "label": "Unwatched archive/failed turn",
+                "start": 281.1543300151825,
+                "end": 301.0547890663147,
+                "phases": [
+                  {
+                    "start": 281.1543300151825,
+                    "end": 294.1758620738983,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 294.1758620738983,
+                    "end": 299.01617908477783,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 299.01617908477783,
+                    "end": 301.0547890663147,
+                    "kind": "cleanup"
+                  }
+                ]
+              }
+            ],
+            "physical_execution_id": "/uploads/79dd71a1-e49c-4dd8-b13f-165e31f5a067/blobs/6ce50e97327cdf1b326d71a73afdfc7994e3682475296ec2944522661afb9558/504",
+            "physical_execution_count": 1,
+            "failed_physical_attempts": [],
+            "invocation_seconds": 346.111,
+            "execution_start": "2026-11-01T06:01:25.441565Z",
+            "execution_end": "2026-11-01T06:07:06.968880Z",
+            "image_import_seconds": 39.130316495895386,
+            "worker": "f5e1f56c-0a6b-47af-b8cb-b97fd422aaea",
+            "case_rows": 13,
+            "source_base": "55bdc1da22c84f3bcf0dff44567fb20159caad5b",
+            "candidate_source_patch_sha256": null,
+            "control_source_note": "Original control target/scenarios unchanged; unrelated manual candidate source may be present in the transported checkout. Invocation contains the exact transport patch.",
+            "fresh_result": "COMPLETED physical TestRunner, invocationLinkType=1; success; no test-result cache hit",
+            "span_artifact_sha256": "729409e939608dfcf803ef0b7b792c972e10814f8b784811706829bc394494f6"
+          },
+          {
+            "id": "pod-pilot-ab",
+            "suite": "pod",
+            "variant": "pilot",
+            "trial": 1,
+            "label": "Pod 2 slots + diagnostics · pilot",
+            "invocation_id": "a0c39b2e-90dc-409b-8e00-02451cdb7487",
+            "target": "//agentplane/system_tests/suites/x:test_pod_concurrent",
+            "cache_note": "Pilot adds native captures absent from control; not policy-matched",
+            "process_seconds": 300.9902968406677,
+            "cpu_seconds": 631.962504,
+            "peak_memory_bytes": 6391554048,
+            "setup_seconds": 67.57931518554688,
+            "case_envelope_seconds": 209.74989485740662,
+            "shared_teardown_seconds": 6.297303676605225,
+            "other_seconds": 17.36378312110901,
+            "timeline": [
+              {
+                "id": "workspace_storage",
+                "label": "Workspace storage",
+                "start": 67.58452820777893,
+                "end": 89.30193901062012,
+                "phases": [
+                  {
+                    "start": 67.58452820777893,
+                    "end": 75.86858010292053,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 75.86858010292053,
+                    "end": 89.2403450012207,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 89.2403450012207,
+                    "end": 89.30193901062012,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "agent_messaging",
+                "label": "Agent messaging",
+                "start": 89.30273103713989,
+                "end": 124.54602909088135,
+                "phases": [
+                  {
+                    "start": 89.30273103713989,
+                    "end": 110.05404710769653,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 110.05404710769653,
+                    "end": 114.59313416481018,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 114.59313416481018,
+                    "end": 124.54602909088135,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "policy_granted_after_start",
+                "label": "Dynamic policy",
+                "start": 89.30709314346313,
+                "end": 138.33902621269226,
+                "phases": [
+                  {
+                    "start": 89.30709314346313,
+                    "end": 132.22249603271484,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 132.22249603271484,
+                    "end": 133.5300431251526,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 133.5300431251526,
+                    "end": 138.33902621269226,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "model_proxy",
+                "label": "Model proxy",
+                "start": 124.54702019691467,
+                "end": 151.3660352230072,
+                "phases": [
+                  {
+                    "start": 124.54702019691467,
+                    "end": 145.3284192085266,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 145.3284192085266,
+                    "end": 145.95833206176758,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 145.95833206176758,
+                    "end": 151.3660352230072,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "launch_preset",
+                "label": "Launch preset",
+                "start": 138.34433913230896,
+                "end": 164.6610071659088,
+                "phases": [
+                  {
+                    "start": 138.34433913230896,
+                    "end": 151.49011421203613,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 151.49011421203613,
+                    "end": 160.51626300811768,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 160.51626300811768,
+                    "end": 164.6610071659088,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "certificate_reissue",
+                "label": "Certificate reissue",
+                "start": 151.367112159729,
+                "end": 152.19957613945007,
+                "phases": [
+                  {
+                    "start": 151.367112159729,
+                    "end": 152.19957613945007,
+                    "kind": "execution"
+                  }
+                ]
+              },
+              {
+                "id": "pod_mtls_replacement",
+                "label": "mTLS replacement/history",
+                "start": 152.20070219039917,
+                "end": 198.73365211486816,
+                "phases": [
+                  {
+                    "start": 152.20070219039917,
+                    "end": 167.64915418624878,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 167.64915418624878,
+                    "end": 180.15466213226318,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 180.15466213226318,
+                    "end": 198.73365211486816,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "standing_instruction",
+                "label": "Standing instructions",
+                "start": 164.66201305389404,
+                "end": 202.8772430419922,
+                "phases": [
+                  {
+                    "start": 164.66201305389404,
+                    "end": 178.78276205062866,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 178.78276205062866,
+                    "end": 183.7498161792755,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 183.7498161792755,
+                    "end": 202.8772430419922,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "codex_suspend_resume",
+                "label": "Codex suspend/compact",
+                "start": 198.73459601402283,
+                "end": 230.89753103256226,
+                "phases": [
+                  {
+                    "start": 198.73459601402283,
+                    "end": 213.8888111114502,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 213.8888111114502,
+                    "end": 224.11185121536255,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 224.11185121536255,
+                    "end": 230.89753103256226,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "two_harness_context_resume",
+                "label": "Two harnesses suspend/resume",
+                "start": 202.87815117835999,
+                "end": 239.99485111236572,
+                "phases": [
+                  {
+                    "start": 202.87815117835999,
+                    "end": 218.9727020263672,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 218.9727020263672,
+                    "end": 233.36368608474731,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 233.36368608474731,
+                    "end": 239.99485111236572,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "unknown_thread_http",
+                "label": "Unknown thread",
+                "start": 230.89827299118042,
+                "end": 230.95080304145813,
+                "phases": [
+                  {
+                    "start": 230.89827299118042,
+                    "end": 230.95080304145813,
+                    "kind": "execution"
+                  }
+                ]
+              },
+              {
+                "id": "thread_tab_streams",
+                "label": "Tabs/reconnect",
+                "start": 230.95171904563904,
+                "end": 264.24674701690674,
+                "phases": [
+                  {
+                    "start": 230.95171904563904,
+                    "end": 244.14347314834595,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 244.14347314834595,
+                    "end": 245.76095700263977,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 245.76095700263977,
+                    "end": 264.24674701690674,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "unwatched_turn_archive",
+                "label": "Unwatched archive/failed turn",
+                "start": 239.99561214447021,
+                "end": 277.322350025177,
+                "phases": [
+                  {
+                    "start": 239.99561214447021,
+                    "end": 252.2959611415863,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 252.2959611415863,
+                    "end": 262.96789622306824,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 262.96789622306824,
+                    "end": 277.322350025177,
+                    "kind": "cleanup"
+                  }
+                ]
+              }
+            ],
+            "physical_execution_id": "/uploads/7923ce62-4122-45af-81cd-b9593f8be2fb/blobs/ab4e76fe488c28cc693ca0d8e329b200a3b85a5658dbf05f1064c0d3dac7b572/504",
+            "physical_execution_count": 1,
+            "failed_physical_attempts": [],
+            "invocation_seconds": 304.792,
+            "execution_start": "2026-11-01T06:07:55.019669Z",
+            "execution_end": "2026-11-01T06:12:56.009966Z",
+            "image_import_seconds": 26.860475540161133,
+            "worker": "8e339c2e-3bb5-4704-979b-b7d7a22430f8",
+            "case_rows": 13,
+            "source_base": "55bdc1da22c84f3bcf0dff44567fb20159caad5b",
+            "candidate_source_patch_sha256": null,
+            "control_source_note": null,
+            "fresh_result": "COMPLETED physical TestRunner, invocationLinkType=1; success; no test-result cache hit",
+            "span_artifact_sha256": "0771545f307093305db6541cfead6391d01c0d5c6e03a4bf400ff4c8792445da",
+            "case_results": {
+              "case_concurrency_limit": 2,
+              "exclusive_cases": ["workspace_storage"],
+              "peak_active_cases": 2,
+              "pytest_reporting": "one aggregate pytest item; see per-case records and spans",
+              "status": "passed",
+              "cases": {
+                "agent_messaging": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 4
+                },
+                "certificate_reissue": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 0
+                },
+                "codex_suspend_resume": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 1
+                },
+                "launch_preset": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 1
+                },
+                "model_proxy": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "pod_mtls_replacement": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "policy_granted_after_start": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "standing_instruction": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "thread_tab_streams": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "two_harness_context_resume": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 1
+                },
+                "unknown_thread_http": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 0
+                },
+                "unwatched_turn_archive": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "workspace_storage": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 0
+                }
+              }
+            },
+            "case_native_diagnostic_count": 20,
+            "case_native_diagnostic_sum_seconds": 89.02229571342468
+          },
+          {
+            "id": "vm-candidate-ab",
+            "suite": "vm",
+            "variant": "candidate",
+            "trial": 1,
+            "label": "VM four guests · trial 1",
+            "invocation_id": "773eca13-421a-47f5-958e-1a0201718f4e",
+            "target": "//agentplane/system_tests/suites/x/vm_consolidation:test_vm_consolidated",
+            "cache_note": "246s stack setup; 221s failed physical attempt excluded from process bar",
+            "process_seconds": 571.8869500160217,
+            "cpu_seconds": 2462.587602,
+            "peak_memory_bytes": 7143313408,
+            "setup_seconds": 246.32704401016235,
+            "case_envelope_seconds": 290.4318549633026,
+            "shared_teardown_seconds": 7.471266031265259,
+            "other_seconds": 27.656785011291504,
+            "timeline": [
+              {
+                "id": "central-sampler",
+                "label": "Central sampler",
+                "start": 246.59631490707397,
+                "end": 420.07330298423767,
+                "phases": [
+                  {
+                    "start": 246.59631490707397,
+                    "end": 370.82779908180237,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 370.82779908180237,
+                    "end": 389.1957790851593,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 389.1957790851593,
+                    "end": 420.07330298423767,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "vm-turn-harness_claude",
+                "label": "Claude turn / supervision",
+                "start": 246.60583090782166,
+                "end": 536.5483620166779,
+                "phases": [
+                  {
+                    "start": 246.60583090782166,
+                    "end": 403.7571358680725,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 403.7571358680725,
+                    "end": 430.3355829715729,
+                    "kind": "session"
+                  },
+                  {
+                    "start": 430.3355829715729,
+                    "end": 504.08003997802734,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 504.08003997802734,
+                    "end": 536.5483620166779,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "vm-turn-harness_codex",
+                "label": "Codex turn",
+                "start": 246.61707186698914,
+                "end": 478.28347396850586,
+                "phases": [
+                  {
+                    "start": 246.61707186698914,
+                    "end": 375.66477489471436,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 375.66477489471436,
+                    "end": 406.711256980896,
+                    "kind": "session"
+                  },
+                  {
+                    "start": 406.711256980896,
+                    "end": 442.3381359577179,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 442.3381359577179,
+                    "end": 478.28347396850586,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "codex-tool-oom",
+                "label": "Codex OOM / recovery",
+                "start": 246.62741088867188,
+                "end": 513.3921689987183,
+                "phases": [
+                  {
+                    "start": 246.62741088867188,
+                    "end": 383.782860994339,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 383.782860994339,
+                    "end": 386.3666949272156,
+                    "kind": "session"
+                  },
+                  {
+                    "start": 386.3666949272156,
+                    "end": 482.71286487579346,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 482.71286487579346,
+                    "end": 513.3921689987183,
+                    "kind": "cleanup"
+                  }
+                ]
+              }
+            ],
+            "physical_execution_id": "/uploads/b9fa4bc0-97a1-4152-a434-40026395ea35/blobs/8839d65be40a89f30c6e3cd8a435c9441dae3f8e865cf3c04eb262a419629055/536",
+            "physical_execution_count": 2,
+            "failed_physical_attempts": [
+              {
+                "physical_execution_id": "/uploads/8e41eb2e-1dee-4fe6-bb7e-09b8f1a04034/blobs/8839d65be40a89f30c6e3cd8a435c9441dae3f8e865cf3c04eb262a419629055/536",
+                "status": {
+                  "code": 14,
+                  "message": "error pausing VM: Patch \"http://localhost/vm\": dial unix /buildbuddy/remotebuilds/firecracker/42984632-3a36-40df-b03f-bdcd52caae9d/root/run/fc.sock: connect: connection refused"
+                },
+                "process_seconds": 221.11393404006958,
+                "cpu_seconds": 785.368876,
+                "start": "2026-11-01T06:09:49.447191Z",
+                "end": "2026-11-01T06:13:30.561125Z"
+              }
+            ],
+            "invocation_seconds": 801.02,
+            "execution_start": "2026-11-01T06:13:34.446195Z",
+            "execution_end": "2026-11-01T06:23:06.333145Z",
+            "image_import_seconds": 215.16267013549805,
+            "worker": "4077b0c8-2969-42c0-ac7e-4f87021f1fe4",
+            "case_rows": 4,
+            "source_base": "55bdc1da22c84f3bcf0dff44567fb20159caad5b",
+            "candidate_source_patch_sha256": "4e6f98f9d12b72a585e300e8fd9d79a9b696e2e9ea56226d56e1b989ac76b542",
+            "control_source_note": null,
+            "fresh_result": "COMPLETED physical TestRunner, invocationLinkType=1; success; no test-result cache hit",
+            "span_artifact_sha256": "b513373039a0f8043aee210abd66fd911ba5edec4735f4f04f339005a72b2a80"
+          },
+          {
+            "id": "pod-pilot-ba",
+            "suite": "pod",
+            "variant": "pilot",
+            "trial": 2,
+            "label": "Pod 2 slots + diagnostics · pilot 2",
+            "invocation_id": "2d6463d4-3c8d-4c6a-a821-3eb37a7d52c2",
+            "target": "//agentplane/system_tests/suites/x:test_pod_concurrent",
+            "cache_note": "Pilot adds native captures absent from control; not policy-matched",
+            "process_seconds": 302.66078901290894,
+            "cpu_seconds": 614.541906,
+            "peak_memory_bytes": 6415400960,
+            "setup_seconds": 68.94274115562439,
+            "case_envelope_seconds": 209.26587510108948,
+            "shared_teardown_seconds": 6.109890937805176,
+            "other_seconds": 18.342281818389893,
+            "timeline": [
+              {
+                "id": "workspace_storage",
+                "label": "Workspace storage",
+                "start": 68.94806003570557,
+                "end": 90.34049320220947,
+                "phases": [
+                  {
+                    "start": 68.94806003570557,
+                    "end": 77.93881916999817,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 77.93881916999817,
+                    "end": 90.29700517654419,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 90.29700517654419,
+                    "end": 90.34049320220947,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "agent_messaging",
+                "label": "Agent messaging",
+                "start": 90.34126710891724,
+                "end": 127.20045208930969,
+                "phases": [
+                  {
+                    "start": 90.34126710891724,
+                    "end": 110.0832691192627,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 110.0832691192627,
+                    "end": 117.34988307952881,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 117.34988307952881,
+                    "end": 127.20045208930969,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "policy_granted_after_start",
+                "label": "Dynamic policy",
+                "start": 90.34586000442505,
+                "end": 142.33536100387573,
+                "phases": [
+                  {
+                    "start": 90.34586000442505,
+                    "end": 136.286062002182,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 136.286062002182,
+                    "end": 137.41993021965027,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 137.41993021965027,
+                    "end": 142.33536100387573,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "model_proxy",
+                "label": "Model proxy",
+                "start": 127.20137310028076,
+                "end": 153.47276210784912,
+                "phases": [
+                  {
+                    "start": 127.20137310028076,
+                    "end": 147.34801602363586,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 147.34801602363586,
+                    "end": 147.99768209457397,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 147.99768209457397,
+                    "end": 153.47276210784912,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "launch_preset",
+                "label": "Launch preset",
+                "start": 142.33621215820312,
+                "end": 167.73130416870117,
+                "phases": [
+                  {
+                    "start": 142.33621215820312,
+                    "end": 155.41921520233154,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 155.41921520233154,
+                    "end": 163.50727820396423,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 163.50727820396423,
+                    "end": 167.73130416870117,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "certificate_reissue",
+                "label": "Certificate reissue",
+                "start": 153.4734890460968,
+                "end": 154.3072211742401,
+                "phases": [
+                  {
+                    "start": 153.4734890460968,
+                    "end": 154.3072211742401,
+                    "kind": "execution"
+                  }
+                ]
+              },
+              {
+                "id": "pod_mtls_replacement",
+                "label": "mTLS replacement/history",
+                "start": 154.30830311775208,
+                "end": 201.88572001457214,
+                "phases": [
+                  {
+                    "start": 154.30830311775208,
+                    "end": 169.55805611610413,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 169.55805611610413,
+                    "end": 181.54180002212524,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 181.54180002212524,
+                    "end": 201.88572001457214,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "standing_instruction",
+                "label": "Standing instructions",
+                "start": 167.73193907737732,
+                "end": 205.0239851474762,
+                "phases": [
+                  {
+                    "start": 167.73193907737732,
+                    "end": 180.66688418388367,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 180.66688418388367,
+                    "end": 185.5466661453247,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 185.5466661453247,
+                    "end": 205.0239851474762,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "codex_suspend_resume",
+                "label": "Codex suspend/compact",
+                "start": 201.88705015182495,
+                "end": 231.8224561214447,
+                "phases": [
+                  {
+                    "start": 201.88705015182495,
+                    "end": 214.8378632068634,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 214.8378632068634,
+                    "end": 225.0023181438446,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 225.0023181438446,
+                    "end": 231.8224561214447,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "two_harness_context_resume",
+                "label": "Two harnesses suspend/resume",
+                "start": 205.02500414848328,
+                "end": 240.91818499565125,
+                "phases": [
+                  {
+                    "start": 205.02500414848328,
+                    "end": 219.89337420463562,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 219.89337420463562,
+                    "end": 234.26528406143188,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 234.26528406143188,
+                    "end": 240.91818499565125,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "unknown_thread_http",
+                "label": "Unknown thread",
+                "start": 231.82516312599182,
+                "end": 231.85477900505066,
+                "phases": [
+                  {
+                    "start": 231.82516312599182,
+                    "end": 231.85477900505066,
+                    "kind": "execution"
+                  }
+                ]
+              },
+              {
+                "id": "thread_tab_streams",
+                "label": "Tabs/reconnect",
+                "start": 231.85641717910767,
+                "end": 265.136981010437,
+                "phases": [
+                  {
+                    "start": 231.85641717910767,
+                    "end": 244.05132007598877,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 244.05132007598877,
+                    "end": 246.67191910743713,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 246.67191910743713,
+                    "end": 265.136981010437,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "unwatched_turn_archive",
+                "label": "Unwatched archive/failed turn",
+                "start": 240.91908311843872,
+                "end": 278.2039830684662,
+                "phases": [
+                  {
+                    "start": 240.91908311843872,
+                    "end": 253.1320140361786,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 253.1320140361786,
+                    "end": 263.4733672142029,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 263.4733672142029,
+                    "end": 278.2039830684662,
+                    "kind": "cleanup"
+                  }
+                ]
+              }
+            ],
+            "physical_execution_id": "/uploads/d4b6ba3f-9d89-4ef0-a206-0d1418188c3d/blobs/a726238342c5dbdaccb3c5ccb7fdf03adfda0204aa28183d3298f6ccf789f5bd/504",
+            "physical_execution_count": 1,
+            "failed_physical_attempts": [],
+            "invocation_seconds": 306.541,
+            "execution_start": "2026-11-01T06:14:36.689585Z",
+            "execution_end": "2026-11-01T06:19:39.350374Z",
+            "image_import_seconds": 28.57673406600952,
+            "worker": "8e339c2e-3bb5-4704-979b-b7d7a22430f8",
+            "case_rows": 13,
+            "source_base": "55bdc1da22c84f3bcf0dff44567fb20159caad5b",
+            "candidate_source_patch_sha256": null,
+            "control_source_note": null,
+            "fresh_result": "COMPLETED physical TestRunner, invocationLinkType=1; success; no test-result cache hit",
+            "span_artifact_sha256": "27a6058a000006e7da3b63ca51123d8c80eed00e04b9167af988352875ff8378",
+            "case_results": {
+              "case_concurrency_limit": 2,
+              "exclusive_cases": ["workspace_storage"],
+              "peak_active_cases": 2,
+              "pytest_reporting": "one aggregate pytest item; see per-case records and spans",
+              "status": "passed",
+              "cases": {
+                "agent_messaging": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 4
+                },
+                "certificate_reissue": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 0
+                },
+                "codex_suspend_resume": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 1
+                },
+                "launch_preset": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 1
+                },
+                "model_proxy": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "pod_mtls_replacement": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "policy_granted_after_start": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "standing_instruction": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "thread_tab_streams": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "two_harness_context_resume": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 1
+                },
+                "unknown_thread_http": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 0
+                },
+                "unwatched_turn_archive": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "workspace_storage": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 0
+                }
+              }
+            },
+            "case_native_diagnostic_count": 20,
+            "case_native_diagnostic_sum_seconds": 92.28727960586548
+          },
+          {
+            "id": "vm-control-ba",
+            "suite": "vm",
+            "variant": "control",
+            "trial": 2,
+            "label": "VM control · trial 2",
+            "invocation_id": "7c073314-1d09-4e31-a5cf-4f59a6abf73a",
+            "target": "//agentplane/system_tests/suites:test_vm",
+            "cache_note": "98s stack setup; overlaps candidate trial 2 submission; cache state uncontrolled",
+            "process_seconds": 360.02293610572815,
+            "cpu_seconds": 1787.460279,
+            "peak_memory_bytes": 10154635264,
+            "setup_seconds": 97.91020894050598,
+            "case_envelope_seconds": 226.48141407966614,
+            "shared_teardown_seconds": 7.357196092605591,
+            "other_seconds": 28.27411699295044,
+            "timeline": [
+              {
+                "id": "runner-vm-mtls-harness_claude",
+                "label": "Claude credentials",
+                "start": 98.13273787498474,
+                "end": 288.397745847702,
+                "phases": [
+                  {
+                    "start": 98.13273787498474,
+                    "end": 203.12974500656128,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 203.12974500656128,
+                    "end": 206.71945095062256,
+                    "kind": "session"
+                  },
+                  {
+                    "start": 206.71945095062256,
+                    "end": 256.898099899292,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 256.898099899292,
+                    "end": 288.397745847702,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "runner-vm-mtls-harness_codex",
+                "label": "Codex credentials",
+                "start": 98.14017486572266,
+                "end": 280.3360788822174,
+                "phases": [
+                  {
+                    "start": 98.14017486572266,
+                    "end": 216.7151210308075,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 216.7151210308075,
+                    "end": 219.6570270061493,
+                    "kind": "session"
+                  },
+                  {
+                    "start": 219.6570270061493,
+                    "end": 251.28271794319153,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 251.28271794319153,
+                    "end": 280.3360788822174,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "central-sampler",
+                "label": "Central sampler",
+                "start": 98.14506483078003,
+                "end": 251.37736082077026,
+                "phases": [
+                  {
+                    "start": 98.14506483078003,
+                    "end": 209.47928094863892,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 209.47928094863892,
+                    "end": 226.41137981414795,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 226.41137981414795,
+                    "end": 251.37736082077026,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "vm-turn-harness_claude",
+                "label": "Claude turn / supervision",
+                "start": 98.14987587928772,
+                "end": 323.86127400398254,
+                "phases": [
+                  {
+                    "start": 98.14987587928772,
+                    "end": 225.20402693748474,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 225.20402693748474,
+                    "end": 245.51826691627502,
+                    "kind": "session"
+                  },
+                  {
+                    "start": 245.51826691627502,
+                    "end": 289.94110083580017,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 289.94110083580017,
+                    "end": 323.86127400398254,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "vm-turn-harness_codex",
+                "label": "Codex turn",
+                "start": 98.15544700622559,
+                "end": 289.44639801979065,
+                "phases": [
+                  {
+                    "start": 98.15544700622559,
+                    "end": 210.80084204673767,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 210.80084204673767,
+                    "end": 230.0879888534546,
+                    "kind": "session"
+                  },
+                  {
+                    "start": 230.0879888534546,
+                    "end": 259.42907094955444,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 259.42907094955444,
+                    "end": 289.44639801979065,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "codex-tool-oom",
+                "label": "Codex OOM / recovery",
+                "start": 98.16008400917053,
+                "end": 314.86374497413635,
+                "phases": [
+                  {
+                    "start": 98.16008400917053,
+                    "end": 210.9492039680481,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 210.9492039680481,
+                    "end": 214.2146599292755,
+                    "kind": "session"
+                  },
+                  {
+                    "start": 214.2146599292755,
+                    "end": 281.554762840271,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 281.554762840271,
+                    "end": 314.86374497413635,
+                    "kind": "cleanup"
+                  }
+                ]
+              }
+            ],
+            "physical_execution_id": "/uploads/33eae4b1-97d7-4d29-a7b0-8718aa66e295/blobs/92c0cc59e02de068903079843cd97c85e5bf86fc023390b31416e6bf09183b62/536",
+            "physical_execution_count": 1,
+            "failed_physical_attempts": [],
+            "invocation_seconds": 363.619,
+            "execution_start": "2026-11-01T06:21:14.043254Z",
+            "execution_end": "2026-11-01T06:27:14.066190Z",
+            "image_import_seconds": 9.591640949249268,
+            "worker": "ea26e36c-6a70-4833-ada0-6dbb28cd12f5",
+            "case_rows": 6,
+            "source_base": "55bdc1da22c84f3bcf0dff44567fb20159caad5b",
+            "candidate_source_patch_sha256": null,
+            "control_source_note": "Original control target/scenarios unchanged; unrelated manual candidate source may be present in the transported checkout. Invocation contains the exact transport patch.",
+            "fresh_result": "COMPLETED physical TestRunner, invocationLinkType=1; success; no test-result cache hit",
+            "span_artifact_sha256": "d64704fa8323ad383466a8f1212c4161510d8d9c8b0584c5b50642b2f895f98c"
+          },
+          {
+            "id": "pod-candidate-policy-ab",
+            "suite": "pod",
+            "variant": "candidate",
+            "trial": 1,
+            "label": "Pod two slots · trial 1",
+            "invocation_id": "26afde75-b3c1-497f-a3dc-38cdc8e26dae",
+            "target": "//agentplane/system_tests/suites/x:test_pod_concurrent",
+            "cache_note": "Matched diagnostics; 62s init; image-store state uncontrolled",
+            "process_seconds": 237.7186028957367,
+            "cpu_seconds": 580.413031,
+            "peak_memory_bytes": 6311464960,
+            "setup_seconds": 62.08616590499878,
+            "case_envelope_seconds": 156.55984210968018,
+            "shared_teardown_seconds": 5.929564952850342,
+            "other_seconds": 13.143029928207397,
+            "timeline": [
+              {
+                "id": "workspace_storage",
+                "label": "Workspace storage",
+                "start": 62.09033989906311,
+                "end": 82.65324592590332,
+                "phases": [
+                  {
+                    "start": 62.09033989906311,
+                    "end": 70.30634188652039,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 70.30634188652039,
+                    "end": 82.65324592590332,
+                    "kind": "execution"
+                  }
+                ]
+              },
+              {
+                "id": "agent_messaging",
+                "label": "Agent messaging",
+                "start": 82.65392899513245,
+                "end": 112.36669993400574,
+                "phases": [
+                  {
+                    "start": 82.65392899513245,
+                    "end": 103.48250603675842,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 103.48250603675842,
+                    "end": 109.53236293792725,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 109.53236293792725,
+                    "end": 112.36669993400574,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "policy_granted_after_start",
+                "label": "Dynamic policy",
+                "start": 82.65796089172363,
+                "end": 123.80445504188538,
+                "phases": [
+                  {
+                    "start": 82.65796089172363,
+                    "end": 120.61273193359375,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 120.61273193359375,
+                    "end": 121.89930391311646,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 121.89930391311646,
+                    "end": 123.80445504188538,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "model_proxy",
+                "label": "Model proxy",
+                "start": 112.36751508712769,
+                "end": 136.73581099510193,
+                "phases": [
+                  {
+                    "start": 112.36751508712769,
+                    "end": 133.7485580444336,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 133.7485580444336,
+                    "end": 134.40057110786438,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 134.40057110786438,
+                    "end": 136.73581099510193,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "launch_preset",
+                "label": "Launch preset",
+                "start": 123.80564904212952,
+                "end": 150.85255002975464,
+                "phases": [
+                  {
+                    "start": 123.80564904212952,
+                    "end": 140.8314208984375,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 140.8314208984375,
+                    "end": 149.93802905082703,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 149.93802905082703,
+                    "end": 150.85255002975464,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "certificate_reissue",
+                "label": "Certificate reissue",
+                "start": 136.73897695541382,
+                "end": 137.72368788719177,
+                "phases": [
+                  {
+                    "start": 136.73897695541382,
+                    "end": 137.72368788719177,
+                    "kind": "execution"
+                  }
+                ]
+              },
+              {
+                "id": "pod_mtls_replacement",
+                "label": "mTLS replacement/history",
+                "start": 137.72460508346558,
+                "end": 166.09024500846863,
+                "phases": [
+                  {
+                    "start": 137.72460508346558,
+                    "end": 153.9618420600891,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 153.9618420600891,
+                    "end": 164.29842495918274,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 164.29842495918274,
+                    "end": 166.09024500846863,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "standing_instruction",
+                "label": "Standing instructions",
+                "start": 150.8534450531006,
+                "end": 172.12261295318604,
+                "phases": [
+                  {
+                    "start": 150.8534450531006,
+                    "end": 165.13894701004028,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 165.13894701004028,
+                    "end": 170.0804181098938,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 170.0804181098938,
+                    "end": 172.12261295318604,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "codex_suspend_resume",
+                "label": "Codex suspend/compact",
+                "start": 166.09137105941772,
+                "end": 190.52128911018372,
+                "phases": [
+                  {
+                    "start": 166.09137105941772,
+                    "end": 178.20355892181396,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 178.20355892181396,
+                    "end": 189.41934895515442,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 189.41934895515442,
+                    "end": 190.52128911018372,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "two_harness_context_resume",
+                "label": "Two harnesses suspend/resume",
+                "start": 172.12365889549255,
+                "end": 198.27887296676636,
+                "phases": [
+                  {
+                    "start": 172.12365889549255,
+                    "end": 185.27573204040527,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 185.27573204040527,
+                    "end": 196.7478039264679,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 196.7478039264679,
+                    "end": 198.27887296676636,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "unknown_thread_http",
+                "label": "Unknown thread",
+                "start": 190.52485990524292,
+                "end": 191.59060788154602,
+                "phases": [
+                  {
+                    "start": 190.52485990524292,
+                    "end": 191.59060788154602,
+                    "kind": "execution"
+                  }
+                ]
+              },
+              {
+                "id": "thread_tab_streams",
+                "label": "Tabs/reconnect",
+                "start": 191.5918469429016,
+                "end": 206.4569890499115,
+                "phases": [
+                  {
+                    "start": 191.5918469429016,
+                    "end": 203.53424787521362,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 203.53424787521362,
+                    "end": 205.10822105407715,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 205.10822105407715,
+                    "end": 206.4569890499115,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "unwatched_turn_archive",
+                "label": "Unwatched archive/failed turn",
+                "start": 198.27987098693848,
+                "end": 218.64006400108337,
+                "phases": [
+                  {
+                    "start": 198.27987098693848,
+                    "end": 212.5357370376587,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 212.5357370376587,
+                    "end": 216.95462608337402,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 216.95462608337402,
+                    "end": 218.64006400108337,
+                    "kind": "cleanup"
+                  }
+                ]
+              }
+            ],
+            "physical_execution_id": "/uploads/b18f7aec-27b8-4fa6-a1f6-87527e8fa4ac/blobs/7d0ec89d5432415edde23b53de9f8f2fc71161629f5b65476b99a1909343287c/504",
+            "physical_execution_count": 1,
+            "failed_physical_attempts": [],
+            "invocation_seconds": 245.377,
+            "execution_start": "2026-11-01T06:20:19.267270Z",
+            "execution_end": "2026-11-01T06:24:16.985873Z",
+            "image_import_seconds": 25.62140703201294,
+            "worker": "8e339c2e-3bb5-4704-979b-b7d7a22430f8",
+            "case_rows": 13,
+            "source_base": "55bdc1da22c84f3bcf0dff44567fb20159caad5b",
+            "candidate_source_patch_sha256": "2140b3c41074ba797ccb272d20ee249dc068fc16608960405d10030b9281df93",
+            "control_source_note": null,
+            "fresh_result": "COMPLETED physical TestRunner, invocationLinkType=1; success; no test-result cache hit",
+            "span_artifact_sha256": "00e6a7689ad92e4dbd252d6310be498770c680b5718c215e711cc66bc1e98ff2",
+            "case_results": {
+              "case_concurrency_limit": 2,
+              "exclusive_cases": ["workspace_storage"],
+              "peak_active_cases": 2,
+              "pytest_reporting": "one aggregate pytest item; see per-case records and spans",
+              "status": "passed",
+              "cases": {
+                "agent_messaging": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 4
+                },
+                "certificate_reissue": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 0
+                },
+                "codex_suspend_resume": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 1
+                },
+                "launch_preset": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 1
+                },
+                "model_proxy": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "pod_mtls_replacement": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "policy_granted_after_start": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "standing_instruction": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "thread_tab_streams": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "two_harness_context_resume": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 1
+                },
+                "unknown_thread_http": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 0
+                },
+                "unwatched_turn_archive": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "workspace_storage": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 0
+                }
+              }
+            },
+            "case_native_diagnostic_count": 0,
+            "case_native_diagnostic_sum_seconds": 0
+          },
+          {
+            "id": "pod-control-policy-ba",
+            "suite": "pod",
+            "variant": "control",
+            "trial": 2,
+            "label": "Pod control · trial 2",
+            "invocation_id": "1eed61a0-50d6-431b-8e34-eb30b455cd07",
+            "target": "//agentplane/system_tests/suites:test_pod",
+            "cache_note": "98s init; overlaps matched candidate submission; cache uncontrolled",
+            "process_seconds": 374.96781492233276,
+            "cpu_seconds": 798.723776,
+            "peak_memory_bytes": 6229004288,
+            "setup_seconds": 97.67891788482666,
+            "case_envelope_seconds": 240.6424479484558,
+            "shared_teardown_seconds": 6.473978042602539,
+            "other_seconds": 30.172471046447754,
+            "timeline": [
+              {
+                "id": "test_an_agent_messages_another_which_reads_and_acknowledges_it",
+                "label": "Agent messaging",
+                "start": 97.6903760433197,
+                "end": 131.49833393096924,
+                "phases": [
+                  {
+                    "start": 97.6903760433197,
+                    "end": 117.70820903778076,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 117.70820903778076,
+                    "end": 127.40309691429138,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 127.40309691429138,
+                    "end": 131.49833393096924,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_a_policy_granted_after_the_sandbox_is_running_takes_effect",
+                "label": "Dynamic policy",
+                "start": 131.51146292686462,
+                "end": 151.46555590629578,
+                "phases": [
+                  {
+                    "start": 131.51146292686462,
+                    "end": 148.0218620300293,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 148.0218620300293,
+                    "end": 149.74979090690613,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 149.74979090690613,
+                    "end": 151.46555590629578,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_the_model_call_itself_goes_through_the_proxy",
+                "label": "Model proxy",
+                "start": 151.4676239490509,
+                "end": 169.12673783302307,
+                "phases": [
+                  {
+                    "start": 151.4676239490509,
+                    "end": 166.2439968585968,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 166.2439968585968,
+                    "end": 167.59277391433716,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 167.59277391433716,
+                    "end": 169.12673783302307,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_a_preset_launches_an_initialized_editable_codex_thread",
+                "label": "Launch preset",
+                "start": 169.1290078163147,
+                "end": 190.48338294029236,
+                "phases": [
+                  {
+                    "start": 169.1290078163147,
+                    "end": 180.31162881851196,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 180.31162881851196,
+                    "end": 189.49479985237122,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 189.49479985237122,
+                    "end": 190.48338294029236,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_cert_manager_reissues_a_deleted_tls_secret",
+                "label": "Certificate reissue",
+                "start": 190.48532485961914,
+                "end": 191.4541609287262,
+                "phases": [
+                  {
+                    "start": 190.48532485961914,
+                    "end": 191.45297288894653,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 191.45297288894653,
+                    "end": 191.4541609287262,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_pod_mtls_session_survives_replacement_and_keeps_history",
+                "label": "mTLS replacement/history",
+                "start": 191.45589089393616,
+                "end": 215.63429498672485,
+                "phases": [
+                  {
+                    "start": 191.45589089393616,
+                    "end": 202.59776091575623,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 202.59776091575623,
+                    "end": 213.84139895439148,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 213.84139895439148,
+                    "end": 215.63429498672485,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session",
+                "label": "Standing instructions",
+                "start": 215.63872504234314,
+                "end": 234.77909302711487,
+                "phases": [
+                  {
+                    "start": 215.63872504234314,
+                    "end": 229.72004389762878,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 229.72004389762878,
+                    "end": 233.14987587928772,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 233.14987587928772,
+                    "end": 234.77909302711487,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_fresh_workspace_storage_survives_replacement",
+                "label": "Workspace storage",
+                "start": 234.78143000602722,
+                "end": 260.47214794158936,
+                "phases": [
+                  {
+                    "start": 234.78143000602722,
+                    "end": 246.94727087020874,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 246.94727087020874,
+                    "end": 260.47078585624695,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 260.47078585624695,
+                    "end": 260.47214794158936,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_codex_standing_instructions_after_suspend_and_compact",
+                "label": "Codex suspend/compact",
+                "start": 260.47343587875366,
+                "end": 279.16421484947205,
+                "phases": [
+                  {
+                    "start": 260.47343587875366,
+                    "end": 268.9735188484192,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 268.9735188484192,
+                    "end": 278.14264488220215,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 278.14264488220215,
+                    "end": 279.16421484947205,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume",
+                "label": "Two harnesses suspend/resume",
+                "start": 279.1662030220032,
+                "end": 300.29799795150757,
+                "phases": [
+                  {
+                    "start": 279.1662030220032,
+                    "end": 288.15952587127686,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 288.15952587127686,
+                    "end": 298.7788188457489,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 298.7788188457489,
+                    "end": 300.29799795150757,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_an_unknown_thread_is_not_found",
+                "label": "Unknown thread",
+                "start": 300.3000509738922,
+                "end": 300.3285028934479,
+                "phases": [
+                  {
+                    "start": 300.3000509738922,
+                    "end": 300.3266990184784,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 300.3266990184784,
+                    "end": 300.3285028934479,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event",
+                "label": "Tabs/reconnect",
+                "start": 300.3298509120941,
+                "end": 317.49336194992065,
+                "phases": [
+                  {
+                    "start": 300.3298509120941,
+                    "end": 313.287300825119,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 313.287300825119,
+                    "end": 315.1635389328003,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 315.1635389328003,
+                    "end": 317.49336194992065,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn",
+                "label": "Unwatched archive/failed turn",
+                "start": 317.4951808452606,
+                "end": 338.3328239917755,
+                "phases": [
+                  {
+                    "start": 317.4951808452606,
+                    "end": 331.48859095573425,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 331.48859095573425,
+                    "end": 336.2414219379425,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 336.2414219379425,
+                    "end": 338.3328239917755,
+                    "kind": "cleanup"
+                  }
+                ]
+              }
+            ],
+            "physical_execution_id": "/uploads/e12c01aa-e0e0-43a6-9166-5c229c47c2a4/blobs/d74587e7f964be1b590a86e200cc9961f7bde3a3d3057f479e47feec55daf5f8/504",
+            "physical_execution_count": 1,
+            "failed_physical_attempts": [],
+            "invocation_seconds": 378.519,
+            "execution_start": "2026-11-01T06:20:58.202374Z",
+            "execution_end": "2026-11-01T06:27:13.170189Z",
+            "image_import_seconds": 48.952247858047485,
+            "worker": "f5e1f56c-0a6b-47af-b8cb-b97fd422aaea",
+            "case_rows": 13,
+            "source_base": "55bdc1da22c84f3bcf0dff44567fb20159caad5b",
+            "candidate_source_patch_sha256": null,
+            "control_source_note": "Original control target/scenarios unchanged; unrelated manual candidate source may be present in the transported checkout. Invocation contains the exact transport patch.",
+            "fresh_result": "COMPLETED physical TestRunner, invocationLinkType=1; success; no test-result cache hit",
+            "span_artifact_sha256": "345533ca53d9f1a7ca4a1a8ff15f8964bd142a90d07f79ab07a4a289d6143995"
+          },
+          {
+            "id": "vm-candidate-ba",
+            "suite": "vm",
+            "variant": "candidate",
+            "trial": 2,
+            "label": "VM four guests · trial 2",
+            "invocation_id": "b1158edc-f4c2-44de-acaf-5d84ddcf0ca5",
+            "target": "//agentplane/system_tests/suites/x/vm_consolidation:test_vm_consolidated",
+            "cache_note": "Fresh test; no physical retry; worker/image-store state uncontrolled",
+            "process_seconds": 448.7550630569458,
+            "cpu_seconds": 1804.113564,
+            "peak_memory_bytes": 7233056768,
+            "setup_seconds": 105.30080986022949,
+            "case_envelope_seconds": 300.6792619228363,
+            "shared_teardown_seconds": 7.217965841293335,
+            "other_seconds": 35.55702543258667,
+            "timeline": [
+              {
+                "id": "central-sampler",
+                "label": "Central sampler",
+                "start": 105.5559709072113,
+                "end": 290.4936327934265,
+                "phases": [
+                  {
+                    "start": 105.5559709072113,
+                    "end": 242.18227291107178,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 242.18227291107178,
+                    "end": 260.0660150051117,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 260.0660150051117,
+                    "end": 290.4936327934265,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "vm-turn-harness_claude",
+                "label": "Claude turn / supervision",
+                "start": 105.5615668296814,
+                "end": 405.7987518310547,
+                "phases": [
+                  {
+                    "start": 105.5615668296814,
+                    "end": 270.7448318004608,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 270.7448318004608,
+                    "end": 297.0674138069153,
+                    "kind": "session"
+                  },
+                  {
+                    "start": 297.0674138069153,
+                    "end": 372.0020020008087,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 372.0020020008087,
+                    "end": 405.7987518310547,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "vm-turn-harness_codex",
+                "label": "Codex turn",
+                "start": 105.5691409111023,
+                "end": 346.5741539001465,
+                "phases": [
+                  {
+                    "start": 105.5691409111023,
+                    "end": 241.1363549232483,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 241.1363549232483,
+                    "end": 273.66543889045715,
+                    "kind": "session"
+                  },
+                  {
+                    "start": 273.66543889045715,
+                    "end": 309.06133580207825,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 309.06133580207825,
+                    "end": 346.5741539001465,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "codex-tool-oom",
+                "label": "Codex OOM / recovery",
+                "start": 105.57543683052063,
+                "end": 386.7793347835541,
+                "phases": [
+                  {
+                    "start": 105.57543683052063,
+                    "end": 257.9896969795227,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 257.9896969795227,
+                    "end": 261.029287815094,
+                    "kind": "session"
+                  },
+                  {
+                    "start": 261.029287815094,
+                    "end": 353.4344699382782,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 353.4344699382782,
+                    "end": 386.7793347835541,
+                    "kind": "cleanup"
+                  }
+                ]
+              }
+            ],
+            "physical_execution_id": "/uploads/7becd6c7-3479-4659-976e-460f1307b43e/blobs/8839d65be40a89f30c6e3cd8a435c9441dae3f8e865cf3c04eb262a419629055/536",
+            "physical_execution_count": 1,
+            "failed_physical_attempts": [],
+            "invocation_seconds": 452.025,
+            "execution_start": "2026-11-01T06:25:36.058519Z",
+            "execution_end": "2026-11-01T06:33:04.813582Z",
+            "image_import_seconds": 9.605088233947754,
+            "worker": "4077b0c8-2969-42c0-ac7e-4f87021f1fe4",
+            "case_rows": 4,
+            "source_base": "55bdc1da22c84f3bcf0dff44567fb20159caad5b",
+            "candidate_source_patch_sha256": "4e6f98f9d12b72a585e300e8fd9d79a9b696e2e9ea56226d56e1b989ac76b542",
+            "control_source_note": null,
+            "fresh_result": "COMPLETED physical TestRunner, invocationLinkType=1; success; no test-result cache hit",
+            "span_artifact_sha256": "e79138cc13bcb8a14f356f950706b5eb6d564d053eb3270fd2923e51e6a34e5a"
+          },
+          {
+            "id": "pod-candidate-policy-repeat",
+            "suite": "pod",
+            "variant": "candidate",
+            "trial": 2,
+            "label": "Pod two slots · trial 2",
+            "invocation_id": "e5df022b-809d-4427-98c2-416261d46329",
+            "target": "//agentplane/system_tests/suites/x:test_pod_concurrent",
+            "cache_note": "Matched diagnostics; unchanged repeat; image-store state uncontrolled",
+            "process_seconds": 238.95182991027832,
+            "cpu_seconds": 587.320382,
+            "peak_memory_bytes": 6379159552,
+            "setup_seconds": 61.1405291557312,
+            "case_envelope_seconds": 155.7559380531311,
+            "shared_teardown_seconds": 6.183008909225464,
+            "other_seconds": 15.872353792190552,
+            "timeline": [
+              {
+                "id": "workspace_storage",
+                "label": "Workspace storage",
+                "start": 61.14485502243042,
+                "end": 81.90555620193481,
+                "phases": [
+                  {
+                    "start": 61.14485502243042,
+                    "end": 69.50214219093323,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 69.50214219093323,
+                    "end": 81.90555620193481,
+                    "kind": "execution"
+                  }
+                ]
+              },
+              {
+                "id": "agent_messaging",
+                "label": "Agent messaging",
+                "start": 81.90612316131592,
+                "end": 110.74788522720337,
+                "phases": [
+                  {
+                    "start": 81.90612316131592,
+                    "end": 102.64446520805359,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 102.64446520805359,
+                    "end": 107.41257214546204,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 107.41257214546204,
+                    "end": 110.74788522720337,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "policy_granted_after_start",
+                "label": "Dynamic policy",
+                "start": 81.91001605987549,
+                "end": 122.866042137146,
+                "phases": [
+                  {
+                    "start": 81.91001605987549,
+                    "end": 119.74574422836304,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 119.74574422836304,
+                    "end": 121.05800414085388,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 121.05800414085388,
+                    "end": 122.866042137146,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "model_proxy",
+                "label": "Model proxy",
+                "start": 110.74876999855042,
+                "end": 133.9402232170105,
+                "phases": [
+                  {
+                    "start": 110.74876999855042,
+                    "end": 131.9100260734558,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 131.9100260734558,
+                    "end": 132.5957431793213,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 132.5957431793213,
+                    "end": 133.9402232170105,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "launch_preset",
+                "label": "Launch preset",
+                "start": 122.86731815338135,
+                "end": 146.9157271385193,
+                "phases": [
+                  {
+                    "start": 122.86731815338135,
+                    "end": 137.97340607643127,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 137.97340607643127,
+                    "end": 146.10611510276794,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 146.10611510276794,
+                    "end": 146.9157271385193,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "certificate_reissue",
+                "label": "Certificate reissue",
+                "start": 133.94148111343384,
+                "end": 134.82411313056946,
+                "phases": [
+                  {
+                    "start": 133.94148111343384,
+                    "end": 134.82411313056946,
+                    "kind": "execution"
+                  }
+                ]
+              },
+              {
+                "id": "pod_mtls_replacement",
+                "label": "mTLS replacement/history",
+                "start": 134.82532119750977,
+                "end": 164.2395601272583,
+                "phases": [
+                  {
+                    "start": 134.82532119750977,
+                    "end": 152.15917301177979,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 152.15917301177979,
+                    "end": 162.6509780883789,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 162.6509780883789,
+                    "end": 164.2395601272583,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "standing_instruction",
+                "label": "Standing instructions",
+                "start": 146.91637516021729,
+                "end": 168.2381250858307,
+                "phases": [
+                  {
+                    "start": 146.91637516021729,
+                    "end": 163.26198410987854,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 163.26198410987854,
+                    "end": 166.71084213256836,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 166.71084213256836,
+                    "end": 168.2381250858307,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "codex_suspend_resume",
+                "label": "Codex suspend/compact",
+                "start": 164.2406301498413,
+                "end": 190.63637614250183,
+                "phases": [
+                  {
+                    "start": 164.2406301498413,
+                    "end": 178.3588421344757,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 178.3588421344757,
+                    "end": 189.6748821735382,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 189.6748821735382,
+                    "end": 190.63637614250183,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "two_harness_context_resume",
+                "label": "Two harnesses suspend/resume",
+                "start": 168.24254512786865,
+                "end": 196.39854311943054,
+                "phases": [
+                  {
+                    "start": 168.24254512786865,
+                    "end": 183.45534205436707,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 183.45534205436707,
+                    "end": 194.9077181816101,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 194.9077181816101,
+                    "end": 196.39854311943054,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "unknown_thread_http",
+                "label": "Unknown thread",
+                "start": 190.63712620735168,
+                "end": 190.66000413894653,
+                "phases": [
+                  {
+                    "start": 190.63712620735168,
+                    "end": 190.66000413894653,
+                    "kind": "execution"
+                  }
+                ]
+              },
+              {
+                "id": "thread_tab_streams",
+                "label": "Tabs/reconnect",
+                "start": 190.660747051239,
+                "end": 208.67302322387695,
+                "phases": [
+                  {
+                    "start": 190.660747051239,
+                    "end": 203.66329407691956,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 203.66329407691956,
+                    "end": 207.21496105194092,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 207.21496105194092,
+                    "end": 208.67302322387695,
+                    "kind": "cleanup"
+                  }
+                ]
+              },
+              {
+                "id": "unwatched_turn_archive",
+                "label": "Unwatched archive/failed turn",
+                "start": 196.39916706085205,
+                "end": 216.88995814323425,
+                "phases": [
+                  {
+                    "start": 196.39916706085205,
+                    "end": 211.6933150291443,
+                    "kind": "provision"
+                  },
+                  {
+                    "start": 211.6933150291443,
+                    "end": 215.4763481616974,
+                    "kind": "execution"
+                  },
+                  {
+                    "start": 215.4763481616974,
+                    "end": 216.88995814323425,
+                    "kind": "cleanup"
+                  }
+                ]
+              }
+            ],
+            "physical_execution_id": "/uploads/38eb9146-9b61-4b9d-986c-e4710f78da44/blobs/7d0ec89d5432415edde23b53de9f8f2fc71161629f5b65476b99a1909343287c/504",
+            "physical_execution_count": 1,
+            "failed_physical_attempts": [],
+            "invocation_seconds": 270.191,
+            "execution_start": "2026-11-01T06:30:14.142328Z",
+            "execution_end": "2026-11-01T06:34:13.094158Z",
+            "image_import_seconds": 24.99167227745056,
+            "worker": "8e339c2e-3bb5-4704-979b-b7d7a22430f8",
+            "case_rows": 13,
+            "source_base": "55bdc1da22c84f3bcf0dff44567fb20159caad5b",
+            "candidate_source_patch_sha256": "2140b3c41074ba797ccb272d20ee249dc068fc16608960405d10030b9281df93",
+            "control_source_note": null,
+            "fresh_result": "COMPLETED physical TestRunner, invocationLinkType=1; success; no test-result cache hit",
+            "span_artifact_sha256": "2d682cb4b7c17ee527a15b80181b0341504c43a1bbcb64fd622bfe52fcc2c680",
+            "case_results": {
+              "case_concurrency_limit": 2,
+              "exclusive_cases": ["workspace_storage"],
+              "peak_active_cases": 2,
+              "pytest_reporting": "one aggregate pytest item; see per-case records and spans",
+              "status": "passed",
+              "cases": {
+                "agent_messaging": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 4
+                },
+                "certificate_reissue": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 0
+                },
+                "codex_suspend_resume": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 1
+                },
+                "launch_preset": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 1
+                },
+                "model_proxy": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "pod_mtls_replacement": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "policy_granted_after_start": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "standing_instruction": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "thread_tab_streams": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "two_harness_context_resume": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 1
+                },
+                "unknown_thread_http": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 0
+                },
+                "unwatched_turn_archive": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 2
+                },
+                "workspace_storage": {
+                  "status": "passed",
+                  "scripted_model_pod_count": 0
+                }
+              }
+            },
+            "case_native_diagnostic_count": 0,
+            "case_native_diagnostic_sum_seconds": 0
+          }
+        ]
+      }
+    </script>
+    <script>
+      (() => {
+        "use strict";
+        const data = JSON.parse(
+          document.getElementById("runtime-data").textContent,
+        );
+        const colors = {
+          setup: "#5068b4",
+          provision: "#22857d",
+          session: "#597caa",
+          execution: "#b06b1e",
+          cleanup: "#8b6b99",
+          other: "#a3abb5",
+        };
+        const names = {
+          setup: "Shared initialization",
+          provision: "Initial guest provisioning",
+          session: "Session setup checks",
+          execution: "Remaining case body",
+          cleanup: "Diagnostics and cleanup",
+          other: "Unattributed launch/other",
+        };
+        const mobile = window.matchMedia("(max-width:650px)").matches;
+        const ns = "http://www.w3.org/2000/svg";
+        function el(tag, attrs = {}, content) {
+          const x = document.createElementNS(ns, tag);
+          for (const [k, v] of Object.entries(attrs)) x.setAttribute(k, v);
+          if (content !== undefined) x.textContent = content;
+          return x;
+        }
+        const f = (x) => Number(x).toFixed(1);
+        function chart(target, width, height, label) {
+          target.replaceChildren();
+          const svg = el("svg", {
+            viewBox: `0 0 ${width} ${height}`,
+            role: "img",
+            "aria-label": label,
+          });
+          target.append(svg);
+          return svg;
+        }
+        function bar(svg, x, y, w, h, color, title) {
+          const r = el("rect", {
+            x,
+            y,
+            width: Math.max(w, 0.8),
+            height: h,
+            fill: color,
+            rx: 3,
+            tabindex: 0,
+          });
+          r.append(el("title", {}, title));
+          svg.append(r);
+          return r;
+        }
+        function text(svg, x, y, value, attrs = {}) {
+          svg.append(
+            el(
+              "text",
+              { x, y, fill: "#24384d", "font-size": 13, ...attrs },
+              value,
+            ),
+          );
+        }
+        function axis(svg, x, y, w, max) {
+          const step = max <= 100 ? 20 : max <= 300 ? 50 : 100;
+          for (let t = 0; t <= max; t += step) {
+            const px = x + (w * t) / max;
+            svg.append(
+              el("line", { x1: px, x2: px, y1: 25, y2: y, stroke: "#dbe3eb" }),
+            );
+            text(svg, px, y + 21, `${t}s`, { "text-anchor": "middle" });
+          }
+        }
+        function legend(id, entries) {
+          const target = document.getElementById(id);
+          for (const [k, name] of Object.entries(entries)) {
+            const span = document.createElement("span");
+            const swatch = document.createElement("i");
+            swatch.style.background = colors[k];
+            swatch.setAttribute("aria-hidden", "true");
+            span.append(swatch, document.createTextNode(name));
+            target.append(span);
+          }
+        }
+        function breakdown() {
+          const rows = data.historical_runs;
+          if (mobile) {
+            mobileBudgets(rows);
+            return;
+          }
+          const svg = chart(
+            document.getElementById("suite-budget-chart"),
+            1000,
+            rows.length * 59 + 65,
+            "Measured elapsed time by suite: shared initialization, case work, teardown and unattributed time",
+          );
+          const max =
+            Math.ceil(Math.max(...rows.map((r) => r.process_seconds)) / 50) *
+            50;
+          axis(svg, 202, rows.length * 59 + 25, 710, max);
+          rows.forEach((r, i) => {
+            const y = 32 + i * 59;
+            text(svg, 4, y + 14, r.short_label, { "font-weight": "600" });
+            let offset = 0;
+            for (const [key, kind, label] of [
+              [
+                "shared_initialization_seconds",
+                "setup",
+                "Shared initialization",
+              ],
+              [
+                "cases_seconds",
+                "execution",
+                "All case work including own setup/cleanup",
+              ],
+              [
+                "shared_teardown_seconds",
+                "cleanup",
+                "Shared diagnostics and stop",
+              ],
+              ["launch_and_other_seconds", "other", "Launch/other"],
+            ]) {
+              const value = r[key];
+              bar(
+                svg,
+                202 + (710 * offset) / max,
+                y,
+                (710 * value) / max,
+                22,
+                colors[kind],
+                `${r.short_label}: ${label} ${f(value)}s`,
+              );
+              if (value >= 38)
+                text(
+                  svg,
+                  202 + (710 * (offset + value / 2)) / max,
+                  y + 15,
+                  `${f(value)}s`,
+                  { fill: "#fff", "font-size": 12, "text-anchor": "middle" },
+                );
+              offset += value;
+            }
+            text(svg, 925, y + 16, `${f(r.process_seconds)}s`, {
+              "font-weight": "600",
+            });
+          });
+        }
+        function podComposition() {
+          const rows = data.pod_cases;
+          const target = document.getElementById("pod-case-chart");
+          if (mobile) {
+            mobilePodCases(target, rows);
+            return;
+          }
+          const svg = chart(
+            target,
+            1000,
+            rows.length * 37 + 65,
+            "Thirteen sequential Pod cases, split into initial provisioning, remaining body and fixture cleanup",
+          );
+          const max = 30;
+          axis(svg, 275, rows.length * 37 + 25, 650, max);
+          rows.forEach((r, i) => {
+            const y = 32 + i * 37;
+            text(svg, 4, y + 14, r.label, { "font-size": 13 });
+            let offset = 0;
+            for (const [key, kind] of [
+              ["fixture_setup", "other"],
+              ["initial_sandbox_provisioning", "provision"],
+              ["remaining_body", "execution"],
+              ["fixture_cleanup", "cleanup"],
+            ]) {
+              const value = r[key];
+              if (value < 0.002) continue;
+              bar(
+                svg,
+                275 + (650 * offset) / max,
+                y,
+                (650 * value) / max,
+                20,
+                colors[kind],
+                `${r.label}: ${names[kind]} ${f(value)}s`,
+              );
+              offset += value;
+            }
+            text(
+              svg,
+              940,
+              y + 15,
+              `${f(r.fixture_setup + r.body + r.fixture_cleanup)}s`,
+              { "font-size": 12 },
+            );
+          });
+        }
+        function drawComparison(suite) {
+          const rows = data.benchmark_runs.filter((r) => r.suite === suite);
+          const target = document.getElementById("benchmark-chart");
+          if (!rows.length) {
+            target.textContent =
+              "No successful comparable execution is available.";
+            return;
+          }
+          if (mobile) {
+            mobileComparison(target, rows, suite);
+            return;
+          }
+          const svg = chart(
+            target,
+            1000,
+            rows.length * 64 + 90,
+            `${suite} benchmark process time and worker CPU, listed by comparison and variant`,
+          );
+          const max =
+            Math.ceil(Math.max(...rows.map((r) => r.process_seconds)) / 50) *
+            50;
+          const cpuMax =
+            Math.ceil(Math.max(...rows.map((r) => r.cpu_seconds)) / 100) * 100;
+          text(svg, 250, 20, "Test process wall seconds", {
+            "font-weight": "600",
+          });
+          text(svg, 680, 20, "Worker CPU seconds", { "font-weight": "600" });
+          rows.forEach((r, i) => {
+            const y = 43 + i * 64;
+            text(svg, 4, y + 14, r.label, {
+              "font-size": 13,
+              "font-weight": "600",
+            });
+            text(
+              svg,
+              4,
+              y + 32,
+              r.cache_note ||
+                "Fresh test result; image-store state uncontrolled",
+              { "font-size": 11, fill: "#526477" },
+            );
+            bar(
+              svg,
+              250,
+              y,
+              (345 * r.process_seconds) / max,
+              22,
+              r.variant === "candidate"
+                ? "#22857d"
+                : r.variant === "control"
+                  ? "#5068b4"
+                  : "#b06b1e",
+              `${r.label}: process ${f(r.process_seconds)} seconds`,
+            );
+            text(svg, 605, y + 16, f(r.process_seconds), { "font-size": 12 });
+            bar(
+              svg,
+              680,
+              y,
+              (240 * r.cpu_seconds) / cpuMax,
+              22,
+              r.variant === "candidate"
+                ? "#22857d"
+                : r.variant === "control"
+                  ? "#5068b4"
+                  : "#b06b1e",
+              `${r.label}: CPU ${f(r.cpu_seconds)} seconds`,
+            );
+            text(svg, 930, y + 16, f(r.cpu_seconds), { "font-size": 12 });
+          });
+          text(
+            svg,
+            250,
+            rows.length * 64 + 61,
+            "Blue: control · Green: matched candidate · Amber: diagnostic pilot. Wall and CPU use independent scales.",
+            { "font-size": 12, fill: "#526477" },
+          );
+          const select = document.getElementById("timeline-run");
+          select.replaceChildren();
+          for (const r of rows) {
+            const option = document.createElement("option");
+            option.value = r.id;
+            option.textContent = r.label;
+            select.append(option);
+          }
+          drawTimeline(select.value);
+        }
+        function drawTimeline(id) {
+          const r = data.benchmark_runs.find((x) => x.id === id);
+          if (!r) return;
+          const rows = r.timeline;
+          const target = document.getElementById("case-timeline");
+          if (mobile) {
+            mobileTimeline(target, r, rows);
+            return;
+          }
+          const svg = chart(
+            target,
+            1000,
+            rows.length * 42 + 115,
+            `${r.label}: actual scenario overlap with shared stack initialization`,
+          );
+          const max =
+            Math.ceil(
+              Math.max(r.setup_seconds, ...rows.map((x) => x.end)) / 50,
+            ) * 50;
+          const x = 275,
+            w = 650;
+          axis(svg, x, rows.length * 42 + 53, w, max);
+          bar(
+            svg,
+            x,
+            28,
+            (w * r.setup_seconds) / max,
+            20,
+            colors.setup,
+            `Shared initialization ${f(r.setup_seconds)} seconds`,
+          );
+          text(svg, 4, 42, "Shared initialization", { "font-weight": "600" });
+          for (let i = 0; i < rows.length; i++) {
+            const row = rows[i],
+              y = 65 + i * 42;
+            text(svg, 4, y + 14, row.label, { "font-size": 12 });
+            const phases =
+              row.phases && row.phases.length
+                ? row.phases
+                : [
+                    {
+                      start: row.start,
+                      end: row.end,
+                      kind: "execution",
+                      name: "Complete scenario including cleanup",
+                    },
+                  ];
+            for (const p of phases)
+              bar(
+                svg,
+                x + (w * p.start) / max,
+                y,
+                (w * (p.end - p.start)) / max,
+                21,
+                colors[p.kind] || colors.execution,
+                `${row.label}: ${p.name || names[p.kind]} ${f(p.end - p.start)}s; starts +${f(p.start)}s`,
+              );
+            text(svg, 939, y + 15, `${f(row.end - row.start)}s`, {
+              "font-size": 12,
+            });
+          }
+          const link = document.getElementById("timeline-evidence");
+          link.href = `https://app.buildbuddy.io/invocation/${r.invocation_id}`;
+          link.textContent = `Open ${r.label} invocation`;
+          document.getElementById("timeline-note").textContent =
+            r.timeline_note ||
+            "Offsets start at shared stack initialization. Bars include each case’s owned cleanup; overlapping intervals are not summed.";
+        }
+        function mobileBudgets(rows) {
+          const svg = chart(
+            document.getElementById("suite-budget-chart"),
+            340,
+            rows.length * 70 + 44,
+            "Measured suite phases, seconds",
+          );
+          const max =
+            Math.ceil(Math.max(...rows.map((r) => r.process_seconds)) / 50) *
+            50;
+          rows.forEach((r, i) => {
+            const y = 20 + i * 70;
+            text(svg, 4, y, r.short_label, {
+              "font-size": 13,
+              "font-weight": "600",
+            });
+            text(svg, 335, y, `${f(r.process_seconds)}s`, {
+              "font-size": 12,
+              "text-anchor": "end",
+            });
+            let offset = 0;
+            for (const [key, kind] of [
+              ["shared_initialization_seconds", "setup"],
+              ["cases_seconds", "execution"],
+              ["shared_teardown_seconds", "cleanup"],
+              ["launch_and_other_seconds", "other"],
+            ]) {
+              const value = r[key],
+                w = (328 * value) / max;
+              bar(
+                svg,
+                4 + (328 * offset) / max,
+                y + 12,
+                w,
+                23,
+                colors[kind],
+                `${r.short_label}: ${names[kind]} ${f(value)}s`,
+              );
+              if (w > 52)
+                text(
+                  svg,
+                  4 + (328 * (offset + value / 2)) / max,
+                  y + 28,
+                  `${f(value)}s`,
+                  { "font-size": 11, fill: "#fff", "text-anchor": "middle" },
+                );
+              offset += value;
+            }
+          });
+          const y = rows.length * 70 + 9;
+          for (let t = 0; t <= max; t += 100)
+            text(svg, 4 + (328 * t) / max, y, `${t}s`, {
+              "font-size": 11,
+              "text-anchor": t === 0 ? "start" : "middle",
+            });
+        }
+        function mobilePodCases(target, rows) {
+          const svg = chart(
+            target,
+            340,
+            rows.length * 57 + 40,
+            "Pod cases: initial provisioning, remaining body and cleanup",
+          );
+          rows.forEach((r, i) => {
+            const y = 20 + i * 57;
+            text(svg, 4, y, r.label, { "font-size": 12 });
+            text(
+              svg,
+              335,
+              y,
+              `${f(r.fixture_setup + r.body + r.fixture_cleanup)}s`,
+              { "font-size": 11, "text-anchor": "end" },
+            );
+            let offset = 0;
+            for (const [key, kind] of [
+              ["fixture_setup", "other"],
+              ["initial_sandbox_provisioning", "provision"],
+              ["remaining_body", "execution"],
+              ["fixture_cleanup", "cleanup"],
+            ]) {
+              const value = r[key];
+              if (value < 0.002) continue;
+              bar(
+                svg,
+                4 + (328 * offset) / 30,
+                y + 10,
+                (328 * value) / 30,
+                18,
+                colors[kind],
+                `${r.label}: ${names[kind]} ${f(value)}s`,
+              );
+              offset += value;
+            }
+          });
+          for (let t = 0; t <= 30; t += 10)
+            text(svg, 4 + (328 * t) / 30, rows.length * 57 + 14, `${t}s`, {
+              "font-size": 11,
+              "text-anchor": t === 0 ? "start" : t === 30 ? "end" : "middle",
+            });
+        }
+        function mobileComparison(target, rows, suite) {
+          const svg = chart(
+            target,
+            340,
+            rows.length * 112 + 28,
+            `${suite}: process wall and worker CPU, independent scales`,
+          );
+          const max =
+            Math.ceil(Math.max(...rows.map((r) => r.process_seconds)) / 50) *
+            50;
+          const cpuMax =
+            Math.ceil(Math.max(...rows.map((r) => r.cpu_seconds)) / 100) * 100;
+          rows.forEach((r, i) => {
+            const y = 20 + i * 112,
+              c =
+                r.variant === "candidate"
+                  ? colors.provision
+                  : r.variant === "control"
+                    ? colors.setup
+                    : colors.execution;
+            text(svg, 4, y, r.label, { "font-size": 13, "font-weight": "600" });
+            text(svg, 4, y + 22, `Wall ${f(r.process_seconds)}s`, {
+              "font-size": 11,
+            });
+            bar(
+              svg,
+              124,
+              y + 8,
+              (208 * r.process_seconds) / max,
+              18,
+              c,
+              `${r.label}: wall ${f(r.process_seconds)}s`,
+            );
+            text(svg, 4, y + 49, `CPU ${f(r.cpu_seconds)}s`, {
+              "font-size": 11,
+            });
+            bar(
+              svg,
+              124,
+              y + 35,
+              (208 * r.cpu_seconds) / cpuMax,
+              18,
+              c,
+              `${r.label}: CPU ${f(r.cpu_seconds)}s`,
+            );
+            text(
+              svg,
+              4,
+              y + 77,
+              `Shared initialization ${f(r.setup_seconds)}s`,
+              { "font-size": 11, fill: "#526477" },
+            );
+          });
+          const select = document.getElementById("timeline-run");
+          select.replaceChildren();
+          for (const r of rows) {
+            const option = document.createElement("option");
+            option.value = r.id;
+            option.textContent = r.label;
+            select.append(option);
+          }
+          drawTimeline(select.value);
+        }
+        function mobileTimeline(target, r, rows) {
+          const svg = chart(
+            target,
+            340,
+            rows.length * 61 + 110,
+            `${r.label}: scenario overlap from shared initialization`,
+          );
+          const max =
+            Math.ceil(
+              Math.max(r.setup_seconds, ...rows.map((x) => x.end)) / 50,
+            ) * 50;
+          text(svg, 4, 19, `Shared initialization ${f(r.setup_seconds)}s`, {
+            "font-size": 12,
+            "font-weight": "600",
+          });
+          bar(
+            svg,
+            4,
+            29,
+            (328 * r.setup_seconds) / max,
+            18,
+            colors.setup,
+            `Shared initialization ${f(r.setup_seconds)}s`,
+          );
+          rows.forEach((row, i) => {
+            const y = 74 + i * 61;
+            text(svg, 4, y, row.label, { "font-size": 11 });
+            text(svg, 335, y, `${f(row.end - row.start)}s`, {
+              "font-size": 11,
+              "text-anchor": "end",
+            });
+            for (const ph of row.phases)
+              bar(
+                svg,
+                4 + (328 * ph.start) / max,
+                y + 10,
+                (328 * (ph.end - ph.start)) / max,
+                18,
+                colors[ph.kind] || colors.execution,
+                `${row.label}: ${names[ph.kind]} ${f(ph.end - ph.start)}s; +${f(ph.start)}s`,
+              );
+          });
+          const y = rows.length * 61 + 90;
+          for (let t = 0; t <= max; t += max > 300 ? 100 : 50)
+            text(svg, 4 + (328 * t) / max, y, `${t}s`, {
+              "font-size": 11,
+              "text-anchor": t === 0 ? "start" : t === max ? "end" : "middle",
+            });
+          const link = document.getElementById("timeline-evidence");
+          link.href = `https://app.buildbuddy.io/invocation/${r.invocation_id}`;
+          link.textContent = `Open ${r.label} invocation`;
+          document.getElementById("timeline-note").textContent =
+            "Offsets start at shared stack initialization. Each case includes owned cleanup. Hover or focus a bar for its phase and start time.";
+        }
+        legend("runtime-legend", {
+          setup: "Shared initialization",
+          execution: "Cases including own setup/cleanup",
+          cleanup: "Shared diagnostics and stop",
+          other: "Launch/other",
+        });
+        legend("pod-legend", {
+          provision: "Initial provisioning",
+          execution: "Remaining body",
+          cleanup: "Fixture cleanup",
+        });
+        legend("timeline-legend", {
+          setup: "Shared initialization",
+          provision: "Initial guest provisioning",
+          session: "Session setup checks",
+          execution: "Remaining scenario work",
+          cleanup: "Diagnostics and cleanup",
+        });
+        breakdown();
+        podComposition();
+        const suite = document.getElementById("benchmark-suite");
+        suite.addEventListener("change", () => drawComparison(suite.value));
+        document
+          .getElementById("timeline-run")
+          .addEventListener("change", (e) => drawTimeline(e.target.value));
+        drawComparison(suite.value);
+        document.documentElement.dataset.runtimeChartsReady = "true";
+      })();
+    </script>
   </body>
 </html>

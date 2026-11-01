@@ -1,10 +1,10 @@
 {
-  "source_devel_commit": "58e4261128f61235dd354192a907447882284ceb",
+  "source_devel_commit": "55bdc1da22c84f3bcf0dff44567fb20159caad5b",
   "window_start_utc": "2026-10-29T20:50:00Z",
-  "window_end_utc": "2026-11-01T02:30:00Z",
-  "published_at_utc": "2026-11-01T03:52:31.430643+00:00",
+  "window_end_utc": "2026-11-01T06:41:32.386674+00:00",
+  "published_at_utc": "2026-11-01T06:41:32.461993+00:00",
   "attribution": "not collected",
-  "sampling_design": "Four fixed complete 90-minute arrival windows with gaps, not a continuous census or random sample.",
+  "sampling_design": "Retained cohort: Four fixed complete 90-minute arrival windows with gaps, not a continuous census or random sample. Focused suite experiments are a separate selected sample, not additional sampled fleet hours.",
   "sampling_windows_utc": [
     {
       "start": "2026-10-29T20:50:00Z",
@@ -24,6 +24,12 @@
     }
   ],
   "sampled_hours": 6,
-  "report_html_sha256": "7a8641178d897f412638ec8864d6d00e409ae805eb78bebd960dc6250c0695b4",
-  "visual_validation_invocation": "c0231dd4-0e60-456b-b456-1d43e7809cba"
+  "retained_cohort_window_end_utc": "2026-11-01T02:30:00Z",
+  "retained_cohort_source_devel_commit": "58e4261128f61235dd354192a907447882284ceb",
+  "runtime_experiment_window_utc": {
+    "start": "2026-11-01T06:00:06.594512Z",
+    "end": "2026-11-01T06:34:13.094158Z"
+  },
+  "report_html_sha256": "93a3bccd308f5fd4be43f57ea878f1a15228dfcd1274927ade24d2bc31cb2e86",
+  "visual_validation_invocation": "ee85bf8d-9e79-4717-84de-aed49dc42048"
 }
