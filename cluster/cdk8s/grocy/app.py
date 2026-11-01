@@ -12,6 +12,7 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, k8s
+
 from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.flux import kustomize_kustomization
