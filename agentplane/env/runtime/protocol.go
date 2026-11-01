@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 
+	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
@@ -21,9 +21,8 @@ type hostLifecyclePeer interface {
 	ChangesSince() <-chan struct{}
 }
 
-// ConnectHost is the sole in-process lifecycle coordinator. It serializes intent
-// application and report observation without holding either component mutex
-// across a call into the other component.
+// ConnectHost observes Host reports while the shared COSI engine applies intents.
+// Neither component mutex is held across a call into the other component.
 func (r *Runtime) ConnectHost(ctx context.Context, client *harnesshost.Runner) error {
 	return r.connectHost(ctx, client, client)
 }
@@ -33,7 +32,7 @@ func (r *Runtime) connectHost(ctx context.Context, client *harnesshost.Runner, p
 	if bootID == "" {
 		return status.Error(codes.InvalidArgument, "Harness Host has no boot ID")
 	}
-	host := &hostLink{bootID: bootID, client: client, intentChanged: make(chan struct{}), connected: true}
+	host := &hostLink{bootID: bootID, client: client, peer: peer, connected: true}
 	r.mu.Lock()
 	if r.closing || r.failed {
 		r.mu.Unlock()
@@ -54,19 +53,34 @@ func (r *Runtime) connectHost(ctx context.Context, client *harnesshost.Runner, p
 		r.intent.Binding.HostBootId = bootID
 		r.intent.Binding.Generation++
 	}
+	if err := r.publishHostIntentLocked(); err != nil {
+		host.connected = false
+		r.changedLocked()
+		r.mu.Unlock()
+		return err
+	}
 	r.changedLocked()
 	r.mu.Unlock()
 	defer func() { r.disconnectHost(host, resultErr) }()
 
-	bridgeCtx, cancel := context.WithCancel(ctx)
-	var workers sync.WaitGroup
-	intentResults := make(chan error, 1)
-	intentApplied := make(chan struct{}, 1)
-	workers.Go(func() { intentResults <- r.applyHostIntents(bridgeCtx, host, peer, intentApplied) })
-	defer func() { cancel(); workers.Wait() }()
-
 	var lastReport *runtimepb.HostReport
+	var lastApplied hostIntentStatus
 	for {
+		r.mu.Lock()
+		runtimeChanged := r.changes
+		failure := r.failureLocked()
+		applied, _, readErr := cosi.Read(context.Background(), r.lifecycleState, hostIntentStatusResource(hostIntentStatus{}))
+		r.mu.Unlock()
+		if failure != nil {
+			return failure
+		}
+		if readErr != nil {
+			return readErr
+		}
+		if applied != lastApplied {
+			lastReport = nil
+			lastApplied = applied
+		}
 		hostChanged := peer.ChangesSince()
 		report, err := peer.Report()
 		if err != nil {
@@ -81,52 +95,8 @@ func (r *Runtime) connectHost(ctx context.Context, client *harnesshost.Runner, p
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case err := <-intentResults:
-			return err
-		case <-intentApplied:
-			// Applying an intent can clear Runtime's report without changing
-			// any Host report fields (notably the same-generation fence).
-			// Re-observe even when Host's value is byte-identical.
-			lastReport = nil
+		case <-runtimeChanged:
 		case <-hostChanged:
-		}
-	}
-}
-
-// Intent application can wait for accepted Session setup. Observe reports on
-// the other worker so that wait cannot prevent a drain acknowledgement. The
-// single intent worker still applies generations in order.
-func (r *Runtime) applyHostIntents(ctx context.Context, host *hostLink, peer hostLifecyclePeer, applied chan<- struct{}) error {
-	var lastIntent *runtimepb.LifecycleIntent
-	for {
-		r.mu.Lock()
-		changed := host.intentChanged
-		var current *runtimepb.LifecycleIntent
-		if r.intent != nil {
-			current = proto.Clone(r.intent).(*runtimepb.LifecycleIntent)
-		}
-		r.mu.Unlock()
-		if current != nil && !proto.Equal(current, lastIntent) {
-			if err := peer.ApplyIntent(ctx, current); err != nil {
-				return fmt.Errorf("apply Host lifecycle intent: %w", err)
-			}
-			lastIntent = current
-			r.mu.Lock()
-			if r.host == host && host.connected {
-				host.intent = proto.Clone(current).(*runtimepb.LifecycleIntent)
-				r.changedLocked()
-			}
-			r.mu.Unlock()
-			select {
-			case applied <- struct{}{}:
-			default:
-			}
-			continue
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-changed:
 		}
 	}
 }
@@ -347,8 +317,13 @@ func (r *Runtime) waitForExecutionFenced(ctx context.Context, binding *runtimepb
 		}
 		// Publishing the fence locally is not enough: stopping Host before it
 		// applies this update can make Close reject the delayed intent.
+		applied, _, err := cosi.Read(context.Background(), r.lifecycleState, hostIntentStatusResource(hostIntentStatus{}))
+		if err != nil {
+			r.mu.Unlock()
+			return err
+		}
 		if r.intent != nil && proto.Equal(r.intent.Binding, binding) && r.intent.ExecutionFenced &&
-			r.host.intent != nil && proto.Equal(r.host.intent.Binding, binding) && r.host.intent.ExecutionFenced {
+			applied.Applied && applied.Intent == intentValue(r.intent) {
 			r.mu.Unlock()
 			return nil
 		}
