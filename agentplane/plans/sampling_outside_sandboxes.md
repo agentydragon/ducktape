@@ -67,14 +67,14 @@ What stays on the harness host:
 
 ### First runnable slice
 
-Worker `/root/central_codex_spike`, 2026-10-27: the experimental
-[`runner/x/central_codex`](../runner/x/central_codex/README.md) subprocess/relay fixture passed on RBE
-in 16.3 seconds ([evidence](../debug/central_codex_sampling.md)). It drives real code-mode shell, patch,
-image and remote instruction loading, keeps native state outside the executor directory, and reads
-conversation history after executor loss and sampler restart. The host explicitly records unknown
-effects and interrupts a disconnected turn: a yielded shell session is not terminal failure evidence.
-The separate Pod/VM failure domain, real fence, authenticated Gateway path, spend attribution and
-comparable nested-call latency remain open. No deployment changes.
+Worker `/root/central_codex_spike`, 2026-10-27: a temporary subprocess/relay fixture passed on RBE
+in 16.3 seconds ([preserved evidence](../debug/central_codex_sampling.md)). It drove real code-mode
+shell, patch, image and remote instruction loading, kept native state outside the executor directory,
+and read conversation history after executor loss and sampler restart. The fixture source has since
+been retired. The host explicitly recorded unknown effects and interrupted a disconnected turn: a
+yielded shell session is not terminal failure evidence. The separate Pod/VM failure domain, real fence,
+authenticated Gateway path, spend attribution and comparable nested-call latency remain open. No
+deployment changes.
 
 ### Reaching a Sandbox's exec-server
 
