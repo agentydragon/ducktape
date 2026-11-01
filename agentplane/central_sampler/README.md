@@ -100,7 +100,7 @@ before stopping the shared host. The gRPC server can durably admit commands unti
 other replicas continue admitting throughout. Active effects retain the existing bounded drain and
 uncertain outcome handling. The Executor adapter separately limits each Runner to eight open or opening
 streams; that is a connection limit, not a limit on resident sampler Sessions or active execution.
-See the [Executor API resource and lifecycle contract](../executor/README.md).
+See the [Executor API resource and lifecycle contract](../env/runtime/execution/SPEC.md).
 
 Host failure interrupts pending work for every attached Session; later code-mode work may start a
 fresh host, but in-flight provider or executor effects are never replayed automatically. Configure CPU

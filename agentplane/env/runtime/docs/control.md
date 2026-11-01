@@ -42,7 +42,7 @@ Session configuration cannot override template resource ceilings or executor sel
 Pods and VMs expose `/run/agentplane/config/environment-runtime.json`,
 `/run/agentplane/sandbox/launch.json`, `/run/agentplane/config/kubeconfig`, and
 `/run/agentplane/trust/` at the same paths. Pod templates mount ConfigMaps; VM boot mounts disks.
-The [configuration inventory](CONFIGURATION.md) specifies every field, source and file.
+The [configuration inventory](config.md) specifies every field, source and file.
 
 The required `environment.kind` selects a Pod or VM variant. Pod policy contains an optional
 container executor; VM policy contains console settings, guest/service capacity, block devices and
@@ -120,7 +120,7 @@ budget remains authoritative across all of its native services.
   remain outcome-unknown, and mutations are never automatically replayed. Closing one stream
   releases its connection and detaches its native session. Codex 0.162.1 allows resume for
   30 seconds before expiring that session and terminating its remaining processes. Other
-  sessions are unaffected. See the sandbox-owned [Executor API](../executor/README.md).
+  sessions are unaffected. See the sandbox-owned [Executor API](../execution/SPEC.md).
 - `OpenSession` answers with the session's `Attached` snapshot: the spec, setup and harness states,
   `last_cursor`, and the active turn id as of that position. `GetStatus` returns one snapshot with a
   Environment Runtime boot UUID, each harness process (its per-spawn UUID and the Sessions it hosts), session
@@ -189,7 +189,7 @@ budget remains authoritative across all of its native services.
   controllers alongside Runtime bootstrap and environment process controllers. Execution
   Service owns its backend lifecycle. Session records, journals and acknowledgements remain durable
   Host authority; the environment seal marker remains Runtime authority. There is no duplicated
-  environment controller in Host. See [lifecycle ownership](docs/lifecycle.md).
+  environment controller in Host. See [lifecycle ownership](lifecycle.md).
 - Orderly Runtime shutdown also waits for Host setup and Runtime bootstrap. An unexpected process loss
   can still interrupt a script; recovery records that outcome and never silently reruns it.
 - A sealed journal takes no further Events, so its commands are refused. Its ingress push sends
