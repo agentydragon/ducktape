@@ -2,11 +2,53 @@ package runtime
 
 import (
 	"context"
+	"errors"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
+	"google.golang.org/protobuf/proto"
 )
+
+type uncertainFenceHandle struct{ calls atomic.Int32 }
+
+func (*uncertainFenceHandle) Executor() executorpb.ExecutorServer { return nil }
+
+func (h *uncertainFenceHandle) StopAndFence(context.Context) error {
+	h.calls.Add(1)
+	return errors.New("uncertain fence")
+}
+
+func TestUncertainExecutionFenceIsNotRetriedForBinding(t *testing.T) {
+	binding := &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1}
+	handle := &uncertainFenceHandle{}
+	r := &Runtime{
+		changes: make(chan struct{}), fatal: make(chan error, 1), executionOwner: handle,
+		host: &hostLink{connected: true, report: &runtimepb.HostReport{
+			Binding: binding, Ready: true, NativeStopped: true,
+		}},
+		intent: &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_QUIESCING},
+	}
+	r.maybeFenceExecution(binding)
+	select {
+	case <-r.fatal:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("uncertain fence did not fail Runtime")
+	}
+	r.mu.Lock()
+	retained := proto.Equal(r.fenceInFlight, binding)
+	r.mu.Unlock()
+	if !retained {
+		t.Fatal("uncertain fence lost its binding marker and can be retried")
+	}
+	r.maybeFenceExecution(binding)
+	if got := handle.calls.Load(); got != 1 {
+		t.Fatalf("fence calls = %d, want 1", got)
+	}
+}
 
 func TestWaitForHostQuiescedWakesForFinalReportPublishedAfterSnapshot(t *testing.T) {
 	binding := &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1}

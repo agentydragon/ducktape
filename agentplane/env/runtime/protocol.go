@@ -182,27 +182,20 @@ func (r *Runtime) maybeFenceExecution(binding *runtimepb.Binding) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), executionFenceGrace)
 		defer cancel()
+		// Retain the in-flight marker on failure: an uncertain stop or fence
+		// publication must not be attempted again for this binding.
 		r.cancelExecutionCalls()
 		if err := r.waitForExecutionCalls(ctx); err != nil {
-			r.mu.Lock()
-			if proto.Equal(r.fenceInFlight, binding) {
-				r.fenceInFlight = nil
-			}
-			r.mu.Unlock()
 			r.fail(fmt.Errorf("drain forwarded Execution calls before fencing: %w", err))
 			return
 		}
 		if err := r.stopExecution(ctx); err != nil {
-			r.mu.Lock()
-			if proto.Equal(r.fenceInFlight, binding) {
-				r.fenceInFlight = nil
-			}
-			r.mu.Unlock()
 			r.fail(fmt.Errorf("fence embedded Execution API: %w", err))
 			return
 		}
 		if err := r.setExecutionFenced(binding); err != nil {
 			r.fail(fmt.Errorf("publish embedded Execution fence: %w", err))
+			return
 		}
 		r.mu.Lock()
 		if proto.Equal(r.fenceInFlight, binding) {
