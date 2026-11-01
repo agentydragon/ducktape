@@ -250,7 +250,7 @@ async def test_parent_session_delegates_through_the_action_cli(
     workspace = current["workspace"]
     assert workspace["availability"] == "AVAILABILITY_CONFIGURED"
     configuration = one(choice for choice in current["configurations"] if choice["harness"] == "HARNESS_CODEX")
-    reasoning_effort = one(effort for effort in configuration["reasoning_efforts"] if effort)
+    reasoning_effort = next(effort for effort in configuration["reasoning_efforts"] if effort)
 
     session_id = str(uuid4())
     opened = await _submit(
