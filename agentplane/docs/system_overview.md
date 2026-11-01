@@ -75,7 +75,7 @@ flowchart LR
     db -->|NOTIFY: central_sampler_outbox| sampler
     sampler -->|typed execution RPCs| gateway
     gateway -->|mTLS Executor gRPC| runtime
-    runtime -->|private Executor gRPC| execution
+    runtime -->|direct Executor calls| execution
     execution -->|local Codex JSON-RPC over WebSocket| executor
     sampler -->|acknowledged outbox: SessionJournalIngress.Push| history
     sampler -->|Responses API| llm -->|model API| responses
@@ -127,7 +127,7 @@ flowchart LR
     gateway -->|mTLS Runner / Executor / WatchState| runtime
     runtime <-->|private binding / lifecycle intents / reports| host
     runtime -->|private native Session RPC| host
-    runtime -->|private Executor RPC / backend fence| execution
+    runtime -->|direct Executor calls / backend fence| execution
     runtime --> bootstrap
     host -.->|durable journal push and ACK| history
 ```

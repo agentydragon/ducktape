@@ -9,8 +9,8 @@ admission and recovery guarantees.
 [Isolation and resources](ISOLATION.md) describes protection goals, the current shared Codex
 backend, process placement, collective resource limits and failure scope.
 
-Environment Runtime runs this service in-process. Harness Host calls its private Unix gRPC API;
-Runtime owns service startup, health, shutdown and fencing. In
+Environment Runtime runs this service in-process and calls its adapter directly. Harness Host uses
+the private Unix socket for health checks; Runtime owns startup, health, shutdown and fencing. In
 Pods, the `companion` subcommand runs as PID 1 in the isolated Codex container and owns the native
 exec-server namespace. Gateway and the central sampler continue to use the unchanged `Executor` wire
 protocol. The independent service is exercised by
@@ -84,8 +84,8 @@ replays execution requests.
 
 ## Source ownership
 
-- `adapter/`: typed process/file RPCs, native session and WebSocket lifetime, bounded frames and
-  cancellation, used by the standalone service.
+- `adapter/`: typed process/file operations, native session and WebSocket lifetime, bounded frames and
+  cancellation, used by both embedded and standalone service modes.
 - `codexexecserver/`: native launch/probe/fence backends and the COSI lifecycle used by Execution Service.
 - `companion/`: Pod PID-1 ownership protocol and its client, shared reaper integration.
 - `service/`: environment identity, state-directory ownership and serving lifetime.
