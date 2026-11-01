@@ -362,7 +362,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 ),
                 "hdd-piraeus-102453": _volume_topology(
                     rack="hil-ovh-h109b04",
-                    storage="1700Gi",
+                    storage="2500Gi",  # This node has a larger HDD pool.
                     storage_class="piraeus-hdd-local",
                     disk="hdd",
                     replicas=1,
