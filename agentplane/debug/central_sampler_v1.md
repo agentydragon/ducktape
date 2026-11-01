@@ -1,8 +1,8 @@
 # Central sampler v1 validation
 
 Evidence for [PR #12225](https://github.com/agentydragon/ducktape/pull/12225), 2026-10-27.
-The [service contract](../x/central_sampler/SPEC.md) and
-[runtime instructions](../x/central_sampler/README.md) describe the implementation.
+The [service contract](../central_sampler/SPEC.md) and
+[runtime instructions](../central_sampler/README.md) describe the implementation.
 
 The results below validate the earlier per-Session host implementation. The selected 2026-10-28
 runtime shares one lazy Codex host across logical Sessions and isolates each code-mode cell in a

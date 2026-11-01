@@ -32,7 +32,7 @@ from agentplane.llm_ingress.models import AttributionConfig, AttributionField, A
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
-from agentplane.x.central_sampler.settings import (
+from agentplane.central_sampler.settings import (
     AnthropicBlockBindingConfig,
     AnthropicCompactionConfig,
     AnthropicMessagesConfig,

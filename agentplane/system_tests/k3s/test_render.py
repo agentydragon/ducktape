@@ -26,7 +26,7 @@ from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
 from agentplane.system_tests.vm_configuration import OOM_TEMPLATE, SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from agentplane.x.central_sampler.settings import (
+from agentplane.central_sampler.settings import (
     MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
     Settings as CentralSamplerSettings,
 )

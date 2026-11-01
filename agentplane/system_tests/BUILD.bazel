@@ -1,6 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
-# gazelle:resolve py agentplane.x.central_sampler.sampler_pb2_grpc //agentplane/x/central_sampler:sampler_pb2_grpc
+# gazelle:resolve py agentplane.central_sampler.sampler_pb2_grpc //agentplane/central_sampler:sampler_pb2_grpc
 
 package(
     default_testonly = True,
@@ -371,10 +371,10 @@ py_library(
         ":tracing",
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
+        "//agentplane/central_sampler:sampler_pb2_grpc",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
-        "//agentplane/x/central_sampler:sampler_pb2_grpc",
         "//model_catalog:catalog",
         "//util/testing:undeclared_outputs",
         "@pypi//grpcio",

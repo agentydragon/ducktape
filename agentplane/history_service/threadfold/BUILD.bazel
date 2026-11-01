@@ -11,8 +11,8 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service/threadfold",
     visibility = [
+        "//agentplane/central_sampler:__pkg__",
         "//agentplane/history_service:__subpackages__",
-        "//agentplane/x/central_sampler:__pkg__",
     ],
     deps = [
         "//agentplane/history_service:history_service_go_proto",

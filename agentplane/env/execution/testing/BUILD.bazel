@@ -30,8 +30,8 @@ py_library(
     name = "codex_exec_server_container",
     srcs = ["codex_exec_server_container.py"],
     visibility = [
+        "//agentplane/central_sampler:__pkg__",
         "//agentplane/env/e2e:__pkg__",
-        "//agentplane/x/central_sampler:__pkg__",
     ],
     deps = [
         "//agentplane/env/e2e/testing:launches",

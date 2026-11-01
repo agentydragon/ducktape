@@ -102,7 +102,7 @@ or prevent its control RPCs. Existing Dispatcher routing still requires the boun
 History retains source evidence and derives the lossy Thread display. Its entries are not a
 provider continuation format: the sampler owns that state in its database. Wrapped native
 harnesses keep their current local sampling, execution and persistence paths. See the
-[standalone API and recovery contract](../x/central_sampler/SPEC.md).
+[standalone API and recovery contract](../central_sampler/SPEC.md).
 
 ## Environment control and native Sessions
 

@@ -13,10 +13,10 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
 
 ## Open plans and gates
 
-- [Central Anthropic follow-ups](../x/central_sampler/plans/anthropic.md) — deferred BuildBuddy
+- [Central Anthropic follow-ups](../central_sampler/plans/anthropic.md) — deferred BuildBuddy
   credentials, background compaction, dynamic tools and optional Langfuse export; direct sampling
   and ordinary compaction are deployed
-- [Central sampler workflow gaps](../x/central_sampler/plans/codex_parity.md) — selected resilience
+- [Central sampler workflow gaps](../central_sampler/plans/codex_parity.md) — selected resilience
   and Session-spawning work, followed by remaining Codex feature candidates
 - [Architecture overview](architecture_overview.md) — four whole directions for where Agentplane's
   objects and data live, the operator's workflows through each, what Agentplane borrows from

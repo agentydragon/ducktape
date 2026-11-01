@@ -107,9 +107,9 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 **Two-week timebox; operator dispatch, 2026-10-30 PDT; scheduling updated 2026-10-31 PDT.**
 Reliability contracts live in the
-[runtime specification](../x/central_sampler/SPEC.md#runtime-and-effects) and
-[recovery guide](../x/central_sampler/docs/blocked_session_recovery.md). The
-[acceptance record](../x/central_sampler/docs/rollout_acceptance.md)
+[runtime specification](../central_sampler/SPEC.md#runtime-and-effects) and
+[recovery guide](../central_sampler/docs/blocked_session_recovery.md). The
+[acceptance record](../central_sampler/docs/rollout_acceptance.md)
 retains the deployed exporter evidence and its limits.
 
 **Operator decision, 2026-10-31 UTC:** skip the dedicated continuation/disruption exercise,
@@ -803,7 +803,7 @@ Codex already runs one app-server and store per Runner, and Claude one process p
 the recommendation covers what remains open around them.
 
 Central Codex hosting through Sandbox exec servers is the opt-in
-[central sampler](../x/central_sampler/README.md), which coexists with local modes. It does not gate
+[central sampler](../central_sampler/README.md), which coexists with local modes. It does not gate
 the current placement decision or separate tool memory containment.
 
 Deliver a recommendation and proposed API shape for review; implementation and migration/retirement
@@ -1028,14 +1028,14 @@ cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
 `ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k` returned HTTP 400 through LiteLLM:
 `input[0]: unknown input item type: "additional_tools"`. Each route now declares its Responses
 dialect and exec encoding; standard mode sends top-level function tools and rejects compaction
-([SPEC](../x/central_sampler/SPEC.md)). Remaining:
+([SPEC](../central_sampler/SPEC.md)). Remaining:
 
 - A bounded check against the reported route establishing its actual accepted wire contract; the
   standard/JSON path is covered only by deterministic fixtures.
 - Compaction for standard-mode routes: `CENTRAL_SAMPLER_PROMPT_COMPACTION`.
 
 Do not silently strip required tool behavior, retry arbitrary HTTP 400s with progressively different
-payloads, or replay already dispatched effects. Independent of the [deployed Anthropic adapter](../x/central_sampler/docs/anthropic_acceptance.md);
+payloads, or replay already dispatched effects. Independent of the [deployed Anthropic adapter](../central_sampler/docs/anthropic_acceptance.md);
 no implementation or rollout is scheduled by this entry.
 
 ### `CENTRAL_SAMPLER_PROMPT_COMPACTION` — compaction by our own prompt
@@ -1057,7 +1057,7 @@ compact how.
 ### `CENTRAL_SAMPLER_BACKGROUND_COMPACTION` — summarize while sampling continues
 
 **Unscheduled; operator requested tracking, 2026-10-30 PDT.** Ordinary Anthropic compaction is
-[implemented and deployed](../x/central_sampler/docs/anthropic_acceptance.md). [Design and acceptance](../x/central_sampler/plans/anthropic.md#background-compaction).
+[implemented and deployed](../central_sampler/docs/anthropic_acceptance.md). [Design and acceptance](../central_sampler/plans/anthropic.md#background-compaction).
 Use Anthropic on-demand compaction concurrently with ordinary turns. Persist the exact summarized
 prefix and atomically replace only it, retaining the appended suffix. Separate the background
 operation from the foreground pending-effect fence; reject stale results after context/ownership
@@ -1069,8 +1069,8 @@ or priority is assigned, and this follow-up does not gate ordinary Anthropic com
 
 **Deferred; operator requested DAG tracking, 2026-10-30 PDT.** Revisit when a concrete Actions/MCP
 workflow needs tools or schemas to change mid-Session. The
-[fixed-tool Anthropic adapter](../x/central_sampler/docs/anthropic_acceptance.md) is implemented and deployed.
-[Component design](../x/central_sampler/plans/anthropic.md#dynamic-tool-definitions) distinguishes
+[fixed-tool Anthropic adapter](../central_sampler/docs/anthropic_acceptance.md) is implemented and deployed.
+[Component design](../central_sampler/plans/anthropic.md#dynamic-tool-definitions) distinguishes
 provider-visible inline tools from nested code-mode tools and the existing Actions-as-tools work.
 Exit when selected: tool additions/removals reach model input and runtime consistently, retain the
 cached prefix where supported, survive restart, and preserve execution authorization plus
@@ -1713,7 +1713,7 @@ resuming with memory retained.
 ### `AGENT_RESUME_NOTICE` — tell agents when their Sandbox was suspended and resumed
 
 **Unscheduled; operator, 2026-10-13 PDT: it would be good.** Central sampler execution already
-[reports verified incarnation changes](../x/central_sampler/SPEC.md#runtime-and-effects) when
+[reports verified incarnation changes](../central_sampler/SPEC.md#runtime-and-effects) when
 opening a replacement exec-server session. The broader lifecycle notice remains unfinished for
 other harness paths and before the next exec. An agent whose Sandbox was suspended and
 resumed needs to learn what changed: its tool processes are gone, a terminal or background process it started

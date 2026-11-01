@@ -237,4 +237,4 @@ Native announcements cannot claim central metadata. The same cursor, exact-repla
 writer fencing and commit-before-ack rules apply. Central outboxes retain evidence in sampler
 PostgreSQL while History is unavailable. Raw boundary and execution-progress observations remain
 retained evidence; source-linked normalized Events drive the ordinary Thread fold. History does
-not own the provider continuation. See the [sampler contract](../x/central_sampler/SPEC.md).
+not own the provider continuation. See the [sampler contract](../central_sampler/SPEC.md).

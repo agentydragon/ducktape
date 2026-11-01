@@ -20,7 +20,7 @@ from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.tracing import tracer
-from agentplane.x.central_sampler import sampler_pb2_grpc
+from agentplane.central_sampler import sampler_pb2_grpc
 from model_catalog.catalog import GPT6_LUNA_RESPONSES
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 

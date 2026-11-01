@@ -111,4 +111,4 @@ The Gateway adds no persistence or operation
 receipts and never replays mutations. Open execution sessions participate in Runner activity and
 quiesce.
 The Dispatcher is absent from this tool path. See the
-[central sampler contract](../x/central_sampler/SPEC.md).
+[central sampler contract](../central_sampler/SPEC.md).
