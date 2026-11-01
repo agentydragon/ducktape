@@ -259,10 +259,8 @@ func TestDirectHostExecutionReadinessFollowsOwnerLifetime(t *testing.T) {
 	if err != nil || ready {
 		t.Fatalf("readiness before Execution owner = %t, %v", ready, err)
 	}
-	handle := &localExecutionHandle{}
-	r.executionOwner = handle
-	r.executionServer = &executorpb.UnimplementedExecutorServer{}
-	r.executionUID = "incarnation"
+	handle := newControllerExecutionHandle(nil)
+	r.executionOwner = &executionLifetime{handle: handle, uid: "incarnation", admitted: true}
 	ready, err = r.HostExecutionReady(t.Context())
 	if err != nil || !ready {
 		t.Fatalf("readiness with active Execution owner = %t, %v", ready, err)
@@ -277,16 +275,16 @@ func TestDirectHostExecutionReadinessFollowsOwnerLifetime(t *testing.T) {
 	handle.mu.Lock()
 	handle.expected = false
 	handle.mu.Unlock()
-	r.executionRecovering = true
+	r.executionOwner.admitted = false
 	ready, err = r.HostExecutionReady(t.Context())
 	if err != nil || ready {
 		t.Fatalf("readiness during fenced recovery = %t, %v", ready, err)
 	}
 
-	r.executionRecovering = false
+	r.executionOwner.admitted = true
 	backendLife, backendLost := context.WithCancel(t.Context())
-	service := &executionServiceHandle{done: make(chan struct{}), backendLife: backendLife}
-	r.executionOwner = service
+	service := &executionServiceHandle{executor: &executorpb.UnimplementedExecutorServer{}, done: make(chan struct{}), backendLife: backendLife}
+	r.executionOwner = &executionLifetime{handle: service, uid: "incarnation", admitted: true}
 	ready, err = r.HostExecutionReady(t.Context())
 	if err != nil || !ready {
 		t.Fatalf("readiness while embedded service is running = %t, %v", ready, err)

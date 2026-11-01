@@ -253,14 +253,7 @@ func (r *Runtime) HostExecutionReady(ctx context.Context) (bool, error) {
 	if r.config.CodexExecServer == nil {
 		return true, nil
 	}
-	if service, ok := r.executionOwner.(*executionServiceHandle); ok && !service.serving() {
-		return false, nil
-	}
-	if stopping, ok := r.executionOwner.(interface{ stopRequested() bool }); ok && stopping.stopRequested() {
-		return false, nil
-	}
-	return !r.closing && !r.executionRecovering && r.executionOwner != nil && r.executionServer != nil &&
-		r.intent != nil && r.executionUID == r.intent.IncarnationUid, nil
+	return !r.closing && r.intent != nil && r.executionOwner.executor(r.intent.IncarnationUid) != nil, nil
 }
 
 func (r *Runtime) setIntentLocked(mode runtimepb.LifecycleIntent_Mode, incarnationUID, sealUID string, executionFenced bool) *runtimepb.LifecycleIntent {

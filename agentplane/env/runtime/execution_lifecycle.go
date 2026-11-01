@@ -109,7 +109,6 @@ type executionLifecycle struct {
 	inputMu           sync.Mutex
 	mu                sync.Mutex
 	events            []executionEvent
-	handle            executionHandle
 	terminal          error
 	startContexts     map[uint64]context.Context
 	startOutcomes     map[uint64]error
@@ -165,7 +164,7 @@ func (h *executionLifecycle) request(ctx context.Context, uid string) (uint64, e
 		if err != nil {
 			return 0, err
 		}
-		if current.Phase == executionReady && current.UID == uid && h.readyOwner() {
+		if current.Phase == executionReady && current.UID == uid && h.readyOwner(uid) {
 			return current.Demand, nil
 		}
 	}
@@ -196,17 +195,10 @@ func (h *executionLifecycle) request(ctx context.Context, uid string) (uint64, e
 	return input.Demand, err
 }
 
-func (h *executionLifecycle) readyOwner() bool {
-	h.mu.Lock()
-	handle := h.handle
-	h.mu.Unlock()
-	if handle == nil {
-		return false
-	}
-	if service, ok := handle.(*executionServiceHandle); ok {
-		return service.serving()
-	}
-	return true
+func (h *executionLifecycle) readyOwner(uid string) bool {
+	h.r.mu.Lock()
+	defer h.r.mu.Unlock()
+	return h.r.executionOwner.executor(uid) != nil
 }
 
 func (h *executionLifecycle) signal(event executionEvent) {
@@ -433,7 +425,7 @@ func (h *executionLifecycle) wait(ctx context.Context, uid string, demand uint64
 		if uid == "" && current.Phase == executionStopped && current.FencedGeneration == current.Generation {
 			return nil
 		}
-		if uid != "" && current.Phase == executionReady && current.UID == uid && current.Demand == demand && h.readyOwner() {
+		if uid != "" && current.Phase == executionReady && current.UID == uid && current.Demand == demand && h.readyOwner(uid) {
 			return nil
 		}
 		select {
@@ -527,30 +519,18 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			} else if event.err != nil {
 				current.Phase, current.Error = executionFailed, event.err.Error()
 				if event.handle != nil {
-					h.mu.Lock()
-					h.handle = event.handle
-					h.mu.Unlock()
 					h.r.mu.Lock()
-					h.r.executionOwner, h.r.executionUID = event.handle, event.uid
-					h.r.executionServer = nil
-					h.r.executionRecovering = true
+					h.r.executionOwner = &executionLifetime{handle: event.handle, uid: event.uid}
 					h.r.changedLocked()
 					h.r.mu.Unlock()
 				}
 				h.r.fail(fmt.Errorf("start embedded Execution: %w", event.err))
 			} else {
-				h.mu.Lock()
-				h.handle = event.handle
-				h.mu.Unlock()
 				h.r.mu.Lock()
-				h.r.executionOwner, h.r.executionUID = event.handle, event.uid
 				validEpoch := event.epoch == nil || event.epoch.Err() == nil
-				if input.UID == event.uid && input.Demand == event.demand && validEpoch {
-					h.r.executionServer = event.handle.Executor()
-					h.r.executionRecovering = false
-				} else {
-					h.r.executionServer = nil
-					h.r.executionRecovering = true
+				h.r.executionOwner = &executionLifetime{
+					handle: event.handle, uid: event.uid,
+					admitted: input.UID == event.uid && input.Demand == event.demand && validEpoch,
 				}
 				h.r.changedLocked()
 				h.r.mu.Unlock()
@@ -576,8 +556,7 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			} else {
 				current.LossBinding = h.r.intent.GetBinding().GetGeneration()
 			}
-			h.r.executionServer = nil
-			h.r.executionRecovering = true
+			h.r.executionOwner.admitted = false
 			h.r.changedLocked()
 			h.r.mu.Unlock()
 			h.stop(event.handle, event.uid)
@@ -604,15 +583,13 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 					}
 				}
 				h.mu.Lock()
-				h.handle = nil
 				if h.watchCancel != nil {
 					h.watchCancel()
 					h.watchCancel = nil
 				}
 				h.mu.Unlock()
 				h.r.mu.Lock()
-				h.r.executionOwner, h.r.executionServer, h.r.executionUID = nil, nil, ""
-				h.r.executionRecovering = false
+				h.r.executionOwner = nil
 				h.r.changedLocked()
 				h.r.mu.Unlock()
 			}
@@ -629,22 +606,21 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	if current.Phase == executionReady && input.UID != current.UID {
 		current.Phase, current.Lost = executionStopping, false
 		h.r.mu.Lock()
-		h.r.executionServer = nil
-		h.r.executionRecovering = true
+		owner := h.r.executionOwner
+		if owner != nil {
+			owner.admitted = false
+		}
 		h.r.changedLocked()
 		h.r.mu.Unlock()
-		if err := write(); err != nil {
-			return err
-		}
-		h.mu.Lock()
-		handle := h.handle
-		h.mu.Unlock()
-		if handle == nil {
+		if owner == nil {
 			err := errors.New("ready embedded Execution has no owned service")
 			h.failTerminal(err)
 			return err
 		}
-		h.stop(handle, current.UID)
+		if err := write(); err != nil {
+			return err
+		}
+		h.stop(owner.handle, owner.uid)
 		return nil
 	}
 	if current.Phase == executionStopped && input.UID != "" {

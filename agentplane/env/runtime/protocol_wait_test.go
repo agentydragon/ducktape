@@ -67,11 +67,11 @@ func TestUncertainExecutionFenceIsNotRetriedForBinding(t *testing.T) {
 
 func TestUnmanagedExecutionOwnerCannotClaimFence(t *testing.T) {
 	handle := &uncertainFenceHandle{}
-	r := &Runtime{executionOwner: handle}
+	r := &Runtime{executionOwner: &executionLifetime{handle: handle}}
 	if err := r.stopExecution(t.Context()); err == nil {
 		t.Fatal("unmanaged Execution owner claimed fence proof")
 	}
-	if r.executionOwner != handle || handle.calls.Load() != 0 {
+	if r.executionOwner == nil || r.executionOwner.handle != handle || handle.calls.Load() != 0 {
 		t.Fatal("unmanaged Execution owner was stopped or discarded")
 	}
 }
