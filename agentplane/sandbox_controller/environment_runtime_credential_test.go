@@ -44,6 +44,10 @@ func TestRunnerCertificateSpecMatchesCertManagerDefaults(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("expected certificate spec: found=%v err=%v", found, err)
 	}
+	uris, found, err := unstructured.NestedStringSlice(expected, "uris")
+	if err != nil || !found || len(uris) != 1 || uris[0] != "spiffe://agentplane/environment-runtime/sandboxes/sandbox-uid/"+runnerCredentialTestID {
+		t.Fatalf("certificate URI = %v (found=%v, err=%v), want the canonical Environment Runtime identity", uris, found, err)
+	}
 
 	withDefaults := runtime.DeepCopyJSON(expected)
 	withDefaults["duration"] = "24h0m0s"
@@ -57,7 +61,9 @@ func TestRunnerCertificateSpecMatchesCertManagerDefaults(t *testing.T) {
 	}
 
 	tests := map[string]func(map[string]interface{}){
-		"URI": func(spec map[string]interface{}) { spec["uris"] = []interface{}{"spiffe://agentplane/env/e2e/other"} },
+		"URI": func(spec map[string]interface{}) {
+			spec["uris"] = []interface{}{"spiffe://agentplane/environment-runtime/other/sandbox-uid/" + runnerCredentialTestID}
+		},
 		"issuer": func(spec map[string]interface{}) {
 			spec["issuerRef"].(map[string]interface{})["name"] = "other-issuer"
 		},

@@ -68,7 +68,7 @@ func (r *Reconciler) setRunnerCredential(ctx context.Context, sandbox *sandboxap
 func RunnerCertificateSecretName(credentialID string) string { return "runner-" + credentialID }
 
 func runnerCertificateURI(sandbox *sandboxapi.Sandbox, credentialID string) string {
-	return fmt.Sprintf("spiffe://agentplane/env/e2e/%s/%s/%s", sandbox.Namespace, sandbox.UID, credentialID)
+	return fmt.Sprintf("spiffe://agentplane/environment-runtime/%s/%s/%s", sandbox.Namespace, sandbox.UID, credentialID)
 }
 
 func newRunnerCredentialID() (string, error) {

@@ -37,7 +37,7 @@ async def _ready_certificate(
         certificate = json.loads(await cluster.kubectl("get", "certificate", name, "-o", "json"))
         spec = certificate["spec"]
         assert spec["secretName"] == f"runner-{credential_id}"
-        assert spec["uris"] == [f"spiffe://agentplane/runner/{namespace}/{sandbox_uid}/{credential_id}"]
+        assert spec["uris"] == [f"spiffe://agentplane/environment-runtime/{namespace}/{sandbox_uid}/{credential_id}"]
         assert set(spec["usages"]) == {"digital signature", "server auth"}
         assert any(
             condition["type"] == "Ready" and condition["status"] == "True"

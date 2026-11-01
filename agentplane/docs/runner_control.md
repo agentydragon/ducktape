@@ -278,8 +278,8 @@ ownership and incarnation validation, boot-ID/epoch fencing and command admissio
 The Sandbox Controller always provisions credentials; k3s keeps real cert-manager/trust-manager and
 mTLS in every stack. Bad mTLS credentials never trigger an insecure retry.
 
-The Gateway's certificate has URI SAN `spiffe://agentplane/runner-gateway`. Each runner certificate
-has exactly one URI SAN, `spiffe://agentplane/env/e2e/<namespace>/<sandbox-uid>/<credential-id>`.
+The Gateway's certificate has URI SAN `spiffe://agentplane/runner-gateway`. Each Environment Runtime
+certificate has exactly one URI SAN, `spiffe://agentplane/environment-runtime/<namespace>/<sandbox-uid>/<credential-id>`.
 Certificates must chain to the configured trust roots and permit the peer's client/server EKU.
 A CA-valid certificate with the wrong URI is rejected.
 

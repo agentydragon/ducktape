@@ -222,7 +222,11 @@ func TestPeerIdentityRequiresTLSPeerCertificate(t *testing.T) {
 }
 
 func TestPeerIdentityRejectsExpiredLeafOnExistingConnection(t *testing.T) {
-	identity, err := url.Parse("spiffe://agentplane/env/e2e/agent-ns/sandbox-uid/credential-id")
+	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := url.Parse(runnerURI)
 	if err != nil {
 		t.Fatal(err)
 	}

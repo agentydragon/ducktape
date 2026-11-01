@@ -71,7 +71,7 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   fresh credential ID used to bind each incarnation to its certificate.
 - Before starting a new workload, the controller creates a cert-manager `Certificate` named
   `runner-<credential-id>` and waits for its generated TLS Secret. The leaf URI SAN is exactly
-  `spiffe://agentplane/env/e2e/<namespace>/<Sandbox UID>/<credential-id>` and has server
+  `spiffe://agentplane/environment-runtime/<namespace>/<Sandbox UID>/<credential-id>` and has server
   authentication usage. The namespace Issuer signs it; cert-manager owns key generation and
   renewal. Runner TLS files mount from that generation's unique Secret, and the shared trust-manager
   CA bundle supplies the root. A renewed key can update only its own generation's Secret.
