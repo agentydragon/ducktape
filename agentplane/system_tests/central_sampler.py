@@ -13,6 +13,7 @@ import yaml
 from kubernetes_asyncio import client as k8s
 from kubernetes_asyncio.client.exceptions import ApiException
 
+from agentplane.central_sampler import sampler_pb2_grpc
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc.calls import dial
 from agentplane.history_service.client import HistoryServiceClient
@@ -20,7 +21,6 @@ from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.tracing import tracer
-from agentplane.x.central_sampler import sampler_pb2_grpc
 from model_catalog.catalog import GPT6_LUNA_RESPONSES
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 

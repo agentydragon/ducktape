@@ -267,8 +267,8 @@ Deferred by the operator on 2026-10-31. Revisit only if normal use still exposes
 instability. The dedicated continuation/disruption exercise, coverage audit and additional acceptance
 tests are not scheduled and do not gate the sprint or daily CI agent. On a concrete failure, retain
 the Session's evidence, reproduce the affected boundary and select proportional regression coverage.
-Existing tests and the [runtime/recovery contracts](../x/central_sampler/SPEC.md#runtime-and-effects)
-remain authoritative; the [deployed evidence](../x/central_sampler/docs/rollout_acceptance.md)
+Existing tests and the [runtime/recovery contracts](../central_sampler/SPEC.md#runtime-and-effects)
+remain authoritative; the [deployed evidence](../central_sampler/docs/rollout_acceptance.md)
 records what was actually exercised.
 
 ## Runtime redesign and offline acceptance
@@ -288,7 +288,7 @@ abandonment or authorize automatic replay.
 
 ### `RUNNER_STATE_BOUNDARY_RETHINK` — should the runner own durable state?
 
-The central-sampling portion shipped as the opt-in [central sampler](../x/central_sampler/README.md)
+The central-sampling portion shipped as the opt-in [central sampler](../central_sampler/README.md)
 ([placement decision](sampling_outside_sandboxes.md#accepted-central-sampler-v1)); do not create a
 competing authority decision here. A standalone redesign of legacy Sandbox-hosted runners remains deferred until explicitly
 selected. Central-admission implementation still waits for the reviewed authority design. Transport direction

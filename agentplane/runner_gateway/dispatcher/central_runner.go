@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -12,7 +13,6 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"

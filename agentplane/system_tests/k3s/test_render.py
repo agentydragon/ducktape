@@ -16,6 +16,10 @@ from agentplane.app.model_catalog import ModelCatalog
 
 # Each service module exports `Settings`; aliases keep their separate config contracts explicit.
 from agentplane.app.settings import Settings as AppSettings
+from agentplane.central_sampler.settings import (
+    MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
+    Settings as CentralSamplerSettings,
+)
 from agentplane.env.harnesshost.harness import Harness
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from agentplane.mcp_edge.settings import Settings as McpEdgeSettings
@@ -26,10 +30,6 @@ from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
 from agentplane.system_tests.vm_configuration import OOM_TEMPLATE, SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from agentplane.x.central_sampler.settings import (
-    MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
-    Settings as CentralSamplerSettings,
-)
 from cluster.cdk8s.agentplane import central_sampler, history_service, llm_ingress, runner_gateway
 from util.bazel.runfiles import get_required_path
 from util.settings_contract import env_name

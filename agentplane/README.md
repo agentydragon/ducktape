@@ -32,7 +32,7 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 - [Integration app](app/README.md): the human-facing frontend over the services above, and a
   client of them. Its static browser shell has a separate [frontend image](app/frontend/serving/README.md).
 
-The opt-in [central code-mode sampler](x/central_sampler/README.md) keeps sampling, JavaScript
+The opt-in [central code-mode sampler](central_sampler/README.md) keeps sampling, JavaScript
 and continuation in a separate service and database; the Sandbox supplies only its executor.
 Wrapped Codex and Claude continue to sample and execute inside their Sandbox. Staging enables the
 optional cdk8s sampler with shared Responses routes and a separate direct-API selection. Existing

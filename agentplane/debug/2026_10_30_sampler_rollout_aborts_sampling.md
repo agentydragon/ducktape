@@ -54,7 +54,7 @@ from ingress evidence; the sampler never committed it to its native conversation
 ## Recovery and related work
 
 No Session state, remote process, workspace or provider request was changed or replayed.
-The current [recovery API](../x/central_sampler/docs/blocked_session_recovery.md) explicitly
+The current [recovery API](../central_sampler/docs/blocked_session_recovery.md) explicitly
 refuses pending sampling and compaction; clearing flags in SQL is not a supported recovery.
 A new Session can continue from the preserved workspace with an explicit handoff. Continuing
 this exact Session needs a reviewed sampling reconciliation/abandonment operation; the completed
@@ -69,8 +69,8 @@ executor-session loss. None covers this sampling boundary. The rollout's
 [#13138](https://github.com/agentydragon/ducktape/pull/13138) drains inbound gRPC; active sampler
 drivers have a separate lifetime and remain canceled on shutdown.
 
-The current [runtime contract](../x/central_sampler/SPEC.md#runtime-and-effects) and
-[recovery guide](../x/central_sampler/docs/blocked_session_recovery.md) own the supported recovery
+The current [runtime contract](../central_sampler/SPEC.md#runtime-and-effects) and
+[recovery guide](../central_sampler/docs/blocked_session_recovery.md) own the supported recovery
 behavior. Dedicated rollout acceptance is deferred; revisit
 [a focused follow-up](../plans/task_freezer.md#central_sampler_reliability_followup--investigate-instability-observed-in-normal-use)
 if normal use exposes continued instability.

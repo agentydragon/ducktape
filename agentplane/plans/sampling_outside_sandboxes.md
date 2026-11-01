@@ -278,7 +278,7 @@ from Postgres, without a native rollout or second Runner conversation journal. T
 actual provider requests/responses, including opaque encrypted reasoning, and correlated tool intents
 and results. An independent full upstream Codex consumer also accepts the scripted wire. This does
 not establish live provider or subscription compatibility. The operator then chose a custom loop
-([central sampler](../x/central_sampler/README.md)).
+([central sampler](../central_sampler/README.md)).
 
 Crash checks distinguish committed intent, dispatch, effect and returned result. Database-clock leases
 and ownership generations fence stale sampler writes. Postgres cannot atomically commit a shell side
@@ -331,7 +331,7 @@ instruction, cache or continuation semantics or prove live provider/account supp
 
 ## Accepted central sampler v1
 
-Operator agreement, 2026-10-27, implemented as the [central sampler](../x/central_sampler/README.md):
+Operator agreement, 2026-10-27, implemented as the [central sampler](../central_sampler/README.md):
 an independent code-mode sampler with its own database, reaching the Sandbox only through the
 Runner's Executor API. Its README records the placement and coexistence rulings.
 
@@ -339,8 +339,8 @@ Runner's Executor API. Its README records the placement and coexistence rulings.
 
 The central sampler supports organization-paid Anthropic Messages directly, with native
 conversation storage, server-side on-demand compaction and request/response content in its own DB.
-The [acceptance record](../x/central_sampler/docs/anthropic_acceptance.md) records merged changes,
-live-test scope and the observed staging rollout. The [remaining plan](../x/central_sampler/plans/anthropic.md)
+The [acceptance record](../central_sampler/docs/anthropic_acceptance.md) records merged changes,
+live-test scope and the observed staging rollout. The [remaining plan](../central_sampler/plans/anthropic.md)
 covers deferred BuildBuddy credentials, background compaction, dynamic tools and optional Langfuse export.
 
 [tag]: https://github.com/openai/codex/tree/rust-v0.162.1/codex-rs

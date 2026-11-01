@@ -182,7 +182,7 @@ and the Session's destination using [its composer](../env/configuration/resolved
 stores the combined instructions. Its [configuration](../env/configuration/configuration.go)
 requires nonempty platform instructions. Preset text is a separate caller-supplied layer.
 The central path currently [forwards the supplied spec](../runner_gateway/dispatcher/central_runner.go)
-and [stores its instructions](../x/central_sampler/store.go) without that Runner composition.
+and [stores its instructions](../central_sampler/store.go) without that Runner composition.
 Central provider adapters add their own base prompt, which is not the Agentplane platform guide.
 Providing a short delegation brief therefore cannot be assumed to preserve the same platform
 orientation across runtimes today.
@@ -779,7 +779,7 @@ separate host decision evaluates those broader ergonomics.
 - Command ownership/deduplication/cancellation: [`session_dispatcher.proto`](../runner_gateway/dispatcher/session_dispatcher.proto),
   [`api.go`](../runner_gateway/dispatcher/api.go); central caller:
   [`central_runner.go`](../runner_gateway/dispatcher/central_runner.go).
-- Identity/authentication: [`central sampler service`](../x/central_sampler/service.go),
+- Identity/authentication: [`central sampler service`](../central_sampler/service.go),
   [`History ingress`](../history_service/ingress/ingress.go),
   [`History storage`](../history_service/storage/store.go),
   [`History API admission`](../history_service/api/service.go),

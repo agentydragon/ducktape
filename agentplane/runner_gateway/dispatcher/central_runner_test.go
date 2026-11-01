@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
+	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
