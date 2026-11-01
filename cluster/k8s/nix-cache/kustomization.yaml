@@ -7,10 +7,6 @@ resources:
 components:
   - ./image-pins
 configMapGenerator:
-  - name: attic-config
-    namespace: nix-cache
-    files:
-      - server.toml
   - name: attic-local-config
     namespace: nix-cache
     files:
