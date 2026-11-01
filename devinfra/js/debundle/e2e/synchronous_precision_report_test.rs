@@ -42,11 +42,11 @@ fn complete_execution_has_no_precision_loss() {
 }
 
 #[test]
-fn incomplete_local_call_does_not_disable_later_own_data_reads() {
+fn incomplete_local_call_preserves_unrelated_own_data_reads() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const record = { name: "ready" };
 function ignore(value) {}
-ignore(...[record]);
+ignore(...[{}]);
 const selected = [record.name];
 console.log(selected[0]);
 "#,
@@ -129,6 +129,99 @@ console.log(changed[0], escaped[0], getter[0], dynamic[0], reflected[0]);
             }),
             "{binding} should retain the conservative member-read path: {report}"
         );
+    }
+}
+
+#[test]
+fn skipped_local_mutations_keep_later_property_reads_conservative() {
+    for (mutation, observed, output) in [
+        (
+            "Object.defineProperty(value, 'name', { get() { globalThis.observed = true; return 'changed'; } });",
+            "record.name",
+            "changed true\n",
+        ),
+        (
+            "value.name = 'changed';",
+            "record.name",
+            "changed undefined\n",
+        ),
+        (
+            "Object.defineProperty(value, 'name', { get() { globalThis.observed = true; return () => 'changed'; } });",
+            "record.name()",
+            "changed true\n",
+        ),
+    ] {
+        let source = format!(
+            "const record = {{ name: () => 'original' }};\n\
+             function change(value) {{ {mutation} }}\n\
+             change(...[record]);\n\
+             const selected = {observed};\n\
+             console.log(selected, globalThis.observed);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, output);
+        let report = execution(&fixture, "selected");
+        assert_eq!(report["complete"], false, "{mutation}: {report}");
+        assert!(
+            report["precision_losses"].as_array().is_some_and(|losses| {
+                losses.iter().any(|loss| {
+                    loss["reason"]["code"] == "unsupported_operation"
+                        && loss["reason"]["operation"] == "member_read"
+                        && loss["reach"]["kind"] == "global"
+                })
+            }),
+            "a skipped mutation may install a getter: {report}"
+        );
+    }
+}
+
+#[test]
+fn skipped_getter_installation_keeps_binding_effects_at_the_later_read() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const state = 'ready';
+const record = { name: 'original' };
+function change(value) {
+  Object.defineProperty(value, 'name', { get() { return state; } });
+}
+
+change(...[record]);
+const selected = record.name;
+console.log(selected);
+"#,
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "ready\n");
+    let graph = fixture.dependency_graph();
+    let reader = source_unit_for_binding(&graph, "selected");
+    let state = source_unit_for_binding(&graph, "state");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == reader
+                && edge.target == state
+                && edge.binding.as_deref() == Some("state")
+                && edge.constrains_init_order
+        }),
+        "the later read may invoke the installed getter and read state"
+    );
+}
+
+#[test]
+fn skipped_post_initializer_writes_disable_the_closed_enum_certificate() {
+    for mutation in [
+        "value.READY = 'changed';",
+        "Object.defineProperty(value, 'READY', { get() { return 'changed'; } });",
+    ] {
+        let source = format!(
+            "var Status = ((values) => ((values.READY = 'ready'), values))(Status || {{}});\n\
+             function change(value) {{ {mutation} }}\n\
+             change(...[Status]);\n\
+             const selected = Status.READY;\n\
+             console.log(selected);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "changed\n");
+        let report = execution(&fixture, "selected");
+        assert_eq!(report["complete"], false, "{mutation}: {report}");
     }
 }
 

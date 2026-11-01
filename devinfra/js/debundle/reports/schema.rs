@@ -869,6 +869,9 @@ pub enum AssumedEffectReason {
     /// The lazy body of an accessor owner whose setter a property write or
     /// `Object.assign` may trigger on a receiver of unknown shape.
     PossibleSetter,
+    /// A read on an object whose descriptors or prototype may have changed
+    /// invokes an accessor installed by code the interpreter did not follow.
+    PossibleGetter,
     /// The whole lazy body of a callable the interpreter executed but could
     /// not model (`callable_inputs`, `array_iteration`), beyond what that
     /// execution reached.
@@ -892,6 +895,7 @@ impl std::fmt::Display for AssumedEffectReason {
                 f.write_str("an escaped callback's closure (`escaped_callback_closure`)")
             }
             Self::PossibleSetter => f.write_str("a possible setter (`possible_setter`)"),
+            Self::PossibleGetter => f.write_str("a possible getter (`possible_getter`)"),
             Self::WholeBodyPromotion { operation } => {
                 let operation = serde_json::to_value(operation)
                     .expect("execution operations serialize as strings");

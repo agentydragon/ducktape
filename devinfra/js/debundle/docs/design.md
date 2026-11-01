@@ -1184,6 +1184,15 @@ Its assignment and execution-order effects remain. Callable-body writes and
 writes after deletion, descriptor replacement, or an intervening statement
 still use the accessor fallback.
 
+Skipped local execution invalidates the property values, descriptors and
+prototype guarantees of ordinary-object allocations (dense arrays included)
+it reaches. Later reads of those objects produce Top and retain possible getter
+effects at the later call site, with
+global reach. This also applies to method lookup, descriptor projections and
+dense-array admission. A11 preserves intrinsic identities; it does not prevent
+skipped code from installing an own getter or a private prototype on an ordinary
+object. Details: <purity_soundness.md> § Settled heap taint.
+
 A parameter-mutation initializer can also prove its receiver fresh at that
 call, independently of whether the returned object escapes later: at the
 invocation, the callable has one simple parameter, calls nothing, returns that

@@ -744,17 +744,41 @@ Code the interpreter does not run, the rest of an incomplete statement or a
 body a bounded fallback summarizes, may mutate anything the statement or that
 body reaches. Those objects, and what they and the bodies they hold reach,
 join `unsettled_objects`. This records possible mutation or escape in skipped
-code without claiming an observed escape. Only plain-array element settlement
-consults this set; it refuses unsettled arrays and elements like tainted ones.
-`facts/at_init_fallback_tests.rs` pins each route against the plain-array
-element state.
+code without claiming an observed escape. For ordinary-object allocations,
+including dense arrays, both sets invalidate prefix property values, ordinary
+descriptor and prototype proofs, and dense-array admission.
+Adding unsettled objects advances the prefix revision so invocation memos cannot
+reuse an earlier property proof.
 
-Known gap: property reads and the other proofs that consult only
-`tainted_objects` can still trust a stale prefix value after skipped code
-mutates an unsettled object or installs an accessor on it. The incomplete
-statement's global reach preserves its own ordering constraints; it does not
-establish the later property's value or descriptor. Closing this gap requires
-modelling those reads and possible accessor effects separately.
+A later property read returns Top and records a global `member_read` precision
+loss. It also promotes possible getter effects from available source owners and
+retained callbacks at that read, including a method's callee lookup. Promoted
+rebinds and reached objects invalidate state before the next operation. Merely
+returning Top would miss a getter's synchronous effects: skipped code can call
+`Object.defineProperty` on the object or change its prototype while preserving
+every intrinsic identity. Neither A11 nor `intrinsics_never_written` forbids
+those ordinary-object mutations. `no_accessor_install_callables` covers selected
+computed calls only, so it supplies no general exemption here.
+
+This settlement model covers the interpreter's `Alloc(Object)` values. Native
+Sets, classes and instances retain their separate taint and exposure models;
+`unsettled_objects` supplies no settlement proof for those value carriers.
+
+The existing closed-enum read certificate has a stronger lifetime guarantee:
+`ChunkHeap::plain_data_bindings` requires every denoted allocation to remain
+private and clean with no binding rebind. Combined with the checked
+parameter-mutation initializer, it certifies the enum's own primitive fields
+even when initializer execution conservatively tainted the allocation. A later
+member write or publication, including a spread-call argument, removes that
+`PlainData` certificate. This is distinct from initial `plain_data_objects`
+syntax, which alone never exempts an unsettled object.
+
+The incomplete statement's global reach preserves its own ordering constraints;
+it does not prove a later property's value or descriptor. The synthetic CLI
+controls in `e2e/synchronous_precision_report_test.rs` cover reads after skipped
+mutations and an unrelated object that remains settled.
+`facts/at_init_fallback_tests.rs` pins the skipped-code routes against plain-array
+element settlement.
 
 ## Plain-array at-init fallback
 
