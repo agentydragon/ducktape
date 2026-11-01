@@ -285,20 +285,20 @@ waiting for completion, and subscribing to or cancelling GitHub PR notifications
 
 Each Claude Session runs its own supervised native process, with `CLAUDE_CONFIG_DIR` in the
 Session's state directory. Every Codex Session of a Runner is one thread of the Runner's one Codex
-app-server ([`codex_app_server.go`](../runner/codex_app_server.go)), whose `CODEX_HOME` is `<state_dir>/codex`.
+app-server ([`codexappserver/host.go`](../env/harnesshost/codexappserver/host.go)), whose `CODEX_HOME` is `<state_dir>/codex`.
 The app-server's command line and `CODEX_HOME` are process-wide. `thread/start` and `thread/resume`
 carry each Session's working directory, model, effort, developer instructions and a thread `config`
 map, whose `shell_environment_policy.set` gives a thread's tools its Session's notification
 destination. The Session record stores one Claude session ID or Codex thread ID, and a runner restart
 creates a new process and resumes the native conversation from that store. See
-[`session/`](../runner/session/), [`supervision/`](../env/supervision/),
-[`retained/`](../runner/retained/), and the adapters ([Claude](../runner/claude/adapter.go),
-[Codex](../runner/codex/adapter.go)).
+[`session/`](../env/harnesshost/session), [`supervision/`](../env/supervision/),
+[`retained/`](../env/harnesshost/retained), and the adapters ([Claude](../env/harnesshost/claude/adapter.go),
+[Codex](../env/harnesshost/codex/adapter.go)).
 
 The shared app-server starts when a Codex Session first needs a harness and stays up until the
 Runner stops or quiesces; it is not reaped when idle. Stopping is phased: every Session halts first
 (its active turn interrupted), each Claude process stops, then the app-server stops once. Its frames
-are assigned by thread ([`codex/router.go`](../runner/codex/router.go)): a response to the Session
+are assigned by thread ([`codex/router.go`](../env/harnesshost/codex/router.go)): a response to the Session
 whose request it answers, a frame naming a thread to that thread's Session or, for a sub-agent, its
 root's, and a frame naming none, like stderr, to every hosted Session. Thread creation is serialized,
 so a thread naming itself before its `thread/start` response belongs to the one Session creating it.
@@ -406,9 +406,9 @@ the possibly orphaned native data for reconciliation. A lost response after the 
 commit resolves by the same public ID. Claude's current adapter chooses a native ID before launch;
 that narrower path does not solve the harness-chosen-ID crash window in general. Specify the
 reservation/mapping format, native reconciliation proof, and failure status before implementation.
-Today [`Session.startHarness`](../runner/session/native.go) writes the native ID only after adapter handshake;
-[`CodexAdapter`](../runner/codex/adapter.go) starts a native thread during that handshake, and
-[`ClaudeAdapter`](../runner/claude/adapter.go) selects an ID before launch but also persists it afterward.
+Today [`Session.startHarness`](../env/harnesshost/session/native.go) writes the native ID only after adapter handshake;
+[`CodexAdapter`](../env/harnesshost/codex/adapter.go) starts a native thread during that handshake, and
+[`ClaudeAdapter`](../env/harnesshost/claude/adapter.go) selects an ID before launch but also persists it afterward.
 Persisting Claude's chosen ID before launch can narrow its case; Codex still needs a proven recovery
 path for an ID assigned by the harness.
 

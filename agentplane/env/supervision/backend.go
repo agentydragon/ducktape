@@ -2,6 +2,7 @@ package supervision
 
 import (
 	"context"
+	"errors"
 	"os"
 	"time"
 )
@@ -27,7 +28,8 @@ type backendFactory func(ProcessConfig) processBackend
 
 // Supervisor is an immutable factory for native processes.
 type Supervisor struct {
-	makeBackend backendFactory
+	makeBackend    backendFactory
+	fenceNamespace func(context.Context) error
 }
 
 // NewSubprocessSupervisor creates a supervisor that owns native process groups
@@ -59,4 +61,14 @@ func (s *Supervisor) NewProcess(config ProcessConfig) (*Process, error) {
 		return nil, err
 	}
 	return &Process{backend: backend, waitDone: make(chan struct{})}, nil
+}
+
+// FenceNamespace kills and waits for every process in a private PID namespace
+// except PID 1. The caller must stop its managed processes first and prevent
+// concurrent launches until the fence completes.
+func (s *Supervisor) FenceNamespace(ctx context.Context) error {
+	if s == nil || s.fenceNamespace == nil {
+		return errors.New("supervisor does not own a private PID namespace")
+	}
+	return s.fenceNamespace(ctx)
 }

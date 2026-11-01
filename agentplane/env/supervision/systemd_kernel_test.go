@@ -48,7 +48,10 @@ func TestSystemdKernelFixture(t *testing.T) {
 		return job, err
 	}
 	stateDir := "/state/.supervision-proof"
-	supervisor, err := launcher.Prepare(stateDir, sandboxUID)
+	runtimeOwner := SystemdOwner{
+		Unit: "agentplane-environment-runtime.service", LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: SystemdRunnerScopeID,
+	}
+	supervisor, err := launcher.PrepareForOwner(stateDir, sandboxUID, runtimeOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +206,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 			defer fenceSystemdUnit(context.Background(), conn, name, true, "")
 		}
 		recovered := *launcher
-		if _, err := recovered.Prepare(stateDir, sandboxUID); err != nil {
+		if _, err := recovered.PrepareForOwner(stateDir, sandboxUID, runtimeOwner); err != nil {
 			t.Fatal(err)
 		}
 		assertSystemdProofEmpty(t, ctx, conn, ownedName)

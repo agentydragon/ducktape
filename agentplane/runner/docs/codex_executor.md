@@ -1,9 +1,9 @@
 # Codex executor isolation
 
-Runner supports local Codex tools and an isolated WebSocket `codex exec-server`. All Codex Sessions
-on a Runner share one app-server and, in isolated mode, one executor. Runner sets
-`CODEX_EXEC_SERVER_URL` before starting the app-server; an executor failure never enables local
-execution. Claude continues to execute in its own harness process.
+Environment Runtime owns the standalone Execution Service and its executor lifetime. Harness Host
+runs the shared Codex app-server and sets `CODEX_EXEC_SERVER_URL` to connect to that service. An
+executor failure never enables local execution. Claude continues to execute in its own harness
+process.
 
 The executor is a resource boundary within the same Sandbox principal. It shares workspace, home,
 temporary files and native state paths with the app-server. It is not an authorization boundary
@@ -11,57 +11,57 @@ between Sessions or a safe place for another principal's credentials.
 
 ## Pods
 
-The template starts `/run/agentplane/runner/bin/agentplane-runner executor` in a separate container
-on the same tools image. This explicit process mode returns before Runner, COSI and telemetry startup.
-Kubernetes `resources` supplies its memory and CPU limits; kubelet restarts the container. Its PID
-namespace must be private (`shareProcessNamespace: false`), and the executor mode must be PID 1.
-Both containers mount the same state, workspace, home, temporary directory, runner binary disk,
+The template starts `/run/agentplane/runner/bin/agentplane-execution-service companion` in a separate
+container on the same tools image. This process mode runs the companion as PID 1 without starting
+Environment Runtime, Harness Host, COSI or telemetry. Kubernetes `resources` supplies its memory and
+CPU limits; kubelet restarts the container. Its PID namespace must be private
+(`shareProcessNamespace: false`). Both containers mount the same state, workspace, home, temporary
+directory, environment binary disk,
 proxy trust bundle and kubeconfig. Projected workload tokens remain confined to the egress sidecar.
 
-The companion selects the shared PID1 `Supervisor` without a Runner state-owner descriptor. A claim's
-explicit environment reaches `exec-server` through `supervision.Process`; PID 1's process-wide
-reaper owns native and orphan waits. The claim connection and container lifetime remain the
-executor's ownership protocol, and it does not construct the Runner's COSI runtime or journals.
+The standalone Execution Service claims the companion over its ownership socket. A claim's explicit
+environment reaches `exec-server` through `supervision.Process`; PID 1's process-wide reaper owns
+native and orphan waits. The claim connection and companion lifetime remain the executor's
+ownership protocol. The companion does not construct Runtime's COSI lifecycle or Host's journals.
 Stdout/stderr readers are not joined before PID 1 exits, since escaped descendants can retain them.
 
-The Sandbox template command and runner disk image pin are separate manifest inputs. A template using
-the `executor` mode requires a disk image that includes that mode; roll them out together. To roll
-back, restore both the previous template command and the previous runner disk image pin. After Flux
-applies the rollback, verify a fresh Pod's executor health endpoint and Runner ownership claim.
+The Sandbox template command and environment disk image pin are separate manifest inputs. A template
+using `companion` mode requires a disk image that includes that command; roll them out together. To
+roll back, restore both the previous template command and the previous environment disk image pin.
+After Flux applies the rollback, verify a fresh Pod's executor health endpoint and Execution Service
+ownership claim.
 
-Runner holds a Unix connection to the companion through an `emptyDir`. Claiming it starts
-`exec-server`; EOF, a fence request, termination, or executor exit ends that whole container
-generation. Exiting PID 1 lets the runtime kill detached descendants as well as the process group.
-An idle successor's fresh generation ID proves cleanup completed. A socket close alone does not.
+Execution Service holds a Unix connection to the companion through an `emptyDir`. On ownership loss
+or executor exit, the companion normally fences its workload process domain and publishes a fresh
+idle generation while keeping PID 1 alive. If that in-container fence fails, the companion exits so
+the container runtime can fence the whole namespace; only a new container generation then proves
+that outer cleanup completed. A socket close alone does not prove either fence.
 
 A claim whose `exec-server` cannot be spawned at all (a missing or unexecutable Codex binary) starts
-nothing, so it ends no generation and fences nothing: the companion refuses the claim with the reason,
-stays PID 1 and serving, and answers the next claim the same way. Exiting instead would restart the
-container into the identical failure, and a companion in restart backoff leaves no control socket for
-Runner to fence — a Sandbox could then neither run Codex nor prove it may stop. Runner records the
-reason, surfaces it to every Session waiting on isolated execution instead of its own startup deadline,
-and keeps retrying at its backoff until a new container generation answers.
+nothing, so there is no workload generation to fence. The companion refuses the claim with the reason,
+stays PID 1 and serving, and answers a later claim the same way. Runtime reports a failed service
+startup instead of retrying through a companion restart loop.
 The companion also reaps orphaned children while running. It serves HTTP `GET /healthz` at the
 template's `--health-listen` address (`:4502` in Pods). Kubernetes liveness and readiness probes
 call that endpoint without launching a probe process. Each request checks the existing Unix control
-socket with a one-second deadline, including while waiting for Runner to claim it; an unavailable
+socket with a one-second deadline, including while waiting for Execution Service to claim it; an unavailable
 control socket returns HTTP 503. The endpoint exposes no ownership or execution commands. Pod OOM evidence remains in
 `status.containerStatuses[].lastState.terminated` and `restartCount`; an ownership disconnect alone
 does not establish that the container was OOM-killed.
 
-The common Runner configuration selects this mode with `environment.kind: "pod"` with
+The common environment configuration selects this mode with `environment.kind: "pod"` and
 `environment.executor.url` and `environment.executor.socket`. The endpoint
 is loopback-only. The health listener accepts kubelet HTTP probes on the Pod address; it has no
-Service or inbound network grant. Runner needs no Kubernetes credentials or cgroup privileges.
+Service or inbound network grant. Runtime needs no Kubernetes credentials or cgroup privileges.
 The template owns the endpoint and socket paths used on both sides.
 
 ## VMs
 
 The template's `vm_resources` value supplies `environment.resources` under `environment.kind: "vm"`.
 Its optional executor budget and `environment.executor` endpoint must be configured together.
-Runner applies that budget to `agentplane-executors.slice`; harnesses use the sibling
-`agentplane-workloads.slice`. Both live with Runner under the capped `agentplane.slice`.
-It fences previous owned services before opening Session stores.
+Execution Service applies that budget to `agentplane-executors.slice`; Harness Host uses the sibling
+`agentplane-workloads.slice`. Runtime and both service units live under the capped `agentplane.slice`.
+Runtime fences previous owned services before admitting an incarnation.
 The harness aggregate and executor aggregate have independent limits; their configured memory caps
 must fit together below the service's memory high watermark. The service's maximum leaves the
 configured OS reserve below guest RAM. Aggregate groups and native leaves disable swap and set
@@ -69,47 +69,49 @@ configured OS reserve below guest RAM. Aggregate groups and native leaves disabl
 can be killed while the exec-server survives, but the kernel can also select the server itself.
 Native leader exit still fences the entire leaf; OOM policy does not weaken that cleanup.
 
-Runner starts `exec-server` as a systemd transient service with `Restart=no`, just like its other
-native launches. The service binds to the Runner unit; Runner death stops its whole cgroup, with
-five seconds of graceful termination before forced cleanup. Runner also fences previous owned
-units at startup before opening journals, and proves the execution domain empty before allowing
-a successor. COSI restarts the executor independently of the app-server. The guest supplies systemd,
-agent UID/GID and block devices; templates supply resource policy.
+Execution Service starts `exec-server` as a systemd transient service with `Restart=no`, bound to the
+Execution Service unit. Runtime fences prior Host and Execution invocations before admitting an
+incarnation. During orderly shutdown Runtime drains Host, proves Execution fenced, and then stops
+both units; the units do not independently stop ahead of that lifecycle protocol. The guest supplies
+systemd, agent UID/GID and block devices; templates supply resource limits.
 See [native supervision](supervision.md) for the backend and ownership boundary.
 
 ## Startup, loss and suspend
 
-1. Runner acquires state ownership and fences previous native work. In Pods it waits for an idle
-   companion generation before opening Session stores. In VMs it fences old owned systemd services in the expected slices.
-2. The first Codex startup starts the executor restart loop and waits for a bounded RPC probe.
-   The probe initializes a WebSocket session and reads `environment/status`. The app-server then
-   starts with the configured executor URL.
-3. Runner probes RPC progress every five seconds with a three-second deadline. Three consecutive
-   failed probes fence that generation; a successful probe resets the failure count. Server exit
-   fences without waiting for further probes. Restart uses exponential backoff capped at ten seconds.
-   Pod cleanup also waits for kubelet to restart the companion. Commands are never replayed by Runner.
-4. Quiesce halts Sessions, stops harnesses, fences the executor and only then seals journals.
-   Ordinary Runner shutdown follows the same cleanup before releasing state ownership. Failure to
-   prove executor cleanup prevents sealing and starting a successor executor.
+1. Runtime acquires environment ownership and fences previous native work. In Pods it waits for a
+   fresh idle companion generation before admitting an incarnation. In VMs it fences old owned
+   systemd services in the expected slices.
+2. On first Codex startup Runtime starts Execution Service and waits for a bounded health probe. The
+   service's native probe initializes a WebSocket session and reads `environment/status`; Harness
+   Host then starts the app-server with the configured executor URL.
+3. Execution Service probes native executor progress every five seconds with a three-second deadline.
+   Three consecutive failures end its lifetime and fence the backend. Runtime proves the old service
+   invocation fenced, then attempts one replacement while the same incarnation remains RUNNING. A
+   failed fence or replacement fails Runtime; there is no internal restart loop or backoff. Commands
+   are never replayed.
+4. Quiesce drains Host Sessions and native work, fences Execution, and only then seals journals.
+   Ordinary Runtime shutdown uses the same order before releasing environment ownership. Failure to
+   prove executor cleanup prevents sealing and starting a successor.
 
 No Sandbox Controller lifecycle API changes are required: its existing quiesce/seal fence covers
-executor cleanup. A replacement Runner performs the startup fence even after an ungraceful exit.
-The bounded cleanup wait can fail during container restart backoff; that is a failed fence, not
-permission to proceed. A later Runner startup can retry once kubelet has produced an idle companion.
+executor cleanup. A replacement Environment Runtime performs the startup fence after an ungraceful
+exit. Its bounded wait may fail while kubelet is replacing the companion; that is a failed fence,
+not permission to proceed. Runtime can retry only after a new idle companion generation proves the
+container runtime cleaned up the prior namespace.
 
 ## Scope in Codex 0.162.1
 
 The remote environment covers the shell/filesystem operations Codex routes to its exec-server.
 Codex can reconnect after a transient WebSocket loss while the server retains its session registry.
 A restarted server loses that registry and running commands; an interrupted tool can return an
-error with uncertain side effects. Later tool calls can use the new server. Runner neither retries
-the command nor treats an executor exit as an app-server exit.
+error with uncertain side effects. Later tool calls can use the new server. Execution Service never
+replays a command, and Runtime does not treat executor loss as an app-server exit.
 
 Code-mode workers and MCP helpers remain children of the app-server in this release and consume
 the harness budget. Work requested from a separate daemon, such as a system Nix daemon, consumes
 that daemon's cgroup rather than the caller's. An RPC probe detects an unresponsive dispatcher;
 it cannot establish progress of every individual command. Host OOM, node eviction and a breached
-outer service/container limit can still stop Runner itself.
+outer service/container limit can still stop the environment.
 
 Central hosting of the Codex app-server with Sandbox executors remains future work. Local tools
 and Sandbox-hosted app-server with isolated tools remain explicit transitional operating modes.

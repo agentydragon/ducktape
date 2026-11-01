@@ -104,6 +104,9 @@ func (b *systemdBackend) start(ctx context.Context, p *Process) error {
 	// Lifecycle retention preserves status until we consume it before Stop.
 	props = append(
 		props,
+		// Runtime-owned processes must remain available until their parent has
+		// completed its lifecycle fence during guest shutdown.
+		property("DefaultDependencies", false),
 		property("Description", "Agentplane native launch "+b.name), property("Type", "exec"), property("Restart", "no"), property("Slice", b.launcher.Slice),
 		property("BindsTo", []string{b.launcher.parentUnit()}), property("After", []string{b.launcher.parentUnit()}), property("RemainAfterExit", true), property("CollectMode", "inactive"),
 		property("Conditions", []systemdCondition{{Type: "ConditionPathExists", Parameter: b.launcher.lifetimeMarker}}),

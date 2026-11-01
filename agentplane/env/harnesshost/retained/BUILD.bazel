@@ -6,12 +6,7 @@ go_library(
     name = "retained",
     srcs = ["retained.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained",
-    visibility = [
-        "//agentplane/env/harnesshost/ingress:__pkg__",
-        "//agentplane/env/harnesshost/session:__pkg__",
-        "//agentplane/runner:__pkg__",
-        "//agentplane/runner:__subpackages__",
-    ],
+    visibility = ["//agentplane/env:__subpackages__"],
     deps = [
         "//agentplane/proto:runner_go_proto",
         "@com_github_google_uuid//:uuid",

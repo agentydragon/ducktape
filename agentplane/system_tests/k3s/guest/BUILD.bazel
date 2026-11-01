@@ -163,7 +163,7 @@ pkg_files(
         "runner-guest.conf",
     ],
     attributes = pkg_attributes(mode = "0644"),
-    renames = {"runner-guest.conf": "agentplane-runner.service.d/guest.conf"},
+    renames = {"runner-guest.conf": "agentplane-environment-runtime.service.d/guest.conf"},
 )
 
 pkg_tar(
@@ -174,7 +174,7 @@ pkg_tar(
         "default.target": "/usr/lib/systemd/system/multi-user.target",
         "getty.target": "/dev/null",
         "multi-user.target.wants/agentplane-acpi.service": "../agentplane-acpi.service",
-        "multi-user.target.wants/agentplane-runner.service": "/usr/lib/systemd/system/agentplane-runner.service",
+        "multi-user.target.wants/agentplane-environment-runtime.service": "/usr/lib/systemd/system/agentplane-environment-runtime.service",
         "multi-user.target.wants/agentplane-shutdown-proof.service": "../agentplane-shutdown-proof.service",
         "multi-user.target.wants/agentplane-startup-profile.service": "../agentplane-startup-profile.service",
         "systemd-firstboot.service": "/dev/null",
@@ -186,8 +186,10 @@ pkg_tar(
     name = "root_shared_systemd",
     srcs = [
         "//agentplane/runner/systemd:agentplane.slice",
+        "//agentplane/runner/systemd:agentplane-environment-runtime.service",
+        "//agentplane/runner/systemd:agentplane-execution-service.service",
         "//agentplane/runner/systemd:agentplane-executors.slice",
-        "//agentplane/runner/systemd:agentplane-runner.service",
+        "//agentplane/runner/systemd:agentplane-harness-host.service",
         "//agentplane/runner/systemd:agentplane-workloads.slice",
     ],
     mode = "0644",

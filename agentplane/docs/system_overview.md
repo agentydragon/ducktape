@@ -38,7 +38,8 @@ flowchart LR
     sampler[Central sampler and shared Codex host]
     db[(Sampler PostgreSQL)]
     gateway[Gateway Executor]
-    runner[Sandbox Runner and execution adapter]
+    runtime[Environment Runtime]
+    execution[Execution Service]
     executor[Loopback Codex exec-server]
     history[History ingress and Thread fold]
     llm[LLM ingress]
@@ -49,8 +50,9 @@ flowchart LR
     db -->|NOTIFY: central_sampler_work| sampler
     db -->|NOTIFY: central_sampler_outbox| sampler
     sampler -->|typed execution RPCs| gateway
-    gateway -->|mTLS Executor gRPC| runner
-    runner -->|local Codex JSON-RPC over WebSocket| executor
+    gateway -->|mTLS Executor gRPC| runtime
+    runtime -->|private Executor gRPC| execution
+    execution -->|local Codex JSON-RPC over WebSocket| executor
     sampler -->|acknowledged outbox: RunnerIngress.Push| history
     sampler -->|Responses API| llm -->|model API| responses
     sampler -->|Anthropic Messages API| anthropic
@@ -72,7 +74,7 @@ The separate `central_sampler_outbox` notification wakes History export. Notific
 Session or Pod routing, and startup scans, listener reconnect catch-up and periodic reconciliation
 cover missed signals.
 The Pod has aggregate CPU/memory limits, with no per-Session or per-cell kernel boundary today.
-Gateway proxies the sandbox-owned [Executor service](../env/execution/executor.proto) to the Runner,
+Gateway proxies the sandbox-owned [Executor service](../env/execution/executor.proto) through Environment Runtime to Execution Service,
 whose execution adapter owns the local
 Codex JSON-RPC connection and native session handshake. A held `OpenSession` stream owns that
 connection; process and file operations use unary RPCs. Native frames return as evidence for the
@@ -86,46 +88,65 @@ provider continuation format: the sampler owns that state in its database. Wrapp
 harnesses keep their current local sampling, execution and persistence paths. See the
 [standalone API and recovery contract](../x/central_sampler/SPEC.md).
 
-## Runner control
+## Environment control and native Sessions
 
 ```mermaid
 flowchart LR
     gateway[Runner Gateway]
-    pod[Pod runner]
-    guest[VM guest runner]
-    gateway -->|mTLS Runner + Executor| pod
-    gateway -->|mTLS Runner + Executor| guest
+    runtime[Environment Runtime]
+    host[Harness Host]
+    execution[Execution Service]
+    bootstrap[Sandbox bootstrap]
+    history[History ingress]
+    gateway -->|mTLS Runner / Executor / WatchState| runtime
+    runtime <-->|private binding / lifecycle intents / reports| host
+    runtime -->|private native Session RPC| host
+    runtime -->|private Executor RPC / process fence| execution
+    runtime --> bootstrap
+    host -.->|durable journal push and ACK| history
 ```
 
-The Gateway dials native gRPC and a state watch on each runner. Incarnation fencing, connection
-Leases and command IDs protect runner-owned journals. History push remains a separate outbound platform route.
+Runtime owns environment identity, bootstrap, health and aggregate lifecycle. Host owns native Session
+admission, state and journals; it rechecks Runtime boot, Host boot and generation before durable work.
+Host reports native stop before Runtime acknowledges Execution fencing, then seals and flushes exact
+History cursors. Public connection Leases and epoch fencing remain in Runtime's control endpoint.
+Central sampler remains a separate control-plane process outside the environment.
 
 ## Codex execution inside a Sandbox
 
 ```mermaid
 flowchart LR
     subgraph pod[Sandbox Pod]
-        runner[Runner and Codex app-server]
-        exec[Executor companion and exec-server]
-        runner -->|Unix ownership connection| exec
-        runner -->|loopback WebSocket tools| exec
+        runtime[Environment Runtime: PID1]
+        host[Harness Host: subprocess owner]
+        execution[Execution Service]
+        exec[Companion container and exec-server]
+        runtime -->|child lifetime| host
+        runtime -->|child lifetime| execution
+        execution -->|Unix ownership connection| exec
+        host -->|shared app-server WebSocket tools| exec
     end
     subgraph vm[VM guest]
-        guest[Runner + COSI controllers]
+        vmruntime[Environment Runtime unit]
+        vmhost[Harness Host unit]
+        vmexecution[Execution Service unit]
         manager[systemd manager]
-        harness[Codex app-server service: workload slice]
-        vmexec[exec-server service: executor slice]
-        guest -->|D-Bus launch, observe, stop, fence| manager
+        harness[Codex app-server: workload slice]
+        vmexec[exec-server: executor slice]
+        vmruntime -->|unit lifecycle / fence| manager
+        vmhost -->|native launch / fence| manager
+        vmexecution -->|executor launch / fence| manager
         manager -->|service lifetime and cgroup| vmexec
         manager -->|service lifetime and cgroup| harness
         harness -->|loopback WebSocket tools| vmexec
     end
 ```
 
-The Pod executor has a private PID namespace and Kubernetes resource limits. The VM executor has a
-sibling systemd slice budget. Both share the Sandbox's identity and filesystem paths with the harness.
-Runner owns restart and fences old commands before reopening Session state or sealing journals.
-Local execution remains a deployment mode. See [executor isolation](../runner/docs/codex_executor.md).
+The Pod executor has a private PID namespace and Kubernetes resource limits. VM native processes use
+separate service scopes and slice budgets. Both share Sandbox identity and filesystem paths with the
+harness. Runtime aggregates process fence proof; Host cannot restart or fence Execution. An abnormal
+Pod Host exit requires the outer container fence before replacement. Local tools remain a deployment
+mode. See [executor isolation](../runner/docs/codex_executor.md).
 
 ## Standalone execution service
 

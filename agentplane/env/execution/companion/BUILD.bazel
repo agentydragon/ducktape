@@ -8,8 +8,6 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/env/execution/companion",
     visibility = [
         "//agentplane/env/execution:__subpackages__",
-        "//agentplane/runner:__pkg__",
-        "//agentplane/runner/cmd:__pkg__",
     ],
     deps = [
         "//agentplane/env/execution/companion/control",

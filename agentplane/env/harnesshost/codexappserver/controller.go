@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/execution/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
@@ -24,7 +23,6 @@ func (*LifecycleController) Settings() controller.QSettings {
 			{Namespace: lifecycle.Namespace, Type: InputType, Kind: controller.InputQPrimary},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.DesiredStateType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.AggregateStatusType, Kind: controller.InputQMapped},
-			{Namespace: lifecycle.Namespace, Type: codexexecserver.RuntimeType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: OperationType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: RuntimeType, Kind: controller.OutputExclusive}},
@@ -264,7 +262,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		if current.Error != "" || current.ExecServerReadyDeadline.IsZero() {
 			return nil
 		}
-		return controller.NewRequeueError(nil, current.ExecServerReadyDeadline.Sub(time.Now()))
+		return controller.NewRequeueError(nil, min(time.Second, current.ExecServerReadyDeadline.Sub(time.Now())))
 	}
 	if draining != nil {
 		return write()
@@ -310,7 +308,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 					return err
 				}
 				if !current.ExecServerReadyDeadline.IsZero() {
-					return controller.NewRequeueError(nil, current.ExecServerReadyDeadline.Sub(time.Now()))
+					return controller.NewRequeueError(nil, min(time.Second, current.ExecServerReadyDeadline.Sub(time.Now())))
 				}
 				return nil
 			}
@@ -392,7 +390,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		return err
 	}
 	if !current.ExecServerReadyDeadline.IsZero() {
-		return controller.NewRequeueError(nil, current.ExecServerReadyDeadline.Sub(time.Now()))
+		return controller.NewRequeueError(nil, min(time.Second, current.ExecServerReadyDeadline.Sub(time.Now())))
 	}
 	return nil
 }
@@ -403,20 +401,17 @@ func (server *Host) executorDependency(
 	current *Runtime,
 	now time.Time,
 ) (bool, error, error) {
-	if server.deps.ExecServer == nil {
+	if server.deps.ExecServerURL == "" {
 		return true, nil, nil
 	}
-	executor, found, err := codexexecserver.ReadRuntime(ctx, r)
+	if server.deps.ExecutionReady == nil {
+		return false, fmt.Errorf("execution readiness is required"), nil
+	}
+	ready, err := server.deps.ExecutionReady(ctx)
 	if err != nil {
-		return false, nil, err
+		return false, err, nil
 	}
-	if found && executor.Refusal != "" {
-		return false, fmt.Errorf("Codex exec-server startup refused: %s", executor.Refusal), nil
-	}
-	if found && executor.StopError != "" {
-		return false, fmt.Errorf("Codex exec-server stopped with error: %s", executor.StopError), nil
-	}
-	if found && executor.Phase == codexexecserver.Ready {
+	if ready {
 		return true, nil, nil
 	}
 	if current.ExecServerReadyDeadline.IsZero() {

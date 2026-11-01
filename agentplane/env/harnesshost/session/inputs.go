@@ -78,7 +78,7 @@ func (s *Session) executionClosed() bool {
 		s.deps.fail(err)
 		return true
 	}
-	return desired.Mode != runnerlifecycle.Running || s.deps.store.Lameduck() || s.journal.SealState() != nil
+	return desired.Mode != runnerlifecycle.Running || s.deps.environmentState().Quiesced || s.journal.SealState() != nil
 }
 
 func (s *Session) waitSetup(ctx context.Context) error {

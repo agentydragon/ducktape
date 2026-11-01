@@ -1,5 +1,7 @@
 [Unit]
 Description=Agentplane harness and script resource aggregate
+# Keep Runtime-managed workloads until Harness Host completes its lifecycle drain.
+DefaultDependencies=no
 
 [Slice]
 CPUAccounting=yes

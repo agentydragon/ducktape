@@ -16,7 +16,7 @@ from agentplane.runner.configuration import Endpoint, RunnerControl
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.gateway import Gateway
-from agentplane.runner.testing.process_fixtures import wait_for_exit
+from agentplane.runner.testing.process_fixtures import wait_for_exit, wait_for_owner_release
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
@@ -147,6 +147,7 @@ class RunningRunner:
             if not process.HasField("pid"):
                 continue
             await asyncio.wait_for(wait_for_exit(process.pid), timeout=10)
+        await wait_for_owner_release(self.state_dir)
 
 
 async def kill_harness(status: runner_pb2.RunnerStatus, session_id: str) -> None:

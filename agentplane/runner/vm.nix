@@ -83,7 +83,9 @@ let
         path = ./systemd + "/${name}";
       })
       [
-        "agentplane-runner.service"
+        "agentplane-environment-runtime.service"
+        "agentplane-harness-host.service"
+        "agentplane-execution-service.service"
         "agentplane.slice"
         "agentplane-workloads.slice"
         "agentplane-executors.slice"
@@ -294,6 +296,7 @@ in
     "d ${runtimeDir} 0755 root root -"
     "d ${runtimeDir}/runner-private 0700 root root -"
     "d ${runtimeDir}/runner-trust 0755 root root -"
+    "d ${runtimeDir}/execution-service 0700 root root -"
     "L+ ${runtimeDir}/runner-tls - - - - ${runtimeDir}/runner-private/runner-tls"
   ];
 
@@ -301,7 +304,7 @@ in
     description = "Give the harness user the Agentplane workspace";
     requires = [ "state-workspaces.mount" ];
     after = [ "state-workspaces.mount" ];
-    before = [ "agentplane-runner.service" ];
+    before = [ "agentplane-environment-runtime.service" ];
     path = [
       pkgs.acl
       pkgs.coreutils
@@ -316,7 +319,7 @@ in
 
   # The production guest and the real-manager test fixture consume the same unit policy.
   # Only the Nix store helper path and workspace preparation dependency need a drop-in.
-  systemd.services.agentplane-runner = {
+  systemd.services.agentplane-environment-runtime = {
     overrideStrategy = "asDropin";
     wantedBy = [ "multi-user.target" ];
     requires = [ "agentplane-workspace.service" ];

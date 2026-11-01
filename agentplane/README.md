@@ -80,18 +80,29 @@ flowchart LR
         sampler[Experimental central sampler]
         samplerdb[(Sampler PostgreSQL)]
     end
-    subgraph runtimes[Runner runtimes]
+    subgraph runtimes[Sandbox environments]
       direction LR
       subgraph sandbox[Sandbox Pod]
-        runner[Runner + native drivers]
+        runtime[Environment Runtime: PID1]
+        runner[Harness Host + native drivers]
+        execution[Execution Service]
+        runtime -->|private lifecycle and native RPC| runner
+        runtime -->|lifecycle and execution RPC| execution
+        execution -->|companion ownership| podexec
         podexec[Codex executor container]
         sidecar[Egress sidecar]
       end
       subgraph vm_guest[VM guest]
-        guest[Guest runner + native drivers]
+        vmruntime[Environment Runtime]
+        guest[Harness Host + native drivers]
+        vmexecution[Execution Service]
+        vmruntime -->|private lifecycle and native RPC| guest
+        vmruntime -->|lifecycle and execution RPC| vmexecution
         manager[systemd manager]
         vmexec[Codex executor service]
-        guest -->|D-Bus supervision| manager
+        vmruntime -->|service lifetime| manager
+        guest -->|native supervision| manager
+        vmexecution -->|executor supervision| manager
         manager -->|service lifetime and cgroup| vmexec
       end
       subgraph vm_sandbox[VM launcher Pod]
@@ -158,8 +169,8 @@ flowchart LR
     sidecar -->|OTLP/gRPC| alloy
     guest -.->|OTLP/gRPC telemetry route| relay
     relay -->|OTLP/gRPC| alloy
-    gw -->|mTLS Runner and Executor gRPC| runner
-    gw -->|mTLS Runner and Executor gRPC| guest
+    gw -->|mTLS Runner and Executor gRPC| runtime
+    gw -->|mTLS Runner and Executor gRPC| vmruntime
     runner -.->|dials RunnerIngress.Push| sidecar
     sidecar -.->|outbound ingress route| hs
     guest -.->|dials RunnerIngress.Push| relay
@@ -181,7 +192,7 @@ flowchart LR
     click index href "indexing/app.py" "Git index API"
 ```
 
-A VM guest runs the runner; its relay is in the separate KubeVirt launcher Pod. The Git index is
+A VM guest runs Environment Runtime, Harness Host and Execution Service; its relay is in the separate KubeVirt launcher Pod. The Git index is
 standalone, with no dependency on the backend services or the app: it polls a configured Git remote,
 embeds files through an embedding endpoint and owns its own PostgreSQL database
 ([indexing README](indexing/README.md)).

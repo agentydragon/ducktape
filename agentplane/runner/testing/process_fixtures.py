@@ -37,22 +37,7 @@ class RunnerProcess:
         await self.process.wait()
         for pid in harness_pids:
             await asyncio.wait_for(wait_for_exit(pid), timeout=10)
-        # The native leader can exit before its separate supervisor finishes fencing
-        # descendants. Both inherit the state-owner descriptor; wait for that fence
-        # before a successor makes its one attempt to own the retained state.
-        try:
-            async with asyncio.timeout(10):
-                with (self.state_dir / ".agentplane-runner-owner").open("rb") as probe:
-                    while True:
-                        try:
-                            fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                        except BlockingIOError:
-                            await asyncio.sleep(0.02)
-                            continue
-                        fcntl.flock(probe, fcntl.LOCK_UN)
-                        break
-        except TimeoutError:
-            raise TimeoutError("native descendants retained the runner state-owner lock after crash") from None
+        await wait_for_owner_release(self.state_dir)
 
     async def stop(self) -> None:
         """SIGTERM, as a Pod's termination sends it; the runner stops its harnesses before exiting."""
@@ -65,6 +50,26 @@ class RunnerProcess:
                 os.killpg(self.process.pid, signal.SIGKILL)
                 await self.process.wait()
                 raise TimeoutError("Go runner did not stop; a test checkpoint or script may still be held") from None
+
+
+async def wait_for_owner_release(state_dir: Path) -> None:
+    # Runtime and Host have separate retained owner descriptors. A native leader
+    # can exit before its supervisor finishes fencing descendants; wait for both
+    # barriers before a successor makes its one attempt to acquire ownership.
+    try:
+        async with asyncio.timeout(10):
+            for owner in (state_dir, state_dir / "harness-host"):
+                with (owner / ".agentplane-runner-owner").open("rb") as probe:
+                    while True:
+                        try:
+                            fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        except BlockingIOError:
+                            await asyncio.sleep(0.02)
+                            continue
+                        fcntl.flock(probe, fcntl.LOCK_UN)
+                        break
+    except TimeoutError:
+        raise TimeoutError("supervised descendants retained an environment or Host owner lock after crash") from None
 
 
 # Bazel's Python is built without os.pidfd_open; the syscall itself is on every kernel this runs on.

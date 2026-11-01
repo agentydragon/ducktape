@@ -23,6 +23,13 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// ErrFencedBackendLoss reports an established executor backend loss after the
+// Execution adapter drained and the backend's process domain was fenced. For the
+// companion backend this includes proof of a fresh idle executor generation.
+// The command maps this specific outcome to a clean process exit so Runtime can
+// replace the API process without replacing the Harness Host.
+var ErrFencedBackendLoss = errors.New("execution backend loss was fenced")
+
 // Run owns the backend from startup fencing until shutdown. The caller must be
 // PID 1 for the direct pod backend: returning lets the container runtime fence escaped descendants.
 // Systemd callers run in agentplane-execution-service.service with its private
@@ -96,10 +103,15 @@ func run(ctx context.Context, config Config, start codexexecserver.Start) (resul
 	if err != nil {
 		return err
 	}
+	var fencedBackendLoss error
 	defer func() {
 		stopCtx, stop := context.WithTimeout(context.Background(), 90*time.Second)
 		defer stop()
-		result = errors.Join(result, instance.Stop(stopCtx))
+		stopErr := instance.Stop(stopCtx)
+		result = errors.Join(result, stopErr)
+		if fencedBackendLoss != nil && result == nil {
+			result = errors.Join(ErrFencedBackendLoss, fencedBackendLoss)
+		}
 	}()
 	backendDone := make(chan error, 1)
 	go func() {
@@ -170,6 +182,10 @@ func run(ctx context.Context, config Config, start codexexecserver.Start) (resul
 			}
 		default:
 		}
+	}
+	if errors.Is(err, codexexecserver.ErrExecutionBackendLost) {
+		fencedBackendLoss = err
+		err = nil
 	}
 	// Cancel sessions before draining RPCs: OpenSession streams are held until
 	// explicitly canceled, and a canceled unary call alone never stops native work.

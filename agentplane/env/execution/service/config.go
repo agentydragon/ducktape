@@ -22,6 +22,7 @@ type Config struct {
 	IncarnationUID   string            `json:"incarnation_uid"`
 	WorkingDirectory string            `json:"working_directory"`
 	StateDir         string            `json:"state_dir"`
+	SocketPath       string            `json:"socket_path,omitempty"`
 	Binary           string            `json:"binary"`
 	ContainerSocket  string            `json:"container_socket,omitempty"`
 	ExecutorURL      string            `json:"executor_url"`
@@ -63,6 +64,9 @@ func (c Config) Validate() error {
 	if !filepath.IsAbs(c.StateDir) {
 		return errors.New("execution state directory must be absolute")
 	}
+	if c.SocketPath != "" && !filepath.IsAbs(c.SocketPath) {
+		return errors.New("execution socket path must be absolute")
+	}
 	if err := codexexecserver.ValidateURL(c.ExecutorURL); err != nil {
 		return err
 	}
@@ -90,4 +94,9 @@ func (c Config) Validate() error {
 	return nil
 }
 
-func (c Config) Socket() string { return filepath.Join(c.StateDir, "execution.sock") }
+func (c Config) Socket() string {
+	if c.SocketPath != "" {
+		return c.SocketPath
+	}
+	return filepath.Join(c.StateDir, "execution.sock")
+}

@@ -1,5 +1,7 @@
 [Unit]
 Description=Agentplane exec-server resource aggregate
+# Keep Runtime-managed executors until Execution Service proves its fence.
+DefaultDependencies=no
 
 [Slice]
 CPUAccounting=yes

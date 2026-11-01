@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -251,12 +250,10 @@ type Acknowledgement struct {
 	Sealed bool   `json:"sealed"`
 }
 
-// Store owns session JSON files and the runner-wide lameduck marker.
+// Store owns Session JSON files and their ingress acknowledgements.
 type Store struct {
-	mu             sync.Mutex
-	root           string
-	incarnationUID string
-	incarnationSet bool
+	mu   sync.Mutex
+	root string
 }
 
 func NewStore(root string) (*Store, error) {
@@ -301,88 +298,6 @@ func (s *Store) SessionIDs() ([]string, error) {
 	}
 	sort.Strings(ids)
 	return ids, nil
-}
-
-func (s *Store) Lameduck() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	info, err := os.Stat(filepath.Join(s.root, "sealed"))
-	return err == nil && info.Mode().IsRegular()
-}
-
-func (s *Store) IncarnationUID() (string, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.incarnationUID, s.incarnationSet
-}
-
-func (s *Store) RequireIncarnationUID() (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.requireIncarnationUIDLocked()
-}
-
-func (s *Store) requireIncarnationUIDLocked() (string, error) {
-	if !s.incarnationSet {
-		return "", errors.New("the runner cannot quiesce before the gateway names its incarnation UID")
-	}
-	return s.incarnationUID, nil
-}
-
-func (s *Store) AdoptIncarnation(incarnationUID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if incarnationUID == "" {
-		return errors.New("runner incarnation UID is required")
-	}
-	s.incarnationUID, s.incarnationSet = incarnationUID, true
-	marker := filepath.Join(s.root, "sealed")
-	data, err := os.ReadFile(marker)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if string(data) == incarnationUID {
-		return nil
-	}
-	if err := os.Remove(marker); err != nil {
-		return err
-	}
-	return syncDirectory(s.root)
-}
-
-func (s *Store) EnterLameduck() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	incarnationUID, err := s.requireIncarnationUIDLocked()
-	if err != nil {
-		return err
-	}
-	marker := filepath.Join(s.root, "sealed")
-	info, err := os.Stat(marker)
-	if err == nil && info.Mode().IsRegular() {
-		return nil
-	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	temporary := filepath.Join(s.root, "sealed.tmp")
-	file, err := os.OpenFile(temporary, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o666)
-	if err != nil {
-		return err
-	}
-	_, writeErr := io.WriteString(file, incarnationUID)
-	syncErr := file.Sync()
-	closeErr := file.Close()
-	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
-		return err
-	}
-	if err := os.Rename(temporary, marker); err != nil {
-		return err
-	}
-	return syncDirectory(s.root)
 }
 
 func (s *Store) Exists(sessionID string) (bool, error) {

@@ -21,7 +21,10 @@ from agentplane.native.codex.testing.responses_sse import CustomToolCall, Messag
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner import configuration, runner_service_pb2
 from agentplane.runner.testing import launches
-from agentplane.runner.testing.codex_exec_server_container import CodexExecServerContainer
+from agentplane.runner.testing.codex_exec_server_container import (
+    CodexExecServerContainer,
+    inspect_codex_exec_server_container,
+)
 from agentplane.runner.testing.gateway import serve_gateway
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner_gateway.testing.gateway_process import run_gateway
@@ -86,6 +89,10 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
             ) as history,
         ):
             store = Store(engine)
+            initial_companion = await asyncio.to_thread(
+                inspect_codex_exec_server_container, codex_exec_server_container.socket
+            )
+            assert not initial_companion.owned
             config = launches.config(
                 runner_pb2.HARNESS_CODEX,
                 endpoint.origin,
@@ -209,12 +216,15 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                         assert rejected.value.code() == grpc.StatusCode.FAILED_PRECONDITION
                     shutdown = asyncio.create_task(running_runner.stop())
                     try:
-                        # Model kubelet restarting PID 1 after namespace cleanup. Runner waits for
-                        # that fresh idle generation before releasing executor ownership.
-                        companion = codex_exec_server_container.container.get_wrapped_container()
-                        await asyncio.to_thread(companion.wait, timeout=10)
-                        await asyncio.to_thread(companion.start)
                         await shutdown
+                        # Orderly lease release fences the owned process domain and leaves the
+                        # companion healthy in a fresh idle generation before Runner exits.
+                        companion_status = await asyncio.to_thread(
+                            inspect_codex_exec_server_container, codex_exec_server_container.socket
+                        )
+                        assert companion_status.generation != initial_companion.generation
+                        assert not companion_status.owned
+                        await asyncio.to_thread(codex_exec_server_container.check_health)
                     finally:
                         if not shutdown.done():
                             shutdown.cancel()

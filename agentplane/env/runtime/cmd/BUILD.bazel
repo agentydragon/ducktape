@@ -1,0 +1,18 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+go_binary(
+    name = "agentplane-environment-runtime",
+    srcs = ["main.go"],
+    pure = "on",
+    deps = [
+        "//agentplane/env/configuration",
+        "//agentplane/env/runtime",
+        "//agentplane/env/supervision",
+        "//agentplane/observability",
+        "@io_opentelemetry_go_otel//attribute",
+        "@org_uber_go_zap//:zap",
+        "@org_uber_go_zap//zapcore",
+    ],
+)

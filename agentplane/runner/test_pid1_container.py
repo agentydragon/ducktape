@@ -69,7 +69,7 @@ async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str, b
         for generation in range(2):
             await asyncio.to_thread(_wait_ready, tmp_path)
             descendants = await asyncio.to_thread(_descendant_pids, container, backend)
-            assert len(descendants) == (1 if mode == "native-exit" else 2)
+            assert len(descendants) == (1 if mode == "native-exit" and backend == "subprocess" else 2)
             with (tmp_path / "owner").open("rb") as probe:
                 with pytest.raises(BlockingIOError):
                     fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -97,7 +97,9 @@ async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str, b
 @pytest.mark.parametrize("abrupt", [False, True], ids=["term", "crash"])
 async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, abrupt: bool) -> None:
     load_oci_image(debian_slim.IMAGE)
-    runner = get_required_path(launches.RUNNER_BINARY).resolve()
+    runner = get_required_path(launches.RUNTIME_BINARY).resolve()
+    host = get_required_path(launches.HOST_BINARY).resolve()
+    execution = get_required_path(launches.EXECUTION_BINARY).resolve()
     fixture = get_required_path("_main/agentplane/env/supervision/runner_pid1_fixture_/runner_pid1_fixture").resolve()
     host_control = gateway.endpoint
     assert isinstance(host_control.security, Insecure)
@@ -124,20 +126,25 @@ async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, 
         LoggedContainer(debian_slim.IMAGE.tag, test_name=f"production-runner-pid1-{abrupt}")
         .with_kwargs(network_mode="host", user=f"{os.getuid()}:{os.getgid()}", pids_limit=128, mem_limit="256m")
         .with_volume_mapping(str(tmp_path), "/proof", mode="rw")
-        .with_volume_mapping(str(runner), "/runner", mode="ro")
+        .with_volume_mapping(str(runner), "/environment-runtime", mode="ro")
+        .with_volume_mapping(str(host), "/harness-host", mode="ro")
+        .with_volume_mapping(str(execution), "/execution-service", mode="ro")
         .with_volume_mapping(str(fixture), "/pid1-proof", mode="ro")
         .with_env("OTEL_SDK_DISABLED", "true")
-        .with_command("/runner --config /proof/runner.json --launch-file /proof/launch.json")
+        .with_command(
+            "/environment-runtime --harness-host-binary /harness-host --execution-service-binary /execution-service "
+            "--config /proof/runner.json --launch-file /proof/launch.json"
+        )
     )
     with container:
         wrapped = container.get_wrapped_container()
+        await gateway.control.connect(host_control, "pid1-proof-uid")
         if abrupt:
             await asyncio.to_thread(_wait_native_tree, tmp_path)
             descendants = await asyncio.to_thread(_descendant_pids, container, "pid1")
             assert len(descendants) == 2
         else:
             descendants = []
-        await gateway.control.connect(host_control, "pid1-proof-uid")
         with (tmp_path / "state" / ".agentplane-runner-owner").open("rb") as probe:
             with pytest.raises(BlockingIOError):
                 fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)

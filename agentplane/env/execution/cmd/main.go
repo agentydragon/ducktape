@@ -40,6 +40,9 @@ func run(args []string) int {
 	defer cancel()
 	if err := service.Run(ctx, config); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		if errors.Is(err, service.ErrFencedBackendLoss) {
+			return 0
+		}
 		return 1
 	}
 	return 0

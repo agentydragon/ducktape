@@ -2,8 +2,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = [
     "//agentplane/env:__subpackages__",
-    "//agentplane/runner:__pkg__",
-    "//agentplane/runner:__subpackages__",
 ])
 
 go_library(

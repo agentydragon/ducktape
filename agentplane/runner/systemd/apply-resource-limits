@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-properties=$(/run/agentplane/runner/bin/agentplane-runner --vm-resource-properties /run/agentplane/config/runner.json)
+properties=$(/run/agentplane/runner/bin/agentplane-environment-runtime --vm-resource-properties /run/agentplane/config/runner.json)
 set --
 while IFS= read -r property; do
     [ -n "$property" ] || continue

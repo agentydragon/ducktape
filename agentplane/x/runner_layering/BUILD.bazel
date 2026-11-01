@@ -101,7 +101,7 @@ py_test(
     data = [
         ":child_exec",  # keep: the sparse-root Codex process fence
         ":tools_rootfs",  # keep: independent tools image for sparse-root probe
-        "//agentplane/runner:main_bin",  # keep: the runner as its own process
+        "//agentplane/env/runtime/cmd:agentplane-environment-runtime",  # keep: the environment Runtime as its own process
         "@agentplane_codex_cli_linux_x64//:files",  # keep: pinned Codex and bwrap
     ],
     env = NATIVE_RUNNER_DOCKER_ENV,

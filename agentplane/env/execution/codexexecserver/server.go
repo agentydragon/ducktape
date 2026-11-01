@@ -28,6 +28,15 @@ const (
 	executorStopGrace  = 5 * time.Second
 )
 
+// ErrExecutionBackendLost marks an established executor that stopped or became
+// unhealthy. It is only a diagnostic; the caller must still prove the backend's
+// process domain was fenced before treating the loss as recoverable.
+var ErrExecutionBackendLost = errors.New("execution backend lost")
+
+// ErrContainerOwnershipLost means the companion closed an established ownership
+// lease. It is a more specific diagnostic for Pod backends.
+var ErrContainerOwnershipLost = errors.New("executor container ownership connection lost")
+
 // Config selects local systemd supervision or ownership of the Pod executor container.
 type Config struct {
 	URL             string
@@ -117,7 +126,7 @@ func NativeStart(config NativeConfig) Start {
 		done := make(chan error, 1)
 		go func() {
 			code, err := process.Wait(context.Background())
-			done <- errors.Join(fmt.Errorf("Codex exec-server exited: code=%d; %s", code, process.ExitDescription()), err)
+			done <- errors.Join(ErrExecutionBackendLost, fmt.Errorf("Codex exec-server exited: code=%d; %s", code, process.ExitDescription()), err)
 		}()
 		return &supervision.Instance{
 			PID: process.PID(), Done: done,
@@ -154,7 +163,7 @@ func Monitor(ctx context.Context, endpoint string) error {
 		}
 		failures++
 		if failures >= healthFailureLimit {
-			return fmt.Errorf("execution backend stopped responding: %w", err)
+			return errors.Join(ErrExecutionBackendLost, fmt.Errorf("execution backend stopped responding: %w", err))
 		}
 	}
 }
@@ -227,7 +236,7 @@ type Refusal struct{ Reason string }
 
 func (r Refusal) Error() string { return "executor companion refused to start Codex: " + r.Reason }
 
-// FenceContainer waits until a fresh idle container proves the old PID namespace is gone.
+// FenceContainer waits for a fresh idle process-domain generation after the prior owner is fenced.
 func FenceContainer(ctx context.Context, socket, previous string) error {
 	return retry.Do(ctx, retry.NewConstant(200*time.Millisecond), func(ctx context.Context) error {
 		attempt, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -245,7 +254,7 @@ func FenceContainer(ctx context.Context, socket, previous string) error {
 				return retry.RetryableError(err)
 			}
 		}
-		return retry.RetryableError(errors.New("waiting for executor container cleanup and restart"))
+		return retry.RetryableError(errors.New("waiting for executor process-domain fence"))
 	})
 }
 
@@ -264,7 +273,7 @@ func claimContainer(ctx context.Context, socket string, env map[string]string) (
 	done := make(chan error, 1)
 	go func() {
 		_, err := io.Copy(io.Discard, connection)
-		done <- errors.Join(errors.New("executor container ownership connection lost"), err)
+		done <- errors.Join(ErrExecutionBackendLost, ErrContainerOwnershipLost, err)
 	}()
 	return &supervision.Instance{Done: done, Stop: func(ctx context.Context) error {
 		_ = connection.Close()

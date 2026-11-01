@@ -182,9 +182,11 @@ scenarios. The sampler, two credential guests and three sandbox/OOM guests boot 
 requests an 8-unit worker so the guests and k3s services fit without waiting for another group to exit.
 
 The guest loads the ACPI button/evdev drivers and runs BusyBox `acpid`. On a power-button event,
-the listener requests `systemctl poweroff`. Systemd stops the runner and its execution services,
-then unmounts the workspace and state before powering off. A shutdown-proof unit checks that both
-mounts are gone before emitting the exact console marker required by teardown. KubeVirt's
+the listener requests `systemctl poweroff`. Systemd signals Environment Runtime first; Runtime
+publishes its closing intent, waits for Host native drain and the Execution fence, then stops both
+service units. Their mount dependencies keep workspace and state available through cleanup, after
+which systemd unmounts them before powering off. A shutdown-proof unit checks that both mounts are
+gone before emitting the exact console marker required by teardown. KubeVirt's
 shutdown grace period and the controller's wait for actual deletion remain in place. The shared
 launcher admission policy keeps PVC-backed virtiofs daemons running as native sidecars until compute
 exits; otherwise Pod termination can stop the state filesystem while the guest closes its journals.

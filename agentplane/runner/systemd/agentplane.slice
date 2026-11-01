@@ -1,5 +1,7 @@
 [Unit]
 Description=Agentplane guest workload resource envelope
+# Keep the shared parent cgroup until Runtime has fenced its managed services.
+DefaultDependencies=no
 
 [Slice]
 CPUAccounting=yes

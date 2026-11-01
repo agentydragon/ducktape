@@ -41,7 +41,7 @@ func TestOperationCompletionPublicationPrecedesConsumption(t *testing.T) {
 			t.Error(err)
 		}
 	}}
-	s := &Session{id: "session", journal: openTestJournal(t), deps: sessionDependencies{ctx: ctx, publishOperation: m.publishOperation, publish: func(*Session, bool) {}, changed: func() {}}}
+	s := &Session{id: "session", journal: openTestJournal(t), deps: sessionDependencies{environmentState: func() Environment { return Environment{IncarnationUID: "test-incarnation"} }, ctx: ctx, publishOperation: m.publishOperation, publish: func(*Session, bool) {}, changed: func() {}}}
 	s.startOperation(&s.preparation, func(context.Context) error { return nil })
 	s.mu.Lock()
 	slot := s.preparation

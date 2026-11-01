@@ -1,178 +1,181 @@
 # Native process supervision
 
-COSI controllers own demand, readiness, restart backoff, quiesce and sealing. They schedule
-asynchronous operations whose completion wakes reconciliation. Harness and server code builds
-`supervision.ProcessConfig` values containing command, working directory and explicit environment.
-The reusable process-lifetime controller, its resources and `Host` registry live in `agentplane/env/supervision/`.
-Runner injects the lifecycle context, state, namespace, shared worker tracking and error callback into
-the host, then registers `Host.Controller()` in the same COSI engine as its other lifecycle
-controllers. The host does not start a second runtime. Runner's `launchProcess` adapter in
-`lifecycle_runtime.go` supplies the admitted owner and generation to `Host.Launch`;
-`supervision.ManagedProcess` publishes
-process intent and exposes streams and waits through that controller.
+The reusable launchers, COSI process controller and process registry live in
+[`agentplane/env/supervision`](../../env/supervision/). Environment Runtime, Harness Host and
+Execution Service each own their process lifetime and inject their own context, state, namespace,
+worker tracking and error callback. Native adapters and script workers publish
+`supervision.ProcessConfig` through `supervision.ManagedProcess`; owning controllers retain
+readiness, restart and journal decisions. A completed attempt never relaunches during reconciliation.
 
-Runner selects a `supervision.Supervisor` during startup while holding state ownership, before
-opening Session stores. Each supervisor creates `Process` handles through a private backend
-interface. `Process` owns the common streams, PID and completion result; backend implementations
-own launch, observation and execution-domain cleanup. `Start` bounds startup independently of
-process lifetime. `Stop` requests graceful shutdown and cleanup; `Wait` returns only after exit
-and cleanup. A canceled wait cancels observation, not execution. `ManagedProcess` places the COSI
-intent and cleanup barrier around that backend process, while callers retain stream access.
+| Owner               | Processes and state                                                                                             |
+| ------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Environment Runtime | Environment bootstrap, Host/Execution lifecycle, environment generation and legacy state-owner lock             |
+| Harness Host        | Shared Codex app-server, Claude Sessions, Session setup/workspace helpers, Session journals and History ingress |
+| Execution Service   | Native exec-server and execution requests; the Pod companion owns the native executor's separate PID namespace  |
 
-VMs prepare systemd supervision, including slice budgets and prior-owner cleanup. Production Pods
-explicitly select the PID1 backend, which directly spawns natives and inherits the state-owner
-descriptor. Non-PID1 integration fixtures explicitly select the subprocess supervisor. Backend choice stays out of
-controllers and per-launch specifications. A manager failure never switches a VM to the Pod
-backend. The Pod exec-server container retains its separate control-socket ownership protocol.
-The generic COSI process controller is part of the shared `supervision` package and runs in Runner's
-existing lifecycle engine. Every Runner-managed
-native launch uses `ProcessDesiredStates`, `ProcessStatuses` and a finalizer per attempt: Codex
-exec-server, shared Codex app-server, per-Session harnesses, bootstrap/setup scripts and credentialed
-workspace helpers. Owning controllers keep readiness, restart and journal policy. Protocol and
-script workers use `supervision.ManagedProcess` to publish intent, consume streams and await the cleanup barrier;
-they never invoke backend start/stop themselves. Canceling a wait leaves execution owned until an
-explicit stop. Canceling startup instead tears down its intent and joins any late launch.
-Process resources contain lifecycle values; launch callbacks and native handles stay in the host
-registry. Teardown cancellation joins an in-flight start and fences any instance it returns before
-releasing the finalizer. A completed attempt never relaunches during reconciliation.
-Runner checks every remaining process intent before sealing or closing, so a failed fence cannot
-be hidden by a protocol reader reporting the leader's exit. The Pod executor mode supervises its own
-container-local child through the same `Supervisor` and `Process` backend. It selects the state-less
-PID1 constructor explicitly: the live ownership connection and outer container lifetime own that
-process, while the Runner itself keeps its state-owner lock and COSI lifecycle. The executor does
-not create a second Runner runtime or journal.
+Each supervisor creates `Process` handles through a private backend interface. `Process` owns
+streams, PID and completion result; the backend owns launch, observation and execution-domain
+cleanup. `Start` bounds startup independently of process lifetime. `Stop` requests graceful shutdown
+and cleanup; `Wait` returns only after exit and cleanup. A canceled wait cancels observation, not
+execution. Canceling startup tears down its intent and joins any late launch.
+
+COSI-managed launches use `ProcessDesiredStates`, `ProcessStatuses` and a finalizer per attempt.
+Launch callbacks and native handles stay in the registry. Teardown joins an in-flight start and
+fences any instance it returns before releasing the finalizer. Owners check remaining process
+intents before acknowledging cleanup; a reader observing leader exit cannot hide a failed fence.
+
+Runtime coordinates the process owners over private sockets. Host reports native stop against the
+exact Runtime/Host boot IDs and lifecycle generation. Runtime fences Execution before authorizing
+Host sealing and waits for the matching seal/History ACK before completing quiesce. The
+[Host protocol](../../env/harnesshost/SPEC.md) and [environment lifecycle](lifecycle.md) define those
+barriers. Transport loss closes admission and drains native work without inventing a seal.
 
 ## VM services
 
-Runner uses [go-systemd's D-Bus bindings](https://github.com/coreos/go-systemd/tree/v22.7.0/dbus)
-over systemd's root-only `/run/systemd/private` socket, without a bus-daemon dependency. The
-bindings own connection setup, job completion tracking and property-change subscriptions.
-Every Claude process, shared Codex app-server, Codex exec-server, bootstrap/setup script
-and credentialed workspace helper is a transient `Type=exec` service. No supervisor subprocess or
-`systemd-run` helper is needed in a VM. Systemd creates the process with its resource and identity
-policy already applied. Native units use `Restart=no`; COSI decides whether to launch a successor.
+The launchers use [go-systemd's D-Bus bindings](https://github.com/coreos/go-systemd/tree/v22.7.0/dbus)
+over systemd's root-only `/run/systemd/private` socket. The bindings own connection setup, job
+completion tracking and property-change subscriptions. Native launches are transient `Type=exec`
+services; they need no supervisor subprocess or `systemd-run` helper. Systemd applies resource and
+identity settings before exec. Native units use `Restart=no`; their owner decides whether a
+successor is permitted.
 
-The hierarchy is shared by the NixOS guest and the system-test guest:
+The NixOS guest and system-test guest share this hierarchy:
 
 ```text
 agentplane.slice                         overall CPU, memory, swap and PID envelope
-  agentplane-runner.service              trusted root controller
+  agentplane-environment-runtime.service environment lifecycle and bootstrap
+  agentplane-harness-host.service        native Session and journal owner
+  agentplane-execution-service.service   execution API and native backend owner
   agentplane-workloads.slice             aggregate harness/setup budget
     agentplane-native-<owner>-<UUID>.service
   agentplane-executors.slice             aggregate exec-server/tool budget
     agentplane-native-<owner>-<UUID>.service
 ```
 
-The preflight helper applies the enclosing envelope before Runner starts. Runner configures slice
-and per-service budgets through D-Bus. Services run as the configured unprivileged UID/GID, without
-capabilities and with `NoNewPrivileges`. Their filesystem is read-only except `/state` and the
-guest's shared `/tmp`; sharing temporary files preserves local exec-server transport. The trusted
-Runner needs access to the system manager. The unprivileged harness identity has no authority to
-start, stop or reconfigure system units.
+The preflight helper applies the enclosing envelope before Runtime starts. Launchers configure
+slice and per-service budgets through D-Bus. Native services run as the configured unprivileged
+UID/GID without capabilities and with `NoNewPrivileges`. Their filesystem is read-only except
+`/state` and the guest's shared `/tmp`; sharing temporary files preserves local exec-server
+transport. The trusted owners can access the system manager. The unprivileged harness identity
+cannot start, stop or reconfigure system units.
 
-Separate stdout/stderr and stdin pipes cross D-Bus as file descriptors, preserving native protocol
-transport and stderr diagnostics. `ExecStartEx` disables manager argument expansion, preserving
-literal dollar signs, specifiers and shell source. The configured environment values are passed
-explicitly; systemd adds service metadata but does not inherit Runner-only variables. Login
-environment defaults are disabled. Start waits for the manager's completed start job, so a rejected
-`execve` is a launch failure. `RemainAfterExit=yes` and `CollectMode=inactive` retain successful
-and failed exit information until Runner reads it and stops the unit. Ordinary stops signal the
-unit first, preserving that evidence before cleanup.
-If an external stop collects the unit before observation, Runner reports process loss (code 125)
-and checks the saved kernel domain before completing cleanup.
+Separate stdout/stderr and stdin pipes cross D-Bus as file descriptors. `ExecStartEx` disables
+manager argument expansion, preserving literal dollar signs, specifiers and shell source.
+Environment values are explicit; systemd adds service metadata without inheriting the owner's
+private environment. Login environment defaults are disabled. Start waits for the completed start
+job, so a rejected `execve` is a launch failure. `RemainAfterExit=yes` and `CollectMode=inactive`
+retain exit information until the owner reads it and stops the unit. Ordinary stops signal the
+unit before cleanup. If an external stop collects the unit before observation, the launcher reports
+process loss (code 125) and checks the saved kernel domain before completing cleanup.
 
-## Completion and crash fencing
+### Invocation and scope fencing
 
-A launch allocates one UUID before sending `StartTransientUnit`. A lost reply or cancellation
-triggers cleanup of that same identity. Runner does not create a second unit to retry an uncertain
-launch. The native command's effects remain subject to journal reconciliation, never automatic
-replay merely because its launch/control RPC failed.
+Every launch allocates one UUID before `StartTransientUnit`. A lost reply or cancellation triggers
+cleanup of that same identity. An uncertain launch never creates a second unit to retry its effects.
+Native effects remain subject to journal reconciliation.
 
-Native units bind to and are ordered after `agentplane-runner.service`. Runner death therefore
-stops them, allowing five seconds after `SIGTERM` before forced cleanup. `KillMode=control-group`
-contains descendants even when they change process groups. Natural leader exit also triggers a
-stop of the whole unit. `Wait` only completes after the unit is inactive/failed and its execution
-domain is empty. A disconnected manager leaves cleanup blocked until it can be proven; process
-exit alone does not authorize a successor or a journal seal.
+`PrepareForOwner` takes an explicit service unit, lifetime directory and scope ID. Runtime uses the
+legacy Runner scope ID so it can discover and fence pre-split units. Host uses `harness-host` and
+Execution uses `execution-service`; their scopes remain independent. Native units bind to their
+owning service and require that service invocation's lifetime marker:
 
-The fixed state-owner lock excludes two live Runners. VM services do not inherit that lock.
-After acquiring it, a replacement first discovers old units in the scope derived from its explicit
-Sandbox UID and state directory, verifies their expected workload/executor slice, and fences them.
-Only then can it open Session stores or journals and admit native execution. Other owner scopes
-are untouched. This startup barrier also covers surviving setup and workspace helpers.
+| Owner service                            | Lifetime directory                             |
+| ---------------------------------------- | ---------------------------------------------- |
+| `agentplane-environment-runtime.service` | `/run/agentplane-environment-runtime-lifetime` |
+| `agentplane-harness-host.service`        | `/run/agentplane-harness-host-lifetime`        |
+| `agentplane-execution-service.service`   | `/run/agentplane-execution-lifetime`           |
 
-Each native launch also requires a marker for its Runner service invocation. Systemd removes the
-service's runtime directory before restarting Runner. A start request still queued on an old
-connection therefore fails its condition if it arrives after replacement, rather than starting
-work after the replacement's inventory scan. A skipped start condition never counts as native exec.
+Service death stops its native units. `KillMode=control-group` contains descendants even when they
+change process groups. Natural leader exit also stops the unit. `Wait` requires the unit to be
+inactive/failed and its execution domain empty. A disconnected manager leaves cleanup blocked;
+process exit alone does not authorize a successor or journal seal. Runtime separately verifies
+Host/Execution service invocation and cgroup fencing during coordinated shutdown/replacement.
+
+Runtime retains the original `<state_dir>/.agentplane-runner-owner` inode. Host holds
+`<state_dir>/harness-host/.agentplane-runner-owner`; Execution holds its own owner under
+`<state_dir>/execution`. After acquiring an owner lock, its launcher discovers old units in the
+scope derived from the Sandbox UID, state directory and explicit scope ID, verifies their expected
+slice, and fences them before admitting new native work. Other scopes are untouched. Session
+records and journals keep their existing paths.
+
+Systemd removes the owner's lifetime directory before restarting its service. A start request
+queued on an old connection then fails its invocation condition if it arrives after replacement,
+including after the replacement's inventory scan. A skipped condition never counts as native exec.
 
 ## Pods and tests
 
 ### PID 1 and the outer fence
 
-`environment.supervision` explicitly selects `pid1` or `subprocess` for a Pod. The production
-Sandbox template selects `pid1`, invokes Runner directly, and disables shared process namespaces.
-The PID1 backend rejects a Runner whose PID is not 1. Non-PID1 integration fixtures select
-`subprocess` and retain the internal supervisor's parent-liveness pipe and trusted owner-descriptor
-copy. VM systemd supervision cannot be combined with Pod PID1 policy and never falls back to it.
+`environment.supervision` explicitly selects `pid1` or `subprocess` for Runtime. Production Pods
+select `pid1`, invoke Environment Runtime directly and disable shared process namespaces. The PID1
+backend rejects a Runtime whose PID is not 1. Runtime starts Harness Host as a child with explicit
+`--supervision subprocess`; Host never inherits Runtime's PID1 role. The Execution API process is
+another Runtime-owned child. Its Pod companion runs separately as PID1 and owns the native
+exec-server namespace. Non-PID1 integration fixtures select Runtime's `subprocess` backend. VM
+systemd supervision does not fall back to a Pod backend.
 
-PID1 launches each native directly in its own process group. The owner descriptor is inherited,
-but native runtimes may close inherited descriptors. Runner keeps ownership through ordinary
-process cleanup and journal closure. `Stop` closes stdin and sends TERM, then KILL after its grace
-budget; a canceled stop escalates and leaves the cleanup barrier owned. Native leader exit kills
-its remaining group. `Wait` completes only after the group disappears; a failed fence blocks the
-process finalizer. Escaped groups are contained by whole-container teardown, as with the subprocess
-backend. They can retain stdout/stderr pipes. The backend container fixture deliberately exits
-without joining those escaped readers. Actual Runner graceful shutdown still joins script and
-protocol readers; an escaped writer can hold it until the outer runtime's termination grace expires
-and SIGKILL ends the container. The production Runner container cases prove clean TERM and abrupt
-bootstrap death, not graceful TERM with escaped pipe holders.
+PID1 launches each child in its own process group. The owner descriptor is inherited, although
+native runtimes may close inherited descriptors. The subprocess supervisor retains a trusted
+owner-descriptor copy and a parent-liveness pipe. Owners keep their locks through ordinary process
+cleanup and journal closure. `Stop` closes stdin and sends TERM, then KILL after its grace budget;
+a canceled stop escalates and leaves the cleanup barrier owned. Leader exit kills the remaining
+process group. `Wait` requires the group to disappear; a failed fence retains the finalizer.
 
-The executor companion uses the same PID1 reaper without a state-owner descriptor. It closes child
-stdin after launch and forwards stdout/stderr asynchronously. Its exit path does not join those
-readers: an escaped writer may hold the pipes until returning from PID 1 lets the runtime fence the
-whole namespace.
+Escaped groups require whole-container teardown. They can retain stdout/stderr pipes. Actual
+Runtime/Host graceful shutdown joins accepted script and protocol readers; an escaped writer can
+hold it until the outer runtime's termination grace expires and SIGKILL ends the container. A Host
+process exit alone does not prove its escaped native descendants are gone. Replacement after an
+abnormal exit therefore requires the outer containment fence.
 
-One process-wide reaper owns every PID1 native and adopted orphan. No PID1 native uses
-`exec.Cmd.Wait`. Start's exec handshake and registration share a mutex with reaping. Managed exits
-are observed with `waitid(WNOWAIT)`: the zombie leader reserves its group identity while KILL is
-sent, then its targeted `wait4` consumes the status. Orphan discovery reads every runtime thread's
-`/proc/self/task/*/children`; only unregistered children use orphan `wait4`. Mixing active subprocess
-wait owners with PID1 reaping is rejected. Unexpected wait or discovery failures terminate PID1,
-leaving the outer runtime to fence the namespace, instead of silently stranding children.
+The companion's PID1 reaper has no environment state-owner descriptor. Its live ownership
+connection owns the native executor. It closes stdin after launch and forwards stdout/stderr
+asynchronously. On ordinary lease release, PID1 stops exec-server, kills any remaining processes
+in its private PID namespace (including escaped process groups), and waits until only PID1 remains
+before publishing the next idle generation. This is safe because the companion and its workload use
+the same unprivileged UID without privilege escalation. An unexpected exec-server exit triggers
+that same sweep and closes the ownership lease so Runtime can recover; if the namespace scan finds
+different credentials or the process sweep cannot complete, PID1 exits and the container runtime
+fences the entire namespace. Escaped output readers are therefore joined only after either the
+in-container process sweep or the outer container fence proves them gone.
 
-The namespace fence is complete when the outer runtime has observed the container's init exit.
-Successful acquisition of the state lock alone does not prove that boundary. Linux's
-[`do_exit`](https://github.com/torvalds/linux/blob/v6.12/kernel/exit.c) closes the exiting task's files
-before `exit_notify` reaches namespace teardown;
-[`zap_pid_ns_processes`](https://github.com/torvalds/linux/blob/v6.12/kernel/pid_namespace.c) then kills
-and joins the remaining namespace tasks. This ordering applies to both Pod backends: abrupt PID1
-death kills an internal supervisor too. Its descriptor is not an independent whole-container fence.
+One process-wide reaper owns every PID1 child and adopted orphan. No PID1 child uses `exec.Cmd.Wait`.
+Start's exec handshake and registration share a mutex with reaping. Managed exits use
+`waitid(WNOWAIT)`: the zombie leader reserves the process group identity while KILL is sent, then
+targeted `wait4` consumes its status. Orphan discovery reads every runtime thread's
+`/proc/self/task/*/children`; only unregistered children use orphan `wait4`. Mixing active
+subprocess wait owners with PID1 reaping is rejected. Unexpected wait/discovery failures terminate
+PID1 and leave the outer runtime to fence the namespace.
 
-The Sandbox Controller waits for the previous Pod's deletion event before creating its successor
+The outer fence is complete when the container runtime observes its init exit. Acquiring a state
+lock alone does not prove that boundary. Linux's
+[`do_exit`](https://github.com/torvalds/linux/blob/v6.12/kernel/exit.c) closes files before
+`exit_notify` reaches namespace teardown;
+[`zap_pid_ns_processes`](https://github.com/torvalds/linux/blob/v6.12/kernel/pid_namespace.c) then
+kills and joins remaining tasks. Abrupt PID1 death also kills an internal supervisor; its retained
+lock descriptor is not an independent whole-container fence.
+
+Sandbox Controller waits for the prior Pod's deletion event before creating its successor
 (`converge` in `sandbox_controller/controller.go`). Normal kubelet restarts and graceful Pod deletion
-supply the outer runtime boundary. An API deletion event after force deletion or loss of a node is
-not evidence that the old container stopped. Both backends require that container teardown or an
-external node/storage fence be established before replacing such an incarnation. The checked-in
-node-local storage and fixed inode lock remain part of the supported contract; neither a Pod UID
-nor PVC access mode replaces runtime fencing. The systemd startup inventory fence is independent.
+supply the outer fence. An API deletion event after force deletion or node loss does not prove the
+old container stopped. Container teardown or an external node/storage fence must precede
+replacement. Node-local storage and the fixed inode lock remain part of the supported contract;
+neither Pod UID nor PVC access mode replaces runtime fencing.
 
-`//agentplane/runner:test_pid1_container` runs both backends in real private PID namespaces. Its
-`runner_pid1_fixture` closes the native's inherited owner descriptor and starts TERM-resistant
-same-group and escaped descendants. It covers nonzero native exit, TERM, forced escalation, abrupt
-PID1 SIGKILL, stream lifetime, fast-exit wait ownership and adopted-orphan reaping. It checks lock
-exclusion while running, then waits for runtime exit, observes descendant death and reacquires the
-lock before restarting the same container. JSON evidence and logs go to undeclared test outputs.
-The Pod system tests exercise the selected production backend through the shared Sandbox template.
-This adds neither privileges nor a production service or endpoint.
+### Acceptance coverage
 
-The system-test guest boots real systemd and a system bus with the same static runner/slice units.
-Before Runner starts, `//agentplane/env/supervision:runner_systemd_fixture` exercises credentials, separate streams, kernel
+`//agentplane/runner:test_pid1_container` runs both backend fixtures in real private PID namespaces.
+It closes the native's inherited owner descriptor and starts TERM-resistant same-group and escaped
+descendants. It checks lock exclusion, observes container exit and descendant death, then reacquires
+the lock before restarting the container. The production cases invoke Runtime plus Host/Execution
+binaries and cover clean TERM and abrupt bootstrap death. They do not claim graceful completion
+with escaped pipe holders. JSON evidence and logs go to undeclared test outputs.
+
+`//agentplane/runner:test_executor_container` exercises the separately packaged Execution companion,
+native executor loss/replacement, shared app-server continuity and coordinated quiesce. Session and
+tool effects are never replayed as part of process replacement.
+
+The system-test guest boots real systemd with the same owner/slice units. Before Runtime starts,
+`//agentplane/env/supervision:runner_systemd_fixture` exercises credentials, separate streams, kernel
 resource limits, lost/canceled launch replies, detached descendants, parent-unit death, ordinary
-stop and scoped startup fencing. Existing VM scenarios then exercise storage, actual harnesses,
-tool OOM and suspend/resume through the platform. The fixture's test wrapper and read-only observer
-are test-only; they add no production control endpoint.
-
-A future VM backend can implement the same launch/observe/stop/fence boundary with direct cgroups.
-Running Runner as VM PID 1 would additionally require guest boot, reaping, signal handling and
-recovery responsibilities currently supplied by systemd.
+stop and scoped startup fencing. VM scenarios exercise storage, actual harnesses, tool OOM and
+suspend/resume. The fixture wrapper and observer add no production control endpoint.

@@ -58,7 +58,9 @@ func pid1ProofNative(mode string) int {
 		panic(err)
 	}
 	roles := []string{"group"}
-	if mode != "native-exit" {
+	// The PID1 native-exit case exercises FenceNamespace against an escaped
+	// descendant. Keep the subprocess backend's original one-descendant case.
+	if mode != "native-exit" || os.Getenv("PID1_PROOF_BACKEND") == "pid1" {
 		roles = append(roles, "escaped")
 	}
 	for _, role := range roles {
@@ -138,13 +140,21 @@ func TestPID1ContainerContract(t *testing.T) {
 	}
 	p, err := supervisor.NewProcess(ProcessConfig{
 		Command: []string{os.Args[0], "--pid1-proof-native", mode},
-		Env:     map[string]string{},
+		Env:     map[string]string{"PID1_PROOF_BACKEND": os.Getenv("PID1_PROOF_BACKEND")},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := p.Start(ctx); err != nil {
 		t.Fatal(err)
+	}
+	if os.Getenv("PID1_PROOF_BACKEND") == "pid1" {
+		if err := supervisor.FenceNamespace(ctx); err == nil || !strings.Contains(err.Error(), "managed child processes") {
+			t.Fatalf("namespace fence accepted a live managed child: %v", err)
+		}
+		if !p.Running() {
+			t.Fatal("rejected namespace fence stopped the managed child")
+		}
 	}
 	if os.Getenv("PID1_PROOF_BACKEND") == "subprocess" {
 		if _, err := NewPID1Supervisor(owner); err == nil || !strings.Contains(err.Error(), "subprocess supervisors own child waits") {
@@ -162,7 +172,7 @@ func TestPID1ContainerContract(t *testing.T) {
 	if err := waitPID1ProofFile(ctx, "/proof/group.pid"); err != nil {
 		t.Fatal(err)
 	}
-	if mode != "native-exit" {
+	if mode != "native-exit" || os.Getenv("PID1_PROOF_BACKEND") == "pid1" {
 		if err := waitPID1ProofFile(ctx, "/proof/escaped.pid"); err != nil {
 			t.Fatal(err)
 		}
@@ -191,9 +201,44 @@ func TestPID1ContainerContract(t *testing.T) {
 	if err != nil || mode == "native-exit" && code != 23 || mode == "term" && code != 0 || mode == "escalate" && code != 137 {
 		t.Fatalf("native completion = (%d, %v)", code, err)
 	}
-	// The escaped descendant holds these pipes until container teardown; joining
-	// its readers here would deadlock PID 1 instead of reaching that boundary.
-	if mode == "native-exit" {
+	if mode == "native-exit" && os.Getenv("PID1_PROOF_BACKEND") == "pid1" {
+		data, err := os.ReadFile("/proof/escaped.pid")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var escapedPID int
+		if _, err := fmt.Sscan(string(data), &escapedPID); err != nil {
+			t.Fatal(err)
+		}
+		if err := supervisor.FenceNamespace(ctx); err != nil {
+			t.Fatalf("fence escaped PID namespace workload: %v", err)
+		}
+		ticker := time.NewTicker(10 * time.Millisecond)
+		for !errors.Is(unix.Kill(escapedPID, 0), unix.ESRCH) {
+			select {
+			case <-ctx.Done():
+				ticker.Stop()
+				t.Fatal("escaped process survived namespace fence:", ctx.Err())
+			case <-ticker.C:
+			}
+		}
+		ticker.Stop()
+		if os.Getpid() != 1 {
+			t.Fatal("namespace fence terminated PID 1")
+		}
+		// PID 1 remains usable and can own a new process after the fence.
+		afterFence, err := supervisor.NewProcess(ProcessConfig{Command: []string{os.Args[0], "--pid1-proof-fast"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := afterFence.Start(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if code, err := afterFence.Wait(ctx); code != 42 || err != nil {
+			t.Fatalf("process after namespace fence = (%d, %v)", code, err)
+		}
+		// The escaped descendant held these pipes until FenceNamespace; now their
+		// readers must finish without terminating the container.
 		for range 2 {
 			select {
 			case err := <-readers:

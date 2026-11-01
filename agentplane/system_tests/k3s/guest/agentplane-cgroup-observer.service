@@ -2,7 +2,7 @@
 Description=Publish read-only cgroup evidence for VM tests
 After=agentplane-guest-prepare.service
 Requires=agentplane-guest-prepare.service
-Before=agentplane-runner.service
+Before=agentplane-environment-runtime.service
 
 [Service]
 ExecStart=/usr/sbin/agentplane-cgroup-observer

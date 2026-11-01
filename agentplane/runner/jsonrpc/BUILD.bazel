@@ -5,8 +5,7 @@ go_library(
     srcs = ["jsonrpc.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/jsonrpc",
     visibility = [
-        "//agentplane/env/execution/adapter:__pkg__",
-        "//agentplane/env/harnesshost/codex:__pkg__",
+        "//agentplane/env:__subpackages__",
         "//agentplane/runner:__subpackages__",
     ],
 )

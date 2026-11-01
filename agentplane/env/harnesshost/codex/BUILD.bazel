@@ -10,9 +10,8 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/env/harnesshost/codex",
     visibility = [
-        "//agentplane/env/harnesshost:__subpackages__",
-        "//agentplane/runner:__pkg__",
-        "//agentplane/runner:__subpackages__",
+        "//agentplane/env:__subpackages__",
+        "//agentplane/env/harnesshost:__pkg__",
     ],
     deps = [
         "//agentplane/env/harnesshost/codex/protocol",

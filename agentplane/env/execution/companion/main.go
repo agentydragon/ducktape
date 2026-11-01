@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -144,8 +145,11 @@ func serveControl(
 	binary, listen string,
 	supervisor *supervision.Supervisor,
 ) error {
-	status := control.Status{Generation: uuid.NewString()}
-	var mu sync.Mutex
+	state := &companionOwnership{
+		status:        control.Status{Generation: uuid.NewString()},
+		fenceRequests: make(chan struct{}, 1),
+	}
+	go state.fenceLoop(lifetime, cancel, supervisor)
 	for {
 		connection, err := listener.Accept()
 		if lifetime.Err() != nil {
@@ -165,10 +169,11 @@ func serveControl(
 			if decoder.Decode(&request) != nil {
 				return
 			}
-			mu.Lock()
+			var responseStatus control.Status
 			if request.Operation == "claim" {
-				if status.Owned {
-					mu.Unlock()
+				state.mu.Lock()
+				if state.status.Owned || state.fencing {
+					state.mu.Unlock()
 					cancel()
 					return
 				}
@@ -177,9 +182,9 @@ func serveControl(
 					Env:     request.Environment,
 				})
 				if err != nil {
-					refused := status
+					refused := state.status
 					refused.Error = err.Error()
-					mu.Unlock()
+					state.mu.Unlock()
 					_ = json.NewEncoder(c).Encode(refused)
 					return
 				}
@@ -187,28 +192,36 @@ func serveControl(
 					// Nothing started, so this generation has no work to fence. Refuse and keep serving,
 					// allowing Runner to retry or fence without waiting for a container restart.
 					fmt.Fprintln(os.Stderr, "start Codex executor:", err)
-					refused := status
+					refused := state.status
 					refused.Error = err.Error() + "; " + process.ExitDescription()
-					mu.Unlock()
+					state.mu.Unlock()
 					_ = json.NewEncoder(c).Encode(refused)
 					return
 				}
+				expectedExit := &atomic.Bool{}
+				state.status.Owned = true
+				state.status.Error = ""
+				state.process = process
+				state.lease = c
+				state.expectedExit = expectedExit
+				responseStatus = state.status
+				state.mu.Unlock()
 				go forwardOutput(lifetime, cancel, "stdout", process.Stdout(), os.Stdout)
 				go forwardOutput(lifetime, cancel, "stderr", process.Stderr(), os.Stderr)
 				if err := process.CloseStdin(); err != nil {
 					fmt.Fprintln(os.Stderr, "close Codex executor stdin:", err)
-					mu.Unlock()
 					cancel()
 					return
 				}
-				status.Owned = true
-				go waitForExecutor(process, cancel)
-			} else if request.Operation != "inspect" || len(request.Environment) != 0 {
-				mu.Unlock()
+				go waitForExecutor(process, expectedExit, func() { state.unexpectedExit(process) })
+			} else if (request.Operation != "inspect" && request.Operation != "fence") || len(request.Environment) != 0 {
 				return
+			} else {
+				state.mu.Lock()
+				responseStatus = state.status
+				state.mu.Unlock()
 			}
-			err := json.NewEncoder(c).Encode(status)
-			mu.Unlock()
+			err := json.NewEncoder(c).Encode(responseStatus)
 			if err != nil {
 				if request.Operation == "claim" {
 					cancel()
@@ -217,29 +230,125 @@ func serveControl(
 			}
 			_ = c.SetDeadline(time.Time{})
 			if request.Operation == "claim" {
-				// Any input, EOF or IO error ends this container generation.
+				// Closing the lease requests a process-domain fence. PID 1 keeps
+				// serving only after the workload is proven absent.
 				var one [1]byte
 				_, _ = c.Read(one[:])
-				cancel()
+				state.requestFence()
+				return
+			}
+			if request.Operation == "fence" {
+				state.requestFence()
 				return
 			}
 			_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
 			var next control.Request
 			if decoder.Decode(&next) == nil && next.Operation == "fence" {
-				cancel()
+				state.requestFence()
 			}
 		}(connection)
 	}
 }
 
-func waitForExecutor(process *supervision.Process, exited context.CancelFunc) {
+type companionOwnership struct {
+	mu            sync.Mutex
+	status        control.Status
+	process       *supervision.Process
+	lease         net.Conn
+	expectedExit  *atomic.Bool
+	fencing       bool
+	fenceRequests chan struct{}
+}
+
+func (s *companionOwnership) requestFence() {
+	select {
+	case s.fenceRequests <- struct{}{}:
+	default:
+	}
+}
+
+func (s *companionOwnership) unexpectedExit(process *supervision.Process) {
+	s.mu.Lock()
+	unexpected := s.process == process && s.expectedExit != nil && !s.expectedExit.Load()
+	s.mu.Unlock()
+	if unexpected {
+		s.requestFence()
+	}
+}
+
+func (s *companionOwnership) fenceLoop(
+	lifetime context.Context,
+	cancel context.CancelFunc,
+	supervisor *supervision.Supervisor,
+) {
+	for {
+		select {
+		case <-lifetime.Done():
+			return
+		case <-s.fenceRequests:
+			s.mu.Lock()
+			if !s.status.Owned || s.fencing {
+				s.mu.Unlock()
+				continue
+			}
+			process := s.process
+			if process == nil || s.expectedExit == nil {
+				s.mu.Unlock()
+				fmt.Fprintln(os.Stderr, "owned Codex executor has no process lifecycle handle")
+				cancel()
+				return
+			}
+			s.fencing = true
+			s.expectedExit.Store(true)
+			lease := s.lease
+			s.mu.Unlock()
+
+			fenceCtx, finish := context.WithTimeout(lifetime, 30*time.Second)
+			err := process.Stop(fenceCtx, 5*time.Second)
+			if err == nil {
+				err = supervisor.FenceNamespace(fenceCtx)
+			}
+			finish()
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "fence Codex executor process domain:", err)
+				// An incomplete in-container fence falls back to the runtime's
+				// whole-namespace teardown.
+				cancel()
+				return
+			}
+
+			s.mu.Lock()
+			if s.process != process {
+				s.mu.Unlock()
+				fmt.Fprintln(os.Stderr, "Codex executor changed during process-domain fence")
+				cancel()
+				return
+			}
+			s.status.Generation = uuid.NewString()
+			s.status.Owned = false
+			s.status.Error = ""
+			s.process = nil
+			s.lease = nil
+			s.expectedExit = nil
+			s.fencing = false
+			s.mu.Unlock()
+			if lease != nil {
+				_ = lease.Close()
+			}
+		}
+	}
+}
+
+func waitForExecutor(process *supervision.Process, expectedExit *atomic.Bool, unexpectedExit func()) {
 	code, err := process.Wait(context.Background())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Codex executor cleanup failed:", err)
 	} else {
 		fmt.Fprintln(os.Stderr, "Codex executor exited with status:", code)
 	}
-	exited()
+	if !expectedExit.Load() {
+		unexpectedExit()
+	}
 }
 
 // Process streams can outlive the direct child when an escaped descendant inherits them. PID 1

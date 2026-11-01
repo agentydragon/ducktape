@@ -132,15 +132,6 @@ def _kill_exec_server(companion: CodexExecServerContainer) -> None:
         raise RuntimeError(f"could not kill Codex exec-server: {result.output!r}")
 
 
-def _wait_for_container_exit(companion: CodexExecServerContainer) -> None:
-    companion.container.get_wrapped_container().wait(timeout=30)
-
-
-def _start_container(companion: CodexExecServerContainer) -> None:
-    # Starting the stopped container models kubelet's restart after PID 1 exits.
-    companion.container.get_wrapped_container().start()
-
-
 def _wait_for_executor_file(path: Path) -> None:
     deadline = time.monotonic() + 30
     while not path.exists():
@@ -192,7 +183,7 @@ async def _reply_to_tool(
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
 
 
-async def test_codex_exec_server_container_restarts_without_restarting_app_server(
+async def test_codex_exec_server_container_recovers_without_restarting_app_server(
     runner: RunningRunner,
     driver: RunnerDriver,
     model: ScriptedModel,
@@ -213,12 +204,12 @@ async def test_codex_exec_server_container_restarts_without_restarting_app_serve
     assert initial_app_server.HasField("pid")
 
     await asyncio.to_thread(_kill_exec_server, codex_exec_server_container)
-    await asyncio.to_thread(_wait_for_container_exit, codex_exec_server_container)
     await asyncio.wait_for(wait_for_exit(detached_host_pid), timeout=30)
-    await asyncio.to_thread(_start_container, codex_exec_server_container)
-    restarted_executor = await _wait_for_generation(
-        codex_exec_server_container.socket, initial_executor.generation, owned=True
+    idle_after_exit = await _wait_for_generation(
+        codex_exec_server_container.socket, initial_executor.generation, owned=False
     )
+    assert idle_after_exit.generation != initial_executor.generation
+    restarted_executor = await _wait_for_owned(codex_exec_server_container.socket, idle_after_exit.generation)
     await asyncio.to_thread(codex_exec_server_container.check_health)
 
     recovered_app_server = await _codex_process(driver)
@@ -241,9 +232,7 @@ async def test_codex_exec_server_container_restarts_without_restarting_app_serve
     assert (await _codex_process(driver)).pid == initial_app_server.pid
 
     await runner.crash()
-    await asyncio.to_thread(_wait_for_container_exit, codex_exec_server_container)
     await asyncio.wait_for(wait_for_exit(second_detached_host_pid), timeout=30)
-    await asyncio.to_thread(_start_container, codex_exec_server_container)
     idle_executor = await _wait_for_generation(
         codex_exec_server_container.socket, restarted_executor.generation, owned=False
     )
@@ -270,12 +259,13 @@ async def test_codex_exec_server_container_restarts_without_restarting_app_serve
     app_server = await _codex_process(driver)
     assert app_server.HasField("pid")
     quiescing = asyncio.create_task(driver.quiesce())
-    await asyncio.to_thread(_wait_for_container_exit, codex_exec_server_container)
     await asyncio.wait_for(wait_for_exit(third_detached_host_pid), timeout=30)
     await asyncio.wait_for(wait_for_exit(app_server.pid), timeout=30)
-    assert not quiescing.done()
-    await asyncio.to_thread(_start_container, codex_exec_server_container)
-    await _wait_for_generation(codex_exec_server_container.socket, owned_executor.generation, owned=False)
+    idle_after_quiesce = await _wait_for_generation(
+        codex_exec_server_container.socket, owned_executor.generation, owned=False
+    )
+    assert idle_after_quiesce.generation != owned_executor.generation
+    await asyncio.to_thread(codex_exec_server_container.check_health)
     await quiescing
     with pytest.raises(SessionSealedError) as sealed:
         await session.until(lambda _: False)
@@ -284,7 +274,7 @@ async def test_codex_exec_server_container_restarts_without_restarting_app_serve
 
 async def test_executor_exit_does_not_join_escaped_output_readers(harness: runner_pb2.Harness, tmp_path: Path) -> None:
     load_oci_image(debian_slim.IMAGE)
-    runner_binary = get_required_path(launches.RUNNER_BINARY).resolve()
+    execution_binary = get_required_path(launches.EXECUTION_BINARY).resolve()
     socket_path = tmp_path / "executor.sock"
     ready_path = tmp_path / "server-ready"
     exit_path = tmp_path / "server-exit"
@@ -314,12 +304,12 @@ async def test_executor_exit_does_not_join_escaped_output_readers(harness: runne
             working_dir=str(tmp_path),
         )
         .with_volume_mapping(str(tmp_path), str(tmp_path), mode="rw")
-        .with_volume_mapping(str(runner_binary), "/runner", mode="ro")
+        .with_volume_mapping(str(execution_binary), "/execution-service", mode="ro")
         .with_command(
             shlex.join(
                 [
-                    "/runner",
-                    "executor",
+                    "/execution-service",
+                    "companion",
                     "--socket",
                     str(socket_path),
                     "--listen",
@@ -338,11 +328,14 @@ async def test_executor_exit_does_not_join_escaped_output_readers(harness: runne
         connection, status = await asyncio.to_thread(_claim_executor, socket_path, {"PATH": "/usr/bin:/bin"})
         with connection:
             assert status["owned"] is True
+            generation = status["generation"]
+            assert isinstance(generation, str)
             await asyncio.to_thread(_wait_for_executor_file, ready_path)
             pipe_holder_host_pid = await asyncio.to_thread(_wait_for_host_pid, companion, marker)
             exit_path.write_text("exit\n")
-            await asyncio.to_thread(_wait_for_container_exit, companion)
             await asyncio.wait_for(wait_for_exit(pipe_holder_host_pid), timeout=10)
+            idle = await _wait_for_generation(socket_path, generation, owned=False)
+            assert idle.generation != generation
 
 
 if __name__ == "__main__":

@@ -1,4 +1,3 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
@@ -15,19 +14,16 @@ load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//visibility:public"])
 
-alias(
-    name = "main_bin",
-    actual = "//agentplane/runner/cmd:agentplane-runner",
-)
-
-# The runner, its Pod executor mode and the `agentplane` CLI, in one image that a Pod mounts as an
-# image volume (`bin/`) and a runner VM attaches as a KubeVirt containerDisk (`disk/runner.img`, an
-# erofs of the same `bin/`).
+# Environment Runtime, Harness Host, Execution service and the `agentplane` CLI, in one image that
+# a Pod mounts as an image volume (`bin/`) and a runner VM attaches as a KubeVirt containerDisk
+# (`disk/runner.img`, an erofs of the same `bin/`).
 pkg_tar(
     name = "disk_bin",
     srcs = [
         "//agentplane/cli:agentplane",
-        "//agentplane/runner/cmd:agentplane-runner",
+        "//agentplane/env/execution/cmd:agentplane-execution-service",
+        "//agentplane/env/harnesshost/cmd:agentplane-harness-host",
+        "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
     ],
     mode = "0755",
     package_dir = "/bin",
@@ -147,7 +143,9 @@ py_test(
     size = "large",
     srcs = ["test_restart.py"],
     data = [
-        ":main_bin",  # keep: the runner as its own process, so a crash takes its harnesses with it
+        "//agentplane/env/execution/cmd:agentplane-execution-service",
+        "//agentplane/env/harnesshost/cmd:agentplane-harness-host",
+        "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
         "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
     ],
@@ -419,7 +417,7 @@ py_test(
     size = "medium",
     srcs = ["test_executor_container.py"],
     data = [
-        "//agentplane/runner/cmd:agentplane-runner",  # keep: the PID-1 production executor mode
+        "//agentplane/env/execution/cmd:agentplane-execution-service",  # keep: the companion PID-1 process
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned Codex executor
     ],
     env = NATIVE_RUNNER_DOCKER_ENV,
@@ -457,8 +455,10 @@ py_test(
     name = "test_pid1_container",
     srcs = ["test_pid1_container.py"],
     data = [
+        "//agentplane/env/execution/cmd:agentplane-execution-service",
+        "//agentplane/env/harnesshost/cmd:agentplane-harness-host",
+        "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
         "//agentplane/env/supervision:runner_pid1_fixture",
-        "//agentplane/runner/cmd:agentplane-runner",
     ],
     env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
@@ -536,115 +536,6 @@ py_test(
         "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
-    ],
-)
-
-go_library(
-    name = "runner",
-    srcs = glob(
-        ["*.go"],
-        exclude = ["*_test.go"],
-    ),
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner",
-    deps = [
-        "//agentplane/env/execution:executor_go_proto",
-        "//agentplane/env/execution/adapter:execution",
-        "//agentplane/env/execution/codexexecserver",
-        "//agentplane/env/execution/companion:executor",
-        "//agentplane/env/harnesshost/codexappserver",
-        "//agentplane/env/harnesshost/harness",
-        "//agentplane/env/harnesshost/ingress",
-        "//agentplane/env/harnesshost/journal",
-        "//agentplane/env/harnesshost/retained",
-        "//agentplane/env/harnesshost/session",
-        "//agentplane/env/harnesshost/workspace",
-        "//agentplane/env/supervision",
-        "//agentplane/observability",
-        "//agentplane/proto:command_go_proto",
-        "//agentplane/proto:event_go_proto",
-        "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:runner_go_proto",
-        "//agentplane/proto:runner_state_go_proto",
-        "//agentplane/proto:sandboxes_go_proto",
-        "//agentplane/runner:runner_service_go_proto",
-        "//agentplane/runner/bootstrap",
-        "//agentplane/runner/configuration",
-        "//agentplane/runner/control",
-        "//agentplane/runner/cosi",
-        "//agentplane/runner/lifecycle",
-        "//agentplane/runner/scripts",
-        "//agentplane/runner_transport",
-        "@com_github_cosi_project_runtime//pkg/controller",
-        "@com_github_cosi_project_runtime//pkg/controller/runtime",
-        "@com_github_cosi_project_runtime//pkg/resource",
-        "@com_github_cosi_project_runtime//pkg/resource/meta/spec",
-        "@com_github_cosi_project_runtime//pkg/resource/typed",
-        "@com_github_cosi_project_runtime//pkg/safe",
-        "@com_github_cosi_project_runtime//pkg/state",
-        "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
-        "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
-        "@com_github_google_uuid//:uuid",
-        "@io_opentelemetry_go_otel//attribute",
-        "@io_opentelemetry_go_otel_trace//:trace",
-        "@org_golang_google_grpc//:grpc",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//encoding/protojson",
-        "@org_golang_google_protobuf//proto",
-        "@org_golang_google_protobuf//types/known/timestamppb",
-        "@org_golang_x_sync//errgroup",
-        "@org_golang_x_sys//unix",
-        "@org_uber_go_zap//:zap",
-    ],
-)
-
-go_test(
-    name = "runner_test",
-    srcs = glob(["*_test.go"]),
-    embed = [":runner"],
-    exec_properties = {"test.dockerUser": "0:0"},
-    race = "on",
-    deps = [
-        "//agentplane/env/execution:executor_go_proto",
-        "//agentplane/env/execution/codexexecserver",
-        "//agentplane/env/execution/companion:executor",
-        "//agentplane/env/execution/companion/control",
-        "//agentplane/env/harnesshost/codexappserver",
-        "//agentplane/env/harnesshost/harness",
-        "//agentplane/env/harnesshost/journal",
-        "//agentplane/env/harnesshost/retained",
-        "//agentplane/env/harnesshost/session",
-        "//agentplane/env/harnesshost/workspace",
-        "//agentplane/env/supervision",
-        "//agentplane/history_service:runner_ingress_go_proto",
-        "//agentplane/proto:event_go_proto",
-        "//agentplane/proto:runner_go_proto",
-        "//agentplane/proto:runner_state_go_proto",
-        "//agentplane/proto:sandboxes_go_proto",
-        "//agentplane/runner:runner_service_go_proto",
-        "//agentplane/runner/bootstrap",
-        "//agentplane/runner/configuration",
-        "//agentplane/runner/control",
-        "//agentplane/runner/lifecycle",
-        "//agentplane/runner/scripts",
-        "//agentplane/runner_transport",
-        "//agentplane/runner_transport/testing",
-        "//agentplane/sandboxes/lease",
-        "@com_github_coder_websocket//:websocket",
-        "@com_github_cosi_project_runtime//pkg/resource",
-        "@com_github_cosi_project_runtime//pkg/resource/typed",
-        "@com_github_cosi_project_runtime//pkg/safe",
-        "@com_github_cosi_project_runtime//pkg/state",
-        "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
-        "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
-        "@org_golang_google_grpc//:grpc",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//health/grpc_health_v1",
-        "@org_golang_google_grpc//metadata",
-        "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//encoding/protojson",
-        "@org_golang_google_protobuf//proto",
-        "@org_golang_x_sys//unix",
     ],
 )
 
