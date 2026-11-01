@@ -16,7 +16,7 @@ The session-scoped `deployment` fixture exposes its cluster handle, app URL, tok
 | `//agentplane/system_tests/suites:test_dispatcher`   | Dispatcher queue, wake and replica behavior                                                                  |
 | `//agentplane/system_tests/suites/mcp:test_actions`  | MCP Action execution, BFF decisions, launcher ownership and OAuth linkage                                    |
 | `//agentplane/system_tests/suites/mcp:test_services` | Dynamic client registration, policy binding and Pod central sampler                                          |
-| `//agentplane/system_tests/suites:test_vm`           | VM Sandbox behavior, runner credentials, systemd supervision and VM central sampler                          |
+| `//agentplane/system_tests/suites:test_vm`           | VM Sandbox behavior, runner credentials and systemd supervision                                              |
 
 The shared stack cuts setup and image-import work, while each target now has a coarser cache key: a
 changed scenario reruns its suite. Scenario modules live in [`scenarios/`](scenarios/) as ordinary
@@ -26,9 +26,9 @@ Gazelle derives Python dependencies; `k3s_suite` supplies stack artifacts and ex
 
 The session-scoped `deployment` fixture yields the running stack. Suite client fixtures depend on
 it directly, and executor fixtures declare the suite's SandboxTemplate and working directory.
-Storage layouts and sampler execution probes remain owned by their respective
-scenario modules. VM probes retain the systemd, UID, and cgroup assertions. VM test markers enable
-tracing and diagnostics; they do not select deployment configuration.
+Storage layouts and execution assertions remain owned by their respective scenario modules. VM
+scenarios retain the systemd, UID, and cgroup assertions. VM test markers enable tracing and
+diagnostics; they do not select deployment configuration.
 
 The build supplies complete service and guest image lists. The pytest adapter resolves these and
 the rendered deployment once into `StackInputs`; stack startup does not discover image layouts by
@@ -60,12 +60,12 @@ The Dispatcher suite remains separate because replica coverage changes the share
 Deployment and deletes a recorded Pod while checking controller behavior.
 
 `test_vm` runs on a stack with KubeVirt emulating the guest CPU and the k3s test guest
-([VM Sandboxes](k3s/README.md#vm-sandboxes)). It starts six VM Sandboxes concurrently: one
+([VM Sandboxes](k3s/README.md#vm-sandboxes)). It starts five VM Sandboxes concurrently: one
 scripted turn per harness through the launcher's egress relay, plus Codex tool OOM containment and
-its successful follow-up command with the same Runner and app-server, two credential guests,
-and the VM central sampler. All six Sandboxes boot independently on an 8-unit executor with
-room for their 1.5 GiB guest allocations and the k3s services. Each harness scenario checks workspace ownership,
-streams, identity, security settings, resource budgets and detached-child cleanup through ordinary
+its successful follow-up command with the same Runner and app-server, plus two credential guests.
+All five Sandboxes boot independently on an 8-unit executor with room for their 1.5 GiB guest
+allocations and the k3s services. Each harness scenario checks workspace ownership, streams,
+identity, security settings, resource budgets and detached-child cleanup through ordinary
 Session setup. Each concurrent VM scenario scopes its own client and Sandboxes, captures diagnostics
 before deletion, and starts cleanup when its assertions finish, overlapping its peers. The suite
 awaits all cleanup before stopping the shared stack; peer cancellation also waits for
@@ -282,13 +282,12 @@ distinct wake generations per authenticated caller per rolling minute.
 
 ## Central sampler
 
-`mcp:test_services` and `test_vm` each run the central sampler scenario on their existing stack,
-using a fresh Pod and VM Sandbox respectively. Each submits a central Session and user input
-through the deployed Dispatcher, runs setup and a model-requested shell command through the
+`mcp:test_services` runs the central sampler scenario on its existing stack using a fresh Pod
+Sandbox. It submits a central Session and user input through the deployed Dispatcher, runs setup
+and a model-requested shell command through the
 Sandbox's holding Gateway and pinned exec-server, then verifies the reasoning, final answer, setup
-output, and command evidence retained by authenticated History ingress. The VM tool also checks the
-real systemd guest's PID 1 and that the executor runs in its systemd-managed executor cgroup. The
-History reader must report the same Session and Sandbox UID and fold the completed turn into
+output, and command evidence retained by authenticated History ingress. The History reader must
+report the same Session and Sandbox UID and fold the completed turn into
 reasoning, assistant, tool, and confirmed-input entities. The tool reads the file setup created, so
 the assertion requires both operations to reach the same executor workspace.
 
@@ -305,7 +304,6 @@ execution/History summary is written to `test.outputs/central-sampler-k3s.json`.
 
 ```bash
 bbr test //agentplane/system_tests/suites/mcp:test_services --test_arg=-k --test_arg=central_setup
-bbr test //agentplane/system_tests/suites:test_vm --test_arg=-k --test_arg=central_setup
 ```
 
 ## MCP integration

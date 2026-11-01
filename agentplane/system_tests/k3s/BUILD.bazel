@@ -94,7 +94,7 @@ oci_layout_rloc(
 
 # Bazel-built service images, loaded into k3s's containerd.
 
-# MCP and VM suites also run their central-sampler scenario.
+# The MCP suite runs the central-sampler scenario.
 oci_layout_rloc(
     name = "central_sampler_layout",
     testonly = True,

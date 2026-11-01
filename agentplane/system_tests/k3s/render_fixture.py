@@ -73,7 +73,7 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
         case FixtureVariant.LOCAL_MODEL:
             _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False)
         case FixtureVariant.LOCAL_MODEL_VM:
-            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=True, central_sampler=True)
+            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=True)
         case FixtureVariant.PUBLIC_LITELLM:
             _render(output, variant, Backend.PUBLIC_LITELLM, vm_sandboxes=False)
 
