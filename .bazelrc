@@ -138,7 +138,7 @@ common:ci --announce_rc
 # retry resubmitted actions after the outer runner was cancelled (a fresh Execute
 # 105 ms after the CANCELLED result; devinfra/buildbuddy/debug/ci_remote_cancellation/
 # rpc_retry_trace.md), so superseded runs kept burning executor time. Zero also
-# disables recovery from transient executor errors: the 2026-10-29 ci-reports
+# disables recovery from transient executor errors: the 2026-10-29 CI report
 # window had 16 of 225 PR and 2 of 66 devel test invocations fail on gRPC
 # Unavailable (Firecracker start timeout / pause refused, one CAS miss), each a red
 # head needing a re-push. One retry recovers those while bounding the
