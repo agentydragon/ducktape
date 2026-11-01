@@ -225,8 +225,8 @@
       "sha256": "oafEbvVhizs90iOC6SXiVX4M+FRvWkDaimjt4iYLJGI="
     },
     "skill-ci_latency": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-7c54e3223c45/ci_latency.skill",
-      "sha256": "fFTjIjxF85kWnHIaFWn8KkPGf3nQceIP0ZjNIODuxWI="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-f14d9de04bfc/ci_latency.skill",
+      "sha256": "8U2d4Ev8BZnv2VeE5ZNkVxBKo86AvWcTliBfVDUMGrQ="
     },
     "skill-seaweed_operator": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-seaweed_operator-64e2b5617599/seaweed_operator.skill",
@@ -257,8 +257,8 @@
       "sha256": "1UVkeBMgsdhaPfiYJ6DrUbfCRNSPb8oPt73C5XzMH+g="
     },
     "skill-ci_reliability": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_reliability-28c1c55abd8b/ci_reliability.skill",
-      "sha256": "KMHFWr2L8CEJEv9AXeSAWNxwH4C5IeMrZEzGsuOWtHI="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_reliability-b4eefa475be0/ci_reliability.skill",
+      "sha256": "tO76R1vg1qFUnGNFw8V6e3+9PsJXfIbLXds5QB24UxE="
     },
     "cpap-gateway-health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/cpap-gateway-health-58d73b1a77dc/cpap_gateway_health-0.1.0-py3-none-any.whl",
