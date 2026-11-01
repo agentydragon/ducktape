@@ -1,110 +1,205 @@
-/**
- * The Notification Service's operator snapshots as the app relays them to the browser: the proto3 JSON of
- * `agentplane/notification_service/notifications_operator.proto`. Names are camelCase, enums are their value
- * names, int64 is a string, a Timestamp is RFC 3339, and a message or `optional` field the service did not set
- * has no key. A field is required here when the service always sets it.
- *
- * Hand-written: the generated TypeScript modules import `google/api/annotations_pb`, which no target provides
- * where they look for it.
- */
+import { fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 
-type Timestamp = string;
-type Int64 = string;
+import {
+  NoticeProgress as NoticeProgressValue,
+  NoticeWaitReason as NoticeWaitReasonValue,
+  SandboxNotificationStatusSchema,
+  SessionNoticeStatesSchema,
+  type InboxNoticeStateJson,
+  type InboxEntrySummaryJson,
+  type InboxStatusJson,
+  type NoticeProgressJson,
+  type NoticeWaitReasonJson,
+  type SandboxNotificationStatus as SandboxNotificationStatusMessage,
+  type SandboxNotificationStatusJson,
+  type SessionNoticeStatesJson,
+  type SubscriptionStatusJson,
+} from "../../proto/notification_operator_proto_generated/agentplane/notification_service/notifications_operator_pb";
+import {
+  SourceFailureKind as SourceFailureKindValue,
+  type InboxJson,
+  type GitHubAccessStatusJson,
+  type GitHubEventFilterJson,
+  GitHubEventName as GitHubEventNameValue,
+  type GitHubEventNameJson,
+  type GitHubSourceJson,
+  type GitHubStatusJson,
+  type GitHubSubjectJson,
+  type GitHubSubjectStatusJson,
+  type SourceJson,
+  type SourceFailureKindJson,
+} from "../../proto/notification_operator_proto_generated/agentplane/notification_service/notifications_pb";
 
-export type SourceFailureKind =
-  | "SOURCE_FAILURE_KIND_RATE_LIMITED"
-  | "SOURCE_FAILURE_KIND_UNAVAILABLE"
-  | "SOURCE_FAILURE_KIND_ACCESS_DENIED"
-  | "SOURCE_FAILURE_KIND_SOURCE_CHANGED"
-  | "SOURCE_FAILURE_KIND_PROCESSING_ERROR";
+type RequiredJson<T, K extends keyof T> = Omit<T, K> & Required<Pick<T, K>>;
+type Override<T, R> = Omit<T, keyof R> & R;
+type UnknownProtoEnum = { unknown: number };
+type ForwardCompatibleEnum<T extends string> = T | UnknownProtoEnum;
 
-export type NoticeWaitReason =
-  | "NOTICE_WAIT_REASON_RETIRED"
-  | "NOTICE_WAIT_REASON_NOTICE_ERROR"
-  | "NOTICE_WAIT_REASON_DELIVERY_RETRY"
-  | "NOTICE_WAIT_REASON_AWAITING_CONFIRMATION"
-  | "NOTICE_WAIT_REASON_DEBOUNCING"
-  | "NOTICE_WAIT_REASON_READY";
+function enumNumbers(values: object): Set<number> {
+  return new Set(Object.values(values).filter((value): value is number => typeof value === "number"));
+}
 
-export type NoticeProgress =
-  "NOTICE_PROGRESS_PREPARED" | "NOTICE_PROGRESS_ATTEMPTED" | "NOTICE_PROGRESS_ADMITTED" | "NOTICE_PROGRESS_CONFIRMED";
+const enumFieldNumbers = new Map<string, Set<number>>([
+  ["errorKind", enumNumbers(SourceFailureKindValue)],
+  ["event", enumNumbers(GitHubEventNameValue)],
+  ["notice", enumNumbers(NoticeProgressValue)],
+  ["noticeWaitReason", enumNumbers(NoticeWaitReasonValue)],
+]);
 
-/** The one key present names the kind of subject. */
-export type GitHubSubject =
-  | { pullRequest: { number: number } }
-  | { issue: { number: number } }
-  | { branch: { name: string } }
-  | { commit: { sha: string } };
+/** Preserve numeric values assigned by a newer protobuf writer as an explicit unknown variant.
+ * Generated Protobuf-ES accepts these numeric ProtoJSON enum values while its generated JSON type
+ * describes only the enum names, so normalize them before returning that JSON-shaped API. */
+function preserveUnknownEnums(value: JsonValue): JsonValue {
+  if (Array.isArray(value)) return value.map(preserveUnknownEnums);
+  if (typeof value !== "object" || value === null) return value;
+  const normalized: Record<string, JsonValue> = {};
+  for (const [key, field] of Object.entries(value)) {
+    const knownValues = enumFieldNumbers.get(key);
+    if (knownValues && typeof field === "number" && !knownValues.has(field)) {
+      normalized[key] = { unknown: field };
+    } else {
+      normalized[key] = preserveUnknownEnums(field);
+    }
+  }
+  return normalized;
+}
 
-/** The one key present names the provider. */
-export type Source = { actions: { requestId: string } } | { github: { repository: string; subject?: GitHubSubject } };
+type InboxView = RequiredJson<
+  InboxJson,
+  "id" | "sessionId" | "lastCursor" | "acknowledged" | "covered" | "expiredThrough" | "retired"
+>;
+type EntrySummaryView = RequiredJson<InboxEntrySummaryJson, "cursor" | "createdAt" | "provider" | "summary">;
+type GitHubAccessView = Override<
+  RequiredJson<GitHubAccessStatusJson, "appId" | "installationId" | "repositoryId" | "currentlyValid">,
+  { errorKind?: SourceFailureKind }
+>;
+type GitHubSubjectStatusView = Override<
+  RequiredJson<GitHubSubjectStatusJson, "repositoryId" | "subject">,
+  { errorKind?: SourceFailureKind }
+>;
+type GitHubStatusView = Override<
+  RequiredJson<GitHubStatusJson, "access" | "subject">,
+  {
+    access: GitHubAccessView[];
+    subject: GitHubSubjectStatusView;
+  }
+>;
+type GitHubEventFilterView = Override<GitHubEventFilterJson, { event?: ForwardCompatibleEnum<GitHubEventNameJson> }>;
+type GitHubSourceView = Override<GitHubSourceJson, { events?: GitHubEventFilterView[] }>;
 
-/** What a GitHub access grant, a GitHub subject and a subscription each observe of their own source. */
-export type SourceObservation = {
-  lastSuccessAt?: Timestamp;
-  errorKind?: SourceFailureKind;
-  error?: string;
-  errorSince?: Timestamp;
-  errorObservedAt?: Timestamp;
-  retryAt?: Timestamp;
-  refreshingUntil?: Timestamp;
-};
+export type SourceFailureKind = ForwardCompatibleEnum<SourceFailureKindJson>;
+export type NoticeWaitReason = ForwardCompatibleEnum<NoticeWaitReasonJson>;
+export type NoticeProgress = ForwardCompatibleEnum<NoticeProgressJson>;
+export type GitHubSubject = GitHubSubjectJson;
+export type Source = Override<SourceJson, { github?: GitHubSourceView }>;
+export type GitHubAccessStatus = GitHubAccessView;
+export type GitHubSubjectStatus = GitHubSubjectStatusView;
+export type SourceObservation = Override<
+  Pick<
+    GitHubAccessStatusJson,
+    "lastSuccessAt" | "errorKind" | "error" | "errorSince" | "errorObservedAt" | "retryAt" | "refreshingUntil"
+  >,
+  { errorKind?: SourceFailureKind }
+>;
+export type SubscriptionStatus = Override<
+  RequiredJson<SubscriptionStatusJson, "id" | "source" | "cancelled" | "expiresAt">,
+  {
+    source: Source;
+    github?: GitHubStatusView;
+    errorKind?: SourceFailureKind;
+  }
+>;
+export type InboxStatus = Override<
+  RequiredJson<
+    InboxStatusJson,
+    | "inbox"
+    | "subscriptions"
+    | "unannouncedCount"
+    | "pendingAcknowledgementCount"
+    | "pendingEntries"
+    | "pendingEntriesMore"
+  >,
+  {
+    inbox: InboxView;
+    subscriptions: SubscriptionStatus[];
+    pendingEntries: EntrySummaryView[];
+    noticeWaitReason?: NoticeWaitReason;
+  }
+>;
+export type SandboxNotificationStatus = Override<
+  RequiredJson<SandboxNotificationStatusJson, "observedAt" | "inboxes">,
+  {
+    inboxes: InboxStatus[];
+  }
+>;
+export type InboxNoticeState = Override<
+  RequiredJson<InboxNoticeStateJson, "inboxId" | "sessionId" | "queued" | "unacknowledged">,
+  { notice?: NoticeProgress; noticeWaitReason?: NoticeWaitReason }
+>;
+export type SessionNoticeStates = Override<
+  RequiredJson<SessionNoticeStatesJson, "observedAt" | "inboxes">,
+  {
+    inboxes: InboxNoticeState[];
+  }
+>;
 
-export type GitHubAccessStatus = SourceObservation & {
-  appId: Int64;
-  installationId: Int64;
-  repositoryId: Int64;
-  checkedAt?: Timestamp;
-  validUntil?: Timestamp;
-  currentlyValid: boolean;
-};
+function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  return typeof value === "object" && Object.values(value).every(isJsonValue);
+}
 
-export type GitHubSubjectStatus = SourceObservation & { repositoryId: Int64; subject: GitHubSubject };
+function parseJson(data: string): JsonValue {
+  const value: unknown = JSON.parse(data);
+  if (!isJsonValue(value)) throw new TypeError("notification snapshot must be JSON");
+  return value;
+}
 
-export type SubscriptionStatus = SourceObservation & {
-  id: string;
-  source: Source;
-  cancelled: boolean;
-  expiresAt: Timestamp;
-  nextSourceCheckAt?: Timestamp;
-  github?: { access: GitHubAccessStatus[]; subject: GitHubSubjectStatus };
-};
+function requireObservedAt(value: { observedAt?: unknown }): void {
+  if (value.observedAt === undefined) throw new TypeError("notification snapshot is missing observedAt");
+}
 
-export type InboxStatus = {
-  inbox: {
-    id: string;
-    sessionId: string;
-    lastCursor: Int64;
-    acknowledged: Int64;
-    covered: Int64;
-    expiredThrough: Int64;
-    retired: boolean;
-    deliveryError?: string;
-  };
-  notice?: { throughCursor: Int64; attempted: boolean; admitted: boolean; confirmed: boolean; error?: string };
-  subscriptions: SubscriptionStatus[];
-  unannouncedCount: number;
-  pendingAcknowledgementCount: number;
-  pendingEntries: { cursor: Int64; createdAt: Timestamp; provider: string; summary: string }[];
-  pendingEntriesMore: boolean;
-  noticeDueAt?: Timestamp;
-  quietUntil?: Timestamp;
-  maxWaitAt?: Timestamp;
-  noticeWaitReason?: NoticeWaitReason;
-  nextWorkAt?: Timestamp;
-};
+function requireSandboxMessageFields(message: SandboxNotificationStatusMessage): void {
+  requireObservedAt(message);
+  for (const status of message.inboxes) {
+    if (status.inbox === undefined) throw new TypeError("notification inbox status is missing inbox");
+    for (const subscription of status.subscriptions) {
+      if (subscription.source === undefined || subscription.expiresAt === undefined)
+        throw new TypeError("notification subscription is missing source or expiry");
+      if (subscription.source.provider.case === undefined)
+        throw new TypeError("notification subscription source is missing its provider");
+      if (
+        subscription.source.provider.case === "github" &&
+        subscription.source.provider.value.subject?.subject.case === undefined
+      )
+        throw new TypeError("GitHub subscription source is missing its subject");
+      if (subscription.github !== undefined && subscription.github.subject?.subject?.subject.case === undefined)
+        throw new TypeError("GitHub subscription status is missing subject");
+    }
+    for (const entry of status.pendingEntries)
+      if (entry.createdAt === undefined) throw new TypeError("notification entry summary is missing createdAt");
+  }
+}
 
-export type SandboxNotificationStatus = { observedAt: Timestamp; inboxes: InboxStatus[] };
+/** Decodes the operator endpoint's ProtoJSON and requires the observation timestamp the service always writes. */
+export function decodeSandboxNotificationStatus(data: string): SandboxNotificationStatus {
+  const message = fromJson(SandboxNotificationStatusSchema, parseJson(data));
+  requireSandboxMessageFields(message);
+  // alwaysEmitImplicit widens to JsonValue; the generated schema above controls its encoding, and
+  // numeric enum values outside this version's generated enum tables are retained as named variants.
+  const json = preserveUnknownEnums(
+    toJson(SandboxNotificationStatusSchema, message, {
+      alwaysEmitImplicit: true,
+    })
+  );
+  return json as SandboxNotificationStatus;
+}
 
-export type InboxNoticeState = {
-  inboxId: string;
-  sessionId: string;
-  queued: number;
-  unacknowledged: number;
-  notice?: NoticeProgress;
-  noticeWaitReason?: NoticeWaitReason;
-  eligibleAt?: Timestamp;
-  error?: string;
-};
-
-export type SessionNoticeStates = { observedAt: Timestamp; inboxes: InboxNoticeState[] };
+/** Decodes the thread-list ProtoJSON snapshot and requires the observation timestamp the service always writes. */
+export function decodeSessionNoticeStates(data: string): SessionNoticeStates {
+  const message = fromJson(SessionNoticeStatesSchema, parseJson(data));
+  requireObservedAt(message);
+  const json = preserveUnknownEnums(toJson(SessionNoticeStatesSchema, message, { alwaysEmitImplicit: true }));
+  return json as SessionNoticeStates;
+}
