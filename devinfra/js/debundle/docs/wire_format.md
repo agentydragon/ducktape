@@ -142,6 +142,25 @@ never relaxes the proof.
 
 ### Translation validation
 
+`effect_translation_validation.json` contains conservative effect-set
+diagnostics beside the unchanged legacy gate and edge-TV reports. It is
+report-only: `legacy_gate_accepts` and `legacy_tv_accepts` retain the current
+verdicts. `counts` includes every conflicting swapped pair, cell incidence,
+Havoc pair, existing premise disposition and observed contradiction. The
+legacy comparison counts ordinary swapped edge conflicts separately from
+the legacy report's forward-edge and placement diagnostics.
+
+`coverage.unknown_coverage` counts missing global/property/host domains
+independently of legacy dataflow opacity, execution incompleteness and heap
+opacity. Unknown domains remain global Havoc; `full_semantic_precision` is
+false. `examples` retains at most twenty deterministic pairs, each with at
+most twenty conflicting cells and their access provenance. Each sampled pair
+retains its exact `cell_count` and `cells_truncated` marker;
+`examples_truncated` makes omitted pairs explicit. Counts remain exact when
+examples are truncated. `full_detail_export_available` is false until
+streaming full-detail CLI tooling exists; this report is not a substitute
+semantic input for staged facts.
+
 `translation_validation.json` is written beside `dependency_graph.json`: the
 translation-validation verdict on the emitted order, report only (the gate
 decides). `gate_accepts` is

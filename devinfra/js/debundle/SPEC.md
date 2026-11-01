@@ -224,6 +224,17 @@ effective env-provided values, the original cwd, logical root paths, and the
 config's chunk-to-module-tree mapping. A graph created before this metadata
 existed remains a historical report only.
 
+Full per-chunk report emission also writes
+`effect_translation_validation.json`: report-only effect conflicts for the
+emitter's exact statement order, derived from staged facts. It leaves the
+legacy gate and edge-TV oracle unchanged. Unknown global/property/host
+coverage remains conservative Havoc independently of purity or synchronous
+completeness. Counts include every conflicting swapped pair and existing
+pair-premise disposition; observed contradictions are diagnostics only.
+Twenty deterministic examples bound default output, with explicit truncation
+and coverage limitations. Full-detail CLI export and full semantic precision
+remain incomplete; see <docs/wire_format.md#translation-validation>.
+
 A command that combines a saved graph with current spec or source checks the
 recorded baseline before reading claims or writing edits. It refuses changed,
 added, deleted, or mismapped inputs and reports the mismatch with a regeneration

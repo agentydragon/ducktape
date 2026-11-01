@@ -196,6 +196,12 @@ fn assert_staged_run_matches(opts: FixtureOpts<'_>, run_args: &[&str]) {
     let (staged, _fixture) = staged(opts);
     let direct = staged.run(run_args);
     let direct_trees = staged.set_aside("direct");
+    assert!(
+        tree(&direct_trees.join("out")).keys().any(|path| path
+            .file_name()
+            .is_some_and(|name| name == "effect_translation_validation.json")),
+        "direct run must produce the facts-backed effect report before staged comparison"
+    );
     let artifact = path(&staged.artifact).to_owned();
     let mut staged_args = run_args.to_vec();
     staged_args.extend(["--analysis", artifact.as_str()]);

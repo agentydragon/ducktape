@@ -114,13 +114,11 @@ a forward edge without one (a premise-cleared callback read, as in
 `call_registration_contract_test`) is accepted only by swapping it, which
 the effect-set check must judge.
 
-## Checking without materializing pairs
+## Checking without retaining all pairs
 
-Tana swaps 7.7 million statement pairs under a realizable order, so pairs
-cannot be enumerated. The check is a sweep in emitted order that keeps, per
-cell, the largest source ordinal among statements already run that wrote it
-and among those that read it, plus the largest ordinal of an already-run
-`Havoc` statement. For each statement `u`:
+Tana swaps 7.7 million statement pairs under a realizable order. The sweep
+retains, per cell, already-run readers and writers ordered by source ordinal.
+For each statement `u`:
 
 - a write to `c` conflicts if an already-run reader or writer of `c` has a
   larger ordinal;
@@ -129,22 +127,34 @@ and among those that read it, plus the largest ordinal of an already-run
 - `Havoc` against any effectful already-run statement with a larger ordinal,
   and the reverse, also conflict.
 
-The cost is linear in the total size of the effect sets. To produce the
-conflicting partner and cell for a diagnostic, the sweep keeps the argmax
-statement, not just the max. Premise overrides are looked up only for
-conflicting pairs.
+Enumerate every matching partner with a larger source ordinal. A single
+maximum is insufficient with pair-specific premises: if source 1 writes c,
+2 and 3 read c, and the emit runs 3,2,1, a premise for (1,3) must not hide
+(1,2). Collect all cells for a candidate pair before classifying its premise;
+never remove participants because another pair was covered.
+
+Traversal is output-sensitive. Ordered suffix queries cost O(A log N), and
+merging them by partner costs O(K log(A + 1)) before pair/cell aggregation,
+where A is access count and K is conflict incidence. K can be quadratic.
+Default reports count all pairs/categories but retain deterministic bounded
+examples, with explicit truncation. Full-detail tooling remains necessary
+before calling the full TV2 migration complete.
 
 ## Effect facts the pair check needs
 
 - **Per-statement effect sets** as abstract-interpreter step 7 defines them
   (`Binding`, `GlobalProp`, `Contents`, `Alloc`, `Havoc`), plus the
-  initialization write of every declared binding. Today these live, in
+  evaluation-time initialization writes (excluding instantiated functions,
+  imports and bare var redeclarations). Today these live, in
   partial form, in `StatementFacts` (`reads`, `rebinds`, `heap_contents`,
   `global_reads`/`global_writes`, `synchronous_calls`).
 - **Synchronous callee effects folded into the caller**, which the interpreter
-  already does for completed executions. An incomplete execution contributes
-  its fallback reach, not unconditional `Havoc`, where the fallback model
-  bounds it (`plans/synchronous_execution_fallback.md`).
+  already does for binding and collection accesses. Bounded fallback reach
+  is currently report-only, without a retained effect-domain closure;
+  incomplete or unmodelled domains remain conservative `Havoc` until that
+  closure exists (`plans/synchronous_execution_fallback.md`). Neither purity
+  nor synchronous completeness certifies arbitrary property/global/host
+  effect coverage.
 - **Host-ordered effects**: microtask and timer enqueue, and host output.
   Swapping two `Promise.resolve().then(...)` statements reorders callbacks, so
   enqueues write one ordered queue cell. Today they are covered only by
@@ -268,6 +278,29 @@ The comparison runs in e2e as differential tests
 e2e test), and on the canonical inputs as a report diff.
 
 ## Measurements
+
+### Initial report-only effect projection
+
+`effect_translation_validation.json` is a sibling of the unchanged edge-TV
+report. It projects guarded initialization writes, eager and synchronous
+binding reads/rebinds, collection accesses and allocation sites from staged
+facts. Unknown global/property/host coverage is separate from legacy timing
+opacity and stays global Havoc. Composed heap provenance is explicitly
+unclassified where the producer has no per-access evidence. Counts cover
+all raw conflicting swapped pairs, existing premise dispositions and
+observed contradictions; this report never rejects or drives the old oracle.
+
+Defaults retain twenty deterministic pair examples with up to twenty cells
+each, and exact pair/cell counts. The sweep merges per-cell ordered suffix
+iterators and aggregates one pair's cells at a time. `examples_truncated`
+and each pair's `cells_truncated` state whether details were omitted;
+full-detail CLI export is not yet implemented. This tranche makes
+no full semantic precision claim and does not complete step 2. In particular
+the active Claude mcp/remoteWorkerWire forward reads remain reportable with
+their existing pair-premise dispositions; oldgate acceptance is not proof
+that their callbacks cannot execute at init.
+
+### Original prototype measurements
 
 The prototype is an offline script over existing `dependency_graph.json`
 outputs; it changes no engine code and is not committed.

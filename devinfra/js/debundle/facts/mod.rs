@@ -56,6 +56,7 @@ mod collector;
 mod dynamic_scope;
 mod global_object;
 mod heap_contents;
+mod initialization_effects;
 mod item_views;
 mod lazy_boundary;
 mod local_class_construction;
@@ -113,6 +114,9 @@ pub use analyze::{
     module_has_top_level_await,
 };
 pub(crate) use analyze::{complete_chunk_structural_with_flow, structural_value_flow};
+pub use initialization_effects::{
+    InitializationEffectEvidence, InitializationEffects, UnknownEffectCoverage,
+};
 pub use item_views::{TopLevelItemView, top_level_item_views};
 pub use local_effects::local_namespace_iife_target;
 pub use statement_facts::{

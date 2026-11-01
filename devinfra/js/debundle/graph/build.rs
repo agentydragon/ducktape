@@ -1505,13 +1505,11 @@ fn promote_at_init_calls(
         // Lexical declarations become observable at their statement. Function
         // declarations are initialized during module instantiation and are
         // therefore not execution-time writes.
-        let is_hoisted_function = stmt.kind == StatementKind::FnDecl
-            || (stmt.kind == StatementKind::Export && stmt.declares_direct_function);
         // Imports describe module linkage; evaluating the import declaration
         // does not write the imported binding in this chunk. Keep this guard
         // explicit even though `collect_declared_names` currently gives
         // imports no local declarations.
-        if stmt.kind != StatementKind::Import && !is_hoisted_function {
+        if stmt.initializes_bindings_at_evaluation() {
             for binding in stmt.declared.difference(&stmt.var_declared) {
                 record_access(
                     &mut writers_by_binding,
