@@ -156,10 +156,8 @@ func (c typedExecutorClient) OpenSession(ctx context.Context, req *executorpb.Op
 
 // openSession follows a verified incarnation change only at the session-open boundary. Process
 // mutations are never replayed; old handles are retired before opening a fresh native session.
-// TODO: Expose the current incarnation UID to the model and add an expected incarnation UID
-// argument to exec, potentially optional for callers that do not require fencing. A mismatch
-// should reject the promise with the current UID before executing the command, letting the
-// model decide whether to continue in the replacement incarnation.
+// Model-controlled incarnation fencing is tracked in agentplane/plans/task_dag.md under
+// EXEC_INCARNATION_FENCING.
 func (e *Executor) openSession(ctx context.Context, resume *string) error {
 	err := e.openSessionAtScope(ctx, resume)
 	if err == nil {

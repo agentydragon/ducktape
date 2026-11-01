@@ -1413,6 +1413,8 @@ flowchart TD
     SANDBOX_AUTODISKFUL[Decision, unscheduled: auto-diskful storage for Sandboxes]
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
+    EXEC_INCARNATION_FENCING[Unscheduled: model-controlled exec incarnation fencing]
+    AGENT_RESUME_NOTICE -. related awareness, not a prerequisite .-> EXEC_INCARNATION_FENCING
     AGENT_EXECUTOR_LOSS_NOTICE[Unscheduled: tell agents when executor restarts or kills lose their processes]
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
@@ -1699,8 +1701,11 @@ resuming with memory retained.
 
 ### `AGENT_RESUME_NOTICE` — tell agents when their Sandbox was suspended and resumed
 
-**Unscheduled; operator, 2026-10-13 PDT: it would be good.** An agent whose Sandbox was suspended and
-resumed learns nothing of it: its tool processes are gone, a terminal or background process it started
+**Unscheduled; operator, 2026-10-13 PDT: it would be good.** Central sampler execution already
+[reports verified incarnation changes](../x/central_sampler/SPEC.md#runtime-and-effects) when
+opening a replacement exec-server session. The broader lifecycle notice remains unfinished for
+other harness paths and before the next exec. An agent whose Sandbox was suspended and
+resumed needs to learn what changed: its tool processes are gone, a terminal or background process it started
 no longer runs, and whether its workspace survived depends on where it lived (the state PVC is kept; a
 VM-local disk is not, until `VM_RAM_SUSPEND`). Tell the agent when a new incarnation of its Sandbox
 started, how long it was down, what was kept (state PVC, workspace) and what was lost (processes,
@@ -1713,6 +1718,27 @@ background process, a terminal and workspace files, and a crash restart (no susp
 differently.
 
 Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-coverage).
+
+### `EXEC_INCARNATION_FENCING` — let the model choose whether exec crosses an incarnation change
+
+**Unscheduled; operator, 2026-10-31 PDT.** Expose the current execution Sandbox incarnation UID to
+the model and add an expected incarnation UID argument to `exec`. On a mismatch, reject the exec
+promise before dispatching the requested command, with a structured error containing the current
+UID. The model can then inspect the change and decide whether to issue a new exec against that
+incarnation. Preserve the fixed Sandbox UID check and never replay uncertain prior commands.
+
+Settle whether the expected UID is required or optional before implementation. The operator's
+suggestion is an optional argument so a model that does not need fencing can elect to continue
+across incarnation changes; define omission behavior and discovery of the current UID explicitly.
+Until this follow-up is implemented, retain the sampler's automatic same-Sandbox rebind and notice
+contract in the [runtime specification](../x/central_sampler/SPEC.md#runtime-and-effects).
+This work is independent of broader resume notices and the Session/runtime redesign.
+
+**Exit:** the model-facing tool schema and instructions explain UID discovery and any opt-out;
+deterministic tests show a stale expected UID rejects with the current UID before command
+dispatch, an explicit retry with that UID executes once, and any optional unfenced mode follows
+its documented behavior. Preserve old-handle rejection, same-Sandbox authorization and unknown
+outcome/no-replay guarantees.
 
 ### `AGENT_EXECUTOR_LOSS_NOTICE` — tell agents when executor restarts or kills lose their processes
 
