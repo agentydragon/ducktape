@@ -7,7 +7,7 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.grpc.calls import ServiceError, dial
+from agentplane.grpc.calls import ServiceError
 from agentplane.grpc.serving import serving
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
@@ -66,8 +66,10 @@ async def test_native_submission_preserves_identity_and_rotates_service_credenti
     session_dispatcher_pb2_grpc.add_SessionDispatcherServicer_to_server(backend, server)
     token_file = tmp_path / "dispatcher-token"
     token_file.write_text("first-service-token")
-    async with serving(server, "127.0.0.1:0", grace_s=0) as port, dial(f"127.0.0.1:{port}") as channel:
-        client = SessionDispatcherClient(channel, token_file=token_file, request_timeout_s=5)
+    async with (
+        serving(server, "127.0.0.1:0", grace_s=0) as port,
+        SessionDispatcherClient.connect(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=5) as client,
+    ):
         sandbox, uid = await client.session_target("session")
         first = await client.submit_input("session", "same-command", sandbox, uid, "original input")
         token_file.write_text("rotated-service-token")
@@ -101,8 +103,10 @@ async def test_native_submission_does_not_automatically_retry_an_unknown_outcome
     session_dispatcher_pb2_grpc.add_SessionDispatcherServicer_to_server(backend, server)
     token_file = tmp_path / "dispatcher-token"
     token_file.write_text("service-token")
-    async with serving(server, "127.0.0.1:0", grace_s=0) as port, dial(f"127.0.0.1:{port}") as channel:
-        client = SessionDispatcherClient(channel, token_file=token_file, request_timeout_s=5)
+    async with (
+        serving(server, "127.0.0.1:0", grace_s=0) as port,
+        SessionDispatcherClient.connect(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=5) as client,
+    ):
         with pytest.raises(ServiceError, match="submission outcome unknown") as caught:
             await client.submit_input("session", "same-command", "original", "original-uid", "original input")
     assert caught.value.code == grpc.StatusCode.UNAVAILABLE

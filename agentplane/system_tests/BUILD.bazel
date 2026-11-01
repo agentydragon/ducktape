@@ -62,10 +62,27 @@ py_library(
     srcs = ["dispatcher_transport.py"],
     deps = [
         ":cluster",
+        ":port_forward",
         ":tracing",
-        "//agentplane/grpc:calls",
         "//agentplane/runner_gateway/dispatcher:testing_client",
-        "//util:net",
+    ],
+)
+
+py_library(
+    name = "port_forward",
+    testonly = True,
+    srcs = ["port_forward.py"],
+)
+
+py_test(
+    name = "test_port_forward",
+    srcs = ["test_port_forward.py"],
+    deps = [
+        ":conftest",
+        ":port_forward",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

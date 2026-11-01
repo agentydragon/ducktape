@@ -1,12 +1,14 @@
 """Generated Dispatcher stub with rotating bearer and deadline transport."""
 
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Self
 
 import grpc
 from google.protobuf.message import Message
 
-from agentplane.grpc.calls import call_unary
+from agentplane.grpc.calls import call_unary, dial
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 
 # gazelle:include_dep @pypi//protobuf
@@ -21,6 +23,13 @@ class SessionDispatcherClient:
         )
         self.token_file = token_file
         self.request_timeout_s = request_timeout_s
+
+    @classmethod
+    @asynccontextmanager
+    async def connect(cls, target: str, *, token_file: Path, request_timeout_s: float) -> AsyncIterator[Self]:
+        """Own the channel for this client's lifetime; callers select credentials and deadline."""
+        async with dial(target) as channel:
+            yield cls(channel, token_file=token_file, request_timeout_s=request_timeout_s)
 
     async def unary[ResponseT: Message](self, call: Callable[..., Awaitable[ResponseT]], request: Message) -> ResponseT:
         return await call_unary(call, request, token_file=self.token_file, timeout_s=self.request_timeout_s)

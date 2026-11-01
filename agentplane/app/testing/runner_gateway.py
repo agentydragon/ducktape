@@ -12,7 +12,7 @@ from uuid import UUID
 import pytest
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.grpc.calls import bearer, dial
+from agentplane.grpc.calls import bearer
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
 from agentplane.runner.configuration import Endpoint, RunnerControl
 from agentplane.runner.testing.config import RunnerTestConfig
@@ -95,8 +95,8 @@ async def session_dispatcher_client(
     gateway: GatewayProcess, token_file: Path
 ) -> AsyncIterator[SessionDispatcherClient]:
     """A replica's own Dispatcher client: a channel of its own to the one Gateway."""
-    async with dial(gateway.target) as channel:
-        yield SessionDispatcherClient(channel, token_file=token_file, request_timeout_s=10)
+    async with SessionDispatcherClient.connect(gateway.target, token_file=token_file, request_timeout_s=10) as client:
+        yield client
 
 
 @pytest.fixture
