@@ -1,8 +1,8 @@
 # Agent CLI
 
 `agentplane` ([`cli/`](../cli/)) is a Go command an agent runs from its shell to call the generated
-Action Service and Session Dispatcher gRPC APIs and the Notification Service and Egress rules HTTP APIs
-through the egress proxy. It adds no authority or state and no backend logic. What it takes off each agent
+Action Service, Session Dispatcher and History Service gRPC APIs and the Notification Service and Egress
+rules HTTP APIs through the egress proxy. It adds no authority or state and no backend logic. What it takes off each agent
 is the part `curl` leaves to every model turn: JSON quoting, the idempotency and recovery protocol, long
 waits, telling an egress refusal from a service refusal, and exit status. `agentplane --help` is what an
 agent reads first; each command's `--help` says what it wraps and the exit codes that matter.
@@ -20,9 +20,10 @@ the facades keep these commands' contract, and a service that moves behind one u
 ## Commands
 
 One command group per service, each configured and failing independently: `agentplane actions` needs
-only the Action Service, `sessions` only the Session Dispatcher, `notifications` only the Notification
-Service, and `egress` only the Egress rules API. Session commands operate on an existing Sandbox; they
-do not create an environment. A group whose configuration is absent exits `2` naming the missing
+only the Action Service, `sessions` uses the Session Dispatcher and `sessions observe-input` also uses
+History, `notifications` uses only the Notification Service, and `egress` only the Egress rules API.
+Session commands operate on an existing Sandbox; they do not create an environment. A command whose
+configuration is absent exits `2` naming the missing
 variables and leaves the others usable. Output, configuration, errors and exit codes are shared by every
 group, so another service joins as one more group under them.
 
@@ -45,6 +46,7 @@ group, so another service joins as one more group under them.
 | `sessions get-dispatch COMMAND_ID`                                                                                                                 | `SessionDispatcher.GetDispatch`                   |
 | `sessions cancel-input COMMAND_ID`                                                                                                                 | `SessionDispatcher.CancelDispatch`                |
 | `sessions interrupt-turn SESSION_ID --sandbox NAME --sandbox-uid UID --command-id ID --turn-id ID`                                                 | `SessionDispatcher.InterruptTurn`                 |
+| `sessions observe-input SESSION_ID --command-id ID [--wait-seconds N] [--resume-token TOKEN]`                                                     | Dispatcher receipt and correlated `HistoryService.FollowSession` events |
 | `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY] [--destination JSON]`     | `POST /v1/subscriptions`                          |
 | `notifications inbox read ID [--after CURSOR] [--limit N]`                                                                                         | `GET /v1/inboxes/{id}/entries`, one page          |
 | `notifications inbox ack ID --through CURSOR`                                                                                                      | `PUT /v1/inboxes/{id}/acknowledgement`            |
@@ -67,12 +69,20 @@ An optional setup script may execute during opening. `interrupt-turn` is deliver
 Sandbox and is not queued; its response contains the result of that call, while `get-dispatch` cannot
 observe it. `--sandbox-uid` is the expected UID of the Kubernetes Sandbox object, not a Pod or VM
 incarnation identifier. `get-opening` reports only the Dispatcher record, not a combined History snapshot.
+`observe-input` uses the caller-held `COMMAND_ID` from `submit-input`, reads its Dispatcher receipt, then
+follows retained History from that receipt's admission cursor. `--wait-seconds` is bounded to 30 seconds;
+zero reads once. `not_observed` means the requested evidence was not seen in this read, not that input
+failed or the model turn ended. The structured result preserves source errors and removed History cursor
+ranges. A resume token is tied to its Session and command and confers no permission; the command rebuilds
+the observation from the retained admission cursor so it can restore command-to-turn correlation.
 
 **Integration gap at this branch's base:** Dispatcher calls are admitted only for configured
 `dispatcher_callers`. The staging config currently lists `agentplane-staging/app`,
 `agentplane-staging/notifications` and `agentplane-staging/actions`; this CLI adds no caller grant or
 identity. Same-ServiceAccount admission is tracked separately, so a caller outside the current allowlist
 cannot use these commands until that backend change lands.
+`sessions observe-input` also requires independent History URL/credential configuration and backend
+authorization; the CLI does not add reader authority or fall back to another caller.
 
 Left out on purpose:
 
@@ -102,7 +112,9 @@ Left out on purpose:
   `ACTION_STATE_FAILED`, `ACTION_STATE_CANCELLED` and `ACTION_STATE_EXECUTION_UNKNOWN`. Other enum
   fields use their generated protobuf value names too (for example, `mcp` becomes `EXECUTOR_KIND_MCP`).
   Session JSON preserves the full returned `SessionOpening`, `Dispatch` or `InterruptTurnResponse`, including
-  UID, delivery state, reason and timestamps where present.
+  UID, delivery state, reason and timestamps where present. `sessions observe-input` emits its structured
+  Dispatcher `SourcePart` and History coverage/observation projection; it does not wrap that value in a
+  second response envelope.
   Action JSON is therefore a deliberate format change from the previous HTTP client's snake_case fields
   and lowercase state names; update scripts that read `--json` before using this CLI version.
 - Notifications and Egress keep their service JSON objects. A gRPC-Gateway response wraps each answer in
@@ -122,8 +134,8 @@ Left out on purpose:
   paging and prompting do not depend on one. The CLI never prompts.
 - **stdout carries the answer, stderr the diagnostics.** After an error (exit `1`-`5` or `15`) stdout is
   empty, except for `wait`, `result` and `submit --wait` ending in exit `3` ([Waiting](#waiting)). The
-  outcome exits (`10`-`14`, `16`, `17`) print what the command answered: the receipt, or the
-  cancellation result.
+  outcome exits (`10`-`14`, `16`, `17`) print what the command answered: the receipt, observation
+  snapshot, or cancellation result.
 - **`get`** prints the receipt and exits `0` whatever its state. **`submit`** without `--wait` prints
   the receipt and exits `0` once the request is recorded, whatever its state.
 - **`result`** prints the stored `execution.result` when the Action succeeded: the tool's own answer
@@ -140,9 +152,9 @@ generated gRPC over HTTP/2; Notifications and Egress rules use HTTP.
 
 | Variable                                                                                                                                 | Value                                                                                                            |
 | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `AGENTPLANE_ACTIONS_URL`, `AGENTPLANE_SESSIONS_URL`                                                                                      | the gRPC service origin (`http` or `https`; defaults to port 80 or 443), no credentials, path, query or fragment |
+| `AGENTPLANE_ACTIONS_URL`, `AGENTPLANE_SESSIONS_URL`, `AGENTPLANE_HISTORY_URL`                                                             | the gRPC service origin (`http` or `https`; defaults to port 80 or 443), no credentials, path, query or fragment |
 | `AGENTPLANE_NOTIFICATIONS_URL`, `AGENTPLANE_EGRESS_URL`                                                                                  | the HTTP service's base URL: `http` or `https`, no credentials, query or fragment                                |
-| `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_SESSIONS_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_CREDENTIAL`, `AGENTPLANE_EGRESS_CREDENTIAL` | the inert placeholder the egress proxy substitutes for that service                                              |
+| `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_SESSIONS_CREDENTIAL`, `AGENTPLANE_HISTORY_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_CREDENTIAL`, `AGENTPLANE_EGRESS_CREDENTIAL` | the inert placeholder the egress proxy substitutes for that service |
 | `AGENTPLANE_DESTINATION`                                                                                                                 | `{"destination_ref": {...}, "session_id": "..."}`: this Session for `subscribe`, `send`                          |
 
 At this branch's base the default runner deployments do not set `AGENTPLANE_SESSIONS_URL` or
