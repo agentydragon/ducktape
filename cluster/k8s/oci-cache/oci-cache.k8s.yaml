@@ -7,6 +7,17 @@ metadata:
   name: oci-cache
 spec: {}
 ---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: registry-cache
+  namespace: oci-cache
+spec:
+  reclaimPolicy: Delete
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
