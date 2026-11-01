@@ -1061,6 +1061,12 @@ ordinary property access on both input and result, and prototype integrity.
 The retained input and returned graph must be fresh ordinary callable/plain-object
 graphs with no proxies or accessors at the call. The returned graph may expose
 or invoke the captured callback later.
+Opaque retained callback sets do not prove this input precondition. Only a result
+of the existing source-proved or audited factory contract has composition
+provenance, and unknown exposure or possible mutation revokes it. Member reads
+and invocation do not transfer provenance to their results. This provenance
+changes callback admission only; it cannot establish purity or the absence of
+other effects from a complete synchronous execution outcome.
 For a namespace-member contract, the author must audit the provider and every
 caller/runtime path supplying values used by admitted callbacks, establishing
 that listed factory members retain their identities and behavior through the

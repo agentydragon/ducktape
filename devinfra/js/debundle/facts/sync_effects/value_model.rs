@@ -156,6 +156,10 @@ impl<T> Captured<T> {
     pub(super) fn with_identity(identity: usize, values: Arc<T>) -> Self {
         Self { identity, values }
     }
+
+    pub(super) fn cache_identity(&self) -> usize {
+        self.identity
+    }
 }
 
 pub(super) type CapturedContext = Captured<Context>;
@@ -180,6 +184,12 @@ impl<T> Ord for Captured<T> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum RetainedResultKind {
+    Factory,
+    Constructor,
+}
+
 /// The interpreter's values: the shared lattice plus carriers for the
 /// callable and heap summaries the lattice does not express yet.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -194,8 +204,15 @@ pub(super) enum AbstractValue {
     Instance(u32, Captured<Values>),
     CallbackFactory,
     InlineCallbackFactory,
-    /// A fresh opaque return value retaining callbacks without publishing them.
+    /// An opaque returned capability retaining live input values. Its capture
+    /// identity is only an abstract cache key: it proves no runtime equality,
+    /// fresh allocation, object shape or privacy of the retained inputs.
     DeferredCallbacks(Captured<Values>),
+    /// An audited factory's ordinary graph or a constructor's instance graph.
+    /// Factory inputs require Factory provenance. This admission capability
+    /// is revocable on exposure or mutation; its capture key is not a runtime
+    /// allocation identity. Member projection and invocation remain opaque.
+    AuditedRetainedResult(RetainedResultKind, Captured<Values>),
     /// Exact own-descriptor entries captured from one source-proved ordinary
     /// object at a native call site. The executor may apply the certificate
     /// through the paired defineProperties call; all other uses keep the

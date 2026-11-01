@@ -1984,8 +1984,11 @@ The summary applies only to a spread-free ordinary call of a function or a
 `new` of a class through the importing binding, when no narrower summary or
 author contract names that binding. Such a call invokes no callback and records
 no precision loss. Its result is the returned argument itself, or a fresh
-opaque value retaining the callbacks of the arguments it may hold. The analysis
-taints the objects among those arguments, and a construction may still throw
+opaque value retaining live references to the arguments it may hold, including
+containers that acquire callbacks later. The carrier proves no object shape,
+privacy or exact result identity; equal interned capture sets do not mean equal
+runtime results. This carrier cannot certify an audited factory's ordinary
+input graph. The analysis taints the objects among those arguments, and a construction may still throw
 before the provider evaluates. Arguments it neither returns nor retains are not
 exposed. The call stays impure, so purity and side-effect order are unchanged.
 Methods of a returned object stay unknown. The summary appears in `modules.json`
@@ -2040,6 +2043,15 @@ callback flow only. It does not
 assert that the factory call is pure or effect-free. Writes through the result
 that can install opaque values, accessors, or a new prototype conservatively
 restore callback effects; known primitive metadata writes retain deferral.
+
+Factory composition requires separate provenance from a factory whose existing
+source proof or author assertion guarantees the fresh ordinary returned graph.
+Opaque foreign, collection, native and source-derived constructor results do not acquire that
+provenance from their retained callbacks. Unknown exposure, possible skipped
+mutation and recognized result writes revoke composition eligibility. Member
+projection and invocation retain callback reach but do not transfer eligibility
+to their results. Interned capture keys may conservatively share revocation
+across distinct results; they never establish runtime equality or freshness.
 
 `chunk_export_purity.<defining chunk>.inline_callback_factory_exports` is a
 narrower named-export contract. It applies only to calls with exactly one
@@ -2209,7 +2221,10 @@ callback storage across constructions. Its reachable methods, prototype and
 property surfaces must introduce no unrepresented importer capabilities;
 provider-private helper methods are allowed only under that same audit.
 Proxies, accessors and externally mutable callback-bearing prototypes are
-outside the contract. Intrinsic-integrity premises must also be established.
+outside the contract. Intrinsic-integrity premises must also be established. An unexposed, unmutated
+result of this exact constructor contract can compose into another audited
+constructor. Its separate provenance does not certify an ordinary factory input,
+because the instance contract permits provider-private prototype helpers.
 
 Recognized callback rebinding, mutation and exposure retain conservative
 timing. Extracting an instance member, invoking it or publishing the instance
