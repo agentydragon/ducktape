@@ -74,3 +74,25 @@ provide the protections above in the current configuration.
 
 Upstream references: [Linux sandbox](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/linux-sandbox/README.md)
 and [execution request](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/exec-server-protocol/src/protocol.rs).
+
+## Native Claude controls
+
+Claude Code has a separate Linux tool-memory feature, available since `2.1.233`:
+`CLAUDE_CODE_TOOL_MEMORY_LIMIT=4G`, for example, caps tool commands collectively in a memory cgroup
+separate from the harness. This requires a writable, delegated cgroup layout. If setup fails,
+Claude continues without the cap and records the failure only in its debug log.
+
+Agentplane does not explicitly enable this cap or delegate cgroups to Claude. Ordinary Pod
+containers have read-only cgroupfs; the VM native services also lack delegation. Enabling the
+variable alone therefore does not establish harness protection. See the existing
+[tool-memory research](../../docs/harness_tool_memory_isolation.md) for the sibling-cgroup
+layout and shell-wrapper interception options.
+
+Claude's optional Bash sandbox separately restricts filesystem and network access. Its Linux
+bubblewrap backend also isolates process IDs, which can protect the harness from accidental
+signals. The shell sandbox does not cover built-in file tools, hooks or MCP servers. Agentplane's
+Claude launch does not enable it.
+
+Upstream references: [tool memory cap](https://code.claude.com/docs/en/tools-reference#memory-limit-on-linux-and-wsl),
+[Bash sandbox](https://code.claude.com/docs/en/sandboxing) and
+[sandbox runtime](https://github.com/anthropics/sandbox-runtime).
