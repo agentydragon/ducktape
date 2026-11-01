@@ -2,6 +2,43 @@ package runtime
 
 import "testing"
 
+func TestStoppedPackagedUnitGroup(t *testing.T) {
+	unit := map[string]any{
+		"Id": HostUnitName, "LoadState": "loaded", "ActiveState": "inactive",
+		"SubState": "dead", "InvocationID": "previous",
+	}
+	service := map[string]any{"MainPID": uint32(0), "Slice": "agentplane.slice"}
+	if group, err := stoppedPackagedUnitGroup(HostUnitName, unit, service); err != nil || group != "/agentplane.slice/"+HostUnitName {
+		t.Fatalf("stopped host group = %q, %v", group, err)
+	}
+	execution := map[string]any{
+		"Id": ExecutionUnitName, "LoadState": "loaded", "ActiveState": "failed",
+		"SubState": "failed", "InvocationID": "previous",
+	}
+	if group, err := stoppedPackagedUnitGroup(ExecutionUnitName, execution, service); err != nil || group != "/agentplane.slice/"+ExecutionUnitName {
+		t.Fatalf("stopped execution group = %q, %v", group, err)
+	}
+	for _, test := range []struct {
+		name     string
+		unitName string
+		unit     map[string]any
+		service  map[string]any
+	}{
+		{"wrong unit", HostUnitName, map[string]any{"Id": ExecutionUnitName, "LoadState": "loaded", "ActiveState": "inactive", "SubState": "dead", "InvocationID": "previous"}, service},
+		{"unknown packaged unit", "other.service", map[string]any{"Id": "other.service", "LoadState": "loaded", "ActiveState": "inactive", "SubState": "dead", "InvocationID": "previous"}, service},
+		{"active", HostUnitName, map[string]any{"Id": HostUnitName, "LoadState": "loaded", "ActiveState": "active", "SubState": "running", "InvocationID": "previous"}, service},
+		{"no previous invocation", HostUnitName, map[string]any{"Id": HostUnitName, "LoadState": "loaded", "ActiveState": "inactive", "SubState": "dead"}, service},
+		{"pid remains", HostUnitName, unit, map[string]any{"MainPID": uint32(7), "Slice": "agentplane.slice"}},
+		{"different slice", HostUnitName, unit, map[string]any{"MainPID": uint32(0), "Slice": "other.slice"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if group, err := stoppedPackagedUnitGroup(test.unitName, test.unit, test.service); err == nil || group != "" {
+				t.Fatalf("unverifiable group = %q, %v", group, err)
+			}
+		})
+	}
+}
+
 func TestSystemdUnitNeverStarted(t *testing.T) {
 	unit := map[string]any{"LoadState": "loaded", "ActiveState": "inactive", "InvocationID": ""}
 	service := map[string]any{"MainPID": uint32(0)}

@@ -106,6 +106,19 @@ func fenceSystemdUnitOnConnection(ctx context.Context, conn *systemd.Conn, name 
 	if expected.ID != "" && group == "" {
 		return fmt.Errorf("systemd unit %s has no recorded cgroup for invocation %s", name, expected.ID)
 	}
+	// systemd clears ControlGroup after stopping a service while retaining its last
+	// InvocationID. For these packaged units, the configured slice gives the exact
+	// cgroup path even after the property is cleared. Still inspect that cgroup:
+	// an inactive unit alone does not prove its old process domain is empty.
+	derivedStoppedGroup := false
+	if group == "" && !active {
+		derivedGroup, groupErr := stoppedPackagedUnitGroup(name, unit, service)
+		if groupErr != nil {
+			return groupErr
+		}
+		group = derivedGroup
+		derivedStoppedGroup = true
+	}
 	if systemdString(unit["LoadState"]) == "loaded" {
 		if _, err := conn.StopUnitContext(ctx, name, "replace", nil); err != nil && !systemdUnitMissing(err) {
 			return fmt.Errorf("stop systemd unit %s: %w", name, err)
@@ -125,6 +138,18 @@ func fenceSystemdUnitOnConnection(ctx context.Context, conn *systemd.Conn, name 
 				return fmt.Errorf("inspect systemd unit %s cgroup: %w", name, err)
 			}
 			if empty {
+				if derivedStoppedGroup {
+					// An inactive observation can race another owner starting this unit.
+					// Do not acknowledge the old fence after its invocation changes.
+					finalUnit, finalErr := conn.GetUnitPropertiesContext(ctx, name)
+					if finalErr != nil {
+						return fmt.Errorf("recheck fenced systemd unit %s: %w", name, finalErr)
+					}
+					if finalID := systemdString(finalUnit["InvocationID"]); finalID != currentID ||
+						(systemdString(finalUnit["ActiveState"]) != "inactive" && systemdString(finalUnit["ActiveState"]) != "failed") {
+						return fmt.Errorf("systemd unit %s changed invocation or became active while fencing", name)
+					}
+				}
 				if expected.RequireSuccess {
 					finalUnit, unitErr := conn.GetUnitPropertiesContext(ctx, name)
 					if unitErr != nil {
@@ -150,6 +175,22 @@ func fenceSystemdUnitOnConnection(ctx context.Context, conn *systemd.Conn, name 
 			return ctx.Err()
 		case <-ticker.C:
 		}
+	}
+}
+
+func stoppedPackagedUnitGroup(name string, unit, service map[string]any) (string, error) {
+	state, substate := systemdString(unit["ActiveState"]), systemdString(unit["SubState"])
+	if systemdString(unit["Id"]) != name || systemdString(unit["LoadState"]) != "loaded" ||
+		!((state == "inactive" && substate == "dead") || (state == "failed" && substate == "failed")) ||
+		systemdUint32(service["MainPID"]) != 0 || systemdString(service["Slice"]) != "agentplane.slice" ||
+		systemdString(unit["InvocationID"]) == "" {
+		return "", fmt.Errorf("systemd unit %s has no verifiable stopped process domain", name)
+	}
+	switch name {
+	case HostUnitName, ExecutionUnitName:
+		return "/agentplane.slice/" + name, nil
+	default:
+		return "", fmt.Errorf("systemd unit %s has no known packaged cgroup path", name)
 	}
 }
 
