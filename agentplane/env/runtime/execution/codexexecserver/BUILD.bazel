@@ -42,6 +42,7 @@ go_test(
     embed = [":codexexecserver"],
     race = "on",
     deps = [
+        "//agentplane/env/runtime/execution/companion/control",
         "//agentplane/env/runtime/lifecycle",
         "//agentplane/env/runtime/supervision",
         "@com_github_coder_websocket//:websocket",

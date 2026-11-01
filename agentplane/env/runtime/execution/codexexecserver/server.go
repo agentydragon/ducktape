@@ -237,7 +237,8 @@ type Refusal struct{ Reason string }
 
 func (r Refusal) Error() string { return "executor companion refused to start Codex: " + r.Reason }
 
-// FenceContainer waits for a fresh idle process-domain generation after the prior owner is fenced.
+// FenceContainer waits for an idle generation at startup, or proof that the
+// specified previous owner's generation was fenced during shutdown.
 func FenceContainer(ctx context.Context, socket, previous string) error {
 	return retry.Do(ctx, retry.NewConstant(200*time.Millisecond), func(ctx context.Context) error {
 		attempt, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -247,11 +248,16 @@ func FenceContainer(ctx context.Context, socket, previous string) error {
 			return retry.RetryableError(err)
 		}
 		defer connection.Close()
+		if previous != "" && status.Generation != previous {
+			// Generation changes only after a proven fence (or whole-container replacement).
+			// A successor may already have claimed the new generation.
+			return nil
+		}
 		if !status.Owned && status.Generation != previous {
 			return nil
 		}
 		if status.Owned {
-			if err := json.NewEncoder(connection).Encode(executorcontrol.Request{Operation: "fence"}); err != nil {
+			if err := json.NewEncoder(connection).Encode(executorcontrol.Request{Operation: "fence", Generation: status.Generation}); err != nil {
 				return retry.RetryableError(err)
 			}
 		}

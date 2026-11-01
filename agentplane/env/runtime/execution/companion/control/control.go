@@ -11,7 +11,9 @@ import (
 
 // Request is one operation on the executor companion's local control socket.
 type Request struct {
-	Operation   string            `json:"operation"`
+	Operation string `json:"operation"`
+	// Generation identifies the owner to fence. A delayed request must not fence its successor.
+	Generation  string            `json:"generation,omitempty"`
 	Environment map[string]string `json:"environment,omitempty"`
 }
 
