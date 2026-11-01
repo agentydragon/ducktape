@@ -1,13 +1,14 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
-import type { NewSandboxDefaults, SandboxPresetView, SandboxView } from "../schema";
-import { TEST_REASONING_EFFORTS, testModelCatalog } from "../testing/model_catalog";
+import type { NewSandboxDefaults, SandboxView } from "../schema";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { api } from "../client";
+import * as appConfigClient from "../app_config_client";
+import type { SandboxPresetView } from "../app_config_client";
 import { SandboxList } from "./list";
 import { SandboxesLiveProvider } from "./live";
 import { deletable, SuspendResume } from "./lifecycle";
@@ -70,23 +71,14 @@ async function render(newSandboxDefaults: NewSandboxDefaults = UNSET_DEFAULTS) {
     },
     bootstrap: "mkdir -p /state/workspaces",
   };
+  vi.spyOn(appConfigClient, "listSandboxPresets").mockResolvedValue([preset]);
   vi.spyOn(api, "GET").mockImplementation(async (path) => {
     const data =
-      path === "/models"
-        ? testModelCatalog(
-            [{ model: "test-claude", display_name: "Test Claude", reasoning_efforts: TEST_REASONING_EFFORTS }],
-            [
-              { model: "test-codex-a", display_name: "Test Codex A", reasoning_efforts: TEST_REASONING_EFFORTS },
-              { model: "test-codex-b", display_name: "Test Codex B", reasoning_efforts: TEST_REASONING_EFFORTS },
-            ]
-          )
-        : path === "/presets"
-          ? [preset]
-          : path === "/sandboxes/form"
-            ? { policy_sets: ["test-basic", "test-packages"], new_sandbox_defaults: newSandboxDefaults }
-            : path === "/sandboxes/templates"
-              ? ["test-template", "other-template"]
-              : [];
+      path === "/sandboxes/form"
+        ? { policy_sets: ["test-basic", "test-packages"], new_sandbox_defaults: newSandboxDefaults }
+        : path === "/sandboxes/templates"
+          ? ["test-template", "other-template"]
+          : [];
     return { data, response: new Response() } as Awaited<ReturnType<typeof api.GET>>;
   });
   const container = document.createElement("div");

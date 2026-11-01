@@ -75,6 +75,7 @@ filegroup(
         "//agentplane/action_service:action_service_pb",
         "//agentplane/action_service:operator_action_service_pb",
         "//agentplane/action_service:web_push_service_pb",
+        "//agentplane/app:config_service_pb",
         "//agentplane/mcp_edge:connection_service_pb",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
@@ -242,6 +243,27 @@ ts_library(
         ":operator_login",
         ":schema",
         "//:node_modules/openapi-fetch",
+    ],
+)
+
+ts_library(
+    name = "app_config_client",
+    srcs = ["app_config_client.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/app:config_service_pb",
+        "//agentplane/proto:runner_pb",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "app_config_client_test",
+    srcs = ["app_config_client.test.ts"],
+    deps = [
+        ":app_config_client",
+        "//:node_modules/vitest",
     ],
 )
 
@@ -1014,8 +1036,7 @@ ts_library(
     srcs = ["model_catalog.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
-        ":schema",
+        ":app_config_client",
     ],
 )
 

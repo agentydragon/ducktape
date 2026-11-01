@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package agentplane.app;
+
+import "agentplane/proto/runner.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+
+// AppConfigService exposes the integration app's browser-visible model and Sandbox preset
+// configuration through generated HTTP/JSON handlers.
+service AppConfigService {
+  rpc ListModels(google.protobuf.Empty) returns (ListModelsResponse) {
+    option (google.api.http) = {get: "/v1/models"};
+  }
+
+  rpc ListSandboxPresets(google.protobuf.Empty) returns (ListSandboxPresetsResponse) {
+    option (google.api.http) = {get: "/v1/presets"};
+  }
+}
+
+message ListModelsResponse {
+  repeated ModelOption models = 1;
+  repeated HarnessModelOffers harnesses = 2;
+}
+
+message ModelOption {
+  string model = 1;
+  string display_name = 2;
+  repeated string reasoning_efforts = 3;
+}
+
+message HarnessModelOffers {
+  agentplane.proto.Harness harness = 1;
+  repeated string models = 2;
+}
+
+message ListSandboxPresetsResponse {
+  repeated SandboxPreset presets = 1;
+}
+
+message SandboxPreset {
+  string name = 1;
+  string title = 2;
+  string template = 3;
+  repeated string policy_sets = 4;
+  repeated string inbox_tags = 5;
+  SessionDefaults session_defaults = 6;
+  string bootstrap = 7;
+}
+
+message SessionDefaults {
+  agentplane.proto.Harness harness = 1;
+  string model = 2;
+  string cwd = 3;
+  optional string reasoning_effort = 4;
+  string instructions = 5;
+  string setup_script = 6;
+}

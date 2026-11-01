@@ -310,7 +310,9 @@ func run(ctx context.Context, config Config) error {
 	defer closeConnections(healthConnections)
 
 	server := NewHTTPServer(appAuth)
-	RegisterCoreRoutes(server, config)
+	if err := RegisterCoreRoutes(server, config); err != nil {
+		return fmt.Errorf("register core routes: %w", err)
+	}
 	RegisterSandboxRoutes(server, config, inventory)
 	RegisterPolicyRoutes(server, config, inventory, policies)
 	RegisterSessionRoutes(server, config, inventory, appBridge, threadStore)

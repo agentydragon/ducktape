@@ -118,6 +118,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/app/frontend:app_config_client",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:mark_glyph",
@@ -268,6 +269,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:langfuse_search",
         "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:model_catalog",
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:trace_search",
         "//agentplane/app/frontend/testing:langfuse_search",
@@ -291,10 +293,10 @@ agentplane_vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend:app_config_client",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/actions:action_client",
-        "//agentplane/app/frontend/testing:model_catalog",
     ],
 )
 

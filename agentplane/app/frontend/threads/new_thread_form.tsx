@@ -3,9 +3,16 @@ import { type JSX, useEffect, useEffectEvent, useMemo, useState } from "react";
 
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 
-import type { ModelCatalog, SessionDefaultsView } from "../schema";
-import { harnessOptions, modelsForHarness, type Harness } from "../model_catalog";
-import { api, displayableError } from "../client";
+import {
+  harnessOptions,
+  listSandboxPresets,
+  models as fetchModelCatalog,
+  modelsForHarness,
+  type Harness,
+  type ModelCatalog,
+  type SessionDefaultsView,
+} from "../model_catalog";
+import { displayableError } from "../client";
 import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
 import { SessionSpecSchema, type SessionSpec } from "../../../proto/runner_pb";
 
@@ -49,12 +56,11 @@ export function NewThreadForm({
 
   useEffect(() => {
     void (async () => {
-      const { data, error: failure } = await api.GET("/models");
-      if (failure) {
+      try {
+        setModelCatalog(await fetchModelCatalog());
+      } catch (failure) {
         reportError(displayableError(failure));
-        return;
       }
-      if (data) setModelCatalog(data);
     })();
   }, []);
 
@@ -68,19 +74,19 @@ export function NewThreadForm({
     }
     setPresetDefaults(null);
     void (async () => {
-      const { data, error: failure } = await api.GET("/presets");
-      if (cancelled) return;
-      if (failure) {
-        reportError(displayableError(failure));
-        return;
+      try {
+        const data = await listSandboxPresets();
+        if (cancelled) return;
+        const preset = data.find((candidate) => candidate.name === presetName);
+        if (!preset) {
+          reportError(`Sandbox preset ${presetName} is missing from the app configuration.`);
+          setPresetDefaults({ preset: presetName, defaults: null });
+          return;
+        }
+        setPresetDefaults({ preset: presetName, defaults: preset.session_defaults });
+      } catch (failure) {
+        if (!cancelled) reportError(displayableError(failure));
       }
-      const preset = data?.find((candidate) => candidate.name === presetName);
-      if (!preset) {
-        reportError(`Sandbox preset ${presetName} is missing from the app configuration.`);
-        setPresetDefaults({ preset: presetName, defaults: null });
-        return;
-      }
-      setPresetDefaults({ preset: presetName, defaults: preset.session_defaults });
     })();
     return () => {
       cancelled = true;

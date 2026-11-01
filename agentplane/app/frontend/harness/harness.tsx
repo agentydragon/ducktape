@@ -2684,26 +2684,31 @@ routes.push(
   ],
   [
     "GET",
-    /^\/models$/,
+    /^\/upstream\/app-config\/v1\/models$/,
     () => ({
       models: [
         {
           model: "harness-claude-model",
-          display_name: "Harness Claude Model",
-          reasoning_efforts: TEST_REASONING_EFFORTS,
+          displayName: "Harness Claude Model",
+          reasoningEfforts: TEST_REASONING_EFFORTS,
         },
-        { model: "next-model", display_name: "Next Model", reasoning_efforts: TEST_REASONING_EFFORTS },
+        { model: "next-model", displayName: "Next Model", reasoningEfforts: TEST_REASONING_EFFORTS },
         {
           model: "harness-codex-model",
-          display_name: "Harness Codex Model",
-          reasoning_efforts: TEST_REASONING_EFFORTS,
+          displayName: "Harness Codex Model",
+          reasoningEfforts: TEST_REASONING_EFFORTS,
         },
       ],
-      harnesses: {
-        HARNESS_CLAUDE: flags.has("claudePaused") ? [] : ["harness-claude-model", "next-model"],
-        HARNESS_CODEX: ["harness-codex-model"],
-        ...(flags.has("centralSamplerEnabled") ? { HARNESS_CENTRAL_SAMPLER: ["harness-codex-model"] } : {}),
-      },
+      harnesses: [
+        {
+          harness: "HARNESS_CLAUDE",
+          models: flags.has("claudePaused") ? [] : ["harness-claude-model", "next-model"],
+        },
+        { harness: "HARNESS_CODEX", models: ["harness-codex-model"] },
+        ...(flags.has("centralSamplerEnabled")
+          ? [{ harness: "HARNESS_CENTRAL_SAMPLER", models: ["harness-codex-model"] }]
+          : []),
+      ],
     }),
   ],
   [
@@ -2716,24 +2721,27 @@ routes.push(
   ],
   [
     "GET",
-    /^\/presets$/,
-    () => [
-      {
-        name: "test-coder",
-        title: "Test coder",
-        template: "runner",
-        policy_sets: [...TEST_CODER_POLICY_SETS],
-        inbox_tags: [],
-        session_defaults: {
-          harness: "HARNESS_CODEX",
-          model: "harness-codex-model",
-          cwd: "/state/workspaces/{session_id}",
-          reasoning_effort: "medium",
-          instructions: "Work on public repositories only.",
+    /^\/upstream\/app-config\/v1\/presets$/,
+    () => ({
+      presets: [
+        {
+          name: "test-coder",
+          title: "Test coder",
+          template: "runner",
+          policySets: [...TEST_CODER_POLICY_SETS],
+          inboxTags: [],
+          sessionDefaults: {
+            harness: "HARNESS_CODEX",
+            model: "harness-codex-model",
+            cwd: "/state/workspaces/{session_id}",
+            reasoningEffort: "medium",
+            instructions: "Work on public repositories only.",
+            setupScript: "",
+          },
+          bootstrap: "mkdir -p /state/workspaces",
         },
-        bootstrap: "mkdir -p /state/workspaces",
-      },
-    ],
+      ],
+    }),
   ],
   ["GET", /^\/sandboxes\/templates$/, () => ["runner"]],
   ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: [...TEST_CODER_POLICY_SETS, "pypi", "github-public"] })],

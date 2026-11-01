@@ -539,7 +539,10 @@ constructing OIDC callback URLs, so there is no released-port allocation window.
 
 ## Launch presets
 
-`GET /presets` publishes configured Sandbox presets and their Thread launch defaults. `POST
+The browser reads configured models and Sandbox presets through the generated `AppConfigService`
+ProtoJSON routes `/upstream/app-config/v1/models` and `/upstream/app-config/v1/presets`. These
+in-process handlers share the app's caller authentication boundary; the service and HTTP mapping are
+defined in `config_service.proto`. `POST
 /sandboxes` stores the selected preset label alongside the concrete Sandbox choices; it does not
 store per-Sandbox Session defaults. On a new Thread open, the app resolves the defaults from its
 configured preset catalog using that Sandbox label, then overlays fields explicitly supplied for
