@@ -125,7 +125,9 @@ func TestHumaResponsesDoNotAddSchemaMetadata(t *testing.T) {
 
 func TestNonUUIDIDSegmentMatchesNoRoute(t *testing.T) {
 	server := NewHTTPServer(nil)
-	RegisterThreadReadRoutes(server, nil, nil, nil, nil, nil, nil)
+	if err := RegisterThreadReadRoutes(server, nil, nil, nil, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
 	RegisterSessionRoutes(server, Config{}, nil, nil, nil)
 	RegisterStreamingRoutes(server, StreamingDependencies{})
 	server.RegisterRawRoute("/threads/{thread_id}/sync/{rest...}", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {

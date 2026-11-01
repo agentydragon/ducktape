@@ -343,7 +343,9 @@ func TestThreadRenameBodyRequiresOneKnownField(t *testing.T) {
 
 func TestThreadReadRouteRegistrationPublishesOpenAPIPaths(t *testing.T) {
 	server := NewHTTPServer(nil)
-	RegisterThreadReadRoutes(server, nil, nil, nil, nil, nil, nil)
+	if err := RegisterThreadReadRoutes(server, nil, nil, nil, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
 	recorder := httptest.NewRecorder()
 	server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
 	if recorder.Code != http.StatusOK {

@@ -22,6 +22,8 @@ type HTTPServer struct {
 	drain          atomic.Bool
 	drainDone      chan struct{}
 	drainOnce      sync.Once
+	cleanupOnce    sync.Once
+	cleanups       []func()
 }
 
 func NewHTTPServer(authentication *auth.Auth) *HTTPServer {
@@ -159,6 +161,19 @@ func (s *HTTPServer) RegisterRawRoute(pattern string, handler http.Handler, oper
 		handler = s.authentication.RequireCaller(handler)
 	}
 	s.mux.Handle(pattern, handler)
+}
+
+func (s *HTTPServer) addCleanup(cleanup func()) {
+	s.cleanups = append(s.cleanups, cleanup)
+}
+
+func (s *HTTPServer) Close() {
+	s.cleanupOnce.Do(func() {
+		for i := len(s.cleanups) - 1; i >= 0; i-- {
+			s.cleanups[i]()
+		}
+		s.cleanups = nil
+	})
 }
 
 func writeDetailError(w http.ResponseWriter, status int, message string) {
