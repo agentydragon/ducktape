@@ -47,6 +47,17 @@ interceptors, epoch and scope checks, and admission accounting before Runtime ca
 adapter directly. An OpenSession stream uses the public server stream with an epoch-cancelled
 context; cancellation and adapter shutdown settle its workers before native backend fencing.
 
+Incarnation adoption and conditional Quiesce are sequence-bound requests to Runtime's single COSI
+lifecycle coordinator, which also owns Close. Each blocking Host, Execution and durable-state boundary publishes its
+stage before a Runtime-owned worker performs it; the Gateway waits for the matching terminal
+status while holding transition serialization. A canceled WatchState epoch stops subsequent
+adoption stages and cannot release a successor until any in-flight Execution start has a proven
+fence. A Running intent already published by that epoch remains current until a successor or
+Close requests its own drain. A prior requested drain is reconciled against its exact binding
+instead of issuing another stop generation. Quiesce seals durably before publishing its intent;
+repeated requests preserve a healthy generation. Close cancels an active transition and waits
+for its settlement before preparing shutdown.
+
 SIGTERM follows the same Host drain and Execution fence path. When shutdown does not have an
 incarnation seal request, Runtime sends `CLOSING` with an empty seal UID; this drains local work
 without claiming a durable History seal. Runtime publishes a generation-bound Closing request to

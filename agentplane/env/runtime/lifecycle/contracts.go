@@ -15,16 +15,18 @@ import (
 )
 
 const (
-	Namespace                   = "runner"
-	DesiredStateType            = "RunnerDesiredStates.agentplane"
-	AggregateStatusType         = "RunnerRuntimes.agentplane"
-	RuntimeCloseStatusType      = "EnvironmentRuntimeCloses.agentplane"
-	ResourceID                  = "runner"
-	HostOwner                   = "runner-host"
-	EnvironmentNamespace        = "environment-runtime"
-	EnvironmentDesiredStateType = "EnvironmentRuntimeDesiredStates.agentplane"
-	EnvironmentResourceID       = "environment-runtime"
-	EnvironmentOwner            = "environment-runtime"
+	Namespace                    = "runner"
+	DesiredStateType             = "RunnerDesiredStates.agentplane"
+	AggregateStatusType          = "RunnerRuntimes.agentplane"
+	RuntimeCloseStatusType       = "EnvironmentRuntimeCloses.agentplane"
+	RuntimeTransitionRequestType = "EnvironmentRuntimeTransitionRequests.agentplane"
+	RuntimeTransitionStatusType  = "EnvironmentRuntimeTransitions.agentplane"
+	ResourceID                   = "runner"
+	HostOwner                    = "runner-host"
+	EnvironmentNamespace         = "environment-runtime"
+	EnvironmentDesiredStateType  = "EnvironmentRuntimeDesiredStates.agentplane"
+	EnvironmentResourceID        = "environment-runtime"
+	EnvironmentOwner             = "environment-runtime"
 )
 
 type Mode uint8
@@ -161,6 +163,106 @@ type RuntimeCloseStatus struct {
 	Generation uint64
 	Stage      RuntimeCloseStage
 	Error      string
+}
+
+type RuntimeTransitionKind uint8
+
+const (
+	RuntimeAdopt RuntimeTransitionKind = iota + 1
+	RuntimeQuiesce
+)
+
+type RuntimeTransitionRequest struct {
+	Sequence uint64
+	Kind     RuntimeTransitionKind
+	UID      string
+}
+
+func (value RuntimeTransitionRequest) DeepCopy() RuntimeTransitionRequest { return value }
+
+type RuntimeTransitionStage uint8
+
+const (
+	RuntimeTransitionPlanning RuntimeTransitionStage = iota
+	RuntimeTransitionNativeStopping
+	RuntimeTransitionExecutionStarting
+	RuntimeTransitionIntentPublishing
+	RuntimeTransitionExecutionFencing
+	RuntimeTransitionHostAcknowledging
+	RuntimeTransitionIncarnationAdopting
+	RuntimeTransitionHostReady
+	RuntimeTransitionBootstrapRequesting
+	RuntimeTransitionQuiesceSealing
+	RuntimeTransitionHostStatusChecking
+	RuntimeTransitionDone
+	RuntimeTransitionFailed
+)
+
+type RuntimeTransitionStatus struct {
+	Sequence  uint64
+	Stage     RuntimeTransitionStage
+	Error     string
+	ErrorCode uint32
+}
+
+func (value RuntimeTransitionStatus) DeepCopy() RuntimeTransitionStatus { return value }
+
+type runtimeTransitionRequestExtension struct{}
+
+func (runtimeTransitionRequestExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
+	return spec.ResourceDefinitionSpec{Type: RuntimeTransitionRequestType, DefaultNamespace: EnvironmentNamespace}
+}
+
+type runtimeTransitionStatusExtension struct{}
+
+func (runtimeTransitionStatusExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
+	return spec.ResourceDefinitionSpec{Type: RuntimeTransitionStatusType, DefaultNamespace: EnvironmentNamespace}
+}
+
+func ReadRuntimeTransitionRequest(ctx context.Context, reader controller.Reader) (RuntimeTransitionRequest, bool, error) {
+	value, err := safe.ReaderGetByID[*typed.Resource[RuntimeTransitionRequest, runtimeTransitionRequestExtension]](ctx, reader, EnvironmentResourceID)
+	if state.IsNotFoundError(err) {
+		return RuntimeTransitionRequest{}, false, nil
+	}
+	if err != nil {
+		return RuntimeTransitionRequest{}, false, err
+	}
+	return *value.TypedSpec(), true, nil
+}
+
+func PublishRuntimeTransitionRequest(ctx context.Context, writer state.State, value RuntimeTransitionRequest) error {
+	resource := typed.NewResource[RuntimeTransitionRequest, runtimeTransitionRequestExtension](
+		resource.NewMetadata(EnvironmentNamespace, RuntimeTransitionRequestType, EnvironmentResourceID, resource.VersionUndefined), value,
+	)
+	return safe.StateModify(ctx, writer, resource, func(current *typed.Resource[RuntimeTransitionRequest, runtimeTransitionRequestExtension]) error {
+		*current.TypedSpec() = value
+		return nil
+	}, state.WithUpdateOwner(EnvironmentOwner))
+}
+
+func ReadRuntimeTransitionStatus(ctx context.Context, reader controller.Reader) (RuntimeTransitionStatus, bool, error) {
+	value, err := safe.ReaderGetByID[*typed.Resource[RuntimeTransitionStatus, runtimeTransitionStatusExtension]](ctx, reader, EnvironmentResourceID)
+	if state.IsNotFoundError(err) {
+		return RuntimeTransitionStatus{}, false, nil
+	}
+	if err != nil {
+		return RuntimeTransitionStatus{}, false, err
+	}
+	return *value.TypedSpec(), true, nil
+}
+
+func WriteRuntimeTransitionStatus(ctx context.Context, writer controller.ReaderWriter, value RuntimeTransitionStatus) error {
+	current, found, err := ReadRuntimeTransitionStatus(ctx, writer)
+	if err != nil || found && current == value {
+		return err
+	}
+	resource := typed.NewResource[RuntimeTransitionStatus, runtimeTransitionStatusExtension](
+		resource.NewMetadata(EnvironmentNamespace, RuntimeTransitionStatusType, EnvironmentResourceID, resource.VersionUndefined), value,
+	)
+	return safe.WriterModify(ctx, writer, resource, func(current *typed.Resource[RuntimeTransitionStatus, runtimeTransitionStatusExtension]) error {
+		*current.TypedSpec() = value
+		return nil
+	})
 }
 
 func (value RuntimeCloseStatus) DeepCopy() RuntimeCloseStatus { return value }

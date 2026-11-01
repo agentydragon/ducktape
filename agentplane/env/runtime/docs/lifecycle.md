@@ -90,6 +90,14 @@ journals close after workers, and the Host owner releases last. Runtime retains 
 until its Host and Execution domains are fenced.
 
 Runtime's own COSI engine also runs its Close aggregate alongside bootstrap and process controllers.
+The same Runtime lifecycle coordinator owns sequence-bound adoption and Quiesce transition statuses. The Gateway holds
+transition serialization while it waits for an exact sequence; canceled WatchState epochs stop
+future adoption stages, and an interrupted Execution start must settle through the Execution fence
+barrier before a successor can enter. A published Running intent remains current after watch loss.
+If a prior transition already requested drain, its exact Host generation is reconciled before
+another incarnation can be adopted. Conditional Quiesce seals durably before publishing a new
+Quiescing intent and preserves a healthy generation on repeated calls. Close cancels an active
+transition, then waits for its status and any uncertain-fence proof before continuing.
 The aggregate observes a Closing desired generation and advances through bound Host native-stop,
 Execution fence, optional Host flush, Host join and bootstrap settlement. Blocking waits and stops run
 in coordinator-owned one-shot workers, leaving the COSI event loop free. Its ready-to-join status

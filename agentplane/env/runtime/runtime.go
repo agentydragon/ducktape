@@ -23,7 +23,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
@@ -100,60 +99,65 @@ type Runtime struct {
 	config Config
 	deps   runtimeDeps
 
-	mu                   sync.Mutex
-	transitionMu         sync.Mutex
-	owner                *environmentOwner
-	state                *EnvironmentState
-	lifecycleState       state.State
-	lifecycleEngine      *cosiruntime.Runtime
-	lifecycleCancel      context.CancelFunc
-	lifecycleDone        chan struct{}
-	lifecycleRunErr      error
-	lifecycleStartOnce   sync.Once
-	lifecycleStartMu     sync.Mutex
-	lifecycleInitErr     error
-	lifecycleContext     context.Context
-	lifecycleWorkers     sync.WaitGroup
-	closeCoordinator     *runtimeCloseController
-	closeControllerErr   error
-	processes            *supervision.Host
-	scripts              *scripts.Runner
-	bootstrapHost        *bootstrap.Host
-	executionLifecycle   *executionLifecycle
-	desired              lifecycle.EnvironmentDesired
-	bootID               string
-	supervisor           *supervision.Supervisor
-	host                 *hostLink
-	intent               *runtimepb.LifecycleIntent
-	lastRunning          *runtimepb.Binding
-	executorProxy        executorpb.ExecutorServer
-	executionServer      executorpb.ExecutorServer
-	executionOwner       executionHandle
-	executionUID         string
-	executionRecovering  bool
-	activeAdmissions     uint64
-	activeExecutionCalls uint64
-	activeExecStreams    uint64
-	execStreamID         uint64
-	execStreams          map[uint64]context.CancelFunc
-	execCalls            map[uint64]context.CancelFunc
-	execCallID           uint64
-	executionFence       bool
-	fenceInFlight        *runtimepb.Binding
-	closing              bool
-	failed               bool
-	idleSince            *timestamppb.Timestamp
-	changes              chan struct{}
-	fatal                chan error
-	failureErr           error
-	control              *control.Server
-	waitBootstrap        func(context.Context) error
-	hostLifetime         hostLifetime
-	hostExited           bool
-	hostExit             chan childExit
-	closeOnce            sync.Once
-	closeDone            chan struct{}
-	closeErr             error
+	mu                       sync.Mutex
+	transitionMu             sync.Mutex
+	transitionUnsafe         error
+	activeTransitionCtx      context.Context
+	activeTransitionCancel   context.CancelFunc
+	activeTransitionSequence uint64
+	activeQuiesceIdleSince   *timestamppb.Timestamp
+	owner                    *environmentOwner
+	state                    *EnvironmentState
+	lifecycleState           state.State
+	lifecycleEngine          *cosiruntime.Runtime
+	lifecycleCancel          context.CancelFunc
+	lifecycleDone            chan struct{}
+	lifecycleRunErr          error
+	lifecycleStartOnce       sync.Once
+	lifecycleStartMu         sync.Mutex
+	lifecycleInitErr         error
+	lifecycleContext         context.Context
+	lifecycleWorkers         sync.WaitGroup
+	closeCoordinator         *runtimeCloseController
+	closeControllerErr       error
+	processes                *supervision.Host
+	scripts                  *scripts.Runner
+	bootstrapHost            *bootstrap.Host
+	executionLifecycle       *executionLifecycle
+	desired                  lifecycle.EnvironmentDesired
+	bootID                   string
+	supervisor               *supervision.Supervisor
+	host                     *hostLink
+	intent                   *runtimepb.LifecycleIntent
+	lastRunning              *runtimepb.Binding
+	executorProxy            executorpb.ExecutorServer
+	executionServer          executorpb.ExecutorServer
+	executionOwner           executionHandle
+	executionUID             string
+	executionRecovering      bool
+	activeAdmissions         uint64
+	activeExecutionCalls     uint64
+	activeExecStreams        uint64
+	execStreamID             uint64
+	execStreams              map[uint64]context.CancelFunc
+	execCalls                map[uint64]context.CancelFunc
+	execCallID               uint64
+	executionFence           bool
+	fenceInFlight            *runtimepb.Binding
+	closing                  bool
+	failed                   bool
+	idleSince                *timestamppb.Timestamp
+	changes                  chan struct{}
+	fatal                    chan error
+	failureErr               error
+	control                  *control.Server
+	waitBootstrap            func(context.Context) error
+	hostLifetime             hostLifetime
+	hostExited               bool
+	hostExit                 chan childExit
+	closeOnce                sync.Once
+	closeDone                chan struct{}
+	closeErr                 error
 }
 
 func New(config Config) (*Runtime, error) {
@@ -303,7 +307,7 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	if err := engine.RegisterQController(r.bootstrapHost.Controller()); err != nil {
 		return err
 	}
-	r.closeCoordinator = &runtimeCloseController{r: r}
+	r.closeCoordinator = &runtimeCloseController{r: r, transition: runtimeTransitionSequence{r: r}}
 	if err := engine.RegisterController(r.closeCoordinator); err != nil {
 		return err
 	}
@@ -358,6 +362,9 @@ func (r *Runtime) admitLifecycleEffect(ctx context.Context, expected lifecycle.E
 func (r *Runtime) Close(ctx context.Context) error {
 	r.mu.Lock()
 	r.closing = true
+	if r.activeTransitionCancel != nil {
+		r.activeTransitionCancel()
+	}
 	r.changedLocked()
 	r.mu.Unlock()
 	if r.executionLifecycle != nil {
@@ -547,175 +554,6 @@ func (r *Runtime) waitForHostNativeStopped(ctx context.Context, binding *runtime
 	}
 }
 
-func (r *Runtime) adoptIncarnation(ctx context.Context, uid string) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if uid == "" {
-		return errors.New("Runner incarnation UID is required")
-	}
-	r.transitionMu.Lock()
-	defer r.transitionMu.Unlock()
-	r.mu.Lock()
-	if r.closing {
-		r.mu.Unlock()
-		return status.Error(codes.Unavailable, "environment Runtime is closing")
-	}
-	if r.host == nil || !r.host.connected {
-		r.mu.Unlock()
-		return status.Error(codes.Unavailable, "Harness Host lifecycle connection is unavailable")
-	}
-	oldUID, known := r.state.IncarnationUID()
-	initialInactive := r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_INACTIVE
-	var initialBinding *runtimepb.Binding
-	if initialInactive {
-		initialBinding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
-	}
-	r.mu.Unlock()
-	if initialInactive {
-		if err := r.waitForHostNativeStopped(ctx, initialBinding); err != nil {
-			return status.Errorf(codes.Unavailable, "initial Harness Host generation did not establish its native-stop barrier: %v", err)
-		}
-	}
-
-	sealedUID, sealed, err := r.state.SealedUID()
-	if err != nil {
-		return status.Errorf(codes.Unavailable, "read environment seal: %v", err)
-	}
-	if sealed {
-		oldUID = sealedUID
-		known = true
-	}
-	if known && oldUID == uid && !sealed {
-		r.mu.Lock()
-		alreadyRunning := r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_RUNNING &&
-			r.intent.IncarnationUid == uid && r.host != nil && r.host.report != nil && r.host.report.Ready &&
-			proto.Equal(r.host.report.Binding, r.intent.Binding)
-		binding := (*runtimepb.Binding)(nil)
-		mode := runtimepb.LifecycleIntent_INACTIVE
-		if r.intent != nil {
-			binding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
-			mode = r.intent.Mode
-		}
-		r.mu.Unlock()
-		if alreadyRunning {
-			r.setLastRunning(binding)
-			return r.requestBootstrap(ctx)
-		}
-		if mode == runtimepb.LifecycleIntent_RUNNING {
-			if err := r.startExecutionForUID(ctx, uid); err != nil {
-				return err
-			}
-			if _, err := r.waitForHostReady(ctx, binding); err != nil {
-				return status.Errorf(codes.Unavailable, "Harness Host did not apply the active generation: %v", err)
-			}
-			r.setLastRunning(binding)
-			return r.requestBootstrap(ctx)
-		}
-		if mode == runtimepb.LifecycleIntent_QUIESCING || mode == runtimepb.LifecycleIntent_CLOSING {
-			if err := r.waitForHostNativeStopped(ctx, binding); err != nil {
-				return status.Errorf(codes.Unavailable, "prior Harness Host generation did not drain: %v", err)
-			}
-			r.maybeFenceExecution(binding)
-			if err := r.waitForExecutionFenced(ctx, binding); err != nil {
-				return status.Errorf(codes.Unavailable, "prior Execution generation did not fence: %v", err)
-			}
-		} else if mode == runtimepb.LifecycleIntent_INACTIVE {
-			if err := r.waitForHostNativeStopped(ctx, binding); err != nil {
-				return status.Errorf(codes.Unavailable, "initial Harness Host generation did not drain: %v", err)
-			}
-		} else {
-			return status.Errorf(codes.Unavailable, "cannot resume environment from lifecycle mode %s", mode)
-		}
-		if err := r.startExecutionForUID(ctx, uid); err != nil {
-			return err
-		}
-		binding, err = r.publishIntent(ctx, lifecycle.Running, runtimepb.LifecycleIntent_RUNNING, uid, "")
-		if err != nil {
-			return err
-		}
-		if _, err := r.waitForHostReady(ctx, binding); err != nil {
-			return status.Errorf(codes.Unavailable, "Harness Host did not apply the active generation: %v", err)
-		}
-		r.setLastRunning(binding)
-		return r.requestBootstrap(ctx)
-	}
-
-	if known {
-		if err := r.startExecutionForUID(ctx, oldUID); err != nil {
-			return fmt.Errorf("prepare old incarnation %s for drain: %w", oldUID, err)
-		}
-		mode := runtimepb.LifecycleIntent_CLOSING
-		seal := ""
-		if sealed {
-			mode, seal = runtimepb.LifecycleIntent_QUIESCING, oldUID
-		}
-		binding, err := r.publishIntent(ctx, lifecycle.Quiescing, mode, oldUID, seal)
-		if err != nil {
-			return err
-		}
-		if err := r.waitForHostNativeStopped(ctx, binding); err != nil {
-			return status.Errorf(codes.Unavailable, "old Harness Host generation did not drain: %v", err)
-		}
-		if err := r.waitForExecutionFenced(ctx, binding); err != nil {
-			return status.Errorf(codes.Unavailable, "old Execution generation did not fence: %v", err)
-		}
-		if sealed {
-			if err := r.waitForHostQuiesced(ctx, binding); err != nil {
-				return status.Errorf(codes.Unavailable, "old sealed Harness Host generation did not flush: %v", err)
-			}
-			if oldUID == uid {
-				if err := r.state.AdoptIncarnation(uid); err != nil {
-					return status.Errorf(codes.Unavailable, "retain existing sealed incarnation: %v", err)
-				}
-				return nil
-			}
-		}
-	}
-
-	if err := r.state.AdoptIncarnation(uid); err != nil {
-		return status.Errorf(codes.Unavailable, "adopt Sandbox incarnation: %v", err)
-	}
-	if r.state.Lameduck() {
-		// The durable marker names this same incarnation. It remains sealed and must not
-		// be cleared merely because the Gateway opened a new watch epoch.
-		if err := r.startExecutionForUID(ctx, uid); err != nil {
-			return err
-		}
-		binding, err := r.publishIntent(ctx, lifecycle.Quiescing, runtimepb.LifecycleIntent_QUIESCING, uid, uid)
-		if err != nil {
-			return err
-		}
-		if report, err := r.waitForHostReady(ctx, binding); err != nil {
-			return status.Errorf(codes.Unavailable, "sealed Harness Host generation did not apply: %v", err)
-		} else if report.NativeStopped {
-			r.maybeFenceExecution(binding)
-		}
-		if err := r.waitForHostNativeStopped(ctx, binding); err != nil {
-			return status.Errorf(codes.Unavailable, "sealed Harness Host generation did not drain: %v", err)
-		}
-		if err := r.waitForExecutionFenced(ctx, binding); err != nil {
-			return status.Errorf(codes.Unavailable, "sealed Execution generation did not fence: %v", err)
-		}
-		if err := r.waitForHostQuiesced(ctx, binding); err != nil {
-			return status.Errorf(codes.Unavailable, "sealed Harness Host generation did not flush: %v", err)
-		}
-		return nil
-	}
-	if err := r.startExecutionForUID(ctx, uid); err != nil {
-		return err
-	}
-	binding, err := r.publishIntent(ctx, lifecycle.Running, runtimepb.LifecycleIntent_RUNNING, uid, "")
-	if err != nil {
-		return err
-	}
-	if _, err := r.waitForHostReady(ctx, binding); err != nil {
-		return status.Errorf(codes.Unavailable, "Harness Host did not apply the active generation: %v", err)
-	}
-	r.setLastRunning(binding)
-	return r.requestBootstrap(ctx)
-}
-
 func (r *Runtime) startExecutionForUID(ctx context.Context, uid string) error {
 	if r.config.CodexExecServer == nil {
 		return nil
@@ -867,97 +705,6 @@ func hasAutosuspendReason(blockers []*sandboxpb.AutosuspendBlocker, reason strin
 func bootstrapIsActive(input bootstrap.Input, inputFound bool, state bootstrap.Runtime, stateFound bool) bool {
 	terminal := stateFound && (state.Phase == bootstrap.Succeeded || state.Phase == bootstrap.Failed || state.Phase == bootstrap.Interrupted)
 	return (stateFound && state.Phase == bootstrap.Running) || (inputFound && input.Requested && !terminal)
-}
-
-func (r *Runtime) Quiesce(ctx context.Context, request *sessionpb.QuiesceRequest) (*sessionpb.QuiesceResponse, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, status.FromContextError(err).Err()
-	}
-	r.transitionMu.Lock()
-	defer r.transitionMu.Unlock()
-	facts, err := r.facts()
-	if err != nil {
-		return nil, err
-	}
-	r.mu.Lock()
-	if r.closing {
-		r.mu.Unlock()
-		return nil, errors.New("environment Runtime is closing")
-	}
-	if !r.state.Lameduck() && request != nil && request.IfIdleSince != nil && (facts.IdleSince == nil || facts.IdleSince.AsTime().UnixMicro() != request.IfIdleSince.AsTime().UnixMicro()) {
-		r.mu.Unlock()
-		return nil, status.Error(codes.Aborted, "the Sandbox is busy or its idle_since differs")
-	}
-	if r.host == nil || !r.host.connected {
-		r.mu.Unlock()
-		return nil, status.Error(codes.Unavailable, "Harness Host lifecycle connection is unavailable")
-	}
-	if err := r.state.EnterLameduck(); err != nil {
-		r.mu.Unlock()
-		return nil, status.Errorf(codes.Unavailable, "persist environment seal: %v", err)
-	}
-	uid, err := r.state.RequireIncarnationUID()
-	if err != nil {
-		r.mu.Unlock()
-		return nil, status.Errorf(codes.FailedPrecondition, "%v", err)
-	}
-	if r.desired.Mode == lifecycle.Quiescing && r.desired.SealUID == uid &&
-		r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_QUIESCING && r.intent.SealUid == uid {
-		host := r.host
-		binding := proto.Clone(r.intent.Binding).(*runtimepb.Binding)
-		currentReport := host.report != nil && host.report.Ready && proto.Equal(host.report.Binding, binding)
-		r.mu.Unlock()
-		// Repeated controller quiesce calls are normally idempotent. Preserve the
-		// old retry behavior only when the Host's current lifecycle generation has
-		// recorded an error; issuing a fresh generation while work is still draining
-		// invalidates its native-stop and Execution-fence acknowledgements.
-		retry := false
-		if currentReport {
-			bound, bindErr := host.client.BoundContext(ctx, binding)
-			if bindErr != nil {
-				return nil, status.Errorf(codes.Unavailable, "authorize Harness Host quiesce status: %v", bindErr)
-			}
-			hostStatus, statusErr := host.client.GetStatus(bound, &sessionpb.GetStatusRequest{})
-			if statusErr != nil {
-				return nil, status.Errorf(codes.Unavailable, "read Harness Host quiesce status: %v", statusErr)
-			}
-			hostStatus = proto.Clone(hostStatus).(*sessionpb.EnvironmentRuntimeStatus)
-			retry = hostStatus.GetLifecycle().GetError() != ""
-		}
-		if !retry {
-			facts, err = r.facts()
-			if err != nil {
-				return nil, err
-			}
-			return &sessionpb.QuiesceResponse{Stage: sessionpb.QuiesceStage(facts.QuiesceStage)}, nil
-		}
-		r.mu.Lock()
-		if r.closing {
-			r.mu.Unlock()
-			return nil, errors.New("environment Runtime is closing")
-		}
-		if r.host != host || r.intent == nil || !proto.Equal(r.intent.Binding, binding) ||
-			r.desired.Mode != lifecycle.Quiescing || r.desired.SealUID != uid {
-			r.mu.Unlock()
-			facts, err = r.facts()
-			if err != nil {
-				return nil, err
-			}
-			return &sessionpb.QuiesceResponse{Stage: sessionpb.QuiesceStage(facts.QuiesceStage)}, nil
-		}
-	}
-	r.desired = lifecycle.EnvironmentDesired{Mode: lifecycle.Quiescing, SealUID: uid, Generation: r.desired.Generation + 1}
-	if err := lifecycle.PublishEnvironmentDesired(context.Background(), r.lifecycleState, r.desired); err != nil {
-		r.mu.Unlock()
-		return nil, status.Errorf(codes.Unavailable, "publish environment quiesce: %v", err)
-	}
-	r.setIntentLocked(runtimepb.LifecycleIntent_QUIESCING, uid, uid, false)
-	r.mu.Unlock()
-	facts, err = r.facts()
-	if err != nil {
-		return nil, err
-	}
-	return &sessionpb.QuiesceResponse{Stage: sessionpb.QuiesceStage(facts.QuiesceStage)}, nil
 }
 
 func (r *Runtime) isClosing() bool {
