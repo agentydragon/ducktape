@@ -5118,6 +5118,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn unsettle(&mut self, values: &Values) {
         let mut pending: Vec<_> = values.iter().cloned().collect();
         let mut visited = BTreeSet::new();
+        // This pass does not change prefix values. Distinct closure contexts
+        // still expand their own captures below, but share each binding's
+        // identical prefix expansion. A later pass starts with an empty set.
+        let mut expanded_prefix_reads = FxHashSet::default();
         let mut changed = false;
         while let Some(value) = pending.pop() {
             if !visited.insert(value.clone()) {
@@ -5138,6 +5142,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             callable
                                 .reads
                                 .iter()
+                                .filter(|binding| expanded_prefix_reads.insert(*binding))
                                 .filter_map(|binding| self.state.prefix_values.get(binding))
                                 .flatten()
                                 .cloned(),
