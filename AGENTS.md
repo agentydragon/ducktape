@@ -8,7 +8,7 @@ Linux only.
 - **Claude Code Web:** certificate errors, `bazel: command not found`, or unresolvable `remote.buildbuddy.io` mean session setup failed — stop and recover via <devinfra/claude/claude_hook/docs/session_start_recovery.md>. Never `--noverify`/`SSL_VERIFY=false`; tell the user if recovery fails.
 - **Agentplane MCP:** use a connected Action when one fits; discover tools and current Action policy rather than assuming access. RBAC: <cluster/docs/agent_rbac.md>; staging: <cluster/docs/agentplane_mcp_staging.md>. `Bash(kubectl …)` uses your own kubeconfig, whose privileges may differ.
 - **Sandbox:** run `bb`/`bazel`/`bazelisk`/`bbr`, `terraform`/`tofu`, `kubectl`, `systemctl`, `ss`, `ip`, `curl` and other network/system commands with `dangerouslyDisableSandbox: true`. Bazel always, without trying in-sandbox first: with any `WebFetch(domain:…)` rule present, `--unshare-net` breaks its gRPC DNS. Details: <docs/claude_code_sandbox.md>.
-- **Scratch:** pick one name per task (a short description or a random slug) and keep every temp file, log, clone and output for that task under `${TMPDIR:-/tmp}/<slug>/`. Never write loose files or extra top-level dirs into `/tmp`. `/tmp` gets cleaned, so commit and push anything worth keeping.
+- **Scratch:** pick one name per task (a short description or a random slug) and keep every temp file, log, clone and output for that task under `${TMPDIR:-/tmp}/agents/YYYY_MM_DD/<slug>/`, using the task's start date. Never write loose files or extra top-level dirs into `/tmp`. `/tmp` gets cleaned, so commit and push anything worth keeping.
 
 ## Bazel Commands
 
@@ -78,7 +78,7 @@ Operator review is the scarce resource. Split into small, independently approvab
 - Never `git reset --soft` onto a moved base; rebase, then squash against `$(git merge-base HEAD origin/devel)`.
 - Committing on `devel` trips `no-commit-to-branch`; `SKIP=` it only with explicit user approval.
 - **A dirty checkout is the user's.** Never switch branches or commit on top of it unasked; if the work doesn't build on that state, use a fresh worktree; ask if ambiguous.
-- **Worktrees:** use the one you started in when suitable; else one harness worktree or `/tmp/ducktape-worktrees/YYYY-MM-DD-<slug>`. Each costs ~250 MB, and once Bazel runs there ~2 GB RAM + 5–10 GB output base — reuse a worktree you've built in rather than multiplying them. `bbr` avoids the local cost.
+- **Worktrees:** use the one you started in when suitable; else one harness worktree or a worktree under the task's scratch directory (see **Scratch**). Each costs ~250 MB, and once Bazel runs there ~2 GB RAM + 5–10 GB output base — reuse a worktree you've built in rather than multiplying them. `bbr` avoids the local cost.
 - **Gotcha:** parallel Bash calls share one cwd. Start every worktree command with `cd <worktree> &&`; never end a chain with a `cd` elsewhere.
 
 ## Conventions
