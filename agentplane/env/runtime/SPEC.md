@@ -49,9 +49,14 @@ context; cancellation and adapter shutdown settle its workers before native back
 
 SIGTERM follows the same Host drain and Execution fence path. When shutdown does not have an
 incarnation seal request, Runtime sends `CLOSING` with an empty seal UID; this drains local work
-without claiming a durable History seal. Runtime waits for accepted bootstrap work to settle before
-releasing its legacy owner lock. A failed bootstrap is a settled durable failure and does not by
-itself make process cleanup fail.
+without claiming a durable History seal. Runtime publishes a generation-bound Closing request to
+its COSI lifecycle engine. Its aggregate coordinator advances only after the matching Host native
+stop, Execution call drain and backend fence, optional exact History seal acknowledgement, Host join,
+and accepted bootstrap settlement. Blocking steps run in Runtime-owned workers. The aggregate's
+ready-to-join status is not a successful Close: Runtime then joins its engine and workers, fences
+the Pod PID namespace when applicable, and releases its legacy owner lock last. A failed or uncertain
+fence keeps that lock; canceling a Close caller only stops that caller's wait. A failed bootstrap is
+a settled durable failure and does not by itself make process cleanup fail.
 While bootstrap is running, Runtime reports the `Bootstrap` autosuspend blocker; it clears when the
 bootstrap reaches a terminal state.
 
