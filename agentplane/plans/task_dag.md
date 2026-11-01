@@ -1453,8 +1453,9 @@ flowchart TD
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
     SYSTEMD_UNIT_CLEANUP[In review #13458: shared systemd cleanup contract]
-    SYSTEMD_NATIVE_SHUTDOWN[In review #13462: systemd-owned native shutdown]
+    SYSTEMD_NATIVE_SHUTDOWN[In review #13458: systemd-owned native shutdown]
     SYSTEMD_UNIT_CLEANUP --> SYSTEMD_NATIVE_SHUTDOWN
+    SYSTEMD_UNIT_COSI_DESIGN[Later decision: systemd Unit resources and controller]
     SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN[Selected P0 decision: caller-authorized resume and message wake]
     EXEC_SUSPENDED_RESUME[Selected P0: recover exec on a suspended Sandbox]
     SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN --> EXEC_SUSPENDED_RESUME
@@ -1766,8 +1767,7 @@ Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-co
 
 ### `SYSTEMD_UNIT_CLEANUP` — one typed systemd stop and cleanup contract
 
-**In review, [#13458](https://github.com/agentydragon/ducktape/pull/13458); selected P0.** The latest
-reported Bazel check is pending.
+**In review, [#13458](https://github.com/agentydragon/ducktape/pull/13458); selected P0.**
 Deduplicate Runtime and native-supervision unit inspection, stop-job observation and process cleanup
 proof under one shared owner. Decode D-Bus maps at the boundary into typed evidence. Recover from
 an already stopped, loaded unit with retained `InvocationID` and cleared `ControlGroup`, using
@@ -1785,15 +1785,17 @@ No process consolidation, lifecycle dependency-graph redesign or automatic mutat
 
 ### `SYSTEMD_NATIVE_SHUTDOWN` — let systemd perform native termination
 
-**In review, [#13462](https://github.com/agentydragon/ducktape/pull/13462), based on #13458; selected
-P0.** Focused local supervision/runtime checks passed and the fixture built, but no real systemd
-guest was exercised. The hosted CI check was pending at the latest report.
+**In review in [#13458](https://github.com/agentydragon/ducktape/pull/13458); selected P0.**
+[#13462](https://github.com/agentydragon/ducktape/pull/13462) merged into that PR's branch, so its
+implementation still awaits the combined PR reaching devel. Actual guest checks exposed unsupported
+runtime stop-timeout mutation. The operator selected configuring grace at launch across all process
+backends and using `Stop(ctx)`; the repair and final guest validation remain in that combined PR.
 Replace native supervision's manual TERM/timer/KILL sequence with systemd stop jobs and its
 configured `KillMode`, stop timeout and final signal. Preserve process exit evidence despite unit
 collection, explicit signal operations, concurrent stop/wait, descendant cleanup and observation
-loss. Consume the shared cleanup contract from `SYSTEMD_UNIT_CLEANUP`; the current PR is based on
-that cleanup PR. Keep admission, drain, journal settlement and History acknowledgements with
-Agentplane. A lost D-Bus connection does not authorize a successor or replay.
+loss. Consume the shared cleanup contract from `SYSTEMD_UNIT_CLEANUP`. Keep admission, drain,
+journal settlement and History acknowledgements with Agentplane. A lost D-Bus connection does not
+authorize a successor or replay.
 
 **Exit:** native shutdown uses systemd's escalation and reports the observed outcome; duplicate
 timers/signals and obsolete retention workarounds are removed where replaced by supported manager
@@ -1801,6 +1803,33 @@ mechanisms. Focused regressions cover stop completion, exit-result retention and
 retain existing descendant and owner-loss coverage. State any remaining initial-cleanup timeout
 uncertainty. Preserve current process topology, resource budgets and graceful shutdown ordering;
 update the owning contract and rollback instructions.
+
+### `SYSTEMD_UNIT_COSI_DESIGN` — review systemd Unit resources and controller ownership
+
+**Later design decision; operator, 2026-11-01 UTC.** Consider representing managed systemd units as
+COSI resources with a controller owning their lifecycle. Compare a dedicated `SystemdUnit` resource
+and controller with extending the existing generic process resources/controller. Recommend one
+owner for D-Bus connections and unit references, start/stop jobs, observations and cleanup, replacing
+the corresponding imperative Runtime helpers and native-supervision wiring. Higher-level components
+express their intent and consume typed status; systemd retains its signal, escalation and cgroup
+management responsibilities.
+
+Cover both packaged Host/Execution service units and native transient units. Distinguish a unit's
+identity, a requested launch attempt and its observed `InvocationID`; define launch-time
+configuration, retained exit outcomes, connection loss/reconnection and uncertain start semantics.
+Reconciliation must preserve terminal one-shot attempts; explicitly assign any restart policy so
+it cannot replay agent work. Keep successful application shutdown separate from proof of an empty
+process domain, and specify how finalizers hold teardown and successor admission until cleanup is
+proven. Treat live D-Bus references and handles as process-owned state, and explain reconstruction
+after controller/runtime loss rather than assuming COSI resources alone make them durable.
+
+**Exit:** review an ownership map, proposed resource/status shapes, and concrete launch, normal exit,
+stop, uncertain start and reconnect sequences against today's generic process controller. Identify
+the bespoke wiring each alternative replaces and show how ordinary Pod supervision continues to
+work. Operator review precedes implementation planning. This decision does not gate
+`SYSTEMD_UNIT_CLEANUP` or `SYSTEMD_NATIVE_SHUTDOWN`; no process consolidation, new binary or COSI
+refactor is dispatched by recording it. Coordinate logical ownership with the separate
+[environment management process decision](#env_management_process_consolidation_design--review-eventual-environment-process-consolidation).
 
 ### `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN` — authorize explicit resume and message wake
 
