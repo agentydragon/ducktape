@@ -54,16 +54,6 @@ wake/delivery. A future design might add switches to Sandbox spec, but must defi
 semantics, trusted event attribution, decision placement and how unannounced entries make progress.
 No per-event switches, per-peer wake grants or owner move are selected or required for v1.
 
-### `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN` — delegated lifecycle controls
-
-Revisit on a concrete need for agents to manage lifecycle or explicit operator prioritization.
-V1 keeps explicit suspend/resume and wake-setting edits as operator controls while preserving
-trusted backend automation. If delegation is needed, compare native Kubernetes RBAC with narrow
-backend operations on Sandbox targets/collections; general Sandbox patch access can edit unrelated
-spec fields. Define grant administration and preserve lifecycle guards. The longer-term direction
-is wake-on-message by default and transparent suspension/resume, not routine granular lifecycle
-management. Current defaults are unchanged; this review does not block v1 messaging.
-
 ### `NOTIFICATION_WORKER_ISOLATION` — separate notification API and delivery workers
 
 Only if worker deaths cause actual operational trouble. Keep workers in-process; first address the specific failure with current supervision/claims/retries.

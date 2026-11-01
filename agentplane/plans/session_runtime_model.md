@@ -2,8 +2,9 @@
 
 Operator-requested future design, 2026-10-28 PDT; discussion directions updated 2026-10-30 PDT.
 The broader object model is a long-term north star; concrete object types, storage and protocols
-remain open. Component names, source layout and the independently assignable Runner extractions
-below were agreed on 2026-10-31 UTC. Session/Environment dispatch regrouping remains for later;
+remain open. Component names and source layout were agreed on 2026-10-31 UTC; current Runtime,
+Harness Host and Execution service contracts live in their component specifications.
+Session/Environment dispatch regrouping remains for later;
 its service roles may share a binary or have separate binaries.
 Prefer the LLM agent loop outside the execution environment when capabilities are otherwise equal:
 tool authority can be explicitly mediated, and environment processes have less opportunity to
@@ -15,8 +16,10 @@ Agentplane has largely represented a harness and its Session state as living ins
 The experimental [central sampler](../x/central_sampler/README.md) hosts them outside execution
 Sandboxes; its Session data should survive their deletion. In that mode a Sandbox supplies tools,
 rather than defining the conversation's lifetime. It still requires a running executor for the first
-open and fixes the binding to one Sandbox incarnation; those are v1 constraints, not a required
-ontology for every future harness.
+open and fixes the logical execution target to one Sandbox. Verified replacement incarnations can
+be adopted at execution-session initialization; model-controlled fencing and explicit resume are
+selected follow-ups in the DAG. These are current constraints, not a required ontology for every
+future harness.
 
 ## Cases the model must represent
 
@@ -82,14 +85,14 @@ The provisioning role is Environment controller. Keep the current Sandbox Contro
 its responsibility broadens to shared environment provisioning. The native `codex app-server`,
 `codex exec-server` and Claude binaries remain distinctly named subprocesses.
 
-The environment-level successor to Runner is Environment Runtime. Its Session/harness code moves to
-Environment Harness Host; its execution adapter and executor lifecycle move to Execution service.
+The environment-level successor to Runner is Environment Runtime. Session/harness code belongs to
+Environment Harness Host; the execution adapter and executor lifecycle belong to Execution service.
 Support an execution-only environment, a local native harness, and a central sampler with zero
 execution environments. A shared app-server serving N Sessions and a separate Execution service
 process within the same environment remain supported. Direct-executing Claude belongs in an
 explicit workload resource domain; sharing one with Codex execution is a deployment choice.
 
-Proposed source ownership:
+Current source ownership:
 
 ```text
 agentplane/
@@ -137,30 +140,13 @@ relay every call. Harness-specific launch, native framing, Session mapping and r
 with the harness backend; Codex exec-server adaptation belongs with the execution backend. Gateway
 owns authenticated routing/fencing. This records ownership, not a new transport or authority policy.
 
-### Independently assignable extractions
-
-The [task DAG](task_dag.md#runner-component-restructuring) owns status and dependencies. Remaining
-slices are Environment Harness Host plus Environment Runtime, and runtime packaging. Each starts
-with a bounded ownership review of admission, drain, durable-state locks, process generations,
-fencing and failure settlement. Review that contract before moving an effect between processes.
-There is no global Runner redesign prerequisite; an unresolved question blocks only the slice
-that needs its answer. Shared-file conflicts require rebasing, not ordering gates.
-
-The [Execution service](../env/execution/README.md) owns the typed gRPC adapter, native backend and
-PID-1 companion under `env/execution`; shared libraries live under `env/supervision` and `env/oneoff`.
-Production Runner still embeds the execution adapter and backend lifecycle. Remaining host and
-packaging changes must preserve Pod PID-1 and VM/systemd execution modes and independent execution
-without a native harness. Future laptop support remains a capability to preserve room for.
-
-The host extraction assigns native Session state/journals/ingress to the Environment Harness Host
-and leaves environment lifecycle with the Environment Runtime. Keep native state, authored data,
-Session and environment identities across cutover. Each change updates all imports, BUILD targets,
-entrypoints, images, settings, protocols and current docs it affects; no compatibility shims or
-duplicate owners.
-A source move alone changes no process lifetime. Runtime changes require their own proportional
-acceptance and rollback plan, including overlapping replicas where relevant. Update the actual
-system diagrams as traffic changes. Packaging work preserves resource, identity and access policy;
-rightsizing and a JS-host replacement remain separate work.
+Current ownership and lifecycle guarantees are defined by the
+[Environment Runtime](../env/runtime/SPEC.md), [Harness Host](../env/harnesshost/SPEC.md) and
+[Execution service](../env/execution/SPEC.md). Pod/VM packaging lives under `env/images`.
+Use those contracts when changing admission, drain, state locks, process generations, fencing or
+failure settlement. Rightsizing, future laptop support, a JS-host replacement and the broader
+Session/environment object model remain separate work. The [task DAG](task_dag.md) owns their
+selection and dependencies; file conflicts alone do not impose ordering.
 
 Prefer central ownership of the loop when it supplies the needed capabilities: Agentplane can
 control its code and environment relationships. Sandbox-hosted Codex remains a supported adapter
@@ -226,11 +212,11 @@ live host. The future API should make environment references usable across code 
 between named references, stored serializable handles and persistent bindings; an environment
 reference need not be a live socket. Do not claim host-memory values survive host loss.
 
-Desired host-loss behavior: tell the agent which JS state/cells were lost and let it continue or
-recover with a fresh runtime. Abandon uncertain in-flight work with retained evidence and a
-model-visible notice rather than permanently blocking the conversation. Do not replay uncertain
-effects or mistake this for restoration of arbitrary JavaScript execution state. This is future
-behavior, not a claim that today's operator-driven recovery already does it automatically.
+Host-loss behavior must distinguish recoverable idle state from uncertain live work: tell the
+agent which JS state/cells were lost, retain evidence, and provide a fresh runtime or explicit
+recovery as required. The [sampler runtime contract](../x/central_sampler/SPEC.md#runtime-and-effects)
+defines its current automatic and operator-driven boundaries. Do not replay uncertain effects or
+mistake a fresh runtime for restoration of arbitrary JavaScript execution state.
 
 ## Tool surfaces and execution implementations
 
