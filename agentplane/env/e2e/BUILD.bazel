@@ -98,8 +98,6 @@ py_test(
     srcs = ["test_restart.py"],
     data = [
         "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
-        "//agentplane/env/runtime/execution/cmd:agentplane-execution-service",
-        "//agentplane/env/runtime/harnesshost/cmd:agentplane-harness-host",
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
         "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
     ],
@@ -400,8 +398,6 @@ py_test(
     srcs = ["test_pid1_container.py"],
     data = [
         "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
-        "//agentplane/env/runtime/execution/cmd:agentplane-execution-service",
-        "//agentplane/env/runtime/harnesshost/cmd:agentplane-harness-host",
         "//agentplane/env/runtime/supervision:runner_pid1_fixture",
     ],
     env = NATIVE_RUNNER_DOCKER_ENV,

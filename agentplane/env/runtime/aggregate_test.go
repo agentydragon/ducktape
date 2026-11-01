@@ -56,9 +56,6 @@ func TestEmbeddedHostLifecycleLossStillFencesExecution(t *testing.T) {
 		return handle, err
 	}
 	r := newLifecycleRunner(t, config)
-	if err := r.adoptIncarnation(context.Background(), "lost-lifecycle-incarnation"); err != nil {
-		t.Fatal(err)
-	}
 	var execution *localExecutionHandle
 	select {
 	case execution = <-started:

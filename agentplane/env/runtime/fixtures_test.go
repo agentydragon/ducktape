@@ -87,7 +87,7 @@ func newLifecycleRunner(t *testing.T, config runtimeTestConfig) *Runtime {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	child := &localHostLifetime{cancel: cancel, done: make(chan struct{})}
+	child := &localHostLifetime{host: host, cancel: cancel, done: make(chan struct{})}
 	r.hostLifetime = child
 	go func() { child.err = host.Run(ctx, configuration.Endpoint{Target: historyTarget}); close(child.done) }()
 	t.Cleanup(func() {
@@ -181,6 +181,7 @@ func waitClose(t *testing.T, done <-chan error) error {
 }
 
 type localHostLifetime struct {
+	host   *harnesshost.Runner
 	cancel context.CancelFunc
 	done   chan struct{}
 	err    error
@@ -197,6 +198,10 @@ func (p *localHostLifetime) Wait(ctx context.Context) (int, error) {
 
 func (p *localHostLifetime) Stop(ctx context.Context) error {
 	p.cancel()
-	_, err := p.Wait(ctx)
-	return err
+	select {
+	case <-p.done:
+		return p.host.Close(ctx)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

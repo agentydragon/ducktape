@@ -168,7 +168,7 @@ The Pod executor has a private PID namespace and Kubernetes resource limits. VM 
 separate service scopes and slice budgets. Both share Sandbox identity and filesystem paths with the
 harness. Runtime aggregates process fence proof; Host cannot restart or fence Execution. An abnormal
 Runtime exit requires the outer container fence before replacement. Local tools remain a deployment
-mode. See [executor isolation](../env/execution/docs/codex_executor.md).
+mode. See [executor isolation](../env/runtime/execution/docs/codex_executor.md).
 
 ## Standalone execution service
 
