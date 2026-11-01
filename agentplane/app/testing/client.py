@@ -105,10 +105,44 @@ class Client:
 
     async def models(self) -> ModelCatalog:
         """Which models each harness may be opened with, as this deployment is configured."""
-        return ModelCatalog.model_validate(await self._json("GET", "/models"))
+        response = await self._json("GET", "/upstream/app-config/v1/models")
+        return ModelCatalog.model_validate(
+            {
+                "models": [
+                    {
+                        "model": model["model"],
+                        "display_name": model["displayName"],
+                        "reasoning_efforts": model["reasoningEfforts"],
+                    }
+                    for model in response["models"]
+                ],
+                "harnesses": {offer["harness"]: offer["models"] for offer in response["harnesses"]},
+            }
+        )
 
     async def presets(self) -> list[SandboxPresetView]:
-        return [SandboxPresetView.model_validate(row) for row in await self._json("GET", "/presets")]
+        response = await self._json("GET", "/upstream/app-config/v1/presets")
+        return [
+            SandboxPresetView.model_validate(
+                {
+                    "name": row["name"],
+                    "title": row["title"],
+                    "template": row["template"],
+                    "policy_sets": row["policySets"],
+                    "inbox_tags": row["inboxTags"],
+                    "session_defaults": {
+                        "harness": row["sessionDefaults"]["harness"],
+                        "model": row["sessionDefaults"]["model"],
+                        "cwd": row["sessionDefaults"]["cwd"],
+                        "reasoning_effort": row["sessionDefaults"].get("reasoningEffort"),
+                        "instructions": row["sessionDefaults"]["instructions"],
+                        "setup_script": row["sessionDefaults"]["setupScript"],
+                    },
+                    "bootstrap": row["bootstrap"],
+                }
+            )
+            for row in response["presets"]
+        ]
 
     async def create_sandbox(self, spec: NewSandbox) -> SandboxView:
         return SandboxView.model_validate(

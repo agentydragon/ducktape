@@ -11,7 +11,9 @@ import (
 
 func TestHTTPServerServesHumaOpenAPIDocument(t *testing.T) {
 	server := NewHTTPServer(nil)
-	RegisterCoreRoutes(server, Config{})
+	if err := RegisterCoreRoutes(server, Config{}); err != nil {
+		t.Fatal(err)
+	}
 	recorder := httptest.NewRecorder()
 	server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest("GET", "/openapi.json", nil))
 	if recorder.Code != 200 {

@@ -48,7 +48,9 @@ func TestFrontendConfigServesOnlyBrowserSettings(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := NewHTTPServer(authentication)
-			RegisterCoreRoutes(server, Config{FrontendConfig: test.config, DatabaseURL: "private-database"})
+			if err := RegisterCoreRoutes(server, Config{FrontendConfig: test.config, DatabaseURL: "private-database"}); err != nil {
+				t.Fatal(err)
+			}
 			handler := server.Handler(authentication)
 			request := httptest.NewRequest(http.MethodGet, "/frontend-config", nil)
 			response := httptest.NewRecorder()

@@ -15,12 +15,13 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-import type { NewSandboxDefaults, NewSandboxInputBody, SandboxPresetView, SandboxView } from "../schema";
+import type { NewSandboxDefaults, NewSandboxInputBody, SandboxView } from "../schema";
 import { IconDotsVertical } from "../icons";
 import { type JSX, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { api, displayableError } from "../client";
+import { listSandboxPresets, type SandboxPresetView } from "../app_config_client";
 import { IdleSuspendField, IdleSuspendInput } from "./idle_suspend";
 import { ConfirmDelete, deletable, deleting, SuspendResume } from "./lifecycle";
 import { useRequiredSandboxesLive } from "./live";
@@ -118,8 +119,11 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         setDefaults(sandboxForm.new_sandbox_defaults);
         setForm((current) => ({ ...current, ...sandboxForm.new_sandbox_defaults }));
       }
-      const { data: presetViews } = await api.GET("/presets");
-      setPresets(presetViews ?? []);
+      try {
+        setPresets(await listSandboxPresets());
+      } catch (failure) {
+        setError(displayableError(failure));
+      }
       const { data: templateNames, error: templateFailure } = await api.GET("/sandboxes/templates");
       if (templateFailure) setError(displayableError(templateFailure));
       else setTemplates(templateNames);

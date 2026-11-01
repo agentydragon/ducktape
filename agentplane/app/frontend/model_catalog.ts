@@ -1,7 +1,7 @@
-import type { ModelCatalog, ModelOption, ThreadView } from "./schema";
-import { api, ok } from "./client";
+import { listModels, type Harness, type ModelCatalog, type ModelOption } from "./app_config_client";
 
-export type Harness = NonNullable<ThreadView["harness"]>;
+export type { Harness, ModelCatalog, ModelOption, SandboxPresetView, SessionDefaultsView } from "./app_config_client";
+export { listSandboxPresets } from "./app_config_client";
 
 /** An empty model list disables new-session selection, not the native harness. */
 export function harnessOptions(catalog: ModelCatalog | null): { value: Harness; label: string; disabled: boolean }[] {
@@ -41,6 +41,6 @@ export function modelsForHarness(catalog: ModelCatalog, harness: Harness): Model
     return option ? [option] : [];
   });
 }
-export async function models(): Promise<ModelCatalog> {
-  return ok(await api.GET("/models"));
+export function models(): Promise<ModelCatalog> {
+  return listModels();
 }

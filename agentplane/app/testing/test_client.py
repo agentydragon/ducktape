@@ -108,7 +108,7 @@ async def test_client_propagates_active_trace_context() -> None:
     observed: list[str] = []
 
     async def accepted(_after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(writer, "200 OK", b"[]", "application/json")
+        await _respond(writer, "200 OK", b'{"presets":[]}', "application/json")
 
     span_context = SpanContext(
         trace_id=0x1234567890ABCDEF1234567890ABCDEF,
@@ -121,6 +121,58 @@ async def test_client_propagates_active_trace_context() -> None:
         async with _app(accepted, requests=observed) as (client, _):
             await client.presets()
     assert "traceparent: 00-1234567890abcdef1234567890abcdef-1234567890abcdef-01\r\n" in observed[0].lower()
+
+
+async def test_app_config_client_adapts_proto_json_to_test_views() -> None:
+    async def models(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "200 OK",
+            json.dumps(
+                {
+                    "models": [{"model": "model-a", "displayName": "Model A", "reasoningEfforts": ["low"]}],
+                    "harnesses": [{"harness": "HARNESS_CODEX", "models": ["model-a"]}],
+                }
+            ).encode(),
+            "application/json",
+        )
+
+    async def presets(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "200 OK",
+            json.dumps(
+                {
+                    "presets": [
+                        {
+                            "name": "work",
+                            "title": "Work",
+                            "template": "linux",
+                            "policySets": [],
+                            "inboxTags": [],
+                            "sessionDefaults": {
+                                "harness": "HARNESS_CODEX",
+                                "model": "model-a",
+                                "cwd": "/workspace",
+                                "instructions": "",
+                                "setupScript": "",
+                            },
+                            "bootstrap": "",
+                        }
+                    ]
+                }
+            ).encode(),
+            "application/json",
+        )
+
+    async with _app(models, presets) as (client, _):
+        catalog = await client.models()
+        views = await client.presets()
+
+    assert catalog.models[0].display_name == "Model A"
+    assert catalog.harnesses == {"HARNESS_CODEX": ["model-a"]}
+    assert views[0].session_defaults.harness == "HARNESS_CODEX"
+    assert views[0].session_defaults.reasoning_effort is None
 
 
 async def test_command_accepts_an_archived_admission_without_a_dispatch() -> None:

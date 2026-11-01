@@ -1,7 +1,13 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
 import type { LangfuseSearchSettings, SandboxView, ThreadView, TraceSearchSettings } from "../schema";
-import { TEST_REASONING_EFFORTS, testModelCatalog } from "../testing/model_catalog";
+import {
+  TEST_REASONING_EFFORTS,
+  testModelCatalog,
+  testModelCatalogProtoJSON,
+  testSandboxPresetsProtoJSON,
+} from "../testing/model_catalog";
+import type { SandboxPresetView } from "../model_catalog";
 import { serveEventStreams } from "../testing/watch";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -202,7 +208,7 @@ async function render(
   serveEventStreams(() => undefined);
   fetchMock.mockImplementation((request: Request) => {
     const path = new URL(request.url).pathname;
-    if (path === "/models") {
+    if (path === "/upstream/app-config/v1/models") {
       if (modelCatalogResponse) return modelCatalogResponse;
       const models = [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }];
       const codexModels = routeNavigation
@@ -212,7 +218,7 @@ async function render(
       if (centralSamplerEnabled) {
         catalog.harnesses.HARNESS_CENTRAL_SAMPLER = ["test-model"];
       }
-      return Promise.resolve(Response.json(catalog));
+      return Promise.resolve(Response.json(testModelCatalogProtoJSON(catalog)));
     }
     if (path === "/sandboxes/form") {
       return Promise.resolve(Response.json({ policy_sets: [] }));
@@ -222,20 +228,27 @@ async function render(
         Response.json({ trace_search: traceSearchSettings, langfuse_search: langfuseSearchSettings })
       );
     }
-    if (path === "/presets") {
-      return Promise.resolve(
-        Response.json([
-          {
-            name: "test-preset",
-            title: "Test preset",
-            template: "runner",
-            policy_sets: [],
-            inbox_tags: [],
-            session_defaults: presetDefaults,
-            bootstrap: "",
-          },
-        ])
-      );
+    if (path === "/upstream/app-config/v1/presets") {
+      const preset: SandboxPresetView = {
+        name: "test-preset",
+        title: "Test preset",
+        template: "runner",
+        policy_sets: [],
+        inbox_tags: [],
+        session_defaults: {
+          harness: String(
+            presetDefaults.harness ?? "HARNESS_CLAUDE"
+          ) as SandboxPresetView["session_defaults"]["harness"],
+          model: String(presetDefaults.model ?? ""),
+          cwd: String(presetDefaults.cwd ?? ""),
+          reasoning_effort:
+            typeof presetDefaults.reasoning_effort === "string" ? presetDefaults.reasoning_effort : null,
+          instructions: String(presetDefaults.instructions ?? ""),
+          setup_script: String(presetDefaults.setup_script ?? ""),
+        },
+        bootstrap: "",
+      };
+      return Promise.resolve(Response.json(testSandboxPresetsProtoJSON([preset])));
     }
     if (/^\/sandboxes\/(startup-test|other-test)\/runner-status$/.test(path)) return runnerStatus();
     const threadPath = /^\/threads\/([^/]+)$/.exec(path);
@@ -746,7 +759,7 @@ it("explains model catalog loading and an empty catalog on the disabled create b
   await act(async () => newThread().click());
   expect(createThreadButton().disabled).toBe(true);
   expect((await createThreadTooltip())?.textContent).toContain("Waiting for the model catalog");
-  await act(async () => deliverCatalog(Response.json(testModelCatalog([], []))));
+  await act(async () => deliverCatalog(Response.json(testModelCatalogProtoJSON(testModelCatalog([], [])))));
   expect(createThreadButton().disabled).toBe(true);
   expect((await createThreadTooltip())?.textContent).toContain("No models are available");
 });

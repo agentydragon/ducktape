@@ -17,7 +17,7 @@ it("throws a non-2xx answer as an HttpError with its status and the complete str
   api.use(middleware);
   try {
     const failure: unknown = await api
-      .GET("/models")
+      .GET("/frontend-config")
       .then((answer) => ok(answer))
       .catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(HttpError);
@@ -39,7 +39,7 @@ it("on a 401 sends the browser to log in once and never hands the response back 
   ];
   // The same pipeline one request later, minus the redirect: had either 401 been handed back to
   // the page, it would have settled before this does.
-  const control = api.GET("/models", { fetch: answer(403) });
+  const control = api.GET("/frontend-config", { fetch: answer(403) });
   await expect(
     Promise.race([
       ...unauthorized.map((request) => request.then(() => "401 reached the page")),

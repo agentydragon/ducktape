@@ -1,5 +1,5 @@
 import { ActionIcon, Anchor, Button, Group, Menu, Popover, Select, Stack, Text, UnstyledButton } from "@mantine/core";
-import type { LangfuseSearchSettings, ModelOption, SandboxView, ThreadView, TraceSearchSettings } from "../schema";
+import type { LangfuseSearchSettings, SandboxView, ThreadView, TraceSearchSettings } from "../schema";
 import { IconDotsVertical, IconHistory } from "../icons";
 import { intlFormatDistance } from "date-fns";
 import { type JSX, useCallback, useEffect, useState } from "react";
@@ -8,6 +8,7 @@ import { Link } from "react-router";
 import { displayableError } from "../client";
 import { harnessBehavior } from "../harness_behavior";
 import { harnessLabel, models, modelsForHarness } from "../model_catalog";
+import type { ModelOption } from "../model_catalog";
 import { langfuseSandboxTraceUrl, langfuseSessionTraceUrl } from "../langfuse_search";
 import { traceSearchUrl } from "../trace_search";
 import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadWindow } from "./thread_sync";
