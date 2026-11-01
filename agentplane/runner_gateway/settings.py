@@ -24,6 +24,17 @@ class CentralSamplerTarget(BaseModel):
     token_file: Path
 
 
+class DelegationSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    actor: ServiceAccountName = Field(description="Actions ServiceAccount trusted to delegate, as namespace/name.")
+    caller_namespaces: tuple[str, ...] = Field(
+        min_length=1, description="Namespaces whose caller identity Actions may assert."
+    )
+    methods: tuple[str, ...] = Field(
+        min_length=1, description="Full SessionDispatcher RPC method names that admit delegation."
+    )
+
+
 class Settings(YamlFileSettings):
     """Fields are YAML keys; each also accepts an `AGENTPLANE_RUNNER_GATEWAY_*` environment override.
     Deployments write the caller lists to the file."""
@@ -68,6 +79,10 @@ class Settings(YamlFileSettings):
     runner_security: Security
     dispatcher_callers: Set[ServiceAccountName] = Field(
         min_length=1, description="ServiceAccounts admitted as Dispatcher callers, as namespace/name."
+    )
+    delegation: DelegationSettings | None = Field(
+        default=None,
+        description="Independent Actions delegation trust; does not grant direct or privileged caller access.",
     )
     gateway_callers: Set[ServiceAccountName] = Field(
         min_length=1, description="ServiceAccounts admitted to the Gateway's Runner proxy, as namespace/name."

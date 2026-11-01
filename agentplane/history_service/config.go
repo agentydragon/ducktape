@@ -23,7 +23,9 @@ type config struct {
 	DatabaseURL string `mapstructure:"database_url"`
 	// ReaderAccounts may call the read API; their namespaces are the ones a reader's token may come from.
 	ReaderAccounts []auth.Account `mapstructure:"reader_accounts"`
-	TokenAudience  string         `mapstructure:"token_audience"`
+	// Delegation is a separate Action actor grant and only applies to its listed RPC methods.
+	Delegation    *delegationConfig `mapstructure:"delegation"`
+	TokenAudience string            `mapstructure:"token_audience"`
 	// RequestTimeoutSeconds bounds a call's backend work and each write to a watch stream.
 	RequestTimeoutSeconds float64       `mapstructure:"request_timeout_s"`
 	ListenAddress         string        `mapstructure:"listen_address"`
@@ -36,6 +38,12 @@ type config struct {
 	NativeFrameReadBatchSize int     `mapstructure:"native_frame_read_batch_size"`
 	// WatchLeaseSeconds is how long a watch or follow stream lasts before planned renewal.
 	WatchLeaseSeconds float64 `mapstructure:"watch_lease_s"`
+}
+
+type delegationConfig struct {
+	Actor            auth.Account `mapstructure:"actor"`
+	CallerNamespaces []string     `mapstructure:"caller_namespaces"`
+	Methods          []string     `mapstructure:"methods"`
 }
 
 // ingressConfig is the runners' listener, apart from the read API so the network fence can admit the egress proxy
@@ -97,6 +105,10 @@ func (c *config) validate() error {
 	}
 	if len(c.ReaderAccounts) == 0 {
 		return errors.New("reader_accounts must list at least one ServiceAccount")
+	}
+	if c.Delegation != nil && (c.Delegation.Actor.Namespace == "" || c.Delegation.Actor.Name == "" ||
+		len(c.Delegation.CallerNamespaces) == 0 || len(c.Delegation.Methods) == 0) {
+		return errors.New("delegation requires an actor, caller namespaces and methods")
 	}
 	if len(c.Ingress.WriterNamespaces) == 0 {
 		return errors.New("ingress.writer_namespaces must list at least one namespace")

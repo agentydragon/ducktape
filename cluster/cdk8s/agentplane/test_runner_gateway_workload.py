@@ -13,6 +13,7 @@ from cluster.cdk8s.agentplane import (
     actions,
     app,
     chart as agentplane_chart,
+    history_service,
     notifications,
     runner_gateway,
     runner_gateway_workload,
@@ -143,6 +144,47 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         "virtualmachineinstances",
     }
     assert "patch" in one(rule for rule in role["rules"] if rule["resources"] == ["sandboxes"])["verbs"]
+
+
+def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manifests: list[dict[str, Any]]) -> None:
+    namespace = staging.ENV.namespace
+    actions_account = f"{namespace}/{actions.NAME}"
+    gateway = yaml.safe_load(
+        _resource(staging_manifests, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
+    )
+    history = yaml.safe_load(
+        _resource(staging_manifests, "ConfigMap", f"{history_service.NAME}-config")["data"]["config.yaml"]
+    )
+    gateway_delegation = gateway["delegation"]
+    assert gateway_delegation["actor"] == actions_account
+    assert gateway_delegation["caller_namespaces"] == [namespace]
+    assert gateway_delegation["methods"] == [
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeModel",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeReasoningEffort",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/OpenSession",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSessionOpening",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/WatchDispatches",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
+    ]
+    history_delegation = history["delegation"]
+    assert history_delegation["actor"] == actions_account
+    assert history_delegation["caller_namespaces"] == [namespace]
+    assert history_delegation["methods"] == [
+        "/agentplane.history_service.HistoryService/ReadSessionEvents",
+        "/agentplane.history_service.HistoryService/FollowSession",
+        "/agentplane.history_service.HistoryService/ReadSessionObservations",
+        "/agentplane.history_service.HistoryService/GetSessionSummary",
+        "/agentplane.history_service.HistoryService/BatchGetSessionSummaries",
+        "/agentplane.history_service.HistoryService/ReadThreadEntities",
+        "/agentplane.history_service.HistoryService/ReadEntityEvidence",
+        "/agentplane.history_service.HistoryService/ReadNativeFrames",
+        "/agentplane.history_service.HistoryService/FindSessions",
+        "/agentplane.history_service.HistoryService/WatchSessionSummaries",
+    ]
 
 
 def test_the_settings_file_the_gateway_reads_is_mounted_beside_its_token(scratch_app: App) -> None:

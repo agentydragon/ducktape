@@ -57,6 +57,32 @@ func TestSettingsLoadFromTheFileAndTheEnvironmentWithTheirDefaults(t *testing.T)
 	}
 }
 
+func TestDelegationTrustIsAnIndependentExactMethodSetting(t *testing.T) {
+	file := requiredFile + `delegation:
+  actor: test-agentplane/actions
+  caller_namespaces: [test-agentplane]
+  methods: [/agentplane.history_service.HistoryService/ReadSessionEvents]
+`
+	c, err := loadTestConfig(t, file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Delegation == nil || c.Delegation.Actor != (auth.Account{Namespace: "test-agentplane", Name: "actions"}) ||
+		!slices.Equal(c.Delegation.CallerNamespaces, []string{"test-agentplane"}) ||
+		!slices.Equal(c.Delegation.Methods, []string{"/agentplane.history_service.HistoryService/ReadSessionEvents"}) {
+		t.Fatalf("delegation settings were not kept separate and explicit: %+v", c.Delegation)
+	}
+	for _, incomplete := range []string{
+		requiredFile + "delegation: {actor: test-agentplane/actions}\n",
+		requiredFile + "delegation: {actor: test-agentplane/actions, caller_namespaces: [], methods: [x]}\n",
+		requiredFile + "delegation: {actor: malformed, caller_namespaces: [test-agentplane], methods: [x]}\n",
+	} {
+		if _, err := loadTestConfig(t, incomplete); err == nil {
+			t.Fatalf("accepted incomplete or malformed delegation setting: %s", incomplete)
+		}
+	}
+}
+
 func TestASettingAFileSetsToItsNonDefaultOverridesTheDefault(t *testing.T) {
 	c, err := loadTestConfig(t, requiredFile+"listen_address: 127.0.0.1:9000\nwatch_lease_s: 1.5\n", settingPrefix+"FOLD_CONCURRENCY=7")
 	if err != nil {

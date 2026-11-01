@@ -35,6 +35,8 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -90,13 +92,18 @@ func openDatabase(ctx context.Context, databaseURL string, connections int) (*sq
 	return db, nil
 }
 
-func readerNamespaces(accounts []auth.Account, servedNamespaces []string) []string {
-	namespaces := make(map[string]struct{}, len(accounts)+len(servedNamespaces))
+func readerNamespaces(accounts []auth.Account, servedNamespaces []string, extra ...auth.Account) []string {
+	namespaces := make(map[string]struct{}, len(accounts)+len(servedNamespaces)+len(extra))
 	for _, account := range accounts {
 		namespaces[account.Namespace] = struct{}{}
 	}
 	for _, namespace := range servedNamespaces {
 		namespaces[namespace] = struct{}{}
+	}
+	for _, account := range extra {
+		if account.Namespace != "" {
+			namespaces[account.Namespace] = struct{}{}
+		}
 	}
 	result := make([]string, 0, len(namespaces))
 	for namespace := range namespaces {
@@ -143,7 +150,12 @@ func run(ctx context.Context, c config) error {
 
 // serve answers the read API on listener and the runner ingress on ingressListener until ctx ends.
 func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, ingressListener net.Listener) error {
-	readerAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.TokenAudience, readerNamespaces(c.ReaderAccounts, c.Ingress.WriterNamespaces))
+	var delegatedNamespaces []auth.Account
+	if c.Delegation != nil {
+		delegatedNamespaces = append(delegatedNamespaces, c.Delegation.Actor)
+	}
+	readerAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.TokenAudience,
+		readerNamespaces(c.ReaderAccounts, c.Ingress.WriterNamespaces, delegatedNamespaces...))
 	if err != nil {
 		return err
 	}
@@ -187,7 +199,25 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 	})
 	methods := auth.HealthMethods()
 	// A watch or follow carries no deadline of its own, so the request timeout bounds its admission.
-	maps.Copy(methods, api.Methods(readerAuth))
+	historyMethods := api.Methods(readerAuth)
+	if c.Delegation != nil {
+		delegator := auth.Delegator{Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces}
+		uidReader := auth.ServiceAccountUIDReaderFunc(func(ctx context.Context, account auth.Account) (string, bool, error) {
+			serviceAccount, err := kube.CoreV1().ServiceAccounts(account.Namespace).Get(ctx, account.Name, metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				return "", false, nil
+			}
+			if err != nil {
+				return "", false, err
+			}
+			return string(serviceAccount.UID), true, nil
+		})
+		historyMethods, err = api.MethodsWithDelegation(readerAuth, delegator, uidReader, c.Delegation.Methods)
+		if err != nil {
+			return fmt.Errorf("configure History delegation: %w", err)
+		}
+	}
+	maps.Copy(methods, historyMethods)
 	server := grpc.NewServer(append(methods.ServerOptions(seconds(c.RequestTimeoutSeconds)), observability.GRPCServerOption())...)
 	historypb.RegisterHistoryServiceServer(server, service)
 	healthServer := health.NewServer()

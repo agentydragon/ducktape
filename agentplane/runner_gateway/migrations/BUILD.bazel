@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 go_library(
@@ -10,6 +10,20 @@ go_library(
     deps = [
         "@com_github_pressly_goose_v3//:goose",
         "@com_github_pressly_goose_v3//lock",
+    ],
+)
+
+go_test(
+    name = "upgrade_integration_test",
+    srcs = [
+        "integration_testmain_test.go",
+        "upgrade_integration_test.go",
+    ],
+    embed = [":migrations"],
+    tags = ["requires_docker"],
+    deps = [
+        "//agentplane/testing/postgres",
+        "@com_github_lib_pq//:pq",
     ],
 )
 

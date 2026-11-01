@@ -54,7 +54,7 @@ func writeSettings(t *testing.T, contents string) string {
 }
 
 func TestCallerListsComeFromTheFileAndKeepAuthAndWakePoliciesSeparate(t *testing.T) {
-	path := writeSettings(t, requiredFile+"wake_callers: [agentplane/app]\n")
+	path := writeSettings(t, requiredFile+"wake_callers: [agentplane/app]\ndelegation:\n  actor: agentplane/actions\n  caller_namespaces: [agentplane]\n  methods: [/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput]\n")
 	c, err := loadTestConfig(t, required(t,
 		settingPrefix+"CONFIG_FILE="+path, settingPrefix+"SANDBOX_CONTROLLER_ACCOUNT=agentplane/sandbox-controller"))
 	if err != nil {
@@ -63,7 +63,10 @@ func TestCallerListsComeFromTheFileAndKeepAuthAndWakePoliciesSeparate(t *testing
 	if !slices.Equal(c.DispatcherCallers, []auth.Account{{Namespace: "agentplane", Name: "app"}, {Namespace: "agentplane", Name: "notifications"}}) ||
 		!slices.Equal(c.WakeCallers, []auth.Account{{Namespace: "agentplane", Name: "app"}}) ||
 		!slices.Equal(c.GatewayCallers, []auth.Account{{Namespace: "agentplane", Name: "runner-gateway"}}) ||
-		c.DispatcherAudience == c.GatewayAudience || c.ControllerAccount.Name != "sandbox-controller" {
+		c.DispatcherAudience == c.GatewayAudience || c.ControllerAccount.Name != "sandbox-controller" || c.Delegation == nil ||
+		c.Delegation.Actor != (auth.Account{Namespace: "agentplane", Name: "actions"}) ||
+		!slices.Equal(c.Delegation.CallerNamespaces, []string{"agentplane"}) ||
+		!slices.Equal(c.Delegation.Methods, []string{"/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput"}) {
 		t.Fatalf("policy boundaries were merged: %+v", c)
 	}
 }
@@ -160,6 +163,7 @@ func TestErrorsNeverCarryTheDatabaseURL(t *testing.T) {
 		{settingPrefix + "CONFIG_FILE=" + writeSettings(t, requiredFile+"unknown_setting: 1\n")},
 		{settingPrefix + "CONFIG_FILE=" + writeSettings(t, "dispatcher_callers: [not-an-account]\ngateway_callers: [agentplane/a]\n")},
 		{settingPrefix + "SANDBOX_CONTROLLER_ACCOUNT=not-an-account"},
+		{settingPrefix + "CONFIG_FILE=" + writeSettings(t, requiredFile+"delegation: {actor: agentplane/actions}\n")},
 	} {
 		_, err := loadTestConfig(t, required(t, bad...))
 		if err == nil {

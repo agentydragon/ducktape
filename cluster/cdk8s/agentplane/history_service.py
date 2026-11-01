@@ -75,6 +75,7 @@ class HistoryService(Construct):
         *,
         database_url: EnvValue,
         callers: dict[ServiceAccountRef, Pods],
+        delegation_actor: ServiceAccountRef | None,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         container_env: Mapping[str, EnvValue] | None = None,
@@ -130,6 +131,23 @@ class HistoryService(Construct):
                 settle_deltas=env.settle_deltas,
             ),
         }
+        if delegation_actor is not None:
+            content["delegation"] = {
+                "actor": f"{delegation_actor.namespace}/{delegation_actor.name}",
+                "caller_namespaces": [env.namespace],
+                "methods": [
+                    "/agentplane.history_service.HistoryService/ReadSessionEvents",
+                    "/agentplane.history_service.HistoryService/FollowSession",
+                    "/agentplane.history_service.HistoryService/ReadSessionObservations",
+                    "/agentplane.history_service.HistoryService/GetSessionSummary",
+                    "/agentplane.history_service.HistoryService/BatchGetSessionSummaries",
+                    "/agentplane.history_service.HistoryService/ReadThreadEntities",
+                    "/agentplane.history_service.HistoryService/ReadEntityEvidence",
+                    "/agentplane.history_service.HistoryService/ReadNativeFrames",
+                    "/agentplane.history_service.HistoryService/FindSessions",
+                    "/agentplane.history_service.HistoryService/WatchSessionSummaries",
+                ],
+            }
         config = SettingsFile(
             self,
             "config",

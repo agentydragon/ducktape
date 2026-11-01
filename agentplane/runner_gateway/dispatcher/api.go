@@ -221,18 +221,76 @@ func Methods(resolver *auth.Resolver) auth.Methods {
 	}
 }
 
+// MethodsWithDelegation adds Actions trust to only the configured full RPC method names.
+func MethodsWithDelegation(
+	resolver *auth.Resolver,
+	delegator auth.Delegator,
+	serviceAccounts auth.ServiceAccountUIDReader,
+	delegatedMethods []string,
+) (auth.Methods, error) {
+	methods, err := Methods(resolver).WithDelegation(
+		delegatedMethods, []auth.Delegator{delegator}, serviceAccounts,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("configure delegated Dispatcher methods: %w", err)
+	}
+	return methods, nil
+}
+
 func (s *Service) caller(ctx context.Context) (CallerIdentity, error) {
-	caller, err := auth.AdmittedReviewedCaller(ctx)
+	effective, err := auth.EffectiveCaller(ctx)
 	if err != nil {
 		return CallerIdentity{}, err
 	}
-	principal := caller.ServiceAccount
-	_, configured := s.DispatcherCallers[principal.Account]
+	attribution := &AdmissionAttribution{
+		Actor: ServiceAccountIdentity{
+			Account: Account{Namespace: effective.Account.Namespace, Name: effective.Account.Name},
+			UID:     effective.ServiceAccountUID,
+		},
+		EffectiveCaller: ServiceAccountIdentity{
+			Account: Account{Namespace: effective.Account.Namespace, Name: effective.Account.Name},
+			UID:     effective.ServiceAccountUID,
+		},
+	}
+	privileged := false
+	admission, err := auth.Admitted(ctx)
+	if err != nil {
+		return CallerIdentity{}, err
+	}
+	switch call := admission.(type) {
+	case auth.DirectAdmission:
+		direct := call
+		if direct.Pod != nil {
+			attribution.ActorPod = &PodIdentity{Name: direct.Pod.PodName, UID: direct.Pod.PodUID}
+			_, configured := s.DispatcherCallers[effective.Account]
+			privileged = configured && direct.Pod.IsPodBound()
+		}
+	case auth.DelegatedAdmission:
+		delegated := call
+		attribution.Actor = ServiceAccountIdentity{
+			Account: Account{Namespace: delegated.Actor.Account.Namespace, Name: delegated.Actor.Account.Name},
+			UID:     delegated.Actor.ServiceAccountUID,
+		}
+		attribution.EffectiveCaller = ServiceAccountIdentity{
+			Account: Account{Namespace: delegated.EffectiveCaller.Account.Namespace, Name: delegated.EffectiveCaller.Account.Name},
+			UID:     delegated.EffectiveCaller.ServiceAccountUID,
+		}
+		attribution.ActorPod = &PodIdentity{Name: delegated.Actor.PodName, UID: delegated.Actor.PodUID}
+		attribution.Action = &ActionCorrelation{
+			RequestID: delegated.Provenance.GetActionRequestId(), ExecutionID: delegated.Provenance.GetActionExecutionId(),
+		}
+	default:
+		return CallerIdentity{}, status.Error(codes.Unauthenticated, "call not admitted")
+	}
+	if err := validateAttribution(attribution); err != nil {
+		return CallerIdentity{}, status.Error(codes.Unauthenticated, "call attribution is invalid")
+	}
 	return CallerIdentity{
-		ServiceAccountIdentity: ServiceAccountIdentity{Account: Account{
-			Namespace: principal.Account.Namespace, Name: principal.Account.Name,
-		}, UID: principal.ServiceAccountUID},
-		Privileged: configured && caller.Pod != nil && caller.Pod.IsPodBound(),
+		ServiceAccountIdentity: ServiceAccountIdentity{
+			Account: Account{Namespace: effective.Account.Namespace, Name: effective.Account.Name},
+			UID:     effective.ServiceAccountUID,
+		},
+		Privileged: privileged, Attribution: attribution,
 	}, nil
 }
 
@@ -446,7 +504,7 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 		execution = account
 	}
 	row, err := s.Store.OpenSessionWithIdentity(ctx, request.GetSessionId(), request.GetSandbox(), current.UID,
-		request.GetSpec(), request.SetupScript, wake, &execution, &caller.ServiceAccountIdentity)
+		request.GetSpec(), request.SetupScript, wake, &execution, &caller.Attribution.Actor, caller.Attribution)
 	if err != nil {
 		return nil, apiError(err)
 	}
