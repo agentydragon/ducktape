@@ -33,7 +33,6 @@ import { resumeSandbox } from "../sandboxes/client";
 import { historyRows, rowKey } from "./history_rows";
 import { SandboxesLiveProvider } from "../sandboxes/live";
 import { ThreadsLiveProvider, useRequiredThreadsLive } from "./live";
-import type { InboxNoticeState } from "../notification_types";
 import { LocalCommands } from "./local_commands";
 import { STREAMING_CURSOR } from "../../../../util/frontend/markdown";
 import { ThreadPage } from "./page";
@@ -140,7 +139,7 @@ let langfuseSearchSettings: LangfuseSearchSettings | null = LANGFUSE_SEARCH_SETT
 // The Dispatcher watches the page opened, which a test answers itself.
 let dispatchWatches: ServedWatch[] = [];
 let threadRows: ThreadView[] | null = null;
-let noticeInboxes: InboxNoticeState[] = [];
+let noticeInboxes: Array<{ inboxId: string; sessionId: string; queued: number; unacknowledged: number }> = [];
 
 beforeEach(() => {
   document.title = "Agentplane";
@@ -177,8 +176,8 @@ beforeEach(() => {
   const served = serveEventStreams((stream) => {
     const { pathname, search } = stream.url;
     eventStreamUrls.push(`${pathname}${search}`);
-    if (pathname === "/threads/notices/stream") {
-      stream.event("snapshot", JSON.stringify({ observedAt: "2026-01-01T12:00:00Z", inboxes: noticeInboxes }));
+    if (pathname === "/upstream/notifications/v1/operator/notices:watch") {
+      stream.send({ snapshot: { observedAt: "2026-01-01T12:00:00Z", inboxes: noticeInboxes } });
       return;
     }
     if (sandboxes === null || reconnected(served, stream)) return;
@@ -193,7 +192,7 @@ beforeEach(() => {
       })
     );
     if (inventoryDrops) stream.drop();
-  });
+  }, undefined, new Set(["/upstream/notifications/v1/operator/notices:watch"]));
   const sandboxFetch = globalThis.fetch;
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
     if (new Headers(init?.headers).get("Accept") === "application/x-ndjson") {

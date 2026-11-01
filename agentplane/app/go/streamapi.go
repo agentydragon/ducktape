@@ -92,6 +92,7 @@ type StreamingDependencies struct {
 	ActionHTTP       streamingUpstream
 	ConnectionHTTP   streamingUpstream
 	HistoryHTTP      streamingUpstream
+	NotificationHTTP streamingUpstream
 	Notifications    sandboxNotificationWatcher
 	NotificationWait time.Duration
 	Egress           egressDecisionWatcher
@@ -109,7 +110,7 @@ func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependenc
 	server.RegisterRawRoute("GET /live/sandboxes/{name}", http.HandlerFunc(routes.liveSandbox), false)
 	server.RegisterRawRoute("GET /live/sandboxes/{name}/egress/decisions", http.HandlerFunc(routes.liveDecisions), false)
 	server.RegisterRawRoute("GET /threads/{thread_id}/events/stream", http.HandlerFunc(routes.threadEvents), false)
-	server.RegisterRawRoute("GET /threads/notices/stream", http.HandlerFunc(routes.threadNotices), true)
+	server.RegisterRawRoute("GET /upstream/notifications/v1/operator/notices:watch", http.HandlerFunc(routes.notificationFacade), true)
 	server.RegisterRawRoute("GET /sandboxes/{name}/notifications/stream", http.HandlerFunc(routes.sandboxNotifications), true)
 	server.RegisterRawRoute("GET /sandboxes/{name}/console/stream", http.HandlerFunc(routes.console), true)
 	for _, method := range []string{http.MethodGet, http.MethodPost} {
@@ -819,24 +820,24 @@ func (r *streamingRoutes) sandboxNotifications(w http.ResponseWriter, request *h
 	}, r.deps.NotificationWait)
 }
 
-func (r *streamingRoutes) threadNotices(w http.ResponseWriter, request *http.Request) {
-	if r.deps.Notifications == nil {
+func (r *streamingRoutes) notificationFacade(w http.ResponseWriter, request *http.Request) {
+	if r.deps.NotificationHTTP == nil {
 		writeDetailError(w, http.StatusServiceUnavailable, "Notification Service is not configured")
 		return
 	}
-	values, present := request.URL.Query()["thread_id"]
+	values, present := request.URL.Query()["sessionIds"]
 	if !present || len(values) == 0 || len(values) > maxNoticeThreads {
-		writeDetailError(w, http.StatusUnprocessableEntity, "thread_id must contain between 1 and 200 values")
+		writeDetailError(w, http.StatusUnprocessableEntity, "sessionIds must contain between 1 and 200 values")
 		return
 	}
-	ids := make([]string, 0, len(values))
+	query := url.Values{}
 	for _, value := range values {
 		id, err := uuid.Parse(value)
 		if err != nil {
-			writeDetailError(w, http.StatusUnprocessableEntity, "thread_id must be a UUID")
+			writeDetailError(w, http.StatusUnprocessableEntity, "sessionIds must be UUIDs")
 			return
 		}
-		ids = append(ids, id.String())
+		query.Add("sessionIds", id.String())
 	}
 	ctx, cancel, err := r.operatorLifetime(request)
 	if err != nil {
@@ -844,23 +845,9 @@ func (r *streamingRoutes) threadNotices(w http.ResponseWriter, request *http.Req
 		return
 	}
 	defer cancel()
-	stream, err := r.deps.Notifications.WatchSessionNotices(ctx, &notifications_operatorpb.WatchSessionNoticesRequest{SessionIds: ids})
-	if err != nil {
-		writeGRPCOpenError(w, err)
-		return
-	}
-	streamCtx, stop := context.WithCancel(ctx)
-	defer stop()
-	r.relayNotificationStream(w, streamCtx, "Notification", func() (proto.Message, error) { return stream.Recv() }, func(message proto.Message) (proto.Message, bool) {
-		response, ok := message.(*notifications_operatorpb.WatchSessionNoticesResponse)
-		if !ok || response == nil {
-			return nil, false
-		}
-		if response.GetReconnectRequired() != nil {
-			return nil, true
-		}
-		return response.GetSnapshot(), false
-	}, r.deps.NotificationWait)
+	forwarded := request.Clone(ctx)
+	forwarded.URL.RawQuery = query.Encode()
+	r.forwardFacade(w, forwarded, ctx, r.deps.NotificationHTTP, "v1/operator/notices:watch", "")
 }
 
 func (r *streamingRoutes) relayNotificationStream(w http.ResponseWriter, ctx context.Context, label string, recv func() (proto.Message, error), snapshot func(proto.Message) (proto.Message, bool), firstWait time.Duration) {

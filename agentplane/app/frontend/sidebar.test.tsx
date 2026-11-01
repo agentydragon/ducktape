@@ -13,15 +13,14 @@ import { SandboxesLiveProvider, type SandboxesSnapshot } from "./sandboxes/live"
 import { Sidebar } from "./sidebar";
 import { threadViewRecorder } from "./threads/thread_view_recorder";
 import { ConnectionIndicator, DEGRADED_AFTER_MS } from "./stream_status";
-import type { InboxNoticeState, SessionNoticeStates } from "./notification_types";
-import { latestOn, reconnected, ServedWatch, serveEventStreams } from "./testing/watch";
+import { latestOn, reconnected, type ServedWatch, serveEventStreams } from "./testing/watch";
 
 vi.mock("./threads/client", async (importOriginal) => ({
   ...(await importOriginal<typeof ThreadClientModule>()),
   listThreadWindow: vi.fn(),
 }));
 
-const NO_NOTICES: Omit<InboxNoticeState, "inboxId" | "sessionId"> = { queued: 0, unacknowledged: 0 };
+const NO_NOTICES = { queued: 0, unacknowledged: 0 };
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(request: Request) => Promise<Response>>();
@@ -136,7 +135,17 @@ async function render(
     initialPath?: string;
     settingsOpen?: boolean;
     open?: boolean;
-    notices?: Record<string, Partial<InboxNoticeState>>;
+    notices?: Record<
+      string,
+      {
+        queued?: number;
+        unacknowledged?: number;
+        notice?: string;
+        noticeWaitReason?: string;
+        eligibleAt?: string;
+        error?: string;
+      }
+    >;
   } = {}
 ): Promise<{
   onOpenSettings: ReturnType<typeof vi.fn>;
@@ -149,10 +158,10 @@ async function render(
   const threadServed: ServedWatch[] = [];
   const served = serveEventStreams((stream) => {
     const { pathname, searchParams } = stream.url;
-    if (pathname === "/threads/notices/stream") {
+    if (pathname === "/upstream/notifications/v1/operator/notices:watch") {
       noticeUrls.push(stream.url.href);
       const inboxes = searchParams
-        .getAll("thread_id")
+        .getAll("sessionIds")
         .filter((session) => session in (options.notices ?? {}))
         .map((session) => ({
           ...NO_NOTICES,
@@ -160,8 +169,7 @@ async function render(
           sessionId: session,
           ...options.notices?.[session],
         }));
-      const states: SessionNoticeStates = { observedAt: "2026-01-01T00:00:00Z", inboxes };
-      stream.event("snapshot", JSON.stringify(states));
+      stream.send({ snapshot: { observedAt: "2026-01-01T00:00:00Z", inboxes } });
       return;
     }
     if (reconnected(served, stream)) return;
@@ -170,7 +178,7 @@ async function render(
       return;
     }
     throw new Error(`Unexpected event stream route: ${pathname}`);
-  });
+  }, undefined, new Set(["/upstream/notifications/v1/operator/notices:watch"]));
   listedThreads = threads;
   const eventFetch = globalThis.fetch;
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
@@ -879,7 +887,7 @@ it("counts each listed thread's unprocessed notifications and flags failed deliv
     },
   });
   await act(async () => {});
-  expect(new URL(noticeUrls[0], "http://test").searchParams.getAll("thread_id")).toEqual(threads.map(({ id }) => id));
+  expect(new URL(noticeUrls[0], "http://test").searchParams.getAll("sessionIds")).toEqual(threads.map(({ id }) => id));
   const badge = (name: string): [string | null, string | null] | undefined => {
     const element = row(name).querySelector(".agentplane-thread-list-row-notices");
     return element === null ? undefined : [element.getAttribute("data-state"), element.textContent];

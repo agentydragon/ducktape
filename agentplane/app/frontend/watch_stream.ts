@@ -14,6 +14,8 @@ export interface WatchHandlers {
   onFrame: (result: unknown) => void;
   /** Called with the opening `connecting` at once, then on every change. */
   onConnection: (connection: StreamConnection) => void;
+  /** Bounds a watch that opens but never sends its initial snapshot. */
+  initialFrameTimeoutMs?: number;
 }
 
 interface Message {
@@ -39,12 +41,16 @@ function results(): TransformStream<string, unknown> {
 }
 
 /** Follows `url` until the returned function is called. */
-export function followWatch(url: string, { onOpen, onFrame, onConnection }: WatchHandlers): () => void {
+export function followWatch(
+  url: string,
+  { onOpen, onFrame, onConnection, initialFrameTimeoutMs }: WatchHandlers
+): () => void {
   return followResponse(url, {
     accept: "application/x-ndjson",
     frames: (body) => body.pipeThrough(results()),
     onOpen,
     onFrame,
     onConnection,
+    initialFrameTimeoutMs,
   });
 }

@@ -648,7 +648,6 @@ agentplane_vitest_test(
     deps = [
         ":client",
         ":live",
-        ":notification_types",
         ":schema",
         ":sidebar",
         ":stream_status",

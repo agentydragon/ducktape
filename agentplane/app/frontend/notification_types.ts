@@ -1,11 +1,10 @@
 /**
- * The Notification Service's operator snapshots as the app relays them to the browser: the proto3 JSON of
+ * The Sandbox Notification Service operator snapshot as the app relays it to the browser: the proto3 JSON of
  * `agentplane/notification_service/notifications_operator.proto`. Names are camelCase, enums are their value
  * names, int64 is a string, a Timestamp is RFC 3339, and a message or `optional` field the service did not set
  * has no key. A field is required here when the service always sets it.
  *
- * Hand-written: the generated TypeScript modules import `google/api/annotations_pb`, which no target provides
- * where they look for it.
+ * This is the app's UID-resolving Sandbox SSE projection; Thread notices use generated protobuf types.
  */
 
 type Timestamp = string;
@@ -25,9 +24,6 @@ export type NoticeWaitReason =
   | "NOTICE_WAIT_REASON_AWAITING_CONFIRMATION"
   | "NOTICE_WAIT_REASON_DEBOUNCING"
   | "NOTICE_WAIT_REASON_READY";
-
-export type NoticeProgress =
-  "NOTICE_PROGRESS_PREPARED" | "NOTICE_PROGRESS_ATTEMPTED" | "NOTICE_PROGRESS_ADMITTED" | "NOTICE_PROGRESS_CONFIRMED";
 
 /** The one key present names the kind of subject. */
 export type GitHubSubject =
@@ -95,16 +91,3 @@ export type InboxStatus = {
 };
 
 export type SandboxNotificationStatus = { observedAt: Timestamp; inboxes: InboxStatus[] };
-
-export type InboxNoticeState = {
-  inboxId: string;
-  sessionId: string;
-  queued: number;
-  unacknowledged: number;
-  notice?: NoticeProgress;
-  noticeWaitReason?: NoticeWaitReason;
-  eligibleAt?: Timestamp;
-  error?: string;
-};
-
-export type SessionNoticeStates = { observedAt: Timestamp; inboxes: InboxNoticeState[] };

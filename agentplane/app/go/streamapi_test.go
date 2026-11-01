@@ -351,7 +351,7 @@ func TestOperatorStreamsAndProxyRoutesRejectWorkloadTokens(t *testing.T) {
 	RegisterStreamingRoutes(server, StreamingDependencies{})
 	ids := uuid.NewString()
 	for _, path := range []string{
-		"/threads/notices/stream?thread_id=" + ids,
+		"/upstream/notifications/v1/operator/notices:watch?sessionIds=" + ids,
 		"/sandboxes/demo/notifications/stream",
 		"/sandboxes/demo/console/stream",
 		"/upstream/dispatcher/v1/items",

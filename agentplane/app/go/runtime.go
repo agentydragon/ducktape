@@ -287,6 +287,15 @@ func run(ctx context.Context, config Config) error {
 		return fmt.Errorf("configure Notification Service gRPC client: %w", err)
 	}
 	defer notificationConn.Close()
+	notificationFacade, err := facade.NewHandler(
+		facadeContext, notificationTarget,
+		time.Duration(config.NotificationsRequestTimeoutSeconds*float64(time.Second)),
+		notifications_operatorpb.RegisterNotificationsOperatorHandlerFromEndpoint,
+	)
+	if err != nil {
+		return fmt.Errorf("configure generated Notification Service HTTP facade: %w", err)
+	}
+	notificationGateway := proxy.NewHandlerUpstream(notificationFacade, config.NotificationsTokenFile)
 	egressTarget, err := grpcTargetFromHTTPURL(config.EgressAdminURL)
 	if err != nil {
 		return fmt.Errorf("configure Egress Service gRPC client: %w", err)
@@ -327,7 +336,7 @@ func run(ctx context.Context, config Config) error {
 		ActionPolicy: actionClient, Federator: federator,
 		ActionServiceURL: config.ActionFederation.ServiceURL,
 		DispatcherHTTP:   dispatcherGateway, ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
-		HistoryHTTP:      historyGateway,
+		HistoryHTTP: historyGateway, NotificationHTTP: notificationGateway,
 		Notifications:    notifications_operatorpb.NewNotificationsOperatorClient(notificationConn),
 		NotificationWait: time.Duration(config.NotificationsRequestTimeoutSeconds * float64(time.Second)),
 		Egress:           egress_adminpb.NewEgressAdminClient(egressConn),

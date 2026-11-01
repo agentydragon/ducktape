@@ -661,7 +661,6 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:mark_glyph",
-        "//agentplane/app/frontend:notification_types",
         "//agentplane/app/frontend:status_mark",
     ],
 )
@@ -763,7 +762,6 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:live",
-        "//agentplane/app/frontend:notification_types",
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:sidebar",
         "//agentplane/app/frontend/sandboxes:client",
@@ -792,12 +790,14 @@ ts_library(
     srcs = ["thread_notices.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:format_time",
-        "//agentplane/app/frontend:live_stream",
-        "//agentplane/app/frontend:notification_types",
+        "//agentplane/app/frontend:stream_reader",
+        "//agentplane/app/frontend:watch_stream",
+        "//agentplane/notification_service:notifications_operator_pb",
     ],
 )
 

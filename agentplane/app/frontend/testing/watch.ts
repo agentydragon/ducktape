@@ -89,16 +89,22 @@ function accepts(init: RequestInit | undefined, type: string): boolean {
 }
 
 /**
- * Stubs `fetch` so that each `text/event-stream` request opens a stream, handed to `open` and
+ * Stubs `fetch` so that each SSE or generated gateway watch request opens a stream, handed to `open` and
  * collected in the returned list in the order of the requests; any other request goes to `other`.
  */
 export function serveEventStreams(
   open: (stream: ServedWatch) => void,
-  other: typeof fetch = globalThis.fetch
+  other: typeof fetch = globalThis.fetch,
+  ndjsonPaths: ReadonlySet<string> = new Set()
 ): ServedWatch[] {
   const served: ServedWatch[] = [];
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
-    if (typeof input !== "string" || !accepts(init, "text/event-stream")) return other(input, init);
+    if (
+      typeof input !== "string" ||
+      (!accepts(init, "text/event-stream") &&
+        !(accepts(init, "application/x-ndjson") && ndjsonPaths.has(new URL(input, "http://test").pathname)))
+    )
+      return other(input, init);
     const stream = new ServedWatch(input, init?.signal ?? undefined);
     served.push(stream);
     open(stream);

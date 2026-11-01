@@ -137,6 +137,7 @@ go_test(
         "//agentplane/app/go/proxy",
         "//agentplane/grpc/facade",
         "//agentplane/mcp_edge:connection_service_go_proto",
+        "//agentplane/notification_service:notifications_operator_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
