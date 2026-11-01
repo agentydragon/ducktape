@@ -7745,6 +7745,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if call.kind == CallKind::New
             && self.is_proven_map_entry_array(&call.callee, &call.args, env, captures, call.owner)
         {
+            // The Map retains its entries, and the interpreter does not track
+            // what it holds: whoever reaches the Map reaches them.
+            let entries = args.iter().flatten().cloned().collect();
+            self.taint_objects(&entries);
             return;
         }
         if call.kind == CallKind::Call
