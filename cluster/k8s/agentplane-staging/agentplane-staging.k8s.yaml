@@ -5573,7 +5573,7 @@ spec:
               - disk:
                   bus: virtio
                 name: runner
-                serial: agentplane-environment-runtime
+                serial: agentplane-runner
               - disk:
                   bus: virtio
                 name: workspace
