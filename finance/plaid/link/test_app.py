@@ -1,11 +1,15 @@
+import asyncio
 import base64
 import hashlib
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
+from threading import Event
 from typing import Any, cast
 from uuid import UUID
 
+import httpx
 import jwt
 import pytest_bazel
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -46,6 +50,7 @@ class _FakeStorage:
         self.purged_item_ids: list[str] = []
         self.queued_item_syncs: list[tuple[str, bool]] = []
         self.webhook_deliveries: list[dict[str, str | None]] = []
+        self.upserted_links: list[StoredLink] = []
 
     def _link(self) -> StoredLink:
         return StoredLink(
@@ -70,6 +75,35 @@ class _FakeStorage:
 
     async def get_link(self, item_id: str) -> StoredLink | None:
         return self._link() if item_id == "item_123" else None
+
+    async def upsert_link(
+        self,
+        *,
+        item_id: str,
+        access_token_secret: str,
+        products_requested: list[str],
+        institution_id: str | None,
+        institution_name: str | None,
+        label: str | None,
+        transaction_days_requested: int | None,
+        products_authorized: list[str],
+        products_billed: list[str],
+    ) -> StoredLink:
+        link = StoredLink(
+            item_id=item_id,
+            label=label,
+            institution_id=institution_id,
+            institution_name=institution_name,
+            products_requested=products_requested,
+            transaction_days_requested=transaction_days_requested,
+            products_authorized=products_authorized,
+            products_billed=products_billed,
+            status="active",
+            access_token_secret=access_token_secret,
+            last_synced_at=None,
+        )
+        self.upserted_links.append(link)
+        return link
 
     async def purge_link_data(self, item_id: str) -> None:
         self.purged_item_ids.append(item_id)
@@ -104,6 +138,7 @@ class _FakeStorage:
 class _FakeSecrets:
     def __init__(self) -> None:
         self.deleted_secret_names: list[str] = []
+        self.written_access_tokens: dict[str, str] = {}
 
     async def read_access_token(self, secret_name: str) -> str:
         if secret_name != "plaid-item-123-access-token":
@@ -111,7 +146,7 @@ class _FakeSecrets:
         return "access-sandbox-existing"
 
     async def write_access_token(self, secret_name: str, access_token: str) -> None:
-        raise AssertionError(f"unexpected secret write in smoke test: {secret_name}")
+        self.written_access_tokens[secret_name] = access_token
 
     async def delete_access_token(self, secret_name: str) -> None:
         self.deleted_secret_names.append(secret_name)
@@ -217,6 +252,34 @@ class _FakePlaidApi(plaid_api.PlaidApi):
         )
 
 
+class _BlockingPublicTokenExchangeApi(_FakePlaidApi):
+    def __init__(self) -> None:
+        super().__init__()
+        self.exchange_started = Event()
+        self.release_exchange = Event()
+
+    def item_public_token_exchange(
+        self, item_public_token_exchange_request: ItemPublicTokenExchangeRequest, **kwargs: Any
+    ) -> Any:
+        self.exchange_started.set()
+        if not self.release_exchange.wait(timeout=10):
+            raise TimeoutError("test did not release the blocked public-token exchange")
+        return super().item_public_token_exchange(item_public_token_exchange_request, **kwargs)
+
+
+class _BlockingItemRemoveApi(_FakePlaidApi):
+    def __init__(self) -> None:
+        super().__init__()
+        self.remove_started = Event()
+        self.release_remove = Event()
+
+    def item_remove(self, item_remove_request: ItemRemoveRequest, **kwargs: Any) -> Any:
+        self.remove_started.set()
+        if not self.release_remove.wait(timeout=10):
+            raise TimeoutError("test did not release the blocked Item removal")
+        return super().item_remove(item_remove_request, **kwargs)
+
+
 def _institution(*, url: str | None = None) -> Institution:
     return cast(
         Institution,
@@ -239,7 +302,26 @@ def _client(
     api: _FakePlaidApi | None = None,
     signed_in: bool = True,
 ) -> TestClient:
-    settings = PlaidWebSettings(
+    settings = _settings()
+    test_client = TestClient(
+        create_app(
+            settings,
+            storage=cast(PlaidLinkStorage, storage or _FakeStorage()),
+            secrets=secrets or _FakeSecrets(),
+            client=PlaidClient(api=api or _FakePlaidApi()),
+        ),
+        base_url=settings.public_base_url,
+        headers={"Origin": settings.public_base_url},
+    )
+    if signed_in:
+        test_client.cookies.set(
+            "__Host-plaid-link-session", _session_cookie(settings), domain="plaid-mcp.test", path="/"
+        )
+    return test_client
+
+
+def _settings() -> PlaidWebSettings:
+    return PlaidWebSettings(
         plaid_env="sandbox",
         client_id="client-id",
         client_secret="client-secret",
@@ -252,30 +334,20 @@ def _client(
         oidc_client_secret="test-client-secret",
         oidc_session_secret="test-session-secret",
     )
-    test_client = TestClient(
-        create_app(
-            settings,
-            storage=cast(PlaidLinkStorage, storage or _FakeStorage()),
-            secrets=secrets or _FakeSecrets(),
-            client=PlaidClient(api=api or _FakePlaidApi()),
-        ),
-        base_url=settings.public_base_url,
-        headers={"Origin": settings.public_base_url},
-    )
-    if signed_in:
-        session = {
-            "user": {
-                "issuer": settings.oidc_issuer,
-                "subject": "test-subject",
-                "username": "agentydragon",
-                "expires_at": time.time() + 3600,
-            }
+
+
+def _session_cookie(settings: PlaidWebSettings) -> str:
+    session = {
+        "user": {
+            "issuer": settings.oidc_issuer,
+            "subject": "test-subject",
+            "username": "agentydragon",
+            "expires_at": time.time() + 3600,
         }
-        encoded_session = base64.b64encode(json.dumps(session, separators=(",", ":")).encode("utf-8"))
-        cookie = TimestampSigner(settings.oidc_session_secret.get_secret_value()).sign(encoded_session).decode("utf-8")
-        # The name browsers already hold sessions under: renaming it signs everyone out.
-        test_client.cookies.set("__Host-plaid-link-session", cookie, domain="plaid-mcp.test", path="/")
-    return test_client
+    }
+    encoded_session = base64.b64encode(json.dumps(session, separators=(",", ":")).encode("utf-8"))
+    # The name browsers already hold sessions under: renaming it signs everyone out.
+    return TimestampSigner(settings.oidc_session_secret.get_secret_value()).sign(encoded_session).decode("utf-8")
 
 
 def test_only_health_and_the_signed_webhook_are_open_without_a_session() -> None:
@@ -455,6 +527,182 @@ def _signed_webhook(api: _FakePlaidApi, payload: dict[str, object]) -> tuple[byt
         headers={"kid": "test-key"},
     )
     return body, token
+
+
+async def test_cancelled_public_token_exchange_persists_token_before_propagating() -> None:
+    api = _BlockingPublicTokenExchangeApi()
+    settings = _settings()
+    storage = _FakeStorage()
+    secrets = _FakeSecrets()
+    app = create_app(
+        settings,
+        storage=cast(PlaidLinkStorage, storage),
+        secrets=secrets,
+        client=PlaidClient(api=api),
+    )
+
+    lifespan = app.router.lifespan_context(app)
+    await lifespan.__aenter__()
+    shutdown: asyncio.Task[bool | None] | None = None
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url=settings.public_base_url,
+            headers={
+                "Origin": settings.public_base_url,
+                "Cookie": f"__Host-plaid-link-session={_session_cookie(settings)}",
+            },
+        ) as client:
+            request = asyncio.create_task(
+                client.post(
+                    "/api/exchange-public-token",
+                    json={"public_token": "public-sandbox-token", "products": ["transactions"]},
+                )
+            )
+            try:
+                assert await asyncio.to_thread(api.exchange_started.wait, 5)
+                request.cancel()
+                shutdown = asyncio.create_task(lifespan.__aexit__(None, None, None))
+                completed, _ = await asyncio.wait({shutdown}, timeout=0.05)
+                assert not completed, "lifespan closed while a cancelled exchange was still running"
+            finally:
+                api.release_exchange.set()
+            cancelled = False
+            try:
+                await request
+            except asyncio.CancelledError:
+                cancelled = True
+    finally:
+        api.release_exchange.set()
+        if shutdown is None:
+            await lifespan.__aexit__(None, None, None)
+        else:
+            await shutdown
+
+    assert cancelled
+    assert secrets.written_access_tokens == {"plaid-item-sandbox-new-access-token": "access-sandbox-new"}
+    assert [link.item_id for link in storage.upserted_links] == ["item-sandbox-new"]
+
+
+async def test_cancelled_item_removal_purges_local_state_after_plaid_removes_item() -> None:
+    api = _BlockingItemRemoveApi()
+    settings = _settings()
+    storage = _FakeStorage()
+    secrets = _FakeSecrets()
+    app = create_app(
+        settings,
+        storage=cast(PlaidLinkStorage, storage),
+        secrets=secrets,
+        client=PlaidClient(api=api),
+    )
+
+    async with app.router.lifespan_context(app), httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url=settings.public_base_url,
+        headers={
+            "Origin": settings.public_base_url,
+            "Cookie": f"__Host-plaid-link-session={_session_cookie(settings)}",
+        },
+    ) as client:
+        request = asyncio.create_task(client.post("/api/links/item_123/remove"))
+        try:
+            assert await asyncio.to_thread(api.remove_started.wait, 5)
+            request.cancel()
+        finally:
+            api.release_remove.set()
+        cancelled = False
+        try:
+            await request
+        except asyncio.CancelledError:
+            cancelled = True
+
+    assert cancelled
+    assert api.removed_access_tokens == ["access-sandbox-existing"]
+    assert secrets.deleted_secret_names == ["plaid-item-123-access-token"]
+    assert storage.purged_item_ids == ["item_123"]
+
+
+class _BlockingInstitutionSearchApi(_FakePlaidApi):
+    def __init__(self) -> None:
+        super().__init__()
+        self.search_started = Event()
+        self.release_search = Event()
+
+    def institutions_search(self, institutions_search_request: InstitutionsSearchRequest, **kwargs: Any) -> Any:
+        self.search_started.set()
+        if not self.release_search.wait(timeout=10):
+            raise TimeoutError("test did not release the blocked institution search")
+        return super().institutions_search(institutions_search_request, **kwargs)
+
+
+async def test_cancelled_sdk_call_is_drained_before_lifespan_shutdown() -> None:
+    api = _BlockingInstitutionSearchApi()
+    settings = _settings()
+    app = create_app(
+        settings,
+        storage=cast(PlaidLinkStorage, _FakeStorage()),
+        secrets=_FakeSecrets(),
+        client=PlaidClient(api=api),
+    )
+
+    lifespan = app.router.lifespan_context(app)
+    await lifespan.__aenter__()
+    shutdown: asyncio.Task[bool | None] | None = None
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url=settings.public_base_url,
+            headers={
+                "Origin": settings.public_base_url,
+                "Cookie": f"__Host-plaid-link-session={_session_cookie(settings)}",
+            },
+        ) as client:
+            request = asyncio.create_task(client.get("/api/institutions", params={"q": "cha"}))
+            assert await asyncio.to_thread(api.search_started.wait, 5)
+            request.cancel()
+            shutdown = asyncio.create_task(lifespan.__aexit__(None, None, None))
+            completed, _ = await asyncio.wait({shutdown}, timeout=0.05)
+            assert not completed, "lifespan closed while its cancelled SDK worker was still running"
+            api.release_search.set()
+            cancelled = False
+            try:
+                await request
+            except asyncio.CancelledError:
+                cancelled = True
+            assert cancelled
+    finally:
+        api.release_search.set()
+        if shutdown is None:
+            await lifespan.__aexit__(None, None, None)
+        else:
+            await shutdown
+
+
+def test_blocked_plaid_search_does_not_block_health_or_webhook() -> None:
+    api = _BlockingInstitutionSearchApi()
+    body, token = _signed_webhook(
+        api,
+        {"webhook_type": "TRANSACTIONS", "webhook_code": "INITIAL_UPDATE", "item_id": "item_123"},
+    )
+
+    with _client(api=api) as client, ThreadPoolExecutor(max_workers=3) as requests:
+        search = requests.submit(client.get, "/api/institutions", params={"q": "cha"})
+        assert api.search_started.wait(timeout=5)
+        health = requests.submit(client.get, "/healthz")
+        webhook = requests.submit(
+            client.post,
+            "/webhooks/plaid",
+            content=body,
+            headers={"Plaid-Verification": token, "Content-Type": "application/json"},
+        )
+        try:
+            assert health.result(timeout=5).status_code == 200
+            webhook_response = webhook.result(timeout=5)
+        finally:
+            api.release_search.set()
+        assert webhook_response.status_code == 200
+        assert webhook_response.json() == {"status": "ignored"}
+        assert search.result(timeout=5).status_code == 200
 
 
 def test_signed_transactions_webhook_is_queued_and_body_tampering_is_rejected() -> None:
