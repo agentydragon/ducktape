@@ -55,7 +55,7 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 8,
         "x": 0,
         "y": 7
       },
@@ -94,8 +94,8 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 4,
+        "w": 8,
+        "x": 8,
         "y": 7
       },
       "datasource": "${DS_MIMIR}",
@@ -133,8 +133,8 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 8,
+        "w": 8,
+        "x": 16,
         "y": 7
       },
       "datasource": "${DS_MIMIR}",
@@ -172,9 +172,9 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 7
+        "w": 8,
+        "x": 0,
+        "y": 11
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -211,9 +211,9 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 7
+        "w": 8,
+        "x": 8,
+        "y": 11
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -250,9 +250,9 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 7
+        "w": 8,
+        "x": 16,
+        "y": 11
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -291,7 +291,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 11
+        "y": 15
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -310,72 +310,10 @@
         "defaults": {
           "unit": "bytes",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#5794F2"
+            "mode": "palette-classic"
           }
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/^ovh-ns1001419 · .* used$/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#5794F2"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/^ovh-ns104952 · .* used$/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#B877D9"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/^ovh-ns104963 · .* used$/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#6ED0E0"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/^.* capacity$/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#8e8e8e"
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "options": {
         "legend": {
@@ -399,7 +337,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 11
+        "y": 15
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -418,72 +356,10 @@
         "defaults": {
           "unit": "bytes",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#5794F2"
+            "mode": "palette-classic"
           }
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/^ovh-ns1001419 · .* copy limits$/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#5794F2"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/^ovh-ns104952 · .* copy limits$/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#B877D9"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/^ovh-ns104963 · .* copy limits$/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#6ED0E0"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/^.* capacity$/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#8e8e8e"
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "options": {
         "legend": {
@@ -501,13 +377,13 @@
     {
       "id": 34,
       "title": "Piraeus thin-pool accounting by storage node",
-      "description": "Physical capacity, used and free bytes are shown separately from the sum of diskful PV limits. Uncommitted headroom is capacity minus those limits and may be negative.",
+      "description": "Physical pool usage and capacity are shown separately from the sum of diskful PV limits. Uncommitted headroom is capacity minus those limits and may be negative.",
       "type": "table",
       "gridPos": {
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 24
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -524,7 +400,7 @@
           "refId": "B"
         },
         {
-          "expr": "disk_usage:pool_free_bytes{node=~\"$node\"}",
+          "expr": "disk_usage:pool_used_bytes{node=~\"$node\"} / on (node, storage_pool) disk_usage:pool_capacity_bytes{node=~\"$node\"}",
           "format": "table",
           "instant": true,
           "refId": "C"
@@ -694,9 +570,9 @@
             "indexByName": {
               "node": 0,
               "storage_pool": 1,
-              "Value #A": 2,
-              "Value #B": 3,
-              "Value #C": 4,
+              "Value #A": 3,
+              "Value #B": 4,
+              "Value #C": 2,
               "Value #D": 5,
               "Value #E": 6,
               "Value #F": 7
@@ -706,7 +582,7 @@
               "storage_pool": "Pool",
               "Value #A": "Physical capacity",
               "Value #B": "Physical used",
-              "Value #C": "Physical free",
+              "Value #C": "Physical used %",
               "Value #D": "Diskful copy limits",
               "Value #E": "Copy limits / capacity",
               "Value #F": "Uncommitted limit headroom"
@@ -746,6 +622,22 @@
                 "value": 1
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Physical used %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
           }
         ]
       },
@@ -766,7 +658,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 34
       },
       "panels": []
     },
@@ -779,7 +671,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 35
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -838,7 +730,7 @@
         "h": 14,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 47
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -990,7 +882,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 57
+        "y": 61
       },
       "panels": []
     },
@@ -1003,7 +895,7 @@
         "h": 11,
         "w": 24,
         "x": 0,
-        "y": 58
+        "y": 62
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
