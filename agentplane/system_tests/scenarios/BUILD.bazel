@@ -255,6 +255,7 @@ py_library(
     deps = [
         "//agentplane/app/testing:client",
         "//agentplane/app/testing:models",
+        "//agentplane/grpc:calls",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",

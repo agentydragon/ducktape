@@ -27,6 +27,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.app.testing.models import SandboxView
+from agentplane.grpc.calls import ServiceError
 from agentplane.proto import command_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
@@ -209,11 +210,11 @@ async def every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event
         command = _input("test-tabs-first", "Reply with exactly: TABS_FIRST")
         await _submit(dispatcher, thread_id, view, command)
         # The Dispatcher id names that command alone.
-        with pytest.raises(grpc.aio.AioRpcError) as reused:
+        with pytest.raises(ServiceError) as reused:
             await dispatcher.submit_input(
                 str(thread_id), command.command_id, view.name, str(view.uid), "Something else"
             )
-        assert reused.value.code() == grpc.StatusCode.ALREADY_EXISTS
+        assert reused.value.code == grpc.StatusCode.ALREADY_EXISTS
         # An exact retry, as after a lost response, answers the same command.
         await _submit(dispatcher, thread_id, view, command)
         request = await model.request()
