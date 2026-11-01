@@ -242,6 +242,9 @@ Repeatable `--effect-conflicts-chunk` requires the export flag and validates
 names against configured materialized chunks. It filters only S4 JSONL sinks:
 source inputs, analysis/census selection, graphs and bounded summaries are
 unchanged. With no filter every materialized chunk can export.
+The Bazel pipeline exposes the same opt-in through `effect_conflicts_jsonl`
+and `effect_conflicts_chunks`; only its final run action receives these flags,
+and streams remain inside the existing reports tree.
 Full semantic precision remains incomplete; see
 <docs/wire_format.md#translation-validation>.
 

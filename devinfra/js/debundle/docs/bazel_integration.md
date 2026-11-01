@@ -53,6 +53,18 @@ path, served as the `dependency_graphs` output group
 the output (gigabytes against megabytes of modules); paths in reports and the
 `GATE_REJECTED` marker still name their original location.
 
+To export full effect-conflict rows, set `effect_conflicts_jsonl = True`.
+Optionally restrict the JSONL sinks with
+`effect_conflicts_chunks = ["main", "worker"]`; an empty list selects every
+materialized chunk. The CLI validates the IDs and requires the export flag
+when a filter is supplied. These attrs affect only the final pipeline action:
+the analysis projection, analyzed inputs, graphs and bounded reports retain
+their existing scope. JSONL files stay beside the other chunk reports under
+`<target>.out/reports/`, including when dependency graphs are split out. No
+additional output group is needed. Export is disabled by default; report
+availability and gate rejection follow the existing CLI policy described in
+[Running the pipeline](cli.md#running-the-pipeline).
+
 ## Integration boundary
 
 Corpus integrations use `pipeline.bzl`'s `debundle_pipeline`, the public

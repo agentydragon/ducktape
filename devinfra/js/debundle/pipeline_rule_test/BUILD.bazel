@@ -1,0 +1,117 @@
+load("//devinfra/js/debundle:pipeline.bzl", "debundle_pipeline")
+load(":pipeline_rule_test.bzl", "pipeline_report_flags_test")
+
+package(default_testonly = True)
+
+filegroup(
+    name = "spec",
+    srcs = glob(["fixture/**/*.yaml"]),
+)
+
+filegroup(
+    name = "source",
+    srcs = [
+        "fixture/js-files.txt",
+        "fixture/source/main.js",
+    ],
+)
+
+debundle_pipeline(
+    name = "jsonl_default",
+    input_data = [":source"],
+    spec_tree_inputs = [":spec"],
+    tags = ["manual"],
+    tree_config = "fixture/config.yaml",
+    tree_modules = "fixture/modules",
+    tree_source_root = ":source",
+    tree_vendor_marks = "fixture/vendor_marks.yaml",
+)
+
+debundle_pipeline(
+    name = "jsonl_readable_default",
+    emit_on_rejection = True,
+    input_data = [":source"],
+    spec_tree_inputs = [":spec"],
+    split_dependency_graphs = True,
+    tags = ["manual"],
+    tree_config = "fixture/config.yaml",
+    tree_modules = "fixture/modules",
+    tree_source_root = ":source",
+    tree_vendor_marks = "fixture/vendor_marks.yaml",
+)
+
+[
+    debundle_pipeline(
+        name = name,
+        effect_conflicts_chunks = chunks,
+        effect_conflicts_jsonl = export,
+        emit_on_rejection = readable,
+        input_data = [":source"],
+        spec_tree_inputs = [":spec"],
+        split_dependency_graphs = readable,
+        tags = ["manual"],
+        tree_config = "fixture/config.yaml",
+        tree_modules = "fixture/modules",
+        tree_source_root = ":source",
+        tree_vendor_marks = "fixture/vendor_marks.yaml",
+    )
+    for name, export, chunks, readable in [
+        ("jsonl_export", True, [], False),
+        (
+            "jsonl_filtered",
+            True,
+            [
+                "main",
+                "static/quote'; $(printf injected) `printf injected`",
+            ],
+            False,
+        ),
+        (
+            "jsonl_readable_filtered",
+            True,
+            [
+                "main",
+                "worker",
+            ],
+            True,
+        ),
+    ]
+]
+
+pipeline_report_flags_test(
+    name = "default_test",
+    baseline = ":jsonl_default",
+    target_under_test = ":jsonl_default",
+)
+
+pipeline_report_flags_test(
+    name = "export_test",
+    baseline = ":jsonl_default",
+    expected_flags = "--effect-conflicts-jsonl",
+    target_under_test = ":jsonl_export",
+)
+
+pipeline_report_flags_test(
+    name = "filtered_test",
+    baseline = ":jsonl_default",
+    expected_flags = "--effect-conflicts-jsonl --effect-conflicts-chunk 'main' --effect-conflicts-chunk 'static/quote'\\''; $(printf injected) `printf injected`'",
+    target_under_test = ":jsonl_filtered",
+)
+
+pipeline_report_flags_test(
+    name = "readable_test",
+    baseline = ":jsonl_readable_default",
+    expected_flags = "--effect-conflicts-jsonl --effect-conflicts-chunk 'main' --effect-conflicts-chunk 'worker'",
+    readable = True,
+    target_under_test = ":jsonl_readable_filtered",
+)
+
+test_suite(
+    name = "tests",
+    tests = [
+        ":default_test",
+        ":export_test",
+        ":filtered_test",
+        ":readable_test",
+    ],
+)

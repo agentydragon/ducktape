@@ -386,6 +386,34 @@ fn export_chunk_filter_requires_export_and_rejects_unknown_chunks() {
             ],
             "unknown --effect-conflicts-chunk",
         ),
+        (
+            vec!["--effect-conflicts-jsonl", "--effect-conflicts-chunk", ""],
+            "Expected a non-empty relative path",
+        ),
+        (
+            vec![
+                "--effect-conflicts-jsonl",
+                "--effect-conflicts-chunk",
+                "/main",
+            ],
+            "Expected a non-empty relative path",
+        ),
+        (
+            vec![
+                "--effect-conflicts-jsonl",
+                "--effect-conflicts-chunk",
+                "../main",
+            ],
+            "Invalid relative path",
+        ),
+        (
+            vec![
+                "--effect-conflicts-jsonl",
+                "--effect-conflicts-chunk",
+                "main/..",
+            ],
+            "Invalid relative path",
+        ),
     ] {
         let mut args = vec!["run", "--spec", fixture.spec_path.to_str().unwrap()];
         args.extend(flags);
