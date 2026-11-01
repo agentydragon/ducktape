@@ -161,7 +161,7 @@ type Settings struct {
 	Listen                           string                      `json:"listen"`
 	Audience                         string                      `json:"audience"`
 	AllowedAccounts                  []string                    `json:"allowed_accounts"`
-	PlatformInstructions             string                      `json:"platform_instructions"`
+	PlatformInstructions             *string                     `json:"platform_instructions,omitempty"`
 	CodeModeHost                     string                      `json:"code_mode_host"`
 	ExecutorCodex                    string                      `json:"executor_codex"`
 	Logs                             string                      `json:"logs"`
@@ -222,8 +222,8 @@ func decodeSettings(reader io.Reader) (Settings, error) {
 }
 
 func (s Settings) Validate() error {
-	if strings.TrimSpace(s.PlatformInstructions) == "" {
-		return errors.New("platform_instructions is required")
+	if s.PlatformInstructions != nil && strings.TrimSpace(*s.PlatformInstructions) == "" {
+		return errors.New("platform_instructions must not be empty when configured")
 	}
 	for name, value := range map[string]string{
 		"database_url":   s.DatabaseURL,

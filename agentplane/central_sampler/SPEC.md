@@ -23,6 +23,11 @@ that effective prompt separately from the raw opening request, which remains the
 An exact duplicate open reuses the stored prompt even if the configured guide has changed; a new
 Session receives the current guide. Provider and harness base instructions remain separate.
 
+If `platform_instructions` is omitted, startup logs a warning and new Sessions retain the previous
+caller-only prompt. An explicitly configured guide must be nonempty. This allows the reader to
+deploy before managed configuration enables the guide; the omission is controlled by the operator,
+never by a Session's opening request. Enabling or changing the guide affects only new Sessions.
+
 Opening or briefing a Session does not start a provider turn. Optional setup may execute first, but
 the first model turn starts only after an explicit `SubmitInput`.
 

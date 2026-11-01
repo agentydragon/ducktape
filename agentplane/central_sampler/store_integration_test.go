@@ -33,7 +33,8 @@ func openStoreSession(t *testing.T, store *Store, request *samplerpb.OpenSession
 			Sandbox: "fixture-sandbox", SandboxUid: "fixture-sandbox-uid",
 		}
 	}
-	return store.OpenSession(t.Context(), request, ownerUID, api, fixturePlatformInstructions)
+	platformInstructions := fixturePlatformInstructions
+	return store.OpenSession(t.Context(), request, ownerUID, api, &platformInstructions)
 }
 
 func openSessionForStore(t *testing.T, store *Store, setup string) *Session {

@@ -14,7 +14,6 @@ from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import central_sampler, database, history_service, llm_ingress, runner_gateway
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.platform_instructions import SessionRuntime, platform_instructions
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.config_format import json_config
 from cluster.cdk8s.probes import grpc_probe
@@ -67,7 +66,6 @@ class CentralSampler(Construct):
             listen=f"0.0.0.0:{self.service.pod_port}",
             connections=dict(props.connections),
             models=dict(props.models),
-            platform_instructions=platform_instructions(env, session_runtime=SessionRuntime.CENTRAL_SAMPLER),
             audience=central_sampler.TOKEN_AUDIENCE,
             allowed_accounts={f"{namespace}/{runner_gateway.NAME}"},
             code_mode_host=Path("/usr/local/bin/codex-code-mode-host"),

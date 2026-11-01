@@ -53,7 +53,7 @@ CPU and memory limits.
 
 Server-owned configuration names the service, provider connections and credential sources,
 model contracts and per-model reasoning-effort allowlists, the rendered Agentplane
-`platform_instructions`, TokenReview audience and allowed caller accounts,
+optional `platform_instructions`, TokenReview audience and allowed caller accounts,
 code-mode host binary, executor-side Codex path, logs, concurrency/deadlines and limits. Each named connection uses `auth.type` (`bearer` or `anthropic_api_key`) and exactly one of
 `auth.credential` or `auth.credential_file`; the service reads the file before each request so projected service-account tokens can rotate. `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL`
 overrides `database_url` in the JSON settings, so database credentials can stay in a Secret-backed

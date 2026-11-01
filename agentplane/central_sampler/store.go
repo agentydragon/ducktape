@@ -335,8 +335,8 @@ func appendEvent(ctx context.Context, tx *sql.Tx, session *Session, event *event
 	return entry, nil
 }
 
-func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionRequest, ownerUID string, api protocol.APIStyle, platformInstructions string) (*Session, error) {
-	if request == nil || request.GetSessionId() == "" || request.GetSpec() == nil || ownerUID == "" || strings.TrimSpace(platformInstructions) == "" {
+func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionRequest, ownerUID string, api protocol.APIStyle, platformInstructions *string) (*Session, error) {
+	if request == nil || request.GetSessionId() == "" || request.GetSpec() == nil || ownerUID == "" || (platformInstructions != nil && strings.TrimSpace(*platformInstructions) == "") {
 		return nil, protocol.ErrInvalid
 	}
 	executor := request.GetExecutor()
@@ -406,14 +406,17 @@ func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionR
 		conversationID := uuid.NewString()
 		// Freeze the effective prompt at first admission. Session.Configuration below keeps the raw
 		// request for idempotency, so a duplicate open never recomposes against changed settings.
-		instructions := sessioninstructions.Compose(platformInstructions, sessioninstructions.Destination{
-			Sandbox: sessioninstructions.SandboxIdentity{
-				Namespace: executor.GetOwner().GetNamespace(),
-				Name:      executor.GetSandbox(),
-				UID:       executor.GetSandboxUid(),
-			},
-			SessionID: request.GetSessionId(),
-		}, request.GetSpec().GetInstructions())
+		instructions := request.GetSpec().GetInstructions()
+		if platformInstructions != nil {
+			instructions = sessioninstructions.Compose(*platformInstructions, sessioninstructions.Destination{
+				Sandbox: sessioninstructions.SandboxIdentity{
+					Namespace: executor.GetOwner().GetNamespace(),
+					Name:      executor.GetSandbox(),
+					UID:       executor.GetSandboxUid(),
+				},
+				SessionID: request.GetSessionId(),
+			}, instructions)
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_conversation(id,generation,owner,lease_until,pending,stopped,
 			executor_session,context,instructions,context_tokens,api) VALUES($1,0,NULL,NULL,NULL,FALSE,NULL,NULL,$2,NULL,$3)`,
 			conversationID, instructions, api); err != nil {
