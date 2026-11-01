@@ -1,6 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//agentplane/runner:__subpackages__"])
+package(
+    default_visibility = [
+        "//agentplane/env/harnesshost:__subpackages__",
+        "//agentplane/runner:__subpackages__",
+    ],
+)
 
 go_library(
     name = "stream",
