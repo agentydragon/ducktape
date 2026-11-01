@@ -6,9 +6,9 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/session"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )

@@ -116,7 +116,7 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 					return err
 				}
 				labels := map[string]string{
-					sandboxapi.SandboxLabel:          certificate.GetLabels()[sandboxapi.SandboxLabel],
+					sandboxapi.SandboxLabel:                      certificate.GetLabels()[sandboxapi.SandboxLabel],
 					sandboxapi.EnvironmentRuntimeCredentialLabel: certificate.GetLabels()[sandboxapi.EnvironmentRuntimeCredentialLabel],
 				}
 				return c.Create(ctx, &corev1.Secret{
@@ -814,7 +814,7 @@ func connect(t *testing.T, c client.Client, runner string) {
 	renewed, duration := metav1.NewMicroTime(testNow), int32(30)
 	lease := &coordinationv1.Lease{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix, Annotations: map[string]string{
-			sandboxlease.PodUIDAnnotation:       runner,
+			sandboxlease.PodUIDAnnotation:                   runner,
 			sandboxlease.EnvironmentRuntimeBootIDAnnotation: "test-runner-boot",
 		}},
 		Spec: coordinationv1.LeaseSpec{RenewTime: &renewed, LeaseDurationSeconds: &duration},

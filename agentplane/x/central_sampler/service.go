@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	runnerpbservice "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"
@@ -165,24 +165,24 @@ func (s *Sampler) command(ctx context.Context, sessionID string, command *comman
 	return entry, nil
 }
 
-func (s *Sampler) SubmitInput(ctx context.Context, r *runnerpbservice.SubmitInputRequest) (*runnerpbservice.SubmitInputResponse, error) {
+func (s *Sampler) SubmitInput(ctx context.Context, r *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
 	entry, err := s.command(ctx, r.GetSessionId(), &commandpb.Command{CommandId: r.GetCommandId(), Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: r.GetText()}}})
-	return &runnerpbservice.SubmitInputResponse{Admission: entry}, err
+	return &environmentruntimepb.SubmitInputResponse{Admission: entry}, err
 }
 
-func (s *Sampler) ChangeModel(ctx context.Context, r *runnerpbservice.ChangeModelRequest) (*runnerpbservice.ChangeModelResponse, error) {
+func (s *Sampler) ChangeModel(ctx context.Context, r *environmentruntimepb.ChangeModelRequest) (*environmentruntimepb.ChangeModelResponse, error) {
 	entry, err := s.command(ctx, r.GetSessionId(), &commandpb.Command{CommandId: r.GetCommandId(), Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: r.GetModel()}}})
-	return &runnerpbservice.ChangeModelResponse{Admission: entry}, err
+	return &environmentruntimepb.ChangeModelResponse{Admission: entry}, err
 }
 
-func (s *Sampler) ChangeReasoningEffort(ctx context.Context, r *runnerpbservice.ChangeReasoningEffortRequest) (*runnerpbservice.ChangeReasoningEffortResponse, error) {
+func (s *Sampler) ChangeReasoningEffort(ctx context.Context, r *environmentruntimepb.ChangeReasoningEffortRequest) (*environmentruntimepb.ChangeReasoningEffortResponse, error) {
 	entry, err := s.command(ctx, r.GetSessionId(), &commandpb.Command{CommandId: r.GetCommandId(), Operation: &commandpb.Command_ChangeReasoningEffort{ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: r.GetEffort()}}})
-	return &runnerpbservice.ChangeReasoningEffortResponse{Admission: entry}, err
+	return &environmentruntimepb.ChangeReasoningEffortResponse{Admission: entry}, err
 }
 
-func (s *Sampler) InterruptTurn(ctx context.Context, r *runnerpbservice.InterruptTurnRequest) (*runnerpbservice.InterruptTurnResponse, error) {
+func (s *Sampler) InterruptTurn(ctx context.Context, r *environmentruntimepb.InterruptTurnRequest) (*environmentruntimepb.InterruptTurnResponse, error) {
 	entry, err := s.command(ctx, r.GetSessionId(), &commandpb.Command{CommandId: r.GetCommandId(), Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: r.GetTurnId()}}})
-	return &runnerpbservice.InterruptTurnResponse{Admission: entry}, err
+	return &environmentruntimepb.InterruptTurnResponse{Admission: entry}, err
 }
 
 func (s *Sampler) Compact(ctx context.Context, r *samplerpb.CompactRequest) (*samplerpb.CompactResponse, error) {

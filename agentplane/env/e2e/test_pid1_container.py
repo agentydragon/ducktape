@@ -33,7 +33,9 @@ def _wait_ready(directory: Path) -> None:
 def _descendant_pids(container: LoggedContainer, backend: str) -> list[int]:
     table = container.get_wrapped_container().top()
     pid_index, command_index = table["Titles"].index("PID"), table["Titles"].index("CMD")
-    supervisors = [row for row in table["Processes"] if "--agentplane-environment-runtime-supervisor" in row[command_index]]
+    supervisors = [
+        row for row in table["Processes"] if "--agentplane-environment-runtime-supervisor" in row[command_index]
+    ]
     assert len(supervisors) == (0 if backend == "pid1" else 1)
     rows = [row for row in table["Processes"] if "--pid1-proof-descendant" in row[command_index]]
     pids = [int(row[pid_index]) for row in rows]

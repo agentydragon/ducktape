@@ -91,7 +91,7 @@ func TestEnsureRunnerCertificateAcceptsOnlyReadyMatchingSecret(t *testing.T) {
 			Namespace: sandbox.Namespace,
 			Name:      RunnerCertificateSecretName(runnerCredentialTestID),
 			Labels: map[string]string{
-				sandboxapi.SandboxLabel:          sandbox.Name,
+				sandboxapi.SandboxLabel:                      sandbox.Name,
 				sandboxapi.EnvironmentRuntimeCredentialLabel: runnerCredentialTestID,
 			},
 			Annotations: map[string]string{runnerCertificateNameAnnotation: RunnerCertificateSecretName(runnerCredentialTestID)},
@@ -448,7 +448,7 @@ func runnerCredentialTestSecret(sandbox *sandboxapi.Sandbox, credentialID string
 			Namespace: sandbox.Namespace,
 			Name:      name,
 			Labels: map[string]string{
-				sandboxapi.SandboxLabel:          sandbox.Name,
+				sandboxapi.SandboxLabel:                      sandbox.Name,
 				sandboxapi.EnvironmentRuntimeCredentialLabel: credentialID,
 			},
 			Annotations: map[string]string{runnerCertificateNameAnnotation: name},

@@ -322,7 +322,9 @@ class RunnerGateway(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 database.egress(namespace),
                 proxy.egress(),
-                EgressRule.to_endpoints(environment_sandbox.pods(namespace).cilium, environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT),
+                EgressRule.to_endpoints(
+                    environment_sandbox.pods(namespace).cilium, environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT
+                ),
                 *([central_sampler.service(namespace).egress()] if self.env.central_sampler is not None else []),
             ],
         )

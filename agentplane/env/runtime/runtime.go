@@ -18,14 +18,14 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
@@ -1203,6 +1203,6 @@ func startSupervisedChild(supervisor *supervision.Supervisor, config supervision
 }
 
 var (
-	_ environmentruntimepb.EnvironmentRuntimeServer       = (*Runtime)(nil)
-	_ runtimepb.EnvironmentRuntimeServer = (*Runtime)(nil)
+	_ environmentruntimepb.EnvironmentRuntimeServer = (*Runtime)(nil)
+	_ runtimepb.EnvironmentRuntimeServer            = (*Runtime)(nil)
 )

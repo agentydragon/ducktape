@@ -73,7 +73,10 @@ class ControlListener:
             )
             try:
                 first = await asyncio.wait_for(watch.read(), timeout=2)
-                if not isinstance(first, environment_runtime_pb2.WatchStateResponse) or not first.environment_runtime_boot_id:
+                if (
+                    not isinstance(first, environment_runtime_pb2.WatchStateResponse)
+                    or not first.environment_runtime_boot_id
+                ):
                     raise RuntimeError("Runner WatchState ended before publishing its boot ID")
             except grpc.aio.AioRpcError, OSError, TimeoutError, RuntimeError:
                 watch.cancel()

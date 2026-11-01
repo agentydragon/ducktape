@@ -242,13 +242,17 @@ def test_session_dispatcher_egress_is_limited_to_the_delegation_rpc_surfaces(
     # that value in its guest runner config; the Pod carries it in its runner container env.
     pod_template = _by_name(staging_manifests, "SandboxTemplate", "environment-tools")
     pod_runner = one(
-        container for container in pod_template["spec"]["pod"]["spec"]["containers"] if container["name"] == "environment-runtime"
+        container
+        for container in pod_template["spec"]["pod"]["spec"]["containers"]
+        if container["name"] == "environment-runtime"
     )
     pod_env = {entry["name"]: entry["value"] for entry in pod_runner["env"] if "value" in entry}
     assert pod_env["AGENTPLANE_SESSIONS_URL"] == service_url
     assert pod_env["AGENTPLANE_SESSIONS_CREDENTIAL"] == credential_placeholder
 
-    vm_runner = json.loads(_by_name(staging_manifests, "ConfigMap", "environment-vm-config")["data"]["environment-runtime.json"])
+    vm_runner = json.loads(
+        _by_name(staging_manifests, "ConfigMap", "environment-vm-config")["data"]["environment-runtime.json"]
+    )
     assert vm_runner["harness_environment"]["values"]["AGENTPLANE_SESSIONS_URL"] == service_url
     assert vm_runner["harness_environment"]["values"]["AGENTPLANE_SESSIONS_CREDENTIAL"] == credential_placeholder
 

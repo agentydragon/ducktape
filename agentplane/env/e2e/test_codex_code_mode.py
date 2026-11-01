@@ -35,7 +35,12 @@ def code_mode_catalog(endpoint: object) -> None:
     ids=["succeeds", "fails"],
 )
 async def test_shell_call_runs_through_exec(
-    driver: RunnerDriver, model: ScriptedModel, spec: session_pb2.SessionSpec, command: str, output: str, succeeded: bool
+    driver: RunnerDriver,
+    model: ScriptedModel,
+    spec: session_pb2.SessionSpec,
+    command: str,
+    output: str,
+    succeeded: bool,
 ) -> None:
     session = await driver.attach("code-mode-tool-1", spec=spec)
     await session.submit_input("input-1", "Run the tool and report TOOL_DONE.")

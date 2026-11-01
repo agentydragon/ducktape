@@ -188,7 +188,10 @@ def test_environment_can_keep_codex_execution_inside_the_runner(scratch_app: App
         limits={"cpu": k8s.Quantity.from_string("31m"), "memory": k8s.Quantity.from_string("251Mi")},
     )
     pod = _runner_pod(
-        app=scratch_app, isolated_executor=False, environment_runtime_resources=environment_runtime_resources, executor_resources=None
+        app=scratch_app,
+        isolated_executor=False,
+        environment_runtime_resources=environment_runtime_resources,
+        executor_resources=None,
     )
     containers = {container["name"]: container for container in pod["containers"]}
     assert "codex-executor" not in containers
@@ -240,12 +243,19 @@ def test_runner_template_serializes_codex_readiness_overrides(scratch_app: App) 
 def test_environment_cannot_configure_resources_for_a_disabled_executor(scratch_app: App) -> None:
     resources = k8s.ResourceRequirements(limits={"memory": k8s.Quantity.from_string("1Gi")})
     with pytest.raises(ValueError, match="executor_resources cannot be set"):
-        _runner_pod(app=scratch_app, isolated_executor=False, environment_runtime_resources=resources, executor_resources=resources)
+        _runner_pod(
+            app=scratch_app,
+            isolated_executor=False,
+            environment_runtime_resources=resources,
+            executor_resources=resources,
+        )
 
 
 def test_runner_template_renders_mtls_server_listener(scratch_app: App) -> None:
     chart = Chart(scratch_app, "runner-template-test")
-    EnvironmentSandboxTemplate(chart, "runner-template", staging.ENV, name="test-runner", image="example.invalid/runner")
+    EnvironmentSandboxTemplate(
+        chart, "runner-template", staging.ENV, name="test-runner", image="example.invalid/runner"
+    )
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
     template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
     pod = template["spec"]["pod"]["spec"]

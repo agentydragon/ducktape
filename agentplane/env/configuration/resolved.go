@@ -55,7 +55,7 @@ type Endpoint struct {
 
 // EnvironmentRuntimeControlConfiguration exposes the Runner as a Gateway-dialed gRPC server.
 type EnvironmentRuntimeControlConfiguration struct {
-	ListenAddress string                   `json:"listen_address"`
+	ListenAddress string                               `json:"listen_address"`
 	Security      environmentruntimetransport.Security `json:"security"`
 }
 

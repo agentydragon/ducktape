@@ -486,7 +486,9 @@ class EnvironmentSandboxTemplate(Construct):
                     *(
                         k8s.EnvVar(name=key, value=value)
                         for key, value in telemetry.service_environment(
-                            self.env.namespace, "agentplane-environment-runtime", endpoint=platform_routes.telemetry_endpoint()
+                            self.env.namespace,
+                            "agentplane-environment-runtime",
+                            endpoint=platform_routes.telemetry_endpoint(),
                         ).items()
                     ),
                     *(key.env() for key in self.key_files),
@@ -508,10 +510,14 @@ class EnvironmentSandboxTemplate(Construct):
                 requests={"cpu": k8s.Quantity.from_string("500m"), "memory": k8s.Quantity.from_string("1Gi")},
                 limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("4Gi")},
             ),
-            ports=[k8s.ContainerPort(name="environment-runtime-control", container_port=ENVIRONMENT_RUNTIME_SERVICE_PORT)],
+            ports=[
+                k8s.ContainerPort(name="environment-runtime-control", container_port=ENVIRONMENT_RUNTIME_SERVICE_PORT)
+            ],
             volume_mounts=[
                 *self._execution_mounts(),
-                k8s.VolumeMount(name=_CONFIG_VOLUME, mount_path=CONFIG_FILE, sub_path="environment-runtime.json", read_only=True),
+                k8s.VolumeMount(
+                    name=_CONFIG_VOLUME, mount_path=CONFIG_FILE, sub_path="environment-runtime.json", read_only=True
+                ),
                 *(self._isolated_executor_mounts() if self.env.isolated_codex_executor else []),
                 *sandbox_pod.platform_control_mounts(),
                 *(key.mount() for key in self.key_files),
@@ -546,7 +552,9 @@ class EnvironmentSandboxTemplate(Construct):
                 workload_volumes=[
                     k8s.Volume(
                         name=_ENVIRONMENT_VOLUME_NAME,
-                        image=k8s.ImageVolumeSource(reference=environment_vm.RUNNER_DISK_IMAGE, pull_policy="IfNotPresent"),
+                        image=k8s.ImageVolumeSource(
+                            reference=environment_vm.RUNNER_DISK_IMAGE, pull_policy="IfNotPresent"
+                        ),
                     ),
                     k8s.Volume(name=_CONFIG_VOLUME, config_map=k8s.ConfigMapVolumeSource(name=self.config_map_name)),
                     *(

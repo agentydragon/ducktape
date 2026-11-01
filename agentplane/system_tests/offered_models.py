@@ -7,7 +7,9 @@ from agentplane.env.harnesshost.harness import Harness
 from agentplane.proto import session_pb2
 
 
-async def models_offered_for(client: Client, harnesses: Sequence[session_pb2.Harness]) -> dict[session_pb2.Harness, str]:
+async def models_offered_for(
+    client: Client, harnesses: Sequence[session_pb2.Harness]
+) -> dict[session_pb2.Harness, str]:
     """Select one model offered by the deployment for each requested harness."""
     catalog = await client.models()
     offered_models: dict[session_pb2.Harness, str] = {}

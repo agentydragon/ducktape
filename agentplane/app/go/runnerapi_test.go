@@ -13,7 +13,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type runnerStatusFake struct{ status *sessionpb.EnvironmentRuntimeStatus }
+type runnerStatusFake struct {
+	status *sessionpb.EnvironmentRuntimeStatus
+}
 
 func (f runnerStatusFake) EnvironmentRuntimeStatus(context.Context, string) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	return f.status, nil

@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"

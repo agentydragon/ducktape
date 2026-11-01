@@ -119,14 +119,14 @@ of a dialed-hostname Sandbox name. Revisit it if the per-connection writes ever 
 
 Facts have different truth sources, so each gets its own condition and `Ready` is their AND:
 
-| Condition         | Source of truth                                                               | Meaning                                                                                                                                 |
-| ----------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `Running`         | controller (Pod or VMI)                                                       | an incarnation exists and runs                                                                                                          |
-| `WorkloadReady`   | controller (Pod Ready)                                                        | the incarnation's Pod is Ready                                                                                                          |
+| Condition                     | Source of truth                                                               | Meaning                                                                                                                                 |
+| ----------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `Running`                     | controller (Pod or VMI)                                                       | an incarnation exists and runs                                                                                                          |
+| `WorkloadReady`               | controller (Pod Ready)                                                        | the incarnation's Pod is Ready                                                                                                          |
 | `EnvironmentRuntimeConnected` | gateway (connection Lease)                                                    | a runner of this incarnation holds a live connection                                                                                    |
-| `Bootstrapped`    | runner (bootstrap result, republished at each connect)                        | the Sandbox's bootstrap ran to success; Sandbox-lifetime; False with reason `BootstrapFailed` if it failed or was interrupted           |
-| `Ready`           | controller                                                                    | all of the above for the current incarnation; reason `BootstrapFailed` if bootstrap failed, `SuspendPending` while a suspend waits (D3) |
-| `Quiesced`        | controller, from the runner's quiesce stage published on the connection Lease | False with reason `Draining`, then `Flushing`; True once every final cursor is acknowledged                                             |
+| `Bootstrapped`                | runner (bootstrap result, republished at each connect)                        | the Sandbox's bootstrap ran to success; Sandbox-lifetime; False with reason `BootstrapFailed` if it failed or was interrupted           |
+| `Ready`                       | controller                                                                    | all of the above for the current incarnation; reason `BootstrapFailed` if bootstrap failed, `SuspendPending` while a suspend waits (D3) |
+| `Quiesced`                    | controller, from the runner's quiesce stage published on the connection Lease | False with reason `Draining`, then `Flushing`; True once every final cursor is acknowledged                                             |
 
 The Sandbox's bootstrap runs once, at runner start and before any Session opens, and
 `Ready` includes `Bootstrapped`. Its outcome lives on the state volume, so each incarnation's runner republishes

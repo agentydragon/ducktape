@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
 )

@@ -11,8 +11,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/ingress"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained"
-	"github.com/agentydragon/ducktape/agentplane/observability"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"google.golang.org/grpc"
 )
 

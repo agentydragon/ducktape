@@ -12,8 +12,8 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/status"
 )
 

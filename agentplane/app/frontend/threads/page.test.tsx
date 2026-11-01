@@ -1024,7 +1024,10 @@ it.each([null, "2026-01-01T12:12:00Z"])(
   async (deadline) => {
     const starting = autosuspendSandbox(deadline);
     sandboxes = [
-      { ...starting, status: { conditions: [{ type: "Ready", status: "False", reason: "AwaitingEnvironmentRuntime" }] } },
+      {
+        ...starting,
+        status: { conditions: [{ type: "Ready", status: "False", reason: "AwaitingEnvironmentRuntime" }] },
+      },
     ];
     const hint = (await render()).querySelector(".agentplane-composer-autosuspend");
     expect(hint?.textContent).toBe("Autosuspend waiting: Sandbox starting");

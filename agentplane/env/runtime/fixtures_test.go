@@ -17,11 +17,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/workspace"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc"
 )
 

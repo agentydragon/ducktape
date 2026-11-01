@@ -14,8 +14,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/structpb"
 )

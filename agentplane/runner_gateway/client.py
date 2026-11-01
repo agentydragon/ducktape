@@ -49,7 +49,9 @@ class SandboxControlClient:
         async with dial(
             self.control_target.format(sandbox=destination.sandbox, namespace=destination.owner.namespace)
         ) as channel:
-            runner: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel)
+            runner: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub = (
+                environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel)
+            )
             return await call_unary(
                 call(runner),
                 request,

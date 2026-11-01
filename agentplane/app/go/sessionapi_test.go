@@ -9,8 +9,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/bridge"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )

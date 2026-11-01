@@ -25,8 +25,8 @@ const (
 	EnvironmentRuntimeTLSMountPath    = "/run/agentplane/environment-runtime-tls"
 	EnvironmentRuntimeTrustVolumeName = "agentplane-environment-runtime-trust"
 	EnvironmentRuntimeTrustMountPath  = "/run/agentplane/environment-runtime-trust"
-	RunnerTrustBundleName = "cluster-internal-ca-bundle"
-	RunnerTrustBundleKey  = "ca-certificates.crt"
+	RunnerTrustBundleName             = "cluster-internal-ca-bundle"
+	RunnerTrustBundleKey              = "ca-certificates.crt"
 
 	// A VM's active credential and the VMI accepted for it. The Sandbox's binding is in
 	// status.runnerCredential.
@@ -391,7 +391,7 @@ func runnerCertificateObject(sandbox *sandboxapi.Sandbox, issuer, credentialID s
 			"name":      RunnerCertificateSecretName(credentialID),
 			"namespace": sandbox.Namespace,
 			"labels": map[string]interface{}{
-				sandboxapi.SandboxLabel:          sandbox.Name,
+				sandboxapi.SandboxLabel:                      sandbox.Name,
 				sandboxapi.EnvironmentRuntimeCredentialLabel: credentialID,
 			},
 			"ownerReferences": []interface{}{map[string]interface{}{
@@ -415,7 +415,7 @@ func runnerCertificateObject(sandbox *sandboxapi.Sandbox, issuer, credentialID s
 			"usages":     []interface{}{"digital signature", "server auth"},
 			"privateKey": map[string]interface{}{"algorithm": "ECDSA", "size": int64(256), "rotationPolicy": "Always"},
 			"secretTemplate": map[string]interface{}{"labels": map[string]interface{}{
-				sandboxapi.SandboxLabel:          sandbox.Name,
+				sandboxapi.SandboxLabel:                      sandbox.Name,
 				sandboxapi.EnvironmentRuntimeCredentialLabel: credentialID,
 			}},
 		},

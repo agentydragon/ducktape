@@ -6,7 +6,7 @@ import (
 	"sort"
 
 	appconfigpb "github.com/agentydragon/ducktape/agentplane/app/configservicepb"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -44,13 +44,13 @@ func (s *appConfigService) ListModels(context.Context, *emptypb.Empty) (*appconf
 	}
 	sort.Strings(harnessNames)
 	for _, name := range harnessNames {
-		value, ok := runnerpb.Harness_value[name]
+		value, ok := sessionpb.Harness_value[name]
 		if !ok {
 			// Config validation rejects unknown names before the server starts.
 			continue
 		}
 		response.Harnesses = append(response.Harnesses, &appconfigpb.HarnessModelOffers{
-			Harness: runnerpb.Harness(value), Models: nonNilStrings(s.config.Models.Harnesses[name]),
+			Harness: sessionpb.Harness(value), Models: nonNilStrings(s.config.Models.Harnesses[name]),
 		})
 	}
 	return response, nil
@@ -63,8 +63,8 @@ func (s *appConfigService) ListSandboxPresets(context.Context, *emptypb.Empty) (
 			Model: preset.SessionDefaults.Model, Cwd: preset.SessionDefaults.CWD,
 			Instructions: preset.SessionDefaults.Instructions, SetupScript: preset.SessionDefaults.SetupScript,
 		}
-		if value, ok := runnerpb.Harness_value[preset.SessionDefaults.Harness]; ok {
-			defaults.Harness = runnerpb.Harness(value)
+		if value, ok := sessionpb.Harness_value[preset.SessionDefaults.Harness]; ok {
+			defaults.Harness = sessionpb.Harness(value)
 		}
 		if preset.SessionDefaults.ReasoningEffort != nil {
 			defaults.ReasoningEffort = preset.SessionDefaults.ReasoningEffort

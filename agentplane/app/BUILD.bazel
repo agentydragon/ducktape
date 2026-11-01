@@ -15,7 +15,7 @@ proto_library(
     name = "config_service_proto",
     srcs = ["config_service.proto"],
     deps = [
-        "//agentplane/proto:runner_proto",
+        "//agentplane/proto:session_proto",
         "@googleapis//google/api:annotations_proto",
         "@protobuf//:empty_proto",
     ],
@@ -31,7 +31,7 @@ go_proto_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/app/configservicepb",
     proto = ":config_service_proto",
     deps = [
-        "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:session_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
@@ -42,7 +42,7 @@ ts_proto_library(
     node_modules = "//:node_modules",
     proto = ":config_service_proto",
     deps = [
-        "//agentplane/proto:runner_pb",
+        "//agentplane/proto:session_pb",
         "//google/api:annotations_pb",
     ],
 )

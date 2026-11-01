@@ -231,16 +231,16 @@ async def run_gateway(
         with tempfile.TemporaryDirectory() as settings_dir, log_path.open("wb") as log_file:
             settings_directory = Path(settings_dir)
             environment_runtime_ca = make_ca("Environment Runtime transport test CA")
-            environment_runtime_ca_file, _ = write_ca(environment_runtime_ca, settings_directory, "environment-runtime-ca")
+            environment_runtime_ca_file, _ = write_ca(
+                environment_runtime_ca, settings_directory, "environment-runtime-ca"
+            )
             gateway_cert, gateway_key = issue_workload_leaf(
                 environment_runtime_ca, "spiffe://agentplane/runner-gateway", settings_directory
             )
             runner_security = MTLS(
                 mode="mtls",
                 tls=TLS(
-                    cert_file=str(gateway_cert),
-                    key_file=str(gateway_key),
-                    ca_file=str(environment_runtime_ca_file),
+                    cert_file=str(gateway_cert), key_file=str(gateway_key), ca_file=str(environment_runtime_ca_file)
                 ),
             )
             effective_settings = Settings(

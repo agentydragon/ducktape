@@ -10,8 +10,8 @@ import (
 	"time"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
 	"github.com/google/uuid"

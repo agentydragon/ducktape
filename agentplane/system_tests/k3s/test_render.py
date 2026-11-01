@@ -467,7 +467,9 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
         "exec_server_probe_timeout_ms": 5_000,
         "exec_server_dependency_timeout_ms": 120_000,
     }
-    pod_config = json.loads(_resource(fixture.objects, "ConfigMap", "environment-tools-config")["data"]["environment-runtime.json"])
+    pod_config = json.loads(
+        _resource(fixture.objects, "ConfigMap", "environment-tools-config")["data"]["environment-runtime.json"]
+    )
     assert "codex_readiness" not in pod_config
     assert config["control"] == {
         "listen_address": "0.0.0.0:9090",

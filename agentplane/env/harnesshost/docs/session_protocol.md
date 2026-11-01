@@ -96,7 +96,7 @@ retained verbatim as `Native`.
 
 | Family  | Events                                                                                                                                       |
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| harness | `HarnessStarted` (resumed, pid), `HarnessExited` (exit code, stopped by the Harness Host), `HarnessLost`, `HarnessStderr`                          |
+| harness | `HarnessStarted` (resumed, pid), `HarnessExited` (exit code, stopped by the Harness Host), `HarnessLost`, `HarnessStderr`                    |
 | command | `CommandAdmitted`, `CommandFailed`, `CommandNoop`, `HarnessUserMessageConfirmed`, `ModelChanged`                                             |
 | turn    | `TurnStarted`, `TurnCompleted` (`COMPLETED`, `INTERRUPTED`, `FAILED`, `PROCESS_LOST`)                                                        |
 | item    | `ItemStarted` (assistant text, reasoning, tool call), `TextDelta`, `ToolArgumentsDelta`, `ToolArguments`, `ToolOutputDelta`, `ItemCompleted` |

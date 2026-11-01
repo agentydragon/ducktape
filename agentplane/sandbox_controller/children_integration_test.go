@@ -107,7 +107,7 @@ func runFakeCertificateSigner(ctx context.Context, objects client.Client, namesp
 				}
 			}
 			labels := map[string]string{
-				sandboxapi.SandboxLabel:          certificate.GetLabels()[sandboxapi.SandboxLabel],
+				sandboxapi.SandboxLabel:                      certificate.GetLabels()[sandboxapi.SandboxLabel],
 				sandboxapi.EnvironmentRuntimeCredentialLabel: certificate.GetLabels()[sandboxapi.EnvironmentRuntimeCredentialLabel],
 			}
 			secret := &corev1.Secret{

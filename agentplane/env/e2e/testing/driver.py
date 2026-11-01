@@ -86,7 +86,9 @@ class SessionFollow:
         """Submit text and return once the runner admitted it."""
         runner = await self._gateway.control.runner()
         await runner.SubmitInput(
-            environment_runtime_pb2.SubmitInputRequest(session_id=self.attached.session_id, command_id=command_id, text=text)
+            environment_runtime_pb2.SubmitInputRequest(
+                session_id=self.attached.session_id, command_id=command_id, text=text
+            )
         )
         self._ended = False
 
@@ -275,7 +277,9 @@ class RunnerDriver:
         runner = await self.gateway.control.runner()
         response = await runner.Quiesce(session_pb2.QuiesceRequest())
         await self.gateway.control.wait_for_facts(
-            environment_runtime_state_pb2.EnvironmentRuntimeFacts(quiesce_stage=environment_runtime_state_pb2.EnvironmentRuntimeFacts.QUIESCE_STAGE_QUIESCED)
+            environment_runtime_state_pb2.EnvironmentRuntimeFacts(
+                quiesce_stage=environment_runtime_state_pb2.EnvironmentRuntimeFacts.QUIESCE_STAGE_QUIESCED
+            )
         )
         sessions = await runner.ListSessions(session_pb2.ListSessionsRequest())
         for session in sessions.sessions:

@@ -19,14 +19,14 @@ flowchart LR
 
 ## Durable owners
 
-| State                              | Owner   | Existing path                                       |
-| ---------------------------------- | ------- | --------------------------------------------------- |
-| Environment lifetime lock          | Runtime | `<state_dir>/.agentplane-environment-runtime-owner`              |
-| Incarnation seal marker            | Runtime | `<state_dir>/sessions/sealed`                       |
-| Bootstrap request and log          | Runtime | `<state_dir>/initialization/`                       |
+| State                              | Owner   | Existing path                                             |
+| ---------------------------------- | ------- | --------------------------------------------------------- |
+| Environment lifetime lock          | Runtime | `<state_dir>/.agentplane-environment-runtime-owner`       |
+| Incarnation seal marker            | Runtime | `<state_dir>/sessions/sealed`                             |
+| Bootstrap request and log          | Runtime | `<state_dir>/initialization/`                             |
 | Native Session lifetime lock       | Host    | `<state_dir>/harness-host/.agentplane-harness-host-owner` |
-| Session records, journals and ACKs | Host    | `<state_dir>/sessions/`                             |
-| Shared Codex native home           | Host    | `<state_dir>/codex/`                                |
+| Session records, journals and ACKs | Host    | `<state_dir>/sessions/`                                   |
+| Shared Codex native home           | Host    | `<state_dir>/codex/`                                      |
 
 The old `.agentplane-runner-owner` files are not adopted or cleared. Runtime and Host use their new
 owner-lock paths after all pre-rename workloads stop; Session IDs, native continuation state,

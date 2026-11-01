@@ -115,6 +115,7 @@ outer service/container limit can still stop the environment.
 
 Central hosting of the Codex app-server with Sandbox executors remains future work. Local tools
 and Sandbox-hosted app-server with isolated tools remain explicit transitional operating modes.
+
 ## Codex Session integration
 
 ### Isolated Codex execution

@@ -11,18 +11,18 @@ import (
 )
 
 const (
-	EnvironmentRuntimeLeaseSuffix             = "-environment-runtime"
-	EnvironmentRuntimeConnectionLabel               = "agentplane.allegedly.works/environment-runtime-connection"
-	ConnectionEpochAnnotation     = "agentplane.allegedly.works/connection-epoch"
-	ConnectionLeaseUIDAnnotation  = "agentplane.allegedly.works/connection-lease-uid"
-	PodUIDAnnotation              = "agentplane.allegedly.works/pod-uid"
-	LastConnectedPodUIDAnnotation = "agentplane.allegedly.works/last-connected-pod-uid"
-	EnvironmentRuntimeBootIDAnnotation        = "agentplane.allegedly.works/environment-runtime-boot-id"
-	QuiesceStageAnnotation        = "agentplane.allegedly.works/quiesce-stage"
-	IdleSinceAnnotation           = "agentplane.allegedly.works/idle-since"
-	BootstrapAnnotation           = "agentplane.allegedly.works/bootstrap"
-	SetupsRunningAnnotation       = "agentplane.allegedly.works/setups-running"
-	AutosuspendBlockersAnnotation = "agentplane.allegedly.works/autosuspend-blockers"
+	EnvironmentRuntimeLeaseSuffix      = "-environment-runtime"
+	EnvironmentRuntimeConnectionLabel  = "agentplane.allegedly.works/environment-runtime-connection"
+	ConnectionEpochAnnotation          = "agentplane.allegedly.works/connection-epoch"
+	ConnectionLeaseUIDAnnotation       = "agentplane.allegedly.works/connection-lease-uid"
+	PodUIDAnnotation                   = "agentplane.allegedly.works/pod-uid"
+	LastConnectedPodUIDAnnotation      = "agentplane.allegedly.works/last-connected-pod-uid"
+	EnvironmentRuntimeBootIDAnnotation = "agentplane.allegedly.works/environment-runtime-boot-id"
+	QuiesceStageAnnotation             = "agentplane.allegedly.works/quiesce-stage"
+	IdleSinceAnnotation                = "agentplane.allegedly.works/idle-since"
+	BootstrapAnnotation                = "agentplane.allegedly.works/bootstrap"
+	SetupsRunningAnnotation            = "agentplane.allegedly.works/setups-running"
+	AutosuspendBlockersAnnotation      = "agentplane.allegedly.works/autosuspend-blockers"
 )
 
 // QuiesceStage is the quiesce progress a runner publishes on its connection Lease.

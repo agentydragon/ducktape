@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"

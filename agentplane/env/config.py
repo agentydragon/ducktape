@@ -106,7 +106,9 @@ class GuestResources(BaseModel):
             if self.executor.memory_max_bytes > self.service_memory_high_bytes - self.aggregate.memory_max_bytes:
                 raise ValueError("harness and executor memory caps must fit below service memory high")
             if self.executor.pids_max >= self.service_pids_max - self.aggregate.pids_max:
-                raise ValueError("harness and executor PID caps must leave room for Environment Runtime and supervisors")
+                raise ValueError(
+                    "harness and executor PID caps must leave room for Environment Runtime and supervisors"
+                )
             if self.executor.cpu_quota_micros > self.service_cpu_quota_micros:
                 raise ValueError("executor CPU quota must fit within Environment Runtime service quota")
         if self.process.memory_max_bytes > self.aggregate.memory_max_bytes:

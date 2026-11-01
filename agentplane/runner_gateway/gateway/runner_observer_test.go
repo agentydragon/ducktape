@@ -12,11 +12,11 @@ import (
 	"time"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
@@ -46,7 +46,7 @@ type observedRunner struct {
 
 func (r *observedRunner) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
 	if err := stream.Send(&environmentruntimepb.WatchStateResponse{
-		SandboxUid:   request.SandboxUid,
+		SandboxUid:               request.SandboxUid,
 		EnvironmentRuntimeBootId: r.bootID, IncarnationUid: request.IncarnationUid, ConnectionEpoch: request.ConnectionEpoch,
 		Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{Bootstrap: environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_SUCCEEDED},
 	}); err != nil {

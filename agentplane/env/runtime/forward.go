@@ -9,9 +9,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	runtimecontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/control"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -392,5 +392,5 @@ func (p *executionProxy) CloseFile(ctx context.Context, request *executorpb.Clos
 
 var (
 	_ environmentruntimepb.EnvironmentRuntimeServer = (*Runtime)(nil)
-	_ executorpb.ExecutorServer    = (*executionProxy)(nil)
+	_ executorpb.ExecutorServer                     = (*executionProxy)(nil)
 )

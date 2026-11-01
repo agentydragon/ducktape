@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc/metadata"
 )

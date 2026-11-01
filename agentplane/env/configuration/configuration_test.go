@@ -23,11 +23,11 @@ func configurationFixture(t *testing.T) (map[string]any, string, string) {
 		"control": map[string]any{"listen_address": "127.0.0.1:8090", "security": map[string]any{"mode": "mtls", "tls": map[string]string{
 			"cert_file": "/run/test/tls.crt", "key_file": "/run/test/tls.key", "ca_file": "/run/test/ca.crt",
 		}}},
-		"ingress":               map[string]string{"target": "history.test:8081", "bearer": "ingress-placeholder"},
-		"platform_instructions": "Test guidance.",
-		"environment_runtime_environment":    map[string]any{"values": map[string]string{"TOOL_ROUTE": "http://tools.test"}},
-		"harness_environment":   map[string]any{"inherit": []string{"PATH", "TOOL_ROUTE"}, "values": map[string]string{"HOME": directory}},
-		"codex":                 map[string]string{"binary": "/opt/tools/codex", "base_url": "http://models.test/v1", "token_env": "RUNNER_TEST_PROVIDER_TOKEN"},
+		"ingress":                         map[string]string{"target": "history.test:8081", "bearer": "ingress-placeholder"},
+		"platform_instructions":           "Test guidance.",
+		"environment_runtime_environment": map[string]any{"values": map[string]string{"TOOL_ROUTE": "http://tools.test"}},
+		"harness_environment":             map[string]any{"inherit": []string{"PATH", "TOOL_ROUTE"}, "values": map[string]string{"HOME": directory}},
+		"codex":                           map[string]string{"binary": "/opt/tools/codex", "base_url": "http://models.test/v1", "token_env": "RUNNER_TEST_PROVIDER_TOKEN"},
 	}
 	return value, configPath, launchPath
 }

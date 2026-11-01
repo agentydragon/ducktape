@@ -11,8 +11,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"

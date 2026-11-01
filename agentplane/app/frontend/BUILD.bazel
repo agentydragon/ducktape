@@ -257,7 +257,7 @@ ts_library(
         ":client",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app:config_service_pb",
-        "//agentplane/proto:runner_pb",
+        "//agentplane/proto:session_pb",
     ],
 )
 

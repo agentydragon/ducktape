@@ -227,7 +227,9 @@ async def test_turn_outcomes_preserve_safe_continuation(
             request = open_request(tmp_path)
             await stub.OpenSession(request, metadata=METADATA)
             await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(session_id=request.session_id, command_id="first", text="Start"),
+                environment_runtime_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="first", text="Start"
+                ),
                 metadata=METADATA,
             )
             async with await endpoint.next() as exchange:

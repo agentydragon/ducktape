@@ -17,11 +17,11 @@ import (
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

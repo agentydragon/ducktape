@@ -10,12 +10,12 @@ const (
 	// receipts. Must equal CREATE_INTENT in agentplane/sandboxes/testing/kubernetes_views.py.
 	CreateIntentAnnotation = "agentplane.allegedly.works/create-intent"
 
-	ConditionRunning         = "Running"
-	ConditionWorkloadReady   = "WorkloadReady"
+	ConditionRunning                     = "Running"
+	ConditionWorkloadReady               = "WorkloadReady"
 	ConditionEnvironmentRuntimeConnected = "EnvironmentRuntimeConnected"
-	ConditionBootstrapped    = "Bootstrapped"
-	ConditionReady           = "Ready"
-	ConditionQuiesced        = "Quiesced"
+	ConditionBootstrapped                = "Bootstrapped"
+	ConditionReady                       = "Ready"
+	ConditionQuiesced                    = "Quiesced"
 
 	RunnerProxySandboxMetadataKey               = "x-agentplane-sandbox"
 	RunnerProxySandboxUIDMetadataKey            = "x-agentplane-sandbox-uid"

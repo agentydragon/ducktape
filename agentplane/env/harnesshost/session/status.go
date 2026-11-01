@@ -2,8 +2,8 @@ package session
 
 import (
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/protobuf/proto"
 )
 

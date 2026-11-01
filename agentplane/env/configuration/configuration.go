@@ -24,21 +24,21 @@ import (
 // Configuration is the file contract used by every Runner deployment. Sandbox
 // identity/bootstrap are supplied separately by the Sandbox Controller.
 type Configuration struct {
-	Version                     int                           `json:"version"`
-	SessionReconcileConcurrency *int                          `json:"session_reconcile_concurrency"`
-	StateDir                    string                        `json:"state_dir"`
-	WorkspaceRoot               *string                       `json:"workspace_root"`
-	InitializationCwd           string                        `json:"initialization_cwd"`
-	Control                     EnvironmentRuntimeControlConfiguration    `json:"control"`
-	Ingress                     Endpoint                      `json:"ingress"`
-	PlatformInstructions        string                        `json:"platform_instructions"`
-	EnvironmentRuntimeEnvironment           EnvironmentVariables          `json:"environment_runtime_environment"`
-	HarnessEnvironment          *EnvironmentVariables         `json:"harness_environment"`
-	Claude                      *HarnessConfiguration         `json:"claude"`
-	Codex                       *HarnessConfiguration         `json:"codex"`
-	Environment                 json.RawMessage               `json:"environment"`
-	CodexReadiness              *CodexReadinessConfiguration  `json:"codex_readiness"`
-	DebugCheckpoint             *DebugCheckpointConfiguration `json:"debug_checkpoint"`
+	Version                       int                                    `json:"version"`
+	SessionReconcileConcurrency   *int                                   `json:"session_reconcile_concurrency"`
+	StateDir                      string                                 `json:"state_dir"`
+	WorkspaceRoot                 *string                                `json:"workspace_root"`
+	InitializationCwd             string                                 `json:"initialization_cwd"`
+	Control                       EnvironmentRuntimeControlConfiguration `json:"control"`
+	Ingress                       Endpoint                               `json:"ingress"`
+	PlatformInstructions          string                                 `json:"platform_instructions"`
+	EnvironmentRuntimeEnvironment EnvironmentVariables                   `json:"environment_runtime_environment"`
+	HarnessEnvironment            *EnvironmentVariables                  `json:"harness_environment"`
+	Claude                        *HarnessConfiguration                  `json:"claude"`
+	Codex                         *HarnessConfiguration                  `json:"codex"`
+	Environment                   json.RawMessage                        `json:"environment"`
+	CodexReadiness                *CodexReadinessConfiguration           `json:"codex_readiness"`
+	DebugCheckpoint               *DebugCheckpointConfiguration          `json:"debug_checkpoint"`
 }
 
 const DefaultSessionReconcileConcurrency = 16
