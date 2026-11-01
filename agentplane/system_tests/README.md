@@ -10,16 +10,16 @@ The eight CI suites each start one [disposable k3s stack](k3s/README.md) in an R
 The session-scoped `deployment` fixture exposes its cluster handle, app URL, token, and MCP access
 ([`system_test_target.py`](k3s/system_test_target.py)). Compatible scenarios share a stack:
 
-| Target                                                 | Scenarios                                                                                                    |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `//agentplane/system_tests/suites:test_pod`            | egress, messaging, presets, session instructions, suspend/resume, thread stream, Pod credentials and storage |
-| `//agentplane/system_tests/suites:test_dispatcher`     | Dispatcher queue, wake and replica behavior                                                                  |
-| `//agentplane/system_tests/suites/mcp:test_actions`    | MCP Action execution, BFF decisions, launcher ownership and OAuth linkage                                    |
-| `//agentplane/system_tests/suites/mcp:test_services`   | Dynamic client registration, external MCP Connection, policy binding and Pod central sampler                 |
-| `//agentplane/system_tests/suites/mcp:test_delegation` | External MCP Connection reuse, explicit Session input, retained reads with the integration app unavailable   |
-| `//agentplane/system_tests/suites/mcp:test_parent_delegation` | Existing-Sandbox parent Session uses the Action CLI to open and drive a child Session                   |
-| `//agentplane/system_tests/suites:test_real_model`     | Public LiteLLM egress and real-model standing-instruction acceptance                                         |
-| `//agentplane/system_tests/suites:test_vm`             | VM Sandbox behavior, runner credentials and systemd supervision                                              |
+| Target                                                        | Scenarios                                                                                                    |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `//agentplane/system_tests/suites:test_pod`                   | egress, messaging, presets, session instructions, suspend/resume, thread stream, Pod credentials and storage |
+| `//agentplane/system_tests/suites:test_dispatcher`            | Dispatcher queue, wake and replica behavior                                                                  |
+| `//agentplane/system_tests/suites/mcp:test_actions`           | MCP Action execution, BFF decisions, launcher ownership and OAuth linkage                                    |
+| `//agentplane/system_tests/suites/mcp:test_services`          | Dynamic client registration, external MCP Connection, policy binding and Pod central sampler                 |
+| `//agentplane/system_tests/suites/mcp:test_delegation`        | External MCP Connection reuse, explicit Session input, retained reads with the integration app unavailable   |
+| `//agentplane/system_tests/suites/mcp:test_parent_delegation` | Existing-Sandbox parent Session uses the Action CLI to open and drive a child Session                        |
+| `//agentplane/system_tests/suites:test_real_model`            | Public LiteLLM egress and real-model standing-instruction acceptance                                         |
+| `//agentplane/system_tests/suites:test_vm`                    | VM Sandbox behavior, runner credentials and systemd supervision                                              |
 
 The shared stack cuts setup and image-import work, while each target now has a coarser cache key: a
 changed scenario reruns its suite. Scenario modules live in [`scenarios/`](scenarios/) as ordinary
