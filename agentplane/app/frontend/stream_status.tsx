@@ -140,7 +140,9 @@ export function useOptionalStreamStatus(name: string, connection: StreamConnecti
 
 function describe({ name, connection, stalled }: StreamStatus): string {
   const parts = [`${name}: ${connection.phase} since ${timeAgo(connection.since)} (${isoTime(connection.since)})`];
-  if (connection.phase === "reconnecting") {
+  if (connection.phase === "invalid") {
+    parts.push(connection.lastError);
+  } else if (connection.phase === "reconnecting") {
     parts.push(`attempt ${connection.attempt}`);
     if (connection.lastError !== null) parts.push(connection.lastError);
   }
