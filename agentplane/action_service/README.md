@@ -480,10 +480,11 @@ separate from the integration app's database.
 
 Goose version 7 creates the final typed schema on an empty database. A database that completed
 version 6 is adopted in place: the migration validates its history and schema, then records version
-7 without replaying DDL or rewriting Action rows. Existing Goose versions 1–6 and Alembic history
-remain intact. Databases behind version 6, or with a partial or unmarked schema, must first be
-repaired with the earlier migration-capable image. Do not renumber this baseline; subsequent schema
-changes use later Goose versions.
+7 without replaying DDL or rewriting Action rows. Version 8 adds nullable `caller_uid` provenance;
+existing requests remain unknown and are never backfilled. Existing Goose versions 1–6 and Alembic
+history remain intact. Databases behind version 6, or with a partial or unmarked schema, must first
+be repaired with the earlier migration-capable image. Do not renumber this baseline; subsequent
+schema changes use later Goose versions.
 
 Action identities use `action_group`/`action_name` columns, event actors use binary `Principal`
 messages, and decision policy evidence uses binary `PolicyEvidence` messages. Arguments, results and
@@ -491,7 +492,7 @@ errors retain JSONB. The rolling Deployment keeps the existing replica serving w
 apply migrations. Goose's session lock serializes concurrent starts; every schema change must
 remain compatible with the old and new service versions during that overlap. A database with historical
 versions 1–6 retains its rollback path to a typed-storage-compatible version 6 image. A fresh
-version 7 database requires a rollback image that understands the version 7 baseline, or a
+version 8 database requires a rollback image that understands the version 8 schema, or a
 coordinated database restore. See the
 [version 6 cutover evidence](debug/2026_10_28_native_storage_cutover.md) and
 [version 7 baseline verification](debug/2026_10_28_final_schema_baseline.md).

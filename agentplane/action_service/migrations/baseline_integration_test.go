@@ -79,11 +79,15 @@ func TestFreshBaselineAcceptsTypedRows(t *testing.T) {
 	if got := count(t, db, `SELECT count(*) FROM action_service_goose_version WHERE version_id=7 AND is_applied`); got != 1 {
 		t.Fatalf("fresh baseline version rows = %d, want 1", got)
 	}
+	if got := count(t, db, `SELECT count(*) FROM action_service_goose_version WHERE version_id=8 AND is_applied`); got != 1 {
+		t.Fatalf("fresh caller UID migration rows = %d, want 1", got)
+	}
 }
 
 func seedCompletedSix(t *testing.T, db *sql.DB) {
 	t.Helper()
-	exec(t, db, `DELETE FROM action_service_goose_version WHERE version_id=7`)
+	exec(t, db, `DELETE FROM action_service_goose_version WHERE version_id IN (7, 8)`)
+	exec(t, db, `ALTER TABLE action_request DROP COLUMN caller_uid`)
 	exec(t, db, `INSERT INTO action_service_goose_version(version_id,is_applied)
         SELECT version_id,true FROM generate_series(1,6) AS version_id`)
 }
@@ -143,10 +147,14 @@ func TestAdoptSixPreservesHistoryRowsAndRelations(t *testing.T) {
 	if got := count(t, db, `SELECT count(*) FROM action_service_goose_version WHERE version_id=7 AND is_applied`); got != 1 {
 		t.Fatalf("version 7 history rows = %d, want 1", got)
 	}
+	if got := count(t, db, `SELECT count(*) FROM action_service_goose_version WHERE version_id=8 AND is_applied`); got != 1 {
+		t.Fatalf("version 8 history rows = %d, want 1", got)
+	}
 	if got := count(t, db, `SELECT count(*) FROM action_request r JOIN action_decision d ON d.request_id=r.id
         JOIN action_event e ON e.request_id=r.id WHERE r.arguments='{"human":"untouched"}'::jsonb
         AND r.description='human description' AND d.decision_note='operator kept this note'
-        AND d.policy_evidence_proto='\x0801'::bytea AND e.actor_proto='\x0a020801'::bytea`); got != 1 {
+        AND d.policy_evidence_proto='\x0801'::bytea AND e.actor_proto='\x0a020801'::bytea
+        AND r.caller_uid IS NULL`); got != 1 {
 		t.Fatalf("preserved human and typed history rows = %d, want 1", got)
 	}
 }
@@ -178,7 +186,8 @@ func TestRejectsOlderAndPartialSchemasWithoutChanges(t *testing.T) {
 
 func TestRejectsUnmarkedExistingSchema(t *testing.T) {
 	db := cloneDatabase(t)
-	exec(t, db, `DELETE FROM action_service_goose_version WHERE version_id=7`)
+	exec(t, db, `DELETE FROM action_service_goose_version WHERE version_id IN (7, 8)`)
+	exec(t, db, `ALTER TABLE action_request DROP COLUMN caller_uid`)
 	if err := migrations.Up(t.Context(), db); err == nil || !strings.Contains(err.Error(), "without completed version 6 history") {
 		t.Fatalf("Up error = %v, want unmarked schema rejection", err)
 	}
@@ -206,6 +215,9 @@ func TestConcurrentAdoption(t *testing.T) {
 	}
 	if got := count(t, db, `SELECT count(*) FROM action_service_goose_version WHERE version_id=7 AND is_applied`); got != 1 {
 		t.Fatalf("concurrent version 7 history rows = %d, want 1", got)
+	}
+	if got := count(t, db, `SELECT count(*) FROM action_service_goose_version WHERE version_id=8 AND is_applied`); got != 1 {
+		t.Fatalf("concurrent version 8 history rows = %d, want 1", got)
 	}
 	if after := relfilenodes(t, db); !reflect.DeepEqual(after, beforeNodes) {
 		t.Fatalf("concurrent adoption rewrote an Action table: before %v, after %v", beforeNodes, after)
