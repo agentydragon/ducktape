@@ -232,6 +232,14 @@ func runWithServer(ctx context.Context, config Config, start codexexecserver.Sta
 					err = backendErr
 				}
 			default:
+				// A Runtime-requested stop cancels the parent context. The
+				// native Stop below still has to prove the backend fence, but
+				// the interrupted health probe is not itself a service failure.
+				// An independent readiness deadline leaves ctx live and keeps
+				// its error.
+				if ctx.Err() != nil {
+					err = nil
+				}
 			}
 		}
 	}

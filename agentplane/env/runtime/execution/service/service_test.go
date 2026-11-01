@@ -411,6 +411,97 @@ func TestEmbeddedBackendLossDuringHealthWaitKeepsFenceEvidence(t *testing.T) {
 	}
 }
 
+func TestEmbeddedOwnerStopDuringHealthWaitJoinsBackendFence(t *testing.T) {
+	config := Config{ExecutorURL: testExecutorEndpoint(t), SocketPath: filepath.Join(t.TempDir(), "e.sock")}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	serveEntered := make(chan struct{})
+	releaseServe := make(chan struct{})
+	stopEntered := make(chan struct{})
+	releaseStop := make(chan struct{})
+	ready := make(chan struct{}, 1)
+	finished := make(chan error, 1)
+	go func() {
+		finished <- runWithServer(ctx, config, func(context.Context) (*supervision.Instance, error) {
+			return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error {
+				close(stopEntered)
+				<-releaseStop
+				return nil
+			}}, nil
+		}, func(executorpb.ExecutorServer) { ready <- struct{}{} }, func(*grpc.Server, net.Listener) error {
+			close(serveEntered)
+			<-releaseServe
+			return nil
+		})
+	}()
+	select {
+	case <-serveEntered:
+	case err := <-finished:
+		t.Fatalf("service exited before health wait: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("service did not enter health wait")
+	}
+	cancel()
+	select {
+	case <-stopEntered:
+	case err := <-finished:
+		t.Fatalf("service returned before native fence: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("owner stop did not begin native fence")
+	}
+	select {
+	case <-ready:
+		t.Fatal("adapter published after owner requested stop")
+	case err := <-finished:
+		t.Fatalf("service returned before native fence: %v", err)
+	default:
+	}
+	close(releaseServe)
+	close(releaseStop)
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatalf("clean owner stop after native fence = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("service did not return after native fence")
+	}
+}
+
+func TestEmbeddedHealthReadinessTimeoutRemainsFailure(t *testing.T) {
+	config := Config{ExecutorURL: testExecutorEndpoint(t), SocketPath: filepath.Join(t.TempDir(), "e.sock")}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	ready := make(chan struct{}, 1)
+	finished := make(chan error, 1)
+	releaseServe := make(chan struct{})
+	defer close(releaseServe)
+	go func() {
+		finished <- runWithServer(ctx, config, func(context.Context) (*supervision.Instance, error) {
+			return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { return nil }}, nil
+		}, func(executorpb.ExecutorServer) { ready <- struct{}{} }, func(*grpc.Server, net.Listener) error {
+			<-releaseServe
+			return nil
+		})
+	}()
+	select {
+	case err := <-finished:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("independent health readiness timeout = %v, want deadline failure", err)
+		}
+		if ctx.Err() != nil {
+			t.Fatalf("owner context canceled before independent readiness timeout: %v", ctx.Err())
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("health readiness did not time out")
+	}
+	select {
+	case <-ready:
+		t.Fatal("adapter published despite health readiness timeout")
+	default:
+	}
+}
+
 func testExecutorEndpoint(t *testing.T) string {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
