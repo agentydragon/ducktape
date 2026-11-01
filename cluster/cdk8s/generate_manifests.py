@@ -1628,7 +1628,6 @@ def generate_manifests(root: Path) -> None:
     grocy_sf_kustomization = grocy_flux_kustomizations.grocy_sf(
         flux_chart,
         grocy_sf_artifact,
-        volsync_kustomization,
         external_secrets_operator_kustomization,
         mcp_oauth_state_kustomization,
         monitoring_crds_kustomization,
@@ -1640,7 +1639,6 @@ def generate_manifests(root: Path) -> None:
     grocy_vallejo_kustomization = grocy_flux_kustomizations.grocy_vallejo(
         flux_chart,
         grocy_vallejo_artifact,
-        volsync_kustomization,
         external_secrets_operator_kustomization,
         mcp_oauth_state_kustomization,
         monitoring_crds_kustomization,

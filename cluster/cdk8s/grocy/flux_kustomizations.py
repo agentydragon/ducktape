@@ -11,7 +11,6 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 def grocy_sf(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    volsync: Kustomization,
     external_secrets_operator: Kustomization,
     mcp_oauth_state: Kustomization,
     monitoring_crds: Kustomization,
@@ -24,7 +23,6 @@ def grocy_sf(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            volsync,
             external_secrets_operator,
             mcp_oauth_state,
             # the ServiceMonitor/PodMonitor CRD
@@ -52,7 +50,6 @@ def grocy_sf_user_perms(
 def grocy_vallejo(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    volsync: Kustomization,
     external_secrets_operator: Kustomization,
     mcp_oauth_state: Kustomization,
     monitoring_crds: Kustomization,
@@ -65,7 +62,6 @@ def grocy_vallejo(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            volsync,
             external_secrets_operator,
             mcp_oauth_state,
             # the ServiceMonitor/PodMonitor CRD

@@ -1,7 +1,6 @@
 """Grocy itself, one directory per household (`<household>/app`, the household's Flux
 Kustomization directory): its Namespace, the Deployment, Service, settings overrides and
-ingress NetworkPolicy, the config PVCs and VolSync backup, and the verification job around
-them. The directory's `kustomization.yaml` also includes the household's MCP server
+ingress NetworkPolicy, the config PVC and its verification job. The directory's `kustomization.yaml` also includes the household's MCP server
 (`../mcp`, cluster/cdk8s/grocy/mcp.py).
 """
 
@@ -13,47 +12,24 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, k8s
-from volsync_replicationdestination_crds.backube.volsync import (
-    ReplicationDestinationSpecRsyncTls,
-    ReplicationDestinationSpecRsyncTlsCopyMethod,
-    ReplicationDestinationSpecRsyncTlsMoverAffinity,
-    ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinity,
-    ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
-    ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
-    ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
-    ReplicationDestinationSpecRsyncTlsMoverSecurityContext,
-    ReplicationDestinationSpecRsyncTlsMoverSecurityContextSeccompProfile,
-)
-from volsync_replicationsource_crds.backube.volsync import (
-    ReplicationSourceSpecRsyncTls,
-    ReplicationSourceSpecRsyncTlsCopyMethod,
-    ReplicationSourceSpecRsyncTlsMoverSecurityContext,
-    ReplicationSourceSpecRsyncTlsMoverSecurityContextSeccompProfile,
-    ReplicationSourceSpecTrigger,
-)
-
-from cluster.cdk8s import cilium, namespaces, node_scheduling
+from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.volsync.replication_destination import ReplicationDestination
-from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAME = "grocy"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _IMAGE = "lscr.io/linuxserver/grocy:v4.6.0-ls318"
 _CONFIG_CLAIM = "grocy-config-piraeus"
-_BACKUP = "grocy-config-ovh-backup"
 _HTTP = Port(name="http", number=80)
 # grocy/mcp.py and grocy/user_perms.py render one of theirs per household too.
 HOUSEHOLDS = ("sf", "vallejo")
 # Every grocy directory but the hand-written image-pins Components: `<household>/{app,mcp,user-perms}`
 # and `user-perms-base`.
 ROOT = f"{GENERATED_ROOT}/grocy"
-_BACKUP_SCHEDULE = "23 */6 * * *"
 
 
 def output_dir(household: str) -> str:
@@ -199,48 +175,6 @@ def _server(chart: Chart, namespace: str) -> None:
     )
 
 
-_MOVER_UID = 1000  # Matches the linuxserver.io image's PUID/PGID, so movers own the files they copy.
-
-
-def _destination_mover_security_context() -> ReplicationDestinationSpecRsyncTlsMoverSecurityContext:
-    return ReplicationDestinationSpecRsyncTlsMoverSecurityContext(
-        run_as_user=_MOVER_UID,
-        run_as_group=_MOVER_UID,
-        fs_group=_MOVER_UID,
-        seccomp_profile=ReplicationDestinationSpecRsyncTlsMoverSecurityContextSeccompProfile(type="RuntimeDefault"),
-    )
-
-
-def _destination_mover_affinity() -> ReplicationDestinationSpecRsyncTlsMoverAffinity:
-    """Keeps the destination mover on an OVH node. The backup PVs predate the SeaweedFS
-    StorageClasses' allowedTopologies, so they carry no node affinity of their own and the
-    scheduler would otherwise place the mover on a home node without the SeaweedFS CSI driver."""
-    return ReplicationDestinationSpecRsyncTlsMoverAffinity(
-        node_affinity=ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinity(
-            required_during_scheduling_ignored_during_execution=ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                node_selector_terms=[
-                    ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                        match_expressions=[
-                            ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                key=node_scheduling.ZONE_LABEL, operator="In", values=[node_scheduling.HIL_OVH_ZONE]
-                            )
-                        ]
-                    )
-                ]
-            )
-        )
-    )
-
-
-def _source_mover_security_context() -> ReplicationSourceSpecRsyncTlsMoverSecurityContext:
-    return ReplicationSourceSpecRsyncTlsMoverSecurityContext(
-        run_as_user=_MOVER_UID,
-        run_as_group=_MOVER_UID,
-        fs_group=_MOVER_UID,
-        seccomp_profile=ReplicationSourceSpecRsyncTlsMoverSecurityContextSeccompProfile(type="RuntimeDefault"),
-    )
-
-
 def household_chart(app: App, *, household: str) -> Chart:
     namespace = service(household).pods.namespace
     chart = Chart(app, namespace, disable_resource_name_hashes=True)
@@ -301,50 +235,6 @@ def household_chart(app: App, *, household: str) -> Chart:
                     ],
                 )
             ),
-        ),
-    )
-    # Periodic backup of the Piraeus-backed primary into a SeaweedFS-backed PVC.
-    #
-    # Direction: Piraeus HDD (primary, hot) → seaweedfs-ovh (cold, SeaweedFS replicates
-    # across kimsufi nodes).
-    #
-    # copyMethod: Direct (no VolumeSnapshotClass installed). Mover and live grocy pod both
-    # access the live primary; backups may catch torn SQLite writes occasionally — acceptable
-    # for crash-consistent restore.
-    k8s.KubePersistentVolumeClaim(
-        chart,
-        "backup-claim",
-        metadata=k8s.ObjectMeta(name=_BACKUP, namespace=namespace),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="seaweedfs-ovh",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("2Gi")}),
-        ),
-    )
-    ReplicationDestination(
-        chart,
-        "backup-destination",
-        metadata=ApiObjectMetadata(name=_BACKUP, namespace=namespace),
-        rsync_tls=ReplicationDestinationSpecRsyncTls(
-            destination_pvc=_BACKUP,
-            copy_method=ReplicationDestinationSpecRsyncTlsCopyMethod.DIRECT,
-            service_type="ClusterIP",
-            mover_security_context=_destination_mover_security_context(),
-            mover_affinity=_destination_mover_affinity(),
-        ),
-    )
-    ReplicationSource(
-        chart,
-        "backup-source",
-        metadata=ApiObjectMetadata(name=_BACKUP, namespace=namespace),
-        source_pvc=_CONFIG_CLAIM,
-        trigger=ReplicationSourceSpecTrigger(schedule=_BACKUP_SCHEDULE),
-        mover=ReplicationSourceSpecRsyncTls(
-            copy_method=ReplicationSourceSpecRsyncTlsCopyMethod.DIRECT,
-            key_secret=f"volsync-rsync-tls-{_BACKUP}",
-            address=f"volsync-rsync-tls-dst-{_BACKUP}.{namespace}.svc",
-            port=8000,
-            mover_security_context=_source_mover_security_context(),
         ),
     )
     return chart

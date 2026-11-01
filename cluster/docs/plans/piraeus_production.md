@@ -21,7 +21,7 @@ Remove completed work from this plan as it lands. The deployed design is in
 
 Track this separately in [#11753](https://github.com/agentydragon/ducktape/issues/11753).
 The Haku UI WALs stay on Seaweed until Haku UI is retired. Forgejo's shared Git
-volume and Grocy's backup destinations also remain on Seaweed.
+volume remains on Seaweed.
 
 The remaining replicated-class acceptance gap is expansion. Test it before more
 consumers move (see [the deployed design](../piraeus.md) and

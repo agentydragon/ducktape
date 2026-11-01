@@ -3778,8 +3778,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: volsync
-      namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: mcp-oauth-state-db
@@ -3806,8 +3804,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: volsync
-      namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: mcp-oauth-state-db
