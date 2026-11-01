@@ -100,6 +100,36 @@ k3s_suite(
     ],
 )
 
+# Keep the parent-to-child CLI flow separate from the external OAuth acceptance stack.
+k3s_suite(
+    name = "test_parent_delegation",
+    srcs = ["test_parent_delegation.py"],
+    stack = "mcp",
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane:policy_sets",
+        "//agentplane/action_service:action_service_pb2",
+        "//agentplane/app/testing:client",
+        "//agentplane/app/testing:models",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:agent",
+        "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests:offered_models",
+        "//agentplane/system_tests:sandbox",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/system_tests/scenarios:mcp",
+        "//agentplane/system_tests/suites:conftest",
+        "//agentplane/testing:scripted_model",
+        "@pypi//more_itertools",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "conftest",
     testonly = True,
