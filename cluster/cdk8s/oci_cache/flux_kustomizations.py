@@ -14,7 +14,6 @@ def oci_cache(
     artifact: ArtifactGeneratorSpecArtifacts,
     monitoring_crds: Kustomization,
     piraeus_cluster: Kustomization,
-    seaweedfs_operator: Kustomization,
 ) -> Kustomization:
     name = "oci-cache"
     return flux_kustomization(
@@ -29,7 +28,6 @@ def oci_cache(
             # Namespace, app, and ServiceMonitor are managed together here.
             monitoring_crds,
             piraeus_cluster,
-            seaweedfs_operator,
         ),
         description="Zot OCI pull-through cache and its namespace-local monitoring.",
     )

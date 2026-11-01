@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart, JsonPatch
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
@@ -20,7 +20,6 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
-from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/oci-cache"
@@ -183,10 +182,6 @@ def _deployment(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAMESPACE, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO)
-    # Re-adopt the orphaned Zot IAM user so the operator can retire it in a
-    # separate reconciliation, after the old credentials CR has finalized.
-    identity = s3.identity(chart, "retired-identity", name="registry-cache", namespace=_NAMESPACE)
-    identity.add_json_patch(JsonPatch.replace("/spec/reclaimPolicy", "Delete"))
     _deployment(chart)
     k8s.KubeService(
         chart,

@@ -1292,11 +1292,7 @@ def generate_manifests(root: Path) -> None:
     )
     oci_cache_artifact = artifact("oci-cache", oci_cache_zot.OUTPUT_DIR)
     oci_cache_kustomization = oci_cache_flux_kustomizations.oci_cache(
-        flux_chart,
-        oci_cache_artifact,
-        monitoring_crds_kustomization,
-        piraeus_cluster_kustomization,
-        seaweedfs_operator_kustomization,
+        flux_chart, oci_cache_artifact, monitoring_crds_kustomization, piraeus_cluster_kustomization
     )
     seaweedfs_public_s3_artifact = artifact("seaweedfs-public-s3", seaweedfs_public_s3.OUTPUT_DIR)
     seaweedfs_public_s3.seaweedfs_public_s3(
