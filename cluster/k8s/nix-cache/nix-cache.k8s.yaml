@@ -61,8 +61,8 @@ spec:
       isolationCheck:
         enabled: false
   storage:
-    resizeInUseVolumes: false
-    size: 8Gi
+    resizeInUseVolumes: true
+    size: 16Gi
     storageClass: piraeus-ssd-local
 ---
 apiVersion: seaweed.seaweedfs.com/v1
