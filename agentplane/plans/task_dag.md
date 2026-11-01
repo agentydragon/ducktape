@@ -35,8 +35,7 @@ authorized work; the priority list does not dispatch the other tracks.
 **Component boundaries:** the [Environment Runtime](../env/runtime/SPEC.md),
 [Harness Host](../env/runtime/harnesshost/SPEC.md) and [Execution service](../env/runtime/execution/SPEC.md)
 have distinct lifecycle responsibilities. Preserve those logical owners in the selected work;
-their executable packaging and process grouping remain subject to
-`ENV_MANAGEMENT_PROCESS_CONSOLIDATION_DESIGN` and explicit operator review. Session and
+the operator selected a combined management process in `ENV_MANAGEMENT_PROCESS_CONSOLIDATION_DESIGN`. Session and
 Environment dispatch remain distinct roles whose binary grouping is for later; the broader
 runtime-model decision does not gate these reliability or delegation slices.
 
@@ -1898,32 +1897,20 @@ flowchart TD
     ENVIRONMENT_RUNTIME_SERVICE_SPLIT[Unscheduled: split Environment and Harness/Session APIs]
     HISTORY_SERVICE_RENAME[Decision, unscheduled: History as a transcript service]
     SERVICE_SETTINGS_RETHINK[Decision, unscheduled: how Agentplane services are configured]
-    ENV_MANAGEMENT_PROCESS_CONSOLIDATION_DESIGN[Decision, later: environment management process grouping]
+    ENV_MANAGEMENT_PROCESS_CONSOLIDATION_DESIGN[In progress: combine environment management components]
 ```
 
-### `ENV_MANAGEMENT_PROCESS_CONSOLIDATION_DESIGN` — review eventual environment process consolidation
+### `ENV_MANAGEMENT_PROCESS_CONSOLIDATION_DESIGN` — combine environment management components
 
-**Decision, later; operator, 2026-11-01 UTC: pending explicit operator review before implementation.**
-Review consolidation of Environment Runtime, Harness Host management and the Go Execution API.
-Distinguish one executable with separate runnable roles from one OS process with a shared heap,
-crash boundary and restart lifetime. Compare the current separate processes, Runtime plus Harness
-Host management in one process, and all three Go components in one process. Keep native Claude,
-Codex app-server and Codex exec-server processes distinct from their Go management components.
+**In progress; operator direction, 2026-11-01 UTC.** Run Environment Runtime, Harness Host and the
+Execution API in one process, with native harnesses and exec-server retaining their distinct VM
+slices and the Pod execution companion remaining separate. Keep logical ownership boundaries,
+independently runnable Execution and execution-only environments. The operator will ensure no old
+Sandboxes are alive during cutover and can delete them; preserve authored data before deletion.
 
-Recommendation for review: retain clear logical modules, independently runnable Execution and an
-optional resident harness; evaluate a combined default after supervision cleanup clarifies actual
-failure and lifetime requirements. Preserve execution-only environments and central Sessions
-attached to zero or more environments. Compare reduced private RPC/ownership coordination with
-adapter-failure containment, updates without interrupting unrelated work, resource/privilege
-boundaries and restart/adoption semantics. The current split's incomplete independent recovery
-does not settle that tradeoff; separate cgroups do not imply survival when native units are bound
-to their manager's lifetime.
-
-**Exit:** the operator reviews packaging and process topology separately, including concrete
-graceful-stop/crash/restart examples and a data-preserving transition if selected. Only then add
-implementation nodes and their real prerequisites. This decision does not gate current
-reliability, delegation or broader runtime-model design work;
-no executable/process consolidation is dispatched now.
+Complete the combined process, replace its private in-process transports with direct calls while
+preserving admission, cancellation and fencing semantics, and verify shutdown and restart in both
+Pod and VM system tests. No uncertain native effects are replayed.
 
 ### `SANDBOX_ENVIRONMENT_RENAME_DESIGN` — review a scoped Sandbox-to-Environment rename
 

@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -187,15 +185,4 @@ func waitExecutionReady(ctx context.Context, conn *grpc.ClientConn) error {
 		case <-ticker.C:
 		}
 	}
-}
-
-func inheritedEnvironment() map[string]string {
-	result := map[string]string{}
-	for _, entry := range os.Environ() {
-		key, value, ok := strings.Cut(entry, "=")
-		if ok {
-			result[key] = value
-		}
-	}
-	return result
 }

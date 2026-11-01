@@ -122,7 +122,6 @@ func runService(ctx context.Context, args []string) error {
 		Supervision: settings.Supervision, PodPID1: settings.PodPID1, VMProcessLauncher: settings.VMProcessLauncher,
 		CodexExecServer: settings.CodexExecServer, CodexBinary: codexBinary,
 		HarnessEnvironment: settings.HarnessEnvironment, InitializationCwd: settings.InitializationCwd,
-		ConfigPath: *configPath, LaunchPath: *launchPath,
 		HostIngress: ingress,
 		HostConfig: harnesshost.Config{
 			StateDir: settings.StateDir, SessionReconcileConcurrency: settings.SessionReconcileConcurrency,

@@ -16,7 +16,7 @@ pure-Go `//agentplane/env/runtime/supervision:environment_runtime_systemd_fixtur
 Runner. It exercises direct argv/stream semantics, lost launch replies, Runner death, stop status,
 reaper retries and scoped startup fencing. Ordinary VM Session setup checks workspace creation,
 credentials, resource mapping and detached descendants; VM tools cover execution and OOM.
-The production `//agentplane/env/runtime/harnesshost/cmd:agentplane-harness-host` remains pure-Go.
+The production `//agentplane/env/runtime/cmd:agentplane-environment-runtime` is pure Go.
 
 ### Native subagents
 

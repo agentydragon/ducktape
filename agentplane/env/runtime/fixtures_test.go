@@ -48,7 +48,7 @@ func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string
 	t.Helper()
 	root := t.TempDir()
 	launch := configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}, Bootstrap: bootstrap}
-	config := Config{StateDir: root, Launch: launch, Supervision: "subprocess", ConfigPath: filepath.Join(root, "config.json"), LaunchPath: filepath.Join(root, "launch.json"), InitializationCwd: workspace, Control: insecureControl(), RuntimeSocket: filepath.Join(root, "runtime.sock"), HostSocket: filepath.Join(root, "host.sock"), ExecutionSocket: filepath.Join(root, "execution.sock")}
+	config := Config{StateDir: root, Launch: launch, Supervision: "subprocess", InitializationCwd: workspace, Control: insecureControl(), RuntimeSocket: filepath.Join(root, "runtime.sock"), HostSocket: filepath.Join(root, "host.sock"), ExecutionSocket: filepath.Join(root, "execution.sock")}
 	return runtimeTestConfig{Config: config, host: harnesshost.Config{StateDir: root, Launch: launch, WorkspaceRoot: workspace, InitializationCwd: workspace, RuntimeSocket: config.RuntimeSocket, ListenSocket: config.HostSocket, Claude: &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test"}, HTTPClient: http.DefaultClient}}
 }
 

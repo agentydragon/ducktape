@@ -67,16 +67,16 @@ evidence destination remain open; preserve the ability to record harness traces.
 
 ## Role boundaries and routing
 
-Operator direction, 2026-10-31 UTC: use the following responsibilities and names. Each standalone
-binary has its own directory and entrypoint; shared libraries live outside directories owned by
-another binary. The Environment Runtime, Execution service and native Harness Host run as components
-of an execution environment. The central sampler is a separate control-plane implementation.
+Operator direction, 2026-11-01 UTC: use the following responsibilities and names. Environment
+Runtime, Execution and native Harness Host are components of one environment management process;
+Execution also remains independently runnable. The central sampler is a separate control-plane
+implementation.
 
 | Component                      | Runnable target                  | Responsibility                                                                                                             |
 | ------------------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Environment Runtime            | `agentplane-environment-runtime` | Environment identity, bootstrap, component discovery, health and coordinated drain.                                        |
 | Execution service              | `agentplane-execution-service`   | Typed process/filesystem API, execution sessions, handles, output and cancellation; initially backed by Codex exec-server. |
-| Environment Harness Host       | `agentplane-harness-host`        | Native Claude/Codex Session admission, protocol adaptation, continuation state, journals and History export.               |
+| Environment Harness Host       | Runtime component                | Native Claude/Codex Session admission, protocol adaptation, continuation state, journals and History export.               |
 | Central sampler                | `agentplane-central-sampler`     | Independent control-plane LLM agent loop; may call the environment Execution service.                                      |
 | Environment dispatch / gateway | Binary grouping deferred         | Authenticated access to environment endpoints, connection ownership and incarnation fencing.                               |
 | Session dispatcher             | Binary grouping deferred         | Durable Session command admission/delivery and routing to its owning harness, which may be environment-bound.              |

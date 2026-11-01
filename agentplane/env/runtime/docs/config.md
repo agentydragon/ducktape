@@ -141,9 +141,8 @@ The paths consumed by Runtime and tools are identical.
 | `/run/agentplane/config/kubeconfig`                              | Sandbox workload identity through the egress proxy.     |
 | `/run/agentplane/trust/ca-certificates.crt`                      | Egress proxy CA bundle.                                 |
 | `/run/agentplane/trust/ca-certificates.p12`                      | Java proxy trust store.                                 |
-| `/run/agentplane/environment/bin/agentplane-environment-runtime` | Environment owner and Pod PID 1.                        |
-| `/run/agentplane/environment/bin/agentplane-harness-host`        | Session, harness and journal owner, started by Runtime. |
-| `/run/agentplane/environment/bin/agentplane-execution-service`   | Execution API owner and Pod companion entrypoint.       |
+| `/run/agentplane/environment/bin/agentplane-environment-runtime` | Environment, Session and Execution owner; Pod PID 1.   |
+| `/run/agentplane/environment/bin/agentplane-execution-service`   | Standalone Execution API and Pod companion entrypoint.  |
 | `/state`                                                         | Durable Session journals and native persistence.        |
 | `/state/workspaces`                                              | Sandbox-owned workspace storage.                        |
 

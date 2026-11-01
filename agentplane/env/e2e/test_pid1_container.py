@@ -5,6 +5,7 @@ import fcntl
 import json
 import os
 import time
+import uuid
 from pathlib import Path
 
 import pytest
@@ -213,7 +214,7 @@ async def test_production_pid1_embedded_host_reaps_setup(
         stub = await gateway.control.runner()
         await stub.OpenSession(
             environment_runtime_pb2.OpenSessionRequest(
-                session_id="host-pid1-setup",
+                session_id=str(uuid.uuid4()),
                 spec=session_pb2.SessionSpec(
                     harness=session_pb2.HARNESS_CODEX,
                     cwd="/proof/state/workspaces/project",

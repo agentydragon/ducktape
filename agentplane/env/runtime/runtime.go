@@ -1,11 +1,10 @@
-// Package runtime owns one Sandbox environment's identity, bootstrap and child service lifecycle.
+// Package runtime owns one Sandbox environment's identity, bootstrap and component lifecycles.
 package runtime
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -65,21 +64,11 @@ type Config struct {
 	CodexBinary        string
 	HarnessEnvironment map[string]string
 	InitializationCwd  string
-	ConfigPath         string
-	LaunchPath         string
 	HostConfig         harnesshost.Config
 	HostIngress        configuration.Endpoint
 	RuntimeSocket      string
 	HostSocket         string
 	ExecutionSocket    string
-}
-
-type childProcess interface {
-	Start(context.Context) error
-	Wait(context.Context) (int, error)
-	Stop(context.Context) error
-	Stdout() io.Reader
-	Stderr() io.Reader
 }
 
 type hostLifetime interface {
@@ -90,15 +79,11 @@ type hostLifetime interface {
 type childExit struct {
 	code          int
 	err           error
-	healthFailure bool
 }
 
 type runtimeDeps struct {
 	prepareSupervisor func(Config, *os.File) (*supervision.Supervisor, error)
 	dialHost          func(string) (*grpc.ClientConn, error)
-	startUnit         func(context.Context, string) (unitInvocation, error)
-	fenceUnit         func(context.Context, string, unitInvocation) error
-	startChild        func(*supervision.Supervisor, supervision.ProcessConfig) (childProcess, error)
 	listen            func(string) (net.Listener, error)
 	waitBootstrap     func(context.Context) error
 	startExecution    func(context.Context, Config, string) (executionHandle, error)
@@ -160,7 +145,6 @@ type Runtime struct {
 	execStreams          map[uint64]context.CancelFunc
 	execCalls            map[uint64]context.CancelFunc
 	execCallID           uint64
-	execution            childProcess
 	executionFence       bool
 	fenceInFlight        *runtimepb.Binding
 	closing              bool
@@ -174,7 +158,6 @@ type Runtime struct {
 	hostLifetime         hostLifetime
 	hostExited           bool
 	hostExit             chan childExit
-	processOutputWait    sync.WaitGroup
 	closeOnce            sync.Once
 	closeDone            chan struct{}
 	closeErr             error
@@ -196,9 +179,6 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	}
 	if err := configuration.ValidateControlIdentity(config.Control, config.Launch.Sandbox); err != nil {
 		return nil, err
-	}
-	if config.ConfigPath == "" || config.LaunchPath == "" {
-		return nil, errors.New("environment Runtime requires config and launch file paths")
 	}
 	if config.Supervision != "pid1" && config.Supervision != "subprocess" && config.Supervision != "systemd" {
 		return nil, errors.New("environment Runtime requires explicit pid1, subprocess or systemd supervision")
@@ -269,20 +249,11 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 		_ = owner.Close()
 		return nil, err
 	}
-	if deps.startChild == nil {
-		deps.startChild = startSupervisedChild
-	}
 	if deps.dialHost == nil {
 		deps.dialHost = dialUnix
 	}
 	if deps.listen == nil {
 		deps.listen = func(address string) (net.Listener, error) { return net.Listen("unix", address) }
-	}
-	if deps.startUnit == nil {
-		deps.startUnit = startSystemdUnit
-	}
-	if deps.fenceUnit == nil {
-		deps.fenceUnit = fenceSystemdUnit
 	}
 	lifecycleState := injectedState
 	if lifecycleState == nil {
@@ -494,7 +465,6 @@ func (r *Runtime) finishClose() error {
 	r.lifecycleCancel()
 	<-r.lifecycleDone
 	r.lifecycleWorkers.Wait()
-	r.processOutputWait.Wait()
 	if r.config.Supervision == "pid1" {
 		// The Runtime owns the whole Pod PID namespace. Join both management
 		// controllers before killing any escaped native descendants, then retain
@@ -886,12 +856,12 @@ func (r *Runtime) watchExecutionProcess(handle executionHandle, uid string, moni
 		r.mu.Unlock()
 		return
 	}
-	if !exit.healthFailure && (exit.code != 0 || exit.err != nil) {
+	if exit.code != 0 || exit.err != nil {
 		r.mu.Unlock()
 		r.fail(fmt.Errorf("embedded Execution API exited without a successful backend fence (status=%d): %v", exit.code, exit.err))
 		return
 	}
-	// A clean child exit (or a systemd health loss) still needs an exact fence
+	// A fenced backend loss still needs an exact fence
 	// when the environment is already draining. Recovery owns that fence and
 	// clears the old handle before a same-incarnation RUNNING transition can
 	// reuse it. It only starts a replacement if RUNNING is still current after
@@ -1189,10 +1159,6 @@ func (r *Runtime) closeOwner() error { return r.owner.Close() }
 
 func dialUnix(path string) (*grpc.ClientConn, error) {
 	return grpc.NewClient("unix://"+path, observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-}
-
-func startSupervisedChild(supervisor *supervision.Supervisor, config supervision.ProcessConfig) (childProcess, error) {
-	return supervisor.NewProcess(config)
 }
 
 var (
