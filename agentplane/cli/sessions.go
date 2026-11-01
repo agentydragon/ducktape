@@ -6,25 +6,101 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	sessionclient "github.com/agentydragon/ducktape/agentplane/session_client"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const sessionsHelp = `Calls the SessionDispatcher gRPC API (AGENTPLANE_SESSIONS_URL, AGENTPLANE_SESSIONS_CREDENTIAL).
+observe-input also reads retained History (AGENTPLANE_HISTORY_URL, AGENTPLANE_HISTORY_CREDENTIAL).
 
-This group opens and directs Sessions in an existing Sandbox. It does not provision an environment or
-read the combined History snapshot. The Dispatcher caller must already be authorized by the backend.`
+This group opens and directs Sessions in an existing Sandbox and can observe an input's correlated
+History result. It does not provision an environment. The caller must already be authorized by each
+backend it reads.`
 
 type sessionCall func(context.Context, dispatcherpb.SessionDispatcherClient, []string) error
 
 func (a *app) sessionsCommand() *cobra.Command {
 	return group("sessions", "Open and direct Sessions in an existing Sandbox", sessionsHelp,
 		a.openSessionCommand(), a.submitInputCommand(), a.getOpeningCommand(), a.getDispatchCommand(),
-		a.cancelInputCommand(), a.interruptTurnCommand())
+		a.cancelInputCommand(), a.interruptTurnCommand(), a.observeInputCommand())
+}
+
+func (a *app) observeInputCommand() *cobra.Command {
+	var waitSeconds int
+	var resumeToken string
+	var commandID string
+	command := &cobra.Command{
+		Use:   "observe-input SESSION_ID --command-id ID [--wait-seconds N] [--resume-token TOKEN]",
+		Short: "Read one input's Dispatcher receipt and correlated History result",
+		Long: `Reads the caller-held input command from SessionDispatcher, then follows retained History from its
+admission cursor. It does not submit or retry input. A returned not_observed result is not evidence that
+the command failed or that a turn completed. History gaps and source errors are returned as structured
+coverage facts. Both backends authorize this caller independently.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if args[0] == "" || commandID == "" {
+				return usageFailure("SESSION_ID and --command-id must be non-empty")
+			}
+			if waitSeconds < 0 || waitSeconds > 30 {
+				return usageFailure("--wait-seconds must be between 0 and 30")
+			}
+			dispatcherConnection, err := a.connectGRPC("SESSIONS")
+			if err != nil {
+				return err
+			}
+			defer dispatcherConnection.Close()
+			historyConnection, err := a.connectGRPC("HISTORY")
+			if err != nil {
+				return err
+			}
+			defer historyConnection.Close()
+			ctx, cancel := a.deadline()
+			defer cancel()
+			result, err := sessionclient.ObserveInput(ctx,
+				dispatcherpb.NewSessionDispatcherClient(dispatcherConnection),
+				historypb.NewHistoryServiceClient(historyConnection),
+				sessionclient.ObserveInputRequest{
+					SessionID: args[0], CommandID: commandID, WaitSeconds: waitSeconds, ResumeToken: resumeToken,
+				},
+			)
+			if err != nil {
+				if deadlineElapsed(ctx) {
+					body, marshalErr := json.Marshal(result)
+					if marshalErr != nil {
+						return invalidResponse("marshal input observation: %v", marshalErr)
+					}
+					if showErr := a.showOne(body, inputObservationLine); showErr != nil {
+						return showErr
+					}
+					return exitWith(exitDeadline)
+				}
+				return grpcFailure(ctx, err)
+			}
+			body, err := json.Marshal(result)
+			if err != nil {
+				return invalidResponse("marshal input observation: %v", err)
+			}
+			if err := a.showOne(body, inputObservationLine); err != nil {
+				return err
+			}
+			if deadlineElapsed(ctx) && result.Observation.Kind == sessionclient.ObservationNotObserved {
+				return exitWith(exitDeadline)
+			}
+			return nil
+		},
+	}
+	command.Flags().StringVar(&commandID, "command-id", "", "caller-held idempotency key used by submit-input")
+	command.Flags().IntVar(&waitSeconds, "wait-seconds", 0, "maximum time to wait for a correlated result (0 reads once; max 30)")
+	command.Flags().StringVar(&resumeToken, "resume-token", "", "resume token returned by a prior observation for this Session and command")
+	_ = command.MarkFlagRequired("command-id")
+	return command
 }
 
 func (a *app) sessionCommand(fn sessionCall) func(*cobra.Command, []string) error {
@@ -336,6 +412,51 @@ func dispatchLine(raw json.RawMessage) (string, error) {
 	)
 	if dispatch.Reason != nil {
 		line += fields("reason", fmt.Sprintf("%q", dispatch.GetReason()))
+	}
+	return line, nil
+}
+
+func inputObservationLine(raw json.RawMessage) (string, error) {
+	var observation sessionclient.InputObservation
+	if err := json.Unmarshal(raw, &observation); err != nil {
+		return "", invalidResponse("%v", err)
+	}
+	line := fields(observation.SessionID, observation.CommandID, string(observation.Observation.Kind))
+	if observation.Dispatch.Kind != "" {
+		line += fields("dispatcher " + observation.Dispatch.Kind)
+	}
+	if len(observation.Dispatch.Value) > 0 {
+		dispatch := &dispatcherpb.Dispatch{}
+		if err := protojson.Unmarshal(observation.Dispatch.Value, dispatch); err != nil {
+			return "", invalidResponse("dispatcher receipt: %v", err)
+		}
+		line += fields(enumSuffix(dispatch.GetState().String(), "DELIVERY_STATE_"), enumSuffix(dispatch.GetOperation().String(), "OPERATION_"))
+	}
+	if observation.Observation.TurnID != nil {
+		line += fields("turn " + *observation.Observation.TurnID)
+	}
+	if observation.Observation.Turn != nil {
+		turn := observation.Observation.Turn
+		line += fields("turn " + turn.TurnID)
+		line += fields("status " + turn.Status)
+		if turn.FinalAssistantMessage != nil {
+			line += fields("message", strconv.Quote(firstLine(*turn.FinalAssistantMessage)))
+		}
+	}
+	if observation.Observation.Reason != nil {
+		line += fields("reason", strconv.Quote(*observation.Observation.Reason))
+	}
+	if observation.Observation.ThroughCursor != "" {
+		line += fields("history through " + observation.Observation.ThroughCursor)
+	}
+	if len(observation.Observation.Gaps) > 0 {
+		line += fmt.Sprintf("  history gaps %d", len(observation.Observation.Gaps))
+	}
+	if observation.Dispatch.Error != nil {
+		line += fields("dispatcher error", observation.Dispatch.Error.Code)
+	}
+	if observation.Observation.Error != nil {
+		line += fields("history error", observation.Observation.Error.Code)
 	}
 	return line, nil
 }
