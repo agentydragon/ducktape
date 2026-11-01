@@ -402,21 +402,13 @@ func (r *Runtime) waitForHostReady(ctx context.Context, binding *runtimepb.Bindi
 
 func (r *Runtime) waitForHostQuiesced(ctx context.Context, binding *runtimepb.Binding) error {
 	for {
-		report, ready := r.currentReport(binding)
-		if ready && report.Facts.GetQuiesceStage() == environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED {
+		quiesced, changed, err := r.hostQuiescenceWaitSnapshot(binding)
+		if err != nil {
+			return err
+		}
+		if quiesced {
 			return nil
 		}
-		r.mu.Lock()
-		if failure := r.failureLocked(); failure != nil {
-			r.mu.Unlock()
-			return failure
-		}
-		if r.host == nil || !r.host.connected {
-			r.mu.Unlock()
-			return status.Error(codes.Unavailable, "Harness Host lifecycle connection is unavailable")
-		}
-		changed := r.changes
-		r.mu.Unlock()
 		select {
 		case <-changed:
 		case <-ctx.Done():
@@ -425,11 +417,19 @@ func (r *Runtime) waitForHostQuiesced(ctx context.Context, binding *runtimepb.Bi
 	}
 }
 
-func (r *Runtime) currentReport(binding *runtimepb.Binding) (*runtimepb.HostReport, bool) {
+func (r *Runtime) hostQuiescenceWaitSnapshot(binding *runtimepb.Binding) (bool, <-chan struct{}, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.host == nil || !r.host.connected || r.host.report == nil || !r.host.report.Ready || !proto.Equal(r.host.report.Binding, binding) {
-		return nil, false
+	if r.host != nil && r.host.connected && r.host.report != nil && r.host.report.Ready &&
+		proto.Equal(r.host.report.Binding, binding) &&
+		r.host.report.Facts.GetQuiesceStage() == environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED {
+		return true, nil, nil
 	}
-	return proto.Clone(r.host.report).(*runtimepb.HostReport), true
+	if failure := r.failureLocked(); failure != nil {
+		return false, nil, failure
+	}
+	if r.host == nil || !r.host.connected {
+		return false, nil, status.Error(codes.Unavailable, "Harness Host lifecycle connection is unavailable")
+	}
+	return false, r.changes, nil
 }
