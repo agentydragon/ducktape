@@ -112,3 +112,17 @@ pass. The subsequent rebase onto pin-only
 `f684931c6e` preserves the exact debundle subtree of the tested base. Only this
 evidence note changes after the combined checks; production and test inputs
 remain identical.
+
+## Export-reentry landing race
+
+C2 merged as `28628668de` immediately before PR creation, so the initial PR
+head was conflicted. The rebase preserves its real `ExportReentry` full-report
+kind, allowed-kind validation, per-chunk full sink and borrowed bounded summary.
+The graph action continues to exclude all full-report kinds/chunks and JSONL;
+the ordinary Pipeline retains them. No source fact or gate rule changes.
+
+[Reconciled checks](https://app.buildbuddy.io/invocation/cc8a7912-6b61-4842-b4c5-12b471b1cbf5)
+pass all 36 named targets/aspects and 28 suites, including seven action controls,
+export-reentry/closed-loader controls and the prior graph/staged/query/snapshot
+and final-validation matrix. Production/test source is `832beb653a`; this
+checkpoint is a separate docs-only follow-up. Normal pinned hooks pass.
