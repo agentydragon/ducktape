@@ -16,12 +16,12 @@ import pytest
 import pytest_bazel
 from pydantic import SecretStr
 
-from agentplane.env.runtime.control import environment_runtime_pb2
-from agentplane.proto import event_pb2
 from agentplane.central_sampler import sampler_pb2, sampler_pb2_grpc
 from agentplane.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig
 from agentplane.central_sampler.testing import METADATA, open_request, service, settings
 from agentplane.central_sampler.testing_store import IntentSnapshot, Store
+from agentplane.env.runtime.control import environment_runtime_pb2
+from agentplane.proto import event_pb2
 from util.testing.sqlalchemy_engines import postgres_async_engine
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 

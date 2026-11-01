@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
 func anthropicHistoryItemID(message map[string]json.RawMessage, index int, block map[string]json.RawMessage) string {

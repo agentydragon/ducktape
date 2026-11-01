@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
 func testConfig() Config {

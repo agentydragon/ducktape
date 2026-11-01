@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -17,8 +19,6 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"

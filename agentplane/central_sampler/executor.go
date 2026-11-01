@@ -13,10 +13,10 @@ import (
 	"sync"
 	"time"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
-	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

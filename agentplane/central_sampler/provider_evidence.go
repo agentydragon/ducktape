@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 
-	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
 type ResponseEvidence struct {

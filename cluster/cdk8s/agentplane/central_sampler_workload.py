@@ -9,8 +9,8 @@ from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, EnvValue, MemoryResources, PathMapping, Secret, Volume
 from constructs import Construct
 
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.central_sampler.settings import Settings
+from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import central_sampler, database, history_service, llm_ingress, runner_gateway
 from cluster.cdk8s.agentplane.environment import Environment

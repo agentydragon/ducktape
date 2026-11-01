@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
 type fakeCodeModePeer struct {

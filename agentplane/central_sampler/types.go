@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
 
 // Owner fences every runtime write to the lease generation that acquired it.

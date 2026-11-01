@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 )
 
 // The expected strings are Codex rust-v0.162.1's rendered `<environment_context>` shape, which the

@@ -3,8 +3,8 @@ package responses
 import (
 	"encoding/json"
 
-	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
 // Observations projects one native event into normalized events. It never changes or replaces

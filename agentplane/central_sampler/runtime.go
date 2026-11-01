@@ -12,10 +12,10 @@ import (
 	"sync"
 	"time"
 
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/protobuf/proto"
 )
 

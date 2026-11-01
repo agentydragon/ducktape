@@ -7,9 +7,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	_ "github.com/lib/pq"
 )
 

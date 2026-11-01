@@ -9,9 +9,6 @@ import pytest
 import pytest_bazel
 from pydantic import SecretStr
 
-from agentplane.env.runtime.control import environment_runtime_pb2
-from agentplane.native.testing.model_endpoint import SseEvent
-from agentplane.proto import event_pb2
 from agentplane.central_sampler import sampler_pb2
 from agentplane.central_sampler.settings import (
     AnthropicCompactionConfig,
@@ -23,6 +20,9 @@ from agentplane.central_sampler.settings import (
 )
 from agentplane.central_sampler.testing import METADATA, Endpoint, open_request, service, settings
 from agentplane.central_sampler.testing_store import Store
+from agentplane.env.runtime.control import environment_runtime_pb2
+from agentplane.native.testing.model_endpoint import SseEvent
+from agentplane.proto import event_pb2
 from util.testing.sqlalchemy_engines import postgres_async_engine
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 

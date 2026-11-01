@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 )
 
 func TestProtocolEventsDoNotLoadRetainedConversationItems(t *testing.T) {
