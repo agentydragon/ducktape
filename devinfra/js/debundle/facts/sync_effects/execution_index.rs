@@ -11357,7 +11357,7 @@ impl Visit for ExecutionIndex {
             }
             self.binding_declaration_writes
                 .entry(binding.id.to_id())
-                .or_default()
+                .or_insert_with(|| Vec::with_capacity(1))
                 .push(BindingDeclarationWrite {
                     owner: self.owner,
                     binding_span: binding.id.span,
@@ -11392,7 +11392,7 @@ impl Visit for ExecutionIndex {
             for (id, _) in bindings {
                 self.binding_declaration_writes
                     .entry(id.clone())
-                    .or_default()
+                    .or_insert_with(|| Vec::with_capacity(1))
                     .push(BindingDeclarationWrite {
                         owner: self.owner,
                         binding_span: declarator.name.span(),
