@@ -494,6 +494,11 @@ spec:
       name: clickhouse-schema
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/clickhouse-orphan-views-cleanup/**"
+          to: "@artifact/cluster/generated/clickhouse-orphan-views-cleanup/"
+      name: clickhouse-orphan-views-cleanup
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/cpap-sync/**"
           to: "@artifact/cluster/k8s/cpap-sync/"
       name: cpap-sync
