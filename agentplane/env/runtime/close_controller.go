@@ -14,11 +14,12 @@ import (
 
 const runtimeCloseControllerName = "environment-runtime-close"
 
-// The controller owns the Close sequence. Each blocking boundary runs in one
-// worker; the COSI event loop only publishes the next barrier after that worker
-// has completed. A failed worker is retained as a terminal status, never retried.
+// The controller owns Runtime's Close and epoch transition sequences. Each
+// blocking boundary runs in a worker; its single event loop stays free to
+// observe either completion and gives Close reconciliation priority.
 type runtimeCloseController struct {
 	r          *Runtime
+	transition runtimeTransitionSequence
 	stage      lifecycle.RuntimeCloseStage
 	generation uint64
 	plan       closePlan
@@ -46,33 +47,61 @@ type closeOperation struct {
 func (*runtimeCloseController) Name() string { return runtimeCloseControllerName }
 
 func (*runtimeCloseController) Inputs() []controller.Input {
-	return []controller.Input{{Namespace: lifecycle.EnvironmentNamespace, Type: lifecycle.EnvironmentDesiredStateType, Kind: controller.InputWeak}}
+	return []controller.Input{
+		{Namespace: lifecycle.EnvironmentNamespace, Type: lifecycle.EnvironmentDesiredStateType, Kind: controller.InputWeak},
+		{Namespace: lifecycle.EnvironmentNamespace, Type: lifecycle.RuntimeTransitionRequestType, Kind: controller.InputWeak},
+	}
 }
 
 func (*runtimeCloseController) Outputs() []controller.Output {
-	return []controller.Output{{Type: lifecycle.RuntimeCloseStatusType, Kind: controller.OutputExclusive}}
+	return []controller.Output{
+		{Type: lifecycle.RuntimeCloseStatusType, Kind: controller.OutputExclusive},
+		{Type: lifecycle.RuntimeTransitionStatusType, Kind: controller.OutputExclusive},
+	}
 }
 
 func (c *runtimeCloseController) Run(ctx context.Context, r controller.Runtime, _ *zap.Logger) error {
+	c.transition.engineCtx = ctx
 	defer func() {
+		// A transition caller holds transitionMu until it sees terminal status.
+		// Wake it before joining workers so a Close Prepare worker cannot remain
+		// blocked behind that mutex when the engine exits unexpectedly.
+		c.r.mu.Lock()
+		if (c.op != nil || c.r.activeTransitionCtx != nil) && c.r.closeControllerErr == nil {
+			c.r.closeControllerErr = errors.New("Runtime lifecycle coordinator exited before active work settled")
+			c.r.changedLocked()
+		}
+		c.r.mu.Unlock()
 		if c.plan.cancelFence != nil {
 			c.plan.cancelFence()
 		}
+		if c.transition.cancel != nil {
+			c.transition.cancel()
+		}
 		if c.op != nil {
 			c.op.cancel()
+		}
+		if c.transition.worker != nil {
+			<-c.transition.worker.done
+		}
+		if c.op != nil {
 			<-c.op.done
 		}
 	}()
 	for {
-		var done <-chan struct{}
+		var closeDone, transitionDone <-chan struct{}
 		if c.op != nil {
-			done = c.op.done
+			closeDone = c.op.done
+		}
+		if c.transition.worker != nil {
+			transitionDone = c.transition.worker.done
 		}
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-r.EventCh():
-		case <-done:
+		case <-closeDone:
+		case <-transitionDone:
 		}
 		if err := c.reconcile(ctx, r); err != nil {
 			c.r.mu.Lock()
@@ -80,6 +109,14 @@ func (c *runtimeCloseController) Run(ctx context.Context, r controller.Runtime, 
 			c.r.changedLocked()
 			c.r.mu.Unlock()
 			c.r.fail(fmt.Errorf("reconcile Runtime Close: %w", err))
+			return err
+		}
+		if err := c.transition.reconcile(ctx, r); err != nil {
+			c.r.mu.Lock()
+			c.r.closeControllerErr = err
+			c.r.changedLocked()
+			c.r.mu.Unlock()
+			c.r.fail(fmt.Errorf("reconcile Runtime transition: %w", err))
 			return err
 		}
 		r.ResetRestartBackoff()
@@ -209,8 +246,13 @@ func (c *runtimeCloseController) runStage(ctx context.Context, stage lifecycle.R
 
 func (c *runtimeCloseController) prepare() error {
 	r := c.r
+	r.transitionMu.Lock()
+	defer r.transitionMu.Unlock()
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.transitionUnsafe != nil {
+		return fmt.Errorf("prior Runtime transition has an uncertain Execution fence: %w", r.transitionUnsafe)
+	}
 	snapshot := r.state.Snapshot()
 	sealUID := ""
 	if snapshot.Quiesced {
@@ -238,7 +280,8 @@ func (c *runtimeCloseController) prepare() error {
 		if sealUID != "" {
 			mode = runtimepb.LifecycleIntent_QUIESCING
 		}
-		if sealUID != "" && r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_QUIESCING && r.intent.SealUid == sealUID {
+		if r.intent != nil && ((sealUID != "" && r.intent.Mode == runtimepb.LifecycleIntent_QUIESCING && r.intent.SealUid == sealUID) ||
+			(sealUID == "" && r.intent.Mode == runtimepb.LifecycleIntent_CLOSING && r.intent.IncarnationUid == incarnationUID)) {
 			p.binding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
 		} else {
 			p.binding = proto.Clone(r.setIntentLocked(mode, incarnationUID, sealUID, false).Binding).(*runtimepb.Binding)

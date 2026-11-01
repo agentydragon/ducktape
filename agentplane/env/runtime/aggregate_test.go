@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -345,6 +346,106 @@ func TestCloseDuringSuccessfulHostConstructionJoinsSharedEngine(t *testing.T) {
 	_ = owner.Close()
 }
 
+func TestCloseCancelsBlockedAdoptionWithoutStartingSuccessor(t *testing.T) {
+	config := executionRuntimeConfig(t, "ws://unused", nil)
+	start := config.deps.startExecution
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	defer once.Do(func() { close(release) })
+	var mu sync.Mutex
+	var starts []string
+	config.deps.startExecution = func(ctx context.Context, config Config, uid string) (executionHandle, error) {
+		mu.Lock()
+		starts = append(starts, uid)
+		mu.Unlock()
+		handle, err := start(ctx, config, uid)
+		if err != nil {
+			return nil, err
+		}
+		return &recordingExecutionHandle{executionHandle: handle, beforeFence: func(ctx context.Context) error {
+			if uid == "test-incarnation" {
+				close(entered)
+				select {
+				case <-release:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+			return nil
+		}}, nil
+	}
+	r := newLifecycleRunner(t, config)
+	adoptionDone := make(chan error, 1)
+	go func() { adoptionDone <- r.adoptIncarnation(context.Background(), "successor") }()
+	select {
+	case <-entered:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("old incarnation fence was not requested")
+	}
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- r.Close(context.Background()) }()
+	waitRuntime(t, r, r.isClosing, "Close admission gate")
+	once.Do(func() { close(release) })
+	if err := waitClose(t, adoptionDone); status.Code(err) != codes.Canceled {
+		t.Fatalf("canceled adoption = %v, want context cancellation", err)
+	}
+	if err := waitClose(t, closeDone); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, uid := range starts {
+		if uid == "successor" {
+			t.Fatalf("successor Execution started after Close: %v", starts)
+		}
+	}
+	if uid, ok := r.state.IncarnationUID(); !ok || uid != "test-incarnation" {
+		t.Fatalf("Close changed incarnation during canceled adoption: %q (%t)", uid, ok)
+	}
+}
+
+func TestEngineExitDuringCanceledExecutionStartJoinsTransitionAndRetainsOwner(t *testing.T) {
+	config := executionRuntimeConfig(t, "ws://unused", nil)
+	config.expectCloseError = true
+	start := config.deps.startExecution
+	entered := make(chan struct{})
+	config.deps.startExecution = func(ctx context.Context, config Config, uid string) (executionHandle, error) {
+		if uid == "successor" {
+			close(entered)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		return start(ctx, config, uid)
+	}
+	r := newLifecycleRunner(t, config)
+	adoptionDone := make(chan error, 1)
+	go func() { adoptionDone <- r.adoptIncarnation(context.Background(), "successor") }()
+	select {
+	case <-entered:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("successor Execution start was not admitted")
+	}
+	r.lifecycleCancel()
+	select {
+	case <-r.lifecycleDone:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("Runtime lifecycle engine did not join its transition worker")
+	}
+	if err := waitClose(t, adoptionDone); err == nil {
+		t.Fatal("adoption succeeded after lifecycle engine exit")
+	}
+	r.mu.Lock()
+	unsafe := r.transitionUnsafe
+	r.mu.Unlock()
+	if unsafe == nil {
+		t.Fatal("engine exit did not record the unproved Execution fence")
+	}
+	if owner, err := openEnvironmentOwner(config.StateDir); err == nil {
+		_ = owner.Close()
+		t.Fatal("engine exit released environment owner without proving Execution fence")
+	}
+}
+
 func TestFreshSessionAdmissionInvalidatesIdleToken(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
@@ -417,6 +518,10 @@ func TestRepeatedQuiesceKeepsCurrentLifecycleGeneration(t *testing.T) {
 	if _, err := r.Quiesce(client.ctx, request); err != nil {
 		t.Fatal(err)
 	}
+	firstStatus, found, err := lifecycle.ReadRuntimeTransitionStatus(context.Background(), r.lifecycleState)
+	if err != nil || !found || firstStatus.Stage != lifecycle.RuntimeTransitionDone {
+		t.Fatalf("first Quiesce transition = %+v, found=%t, err=%v", firstStatus, found, err)
+	}
 	waitRuntime(t, r, func() bool {
 		r.mu.Lock()
 		defer r.mu.Unlock()
@@ -428,6 +533,10 @@ func TestRepeatedQuiesceKeepsCurrentLifecycleGeneration(t *testing.T) {
 	r.mu.Unlock()
 	if _, err := r.Quiesce(client.ctx, request); err != nil {
 		t.Fatal(err)
+	}
+	secondStatus, found, err := lifecycle.ReadRuntimeTransitionStatus(context.Background(), r.lifecycleState)
+	if err != nil || !found || secondStatus.Stage != lifecycle.RuntimeTransitionDone || secondStatus.Sequence <= firstStatus.Sequence {
+		t.Fatalf("repeated Quiesce transition = %+v, found=%t, err=%v; first=%+v", secondStatus, found, err, firstStatus)
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()

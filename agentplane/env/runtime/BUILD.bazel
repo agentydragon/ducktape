@@ -16,6 +16,8 @@ go_library(
         "protocol.go",
         "runtime.go",
         "serve.go",
+        "transition_api.go",
+        "transition_sequence.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime",
     deps = [
