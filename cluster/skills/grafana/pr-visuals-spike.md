@@ -13,13 +13,19 @@ Run it on the remote Docker-capable executor:
 bbr test //cluster/skills/grafana:piraeus_dashboard_visual_test
 ```
 
+`grafana_dashboard_visual_test` in `visual_test.bzl` takes a dashboard file,
+a synthetic metrics fixture, and a Python test that owns the scenarios and
+screenshots. It supplies the shared isolated service and browser dependencies,
+the Docker requirement, and the `visual` tag. The Piraeus target is the first
+example; the shared service currently supports one Prometheus datasource.
+
 The synthetic fixture covers several nodes, SSD and HDD pools, per-copy metrics,
 and PVC usage. This is a rendering and representative-query check, not proof
 that the deployed cluster's datasource or metrics work. An initial run has no
 before image until the target has a published devel baseline. The publisher
 labels a fallback baseline when it cannot find one for the exact base commit.
 
-The next step is a reusable render harness and fixtures for other dashboards and
+The next step is fixtures for other dashboards and support for other
 datasources. A separately invoked live-data preview could substitute a supplied
 metrics endpoint for synthetic Prometheus, but it needs an explicit design for
 authentication, network access and screenshot publication. Live data must not

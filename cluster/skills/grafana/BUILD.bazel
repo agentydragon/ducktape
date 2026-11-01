@@ -1,7 +1,8 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_binary", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//skills:defs.bzl", "skill_package")
+load(":visual_test.bzl", "grafana_dashboard_visual_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -39,28 +40,32 @@ py_test(
     ],
 )
 
-py_test(
-    name = "piraeus_dashboard_visual_test",
-    srcs = ["test_piraeus_dashboard_visual.py"],
-    data = ["//cluster/cdk8s/monitoring:piraeus_dashboard"],
-    main = "test_piraeus_dashboard_visual.py",
-    requires_docker = True,
-    tags = ["visual"],
+py_library(
+    name = "visual_harness",
+    testonly = True,
+    srcs = ["visual_harness.py"],
     deps = [
         "//third_party/containers:grafana_visual",
         "//third_party/containers:prometheus_visual",
         "//util:oci",
-        "//util/bazel:runfiles",
-        "//util/testing:frontend_visual",
         "//util/testing:undeclared_outputs",
-        "//util/testing:visual_capture",
         "@pypi//docker",
         "@pypi//httpx",
-        "@pypi//playwright",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "piraeus_metrics",
+    testonly = True,
+    srcs = ["piraeus_metrics.py"],
+    deps = ["//util/testing:frontend_visual"],
+)
+
+grafana_dashboard_visual_test(
+    name = "piraeus_dashboard_visual_test",
+    src = "test_piraeus_dashboard_visual.py",
+    dashboard = "//cluster/cdk8s/monitoring:piraeus_dashboard",
+    fixture = ":piraeus_metrics",
 )
 
 skill_package(
