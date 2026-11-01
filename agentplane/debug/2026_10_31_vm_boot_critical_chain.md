@@ -4,7 +4,7 @@
 
 The passing six-scenario probe was BuildBuddy invocation
 [`a394fe63-0e05-4287-8748-08edfbc2228a`](https://app.buildbuddy.io/invocation/a394fe63-0e05-4287-8748-08edfbc2228a),
-from source commit `5f3c7502ee` (merged by PR #13359 as `747d69982b3725940df475b24421ff8068fc4520`).
+using the boot-probe implementation merged by PR #13359 (`747d69982b3725940df475b24421ff8068fc4520`).
 Its OOM guest reported this systemd critical chain:
 
 | Unit or device                        |       Start | Activation elapsed |
