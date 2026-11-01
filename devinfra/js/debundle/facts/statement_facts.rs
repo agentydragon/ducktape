@@ -224,6 +224,10 @@ pub(crate) struct SynchronousCalls {
     /// What each plain-array binding the statement reads holds at its program
     /// point, when its elements are known.
     pub(crate) settled_array_elements: BTreeMap<Id, SettledElements>,
+    /// For a statement with the `GlobalObjectAliasEscape` havoc: the
+    /// top-level bindings it reads eagerly that may hold the global object
+    /// where it starts (`None` when execution did not settle them).
+    pub(crate) global_object_aliases: Option<BTreeSet<Id>>,
     /// Heap-content cells of the callables this statement invoked.
     pub(crate) heap_contents: HeapContentCells,
     pub precision_losses: Vec<crate::reports::schema::ExecutionPrecisionLoss>,

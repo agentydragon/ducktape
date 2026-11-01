@@ -40,8 +40,8 @@ use crate::facts::sync_effects::property_inference::{
 };
 use crate::facts::value_flow::{ChunkValueFlow, Values as FlowValues};
 use crate::facts::{
-    LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableShapes,
-    StatementPurityContext, set_iterables::SetIterableProof,
+    DataflowOpacityCause, LocalClassConstructionProof, LocalClassConstructionShapes,
+    SetIterableShapes, StatementPurityContext, set_iterables::SetIterableProof,
 };
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::{ChunkCodeGraph, Effects};
@@ -8627,6 +8627,18 @@ pub(crate) fn annotate_synchronous_calls(
             .filter(|binding| proofs.graph.is_plain_array(binding.0.as_ref()))
             .cloned(),
     );
+    // A statement whose reads a global-object alias may reach resolves them
+    // against their settled values.
+    needed.extend(
+        facts
+            .iter()
+            .filter(|fact| {
+                fact.havoc
+                    .contains(&DataflowOpacityCause::GlobalObjectAliasEscape)
+            })
+            .flat_map(|fact| fact.reads.eager.iter())
+            .cloned(),
+    );
     // Member reads of a `PlainData` binding resolve against its settled
     // allocations' own properties.
     needed.extend(
@@ -9018,11 +9030,45 @@ impl Executor<'_, '_> {
         self.taint_objects(&values);
     }
 
+    /// The top-level bindings `fact` reads eagerly that may hold the global
+    /// object at its program point: their settled values include it or a
+    /// value the interpreter does not know, or are not complete.
+    fn global_object_aliases(&self, fact: &StatementFacts) -> Option<BTreeSet<Id>> {
+        fact.havoc
+            .contains(&DataflowOpacityCause::GlobalObjectAliasEscape)
+            .then(|| {
+                fact.reads
+                    .eager
+                    .iter()
+                    .filter(|binding| self.inputs.top_bindings.contains(*binding))
+                    .filter(|binding| {
+                        !self.inputs.single_writer_bindings.contains(*binding)
+                            || !self.inputs.needed_bindings.contains(*binding)
+                            || self
+                                .state
+                                .prefix_values
+                                .get(*binding)
+                                .is_some_and(|values| {
+                                    values.iter().any(|value| {
+                                        matches!(
+                                            value,
+                                            AbstractValue::GlobalObject
+                                                | AbstractValue::Value(Value::Top)
+                                        )
+                                    })
+                                })
+                    })
+                    .cloned()
+                    .collect()
+            })
+    }
+
     pub(super) fn execute_owner(&mut self, owner: SourceUnitOrdinal) -> SynchronousCalls {
         let inputs = self.inputs;
         let index = inputs.index;
         let fact = &inputs.facts[owner.0];
         let settled_array_elements = self.settled_array_elements(fact);
+        let global_object_aliases = self.global_object_aliases(fact);
         let calls = &index.top_calls[owner.0];
         let assignments = &index.top_assignments[owner.0];
         let needed = &inputs.needed_bindings;
@@ -9269,6 +9315,7 @@ impl Executor<'_, '_> {
         if !outcome.complete {
             self.taint_incomplete_reach(fact, &outcome.effects);
         }
+        outcome.effects.global_object_aliases = global_object_aliases;
         // A failed runtime path forfeits the prevalidated private-result proof.
         // Keep the actual execution/effect outcome in either case.
         if !self.state.private_constructor_result_owners.is_empty()

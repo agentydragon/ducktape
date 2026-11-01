@@ -512,11 +512,13 @@ ArgumentNoEscape, DescriptorCopy*}` → the
 - Landed: a statement's bail shapes are one `havoc` set beside its cells;
   `dataflow_summarizable` and `cell_writes_summarizable` are its projections,
   and `trusted_dataflow_summaries` clears every havoc but `DynamicCellWrites`.
-- Remaining: the cells and `global_object.rs` taint become projections of the
-  interpreter's effect set (`Binding`/`GlobalProp` cells). A member access
-  whose receiver evaluates to the global object is a `GlobalProp` cell, in the
-  statement and in callees it executes; havoc only where the global object
-  escapes somewhere the interpreter cannot follow. `collector.rs` keeps only
+- Landed: `global_object.rs`'s taint is a candidate set. Execution settles
+  which bindings a tainted statement reads may hold the global object, and a
+  statement using them only as bases of static-key member reads gets those
+  `GlobalProp` read cells instead of the havoc.
+- Remaining: the cells become projections of the interpreter's effect set
+  (`Binding`/`GlobalProp` cells), writes through an alias included, and
+  callees' `GlobalProp` effects with them. `collector.rs` keeps only
   syntax collection (declarations, lazy boundaries, TLA). Needs canonical
   replays: it changes precision both ways, and `needed` grows to every
   eagerly read binding. Callee `GlobalProp` writes are ordered today by the

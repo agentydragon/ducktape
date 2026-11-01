@@ -750,6 +750,10 @@ globalThis`) marks the bindings it flows into (transitively,
     to a fixpoint) as suspects, and every statement reading a
     suspect bails — `g.tag` touches the same cells as
     `globalThis.tag` but the summary only sees `Binding(g)`.
+    Synchronous execution then settles which bindings such a
+    statement reads may hold the global object; when it uses each
+    of them only as the base of static-key member reads, those
+    reads are `GlobalProp` cells and the bail is lifted.
 
   The graph also keeps a heap-content timeline over `ArrayContents(origin)`
   and `SetContents(origin)` cells (`facts/heap_contents.rs`). Each body's
