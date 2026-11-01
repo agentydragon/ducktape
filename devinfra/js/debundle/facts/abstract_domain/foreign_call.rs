@@ -110,11 +110,15 @@ fn all_parameters(count: usize) -> BTreeSet<usize> {
     (0..count).collect()
 }
 
-/// Summarize `body` or return `None` (the call stays unknown). The caller
+/// Summarize an unmigrated `body` or return `None` (the call stays unknown).
+/// The canonical index routes covered direct-return bodies to the central
+/// transfer consumer first, with no retry here after a failed strict query.
+/// Literal expression operations remain needed by multi-statement/class bodies.
+/// The caller
 /// establishes stable binding identity and dynamic-scope absence;
 /// `collection_intact` answers the closed census for an empty keyed
 /// collection's global constructor slot.
-pub(crate) fn derive_foreign_call(
+pub(crate) fn derive_unmigrated_foreign_call(
     body: ForeignBody<'_>,
     shadowed: &BTreeSet<&'static str>,
     collection_intact: impl Fn(NativeIntrinsic) -> bool,
@@ -610,7 +614,7 @@ mod tests {
             }
             _ => None,
         })?;
-        derive_foreign_call(body, &BTreeSet::new(), |_| true)
+        derive_unmigrated_foreign_call(body, &BTreeSet::new(), |_| true)
     }
 
     fn call(returns: &[ForeignReturn], retained: &[usize]) -> Option<DerivedForeignCall> {
@@ -635,12 +639,8 @@ mod tests {
     }
 
     #[test]
-    fn allocation_only_bodies_are_summarized() {
+    fn unmigrated_allocation_only_bodies_are_summarized() {
         js_ast::with_swc_globals(|| {
-            assert_eq!(
-                derive("function keep(value, reset) { return value; }", "keep"),
-                call(&[ForeignReturn::Argument { index: 0 }], &[])
-            );
             assert_eq!(
                 derive(
                     "function object(shape, options) { const tag = 'object'; return { tag, shape, [1]: 0 }; }",
@@ -809,9 +809,12 @@ mod tests {
                 unreachable!()
             };
             let body = || ForeignBody::Function(&declaration.function);
-            assert!(derive_foreign_call(body(), &BTreeSet::new(), |_| true).is_some());
-            assert!(derive_foreign_call(body(), &BTreeSet::new(), |_| false).is_none());
-            assert!(derive_foreign_call(body(), &BTreeSet::from(["WeakMap"]), |_| true).is_none());
+            assert!(derive_unmigrated_foreign_call(body(), &BTreeSet::new(), |_| true).is_some());
+            assert!(derive_unmigrated_foreign_call(body(), &BTreeSet::new(), |_| false).is_none());
+            assert!(
+                derive_unmigrated_foreign_call(body(), &BTreeSet::from(["WeakMap"]), |_| true)
+                    .is_none()
+            );
         });
     }
 }

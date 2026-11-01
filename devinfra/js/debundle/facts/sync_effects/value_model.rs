@@ -190,11 +190,37 @@ pub(super) enum RetainedResultKind {
     Constructor,
 }
 
+/// Query ownership, not a stable provider or runtime allocation identity. These
+/// opaque values become argument positions and never enter importer state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct ProviderScopeId(u64);
+
+impl ProviderScopeId {
+    pub(super) fn fresh() -> Option<Self> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        NEXT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+            next.checked_add(1)
+        })
+        .ok()
+        .map(Self)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct SymbolicInputId {
+    pub(super) scope: ProviderScopeId,
+    pub(super) parameter: usize,
+}
+
 /// The interpreter's values: the shared lattice plus carriers for the
 /// callable and heap summaries the lattice does not express yet.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum AbstractValue {
     Value(Value),
+    /// Unknown kind/capabilities; only forwarding, storing and returning this
+    /// query-local input is covered. It proves no shape or native identity.
+    SymbolicInput(SymbolicInputId),
     Closure(u32, CapturedContext),
     /// A class's static or prototype surface can expose its deferred methods.
     /// Merely creating the class does not execute those methods.
@@ -486,6 +512,30 @@ fn set_iterator_prototype_expression(call: &CallExpr) -> bool {
 
 impl ValueExpr {
     pub(super) fn from_expr(expr: &Expr) -> Self {
+        Self::from_expr_with_coverage(expr).0
+    }
+
+    /// Preserve coverage in the same recursive lowering that produces values.
+    /// This is syntax coverage only; input access and runtime transfer evidence
+    /// are required before any allocation-only judgment may be issued.
+    pub(super) fn from_expr_with_coverage(expr: &Expr) -> (Self, bool) {
+        let mut covered = true;
+        let value = Self::lower(expr, &mut covered);
+        (value, covered)
+    }
+
+    fn lower(expr: &Expr, covered: &mut bool) -> Self {
+        if !matches!(
+            expr.unwrap_parens(),
+            Expr::Ident(_)
+                | Expr::Object(_)
+                | Expr::Array(_)
+                | Expr::Lit(
+                    Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_)
+                )
+        ) {
+            *covered = false;
+        }
         match expr.unwrap_parens() {
             Expr::Ident(ident) => Self::Binding(ident.to_id()),
             Expr::Fn(function) => Self::Alloc(Kind::Function, function.function.span.lo.0),
@@ -497,31 +547,56 @@ impl ValueExpr {
                     .props
                     .iter()
                     .map(|property| match property {
-                        PropOrSpread::Spread(spread) => (None, Self::from_expr(&spread.expr)),
+                        PropOrSpread::Spread(spread) => {
+                            *covered = false;
+                            (None, Self::lower(&spread.expr, covered))
+                        }
                         PropOrSpread::Prop(property) => match property.as_ref() {
-                            Prop::KeyValue(pair) => (
-                                object_data_property_name(&pair.key),
-                                Self::from_expr(&pair.value),
-                            ),
+                            Prop::KeyValue(pair) => {
+                                if !matches!(
+                                    pair.key,
+                                    PropName::Ident(_) | PropName::Str(_) | PropName::Num(_)
+                                ) || static_property_name(&pair.key).as_deref()
+                                    == Some("__proto__")
+                                {
+                                    *covered = false;
+                                }
+                                (
+                                    object_data_property_name(&pair.key),
+                                    Self::lower(&pair.value, covered),
+                                )
+                            }
                             Prop::Shorthand(ident) => {
                                 (Some(ident.sym.to_string()), Self::Binding(ident.to_id()))
                             }
-                            Prop::Assign(assign) => (
-                                Some(assign.key.sym.to_string()),
-                                Self::from_expr(&assign.value),
-                            ),
-                            Prop::Method(method) => (
-                                static_property_name(&method.key),
-                                Self::Alloc(Kind::Function, method.function.span.lo.0),
-                            ),
-                            Prop::Getter(getter) => (
-                                static_property_name(&getter.key),
-                                Self::Alloc(Kind::Function, getter.function.span.lo.0),
-                            ),
-                            Prop::Setter(setter) => (
-                                static_property_name(&setter.key),
-                                Self::Alloc(Kind::Function, setter.function.span.lo.0),
-                            ),
+                            Prop::Assign(assign) => {
+                                *covered = false;
+                                (
+                                    Some(assign.key.sym.to_string()),
+                                    Self::lower(&assign.value, covered),
+                                )
+                            }
+                            Prop::Method(method) => {
+                                *covered = false;
+                                (
+                                    static_property_name(&method.key),
+                                    Self::Alloc(Kind::Function, method.function.span.lo.0),
+                                )
+                            }
+                            Prop::Getter(getter) => {
+                                *covered = false;
+                                (
+                                    static_property_name(&getter.key),
+                                    Self::Alloc(Kind::Function, getter.function.span.lo.0),
+                                )
+                            }
+                            Prop::Setter(setter) => {
+                                *covered = false;
+                                (
+                                    static_property_name(&setter.key),
+                                    Self::Alloc(Kind::Function, setter.function.span.lo.0),
+                                )
+                            }
                         },
                     })
                     .collect(),
@@ -531,12 +606,20 @@ impl ValueExpr {
                 array
                     .elems
                     .iter()
-                    .flatten()
-                    .map(|element| (None, Self::from_expr(&element.expr)))
+                    .filter_map(|element| {
+                        let Some(element) = element else {
+                            *covered = false;
+                            return None;
+                        };
+                        if element.spread.is_some() {
+                            *covered = false;
+                        }
+                        Some((None, Self::lower(&element.expr, covered)))
+                    })
                     .collect(),
             ),
             Expr::Member(member) => Self::Member(
-                Box::new(Self::from_expr(&member.obj)),
+                Box::new(Self::lower(&member.obj, covered)),
                 static_prop(&member.prop),
                 MemberKey::of(&member.prop),
             ),
@@ -551,10 +634,10 @@ impl ValueExpr {
                         // timing precision must not admit namespace contracts.
                         Self::Unknown,
                         Self::Call(
-                            Box::new(Self::from_expr(&call.callee)),
+                            Box::new(Self::lower(&call.callee, covered)),
                             call.args
                                 .iter()
-                                .map(|arg| Self::from_expr(&arg.expr))
+                                .map(|arg| Self::lower(&arg.expr, covered))
                                 .collect(),
                             call.span.into(),
                         ),
@@ -564,7 +647,7 @@ impl ValueExpr {
                     let mut options = vec![
                         Self::Undefined,
                         Self::Member(
-                            Box::new(Self::from_expr(&member.obj)),
+                            Box::new(Self::lower(&member.obj, covered)),
                             static_prop(&member.prop),
                             MemberKey::of(&member.prop),
                         ),
@@ -584,10 +667,10 @@ impl ValueExpr {
                     unreachable!("recognized iterator-prototype expression is an ordinary call")
                 };
                 Self::ArrayIteratorPrototype(Box::new(Self::Call(
-                    Box::new(Self::from_expr(callee)),
+                    Box::new(Self::lower(callee, covered)),
                     call.args
                         .iter()
-                        .map(|argument| Self::from_expr(&argument.expr))
+                        .map(|argument| Self::lower(&argument.expr, covered))
                         .collect(),
                     call.span.into(),
                 )))
@@ -597,10 +680,10 @@ impl ValueExpr {
                     unreachable!("recognized iterator-prototype expression is an ordinary call")
                 };
                 Self::SetIteratorPrototype(Box::new(Self::Call(
-                    Box::new(Self::from_expr(callee)),
+                    Box::new(Self::lower(callee, covered)),
                     call.args
                         .iter()
-                        .map(|argument| Self::from_expr(&argument.expr))
+                        .map(|argument| Self::lower(&argument.expr, covered))
                         .collect(),
                     call.span.into(),
                 )))
@@ -608,10 +691,10 @@ impl ValueExpr {
             Expr::Call(call) if call.args.iter().all(|arg| arg.spread.is_none()) => {
                 match &call.callee {
                     Callee::Expr(callee) => Self::Call(
-                        Box::new(Self::from_expr(callee)),
+                        Box::new(Self::lower(callee, covered)),
                         call.args
                             .iter()
-                            .map(|arg| Self::from_expr(&arg.expr))
+                            .map(|arg| Self::lower(&arg.expr, covered))
                             .collect(),
                         call.span.into(),
                     ),
@@ -627,20 +710,20 @@ impl ValueExpr {
                     .all(|arg| arg.spread.is_none()) =>
             {
                 Self::New(
-                    Box::new(Self::from_expr(&new_expr.callee)),
+                    Box::new(Self::lower(&new_expr.callee, covered)),
                     new_expr
                         .args
                         .as_deref()
                         .unwrap_or_default()
                         .iter()
-                        .map(|arg| Self::from_expr(&arg.expr))
+                        .map(|arg| Self::lower(&arg.expr, covered))
                         .collect(),
                     new_expr.span.into(),
                 )
             }
             Expr::Cond(cond) => Self::Alternatives(vec![
-                Self::from_expr(&cond.cons),
-                Self::from_expr(&cond.alt),
+                Self::lower(&cond.cons, covered),
+                Self::lower(&cond.alt, covered),
             ]),
             Expr::Bin(bin)
                 if matches!(
@@ -649,21 +732,21 @@ impl ValueExpr {
                 ) =>
             {
                 Self::Alternatives(vec![
-                    Self::from_expr(&bin.left),
-                    Self::from_expr(&bin.right),
+                    Self::lower(&bin.left, covered),
+                    Self::lower(&bin.right, covered),
                 ])
             }
             Expr::Bin(bin) => Self::Primitive(vec![
-                Self::from_expr(&bin.left),
-                Self::from_expr(&bin.right),
+                Self::lower(&bin.left, covered),
+                Self::lower(&bin.right, covered),
             ]),
-            Expr::Unary(unary) => Self::Primitive(vec![Self::from_expr(&unary.arg)]),
-            Expr::Update(update) => Self::Primitive(vec![Self::from_expr(&update.arg)]),
+            Expr::Unary(unary) => Self::Primitive(vec![Self::lower(&unary.arg, covered)]),
+            Expr::Update(update) => Self::Primitive(vec![Self::lower(&update.arg, covered)]),
             Expr::Seq(seq) => seq
                 .exprs
                 .last()
-                .map_or(Self::Unknown, |expr| Self::from_expr(expr)),
-            Expr::Assign(assign) => Self::from_expr(&assign.right),
+                .map_or(Self::Unknown, |expr| Self::lower(expr, covered)),
+            Expr::Assign(assign) => Self::lower(&assign.right, covered),
             Expr::Lit(Lit::Regex(regex)) => Self::ObjectLiteral(regex.span.lo.0, Vec::new()),
             Expr::Lit(literal) => Self::NonCallable(match literal {
                 Lit::Str(_) => PrimKinds::STRING,

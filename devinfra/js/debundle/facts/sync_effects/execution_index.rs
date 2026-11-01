@@ -1258,6 +1258,10 @@ struct Callable {
     local_assignments: Vec<(Id, ValueExpr)>,
     declared_locals: BTreeSet<Id>,
     returns: Vec<ValueExpr>,
+    /// One source-ordered return covering the complete simple-parameter body.
+    /// Syntax coverage is retained during the same value lowering below.
+    direct_return_site: Option<CallSite>,
+    allocation_return: Option<ValueExpr>,
     local_functions: BTreeSet<Id>,
     literal_captures: BTreeSet<Id>,
     literal_exposures: BTreeSet<Id>,
@@ -1489,6 +1493,8 @@ impl Default for Callable {
             local_assignments: Vec::new(),
             declared_locals: BTreeSet::new(),
             returns: Vec::new(),
+            direct_return_site: None,
+            allocation_return: None,
             local_functions: BTreeSet::new(),
             literal_captures: BTreeSet::new(),
             literal_exposures: BTreeSet::new(),
@@ -6011,6 +6017,27 @@ impl BundleGlobalContext<'_> {
 }
 
 impl ExecutionIndex {
+    pub(super) fn allocation_layout(
+        &self,
+        allocation: u32,
+    ) -> super::allocation_transfer::LiteralLayout {
+        use super::allocation_transfer::LiteralLayout;
+        if self.exact_object_spread_copies.contains(&allocation) {
+            return LiteralLayout::Unsupported;
+        }
+        if let Some(elements) = self.array_elements.get(&allocation) {
+            return elements
+                .iter()
+                .map(|element| {
+                    let element = element.as_ref()?;
+                    (!element.spread).then(|| element.value.clone())
+                })
+                .collect::<Option<Vec<_>>>()
+                .map_or(LiteralLayout::Unsupported, LiteralLayout::DenseArray);
+        }
+        LiteralLayout::Record
+    }
+
     /// Simple top-level declared bindings every write of which stores a fresh
     /// value (`fresh_value`); every write is modeled because the modeled
     /// writes number as many as the binding's recorded writes. Before the
@@ -11009,6 +11036,24 @@ impl Visit for ExecutionIndex {
                 .callables
                 .get_mut(&function.span.lo.0)
                 .unwrap()
+                .direct_return_site = (!function.is_async
+                && !function.is_generator
+                && function.decorators.is_empty()
+                && function.params.iter().all(|param| {
+                    param.decorators.is_empty() && matches!(param.pat, Pat::Ident(_))
+                }))
+            .then(|| {
+                function
+                    .body
+                    .as_ref()
+                    .and_then(sole_return_expression)
+                    .map(|expression| expression.span().into())
+            })
+            .flatten();
+            index
+                .callables
+                .get_mut(&function.span.lo.0)
+                .unwrap()
                 .may_fall_through = !function
                 .body
                 .as_ref()
@@ -11034,6 +11079,23 @@ impl Visit for ExecutionIndex {
         }
         let params = arrow.params.iter().map(Parameter::from_pattern).collect();
         self.with_callable(arrow.span, params, |index| {
+            index
+                .callables
+                .get_mut(&arrow.span.lo.0)
+                .unwrap()
+                .direct_return_site = (!arrow.is_async
+                && !arrow.is_generator
+                && arrow
+                    .params
+                    .iter()
+                    .all(|param| matches!(param, Pat::Ident(_))))
+            .then(|| match arrow.body.as_ref() {
+                ArrowFunctionBody::Expr(expression) => Some(expression.span().into()),
+                ArrowFunctionBody::FunctionBody(body) => {
+                    sole_return_expression(body).map(|expression| expression.span().into())
+                }
+            })
+            .flatten();
             for parameter in &arrow.params {
                 index.invalidate_property_key_pattern(parameter);
             }
@@ -11049,12 +11111,12 @@ impl Visit for ExecutionIndex {
             };
             arrow.visit_children_with(index);
             if let ArrowFunctionBody::Expr(expr) = arrow.body.as_ref() {
-                index
-                    .callables
-                    .get_mut(&arrow.span.lo.0)
-                    .unwrap()
-                    .returns
-                    .push(ValueExpr::from_expr(expr));
+                let (value, covered) = ValueExpr::from_expr_with_coverage(expr);
+                let callable = index.callables.get_mut(&arrow.span.lo.0).unwrap();
+                if covered && callable.direct_return_site == Some(expr.span().into()) {
+                    callable.allocation_return = Some(value.clone());
+                }
+                callable.returns.push(value);
             }
         });
     }
@@ -11791,18 +11853,19 @@ impl Visit for ExecutionIndex {
                 .push(ValueExpr::Undefined);
         }
         if let (Some(key), Some(arg)) = (self.current, &ret.arg) {
-            if let ValueExpr::Binding(id) = ValueExpr::from_expr(arg) {
+            let (value, covered) = ValueExpr::from_expr_with_coverage(arg);
+            if let ValueExpr::Binding(id) = &value {
                 self.callables
                     .get_mut(&key)
                     .unwrap()
                     .escaped_bindings
-                    .insert(id);
+                    .insert(id.clone());
             }
-            self.callables
-                .get_mut(&key)
-                .unwrap()
-                .returns
-                .push(ValueExpr::from_expr(arg));
+            let callable = self.callables.get_mut(&key).unwrap();
+            if covered && callable.direct_return_site == Some(arg.span().into()) {
+                callable.allocation_return = Some(value.clone());
+            }
+            callable.returns.push(value);
         }
     }
 
@@ -12790,7 +12853,9 @@ fn infer_foreign_calls<'f>(
     collection_intact: impl Fn(NativeIntrinsic) -> bool,
     wanted: impl Fn(&InferredForeignCall) -> bool,
 ) -> BTreeMap<String, InferredForeignCall> {
-    use crate::facts::abstract_domain::foreign_call::{ForeignBody, derive_foreign_call};
+    use crate::facts::abstract_domain::foreign_call::{
+        ForeignBody, derive_unmigrated_foreign_call,
+    };
     if !index.dynamic_scope_owners.is_empty() {
         return BTreeMap::new();
     }
@@ -12847,7 +12912,20 @@ fn infer_foreign_calls<'f>(
         .into_iter()
         .filter(|(binding, ..)| !index.reassigned_bindings.contains(&binding.to_id()))
         .filter_map(|(binding, declaration, declaration_start, hoisted)| {
-            let derived = derive_foreign_call(declaration, &shadowed, &collection_intact)?;
+            let derived = if matches!(
+                &declaration,
+                ForeignBody::Function(_) | ForeignBody::Arrow(_)
+            ) && index
+                .callables
+                .get(&declaration_start)
+                .is_some_and(|callable| callable.allocation_return.is_some())
+            {
+                // This migrated slice consumes the central value transfers.
+                // A failed access/coverage judgment must not retry the AST evaluator.
+                strict_provider::derive(index, declaration_start)?
+            } else {
+                derive_unmigrated_foreign_call(declaration, &shadowed, &collection_intact)?
+            };
             Some((
                 binding,
                 foreign_call(index, derived, declaration_start, hoisted),
@@ -13091,6 +13169,8 @@ fn infer_namespace_wrappers(
 }
 #[path = "interpreter.rs"]
 pub(crate) mod interpreter;
+#[path = "strict_provider.rs"]
+mod strict_provider;
 
 #[path = "runtime_heap.rs"]
 mod runtime_heap;

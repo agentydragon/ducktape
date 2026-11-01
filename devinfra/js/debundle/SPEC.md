@@ -1977,6 +1977,25 @@ the provider derivation and the caller's own-property derivation in
 
 ## Derived foreign call summaries
 
+Simple-parameter functions with one direct return of an input, primitive, or
+static ordinary record/array literal use the same value and literal-heap
+transfers as application execution. The canonical lowering retains complete
+source coverage before value lowering can erase syntax. This narrow
+`CoveredAllocationOnly` certificate excludes external access/write,
+publication, invocation and throwing operations. Parameters are scoped opaque
+values: forwarding/storing/returning one proves no input kind, property shape,
+native identity or coercion behavior. Any unsupported input access or transfer
+declines the summary. A failed migrated query does not retry a different
+evaluator. Other supported bodies retain their existing strict source proof.
+
+Source coverage excludes async/generator functions, defaults/rest/destructuring,
+extra statements, assignments, sequence/template/operator/conditional syntax,
+member reads, computed/spread/accessor/prototype fields, calls, throws and
+control flow. Local-assignment pre-evaluation and a complete synchronous
+execution outcome do not establish this certificate. Child transfer judgments
+and proof dependencies compose; this initial premise-free literal consumer
+declines any unexpected nonempty dependency set rather than discarding it.
+
 A directly imported, stable top-level function or class declaration of another
 analyzed chunk receives a summary when every operation its call performs runs
 no other code. The body may read only its parameters and its own `const`/`let`

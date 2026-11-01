@@ -722,6 +722,7 @@ pub(super) struct Executor<'source, 'rule> {
     inputs: &'rule ExecutionInputs<'source>,
     state: ExecutionStateSlot,
     queries: RuntimeQueries<'source, 'rule>,
+    allocation_judgment: super::super::allocation_transfer::AllocationJudgment,
 }
 
 /// A suspended transfer has handed its state to its child. Keep the remaining
@@ -759,6 +760,47 @@ pub(super) struct ValidatedMetadataDecoration {
     target_owner: SourceUnitOrdinal,
 }
 
+struct ApplicationAllocationContext<'a, 'source, 'rule> {
+    executor: &'a mut Executor<'source, 'rule>,
+    environment: &'a Context,
+    captures: &'a Context,
+}
+
+impl super::super::allocation_transfer::AllocationContext
+    for ApplicationAllocationContext<'_, '_, '_>
+{
+    fn source_covered(&self) -> bool {
+        false
+    }
+
+    fn binding(
+        &mut self,
+        binding: &Id,
+    ) -> Option<super::super::allocation_transfer::AllocationValue> {
+        Some(super::super::allocation_transfer::AllocationValue::opaque(
+            self.executor.evaluate_binding(binding, self.environment),
+        ))
+    }
+
+    fn child(
+        &mut self,
+        expression: &ValueExpr,
+    ) -> Option<super::super::allocation_transfer::AllocationValue> {
+        Some(
+            self.executor
+                .evaluate_allocation_child(expression, self.environment, self.captures),
+        )
+    }
+
+    fn literal_layout(&self, allocation: u32) -> super::super::allocation_transfer::LiteralLayout {
+        self.executor.inputs.index.allocation_layout(allocation)
+    }
+
+    fn heap(&mut self) -> super::super::allocation_transfer::LiteralHeap<'_> {
+        self.executor.literal_heap()
+    }
+}
+
 impl<'source, 'rule> Executor<'source, 'rule> {
     pub(super) fn new(
         inputs: &'rule ExecutionInputs<'source>,
@@ -769,14 +811,38 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             inputs,
             state: ExecutionStateSlot(Some(state)),
             queries,
+            // Creating an executor establishes no whole-source coverage.
+            allocation_judgment: super::super::allocation_transfer::AllocationJudgment::Opaque,
         }
     }
 
-    pub(super) fn into_state(self) -> Box<ExecutionState> {
-        self.state.0.expect("the completed transfer owns its state")
+    pub(super) fn into_transfer(
+        self,
+    ) -> (
+        Box<ExecutionState>,
+        super::super::allocation_transfer::AllocationJudgment,
+    ) {
+        (
+            self.state.0.expect("the completed transfer owns its state"),
+            self.allocation_judgment,
+        )
+    }
+
+    pub(super) fn mark_allocation_opaque(&mut self) {
+        self.allocation_judgment = super::super::allocation_transfer::AllocationJudgment::Opaque;
     }
 
     fn request(&mut self, operation: RuntimeOperation) -> RuntimeValue {
+        self.request_with_allocation_judgment(operation).0
+    }
+
+    fn request_with_allocation_judgment(
+        &mut self,
+        operation: RuntimeOperation,
+    ) -> (
+        RuntimeValue,
+        super::super::allocation_transfer::AllocationJudgment,
+    ) {
         let state = self
             .state
             .0
@@ -784,7 +850,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .expect("the requesting transfer owns its state");
         let result = self.queries.request(state, operation);
         self.state.0 = Some(result.state);
-        result.value
+        self.allocation_judgment
+            .compose(&result.allocation_judgment);
+        (result.value, result.allocation_judgment)
     }
 
     fn request_callback_operation(&mut self, operation: CallbackOperation) -> CallbackResult {
@@ -1814,42 +1882,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn retain_dense_array(&mut self, object: u32, slots: Vec<Values>) {
+        self.literal_heap().dense_array(object, slots);
+    }
+
+    fn literal_heap(&mut self) -> super::super::allocation_transfer::LiteralHeap<'_> {
         let state = &mut *self.state;
-        let before = state.prefix_object_properties.get(&object).cloned();
-        let dense = state
-            .dense_arrays
-            .entry(object)
-            .or_insert_with(|| DenseArray {
-                slots: slots.clone(),
-            });
-        let length = dense.slots.len().max(slots.len());
-        dense
-            .slots
-            .resize_with(length, || Values::from([AbstractValue::UNDEFINED]));
-        for (index, current) in dense.slots.iter_mut().enumerate() {
-            if let Some(values) = slots.get(index) {
-                current.extend(values.iter().cloned());
-            } else {
-                current.insert(AbstractValue::UNDEFINED);
-            }
-        }
-        let properties = state.prefix_object_properties.entry(object).or_default();
-        properties
-            .entry(Some("length".into()))
-            .or_default()
-            .insert(AbstractValue::PRIMITIVE);
-        for (index, values) in dense.slots.iter().enumerate() {
-            properties
-                .entry(Some(index.to_string()))
-                .or_default()
-                .extend(values.iter().cloned());
-            properties
-                .entry(None)
-                .or_default()
-                .extend(values.iter().cloned());
-        }
-        if before.as_ref() != Some(properties) {
-            state.prefix_revision = state.prefix_revision.wrapping_add(1);
+        super::super::allocation_transfer::LiteralHeap {
+            properties: &mut state.prefix_object_properties,
+            arrays: &mut state.dense_arrays,
+            revision: &mut state.prefix_revision,
         }
     }
 
@@ -3955,7 +3996,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             | AbstractValue::ForeignDeferredRecord
             | AbstractValue::ObjectAssign
             | AbstractValue::ArrayIntrinsic
-            | AbstractValue::GlobalObject => {}
+            | AbstractValue::GlobalObject
+            | AbstractValue::SymbolicInput(_) => {}
             AbstractValue::Value(Value::Alloc(
                 Kind::Array
                 | Kind::Map
@@ -5193,6 +5235,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 return global(GlobalReachCause::TaintedInput);
             }
             match &value {
+                AbstractValue::SymbolicInput(_) => return global(GlobalReachCause::TaintedInput),
                 AbstractValue::DeferredCallbacks(captured)
                 | AbstractValue::AuditedRetainedResult(_, captured)
                     if self
@@ -6436,15 +6479,80 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn evaluate(&mut self, expr: &ValueExpr, env: &Context, captures: &Context) -> Values {
-        let result = self.request(RuntimeOperation::Evaluate {
-            expression: expr.clone(),
-            environment: env.clone(),
-            captures: captures.clone(),
-        });
+        self.evaluate_allocation_child(expr, env, captures).values
+    }
+
+    fn evaluate_allocation_child(
+        &mut self,
+        expr: &ValueExpr,
+        env: &Context,
+        captures: &Context,
+    ) -> super::super::allocation_transfer::AllocationValue {
+        let (result, judgment) =
+            self.request_with_allocation_judgment(RuntimeOperation::Evaluate {
+                expression: expr.clone(),
+                environment: env.clone(),
+                captures: captures.clone(),
+            });
         let RuntimeValue::Values(values) = result else {
             unreachable!("expression transfers produce values");
         };
-        values
+        super::super::allocation_transfer::AllocationValue { values, judgment }
+    }
+
+    fn evaluate_binding(&mut self, id: &Id, env: &Context) -> Values {
+        if self.inputs.index.callback_factory_imports.contains(id) {
+            return Values::from([AbstractValue::CallbackFactory]);
+        }
+        if self
+            .inputs
+            .index
+            .inline_callback_factory_imports
+            .contains(id)
+        {
+            return Values::from([AbstractValue::InlineCallbackFactory]);
+        }
+        if self.inputs.index.imported_bindings.contains(id)
+            && let Some(value) = self.inputs.imported_values.get(id.0.as_ref())
+        {
+            // Preserve the source-proved exported value through the
+            // ordinary value transfers, including local copies. Reads
+            // and import ordering remain separate statement facts.
+            return Values::from([AbstractValue::Value(*value)]);
+        }
+        if self.inputs.top_bindings.contains(id) {
+            if let Some(prefix_values) = self.state.prefix_values.get(id) {
+                let mut values = prefix_values.clone();
+                if !self.state.initialized_bindings.contains(id) {
+                    values.insert(if self.inputs.var_bindings.contains(id) {
+                        AbstractValue::UNDEFINED
+                    } else {
+                        AbstractValue::Value(Value::Unavailable)
+                    });
+                }
+                values
+            } else if self.inputs.var_bindings.contains(id) {
+                Values::from([AbstractValue::UNDEFINED])
+            } else {
+                // Whole-chunk flow includes future initializers. A
+                // missing prefix value for a local binding is TDZ.
+                Values::from([AbstractValue::Value(Value::Unavailable)])
+            }
+        } else if let Some(values) = env.get(id) {
+            values.clone()
+        } else if self
+            .inputs
+            .index
+            .global_object_names
+            .contains(id.0.as_ref())
+            && !self.inputs.flow.is_declared(id)
+            && !self.inputs.shadowed.contains(id.0.as_ref())
+        {
+            Values::from([AbstractValue::GlobalObject])
+        } else {
+            let values = from_flow(self.inputs.flow.values_of_binding(id));
+            if values.is_empty() { unknown() } else { values }
+        }
     }
 
     pub(super) fn evaluate_transfer(
@@ -6453,61 +6561,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         env: &Context,
         captures: &Context,
     ) -> Values {
+        if let Some(value) = super::super::allocation_transfer::transfer(
+            &mut ApplicationAllocationContext {
+                executor: self,
+                environment: env,
+                captures,
+            },
+            expr,
+        ) {
+            self.allocation_judgment.compose(&value.judgment);
+            return value.values;
+        }
+        self.mark_allocation_opaque();
         match expr {
-            ValueExpr::Binding(id) => {
-                if self.inputs.index.callback_factory_imports.contains(id) {
-                    return Values::from([AbstractValue::CallbackFactory]);
-                }
-                if self
-                    .inputs
-                    .index
-                    .inline_callback_factory_imports
-                    .contains(id)
-                {
-                    return Values::from([AbstractValue::InlineCallbackFactory]);
-                }
-                if self.inputs.index.imported_bindings.contains(id)
-                    && let Some(value) = self.inputs.imported_values.get(id.0.as_ref())
-                {
-                    // Preserve the source-proved exported value through the
-                    // ordinary value transfers, including local copies. Reads
-                    // and import ordering remain separate statement facts.
-                    return Values::from([AbstractValue::Value(*value)]);
-                }
-                if self.inputs.top_bindings.contains(id) {
-                    if let Some(prefix_values) = self.state.prefix_values.get(id) {
-                        let mut values = prefix_values.clone();
-                        if !self.state.initialized_bindings.contains(id) {
-                            values.insert(if self.inputs.var_bindings.contains(id) {
-                                AbstractValue::UNDEFINED
-                            } else {
-                                AbstractValue::Value(Value::Unavailable)
-                            });
-                        }
-                        values
-                    } else if self.inputs.var_bindings.contains(id) {
-                        Values::from([AbstractValue::UNDEFINED])
-                    } else {
-                        // Whole-chunk flow includes future initializers. A
-                        // missing prefix value for a local binding is TDZ.
-                        Values::from([AbstractValue::Value(Value::Unavailable)])
-                    }
-                } else if let Some(values) = env.get(id) {
-                    values.clone()
-                } else if self
-                    .inputs
-                    .index
-                    .global_object_names
-                    .contains(id.0.as_ref())
-                    && !self.inputs.flow.is_declared(id)
-                    && !self.inputs.shadowed.contains(id.0.as_ref())
-                {
-                    Values::from([AbstractValue::GlobalObject])
-                } else {
-                    let values = from_flow(self.inputs.flow.values_of_binding(id));
-                    if values.is_empty() { unknown() } else { values }
-                }
-            }
+            ValueExpr::Binding(_) => unreachable!("the shared transfer resolves bindings"),
             ValueExpr::Alloc(Kind::Function, key) => Values::from([AbstractValue::Closure(
                 *key,
                 self.closure_captures(*key, captures),
@@ -6558,45 +6625,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 if self.inputs.index.array_elements.contains_key(key) {
                     return self.evaluate_array(*key, env, captures);
                 }
-                let mut evaluated = BTreeMap::<Option<String>, Values>::new();
-                let mut may_throw = false;
-                let mut can_complete = true;
-                for (property, expression) in properties {
-                    let mut values = self.evaluate(expression, env, captures);
-                    if values.remove(&AbstractValue::Value(Value::Unavailable)) {
-                        may_throw = true;
-                        can_complete &= !values.is_empty();
-                    }
-                    evaluated
-                        .entry(property.clone())
-                        .or_default()
-                        .extend(values);
-                }
-                if can_complete {
-                    let current = self.state.prefix_object_properties.entry(*key).or_default();
-                    let mut changed = false;
-                    for (property, values) in evaluated {
-                        let current_values = current.entry(property).or_default();
-                        let before = current_values.len();
-                        current_values.extend(values);
-                        changed |= current_values.len() != before;
-                    }
-                    if changed {
-                        self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
-                    }
-                }
-                let mut result = Values::new();
-                if can_complete {
-                    result.insert(AbstractValue::Value(Value::Alloc(Kind::Object, *key)));
-                }
-                if may_throw || !can_complete {
-                    result.insert(AbstractValue::Value(Value::Unavailable));
-                }
-                result
+                super::super::allocation_transfer::record(
+                    &mut ApplicationAllocationContext {
+                        executor: self,
+                        environment: env,
+                        captures,
+                    },
+                    *key,
+                    properties,
+                    super::super::allocation_transfer::AllocationJudgment::Opaque,
+                )
+                .expect("application child transfers always produce values")
+                .values
             }
-            ValueExpr::Undefined => Values::from([AbstractValue::UNDEFINED]),
-            ValueExpr::NonCallable(kinds) => {
-                Values::from([AbstractValue::Value(Value::Prim(*kinds))])
+
+            ValueExpr::Undefined | ValueExpr::NonCallable(_) => {
+                unreachable!("the shared transfer evaluates primitive values")
             }
             ValueExpr::Member(object, property, is_static_identifier) => {
                 if let Some(values) = property

@@ -1067,6 +1067,14 @@ provenance, and unknown exposure or possible mutation revokes it. Member reads
 and invocation do not transfer provenance to their results. This provenance
 changes callback admission only; it cannot establish purity or the absence of
 other effects from a complete synchronous execution outcome.
+
+The shared literal transfer's `CoveredAllocationOnly` judgment has a separate
+whole-source-coverage precondition and closed parameter-access evidence. It is
+not a replacement for the complete effect ledger needed by general execution
+purity. Unsupported expressions, ambient reads and every non-Evaluate runtime
+transfer are opaque. In particular, neither source erasure in ValueExpr nor
+pre-evaluation of local assignments can discharge an external-write or throw
+obligation.
 For a namespace-member contract, the author must audit the provider and every
 caller/runtime path supplying values used by admitted callbacks, establishing
 that listed factory members retain their identities and behavior through the

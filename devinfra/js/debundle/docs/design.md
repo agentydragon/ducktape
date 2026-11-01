@@ -1509,6 +1509,19 @@ mutation revoke it monotonically; member projection and invocation keep callback
 reach without transferring that capability. Interned capture keys may share
 revocation conservatively, but do not represent runtime allocation identity.
 
+The first migrated provider-summary slice shares the application's primitive,
+binding and literal-allocation transfers and real heap merging. A strict query
+supplies only scoped opaque parameters and a real empty literal heap. Canonical
+source coverage is collected during the same recursive value lowering, before
+sequence/assignment/template and other syntax can disappear from ValueExpr.
+Only a whole simple-parameter direct-return body can receive the narrow
+allocation-only certificate; normal ambient binding access stays opaque.
+RuntimeResult carries child judgments and dependencies even when a parent
+consumes only Values. Every non-Evaluate or unsupported transfer stays opaque.
+The unmigrated source evaluator remains responsible for its other supported
+cases. This slice adds no provider publication premise, purity fact or public
+shape schema, and does not use Outcome.complete as an effect ledger.
+
 Callable own/prototype properties are not tracked as ordinary object records.
 Installing nonprimitive values through a recognized callable receiver or local
 alias therefore promotes the supplied callbacks conservatively at the write.
