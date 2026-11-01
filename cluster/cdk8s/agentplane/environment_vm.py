@@ -200,7 +200,9 @@ class EnvironmentVmTemplate(Construct):
                     config_map=VirtualMachineSpecTemplateSpecVolumesConfigMap(name=env.egress.ca_secret_name),
                 ),
                 # An erofs with the runner and `agentplane` command, which vm.nix mounts executable.
-                "agentplane-environment-runtime": VirtualMachineSpecTemplateSpecVolumes(
+                # The guest finds this disk via virtio-agentplane-runner in its fstab. Keep that
+                # device serial stable; it names the payload disk, not the Runtime service.
+                "agentplane-runner": VirtualMachineSpecTemplateSpecVolumes(
                     name="runner",
                     container_disk=VirtualMachineSpecTemplateSpecVolumesContainerDisk(
                         image=RUNNER_DISK_IMAGE, image_pull_policy="IfNotPresent"

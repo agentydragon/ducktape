@@ -427,6 +427,10 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
 
     vm_template = _resource(fixture.objects, "SandboxTemplate", "environment-vm")["spec"]
     vm_spec = vm_template["vm"]["template"]["spec"]
+    runner_disk = next(disk for disk in vm_spec["domain"]["devices"]["disks"] if disk["name"] == "runner")
+    assert runner_disk["serial"] == "agentplane-runner"  # vm.nix mounts virtio-agentplane-runner from fstab.
+    runner_volume = next(volume for volume in vm_spec["volumes"] if volume["name"] == "runner")
+    assert runner_volume["containerDisk"]["image"] == ("git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset")
     supervision = _resource(fixture.objects, "SandboxTemplate", SUPERVISION_TEMPLATE)["spec"]["vm"]["template"]["spec"]
     oom_template = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)["spec"]["vm"]["template"]["spec"]
     ordinary_root = next(
