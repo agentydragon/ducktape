@@ -539,7 +539,7 @@ The dependency graph is the right abstraction for tooling:
 Native-integrity diagnostics retain the write census produced during the shared
 AST analysis, including source chunk, statement, operation, and location. The
 receiver roots precede unknown-global-value widening; `through_local_alias`
-distinguishes an alias path from a direct receiver. `program_graph.json`'s
+distinguishes an alias path from a direct receiver. `program_graph.json.gz`'s
 `native_integrity_witnesses` stores each census site once for the run. Source units reference
 its required slots and affected native families through
 `synchronous_execution.native_integrity_checks` when the interpreter
@@ -1151,7 +1151,7 @@ policy.
 
 For each selected chunk, materialization records the decision and every
 independently observed blocker in `export_reentry.json`, beside
-`dependency_graph.json`. `loader` names the loader derivation and the first
+`dependency_graph.json.gz`. `loader` names the loader derivation and the first
 witness of each failure kind; `global_blockers` names artifact incompleteness
 and nonordinary static requests across the artifact. The per-target
 `closure_blockers` names non-ESM, top-level-await, and open replacement-bundle
@@ -2653,7 +2653,7 @@ Five layers, bottom-up:
    subgraph of the dependency graph; a DAG of atomic groups
    (`compute_atomic_groups`). Each group is the smallest set of
    source units a valid module assignment may not split. Surfaced in
-   `dependency_graph.json.atomic_graph`.
+   `dependency_graph.json.gz.atomic_graph`.
 3. **Spec assignment** — the author's current mapping of source units
    to modules (the spec's `members:` + `anonymous_statements:`
    plus the routing of unclaimed source units under `unassigned_mode`).
@@ -2752,7 +2752,7 @@ propose`, `atoms`, `coverage`, `describe`, `inspect-source --id`, `scc`,
 behalf of the spec author.
 
 Each materialized chunk has reports under `reports/tree/<chunk_id>/`.
-`dependency_graph.json` carries the detailed dependency graph, current module quotient,
+`dependency_graph.json.gz` carries the detailed dependency graph, current module quotient,
 and embedded atomic DAG. Compact validation status is folded into
 `chunk.json`; `cycles.json` and `atomic_group_conflicts.json` are emitted only
 for rejection cases.
@@ -2781,7 +2781,7 @@ use the dependency graph and source bodies for drill-down.
 2. Pipeline runs the validator. The report flags:
    - **Cycles** in the explicit-only assignment, if any.
    - **Atomic-group conflicts** when the spec splits an indivisible unit.
-   - **Atomic DAG facts** in `dependency_graph.json` for planning the next peel.
+   - **Atomic DAG facts** in `dependency_graph.json.gz` for planning the next peel.
 3. Spec author resolves: first fix any validation cycles or atomic-group
    conflicts; then use `debundle modules propose`, `atoms`, `coverage`,
    `describe`, and `inspect-source --id` to choose explicit source-unit sets for new
@@ -2798,7 +2798,7 @@ implicit transformation in the middle.
 The same dependency graph drives the next-spec workflow. A pipeline that
 only reports whether the current spec passed forces spec authors into
 speculative edit/build/test loops. `debundle run` therefore emits the
-atomic-group DAG in `dependency_graph.json`, and the top-level read-only
+atomic-group DAG in `dependency_graph.json.gz`, and the top-level read-only
 queries (`debundle modules propose`, `atoms`, `coverage`, `describe`,
 `inspect-source --id`, `scc`, `cluster`, `graph-summary`) compute advisory
 views from that stable graph.

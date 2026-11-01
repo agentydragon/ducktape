@@ -164,7 +164,12 @@ fn tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
                 continue;
             }
             let bytes = fs::read(&entry).unwrap();
-            let bytes = match serde_json::from_slice::<Value>(&bytes) {
+            let json = if entry.extension().is_some_and(|extension| extension == "gz") {
+                Ok(read_json::<Value>(&entry))
+            } else {
+                serde_json::from_slice::<Value>(&bytes)
+            };
+            let bytes = match json {
                 Ok(Value::Object(mut report)) if report.contains_key("provenance") => {
                     report.remove("provenance");
                     serde_json::to_vec(&report).unwrap()

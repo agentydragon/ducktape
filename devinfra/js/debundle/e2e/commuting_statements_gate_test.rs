@@ -89,7 +89,7 @@ fn expect_rejected<'a>(build: impl Fn() -> FixtureOpts<'a>, kind: &str, tokens: 
     expect_rejection_containing_all(build(), tokens);
 }
 
-/// The inert edges a premise bought, as recorded in `dependency_graph.json`.
+/// The inert edges a premise bought, as recorded in `dependency_graph.json.gz`.
 fn inerted_edges<'a>(
     graph: &'a DependencyGraphReport,
     premise: &CommutingStatementsRef,
@@ -261,7 +261,7 @@ fn eager_use_cycle_is_not_cleared_by_an_accepted_pair() {
     let rejected = run_rejection_fixture(split(vec![pair()]));
     let graph_path = rejected
         .report_root
-        .join("static/app/dependency_graph.json");
+        .join("static/app/dependency_graph.json.gz");
     let graph_path = graph_path.to_str().expect("utf-8 path");
     let gate_text = |verb: &str| {
         let out = run_debundle(&["gate", verb, "0", "--graph", graph_path, "--format", "text"]);

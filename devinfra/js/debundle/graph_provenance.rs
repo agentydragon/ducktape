@@ -113,9 +113,7 @@ pub fn program_graph_path(graph_path: &Path, program_graph: &Path) -> PathBuf {
 }
 
 fn read_json_header<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
-    let file = fs::File::open(path).with_context(|| format!("reading {}", path.display()))?;
-    serde_json::from_reader(BufReader::new(file))
-        .with_context(|| format!("parsing header of {}", path.display()))
+    report_io::read_json(path).with_context(|| format!("parsing header of {}", path.display()))
 }
 
 pub fn read_graph_header(path: &Path) -> Result<GraphHeader> {

@@ -7,7 +7,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::fs;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
@@ -35,7 +34,7 @@ use spec_modules::{
 
 #[derive(Debug, Clone, ClapArgs)]
 pub struct CommonArgs {
-    /// Path to `dependency_graph.json` (debundler analysis output).
+    /// Path to `dependency_graph.json.gz` (debundler analysis output).
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
     pub dependency_graph_path: PathBuf,
 
@@ -204,7 +203,7 @@ pub enum QueryKind {
 /// What `describe` / `inspect-source --id` can resolve; each variant names its query kind.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectionKind {
-    /// One source-unit ID from `dependency_graph.json`.
+    /// One source-unit ID from `dependency_graph.json.gz`.
     SourceUnit(String),
     /// Every source unit claimed by this module path.
     ModulePath(String),
@@ -214,7 +213,7 @@ pub enum SelectionKind {
     Binding(String),
     /// A proposer proposal by `proposed_module_id`.
     Proposal(String),
-    /// One atomic group id from `dependency_graph.json`.
+    /// One atomic group id from `dependency_graph.json.gz`.
     AtomicGroup(String),
     /// One proposer diagnostic by `diagnostic_id`.
     Diagnostic(String),
@@ -1237,10 +1236,7 @@ pub fn run_source_selection_report(
 }
 
 fn load_graph(path: &Path) -> Result<DependencyGraphReport> {
-    serde_json::from_str(
-        &fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?,
-    )
-    .with_context(|| format!("parsing {}", path.display()))
+    report_io::read_json(path)
 }
 
 fn load_program_graph(
@@ -1248,10 +1244,7 @@ fn load_program_graph(
     graph: &DependencyGraphReport,
 ) -> Result<ProgramGraphReport> {
     let path = graph_provenance::program_graph_path(graph_path, &graph.program_graph);
-    serde_json::from_str(
-        &fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?,
-    )
-    .with_context(|| format!("parsing {}", path.display()))
+    report_io::read_json(&path)
 }
 
 fn apply_limit<T>(records: &mut Vec<T>, limit: usize) {

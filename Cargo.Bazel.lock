@@ -1,5 +1,5 @@
 {
-  "checksum": "304e11b2bc264ed2a7ce30227d7b96847d6ff343d23d9b98acb65bc260985d9f",
+  "checksum": "3594ccb96e91ee1898e9fc3c468218850b26b718af7ba6429cb60bf62a277864",
   "conditions": {
     "aarch64-apple-darwin": [
       "aarch64-apple-darwin"
@@ -11728,6 +11728,10 @@
             "target": "env_logger"
           },
           {
+            "id": "flate2 1.1.10",
+            "target": "flate2"
+          },
+          {
             "id": "futures 0.3.34",
             "target": "futures"
           },
@@ -13723,6 +13727,21 @@
     },
     "flate2 1.1.10": {
       "common_attrs": {
+        "crate_features": [
+          "any_impl",
+          "miniz_oxide",
+          "rust_backend"
+        ],
+        "deps": [
+          {
+            "id": "crc32fast 1.5.2",
+            "target": "crc32fast"
+          },
+          {
+            "id": "miniz_oxide 0.9.1",
+            "target": "miniz_oxide"
+          }
+        ],
         "edition": "2018"
       },
       "library_target_name": "flate2",
@@ -23932,10 +23951,20 @@
     },
     "miniz_oxide 0.9.1": {
       "common_attrs": {
+        "crate_features": [
+          "default",
+          "simd",
+          "simd-adler32",
+          "with-alloc"
+        ],
         "deps": [
           {
             "id": "adler2 2.0.1",
             "target": "adler2"
+          },
+          {
+            "id": "simd-adler32 0.3.10",
+            "target": "simd_adler32"
           }
         ],
         "edition": "2021"
@@ -48446,6 +48475,7 @@
     "dirs 7.0.0",
     "dunce 1.0.5",
     "env_logger 0.11.11",
+    "flate2 1.1.10",
     "futures 0.3.34",
     "glob 0.3.4",
     "http 1.5.0",

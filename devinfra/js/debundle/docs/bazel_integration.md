@@ -46,12 +46,15 @@ the build. A gate-rejected output is marked by `GATE_REJECTED` at its
 `write_js_tree` root and is never a runnable bundle (<../SPEC.md> § Reading-only
 output on gate rejection), so name the target for it, e.g. `debundle_readable`.
 
-`split_dependency_graphs = True` moves every `reports/**/dependency_graph.json`,
-and the `program_graph.json` they reference, out of `<target>.out` into `<target>.dependency_graphs/` at the same relative
+`split_dependency_graphs = True` moves every `reports/**/dependency_graph.json.gz`,
+and the `program_graph.json.gz` they reference, out of `<target>.out` into `<target>.dependency_graphs/` at the same relative
 path, served as the `dependency_graphs` output group
 (`--output_groups=+dependency_graphs`). On a large corpus the graphs are most of
 the output (gigabytes against megabytes of modules); paths in reports and the
 `GATE_REJECTED` marker still name their original location.
+The mover also recognizes historical plain `.json` graphs from an explicitly
+selected older debundler. It moves existing files without changing their
+encoding or relative program-graph reference.
 
 To export full effect-conflict rows, set `effect_conflicts_jsonl = True`.
 Optionally restrict the JSONL sinks with

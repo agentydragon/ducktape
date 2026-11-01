@@ -124,7 +124,7 @@ Validation is translation validation (<translation_validation_gate.md>).
 | Separate checks: strip split-brain/privacy, commuting gate, TDZ                      | One conflict check                                      |
 | Premises carry `audited_source_sha256` and evidence in reports                       | Premises carry an engine audit list and a runtime probe |
 | Analysis recomputed on every edit                                                    | Cached; assignment edits rerun stages 3–5               |
-| `dependency_graph.json` near 1 GB                                                    | Small default reports                                   |
+| `dependency_graph.json.gz` (about 1 GB before compression)                           | Small default reports                                   |
 
 ## Plans as steps
 

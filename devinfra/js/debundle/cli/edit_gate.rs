@@ -31,7 +31,7 @@
 //!
 //! On rejection the gate also writes the same on-disk artifacts the
 //! pipeline writes — `cycles.json` / `atomic_group_conflicts.json` as
-//! siblings of the supplied `dependency_graph.json` (the location
+//! siblings of the supplied `dependency_graph.json.gz` (the location
 //! `debundle gate list/describe` reads by default) — so the
 //! documented `gate` follow-up queries work after an edit-gate or
 //! `--dry-run` rejection. Stale artifacts from a previous rejection
@@ -149,7 +149,7 @@ impl<'a> Gate<'a> {
                 source_context,
             }),
             None => bail!(
-                "realizability gate requires --graph (path to dependency_graph.json) or --no-verify"
+                "realizability gate requires --graph (path to dependency_graph.json.gz) or --no-verify"
             ),
         }
     }
@@ -496,7 +496,7 @@ pub fn source_claim_sets_from_post_spec(post_spec: &PostEditSpec) -> Vec<SourceC
 
 /// Resolve typed binding claims to source unit identities. Direct imports remain
 /// distinct from local declarations, and repeated local declarations are
-/// joined only when `dependency_graph.json` carries matching `CoDeclaration` edges.
+/// joined only when `dependency_graph.json.gz` carries matching `CoDeclaration` edges.
 pub fn project_source_unit_claims(
     dependency_graph_report: &DependencyGraphReport,
     post_spec: &PostEditSpec,
@@ -690,7 +690,7 @@ pub fn source_unit_module_assignments_from_projection(
     for node in &dependency_graph_report.nodes {
         anyhow::ensure!(
             assignments.insert(node.id.clone(), None).is_none(),
-            "dependency_graph.json repeats source unit ID {:?}",
+            "dependency_graph.json.gz repeats source unit ID {:?}",
             node.id
         );
     }
@@ -724,13 +724,13 @@ fn assign_source_unit_module(
         .get(source_unit.0)
         .with_context(|| {
             format!(
-                "resolved source unit index {} is absent from dependency_graph.json",
+                "resolved source unit index {} is absent from dependency_graph.json.gz",
                 source_unit.0
             )
         })?;
     let destination = assignments.get_mut(&node.id).with_context(|| {
         format!(
-            "resolved source unit {:?} is absent from dependency_graph.json",
+            "resolved source unit {:?} is absent from dependency_graph.json.gz",
             node.id
         )
     })?;

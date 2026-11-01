@@ -245,7 +245,11 @@ fn create(args: CreateArgs, current: CurrentRoots) -> Result<SnapshotOutcome> {
     // `program_graph` reference inside `analysis/`.
     let graph_path = Path::new("analysis")
         .join(graph.chunk_id.split('/').collect::<PathBuf>())
-        .join("dependency_graph.json");
+        .join(
+            args.graph
+                .file_name()
+                .context("graph path requires a file name")?,
+        );
     let program_graph = lexically_within(&graph_provenance::program_graph_path(
         &graph_path,
         &graph.program_graph,

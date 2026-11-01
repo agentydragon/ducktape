@@ -178,7 +178,7 @@ impl DependencyGraph {
     ///
     /// Errors with [`UnresolvedDependencyEdgeEndpoint`] when an edge
     /// references a source unit id missing from the report's node table —
-    /// a malformed or version-skewed `dependency_graph.json`. Silently
+    /// a malformed or version-skewed `dependency_graph.json.gz`. Silently
     /// dropping such edges would hand the planner-side gate a weaker
     /// graph than the one the report described.
     pub fn from_report(
@@ -305,7 +305,7 @@ impl DependencyGraph {
     }
 }
 
-/// An `dependency_graph.json` edge references a source unit id absent from the
+/// An `dependency_graph.json.gz` edge references a source unit id absent from the
 /// report's node table. See [`DependencyGraph::from_report`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnresolvedDependencyEdgeEndpoint {
@@ -319,7 +319,7 @@ impl fmt::Display for UnresolvedDependencyEdgeEndpoint {
         write!(
             f,
             "dependency-graph edge {} references source-unit ID {} which is not in the report's node table \
-             (malformed or version-skewed dependency_graph.json)",
+             (malformed or version-skewed dependency_graph.json.gz)",
             self.edge_id, self.endpoint,
         )
     }

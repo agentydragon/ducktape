@@ -7,7 +7,6 @@ use graph_provenance::GraphProvenance;
 use output_layout::{DEPENDENCY_GRAPH_REPORT, PROGRAM_GRAPH_REPORT};
 use serde::Serialize;
 use std::fs;
-use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -36,11 +35,7 @@ pub(super) fn write_chunk_report_json<T: Serialize>(
         fs::create_dir_all(parent)?;
     }
     if filename == DEPENDENCY_GRAPH_REPORT {
-        // This side output is large enough on real app chunks that pretty
-        // printing meaningfully affects local and remote test artifact size.
-        // Keep small human-first reports pretty; keep the graph jq-first.
-        let mut output = BufWriter::new(fs::File::create(path)?);
-        serde_json::to_writer(&mut output, value)?;
+        report_io::write_json_gzip(&path, value)?;
     } else {
         let body = serde_json::to_string_pretty(value)?;
         fs::write(path, body)?;
@@ -48,7 +43,7 @@ pub(super) fn write_chunk_report_json<T: Serialize>(
     Ok(())
 }
 
-/// The run's `program_graph.json`, written at most once and only when a chunk
+/// The run's `program_graph.json.gz`, written at most once and only when a chunk
 /// writes a graph that references it (a dry run's accept path writes neither).
 pub(super) struct ProgramGraphOutput<'a> {
     provenance: Option<&'a GraphProvenance>,
@@ -76,15 +71,13 @@ impl<'a> ProgramGraphOutput<'a> {
         &self.author_inputs
     }
 
-    /// Ensure `program_graph.json` exists under `report_out_dir` and return
-    /// the reference `chunk_id`'s `dependency_graph.json` records: the path
+    /// Ensure `program_graph.json.gz` exists under `report_out_dir` and return
+    /// the reference `chunk_id`'s `dependency_graph.json.gz` records: the path
     /// relative to that graph's directory.
     pub(super) fn reference_for(&self, report_out_dir: &Path, chunk_id: &str) -> Result<PathBuf> {
         let mut written = self.written.lock().expect("program graph lock poisoned");
         if !*written {
             fs::create_dir_all(report_out_dir)?;
-            let mut output =
-                BufWriter::new(fs::File::create(report_out_dir.join(PROGRAM_GRAPH_REPORT))?);
             let report = ProgramGraphReport {
                 provenance: self.provenance.cloned(),
                 native_integrity_witnesses: self
@@ -106,7 +99,7 @@ impl<'a> ProgramGraphOutput<'a> {
                     .map(|integrity| integrity.never_written_overrides.clone())
                     .unwrap_or_default(),
             };
-            serde_json::to_writer(&mut output, &report)?;
+            report_io::write_json_gzip(&report_out_dir.join(PROGRAM_GRAPH_REPORT), &report)?;
             *written = true;
         }
         Ok(chunk_id

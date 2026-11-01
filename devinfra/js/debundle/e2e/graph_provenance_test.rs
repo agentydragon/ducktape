@@ -83,7 +83,7 @@ impl AliasGraphFixture {
         );
 
         Self {
-            graph: out_root.join("reports/tree/provider/dependency_graph.json"),
+            graph: out_root.join("reports/tree/provider/dependency_graph.json.gz"),
             _root: root,
             source_root,
             source_file,
@@ -288,7 +288,7 @@ fn flat_graph_unit_inspection_checks_source_without_module_tree_scope() {
     let graph = fixture
         .report_root
         .join(&fixture.chunk_id)
-        .join("dependency_graph.json");
+        .join("dependency_graph.json.gz");
     let unit = fixture
         .dependency_graph()
         .nodes
@@ -432,10 +432,9 @@ fn config_assumption_and_engine_change_reject() {
 
     let fixture = GraphFixture::acyclic_pair();
     let path = program_graph_path(&fixture.graph);
-    let mut program_graph: serde_json::Value =
-        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let mut program_graph: serde_json::Value = report_io::read_json(&path).unwrap();
     program_graph["provenance"]["engine_sha256"] = "wrong-engine".into();
-    fs::write(&path, serde_json::to_vec(&program_graph).unwrap()).unwrap();
+    report_io::write_json_gzip(&path, &program_graph).unwrap();
     assert_mismatch(&fixture, "engine");
 }
 
@@ -462,7 +461,7 @@ fn provider_chunk_analysis_option_invalidates_consumer_graph() {
     fs::write(config, text).unwrap();
     let output = std::process::Command::new(debundler_path())
         .args(["coverage", "--graph"])
-        .arg(run.report_root.join("main/dependency_graph.json"))
+        .arg(run.report_root.join("main/dependency_graph.json.gz"))
         .arg("--modules")
         .arg(run.root().join("modules/main"))
         .args(["--format", "json"])
@@ -477,10 +476,9 @@ fn provider_chunk_analysis_option_invalidates_consumer_graph() {
 fn missing_metadata_cannot_authorize_edit_but_graph_only_read_works() {
     let fixture = GraphFixture::acyclic_pair();
     let path = program_graph_path(&fixture.graph);
-    let mut program_graph: serde_json::Value =
-        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let mut program_graph: serde_json::Value = report_io::read_json(&path).unwrap();
     program_graph.as_object_mut().unwrap().remove("provenance");
-    fs::write(&path, serde_json::to_vec(&program_graph).unwrap()).unwrap();
+    report_io::write_json_gzip(&path, &program_graph).unwrap();
     fixture.assert_success(&["atoms", "--format", "json"]);
     assert_mismatch(&fixture, "missing_provenance");
 }
@@ -528,7 +526,7 @@ fn wrong_chunk_scope_with_same_binding_is_rejected() {
         &[],
     );
     assert!(run.result.status.success(), "{}", run.result.stderr);
-    let graph = run.report_root.join("main/dependency_graph.json");
+    let graph = run.report_root.join("main/dependency_graph.json.gz");
     let wrong = run.root().join("modules/dependency");
     let output = std::process::Command::new(debundler_path())
         .arg("coverage")
@@ -568,7 +566,7 @@ fn explicit_roots_allow_relocated_graph_and_spec() {
     copy_tree(fixture.root(), relocated.path());
     let graph = relocated
         .path()
-        .join("out/reports/tree/main/dependency_graph.json");
+        .join("out/reports/tree/main/dependency_graph.json.gz");
     let output = fixture
         .process(&[
             "--spec-root",
@@ -606,7 +604,7 @@ fn relocated_mismatch_recipe_rebuilds_after_original_inputs_are_removed() {
     fs::create_dir(relocated.path().join("out-regenerated")).unwrap();
     let graph = relocated
         .path()
-        .join("out/reports/tree/main/dependency_graph.json");
+        .join("out/reports/tree/main/dependency_graph.json.gz");
     let output = std::process::Command::new(debundler_path())
         .args([
             "--spec-root",
@@ -727,9 +725,9 @@ fn env_only_run_records_replayable_absolute_argv_across_cwd() {
         .output()
         .unwrap();
     assert!(result.status.success(), "{}", stderr(&result));
-    let graph = out.join("reports/tree/main/dependency_graph.json");
+    let graph = out.join("reports/tree/main/dependency_graph.json.gz");
     let program_graph: serde_json::Value =
-        serde_json::from_slice(&fs::read(program_graph_path(&graph)).unwrap()).unwrap();
+        report_io::read_json(&program_graph_path(&graph)).unwrap();
     let provenance = &program_graph["provenance"];
     assert_eq!(
         provenance["generation_cwd"],

@@ -762,7 +762,7 @@ pub enum SlotReach {
     UnknownReceiver,
 }
 
-/// A completed whole-program census, as `program_graph.json` records it,
+/// A completed whole-program census, as `program_graph.json.gz` records it,
 /// queried slot by slot. It mirrors [`IntegrityFlags`] without author axioms.
 pub struct CensusExplanation<'a> {
     witnesses: &'a [NativeMutationWitness],

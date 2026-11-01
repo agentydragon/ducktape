@@ -101,7 +101,7 @@ The browser writer materializes those decisions without rediscovering entries.
 
 `debundle run --emit-on-rejection` changes only what a realizability-gate
 rejection writes; it is mutually exclusive with `--dry-run`. The selector pass,
-the gate and its evidence reports (`dependency_graph.json`, `cycles.json` /
+the gate and its evidence reports (`dependency_graph.json.gz`, `cycles.json` /
 `atomic_group_conflicts.json` under `reports/tree/<chunk>/`) are unchanged,
 and the run still exits nonzero with the gate's diagnostic. An accepted spec
 produces exactly the output it produces without the flag.
@@ -213,8 +213,14 @@ nested bodies and unsupported contexts keep their conservative witnesses.
 This does not change purity, callback effects, exceptions or loader return
 property reads.
 
-Each `dependency_graph.json` written by `debundle run` references the run's
-`program_graph.json`, which carries input provenance:
+Full dependency and program graphs are written directly as deterministic
+gzip level-1 compact JSON, without a plaintext staging file. Saved-graph
+commands accept both gzip and historical explicit plain JSON by content;
+corrupt or incomplete compressed streams fail. Small reports and report
+selection retain their existing behavior.
+
+Each `dependency_graph.json.gz` written by `debundle run` references the run's
+`program_graph.json.gz`, which carries input provenance:
 SHA-256 of the executable engine and the exact bytes read for the tree config,
 vendor marks, module YAMLs, optional binding patches, JS list, every listed JS
 chunk, and vendor package files consulted by planning. Module YAML path
@@ -986,7 +992,7 @@ program_premises:
   non_literal_loader_calls: native_addons_only # or unknown
   intrinsics_never_written:
     families: all # or a list: [Object, Array, Map]
-    note: "Audit list: program_graph.json; runtime probe: <invocation>"
+    note: "Audit list: program_graph.json.gz; runtime probe: <invocation>"
   note: "Audit: <where the premise was checked>"
 ```
 
@@ -1022,7 +1028,7 @@ its binding name, or an assignment to that binding. Every other witness that
 would reach a named family (an unknown receiver, a global-object write that
 couples every prototype slot, a descendant) is overridden: the family's slots
 stay intact and `%Object.prototype%` property checks pass when `Object` is
-named. `program_graph.json` lists each overridden witness under
+named. `program_graph.json.gz` lists each overridden witness under
 `intrinsics_never_written_overrides` with its source location, the families it
 would reach and why (`unknown_receiver`, `global_object`, `family`). That
 generated list is the author's audit list. Proofs that use an overridden slot
@@ -1789,7 +1795,7 @@ The premise makes inert only the `sequenced` (side-effect ordering) edges
 between the two selected source units, in either direction. The dependency
 graph still records each such edge as what source analysis found, with
 `constrains_init_order: false` and `commuting_premise` naming the entry, and
-`dependency_graph.json.commuting_statements[]` lists per entry the edge ids it
+`dependency_graph.json.gz.commuting_statements[]` lists per entry the edge ids it
 inerted and the spec location; a blocking SCC in `cycles.json` lists the inert
 edges between its members as `inert_commuting_edges`. The premise never
 touches `eager_use` edges: an at-init read is a dataflow dependence whose
@@ -1864,7 +1870,7 @@ A1–A11 and every other contract still apply, and it grants no purity,
 no-reentry or receiver guarantee.
 
 That classification is decided once per edge when the graph is built and
-retained as `dependency_graph.json` `edges[].premise_verdict` on every
+retained as `dependency_graph.json.gz` `edges[].premise_verdict` on every
 `sequenced` and `co_declaration` edge: `inertable`, `summarized` (strict-chain
 adjacency of two summarized effects), or `known` with the `conflict` the gate
 would report. Applying a premise reads the retained verdicts of the edges
@@ -2742,7 +2748,7 @@ heap taint).
 Property-specific Object prototype premises appear in
 `synchronous_execution.native_prototype_property_checks`: each entry names the
 property, the absence verdict, and the number of blocking source operations.
-`program_graph.json` shares those operations once per run under
+`program_graph.json.gz` shares those operations once per run under
 `native_prototype_mutations`, with
 chunk, source unit, source location, kind and possible property names. A null
 property set means any name; an empty set means Symbol keys only. These are
@@ -2750,7 +2756,7 @@ conservative possible writers, not proof that a mutation executes. `describe`
 selects blockers for checked names and applies its ordinary section limits.
 Native-call identity checks and their witnesses remain separate.
 
-`dependency_graph.json` includes `imported_callable_summaries` for directly
+`dependency_graph.json.gz` includes `imported_callable_summaries` for directly
 called bare imported callback-factory summaries used by synchronous analysis.
 Each shared entry names
 the importer's local binding and preserves all `callback_factory_evidence` from
@@ -2841,7 +2847,7 @@ edge whose endpoint is classified pure (an allocation, a pure content reader)
 has no evidence for that side but keeps its `explanation`.
 
 The explanation is retained when the dependency graph is built
-(`dependency_graph.json` `edges[].sequenced_cause` for `sequenced` edges; the
+(`dependency_graph.json.gz` `edges[].sequenced_cause` for `sequenced` edges; the
 edge `role` for at-init reads), never recomputed at report time. Where several
 rules would emit the same source-unit pair, the first emitted cause is kept.
 `explanation` is absent for the other edge kinds, whose `kind` and `binding`

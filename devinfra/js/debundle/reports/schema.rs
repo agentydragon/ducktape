@@ -93,8 +93,8 @@ pub struct DependencyGraphReport {
     pub atomic_graph: AtomicGraphReport,
 }
 
-/// `program_graph.json`: the program-wide sections every chunk's
-/// `dependency_graph.json` shares, written once per run beside the chunk
+/// `program_graph.json.gz`: the program-wide sections every chunk's
+/// `dependency_graph.json.gz` shares, written once per run beside the chunk
 /// report directories.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProgramGraphReport {
@@ -439,7 +439,7 @@ pub struct NativeIntegrityCheck {
     /// graphs written before it was recorded.
     #[serde(default)]
     pub slots: BTreeSet<String>,
-    /// References to the affected roots in `program_graph.json`'s native_integrity_witnesses.
+    /// References to the affected roots in `program_graph.json.gz`'s native_integrity_witnesses.
     pub affected_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
 }
 
@@ -1146,7 +1146,7 @@ pub struct AtomicGroupEdgeReport {
 /// Wire shape for `atomic_group_conflicts.json` (one entry per
 /// conflicting atomic group). Projects the in-memory
 /// [`AtomicGroupConflict`] onto the shared entity-key formats: owners
-/// as `"unit:N"` strings (joining `dependency_graph.json`'s `nodes[].id`)
+/// as `"unit:N"` strings (joining `dependency_graph.json.gz`'s `nodes[].id`)
 /// and modules as canonical [`spec::ModulePath`]s (joining the module
 /// table's `path`). The raw `SourceUnitId` / `ModuleId` indices never hit
 /// the wire.

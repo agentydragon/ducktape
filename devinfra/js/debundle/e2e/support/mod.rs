@@ -120,18 +120,18 @@ impl Fixture {
             &self
                 .report_root
                 .join(&self.chunk_id)
-                .join("dependency_graph.json"),
+                .join("dependency_graph.json.gz"),
         )
     }
 }
 
 impl RejectedFixture {
     pub fn dependency_graph(&self) -> DependencyGraphReport {
-        self.read_report("dependency_graph.json")
+        self.read_report("dependency_graph.json.gz")
     }
 
     pub fn program_graph(&self) -> ProgramGraphReport {
-        read_program_graph(&self.report_path("dependency_graph.json"))
+        read_program_graph(&self.report_path("dependency_graph.json.gz"))
     }
 
     /// Where `--emit-on-rejection` writes the logical-module tree.
@@ -187,10 +187,10 @@ impl RejectedFixture {
 }
 
 fn read_dependency_graph(report_root: &Path, chunk_id: &str) -> DependencyGraphReport {
-    read_json(&report_root.join(chunk_id).join("dependency_graph.json"))
+    read_json(&report_root.join(chunk_id).join("dependency_graph.json.gz"))
 }
 
-/// The `program_graph.json` that the graph at `graph_path` references.
+/// The `program_graph.json.gz` that the graph at `graph_path` references.
 pub fn program_graph_path(graph_path: &Path) -> PathBuf {
     let graph: DependencyGraphReport = read_json(graph_path);
     graph_provenance::program_graph_path(graph_path, &graph.program_graph)
@@ -368,7 +368,7 @@ pub fn assert_gate_rejected_banner(entry_path: &Path, evidence_report: &Path) {
 
 /// Like [`run_rejection_fixture`] but with `debundle run --dry-run`.
 /// Dry-run skips all emitted-JS and accept-path report writes but
-/// still materializes rejection evidence (`dependency_graph.json` +
+/// still materializes rejection evidence (`dependency_graph.json.gz` +
 /// `cycles.json` / `atomic_group_conflicts.json`) under the standard
 /// per-chunk report layout.
 pub fn run_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
@@ -1153,11 +1153,8 @@ fn read_json_with_stderr<T: DeserializeOwned>(path: &Path, stderr: Option<&str>)
     let context = stderr
         .map(|stderr| format!("\ndebundler stderr:\n{stderr}"))
         .unwrap_or_default();
-    serde_json::from_str(
-        &fs::read_to_string(path)
-            .unwrap_or_else(|err| panic!("read JSON report {}: {err}{context}", path.display())),
-    )
-    .unwrap_or_else(|err| panic!("parse JSON report {}: {err}{context}", path.display()))
+    report_io::read_json(path)
+        .unwrap_or_else(|err| panic!("parse JSON report {}: {err}{context}", path.display()))
 }
 
 pub fn debundler_path() -> PathBuf {

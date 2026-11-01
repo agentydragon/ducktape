@@ -60,7 +60,7 @@ impl GraphFixture {
         );
         let modules_root = run._root.path().join("modules/main");
         Self {
-            graph: run.report_root.join("main/dependency_graph.json"),
+            graph: run.report_root.join("main/dependency_graph.json.gz"),
             modules: modules_root,
             run,
         }
@@ -221,7 +221,9 @@ impl GraphFixture {
     /// Refresh the saved graph after deliberate changes to valid authoring inputs.
     pub fn refresh_graph(&self) {
         let rerun = self.rerun();
-        let fresh_graph = rerun.path().join("reports/tree/main/dependency_graph.json");
+        let fresh_graph = rerun
+            .path()
+            .join("reports/tree/main/dependency_graph.json.gz");
         fs::copy(
             program_graph_path(&fresh_graph),
             program_graph_path(&self.graph),

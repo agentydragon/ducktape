@@ -50,13 +50,13 @@ Use `debundle <command> --help` for the current command and flag inventory.
 Generate current analysis, then create a separate snapshot for each worker:
 
 ```bash
-debundle snapshot create --graph output/reports/tree/main/dependency_graph.json \
+debundle snapshot create --graph output/reports/tree/main/dependency_graph.json.gz \
   --destination /tmp/worker-one > /tmp/worker-one.json
 debundle snapshot verify /tmp/worker-one
 ```
 
 `--graph` may also come from `DEBUNDLE_GRAPH`; an explicit flag wins. The
-returned JSON identifies the copied engine, graph (with the `program_graph.json`
+returned JSON identifies the copied engine, graph (with the `program_graph.json.gz`
 it references), spec/source roots, complete
 modules tree, `graph_package_roots` map and a `regeneration_argv` array. For a
 graph-backed query or edit in the snapshot, pass each map entry as the global
@@ -96,7 +96,7 @@ both are set.
 
 | Flag                            | Env var                      | Meaning                                                                                                                                                                                                    |
 | ------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--graph <path>`                | `DEBUNDLE_GRAPH`             | `dependency_graph.json` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation.                                           |
+| `--graph <path>`                | `DEBUNDLE_GRAPH`             | `dependency_graph.json.gz` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation.                                        |
 | `--modules <dir>`               | `DEBUNDLE_MODULES`           | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                                                                           |
 | `--source-root <dir>`           | `DEBUNDLE_SOURCE_ROOT`       | Selector lookup root. It must contain the graph's verified physical input; an existing logical-path candidate must resolve to that same file. Missing alias paths use the captured chunk-to-input mapping. |
 | `--tree-config <file>`          | `DEBUNDLE_TREE_CONFIG`       | For graph-backed `modules` edits and queries, scope an app-level modules tree to the chunk named by `--graph`.                                                                                             |
@@ -155,7 +155,7 @@ Export the env vars once per shell session and subsequent commands run
 without repeating the flags:
 
 ```bash
-export DEBUNDLE_GRAPH=<debundle-output>/reports/tree/<chunk-id>/dependency_graph.json
+export DEBUNDLE_GRAPH=<debundle-output>/reports/tree/<chunk-id>/dependency_graph.json.gz
 export DEBUNDLE_MODULES=<spec-root>/<version>/modules
 export DEBUNDLE_SOURCE_ROOT=<debundle-output>/app
 export DEBUNDLE_OUT=<debundle-output-root>
@@ -212,7 +212,7 @@ For example, this plans a graph query without reading the graph or creating
 reports, and records `DEBUNDLE_GRAPH` as an explicit `--graph` argument:
 
 ```sh
-DEBUNDLE_GRAPH='reports/tree/main/dependency_graph.json' \
+DEBUNDLE_GRAPH='reports/tree/main/dependency_graph.json.gz' \
   debundle gate list --print-invocation
 ```
 
@@ -381,7 +381,7 @@ first in its matching section so it remains available under a small limit.
 query and defaults to `both`. It filters dependency, atomic-group, and
 module-quotient edges; neighbor source units are derived from the remaining
 dependency edges. Repeat `--reason KIND` to retain any of several dependency
-reasons, using the `edge_kind` spellings from `dependency_graph.json`:
+reasons, using the `edge_kind` spellings from `dependency_graph.json.gz`:
 `eager_use`, `lazy_use`, `hoisted_use`, `eager_rebind`, `lazy_rebind`,
 `deferred_rebind`, `sequenced`, `co_declaration`, `co_location`, or
 `local_effect`. Both
@@ -400,7 +400,7 @@ Every command that modifies the spec runs validation **by default** before
 writing changes back to disk. For commands that affect the chunk's module
 assignment (anything that moves a binding between modules), that means
 the post-edit claim checks followed by the full realizability + atom-split
-gate — which requires `--graph <dependency_graph.json>` unless `--no-verify` is set.
+gate — which requires `--graph <dependency_graph.json.gz>` unless `--no-verify` is set.
 Direct local claims must identify graph source units, typed `kind` pins must match
 one source chunk (a repeated declaration may satisfy the kind at any site),
 and `import_specifier` pins must name an import specifier. Pass `--source-root` when
@@ -450,7 +450,7 @@ If the spec is unrealizable, `debundle run` rejects and emits structured
 side outputs (`cycles.json`, `atomic_group_conflicts.json`) under
 `reports/tree/<chunk-id>/`. `debundle run --dry-run` runs pipeline
 parse/facts/gate checks without writing emitted JS or reports; a gate
-rejection still writes `dependency_graph.json` plus the rejection evidence, so
+rejection still writes `dependency_graph.json.gz` plus the rejection evidence, so
 the `gate` queries work on the rejection that was just reported.
 
 `debundle run --emit-on-rejection` (exclusive with `--dry-run`) additionally
@@ -626,7 +626,7 @@ debundle inspect-source --source-file app.js
 debundle inspect-source --source-root extracted --chunk static/app.js \
   --statements 12..16 --format json
 debundle inspect-source --source-file app.js --around-binding XOe
-debundle inspect-source --id atomic:17 --graph dependency_graph.json --modules spec/modules \
+debundle inspect-source --id atomic:17 --graph dependency_graph.json.gz --modules spec/modules \
   --source-root extracted
 debundle inspect-source --id runtime/plugins --view raw --context-statements 1
 ```
@@ -935,7 +935,7 @@ the requested source binding, not merely to some unique declaration:
 modules into the surviving gated same-module seed fragments:
 
 ```sh
-debundle modules decompose --graph dependency_graph.json --modules spec/modules \
+debundle modules decompose --graph dependency_graph.json.gz --modules spec/modules \
   --format json
 ```
 
@@ -985,7 +985,7 @@ source-backed selector resolution:
 
 ```sh
 debundle modules decompose --atomic --preserve-selector-anchors \
-  --source-root source --graph dependency_graph.json --modules spec/modules --format json
+  --source-root source --graph dependency_graph.json.gz --modules spec/modules --format json
 ```
 
 This option requires `--source-root` and resolves current claims through the
@@ -1009,7 +1009,7 @@ cycles, add `--coarsen-blocking-sccs`:
 
 ```sh
 debundle modules decompose --atomic --coarsen-blocking-sccs \
-  --graph dependency_graph.json --modules spec/modules --format json
+  --graph dependency_graph.json.gz --modules spec/modules --format json
 ```
 
 This opt-in mode consumes only the blocking SCC module lists returned by the
@@ -1035,7 +1035,7 @@ co-locate the complete candidate groups named by each reported atomic group:
 
 ```sh
 debundle modules decompose --atomic --coarsen-blocking-sccs \
-  --coarsen-atomic-conflicts --graph dependency_graph.json --modules spec/modules \
+  --coarsen-atomic-conflicts --graph dependency_graph.json.gz --modules spec/modules \
   --format json
 ```
 
@@ -1096,7 +1096,7 @@ To include residual ownership in that baseline, add `--include-residual`:
 
 ```sh
 debundle modules decompose --atomic --include-residual \
-  --graph dependency_graph.json --modules spec/modules --format json
+  --graph dependency_graph.json.gz --modules spec/modules --format json
 ```
 
 Each residual body atom gets its own proposed active module. Top-level import
@@ -1115,7 +1115,7 @@ present in the scoped module tree:
 
 ```sh
 debundle modules refine --batch reviewed-source-units.json \
-  --graph dependency_graph.json --modules spec/modules --source-root source
+  --graph dependency_graph.json.gz --modules spec/modules --source-root source
 ```
 
 The batch is a JSON array of `{ "unit_id": "...", "module": "..." }`
@@ -1205,7 +1205,7 @@ artifacts to disk as siblings of `--graph` — the default location the
 rejection that was just reported. A subsequent edit that passes the gate
 clears the stale artifacts. `debundle run` (and `run --dry-run`) writes the
 same files under `reports/tree/<chunk>/`, which is the same
-sibling-of-`dependency_graph.json` layout.
+sibling-of-`dependency_graph.json.gz` layout.
 
 A `commuting_statements` entry the graph build rejects (contradicted by a
 source fact, or inerting no edge; [SPEC](../SPEC.md#commuting-statements))
@@ -1234,7 +1234,7 @@ exit 0.
 For a sequencing edge, `gate describe` retains the impure initializer source
 unit and its purity reasons, and every cut and evidence edge carries the same
 `explanation` the stored cut has (the evidence rebuilds it from
-`dependency_graph.json`'s `edges[].role` and `edges[].sequenced_cause`). Supply
+`dependency_graph.json.gz`'s `edges[].role` and `edges[].sequenced_cause`). Supply
 `--modules` and `--source-root` together to get `sequenced_source_inspections`,
 a runnable `inspect-source` command keyed by each stored source unit (source
 and target sides alike). The text view prints the same commands and a `why:`
@@ -1254,7 +1254,7 @@ source-root paths:
 
 ```sh
 debundle gate diagnose later \
-  --graph reports/tree/static/app/dependency_graph.json \
+  --graph reports/tree/static/app/dependency_graph.json.gz \
   --modules spec/modules \
   --source-root snapshot \
   --format json
@@ -1295,7 +1295,7 @@ mechanically from the rejection the pipeline or an edit gate wrote:
 
 ```sh
 debundle spec propose-commutations \
-  --graph reports/tree/static/app/dependency_graph.json \
+  --graph reports/tree/static/app/dependency_graph.json.gz \
   --source-root snapshot \
   --modules spec/modules/static/app \
   --out commutations.yaml --format json
@@ -1425,11 +1425,11 @@ Typical debundle outputs:
   `runtime.json`, `source_assets.json`, `provenance.json`,
   `rename_queue.json`, `vendor_swaps.json` when those outputs are
   configured
-- `reports/tree/program_graph.json`: the program-wide graph sections every
-  chunk's `dependency_graph.json` references (input provenance, native
+- `reports/tree/program_graph.json.gz`: the program-wide graph sections every
+  chunk's `dependency_graph.json.gz` references (input provenance, native
   mutation census)
 - per-chunk reports under `reports/tree/<chunk-id>/`: `chunk.json`,
-  `modules.json`, `dependency_graph.json`, `export_reentry.json`,
+  `modules.json`, `dependency_graph.json.gz`, `export_reentry.json`,
   `selector_diagnostics.json` when any selector did not resolve or resolved
   with a warning, plus `cycles.json` / `atomic_group_conflicts.json` only when
   validation rejects. `export_reentry.json` is also kept on a dry-run
@@ -1445,7 +1445,7 @@ understanding the implementation.
 
 ### Synchronous execution precision
 
-In `dependency_graph.json`, inspect a node's `synchronous_execution.complete`
+In `dependency_graph.json.gz`, inspect a node's `synchronous_execution.complete`
 and `precision_losses` to see why synchronous-effect inference retained a
 conservative fallback. Reasons distinguish unknown call targets, unsupported
 operations, recursion, and exhausted invocation or callback-pool budgets. Budget
@@ -1466,13 +1466,13 @@ establish an unused annotation. See the
 
 ### Native integrity guards
 
-`debundle explain-integrity` reads a saved graph and its `program_graph.json`
+`debundle explain-integrity` reads a saved graph and its `program_graph.json.gz`
 (no reanalysis) and answers why the census leaves an intrinsic slot unknown
 (SPEC.md § Native integrity inputs):
 
 ```bash
 # Losses on this line, the units whose execution recorded them, and their failed guards
-debundle explain-integrity --graph output/reports/tree/static/index/dependency_graph.json \
+debundle explain-integrity --graph output/reports/tree/static/index/dependency_graph.json.gz \
   --at static/index.js:1234
 # The same for a source unit or a binding it declares
 debundle explain-integrity --id unit:120

@@ -14,7 +14,7 @@ fn gate_diagnose_json(
     let graph = fixture
         .report_root
         .join(&fixture.chunk_id)
-        .join("dependency_graph.json")
+        .join("dependency_graph.json.gz")
         .to_string_lossy()
         .into_owned();
     let modules = fixture.modules_root.to_string_lossy().into_owned();
@@ -868,7 +868,7 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
             rejected
                 .report_root
                 .join(&rejected.chunk_id)
-                .join("dependency_graph.json")
+                .join("dependency_graph.json.gz")
                 .canonicalize()
                 .unwrap()
                 .to_str()

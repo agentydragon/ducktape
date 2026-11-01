@@ -253,7 +253,7 @@ fn exported_factory_result_stays_deferred_until_acyclic_importer_use() {
     let graph: analysis::DependencyGraphReport = read_json(
         &fixture
             .report_root
-            .join("static/provider/dependency_graph.json"),
+            .join("static/provider/dependency_graph.json.gz"),
     );
     let command = graph
         .nodes

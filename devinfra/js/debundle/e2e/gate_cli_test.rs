@@ -1,6 +1,6 @@
 //! E2e for `debundle gate {list,describe,cut}` against REAL pipeline
 //! artifacts. A spec with a cross-module at-init cycle is rejected by
-//! `debundle run`, which writes `dependency_graph.json` + `cycles.json`
+//! `debundle run`, which writes `dependency_graph.json.gz` + `cycles.json`
 //! under the report root; the gate CLI is then exercised against
 //! those files.
 //!
@@ -63,7 +63,7 @@ fn rejected_cycle_fixture() -> RejectedFixture {
 fn graph_path(rejected: &RejectedFixture) -> PathBuf {
     rejected
         .report_root
-        .join("static/app/dependency_graph.json")
+        .join("static/app/dependency_graph.json.gz")
 }
 
 fn gate_json(args: &[&str]) -> serde_json::Value {
@@ -256,7 +256,7 @@ fn gate_describe_recomputes_nonempty_evidence_from_real_artifacts() {
         "fixture must exercise sequencing provenance: {cut}"
     );
     // Every constraining edge explains itself, from stored provenance
-    // (`cycles.json`) and from the recomputed `dependency_graph.json`
+    // (`cycles.json`) and from the recomputed `dependency_graph.json.gz`
     // evidence alike: strict-chain sequencing names both impure
     // endpoints; the at-init reads here are all direct (`wrap(A)`,
     // `wrap(C)` read their argument in the statement's own position).
@@ -362,7 +362,7 @@ fn gate_unknown_id_fails_cleanly() {
 fn dry_run_rejection_materializes_gate_artifacts() {
     // `debundle run --dry-run` keeps the no-output contract on the
     // accept path, but a gate rejection must still write
-    // dependency_graph.json + cycles.json at the standard report location
+    // dependency_graph.json.gz + cycles.json at the standard report location
     // so the documented `gate list/describe` follow-up works on the
     // rejection that was just reported.
     let rejected = run_dry_run_rejection_fixture(cycle_fixture_opts());

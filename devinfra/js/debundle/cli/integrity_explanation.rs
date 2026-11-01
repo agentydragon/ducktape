@@ -24,8 +24,8 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, ClapArgs)]
 #[command(group(ArgGroup::new("query").required(true).args(["slot", "at", "id"])))]
 pub(super) struct ExplainIntegrityArgs {
-    /// Saved `dependency_graph.json` (or DEBUNDLE_GRAPH); the census is read
-    /// from the `program_graph.json` it references.
+    /// Saved `dependency_graph.json.gz` (or DEBUNDLE_GRAPH); the census is read
+    /// from the `program_graph.json.gz` it references.
     #[arg(long, env = "DEBUNDLE_GRAPH")]
     graph: PathBuf,
 
@@ -251,8 +251,7 @@ pub(super) fn run(args: ExplainIntegrityArgs, roots: CurrentRoots) -> Result<()>
 }
 
 fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
-    let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    serde_json::from_slice(&bytes).with_context(|| format!("parsing {}", path.display()))
+    report_io::read_json(path)
 }
 
 fn explain(

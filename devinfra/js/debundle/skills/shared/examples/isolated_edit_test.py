@@ -60,7 +60,7 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(tmp_path: P
         ],
         tmp_path,
     )
-    graph = output / "reports/tree/main/dependency_graph.json"
+    graph = output / "reports/tree/main/dependency_graph.json.gz"
 
     def snapshot(name: str) -> Snapshot:
         return cast(

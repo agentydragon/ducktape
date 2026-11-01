@@ -38,7 +38,6 @@
 //! in which proposed class."
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fs;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
@@ -478,11 +477,7 @@ pub struct ProposalDiagnostic {
 }
 
 pub fn propose_from_files(options: &ProposalOptions) -> Result<ProposalsReport> {
-    let graph: DependencyGraphReport = serde_json::from_str(
-        &fs::read_to_string(&options.dependency_graph_path)
-            .with_context(|| format!("reading {}", options.dependency_graph_path.display()))?,
-    )
-    .with_context(|| format!("parsing {}", options.dependency_graph_path.display()))?;
+    let graph: DependencyGraphReport = report_io::read_json(&options.dependency_graph_path)?;
     propose_from_graph(&graph, options)
 }
 
@@ -534,11 +529,7 @@ pub fn decompose_modules_from_files_with_options(
     options: &ProposalOptions,
     decomposition: ModuleDecompositionOptions,
 ) -> Result<ModuleDecompositionReport> {
-    let graph: DependencyGraphReport = serde_json::from_str(
-        &fs::read_to_string(&options.dependency_graph_path)
-            .with_context(|| format!("reading {}", options.dependency_graph_path.display()))?,
-    )
-    .with_context(|| format!("parsing {}", options.dependency_graph_path.display()))?;
+    let graph: DependencyGraphReport = report_io::read_json(&options.dependency_graph_path)?;
     decompose_modules_from_graph_with_options(&graph, options, decomposition)
 }
 
@@ -2272,7 +2263,7 @@ fn propose_with_context(
 /// chunk-prefix stripping or fallback chain is needed and two source_units of
 /// one module can never disagree (the former self-merge bug). A
 /// destination key absent from the table is a malformed report
-/// (truncated / version-skewed `dependency_graph.json`), surfaced as an
+/// (truncated / version-skewed `dependency_graph.json.gz`), surfaced as an
 /// `Err` rather than a panic so the CLI reports it cleanly.
 fn active_module_label(
     node: &SourceUnitReport,
@@ -3508,7 +3499,7 @@ mod tests {
     fn non_residual_source_unit_with_missing_destination_is_clean_error_not_panic() {
         // A non-residual source_unit whose `destination` key is absent from
         // the module table (`quotient.nodes`) models a truncated /
-        // version-skewed `dependency_graph.json` deserialized from disk by
+        // version-skewed `dependency_graph.json.gz` deserialized from disk by
         // `propose_from_files`. `is_residual` returns false for an
         // unknown key, so the source_unit survives the residual filter and
         // reaches `active_module_label`. The proposer must surface a

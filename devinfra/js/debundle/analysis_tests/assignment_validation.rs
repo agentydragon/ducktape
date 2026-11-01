@@ -19,7 +19,7 @@ enum TestDestination {
 fn dependency_graph_report(assignment_analysis: &AssignmentAnalysis) -> DependencyGraphReport {
     static NO_OPTIONS: BTreeMap<String, spec::DependencyGraphOptions> = BTreeMap::new();
     assignment_analysis.dependency_graph_report(
-        "../program_graph.json".into(),
+        "../program_graph.json.gz".into(),
         &analysis::reports::author_inputs::AuthorInputLocations::new(None, &NO_OPTIONS)
             .expect("no author inputs need no provenance"),
     )
@@ -264,7 +264,7 @@ fn dependency_graph_report_emits_atomic_graph() {
     assert!(json.contains(r#""atomic_graph""#));
 }
 
-/// `cli/gate.rs` reads the callee source unit off the serialized `dependency_graph.json` edge to
+/// `cli/gate.rs` reads the callee source unit off the serialized `dependency_graph.json.gz` edge to
 /// drop a promoted edge when callee and caller land in different modules.
 #[test]
 fn dependency_graph_report_names_the_callee_source_unit_on_a_promoted_at_init_edge() {

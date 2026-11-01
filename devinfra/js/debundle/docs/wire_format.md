@@ -19,7 +19,7 @@ strings), **not** as SWC `Id = (Atom, SyntaxContext)`. The
 
 | File                          | Field carrying binding identity                                                                                                                                                                                                              |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dependency_graph.json`       | `nodes[].declared_bindings[].binding: Atom`, `edges[].binding: Option<Atom>`, `edges[].sequenced_cause` binding/cell names                                                                                                                   |
+| `dependency_graph.json.gz`    | `nodes[].declared_bindings[].binding: Atom`, `edges[].binding: Option<Atom>`, `edges[].sequenced_cause` binding/cell names                                                                                                                   |
 | `cycles.json`                 | `cut[].binding: Option<Atom>`, `cut[].from_binding: Option<Atom>`, `cut[].explanation` binding/cell names (evidence is recomputed on demand by `debundle gate describe`); `rejection` names the pass (SPEC § Realizability cut explanations) |
 | `atomic_group_conflicts.json` | `claims[].binding_names: Vec<Atom>`                                                                                                                                                                                                          |
 
@@ -29,17 +29,25 @@ in memory, but the wire form is the string itself, which is portable.
 
 ## Program graph
 
+Full graph files use `.json.gz`: deterministic gzip level-1 streams containing
+the complete existing compact JSON payload. Writers finish the compression
+footer and flush the file before reporting success; no plaintext full graph
+is staged or emitted. Small JSON reports and JSONL are unchanged. Saved-graph
+readers accept gzip and historical explicit plain JSON by content and validate
+the complete compressed stream, including checksums and trailing bytes. For
+shell inspection, use `gzip -dc dependency_graph.json.gz | jq ...`.
+
 Sections that are the same for every chunk are written once per run, as
-`program_graph.json` at the report root (`reports/tree/` beside the chunk
+`program_graph.json.gz` at the report root (`reports/tree/` beside the chunk
 directories): `provenance`, `native_integrity_witnesses` and
-`native_prototype_mutations`. Each `dependency_graph.json` names it in
+`native_prototype_mutations`. Each `dependency_graph.json.gz` names it in
 `program_graph`, a path relative to the graph's own directory
-(`../program_graph.json` for chunk `main`). A tool that copies a graph copies
+(`../program_graph.json.gz` for chunk `main`). A tool that copies a graph copies
 the program graph at the same relative location.
 
 ## Saved-graph input provenance
 
-`program_graph.json.provenance` records the run's file inputs by named
+`program_graph.json.gz.provenance` records the run's file inputs by named
 root and SHA-256. Its `present_directories` entries record package subpaths
 whose directory presence affected analysis; they assert only that the path is a
 directory, not that its contents were read. `debundle snapshot create` recreates
@@ -49,7 +57,7 @@ list for older provenance records.
 
 ## Atomic graph reports
 
-`dependency_graph.json.atomic_graph.nodes[]` contains atomic groups. Each node
+`dependency_graph.json.gz.atomic_graph.nodes[]` contains atomic groups. Each node
 represents one SCC of the constraining-edge subgraph over source-unit nodes; its
 `source_unit_ids` and `members` identify the source units in that group.
 Each source unit can move between modules, while an atomic group can contain one or
@@ -69,7 +77,7 @@ requested source units cover complete groups or split them.
 
 Conflicts during `run` are written to `atomic_group_conflicts.json`. The
 analysis and CLI report fields name the groups explicitly, so each row can be
-joined directly to `dependency_graph.json.atomic_graph.nodes[].id`.
+joined directly to `dependency_graph.json.gz.atomic_graph.nodes[].id`.
 
 ### Export-reentry diagnostics
 
@@ -176,7 +184,7 @@ only after the stream flushes. Gate-rejected chunks can have complete exports
 even though the command exits nonzero.
 These reports are not substitute semantic inputs for staged facts.
 
-`translation_validation.json` is written beside `dependency_graph.json`: the
+`translation_validation.json` is written beside `dependency_graph.json.gz`: the
 translation-validation verdict on the emitted order, report only (the gate
 decides). `gate_accepts` is
 the realizability gate's verdict and `accepts` translation validation's;
@@ -232,13 +240,13 @@ replay and pre-filtering inner-scope reads don't pay for themselves. See
 
 ## Reader audiences
 
-| Consumer                                                                                                                     | Reads                                                                 | Cross-process?          |
-| ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ----------------------- |
-| Spec author with `jq`                                                                                                        | `dependency_graph.json`, `cycles.json`, `atomic_group_conflicts.json` | yes (Atom-only)         |
-| `debundle atoms` / `coverage` / `graph-summary` / `scc` / `cluster` / `describe` / `inspect-source --id` / `modules propose` | `dependency_graph.json`, source bytes + spec                          | yes (Atom-only)         |
-| `debundle gate diagnose <binding>`                                                                                           | `dependency_graph.json`, source bytes + module spec                   | yes (Atom-only)         |
-| `debundle bindings assign` / `bindings rename` / `modules merge`                                                             | spec YAMLs + `dependency_graph.json` (gate)                           | yes                     |
-| Materializer (`debundle run`)                                                                                                | spec + chunk bytes + everything in-process                            | N/A — always in-process |
+| Consumer                                                                                                                     | Reads                                                                    | Cross-process?          |
+| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ----------------------- |
+| Spec author with `jq`                                                                                                        | `dependency_graph.json.gz`, `cycles.json`, `atomic_group_conflicts.json` | yes (Atom-only)         |
+| `debundle atoms` / `coverage` / `graph-summary` / `scc` / `cluster` / `describe` / `inspect-source --id` / `modules propose` | `dependency_graph.json.gz`, source bytes + spec                          | yes (Atom-only)         |
+| `debundle gate diagnose <binding>`                                                                                           | `dependency_graph.json.gz`, source bytes + module spec                   | yes (Atom-only)         |
+| `debundle bindings assign` / `bindings rename` / `modules merge`                                                             | spec YAMLs + `dependency_graph.json.gz` (gate)                           | yes                     |
+| Materializer (`debundle run`)                                                                                                | spec + chunk bytes + everything in-process                               | N/A — always in-process |
 
 ## Reconstruction recipe
 
@@ -273,7 +281,7 @@ underlying number.
 
 ## Convention: interned module references + a single module table
 
-Module identity is **interned** on the wire. `dependency_graph.json` (a.k.a.
+Module identity is **interned** on the wire. `dependency_graph.json.gz` (a.k.a.
 `module_graph`) carries exactly one module table — `module_graph.nodes`,
 a list of `ModuleEntry { key, path, kind }` — and the table is the
 **single source of truth** for each module's path and destination kind.
@@ -300,7 +308,7 @@ the emitted entry filename is chosen separately by the chunk configuration.
 
 ## Binding-ordering effect provenance
 
-`dependency_graph.json` `edges[].sequenced_cause` for the `binding_timeline`
+`dependency_graph.json.gz` `edges[].sequenced_cause` for the `binding_timeline`
 and `shared_var_access` rules carries `source` and `target`, and
 `uninitialized_observation` carries `observation`: the provenance of that
 endpoint's binding effect, `{"kind": "observed"}` or
@@ -314,7 +322,7 @@ commuting-statements gate never reads an unclassified effect as assumed.
 
 An impure known-function call has one `impure_function_call` reason at the
 call site. Its optional `cause_ref` points to an entry in the same
-`dependency_graph.json` file's `purity_causes[]` table. Each entry has an `id`
+`dependency_graph.json.gz` file's `purity_causes[]` table. Each entry has an `id`
 and a `purity` verdict whose reasons may point to further entries. Follow
 these links to inspect the callee's full cause chain; shared callees are
 stored once rather than copied into every caller. A direct reason's
@@ -325,7 +333,7 @@ an impure known-function call. Older reports without the table or
 
 ## Callback-factory barrier diagnostics
 
-`dependency_graph.json.nodes[].callback_factory_barriers[]` is optional and
+`dependency_graph.json.gz.nodes[].callback_factory_barriers[]` is optional and
 omitted for accepted calls. It records a matched retained callback-factory
 signature that the conservative analyzer rejected. The currently supported
 rejections are `rejection.code = "namespace_member_write"` for a static member
@@ -379,7 +387,7 @@ its purity reason.
 
 ## Module identity everywhere else: `ModulePath` / `ModuleRef`
 
-Every artifact outside `dependency_graph.json` denotes modules by
+Every artifact outside `dependency_graph.json.gz` denotes modules by
 canonical `ModulePath` — never by interned key, and never by the
 in-process `"<chunk_id>::<path>"` spelling (`PlannedModule.id`,
 which exists only in memory). Per-chunk files use the bare path (the
