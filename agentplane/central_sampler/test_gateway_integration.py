@@ -21,8 +21,8 @@ from agentplane.env import config as configuration
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.gateway import serve_gateway
 from agentplane.env.e2e.testing.process import RunningRunner
-from agentplane.env.execution import executor_pb2, executor_pb2_grpc
 from agentplane.env.runtime.control import environment_runtime_pb2
+from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
 from agentplane.env.runtime.execution.testing.codex_exec_server_container import (
     CodexExecServerContainer,
     inspect_codex_exec_server_container,

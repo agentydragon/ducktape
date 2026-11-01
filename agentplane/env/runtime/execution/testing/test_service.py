@@ -13,7 +13,7 @@ import grpc.aio
 import pytest
 import pytest_bazel
 
-from agentplane.env.execution import executor_pb2, executor_pb2_grpc
+from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
 from agentplane.proto import sandboxes_pb2
 from third_party.containers import debian_slim
 from util.bazel.runfiles import get_required_path, own_repo_rlocation

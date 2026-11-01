@@ -7,9 +7,9 @@ import (
 	"strconv"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
-	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	runtimecontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/codes"

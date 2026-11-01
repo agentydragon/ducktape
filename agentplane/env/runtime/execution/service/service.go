@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	execution "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/adapter"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/sethvargo/go-retry"

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc/codes"

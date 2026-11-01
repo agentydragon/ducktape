@@ -15,9 +15,9 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver",
     deps = [
         "//agentplane/env/cosi",
-        "//agentplane/env/runtime/lifecycle",
         "//agentplane/env/oneoff",
         "//agentplane/env/runtime/execution/companion/control",
+        "//agentplane/env/runtime/lifecycle",
         "//agentplane/env/runtime/supervision",
         "//agentplane/observability",
         "@com_github_coder_websocket//:websocket",

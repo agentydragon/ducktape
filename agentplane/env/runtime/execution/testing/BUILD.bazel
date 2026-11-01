@@ -12,8 +12,8 @@ py_test(
     requires_docker = True,
     deps = [
         "//:conftest",
-        "//agentplane/env/execution:executor_pb2",
-        "//agentplane/env/execution:executor_pb2_grpc",
+        "//agentplane/env/runtime/execution:executor_pb2",
+        "//agentplane/env/runtime/execution:executor_pb2_grpc",
         "//agentplane/proto:sandboxes_pb2",
         "//third_party/containers:debian_slim",
         "//util:oci",

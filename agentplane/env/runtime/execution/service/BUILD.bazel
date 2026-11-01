@@ -10,7 +10,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/service",
     deps = [
-        "//agentplane/env/execution:executor_go_proto",
+        "//agentplane/env/runtime/execution:executor_go_proto",
         "//agentplane/env/runtime/execution/adapter:execution",
         "//agentplane/env/runtime/execution/codexexecserver",
         "//agentplane/env/runtime/supervision",
@@ -30,7 +30,7 @@ go_test(
     embed = [":service"],
     race = "on",
     deps = [
-        "//agentplane/env/execution:executor_go_proto",
+        "//agentplane/env/runtime/execution:executor_go_proto",
         "//agentplane/env/runtime/execution/codexexecserver",
         "//agentplane/env/runtime/supervision",
         "//agentplane/proto:sandboxes_go_proto",

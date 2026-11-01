@@ -6,7 +6,7 @@ import (
 	"errors"
 	"sync"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"

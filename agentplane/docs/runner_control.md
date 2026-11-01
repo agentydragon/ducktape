@@ -9,7 +9,7 @@ Runner configuration requires `control.listen_address` and `control.security.mod
 requires the matching `runner_security.mode`. Each explicitly selects `mtls` or `insecure`. `mtls`
 requires a `tls` block with absolute `cert_file`, `key_file` and `ca_file` paths. `insecure` rejects a
 TLS block. Missing/unknown modes and partial or contradictory configuration fail startup.
-The service definitions are `runner/environment_runtime.proto` and `env/execution/executor.proto`;
+The service definitions are `runner/environment_runtime.proto` and `env/runtime/execution/executor.proto`;
 `proto/environment_runtime_state.proto` defines the facts published by `Runner.WatchState`.
 
 ## State observation and fencing
@@ -35,7 +35,7 @@ and new control calls; admitted journal work remains runner-owned and continues 
 `Executor.OpenSession` holds the Runner-side Codex connection with a server stream; typed unary
 process and file RPCs use its opaque session ID. JSON-RPC framing, initialization and native
 notifications stay in the Runner adapter. Both hops use the same sandbox-owned
-[Executor contract](../env/execution/executor.proto). Closing the session stream releases the local
+[Executor contract](../env/runtime/execution/executor.proto). Closing the session stream releases the local
 WebSocket; Codex retains its detached session for 30 seconds before expiring it and terminating
 remaining processes. Request IDs provide correlation, not
 deduplication or durable admission; uncertain mutations are never automatically replayed.

@@ -11,8 +11,8 @@ go_library(
     srcs = ["server.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/control",
     deps = [
-        "//agentplane/env/execution:executor_go_proto",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/env/runtime/execution:executor_go_proto",
         "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/streaming",
         "//agentplane/observability",

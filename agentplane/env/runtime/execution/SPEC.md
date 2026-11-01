@@ -1,7 +1,7 @@
 # Execution service contract
 
 The execution service provides typed process and filesystem operations for one execution
-environment. The public contract is [`executor.proto`](../../execution/executor.proto). Its initial backend is
+environment. The public contract is [`executor.proto`](executor.proto). Its initial backend is
 Codex exec-server; running a native agent harness or app-server is not required.
 
 ## Ownership and admission

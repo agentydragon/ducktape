@@ -108,7 +108,7 @@ agentplane/
 
 `env/` groups software specific to operating execution environments. The native Harness Host runs
 inside an environment; the central sampler owns the LLM loop outside environments and may use the
-Execution service API as a client. Keep the Executor protocol and client with `env/execution`, whose
+Execution service API as a client. Keep the Executor protocol and client with `env/runtime/execution`, whose
 API is consumed by the central sampler and Gateway. Shared supervision and one-shot work
 coordination serve the Environment Runtime, Execution service and Harness Host; they create no
 services.

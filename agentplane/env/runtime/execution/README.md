@@ -1,7 +1,7 @@
 # Environment execution service
 
 `//agentplane/env/runtime/execution/cmd:agentplane-execution-service` serves the typed
-[`Executor` API](../../execution/executor.proto) independently of a native harness, app-server, Runner journal,
+[`Executor` API](executor.proto) independently of a native harness, app-server, Runner journal,
 model provider or integration app. It owns one Codex exec-server and a private Unix gRPC socket.
 The generated Go and Python clients live with this protocol. [SPEC.md](SPEC.md) defines lifetime,
 admission and recovery guarantees.
@@ -94,7 +94,7 @@ replays execution requests.
 - `cmd/`: executable entrypoint; `testing/`: real container service acceptance.
 
 **Deviation:** the proto keeps the published `agentplane.executor` wire package while source and
-client import paths live under `env/execution`. Relocation changes neither RPC method names nor
+client import paths live under `env/runtime/execution`. Relocation changes neither RPC method names nor
 message fields, so current Gateway, Harness Host and sampler versions still agree during deployment.
 
 ## Cutover and rollback

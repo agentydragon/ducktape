@@ -6,9 +6,9 @@ import (
 	"sync"
 	"testing"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	execution "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/adapter"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"

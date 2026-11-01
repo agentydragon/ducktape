@@ -3,7 +3,7 @@ package execution
 import (
 	"context"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 )
 
 func (a *Adapter) StartProcess(ctx context.Context, r *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {

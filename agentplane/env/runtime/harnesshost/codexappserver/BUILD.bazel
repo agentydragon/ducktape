@@ -17,10 +17,10 @@ go_library(
     ],
     deps = [
         "//agentplane/env/cosi",
-        "//agentplane/env/runtime/lifecycle",
         "//agentplane/env/oneoff",
         "//agentplane/env/runtime/harnesshost/codex",
         "//agentplane/env/runtime/harnesshost/harness",
+        "//agentplane/env/runtime/lifecycle",
         "//agentplane/env/runtime/supervision",
         "//agentplane/observability",
         "//agentplane/proto:session_go_proto",
@@ -43,9 +43,9 @@ go_test(
     embed = [":codexappserver"],
     race = "on",
     deps = [
-        "//agentplane/env/runtime/lifecycle",
         "//agentplane/env/oneoff",
         "//agentplane/env/runtime/harnesshost/harness",
+        "//agentplane/env/runtime/lifecycle",
         "//agentplane/env/runtime/supervision",
         "@com_github_cosi_project_runtime//pkg/controller",
         "@com_github_cosi_project_runtime//pkg/controller/runtime",
