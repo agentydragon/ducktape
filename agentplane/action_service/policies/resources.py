@@ -1,11 +1,8 @@
-"""The constants and the rule parser through which the Action Service reads `PolicySet` and
-`PolicyBinding` (`agentplane/policy_sets.py`; the CRDs live in `agentplane/crds`).
+"""Action Service constants and validation for `action_auto_approve` PolicySet rules.
 
-A `PolicySet` carries Action policies as `action_auto_approve` rules, which `parse_action_rule` reads;
-a rule that does not parse refuses its set (`RefusedPolicySet`), which the informer reports in the
-binding's `ActionsReady` condition. A caller ServiceAccount is an ordinary ServiceAccount carrying
-`CALLER_LABEL`, which is what admits it here at all -- a Pod running as it and a Connection acting as
-it alike.
+`parse_action_rule` validates one rule during cdk8s synthesis. The Go runtime reads the PolicySets and
+reports `ActionsReady` on bindings. A caller ServiceAccount is an ordinary ServiceAccount carrying
+`CALLER_LABEL`, which admits it here -- a Pod running as it and a Connection acting as it alike.
 """
 
 from __future__ import annotations

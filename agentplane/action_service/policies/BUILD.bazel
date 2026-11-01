@@ -71,7 +71,6 @@ py_test(
         ":exact_actions",
         ":resources",
         "//:conftest",
-        "//agentplane:policy_sets",
         "//agentplane/action_service:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
