@@ -22,7 +22,7 @@ import (
 const (
 	secondSessionID = "ca5db09e-2b26-4518-a587-adab5a2c3f60"
 	firstInputID    = "c40dd833-326f-4be1-b42a-4bb74c76c49a"
-	secondInputID   = "a5f7615d-66cc-447a-84ec-5d7a63dd07e7"
+	secondInputID   = "input/from-direct-dispatcher-client"
 )
 
 var resultSessionID = uuid.MustParse(testSessionID)
@@ -168,7 +168,7 @@ func TestReadTurnsPagesAtCompletedTurnsAndPinsTheInitialHistoryTail(t *testing.T
 	if len(first.Turns) != 1 || first.Turns[0].TurnID != "provider:turn-1" || first.ThroughCursor != "5" || first.NextCursor == "" {
 		t.Fatalf("first page = %#v", first)
 	}
-	if got := first.Turns[0]; got.Status == nil || *got.Status != TurnStatusCompleted || len(got.Input) != 1 ||
+	if got := first.Turns[0]; got.Status == nil || *got.Status != TurnStatus(eventpb.TurnStatus_TURN_STATUS_COMPLETED.String()) || len(got.Input) != 1 ||
 		got.Input[0].Text != "first task" || len(got.Input[0].CommandIDs) != 1 ||
 		got.FinalAssistantMessage == nil || *got.FinalAssistantMessage != "first answer" {
 		t.Fatalf("first projected turn = %#v", got)
@@ -182,12 +182,12 @@ func TestReadTurnsPagesAtCompletedTurnsAndPinsTheInitialHistoryTail(t *testing.T
 		t.Fatalf("second page = %#v", second)
 	}
 	gotSecond := second.Turns[0]
-	if gotSecond.Status == nil || *gotSecond.Status != TurnStatusFailed || gotSecond.Error == nil || *gotSecond.Error != "shell exited 1" ||
+	if gotSecond.Status == nil || *gotSecond.Status != TurnStatus(eventpb.TurnStatus_TURN_STATUS_FAILED.String()) || gotSecond.Error == nil || *gotSecond.Error != "shell exited 1" ||
 		len(gotSecond.ToolCalls) != 1 || gotSecond.ToolCalls[0].ItemID != "call/not-a-uuid" || len(second.Gaps) != 1 ||
 		second.Gaps[0] != (HistoryCursorRange{First: 7, Last: 7}) {
 		t.Fatalf("second projected turn/coverage = %#v, %#v", gotSecond, second.HistoryCoverage)
 	}
-	if len(second.Turns[0].Input[0].CommandIDs) != 1 || second.Turns[0].Input[0].CommandIDs[0].String() != secondInputID {
+	if len(second.Turns[0].Input[0].CommandIDs) != 1 || string(second.Turns[0].Input[0].CommandIDs[0]) != secondInputID {
 		t.Fatalf("second input command IDs = %#v", second.Turns[0].Input)
 	}
 
@@ -269,7 +269,7 @@ func TestReadTurnsPreservesToolOnlyUnfinishedTurn(t *testing.T) {
 	}
 }
 
-func TestReadTurnsKeepsIncompleteTurnBehindResumeCursorOnSourceFailure(t *testing.T) {
+func TestReadTurnsPreservesIncompleteFactsAndResumesAtTurnBoundaryOnSourceFailure(t *testing.T) {
 	const largeTurnEnd = turnEventPageSize + 3
 	entries := make([]*eventlogpb.EventEntry, 0, largeTurnEnd)
 	entries = append(
@@ -306,8 +306,11 @@ func TestReadTurnsKeepsIncompleteTurnBehindResumeCursorOnSourceFailure(t *testin
 	if err != nil {
 		t.Fatalf("ReadTurns(first attempt) error = %v", err)
 	}
-	if len(first.Turns) != 1 || first.Turns[0].TurnID != "provider:first-turn" || first.Error == nil || first.NextCursor == "" || first.ThroughCursor != "2" {
-		t.Fatalf("partial turn did not remain behind a retryable completed-turn boundary: %#v", first)
+	if len(first.Turns) != 2 || first.Turns[0].TurnID != "provider:first-turn" || first.Error == nil || first.NextCursor == "" || first.ThroughCursor != "1000" {
+		t.Fatalf("source failure lost observed turns or coverage: %#v", first)
+	}
+	if partial := first.Turns[1]; partial.TurnID != "provider:large-turn" || partial.Status != nil || len(partial.ToolCalls) != turnEventPageSize-3 {
+		t.Fatalf("source failure lost or finalized the unfinished turn: %#v", partial)
 	}
 	retried, err := ReadTurns(context.Background(), history, ReadTurnsRequest{SessionID: resultSessionID, Count: 2, PageCursor: first.NextCursor})
 	if err != nil {

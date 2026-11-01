@@ -129,20 +129,12 @@ func GetSession(
 	return snapshot, nil
 }
 
-// OpaqueID is a nonempty provider-owned identifier. It deliberately makes no UUID or ordering
+// OpaqueID is a nonempty source-owned identifier. It deliberately makes no UUID or ordering
 // assumption.
 type OpaqueID string
 
 // TurnStatus is the protobuf TurnStatus enum's ProtoJSON spelling.
 type TurnStatus string
-
-const (
-	TurnStatusUnspecified TurnStatus = "TURN_STATUS_UNSPECIFIED"
-	TurnStatusCompleted   TurnStatus = "TURN_STATUS_COMPLETED"
-	TurnStatusInterrupted TurnStatus = "TURN_STATUS_INTERRUPTED"
-	TurnStatusFailed      TurnStatus = "TURN_STATUS_FAILED"
-	TurnStatusProcessLost TurnStatus = "TURN_STATUS_PROCESS_LOST"
-)
 
 // HistoryCursorRange preserves protobuf uint64 JSON boundaries while keeping cursor values typed.
 type HistoryCursorRange struct {
@@ -194,10 +186,11 @@ type HistoryCoverage struct {
 	Error         *SourceError         `json:"error,omitempty"`
 }
 
-// TurnInput records one retained harness input and the UUID command IDs that contributed it.
+// TurnInput records one retained harness input and the command IDs that contributed it. Dispatcher
+// accepts opaque command IDs, including inputs submitted outside the UUID-based delegation tools.
 type TurnInput struct {
-	Text       string      `json:"text"`
-	CommandIDs []uuid.UUID `json:"command_ids"`
+	Text       string     `json:"text"`
+	CommandIDs []OpaqueID `json:"command_ids"`
 }
 
 // TurnToolCall is the stable, compact part of an observed tool call.
@@ -298,6 +291,7 @@ func ReadTurns(ctx context.Context, history historypb.HistoryServiceClient, requ
 	projection := turnProjection{}
 	after := cursor.AfterCursor
 	lastComplete := cursor.AfterCursor
+	coveredThrough := cursor.AfterCursor
 	for after < cursor.Through {
 		pageAfter := after
 		events, readErr := history.ReadSessionEvents(ctx, &historypb.ReadSessionEventsRequest{
@@ -308,17 +302,14 @@ func ReadTurns(ctx context.Context, history historypb.HistoryServiceClient, requ
 				return page, status.FromContextError(ctx.Err()).Err()
 			}
 			page.Error = sourceFailure(readErr)
-			page.ThroughCursor = strconv.FormatUint(lastComplete, 10)
 			break
 		}
 		if events == nil {
 			page.Error = &SourceError{Code: codes.DataLoss.String(), Message: "History returned an empty response"}
-			page.ThroughCursor = strconv.FormatUint(lastComplete, 10)
 			break
 		}
 		if events.GetLastCursor() < cursor.Through {
 			page.Error = &SourceError{Code: codes.DataLoss.String(), Message: "retained History cursor moved behind the page snapshot"}
-			page.ThroughCursor = strconv.FormatUint(lastComplete, 10)
 			break
 		}
 		entries := events.GetEntries()
@@ -327,7 +318,6 @@ func ReadTurns(ctx context.Context, history historypb.HistoryServiceClient, requ
 		for _, entry := range entries {
 			if entry == nil || entry.GetCursor() <= lastScanned {
 				page.Error = &SourceError{Code: codes.DataLoss.String(), Message: "History returned entries out of cursor order"}
-				page.ThroughCursor = strconv.FormatUint(lastComplete, 10)
 				stop = true
 				break
 			}
@@ -336,24 +326,22 @@ func ReadTurns(ctx context.Context, history historypb.HistoryServiceClient, requ
 			}
 			if boundary := projection.startOfDifferentTurn(entry); boundary {
 				page.Error = &SourceError{Code: codes.DataLoss.String(), Message: "retained History started a new turn before completing the prior turn"}
-				page.ThroughCursor = strconv.FormatUint(lastComplete, 10)
 				stop = true
 				break
 			}
 			if err := projection.add(entry); err != nil {
 				page.Error = &SourceError{Code: codes.DataLoss.String(), Message: "retained History contains an incomplete turn projection"}
-				page.ThroughCursor = strconv.FormatUint(lastComplete, 10)
 				stop = true
 				break
 			}
 			lastScanned = entry.GetCursor()
+			coveredThrough = lastScanned
 			if projection.completed != nil {
 				page.Turns = append(page.Turns, *projection.completed)
 				projection.completed = nil
 				projection.current = nil
 				lastComplete = lastScanned
 				if uint32(len(page.Turns)) == request.Count {
-					page.ThroughCursor = strconv.FormatUint(lastScanned, 10)
 					if lastScanned < cursor.Through {
 						page.NextCursor = encodeTurnPageCursor(turnPageCursor{
 							Version: turnCursorVersion, SessionID: sessionID.String(), AfterCursor: lastScanned, Through: cursor.Through,
@@ -366,7 +354,6 @@ func ReadTurns(ctx context.Context, history historypb.HistoryServiceClient, requ
 			}
 		}
 		if stop {
-			through := parseCoverageCursor(page.ThroughCursor, lastScanned)
 			if page.Error != nil {
 				if lastComplete < cursor.Through {
 					page.NextCursor = encodeTurnPageCursor(turnPageCursor{
@@ -375,11 +362,10 @@ func ReadTurns(ctx context.Context, history historypb.HistoryServiceClient, requ
 					page.ResumeToken = page.NextCursor
 				}
 			}
-			addCoverageGaps(&page.HistoryCoverage, events.GetRemoved(), pageAfter, through)
+			addCoverageGaps(&page.HistoryCoverage, events.GetRemoved(), pageAfter, coveredThrough)
 			break
 		}
 		if len(entries) >= turnEventPageSize && lastScanned > after {
-			page.ThroughCursor = strconv.FormatUint(lastScanned, 10)
 			addCoverageGaps(&page.HistoryCoverage, events.GetRemoved(), pageAfter, lastScanned)
 			after = lastScanned
 			continue
@@ -387,22 +373,19 @@ func ReadTurns(ctx context.Context, history historypb.HistoryServiceClient, requ
 		// A short History page covers the rest of the snapshot, including explicitly removed
 		// cursor ranges. Settled deltas are represented by their retained completion event and are
 		// not reported as missing History.
-		page.ThroughCursor = strconv.FormatUint(cursor.Through, 10)
+		coveredThrough = cursor.Through
 		addCoverageGaps(&page.HistoryCoverage, events.GetRemoved(), pageAfter, cursor.Through)
 		after = cursor.Through
 	}
 
-	if page.ThroughCursor == "" {
-		page.ThroughCursor = strconv.FormatUint(lastComplete, 10)
-	}
+	page.ThroughCursor = strconv.FormatUint(coveredThrough, 10)
 	if page.Error != nil && page.NextCursor == "" && lastComplete < cursor.Through {
 		page.NextCursor = encodeTurnPageCursor(turnPageCursor{
 			Version: turnCursorVersion, SessionID: sessionID.String(), AfterCursor: lastComplete, Through: cursor.Through,
 		})
 		page.ResumeToken = page.NextCursor
 	}
-	if page.NextCursor == "" && after >= cursor.Through {
-		page.ThroughCursor = strconv.FormatUint(cursor.Through, 10)
+	if page.Error != nil || page.NextCursor == "" && after >= cursor.Through {
 		page.Turns = append(page.Turns, projection.finishPartial()...)
 	}
 	return page, nil
@@ -528,14 +511,13 @@ func (p *turnProjection) add(entry *eventlogpb.EventEntry) error {
 		current := p.ensure(confirmed.GetTurnId())
 		input := TurnInput{Text: confirmed.GetText()}
 		for _, commandID := range confirmed.GetOriginCommandIds() {
-			parsed, err := uuid.Parse(commandID)
-			if err != nil {
-				return fmt.Errorf("input command id is invalid: %w", err)
+			if commandID == "" {
+				return errors.New("input command id is empty")
 			}
-			input.CommandIDs = append(input.CommandIDs, parsed)
+			input.CommandIDs = append(input.CommandIDs, OpaqueID(commandID))
 		}
 		if input.CommandIDs == nil {
-			input.CommandIDs = []uuid.UUID{}
+			input.CommandIDs = []OpaqueID{}
 		}
 		current.Input = append(current.Input, input)
 	case *eventpb.Event_TurnStarted:
@@ -616,15 +598,4 @@ func addCoverageGaps(coverage *HistoryCoverage, ranges []*historypb.CursorRange,
 			coverage.Gaps = append(coverage.Gaps, HistoryCursorRange{First: first, Last: last})
 		}
 	}
-}
-
-func parseCoverageCursor(value string, fallback uint64) uint64 {
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.ParseUint(value, 10, 64)
-	if err != nil {
-		return fallback
-	}
-	return parsed
 }

@@ -84,7 +84,9 @@ keeps missing and unavailable sources distinct. It does not query a live environ
 read-turns` reads retained History through the cursor captured on its first page, returns at most 100
 turns (default 20), and resumes after completed turns with its opaque Session-scoped `--page-cursor`.
 The final retained turn may be unfinished and then has no terminal status. Gaps and read errors remain
-explicit. Tool results do not establish task success, and the projection never fills missing content
+explicit. A failed read preserves the unfinished turn's observed facts and returns a cursor at the
+preceding completed turn; retrying can return that same turn with more facts. Replace its projection
+by turn ID when combining these pages. Tool results do not establish task success, and the projection never fills missing content
 from another turn.
 
 Dispatcher authorizes ordinary callers against the target's actual ServiceAccount UID and scopes
