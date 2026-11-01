@@ -190,6 +190,7 @@ go_test(
     embed = [":main_lib"],
     deps = [
         "//agentplane/app/go/auth",
+        "//agentplane/sandboxes/runtimeconfig",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
     ],
