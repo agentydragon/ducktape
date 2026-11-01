@@ -3,6 +3,7 @@
 mod callback_arguments;
 mod prototype_properties;
 
+use super::local_operations::LocalBody;
 use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
 use super::noninvoking_initialization::OriginalInitializer;
 use super::value_model::{
@@ -1278,6 +1279,7 @@ struct Callable {
     /// Syntax coverage is retained during the same value lowering below.
     direct_return_site: Option<CallSite>,
     allocation_return: Option<ValueExpr>,
+    local_body: Option<LocalBody>,
     local_functions: BTreeSet<Id>,
     literal_captures: BTreeSet<Id>,
     literal_exposures: BTreeSet<Id>,
@@ -1511,6 +1513,7 @@ impl Default for Callable {
             returns: Vec::new(),
             direct_return_site: None,
             allocation_return: None,
+            local_body: None,
             local_functions: BTreeSet::new(),
             literal_captures: BTreeSet::new(),
             literal_exposures: BTreeSet::new(),
@@ -11133,6 +11136,26 @@ impl Visit for ExecutionIndex {
                 .callables
                 .get_mut(&function.span.lo.0)
                 .unwrap()
+                .local_body = (!function.is_async
+                && !function.is_generator
+                && function.decorators.is_empty()
+                && function.type_params.is_none()
+                && function.return_type.is_none()
+                && function
+                    .params
+                    .iter()
+                    .all(|param| param.decorators.is_empty()))
+            .then(|| {
+                LocalBody::lower(
+                    function.params.iter().map(|parameter| &parameter.pat),
+                    function.body.as_ref()?,
+                )
+            })
+            .flatten();
+            index
+                .callables
+                .get_mut(&function.span.lo.0)
+                .unwrap()
                 .direct_return_site = (!function.is_async
                 && !function.is_generator
                 && function.decorators.is_empty()
@@ -11176,6 +11199,21 @@ impl Visit for ExecutionIndex {
         }
         let params = arrow.params.iter().map(Parameter::from_pattern).collect();
         self.with_callable(arrow.span, params, |index| {
+            index
+                .callables
+                .get_mut(&arrow.span.lo.0)
+                .unwrap()
+                .local_body = (!arrow.is_async
+                && !arrow.is_generator
+                && arrow.type_params.is_none()
+                && arrow.return_type.is_none())
+            .then(|| match arrow.body.as_ref() {
+                ArrowFunctionBody::FunctionBody(body) => {
+                    LocalBody::lower(arrow.params.iter(), body)
+                }
+                ArrowFunctionBody::Expr(_) => None,
+            })
+            .flatten();
             index
                 .callables
                 .get_mut(&arrow.span.lo.0)
