@@ -8,12 +8,14 @@ test's undeclared outputs, so a failure shows what the harness actually sent.
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 import json
 import socket
 from collections import defaultdict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from typing import Any
 
 from aiohttp import web
@@ -39,15 +41,36 @@ class ScriptedUpstream:
         self._messages: defaultdict[str, AnthropicMessages] = defaultdict(AnthropicMessages)
         self._responses: defaultdict[str, OpenAIResponses] = defaultdict(OpenAIResponses)
         self._received = itertools.count(1)
+        self._case_pods: ContextVar[set[str] | None] = ContextVar("scripted_case_pods", default=None)
 
     def model(self, pod: str, harness: runner_pb2.Harness) -> ScriptedModel[Any]:
         """The model `harness` in Sandbox Pod `pod` talks to."""
+        if (pods := self._case_pods.get()) is not None:
+            pods.add(pod)
         match harness:
             case runner_pb2.HARNESS_CLAUDE:
                 return ClaudeModel(self._messages[pod])
             case runner_pb2.HARNESS_CODEX:
                 return CodexModel(self._responses[pod])
         raise ValueError(f"unsupported {harness=}")
+
+    @asynccontextmanager
+    async def case_scope(self) -> AsyncIterator[None]:
+        """Check and release only this case's model queues after its guests have stopped."""
+        if self._case_pods.get() is not None:
+            raise RuntimeError("scripted model case scopes cannot nest")
+        pods: set[str] = set()
+        token = self._case_pods.set(pods)
+        try:
+            yield
+        finally:
+            self._case_pods.reset(token)
+            async with asyncio.TaskGroup() as checks:
+                for pod in pods:
+                    if (messages := self._messages.pop(pod, None)) is not None:
+                        checks.create_task(messages.stop())
+                    if (responses := self._responses.pop(pod, None)) is not None:
+                        checks.create_task(responses.stop())
 
     @asynccontextmanager
     async def serving(self, *, listener: socket.socket) -> AsyncIterator[None]:

@@ -47,8 +47,13 @@ Within each suite, independent Claude/Codex cases run together through
 [`run_harness_pair`](harness_pair.py), sharing the test's clients and scripted model server.
 Each harness still creates its own Sandboxes and runs every scenario assertion. Seven Pod pairs
 and four MCP pairs overlap; the messaging and launcher pairs each peak at four Sandbox Pods.
-Storage remains sequential because it requires an empty Sandbox inventory and changes shared
-configuration. MCP OAuth linkage remains parametrized and sequential because both harnesses
+The Pod suite also runs two independent cases concurrently on that same stack. Each case owns its
+clients, Sandboxes, HTTP streams and model-response checks. Storage runs alone first because it
+requires an empty Sandbox inventory and changes shared configuration. Only cases selected by
+pytest are started; all 13 retain separate parameter IDs, JUnit results and real execution
+durations from their OTel spans. For example, `--test_arg=-k=pod_mtls` selects only the Pod credential
+case. A case failure is reported on its own item while peers finish; early suite exit cancels and
+drains unfinished work before the shared deployment stops. MCP OAuth linkage remains parametrized and sequential because both harnesses
 update the same operator/server record. A pair failure names its harness and cancels and awaits
 its peer before fixture cleanup.
 The Dispatcher suite remains separate because replica coverage changes the shared Runner Gateway

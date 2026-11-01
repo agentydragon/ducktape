@@ -29,6 +29,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":case_batch",
         ":cluster",
         ":native_artifacts",
         ":offered_models",
@@ -302,8 +303,12 @@ py_test(
         ":conftest",
         ":scripted_upstream",
         "//:conftest",
+        "//agentplane/native/claude/testing:requests",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/testing:scripted_model",
         "//util:net",
         "@pypi//httpx",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -507,6 +512,30 @@ py_test(
         "//util/testing:undeclared_outputs",
         "@pypi//opentelemetry_api",
         "@pypi//opentelemetry_sdk",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "case_batch",
+    srcs = ["case_batch.py"],
+    deps = [
+        ":tracing",
+        "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_sdk",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_case_batch",
+    srcs = ["test_case_batch.py"],
+    deps = [
+        ":case_batch",
+        ":conftest",
+        "//:conftest",
+        "@pypi//opentelemetry_api",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
