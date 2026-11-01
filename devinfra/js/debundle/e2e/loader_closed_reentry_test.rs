@@ -132,13 +132,21 @@ fn closed_commonjs_request_keeps_the_static_importer_proof() {
                 "loader_result_for_evaluating_module",
                 "synchronous_load_runs_app_callbacks",
             ],
-            "requests": [{
+            "premise_keys": [],
+            "requests": { "total": 1, "examples": [{
                 "source_chunk": PROVIDER_CHUNK,
                 "specifier": "./helper.js",
                 "target": { "chunk": { "chunk": "static/helper", "file": "entry.js" } },
                 "request_count": 1,
-            }],
-            "loaded_chunks": ["static/helper"],
+            }], "truncated": false },
+            "request_site_count": 1,
+            "loaded_chunks": { "total": 1, "examples": ["static/helper"], "truncated": false },
+            "suspended_sites": 0,
+            "premised_sites": 0,
+            "outside_window_sites": 0,
+            "unreachable_sites": 0,
+            "failures": [],
+            "reentry_through": null,
         })
     );
     // `loadHelper` is never called: Node has no `import.meta.require`.
@@ -372,7 +380,7 @@ fn suspension_needs_the_microtask_key_and_an_await_on_every_path() {
         );
         let first = &failure(&derivation, "opaque_loader_site")["first"]["site"];
         assert_eq!(first["source_chunk"], "static/sidecar", "{sidecar}");
-        assert!(derivation.get("suspended_sites").is_none(), "{sidecar}");
+        assert_eq!(derivation["suspended_sites"], 0, "{sidecar}");
     }
 }
 
@@ -444,7 +452,7 @@ fn exported_loader_alias_with_literal_calls_is_classified() {
 export function readPath() { return load("node:path"); }
 "#;
     let report = accepted_provider_report(&[("static/runtime", RUNTIME), ("static/user", user)]);
-    let requests = report["loader"]["requests"].as_array().unwrap();
+    let requests = report["loader"]["requests"]["examples"].as_array().unwrap();
     assert!(
         requests
             .iter()
@@ -516,7 +524,7 @@ export function legacy() { return import.meta.require("constants"); }
         },
         ProgramPremises::default(),
     );
-    let targets: Vec<_> = report["loader"]["requests"]
+    let targets: Vec<_> = report["loader"]["requests"]["examples"]
         .as_array()
         .unwrap()
         .iter()
@@ -674,7 +682,7 @@ fn module_uses_that_make_no_free_loader_are_classified() {
         ),
     ] {
         let report = accepted_provider_report_under(&extra, module_host(), process_premise());
-        let builtins: Vec<_> = report["loader"]["requests"]
+        let builtins: Vec<_> = report["loader"]["requests"]["examples"]
             .as_array()
             .unwrap()
             .iter()
@@ -793,7 +801,7 @@ export function addon() { return import.meta.require("/$bunfs/root/addon.node");
     );
     let report = export_reentry_report(&fixture.report_root);
     assert_eq!(report["policy"], "no_static_importer_reentry", "{report:#}");
-    let embedded: Vec<_> = report["loader"]["requests"]
+    let embedded: Vec<_> = report["loader"]["requests"]["examples"]
         .as_array()
         .unwrap()
         .iter()
@@ -939,9 +947,12 @@ fn reach_back_reenters_only_through_the_names_the_window_imports() {
     let report = export_reentry_report(&fixture.report_root);
     assert_eq!(
         report["policy"],
-        json!({ "reentry_through": ["loadHelper"] })
+        json!({ "reentry_through": { "total": 1, "examples": ["loadHelper"], "truncated": false } })
     );
-    assert_eq!(report["loader"]["reentry_through"], json!(["loadHelper"]));
+    assert_eq!(
+        report["loader"]["reentry_through"]["examples"],
+        json!(["loadHelper"])
+    );
     assert_generated_module_after_entry_script(
         &fixture,
         "const consumer = await import('./static/consumer/entry.js');\nconsole.log(consumer.readLater());\n",
@@ -954,7 +965,7 @@ fn a_window_importing_the_bound_export_or_the_namespace_keeps_it_bound() {
     for (window, policy) in [
         (
             "import { readLater } from \"./provider.js\";\nexport function use() { return readLater(); }\n",
-            json!({ "reentry_through": ["readLater"] }),
+            json!({ "reentry_through": { "total": 1, "examples": ["readLater"], "truncated": false } }),
         ),
         (
             "import * as provider from \"./provider.js\";\nexport function use() { return provider.loadHelper(); }\n",

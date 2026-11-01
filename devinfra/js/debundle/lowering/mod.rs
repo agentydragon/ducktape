@@ -45,6 +45,7 @@ mod naturalize;
 mod placement;
 mod plans;
 mod rebind_fold;
+mod reentry_report;
 pub mod rename_ledger;
 #[cfg(test)]
 mod rename_ledger_proptest;
@@ -240,12 +241,14 @@ pub struct ExportReentryTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FullReportKind {
     TranslationValidation,
+    ExportReentry,
 }
 
 impl FullReportKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::TranslationValidation => "translation-validation",
+            Self::ExportReentry => "export-reentry",
         }
     }
 }
@@ -255,8 +258,9 @@ impl std::str::FromStr for FullReportKind {
     fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
         match value {
             "translation-validation" => Ok(Self::TranslationValidation),
+            "export-reentry" => Ok(Self::ExportReentry),
             _ => Err(format!(
-                "unknown full report {value:?}; expected translation-validation"
+                "unknown full report {value:?}; expected translation-validation or export-reentry"
             )),
         }
     }

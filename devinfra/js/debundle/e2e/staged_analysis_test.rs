@@ -381,3 +381,20 @@ fn full_translation_report_matches_direct_and_staged_runs() {
         ],
     );
 }
+
+#[test]
+fn full_reentry_export_matches_staged_and_filters_only_sinks() {
+    assert_staged_run_matches(
+        split_with_pure_import(),
+        &["--full-report", "export-reentry"],
+    );
+    assert_staged_run_matches(
+        rejected_split(),
+        &["--emit-on-rejection", "--full-report", "export-reentry"],
+    );
+    assert_export_filter_changes_only_sinks(
+        &["--full-report", "export-reentry"],
+        "--full-report-chunk",
+        "export_reentry.full.json",
+    );
+}

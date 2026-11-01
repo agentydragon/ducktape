@@ -678,6 +678,8 @@ pub(super) fn finish_logical_chunk(
             report_emission,
             policy: gate_rejection_policy,
             effect_conflicts_jsonl,
+            full_export_reentry: full_reports.contains(&super::FullReportKind::ExportReentry)
+                && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
             full_translation_validation: full_reports
                 .contains(&super::FullReportKind::TranslationValidation)
                 && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
@@ -1519,6 +1521,7 @@ struct ChunkReportContext<'a> {
     policy: GateRejectionPolicy,
     effect_conflicts_jsonl: bool,
     full_translation_validation: bool,
+    full_export_reentry: bool,
 }
 
 fn validate_and_emit_reports<'a>(
@@ -1534,6 +1537,7 @@ fn validate_and_emit_reports<'a>(
         policy,
         effect_conflicts_jsonl,
         full_translation_validation,
+        full_export_reentry,
     } = context;
     let validation = assignment_analysis.validate_for_emission();
     let assignment_report = match &validation {
@@ -1555,7 +1559,7 @@ fn validate_and_emit_reports<'a>(
         "--effect-conflicts-jsonl requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
     );
     ensure!(
-        !full_translation_validation || report_out_dir.is_some(),
+        !(full_translation_validation || full_export_reentry) || report_out_dir.is_some(),
         "--full-report requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
     );
     let mut full_tv = if full_translation_validation {
@@ -1623,11 +1627,19 @@ fn validate_and_emit_reports<'a>(
                 program_graph.author_inputs(),
             ),
         )?;
+        if full_export_reentry {
+            write_chunk_report_json(
+                report_out_dir,
+                chunk_id,
+                output_layout::EXPORT_REENTRY_FULL_REPORT,
+                export_reentry_report,
+            )?;
+        }
         write_chunk_report_json(
             report_out_dir,
             chunk_id,
             EXPORT_REENTRY_REPORT,
-            export_reentry_report,
+            &super::reentry_report::ExportReentrySummary::from(export_reentry_report),
         )?;
         write_chunk_report_json(
             report_out_dir,

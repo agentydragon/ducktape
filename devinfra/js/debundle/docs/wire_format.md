@@ -81,72 +81,52 @@ joined directly to `dependency_graph.json.gz.atomic_graph.nodes[].id`.
 
 ### Export-reentry diagnostics
 
-`export_reentry.json` is a per-selected-chunk diagnostic, not analyzer input.
-Its `host_behavior` echoes the spec's typed block as read (SPEC.md § Host
-behavior; omitted keys absent, `synchronous_module_loader` always present),
-and `policy` is `conservative`, `no_static_importer_reentry` or `{"reentry_through": [names]}`. `loader` is
-the loader derivation (SPEC.md § Loader-closed derivation), tagged by `rule`:
-`no_synchronous_loader`, `no_host_loader_sites`, or `loader_closure` with
-`closed`, `host_keys` (keys a closed certificate consumed), `requests`
-(resolved literal requests per source chunk, specifier and `target`
-`{"builtin": id}` or `{"chunk": {"chunk", "file"}}`, with `request_count`),
-`loaded_chunks`, `suspended_sites` (mandatorily suspended sites excluded under
-`synchronous_load_drains_microtasks: never`), `unreachable_sites` (sites no
-reachable code can enter), and `failures`. Each failure has a `reason`, its
-`occurrences`, and the `first` witness in chunk-name then site order: either
-`{"host_behavior": key}` or `{"site": {...}}`, a site naming its
-`source_chunk` and `form` (`interop` with the census `kind`, `item`, `line`,
-`specifier` and `resolved_target`; `static_request` with `specifier` and
-`resolved_target`; `loader_binding_use` with `item`, `line`, `call`,
-`specifier` and `resolved_target` for a use of an exported loader alias;
-`namespace_request` with `item`, `specifier` and `resolved_target`;
-`top_level_await`; `vendor_chunk`).
-`host_builtin_leaves`, when nonempty, lists each consumed
-`reentry_free_builtin_modules` or `reentry_free_bun_modules` static request;
-`builtin` holds the module ID either way. The typed
-`global_blockers` and `closure_blockers` arrays use a `reason` tag. Chunk
-references are canonical chunk IDs; static-request entries carry the source
-chunk and original specifier, with `resolved_target: {"chunk", "file"}` when
-the index resolves one. The global predicates are collected once per
-materialization; closure predicates are checked for each selected target even
-when a global blocker already forces the conservative policy. The report
-never relaxes the proof.
+`export_reentry.json` is a bounded per-selected-chunk diagnostic, never analyzer
+input. `host_behavior` and `program_premises` echo the typed author inputs;
+`policy` is `conservative`, `no_static_importer_reentry`, or
+`{"reentry_through": {"total": N, "examples": [names], "truncated": bool}}`.
+The last form is a presentation sample, not the interpreter's actual name set.
 
-```json
-{
-  "host_behavior": { "synchronous_module_loader": "present" },
-  "policy": "conservative",
-  "loader": {
-    "rule": "loader_closure",
-    "closed": false,
-    "failures": [
-      {
-        "reason": "undeclared_host_behavior",
-        "occurrences": 2,
-        "first": { "host_behavior": "loader_result_for_evaluating_module" }
-      },
-      {
-        "reason": "opaque_loader_site",
-        "occurrences": 1,
-        "first": {
-          "site": {
-            "source_chunk": "static/provider",
-            "form": "interop",
-            "kind": "global_this_require",
-            "item": 0,
-            "line": 1
-          }
-        }
-      }
-    ]
-  },
-  "global_blockers": [],
-  "closure_blockers": [
-    { "reason": "open_replacement_bundle", "source_chunk": "static/provider" },
-    { "reason": "target_cycle", "target_chunk": "static/provider" }
-  ]
-}
-```
+Every sampled collection has `{total, examples, truncated}`: `global_blockers`,
+`closure_blockers`, `host_builtin_leaves`, and, for `loader_closure`, loader
+`requests`, `loaded_chunks`, and optional `reentry_through`. Examples borrow the
+first twenty entries in the complete derivation's deterministic order. `total`
+is the exact collection size, not the number of underlying sites. Read totals,
+not example lengths. Empty sampled collections remain explicit.
+`host_builtin_request_count` is the exact sum of all builtin-leaf
+`request_count` values. Loader `request_site_count` similarly sums all resolved
+request counts, including rows beyond the examples.
+
+`loader.rule` is `no_synchronous_loader`, `no_host_loader_sites`, or
+`loader_closure`. The last form retains exact `closed`, consumed `host_keys`
+and `premise_keys`, `suspended_sites`, `premised_sites`, `outside_window_sites`,
+and `unreachable_sites`. `failures` already aggregates the complete occurrence
+count and one deterministic first witness per finite failure kind, so remains
+complete. Witnesses identify either a host behavior key or a source chunk and
+typed site. No result is inferred from a sample's emptiness.
+
+Request examples retain source chunk, specifier, typed target and
+`request_count`. Builtin-leaf examples retain the static request's source,
+specifier, builtin ID and count. Global/closure blocker examples retain their
+existing typed `reason` and source/target evidence. Chunk references remain
+canonical IDs. All global and closure predicates still run, including closure
+predicates when a global blocker has already forced conservative policy.
+
+`example_limit` is twenty. `full_detail_export_available` indicates a capability;
+`full_detail_export_command` names `debundle run --full-report export-reentry`.
+This explicit request streams compact `export_reentry.full.json` containing the
+complete original `ExportReentryReport` schema: full policy name sets, full
+loader requests/loaded chunks, full blocker/builtin arrays, and the original
+omission rules for empty fields. It is not emitted by default. Serialization
+and explicit flush must succeed before the bounded summary is written; failures
+fail the run and can leave a partial full file. No summary field asserts that
+an unrequested file exists. `--full-report-chunk` selects sinks only. Full graph
+export and full diagnostics are independent.
+
+The in-memory semantic report and staged analysis payload retain the complete
+original report. The output-only borrowed view cannot be deserialized as an
+interpreter policy or staged proof. Bounded diagnostics never change acceptance,
+export-reentry classification, atomic/cycle checks, rejection markers, or stderr.
 
 ### Translation validation
 

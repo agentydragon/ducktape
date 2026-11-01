@@ -1085,6 +1085,19 @@ reports include it on rejection, while accepted dry runs remain silent. The
 typed wire schema and blocker fields are described in
 <docs/wire_format.md#export-reentry-diagnostics>.
 
+The default is an output-only borrowed summary with exact collection/site
+counts and at most twenty deterministic examples per blocker, builtin, request,
+loaded-chunk or reentry-name collection. Truncation is explicit. Loader failure
+counts and their existing first witnesses remain complete. The actual policy,
+loader derivation and staged analysis payload remain complete and unchanged;
+no semantic check consumes the presentation view. `run --full-report
+export-reentry` streams the original complete schema as compact
+`export_reentry.full.json` and explicitly flushes it before writing the summary.
+Write/flush errors fail the run. Optional `--full-report-chunk` filters only
+full-report sinks; graph exports remain independent. Accepted dry runs refuse
+an explicit full-report request when they suppress reports. No output capability
+flag asserts that an unrequested full file exists.
+
 The static import closure admits a source with no AST items, including a
 comments-only file: it cannot execute statements or reenter an importer.
 Sources containing statements without a runtime ESM declaration retain the
