@@ -356,7 +356,8 @@ def _candidate(scope: Construct) -> None:
                 metadata=k8s.ObjectMeta(labels=_NEXT_LABELS),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
-                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+                    # Auto-diskful needs the consumer to have the HDD pool locally.
+                    node_selector={**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "hdd"},
                     tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     security_context=k8s.PodSecurityContext(fs_group=1000),
                     containers=[
