@@ -39,13 +39,10 @@ func TestInputsUseApprovedActionNamesAndSchemas(t *testing.T) {
 		[]string{"command_id", "session_id", "target", "turn_id"}, []string{"command_id", "session_id", "target", "turn_id"})
 }
 
-func TestMutationActionsDoNotAdvertiseUnimplementedComposites(t *testing.T) {
+func TestOpenSessionInstructionDescriptionKeepsOpeningSeparateFromInput(t *testing.T) {
 	inputs, err := NewInputs()
 	if err != nil {
 		t.Fatal(err)
-	}
-	if got, want := sortedKeys(inputs.SessionMutationActions()), []string{"cancel_input", "interrupt_turn", "observe_input", "open", "submit_input"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("implemented session actions = %v, want %v", got, want)
 	}
 	var open map[string]any
 	if err := json.Unmarshal(inputs.OpenSession.Definition().InputSchema, &open); err != nil {

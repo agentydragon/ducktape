@@ -98,12 +98,12 @@ def test_actions_migrate_before_serving_and_roll(staging_manifests: list[dict[st
     assert server["startupProbe"]["failureThreshold"] == 60
 
 
-def test_session_delegation_offers_only_implemented_direct_tools(scratch_app: App) -> None:
+def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -> None:
     props = SessionDelegationProps(
         direct_tools_by_group={
             actions.ENVIRONMENTS_GROUP: frozenset({"list", "get"}),
             actions.SESSIONS_GROUP: frozenset(
-                {"open", "submit_input", "observe_input", "cancel_input", "interrupt_turn"}
+                {"open", "submit_input", "observe_input", "get", "read_turns", "cancel_input", "interrupt_turn"}
             ),
         }
     )
@@ -131,14 +131,13 @@ def test_session_delegation_offers_only_implemented_direct_tools(scratch_app: Ap
     assert groups["sessions"]["executor"]["kind"] == "session_delegation"
     assert set(groups["sessions"]["direct_tools"]) == {
         "cancel_input",
+        "get",
         "interrupt_turn",
         "observe_input",
         "open",
+        "read_turns",
         "submit_input",
     }
-    # `get` and `read_turns` remain unadvertised until their composition adapters ship.
-    assert "get" not in groups["sessions"]["direct_tools"]
-    assert "read_turns" not in groups["sessions"]["direct_tools"]
     dispatcher = session_dispatcher.service(env.namespace)
     history = history_service.service(env.namespace)
     assert settings["session_delegation_dispatcher"] == {
