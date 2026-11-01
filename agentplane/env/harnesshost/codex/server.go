@@ -50,6 +50,8 @@ func ServerCommand(launch harness.LaunchConfig) ([]string, error) {
 		{"include_collaboration_mode_instructions", false},
 		{"include_environment_context", false},
 		{"web_search", "disabled"},
+		// Agentplane does not use plugins; avoid their background Git sync and scratch-file churn.
+		{"features.plugins", false},
 		{"features.multi_agent", true},
 		{"features.view_image", true},
 		{"features.unbounded_connection_retries", false},
