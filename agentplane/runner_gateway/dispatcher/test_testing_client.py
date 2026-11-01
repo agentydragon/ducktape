@@ -12,6 +12,9 @@ from agentplane.grpc.serving import serving
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 
+# The generated Dispatcher stubs' own pyi chain imports google.protobuf.
+# gazelle:include_dep @pypi//protobuf
+
 
 class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
     def __init__(self) -> None:
@@ -28,7 +31,7 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
         ],
     ) -> session_dispatcher_pb2.SubmitInputResponse:
         self.requests.append(request)
-        self.bearers.append(dict(context.invocation_metadata()).get("authorization"))
+        self.bearers.append(dict(context.invocation_metadata() or ()).get("authorization"))
         if self.failure is not None:
             await context.abort(self.failure, "submission outcome unknown")
         return session_dispatcher_pb2.SubmitInputResponse(
@@ -49,7 +52,7 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
             session_dispatcher_pb2.GetSessionOpeningRequest, session_dispatcher_pb2.GetSessionOpeningResponse
         ],
     ) -> session_dispatcher_pb2.GetSessionOpeningResponse:
-        self.bearers.append(dict(context.invocation_metadata()).get("authorization"))
+        self.bearers.append(dict(context.invocation_metadata() or ()).get("authorization"))
         return session_dispatcher_pb2.GetSessionOpeningResponse(
             opening=session_dispatcher_pb2.SessionOpening(
                 session_id=request.session_id, sandbox="original", sandbox_uid="original-uid"

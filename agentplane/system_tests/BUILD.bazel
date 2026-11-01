@@ -195,6 +195,7 @@ py_test(
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/testing:scripted_model",
         "@pypi//httpx",
         "@pypi//protobuf",
