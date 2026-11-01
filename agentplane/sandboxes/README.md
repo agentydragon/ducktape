@@ -2,12 +2,12 @@
 
 The shared library for Sandbox requesters and readers: the integration app, Runner Gateway and
 Notification Service. Kubernetes holds all Sandbox state. The app submits desired state and operator
-grants; the Sandbox Controller reconciles them and owns Sandbox status. `SandboxReader`
+grants; the Sandbox Controller reconciles them and owns Sandbox status. The Go `SandboxReader`
 reads a Sandbox and its Pod; `SandboxInventory` also creates (idempotently, by a recorded create intent),
 guards `spec.running` patches by UID and resourceVersion, refuses resume with a retryable error while the
 controller is quiescing an incarnation, and starts deletion of a suspended Sandbox. On a resourceVersion
 conflict, resume and send-wake requests reread and re-evaluate current state; concurrent wake requests
-advance one `wakeGeneration`. `kubernetes_views` derives a Sandbox's phase from its status.
+advance one `wakeGeneration`.
 
 `status.operatingMode` is the controller's effective-mode report. It is absent until the controller
 first reconciles a new Sandbox, so readers expose a nullable mode and `Unspecified` phase instead of
@@ -28,4 +28,5 @@ Flux cannot tag a Sandbox the app created, because it would then own the whole o
 Sandbox has only the tags its manifest or launch gives it.
 
 `testing/kubernetes.py` seeds a running Sandbox and its Pod (`SandboxCluster`) on an envtest API
-server for integration tests.
+server for integration tests. The Python reader in `testing/reader.py` and its projection in
+`testing/kubernetes_views.py` are test support for those API-server tests.
