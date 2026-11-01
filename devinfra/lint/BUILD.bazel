@@ -39,11 +39,14 @@ mypy_cli(
 # node_modules doesn't exist at the execroot. See aspect-build/rules_lint#176.
 eslint_bin.eslint_binary(
     name = "eslint",
-    data = ["//:eslintrc"],
-    fixed_args = [
-        "--config",
-        "\"$$JS_BINARY__RUNFILES\"/$(rlocationpath //:eslintrc)",
-    ],
+    data = select({
+        "//devinfra/lint/x/typed_eslint:typed": ["//devinfra/lint/x/typed_eslint:config"],
+        "//conditions:default": ["//:eslintrc"],
+    }),
+    fixed_args = ["--config"] + select({
+        "//devinfra/lint/x/typed_eslint:typed": ["\"$$JS_BINARY__RUNFILES\"/$(rlocationpath //devinfra/lint/x/typed_eslint:config)"],
+        "//conditions:default": ["\"$$JS_BINARY__RUNFILES\"/$(rlocationpath //:eslintrc)"],
+    }),
 )
 
 # Format Bazel files
