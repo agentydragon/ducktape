@@ -60,7 +60,7 @@ func pid1ProofNative(mode string) int {
 	roles := []string{"group"}
 	// The PID1 native-exit case exercises FenceNamespace against an escaped
 	// descendant. Keep the subprocess backend's original one-descendant case.
-	if mode != "native-exit" || os.Getenv("PID1_PROOF_BACKEND") == "pid1" {
+	if mode != "host-setup" && (mode != "native-exit" || os.Getenv("PID1_PROOF_BACKEND") == "pid1") {
 		roles = append(roles, "escaped")
 	}
 	for _, role := range roles {

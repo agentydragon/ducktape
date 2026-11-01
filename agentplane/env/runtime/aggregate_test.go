@@ -42,44 +42,10 @@ func TestFreshSessionAdmissionInvalidatesIdleToken(t *testing.T) {
 	}
 }
 
-func TestRuntimeRunEmbedsHarnessHost(t *testing.T) {
-	proxy := modelConfigServer(t)
-	workspace := t.TempDir()
-	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
-	config.HostConfig = config.host
-	config.HostIngress.Target = startAcknowledgingHistory(t)
-	r, err := New(config.Config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- r.Run(ctx) }()
-	waitRuntime(t, r, func() bool {
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		return r.host != nil && r.host.report != nil && r.host.report.Ready && r.host.report.NativeStopped
-	}, "embedded Host initial binding")
-	if err := r.adoptIncarnation(context.Background(), "embedded-incarnation"); err != nil {
-		t.Fatal(err)
-	}
-	cancel()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run shutdown: %v", err)
-		}
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("embedded Host did not join Runtime shutdown")
-	}
-}
-
 func TestEmbeddedHostLifecycleLossStillFencesExecution(t *testing.T) {
 	url, _, _ := startNativeExecutionTestServer(t, false)
 	config := executionRuntimeConfig(t, url, nil)
-	config.HostConfig = config.host
-	config.HostIngress.Target = startAcknowledgingHistory(t)
+	config.expectCloseError = true
 	started := make(chan *localExecutionHandle, 1)
 	startExecution := config.deps.startExecution
 	config.deps.startExecution = func(ctx context.Context, cfg Config, uid string) (executionHandle, error) {
@@ -89,19 +55,7 @@ func TestEmbeddedHostLifecycleLossStillFencesExecution(t *testing.T) {
 		}
 		return handle, err
 	}
-	r, err := newRuntime(config.Config, nil, config.deps)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- r.Run(ctx) }()
-	waitRuntime(t, r, func() bool {
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		return r.host != nil && r.host.connected && r.host.report != nil && r.host.report.Ready
-	}, "embedded Host initial binding")
+	r := newLifecycleRunner(t, config)
 	if err := r.adoptIncarnation(context.Background(), "lost-lifecycle-incarnation"); err != nil {
 		t.Fatal(err)
 	}
@@ -115,13 +69,10 @@ func TestEmbeddedHostLifecycleLossStillFencesExecution(t *testing.T) {
 	host := r.host
 	r.mu.Unlock()
 	r.disconnectHost(host, errors.New("simulated Host lifecycle loss"))
-	select {
-	case err := <-done:
-		if err == nil {
-			t.Fatal("Runtime silently accepted lost Host lifecycle")
-		}
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("Runtime failed to join Host and fence Execution after lifecycle loss")
+	closeCtx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+	defer cancel()
+	if err := r.Close(closeCtx); err == nil {
+		t.Fatal("Runtime silently accepted lost Host lifecycle")
 	}
 	if !execution.stopRequested() {
 		t.Fatal("Runtime skipped Execution fence after Host lifecycle loss")

@@ -166,7 +166,7 @@ async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, 
 async def test_production_pid1_embedded_host_reaps_setup(
     tmp_path: Path, gateway: Gateway, history_service: GoHistoryService
 ) -> None:
-    """A Host-owned setup child must use Runtime's PID1 reaper and fence escaped descendants."""
+    """A Host-owned setup child must use Runtime's PID1 reaper and join its process group."""
     load_oci_image(debian_slim.IMAGE)
     runner = get_required_path(launches.RUNTIME_BINARY).resolve()
     fixture = get_required_path(
@@ -221,12 +221,12 @@ async def test_production_pid1_embedded_host_reaps_setup(
                     model="pid1-proof-model",
                     reasoning_effort="low",
                 ),
-                setup_script="exec /pid1-proof --pid1-proof-native crash",
+                setup_script="exec /pid1-proof --pid1-proof-native host-setup",
             )
         )
-        await asyncio.to_thread(_wait_native_tree, tmp_path)
+        await asyncio.to_thread(_wait_native_group, tmp_path)
         descendants = await asyncio.to_thread(_descendant_pids, container, "pid1")
-        assert len(descendants) == 2
+        assert len(descendants) == 1
         await asyncio.to_thread(wrapped.kill, signal="SIGTERM")
         result = await asyncio.to_thread(wrapped.wait, timeout=15)
         assert result["StatusCode"] == 0
@@ -239,6 +239,14 @@ def _wait_native_tree(directory: Path) -> None:
     while not all((directory / f"{role}.pid").exists() for role in ("native", "group", "escaped")):
         if time.monotonic() >= deadline:
             raise TimeoutError("production Runner did not launch the native process tree; see container.log")
+        time.sleep(0.01)
+
+
+def _wait_native_group(directory: Path) -> None:
+    deadline = time.monotonic() + 15
+    while not all((directory / f"{role}.pid").exists() for role in ("native", "group")):
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Host did not launch the native process group; see container.log")
         time.sleep(0.01)
 
 

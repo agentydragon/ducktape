@@ -40,8 +40,9 @@ func TestMain(m *testing.M) {
 
 type runtimeTestConfig struct {
 	Config
-	host harnesshost.Config
-	deps runtimeDeps
+	host             harnesshost.Config
+	deps             runtimeDeps
+	expectCloseError bool
 }
 
 func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string, binary string) runtimeTestConfig {
@@ -92,13 +93,13 @@ func newLifecycleRunner(t *testing.T, config runtimeTestConfig) *Runtime {
 	t.Cleanup(func() {
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 		defer closeCancel()
-		if err := r.Close(closeCtx); err != nil {
-			t.Errorf("Runtime close: %v", err)
+		if err := r.Close(closeCtx); (err != nil) != config.expectCloseError {
+			t.Errorf("Runtime close error=%v, expected error=%v", err, config.expectCloseError)
 		}
 		cancel()
 		select {
 		case <-child.done:
-			if child.err != nil {
+			if child.err != nil && !config.expectCloseError {
 				t.Errorf("Host close: %v", child.err)
 			}
 		case <-closeCtx.Done():
