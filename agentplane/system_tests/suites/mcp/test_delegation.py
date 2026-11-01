@@ -88,9 +88,7 @@ async def _wait_basic_policy(cluster: Cluster, view: SandboxView, policy_objects
         and "basic" in binding.get("spec", {}).get("policySets", [])
     ]
     if not bindings:
-        name = await policy_objects.create_binding(
-            f"{view.name}-delegation-basic", sandbox=view, policy_sets=["basic"]
-        )
+        name = await policy_objects.create_binding(f"{view.name}-delegation-basic", sandbox=view, policy_sets=["basic"])
         await policy_objects.wait_actions_ready(name)
         return
     for binding in bindings:
@@ -382,12 +380,7 @@ async def test_external_connection_delegates_without_the_integration_app(
                 submitted = await _tool(
                     session,
                     "sessions__submit_input",
-                    {
-                        "target": target,
-                        "session_id": session_id,
-                        "command_id": first_command,
-                        "text": first_input,
-                    },
+                    {"target": target, "session_id": session_id, "command_id": first_command, "text": first_input},
                 )
                 assert isinstance(submitted.get("dispatch"), dict)
                 preflight = await _tool(
@@ -413,8 +406,7 @@ async def test_external_connection_delegates_without_the_integration_app(
                         json.dumps(boundary_evidence, indent=2) + "\n"
                     )
                     raise AssertionError(
-                        "submitted input failed before model response; "
-                        "see test.outputs/delegation-submit-boundary.json"
+                        "submitted input failed before model response; see test.outputs/delegation-submit-boundary.json"
                     )
                 try:
                     async with asyncio.timeout(45):
@@ -456,12 +448,7 @@ async def test_external_connection_delegates_without_the_integration_app(
                 await _tool(
                     session,
                     "sessions__submit_input",
-                    {
-                        "target": target,
-                        "session_id": session_id,
-                        "command_id": second_command,
-                        "text": second_input,
-                    },
+                    {"target": target, "session_id": session_id, "command_id": second_command, "text": second_input},
                 )
                 second_request = await model.request()
                 assert second_input in second_request.user_texts
@@ -482,9 +469,7 @@ async def test_external_connection_delegates_without_the_integration_app(
                 assert snapshot["history"]["kind"] == "observed"
                 assert snapshot["history"]["value"]["sessionId"] == session_id
 
-                first_page = await _tool(
-                    session, "sessions__read_turns", {"session_id": session_id, "count": 1}
-                )
+                first_page = await _tool(session, "sessions__read_turns", {"session_id": session_id, "count": 1})
                 assert first_page["session_id"] == session_id
                 assert first_page["source"] == "history"
                 assert not first_page.get("error")
@@ -497,11 +482,7 @@ async def test_external_connection_delegates_without_the_integration_app(
                 second_page = await _tool(
                     session,
                     "sessions__read_turns",
-                    {
-                        "session_id": session_id,
-                        "count": 1,
-                        "page_cursor": first_page["next_cursor"],
-                    },
+                    {"session_id": session_id, "count": 1, "page_cursor": first_page["next_cursor"]},
                 )
                 assert len(second_page["turns"]) == 1
                 assert second_page["turns"][0]["input"][0]["text"] == second_input
