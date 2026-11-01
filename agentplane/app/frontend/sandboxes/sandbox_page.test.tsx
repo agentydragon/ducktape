@@ -134,7 +134,8 @@ afterEach(async () => {
 afterAll(() => vi.unstubAllGlobals());
 
 function requestFromFetchInput(input: RequestInfo | URL, init?: RequestInit): Request {
-  return typeof input !== "string" && "url" in input ? (input as Request) : new Request(input, init);
+  if (input instanceof Request) return input;
+  return new Request(input instanceof URL ? input : new URL(input, window.location.href), init);
 }
 
 function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id">): ThreadView {
@@ -256,6 +257,12 @@ async function render(
       return Promise.resolve(Response.json(testSandboxPresetsProtoJSON([preset])));
     }
     if (/^\/sandboxes\/(startup-test|other-test)\/runner-status$/.test(path)) return runnerStatus();
+    if (/^\/upstream\/app\/v1\/threads\/[^/]+$/.test(path)) {
+      return Promise.resolve(Response.json({ detail: "not found" }, { status: 404 }));
+    }
+    if (/^\/upstream\/history\/v1\/sessions\/[^/]+\/summary$/.test(path)) {
+      return Promise.resolve(Response.json({ detail: "not found" }, { status: 404 }));
+    }
     const threadPath = /^\/threads\/([^/]+)$/.exec(path);
     if (threadPath && request.method === "GET") {
       const threads = Array.isArray(live.snapshot.threads) ? live.snapshot.threads : [];
@@ -800,9 +807,11 @@ it("does not retry an Open the runner has not reported", async () => {
   expect(onOpenThread).not.toHaveBeenCalled();
   expect(container.textContent).toContain("No runner Thread or Dispatcher opening is visible yet");
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
-  expect(
-    fetchMock.mock.calls.map(([input, init]) => new URL(requestFromFetchInput(input, init).url).pathname)
-  ).toContain(`/threads/${first.session_id}`);
+  const paths = fetchMock.mock.calls.map(([input, init]) =>
+    new URL(requestFromFetchInput(input, init).url).pathname
+  );
+  expect(paths).toContain(`/upstream/app/v1/threads/${first.session_id}`);
+  expect(paths).toContain(`/upstream/history/v1/sessions/${first.session_id}/summary`);
 });
 
 it("recovers a lost Open from its Thread without sending a second Open", async () => {
