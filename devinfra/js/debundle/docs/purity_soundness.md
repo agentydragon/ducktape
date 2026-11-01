@@ -1143,6 +1143,13 @@ purity. Unsupported expressions, ambient reads and every non-Evaluate runtime
 transfer are opaque. In particular, neither source erasure in ValueExpr nor
 pre-evaluation of local assignments can discharge an external-write or throw
 obligation.
+Strict equality and `void` discard operand values only after composing their
+access judgments and abrupt outcomes. A conditional's test is retained in the
+same recursive lowering; the bounded strict transfer joins terminal value arms
+and admits only when test and arms have covered access. It proves no exact
+truthiness or runtime equality. Effectful/coercing children and unavailable
+bindings cannot acquire an allocation-only certificate through an outer
+operator. General conditionals remain opaque and keep conservative branch reach.
 For a namespace-member contract, the author must audit the provider and every
 caller/runtime path supplying values used by admitted callbacks, establishing
 that listed factory members retain their identities and behavior through the

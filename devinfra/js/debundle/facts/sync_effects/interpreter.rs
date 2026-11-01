@@ -3536,6 +3536,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             ValueExpr::Primitive(operands) => operands
                 .iter()
                 .all(|operand| matches!(operand, ValueExpr::NonCallable(_) | ValueExpr::Undefined)),
+            ValueExpr::Void(operand) => {
+                matches!(
+                    operand.as_ref(),
+                    ValueExpr::NonCallable(_) | ValueExpr::Undefined
+                )
+            }
+            ValueExpr::StrictEquality(left, right) => [left.as_ref(), right.as_ref()]
+                .into_iter()
+                .all(|operand| matches!(operand, ValueExpr::NonCallable(_) | ValueExpr::Undefined)),
             ValueExpr::Alloc(Kind::Function, _)
             | ValueExpr::NonCallable(_)
             | ValueExpr::Undefined => true,
@@ -7362,6 +7371,26 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     results.insert(AbstractValue::PRIMITIVE);
                 }
                 if may_throw || !can_complete {
+                    results.insert(AbstractValue::Value(Value::Unavailable));
+                }
+                results
+            }
+            ValueExpr::StrictEquality(..) | ValueExpr::Void(_) => {
+                unreachable!("the shared transfer handles noncoercing primitive operations")
+            }
+            ValueExpr::Conditional { test, alternatives } => {
+                // Preserve general branches' conservative reach, including the
+                // test that the old result-only Alternatives lowering erased.
+                let mut tested = self.evaluate(test, env, captures);
+                let may_throw = tested.remove(&AbstractValue::Value(Value::Unavailable));
+                if tested.is_empty() {
+                    return Values::from([AbstractValue::Value(Value::Unavailable)]);
+                }
+                let mut results: Values = alternatives
+                    .iter()
+                    .flat_map(|alternative| self.evaluate(alternative, env, captures))
+                    .collect();
+                if may_throw {
                     results.insert(AbstractValue::Value(Value::Unavailable));
                 }
                 results

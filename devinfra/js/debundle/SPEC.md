@@ -1991,9 +1991,16 @@ the provider derivation and the caller's own-property derivation in
 
 ## Derived foreign call summaries
 
-Simple-parameter functions with one direct return of an input, primitive, or
-static ordinary record/array literal use the same value and literal-heap
-transfers as application execution. The canonical lowering retains complete
+Simple-parameter functions with one direct return built from inputs,
+primitives, static ordinary record/array literals, strict equality (`===` or
+`!==`), `void`, or terminal-arm conditionals use the same value and literal-heap
+transfers as application execution. Strict equality evaluates both operands
+without coercion and yields an unknown Boolean; it proves no runtime equality
+or identity. `void` evaluates its operand before discarding its value. A
+conditional retains its test and joins both possible arms, currently restricted
+to direct parameter reads or primitive literals, without truthiness refinement.
+Unsupported compound arms decline centrally without retrying another evaluator.
+The canonical lowering retains complete
 source coverage before value lowering can erase syntax. This narrow
 `CoveredAllocationOnly` certificate excludes external access/write,
 publication, invocation and throwing operations. Parameters are scoped opaque
@@ -2003,12 +2010,16 @@ declines the summary. A failed migrated query does not retry a different
 evaluator. Other supported bodies retain their existing strict source proof.
 
 Source coverage excludes async/generator functions, defaults/rest/destructuring,
-extra statements, assignments, sequence/template/operator/conditional syntax,
+extra statements, assignments, sequence/template syntax, other operators,
 member reads, computed/spread/accessor/prototype fields, calls, throws and
-control flow. Local-assignment pre-evaluation and a complete synchronous
+control-flow statements. Every operand, test and arm must retain source coverage
+and covered access evidence; an outer supported operation cannot hide an
+unsupported or effectful child. Possible abrupt completion prevents the
+certificate. Local-assignment pre-evaluation and a complete synchronous
 execution outcome do not establish this certificate. Child transfer judgments
-and proof dependencies compose; this initial premise-free literal consumer
+and proof dependencies compose; this premise-free consumer
 declines any unexpected nonempty dependency set rather than discarding it.
+This bounded expression transfer is not general source-order execution coverage.
 
 A directly imported, stable top-level function or class declaration of another
 analyzed chunk receives a summary when every operation its call performs runs

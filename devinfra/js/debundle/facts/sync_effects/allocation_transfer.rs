@@ -5,7 +5,7 @@
 
 use super::value_model::{AbstractValue, Context, DenseArray, ProviderScopeId, ValueExpr, Values};
 use crate::analysis_inputs::ProofDependencies;
-use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
 use imbl::OrdMap;
 use std::collections::BTreeMap;
 use swc_ecma_ast::Id;
@@ -136,6 +136,59 @@ pub(super) fn transfer(
         }
         ValueExpr::Undefined => Values::from([AbstractValue::UNDEFINED]),
         ValueExpr::NonCallable(kinds) => Values::from([AbstractValue::Value(Value::Prim(*kinds))]),
+        ValueExpr::StrictEquality(left, right) => {
+            return primitive_operation(
+                context,
+                [left.as_ref(), right.as_ref()],
+                AbstractValue::Value(Value::Prim(PrimKinds::BOOLEAN)),
+                judgment,
+            );
+        }
+        ValueExpr::Void(child) => {
+            return primitive_operation(
+                context,
+                [child.as_ref()],
+                AbstractValue::UNDEFINED,
+                judgment,
+            );
+        }
+        ValueExpr::Conditional { test, alternatives } => {
+            // Decide support before evaluating any child: application children
+            // have real effects and cannot be rolled back before a fallback.
+            if !alternatives.iter().all(|arm| {
+                matches!(
+                    arm,
+                    ValueExpr::Binding(_) | ValueExpr::Undefined | ValueExpr::NonCallable(_)
+                )
+            }) {
+                return None;
+            }
+            let test = context.child(test)?;
+            judgment.compose(&test.judgment);
+            let mut tested = test.values;
+            let may_throw = tested.remove(&AbstractValue::Value(Value::Unavailable));
+            if tested.is_empty() {
+                return Some(AllocationValue::opaque(Values::from([
+                    AbstractValue::Value(Value::Unavailable),
+                ])));
+            }
+            let mut values = Values::new();
+            for arm in alternatives.iter() {
+                let arm = context.child(arm)?;
+                judgment.compose(&arm.judgment);
+                if arm.values.is_empty() {
+                    values.insert(AbstractValue::Value(Value::Unavailable));
+                }
+                values.extend(arm.values);
+            }
+            if may_throw {
+                values.insert(AbstractValue::Value(Value::Unavailable));
+            }
+            if values.contains(&AbstractValue::Value(Value::Unavailable)) {
+                judgment = AllocationJudgment::Opaque;
+            }
+            values
+        }
         ValueExpr::ObjectLiteral(allocation, properties) => {
             let layout = context.literal_layout(*allocation);
             let mut may_throw = false;
@@ -192,6 +245,37 @@ pub(super) fn transfer(
         }
         _ => return None,
     };
+    Some(AllocationValue { values, judgment })
+}
+
+/// Noncoercing primitive operations discard operand values, never their access
+/// evidence or abrupt outcomes. Later operands run only on a completing path.
+fn primitive_operation<'a>(
+    context: &mut impl AllocationContext,
+    operands: impl IntoIterator<Item = &'a ValueExpr>,
+    result: AbstractValue,
+    mut judgment: AllocationJudgment,
+) -> Option<AllocationValue> {
+    let mut may_throw = false;
+    let mut can_complete = true;
+    for operand in operands {
+        let operand = context.child(operand)?;
+        judgment.compose(&operand.judgment);
+        let mut values = operand.values;
+        may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
+        if values.is_empty() {
+            can_complete = false;
+            break;
+        }
+    }
+    let mut values = Values::new();
+    if can_complete {
+        values.insert(result);
+    }
+    if may_throw || !can_complete {
+        judgment = AllocationJudgment::Opaque;
+        values.insert(AbstractValue::Value(Value::Unavailable));
+    }
     Some(AllocationValue { values, judgment })
 }
 
