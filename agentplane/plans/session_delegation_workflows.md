@@ -4,9 +4,18 @@ Status: **existing-environment implementation approved, 2026-10-31; fresh provis
 The selected first
 workflow and its implementation capstone are tracked under
 [`THREAD_CREATE_AUTHORIZATION`](task_dag.md#thread_create_authorization--caller-privilege-delegation-capstone).
-The tools below are proposed additions, not currently callable APIs. The source audit describes
-the implementation at `9d845b6d0acf9ed60c72274e48e973267d258101`; the existing system-test
-scenario was read, not executed for this proposal.
+The MCP tool names below remain interface contracts, not callable tools. The existing
+[Session CLI](../docs/agent_cli.md), [Dispatcher authorization](../runner_gateway/dispatcher/README.md)
+and [retained History access](../history_service/README.md) supply the implemented foundations.
+Shared delegated authentication, persisted Action caller UIDs and Dispatcher/History receiver
+enforcement are implemented under the [delegated authorization contract](../docs/delegated_authorization.md).
+The complete agent-facing workflow still needs the integration and examples below.
+
+**Review status, 2026-11-01 UTC:** platform guidance [#13384](https://github.com/agentydragon/ducktape/pull/13384)
+and target discovery [#13392](https://github.com/agentydragon/ducktape/pull/13392) have passing CI and
+remain open. Managed guidance activation [#13410](https://github.com/agentydragon/ducktape/pull/13410)
+stays held until the compatible reader is deployed to every active sampler replica. Action/MCP
+adapters, remaining composite result reads and the two end-to-end reuse examples remain unfinished.
 
 ## Recommendation and decisions
 
@@ -59,8 +68,9 @@ service authority.
 Actions and carries the original caller's pinned SA identity in the shared
 [delegation envelope](../docs/delegated_authorization.md). The backend checks the actor's explicit
 permission to delegate and applies normal authorization to the effective caller, with no privileged
-fallback. Shared protocol implementation and durable Action caller UID retention precede exposure
-of such adapters; direct CLI/MCP caller-authenticated paths do not wait for them.
+fallback. Reuse the implemented shared protocol and durable Action caller UID. Dispatcher and
+History explicitly admit delegated calls on configured methods; target discovery needs equivalent
+receiver opt-in before Action adapters use it. Direct clients retain caller authentication.
 
 The [tool reference](#tool-contract-derived-from-the-workflows) specifies the authorization and
 approval rule for every proposed operation.
@@ -96,14 +106,14 @@ now where little additional work is needed. Actions-first is acceptable elsewher
 verified caller and backend ownership, and record each remaining RPC/CLI extraction explicitly.
 This does not require a new service or binary, a general transport rewrite, or `orchestration_v1`.
 
-| Operation                                                 | Initial backend mapping                                                                    | Remaining work / TODO                                                                                                                                                                                                                                         |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Open, submit input, cancel queued input, interrupt a turn | Existing `SessionDispatcher.OpenSession`, `SubmitInput`, `CancelDispatch`, `InterruptTurn` | Add target UID/principal checks, then expose generated clients through CLI/MCP. Additional briefing maps to the existing caller-instruction input; prompt composition is backend-owned.                                                                       |
-| Get Session                                               | `SessionDispatcher.GetSessionOpening` plus `HistoryService.GetSessionSummary`              | Keep the composite read in neutral client code initially; add an owning snapshot RPC only if useful, without moving authority between services.                                                                                                               |
-| Read turns, observe one input                             | Existing History reads/follows plus Dispatcher command receipts                            | Extract the compact projection from legacy orchestration DTOs. TODO: owning typed RPCs for the compact turn/observation contract and equivalent direct CLI commands where initial Actions perform the composition.                                            |
-| List/get existing environments                            | Typed Sandbox inventory and runtime/configuration sources                                  | Publish same-SA UID-scoped reads through their backend. Direct gRPC/CLI where straightforward; do not expose a raw unfiltered namespace list.                                                                                                                 |
-| List templates                                            | Full deployment-published catalogue                                                        | Extract shared defaults from app-owned presets. Direct backend read can share the Action Service process; no app calls. TODO: dedicated read RPC/CLI if initially exposed as an Action.                                                                       |
-| Create environment, observe creation                      | Dedicated `environments/create` Action plus neutral provisioning/lookup code               | Human approval initially. First retain the caller UID and support shared-account environments end to end. TODO: typed create/lookup RPCs and direct CLI access for any initially Action-only operation; direct create still needs a valid approval authority. |
+| Operation                                                 | Initial backend mapping                                                                           | Remaining work / TODO                                                                                                                                                                                                                     |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Open, submit input, cancel queued input, interrupt a turn | Existing `SessionDispatcher.OpenSession`, `SubmitInput`, `CancelDispatch`, `InterruptTurn`        | Reuse target UID/principal checks and existing CLI clients; add Action/MCP adapters. Additional briefing maps to the caller-instruction input; central platform composition remains in review.                                            |
+| Get Session                                               | `SessionDispatcher.GetSessionOpening` plus `HistoryService.GetSessionSummary`                     | Keep the composite read in neutral client code initially; add an owning snapshot RPC only if useful, without moving authority between services.                                                                                           |
+| Read turns, observe one input                             | Existing History reads/follows plus Dispatcher command receipts                                   | Reuse `session_client.ObserveInput` and `sessions observe-input`. Add retained-turn projections and Action/MCP exposure. TODO: owning typed RPCs/direct CLI equivalents for new compositions first exposed as Actions.                    |
+| List/get existing environments                            | `EnvironmentDiscovery` over Sandbox inventory and shared runtime/configuration sources, in review | Finish #13392 and expose caller-scoped reads through CLI/MCP. An Action route must preserve the original caller at Discovery's receiver; do not query under Actions' broad SA or expose an unfiltered namespace list.                     |
+| List templates                                            | Full deployment-published catalogue                                                               | Extract shared defaults from app-owned presets. Direct backend read can share the Action Service process; no app calls. TODO: dedicated read RPC/CLI if initially exposed as an Action.                                                   |
+| Create environment, observe creation                      | Dedicated `environments/create` Action plus neutral provisioning/lookup code                      | Deferred: implement shared-account environments and the reviewed catalogue. Reuse persisted caller UID. TODO: typed create/lookup RPCs and CLI access for initially Action-only operations; direct create still needs approval authority. |
 
 ### Budget and broader-policy boundaries
 
@@ -167,9 +177,9 @@ using an optional role preset combines its concrete role text and child briefing
 that client uses a preset or the integration app.
 A child does not implicitly inherit the parent's role, private instructions or transcript.
 
-Today the [native Runner](../runner/admission.go) already prepends configured platform guidance
-and the Session's destination using [its composer](../runner/configuration/resolved.go), then
-stores the combined instructions. Its [configuration](../runner/configuration/configuration.go)
+Today the [native Harness Host](../env/harnesshost/admission.go) already prepends configured platform guidance
+and the Session's destination using [its composer](../env/configuration/resolved.go), then
+stores the combined instructions. Its [configuration](../env/configuration/configuration.go)
 requires nonempty platform instructions. Preset text is a separate caller-supplied layer.
 The central path currently [forwards the supplied spec](../runner_gateway/dispatcher/central_runner.go)
 and [stores its instructions](../x/central_sampler/store.go) without that Runner composition.
@@ -201,8 +211,8 @@ discovery verifies whether that address is eligible rather than treating an envi
 as authority.
 
 The example is a CI-maintenance coordinator delegating investigation of one latency regression.
-Names beginning `environments_` or `sessions_` below are **new MCP tools**. The equivalent
-proposed CLI groups are `agentplane environments` and `agentplane sessions`. Today's central code
+Names beginning `environments_` or `sessions_` below are **new MCP tools**. The `agentplane sessions`
+CLI group exists; `agentplane environments` remains proposed with target discovery. Today's central code
 mode can reach a CLI through `exec`, but has no `sessions` JavaScript global. Native harnesses can
 use MCP tools without Agentplane owning their JavaScript host.
 
@@ -703,21 +713,16 @@ authorized**; it is model-authored content, not a new report protocol. External 
 not required for the MCP workflow. Inbox/history tags remain revisable implementations; neither
 a reply address nor a creator/parent edge grants send/read access.
 
-## Backend gaps and implementation ownership
+## Remaining backend and tool work
 
-| Gap confirmed by source audit                                                | Owning change / constraint                                                                                                                                                                                                                                                                                                                                                                |
-| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Dispatcher admits a fixed backend allowlist rather than same-SA target scope | Dispatcher authenticates normal callers, checks target's actual SA UID, records logical principal and enforces every write, lookup, list, watch and cancel. Keep explicit privileged broker operations distinct.                                                                                                                                                                          |
-| Current identity records can identify intermediary services                  | `sampler_session.account_uid` currently identifies its authenticated Dispatcher peer; central History's writer is the sampler SA. Neither can be reinterpreted as the child/creator's authority. Add explicit logical-principal/provenance fields and validate their source.                                                                                                              |
-| No trusted retained logical-principal association for the proposed read rule | Dispatcher owns admission and supplies its immutable association over an authenticated, designated backend path to sampler/History. History stores it separately from writer and execution Sandbox. Ordinary callers cannot assert another principal. Preserve existing evidence; unassociated old records need an explicit adoption policy, not guessed ownership.                       |
-| Account-token external callers do not fit every current workload method      | MCP edge resolves the verified OAuth connection and its allowed account UID. Reuse `ResolveServiceAccountToken` for explicitly account-authorized methods/audiences; current Dispatcher/History workload admission requires Pod binding. Limit TokenRequest permissions and recheck account identity/revocation. Do not relax every workload endpoint or trust a forwarded caller string. |
-| Runner deployments do not publish a workload Dispatcher route                | Reuse the Actions CLI's proxy/CONNECT and inert bearer pattern. Keep the configured Dispatcher-audience token in the egress sidecar and add scoped proxy credential/routing plus matching CLI settings; no direct Runner egress or real agent-visible bearer is needed. Backend authorization remains authoritative.                                                                      |
-| Native and central opening do not share platform-instruction composition     | Extract backend-owned composition; preserve harness base guidance and default platform/environment context, append the child briefing, and freeze effective content/provenance at opening. Optional presets must not be required to obtain platform guidance; expose deliberate prompt overrides separately.                                                                              |
-| Existing presets describe fresh launch inputs, not eligible existing targets | Dispatcher target inventory plus runtime/configuration owners expose a bounded, authorized descriptor. Extract any shared configuration from the app; no backend calls the app or reads its private tables. Runtime admission remains authoritative.                                                                                                                                      |
-| `OpenSession` pre-check cannot fence replacement during the RPC              | Add expected UID to the backend opening contract and check it there, including deduplication. Scope all subsequent lookups to authenticated authority.                                                                                                                                                                                                                                    |
-| Raw wait/read flow is cumbersome and not command-specific                    | Neutral shared client projection implements `observe_input` over scoped Dispatcher and History APIs. CLI/MCP invoke both as the caller, without a new privileged result database, queue or task owner. Reuse existing command correlation/folding where possible.                                                                                                                         |
-| Direct MCP mutation recovery and structured failure details are incomplete   | New tools preserve caller-held IDs, offer lookup, return typed structured failures and use the same authorization as raw clients. CLI exposes the equivalent contract with machine-readable output.                                                                                                                                                                                       |
-| Current launch creates a separate Sandbox SA                                 | Future provisioning must implement the accepted borrowed-SA/no-new-grants contract and pin approved configuration; it stays deferred until catalogue ownership is selected. Action execution boxes already have a related caller-SA path; unify provisioning semantics where applicable rather than equating unlike current APIs.                                                         |
+| Remaining outcome                       | Owning change / constraint                                                                                                                                                                                                  |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Default platform guidance               | Finish the reader and managed activation under their separate DAG gates. Preserve native base prompts, additive briefing and frozen effective instructions across duplicate opening/resume.                                 |
+| Existing-target discovery               | Finish #13392's bounded same-SA UID-scoped inventory/configuration reads. Preserve runtime admission as a separate check.                                                                                                   |
+| Caller attribution at Discovery         | Enable explicitly trusted delegation on Discovery's methods before Action adapters use them. Reuse the shared auth contract; direct clients retain caller authentication. Never substitute Actions' broader authority.      |
+| Session snapshots and retained turns    | Add neutral client projections over the existing scoped APIs. Reuse command observation in `session_client`; preserve partial facts, source errors, lag/gaps and recovery cursors without another result database or queue. |
+| Action/MCP tools and realistic examples | Expose the selected schemas with caller-held IDs, typed results and lost-reply lookup. Reuse CLI cancellation/interruption, extend direct CLI where needed, and exercise both reuse workflows with the app unavailable.     |
+| Future provisioning                     | Implement borrowed-SA/no-new-grants identity and pinned approved configuration only after catalogue ownership is selected. Reuse persisted caller UID; creation remains outside the first release.                          |
 
 Recording a logical principal does not itself route execution credentials or provider billing.
 Implementation must check the effective account for execution, egress and model access; for this
@@ -733,19 +738,14 @@ has a reviewed migration. Avoid a second general authorization owner in the new 
 
 ## Approved implementation sequence
 
-1. **Pin admission/identity and read contracts.** Specify trusted association propagation,
-   target UID fencing, exact same-SA rule, revocation, existing-record handling and additive
-   instruction composition. A shared
-   execution account is a real authority boundary; per-Session credentials are not introduced.
-2. **Implement backend scope and target/configuration discovery.** Mutation and result-read
-   authorization are prerequisites for exposing a working delegation loop. Existing-target
-   `environments_list`/`environments_get` discovery belongs to this slice and does not wait for fresh
-   provisioning. MCP account-token admission and workload admission can be implemented independently
-   against that selected contract.
-3. **Expose MCP/CLI tools and observation projection.** Schemas/client work can proceed against the
-   pinned contract; end-to-end usability waits on the enforcing backends. No dependency on owning
-   the JS host, changing the whole environment model, or projecting native harness subagents.
-4. **Exercise both reuse workflows; revise scope if they fail.** Fresh provisioning stays deferred
+1. **Finish guidance and target-discovery reviews.** Keep managed guidance activation behind its
+   compatible-reader rollout hold. Existing-target reuse does not wait for fresh provisioning.
+2. **Expose Action/MCP tools and remaining result projections.** Reuse implemented authorization,
+   CLI clients and command observation; complete caller enforcement at Discovery for the selected
+   route. Client work can proceed against the reviewed contracts in parallel with the open PRs.
+   No dependency on owning the JS host, changing the whole environment model, or projecting native
+   harness subagents.
+3. **Exercise both reuse workflows; revise scope if they fail.** Fresh provisioning stays deferred
    until its catalogue ownership decision and identity/approval prerequisites. This sequencing recommendation is not a
    technical dependency of target reuse or a promise to finish all phases inside the current sprint.
 
@@ -786,7 +786,7 @@ separate host decision evaluates those broader ergonomics.
   [`workload auth`](../workload_auth/auth/auth.go),
   [`MCP core client`](../mcp_edge/core_client.go),
   [`Sandbox identity controller`](../sandbox_controller/identity.go).
-- Agent bootstrap/tools: [`resolved.go`](../runner/configuration/resolved.go),
+- Agent bootstrap/tools: [`resolved.go`](../env/configuration/resolved.go),
   [`agent CLI`](../docs/agent_cli.md), [`MCP schemas`](../mcp_edge/mcpserver/tools.json),
   [`direct tools`](../mcp_edge/mcpserver/direct.go), [`MCP results`](../mcp_edge/mcpserver/results.go),
   [`peer messages`](../notification_service/notifications.proto).

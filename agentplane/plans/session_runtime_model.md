@@ -15,11 +15,11 @@ actual tool routing and access; placement alone does not establish isolation.
 Agentplane has largely represented a harness and its Session state as living inside a Sandbox.
 The experimental [central sampler](../x/central_sampler/README.md) hosts them outside execution
 Sandboxes; its Session data should survive their deletion. In that mode a Sandbox supplies tools,
-rather than defining the conversation's lifetime. It still requires a running executor for the first
-open and fixes the logical execution target to one Sandbox. Verified replacement incarnations can
-be adopted at execution-session initialization; model-controlled fencing and explicit resume are
-selected follow-ups in the DAG. These are current constraints, not a required ontology for every
-future harness.
+rather than defining the conversation's lifetime. Executor acquisition is lazy, but the current
+Session API still fixes the logical execution target to one Sandbox. Execution calls support
+optional model-controlled incarnation fencing and report verified replacement incarnations;
+explicit resume still waits on lifecycle authorization in the DAG. These are current constraints,
+not a required ontology for every future harness.
 
 ## Cases the model must represent
 

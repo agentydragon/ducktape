@@ -1,6 +1,7 @@
 # Cross-agent communication and authorization: design space
 
-Status: **messaging shipped (2026-10-21); transcript reads, discovery and launch open.** The send
+Status: **messaging and same-principal retained reads implemented; broader archive policy held;
+target discovery and the complete delegation tool workflow remain open.** The send
 rule (`session_inbox_access`), inbox tags, peer messages, receipts and notices are the Notification
 Service's contract ([API](../notification_service/docs/api.md#messages)). This plan keeps the agreed
 requirements and the open design: the read rule and the
@@ -21,17 +22,19 @@ environment with separate directories. Starting less-privileged agents can wait.
 concrete standing-agent example is daily CI-latency maintenance and fix PRs, with child Sessions
 for delegated work; persistent reactive roles and agents pursuing ongoing goals are both desired.
 
-The bounded create/control/communication contract needs review, but does not depend on settling
+The bounded [caller-privilege contract](session_delegation_workflows.md) is approved and does not depend on settling
 the complete management/delegation vocabulary or implementing native-child Session projection.
 Use Claude/Codex workflows as reference designs for natural tool use. Domain identities, authority,
 durable ownership and failure behavior still need to be sound in this first slice. Cross-access
 cooperation remains a product goal; the broader requirements below are not all prerequisites for
 same-privilege spawning.
 
-The [delegation workflow proposal](session_delegation_workflows.md) supplies the concrete call
-sequences, source audit and implementation gaps for that review. It recommends existing-target
-reuse with backend-enforced same-SA admission and narrow result reads, including external MCP
-callers. These are proposed choices; the DAG retains the selection gate before implementation.
+The [delegation implementation plan](session_delegation_workflows.md) supplies the concrete call
+sequences and remaining integration work. Same-SA admission, narrow retained reads, shared
+delegated auth and Dispatcher/History receiver enforcement are implemented. Existing-target
+discovery and platform guidance remain in review; Action/MCP adapters and complete workflows,
+including external callers without their own environment, remain unfinished. Fresh-environment
+creation and broader cross-SA grants keep their separate design gates.
 
 ## Requirements and preferences
 
@@ -462,7 +465,7 @@ Still open:
 - The longer-term intent is wake-on-message by default, with suspension and resume transparent to
   users and agents. V1 keeps per-Sandbox `spec.wakeOnSend`, Dispatcher's wake allowlist and operator
   lifecycle controls; messaging and history grants imply no lifecycle edits
-  ([lifecycle authorization](task_freezer.md#sandbox_lifecycle_authorization_design--delegated-lifecycle-controls)).
+  ([lifecycle authorization](task_dag.md#sandbox_lifecycle_authorization_design--authorize-explicit-resume-and-message-wake)).
   Per-source wake switches and moving notice timing into Dispatcher are
   [deferred](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership).
 - A2A, MCP and other facades can expose the same contract later without changing the SA and

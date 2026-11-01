@@ -35,8 +35,8 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
 - [Task DAG](task_dag.md) — remaining work and proposed priorities, including unranked future
   harness-capability candidates, deployed acceptance, UI/history, and native recovery
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
-- [Session runtime model](session_runtime_model.md) — agreed environment component names/layout and
-  independently assignable Runner extractions; future Session vocabulary for environment-bound
+- [Session runtime model](session_runtime_model.md) — current environment component boundaries and
+  agreed names/layout; future Session vocabulary for environment-bound
   native harnesses, central sampling, execution attachments and backend-specific constraints
 - [Sampling outside Sandboxes](sampling_outside_sandboxes.md) — research on running Codex's agent loop in the
   control plane with only exec servers in Sandboxes: what Codex already routes to an environment, code mode,
@@ -50,7 +50,8 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
 - [Caller-privilege Session delegation](session_delegation_workflows.md) — approved existing-environment
   and external MCP workflows, backend gaps and structured results; fresh provisioning is deferred.
   Service-mediated caller identity follows the approved
-  [delegated authorization design](../docs/delegated_authorization.md), awaiting shared implementation
+  [delegated authorization contract](../docs/delegated_authorization.md); shared auth and
+  Dispatcher/History receiving paths are implemented, while caller-delegating adapters remain open
 - [Generated HTTP facades](grpc_http_facade.md) — what is left: History reads, the app-contract
   question, browser error codes, attribution, and direct browser access as a later option
 - [Kubernetes API aggregation](api_aggregation_exploration.md) — held design exploration of serving
@@ -60,8 +61,8 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   design covers backend grants per operation and bounds on launcher delegation
 - [History read and follow consumers](history_read_follow.md) — whether the Notification outcome scan
   moves to `FollowSession`, and whether `ReadSessionEvents` folds into it
-- [Scoped Session reads](scoped_session_reads.md) — proposed ServiceAccount read policy for
-  retained Session history
+- [Scoped Session reads](scoped_session_reads.md) — held broader cross-ServiceAccount read policy;
+  narrow same-principal retained reads are implemented
 - [KubeVirt execution environments](kubevirt_environments.md) — the live gates for VM Sandboxes that no
   DAG node names; the design is [VM Sandboxes](../docs/vm_sandboxes.md)
 - [Remaining VM storage work](vm_block_storage.md) — the retained legacy VM's operator hold and the
