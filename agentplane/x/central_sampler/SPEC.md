@@ -62,6 +62,17 @@ documented definitive-loss rejection and complete native evidence are durably re
 operation that found the lost session is not dispatched, affected process handles are abandoned,
 and the model is notified before later operations can use the fresh session.
 
+An authenticated Gateway may report `ExecutionEnvironmentFailure` after it verifies the exact
+Sandbox UID and refuses a request before forwarding it. Scoped Runtime may report a local
+readiness refusal before native dispatch. The catchable error exposes `environment_state` and
+`request_outcome: "not_dispatched"`; it never wakes, resumes, provisions or retries the operation.
+The outer `remote_outcome` is `not_dispatched` for a refused process start. If a refused
+`process/read` was observing a process started earlier, that process outcome is `unknown`: the
+handle is abandoned with its last sequence cursor and buffered output, while the nested read intent
+records `request_outcome: "not_dispatched"`. A later model-requested operation may try again after
+the environment is available; no current request is replayed and the JavaScript host remains
+attached.
+
 A typed `SandboxIncarnationChanged` detail from the authenticated Gateway or Runner permits the
 sampler to adopt a new incarnation only when its Sandbox UID matches the fixed destination. The
 new fence, retirement of old execution handles, and a model-visible notice commit atomically before
@@ -133,7 +144,9 @@ where available, and a text view of at most 8 KiB of retained bytes plus an omis
 bytes omitted by the retained head/tail buffer from bytes hidden only in the error view. The complete
 retained bytes are base64 in the `tool` result `BoundaryRecord` found through `FollowEvents`;
 correlate by process ID and the executor intent ID when available. The process remains abandoned and no exit is inferred. Other nested failures
-retain their ordinary string messages. Large result records use the normal `record_id` and
+retain their ordinary string messages unless Gateway or scoped Runtime supplies a typed,
+pre-dispatch environment failure. That structured error includes `environment_state` and
+`request_outcome`; a process/read error also retains the observed cursor and output. Large result records use the normal `record_id` and
 `fragment_index` reassembly contract.
 
 The pinned code-mode host V1 passes `delegate/response` errors to JavaScript as primitive strings:

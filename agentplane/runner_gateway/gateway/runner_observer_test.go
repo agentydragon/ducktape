@@ -289,6 +289,95 @@ func TestExecutionConnectionOnlySignalsVerifiedIncarnationChanges(t *testing.T) 
 				if _, ok := detail.(*executorpb.SandboxIncarnationChanged); ok {
 					t.Fatalf("rejected request carried a rebind detail: %v", detail)
 				}
+				if test.name == "invalid scope" || test.name == "foreign Sandbox" {
+					if _, ok := detail.(*executorpb.ExecutionEnvironmentFailure); ok {
+						t.Fatalf("unverified destination carried environment state: %v", detail)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestExecutionConnectionReportsVerifiedEnvironmentFailures(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		state      executorpb.ExecutionEnvironmentFailure_State
+		code       codes.Code
+		newSession bool
+		mutate     func(*sandboxFixture) error
+	}{
+		{
+			name: "suspended", state: executorpb.ExecutionEnvironmentFailure_STATE_SUSPENDED, code: codes.Unavailable,
+			mutate: func(f *sandboxFixture) error {
+				sandbox := f.sandbox.DeepCopy()
+				sandbox.Status.OperatingMode = sandboxapi.OperatingModeSuspended
+				sandbox.Status.Incarnation = nil
+				return f.objects.Status().Update(t.Context(), sandbox)
+			},
+		},
+		{
+			name: "starting", state: executorpb.ExecutionEnvironmentFailure_STATE_STARTING, code: codes.Unavailable,
+			mutate: func(f *sandboxFixture) error {
+				sandbox := f.sandbox.DeepCopy()
+				sandbox.Status.Incarnation = nil
+				return f.objects.Status().Update(t.Context(), sandbox)
+			},
+		},
+		{
+			name: "not ready", state: executorpb.ExecutionEnvironmentFailure_STATE_NOT_READY, code: codes.Unavailable,
+			mutate: func(f *sandboxFixture) error {
+				pod := f.pod.DeepCopy()
+				pod.Status.Conditions[0].Status = corev1.ConditionFalse
+				_, err := api.Clientset.CoreV1().Pods(f.namespace).UpdateStatus(t.Context(), pod, metav1.UpdateOptions{})
+				return err
+			},
+		},
+		{
+			name: "quiescing admission", state: executorpb.ExecutionEnvironmentFailure_STATE_QUIESCING, code: codes.FailedPrecondition,
+			newSession: true,
+			mutate: func(f *sandboxFixture) error {
+				sandbox := f.sandbox.DeepCopy()
+				sandbox.Status.OperatingMode = sandboxapi.OperatingModeSuspended
+				sandbox.Status.StopStage = sandboxapi.StopStageQuiescing
+				return f.objects.Status().Update(t.Context(), sandbox)
+			},
+		},
+		{
+			name: "control route unavailable", state: executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE, code: codes.Unavailable,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newSandboxFixture(t)
+			if test.mutate != nil {
+				if err := test.mutate(f); err != nil {
+					t.Fatal(err)
+				}
+			}
+			g := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
+			server := &executorServer{gateway: g}
+			scope := &executorpb.ExecutionScope{
+				Destination: &sandboxespb.SandboxDestination{
+					Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
+					Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+				},
+				ExpectedIncarnationUid: string(f.pod.UID), SessionId: "sampler-session",
+			}
+			_, _, _, err := server.executionConnection(t.Context(), scope, test.newSession)
+			if status.Code(err) != test.code {
+				t.Fatalf("execution connection error=%v, want %s", err, test.code)
+			}
+			var failure *executorpb.ExecutionEnvironmentFailure
+			for _, detail := range status.Convert(err).Details() {
+				if candidate, ok := detail.(*executorpb.ExecutionEnvironmentFailure); ok {
+					failure = candidate
+				}
+				if _, ok := detail.(*executorpb.SandboxIncarnationChanged); ok {
+					t.Fatalf("environment failure disclosed a replacement incarnation: %v", detail)
+				}
+			}
+			if failure == nil || failure.GetState() != test.state || failure.GetOutcome() != executorpb.ExecutionEnvironmentFailure_OUTCOME_NOT_DISPATCHED {
+				t.Fatalf("execution environment details=%v, want state %s and not-dispatched", status.Convert(err).Details(), test.state)
 			}
 		})
 	}

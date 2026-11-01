@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
@@ -69,6 +70,39 @@ func unavailable(err error) error {
 	return status.Error(codes.Unavailable, "Sandbox or runner routing is unavailable")
 }
 
+type executionEnvironmentUnavailableError struct {
+	state executorpb.ExecutionEnvironmentFailure_State
+	code  codes.Code
+	msg   string
+}
+
+func (e *executionEnvironmentUnavailableError) Error() string { return e.msg }
+
+func (e *executionEnvironmentUnavailableError) GRPCStatus() *status.Status {
+	return status.New(e.code, e.msg)
+}
+
+func environmentUnavailable(state executorpb.ExecutionEnvironmentFailure_State) *executionEnvironmentUnavailableError {
+	switch state {
+	case executorpb.ExecutionEnvironmentFailure_STATE_SUSPENDED,
+		executorpb.ExecutionEnvironmentFailure_STATE_STARTING,
+		executorpb.ExecutionEnvironmentFailure_STATE_NOT_READY:
+		return &executionEnvironmentUnavailableError{
+			state: state, code: codes.Unavailable, msg: "destination unavailable; no offline admission",
+		}
+	case executorpb.ExecutionEnvironmentFailure_STATE_QUIESCING:
+		return &executionEnvironmentUnavailableError{
+			state: state, code: codes.FailedPrecondition, msg: "runner or sandbox state refused the request",
+		}
+	case executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE:
+		return &executionEnvironmentUnavailableError{
+			state: state, code: codes.Unavailable, msg: "Sandbox runner control route is unavailable",
+		}
+	default:
+		return nil
+	}
+}
+
 func sandboxPhase(resource *sandboxapi.Sandbox) string {
 	stage := resource.Status.StopStage
 	incarnated := resource.Status.Incarnation != nil
@@ -108,25 +142,31 @@ func (r *sandboxResolver) destination(ctx context.Context, destination *sandboxe
 		return sandboxView{}, err
 	}
 	view := routingView(incarnation)
-	if writes && (view.phase == phaseQuiescing || view.phase == phaseTearDown) {
-		return sandboxView{}, status.Error(codes.FailedPrecondition, "runner or sandbox state refused the request")
+	if view.phase == modeSuspended || view.phase == phaseSuspend && !allowSuspending {
+		return sandboxView{}, environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_SUSPENDED)
+	}
+	if view.phase == phaseCreate {
+		return sandboxView{}, environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_STARTING)
+	}
+	if view.phase == phaseTearDown || writes && view.phase == phaseQuiescing {
+		return sandboxView{}, environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_QUIESCING)
 	}
 	if view.phase != phaseRunning && view.phase != phaseQuiescing && !(allowSuspending && view.phase == phaseSuspend) {
 		return sandboxView{}, status.Error(codes.Unavailable, "destination unavailable; no offline admission")
 	}
 	if view.incarnation == nil {
-		return sandboxView{}, status.Error(codes.Unavailable, "destination unavailable; no offline admission")
+		return sandboxView{}, environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_STARTING)
 	}
 	var pod corev1.Pod
 	err = r.objects.Get(ctx, client.ObjectKey{Namespace: r.namespace, Name: view.incarnation.Name}, &pod)
 	if apierrors.IsNotFound(err) {
-		return sandboxView{}, status.Error(codes.Unavailable, "destination unavailable; no offline admission")
+		return sandboxView{}, environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_NOT_READY)
 	}
 	if err != nil {
 		return sandboxView{}, fmt.Errorf("read Sandbox runner Pod: %w", err)
 	}
 	if !podIsReadyForSandbox(&pod, view) {
-		return sandboxView{}, status.Error(codes.Unavailable, "destination unavailable; no offline admission")
+		return sandboxView{}, environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_NOT_READY)
 	}
 	return view, nil
 }

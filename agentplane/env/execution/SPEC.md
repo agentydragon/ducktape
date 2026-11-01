@@ -17,6 +17,15 @@ Environment Runtime may attach the typed `SandboxIncarnationChanged` status deta
 verifying the same destination Sandbox UID and observing a nonempty current incarnation. Invalid or
 foreign destinations and unavailable incarnations carry no rebind detail.
 
+After caller authorization and exact Sandbox UID resolution, Gateway may attach
+`ExecutionEnvironmentFailure` when it refuses a request before forwarding it to Runner. A scoped
+Runtime may attach a local readiness state only when it refuses before native dispatch. The state
+distinguishes suspended, starting, not-ready, quiescing and unavailable control routing; the
+outcome is `NOT_DISPATCHED`. The detail contains no replacement identity and grants no wake, resume
+or provisioning authority. Invalid, foreign or stale Sandbox identities, an unsynchronized
+inventory and uncertain Kubernetes reads receive no Gateway environment detail. Legacy Runner
+proxy calls keep their existing status behavior and do not receive this execution detail.
+
 The state-directory owner lock precedes socket replacement and native startup. Pod ownership is
 PID 1 plus its private process namespace. On ordinary release, the companion stops exec-server,
 fences every remaining process in that namespace, and publishes a new idle generation only after

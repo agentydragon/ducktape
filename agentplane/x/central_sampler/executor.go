@@ -3,6 +3,7 @@ package centralsampler
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -193,12 +194,16 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 	// Resume failure wraps a transport error, but settlement belongs to this operation and its process.
 	var notDispatched *executorNotDispatchedError
 	if errors.As(err, &notDispatched) {
-		outcome := "unknown"
+		// ensureSessionLocked rejected this operation before recording or sending its
+		// request. Without an associated process there is no prior process effect to
+		// reconcile; an existing process keeps its prior unknown/running status.
+		outcome := "not_dispatched"
 		if notDispatched.processID != "" {
 			process, processErr := e.store.Process(ctx, e.owner, notDispatched.processID)
 			if processErr != nil {
 				return fmt.Errorf("inspect process %s after failed executor reconnect: %w", notDispatched.processID, processErr)
 			}
+			outcome = "unknown"
 			if process.Status == protocol.ProcessStarting {
 				outcome = "not_dispatched"
 			}
@@ -206,19 +211,36 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 			if afterSequence == nil {
 				afterSequence = process.AfterSequence
 			}
-			if abandonErr := e.store.AbandonProcess(ctx, e.owner, notDispatched.processID, afterSequence, notDispatched.output, outcome, notDispatched.retainedSession); abandonErr != nil {
+			if outcome == "not_dispatched" {
+				if settleErr := e.store.ProcessResult(ctx, e.owner, notDispatched.processID, afterSequence, protocol.ProcessExited, nil, true); settleErr != nil {
+					return fmt.Errorf("settle not-dispatched process %s after failed executor reconnect: %w", notDispatched.processID, settleErr)
+				}
+			} else if abandonErr := e.store.AbandonProcess(ctx, e.owner, notDispatched.processID, afterSequence, notDispatched.output, outcome, notDispatched.retainedSession); abandonErr != nil {
 				return fmt.Errorf("record process %s after failed executor reconnect: %w", notDispatched.processID, abandonErr)
 			}
 		}
 		message, encodeErr := formatObservedProcessFailure(observedProcessFailure{
 			Message: notDispatched.Error(), Method: notDispatched.method, Phase: "connection",
 			ProcessID: notDispatched.processID, AfterSeq: notDispatched.afterSequence,
-			RemoteOutcome: "unknown", AutomaticReplay: false,
+			ExecutionSessionID: notDispatched.retainedSession, RemoteOutcome: outcome, RequestOutcome: string(NestedNotDispatched), AutomaticReplay: false,
+			EnvironmentState: executionEnvironmentStateFromError(notDispatched.cause),
 		}, notDispatched.output)
 		if encodeErr != nil {
 			return fmt.Errorf("encode observed process connection failure: %w", encodeErr)
 		}
-		return &toolOutcomeError{toolError: &toolError{message}, evidence: notDispatched.evidence()}
+		return &toolOutcomeError{toolError: &toolError{message}, evidence: notDispatched.evidence(outcome)}
+	}
+	var failureEvidence executionFailureEvidence
+	if errors.As(err, &failureEvidence) {
+		facts := failureEvidence.executionFailureEvidence()
+		if settleErr := e.settleExecutionFailureEvidence(ctx, facts); settleErr != nil {
+			return settleErr
+		}
+		message, encodeErr := executionFailureMessage(facts)
+		if encodeErr != nil {
+			return fmt.Errorf("encode structured execution failure: %w", encodeErr)
+		}
+		return &toolOutcomeError{toolError: &toolError{message}, evidence: facts}
 	}
 	var transport *executorTransportError
 	if errors.As(err, &transport) {
@@ -270,6 +292,78 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 	return err
 }
 
+func (e *Executor) settleExecutionFailureEvidence(ctx context.Context, facts map[string]any) error {
+	processID, _ := facts["process_id"].(string)
+	if processID == "" {
+		return nil
+	}
+	process, err := e.store.Process(ctx, e.owner, processID)
+	if err != nil {
+		return fmt.Errorf("inspect process %s after structured execution failure: %w", processID, err)
+	}
+	method, _ := facts["method"].(string)
+	remoteOutcome, _ := facts["remote_outcome"].(string)
+	if method == "process/start" && remoteOutcome == "not_dispatched" && process.Status == protocol.ProcessStarting {
+		if err := e.store.ProcessResult(ctx, e.owner, processID, nil, protocol.ProcessExited, nil, true); err != nil {
+			return fmt.Errorf("settle process %s after known not-dispatched start: %w", processID, err)
+		}
+		return nil
+	}
+	if remoteOutcome != "unknown" || process.Status == protocol.ProcessAbandoned || process.Status == protocol.ProcessExited || process.Status == protocol.ProcessExitedUnread {
+		return nil
+	}
+	afterSequence := evidenceAfterSequence(facts["after_seq"])
+	output := evidenceOutput(facts)
+	executionSessionID, _ := facts["execution_session_id"].(string)
+	if err := e.store.AbandonProcess(ctx, e.owner, processID, afterSequence, output, "unknown", executionSessionID); err != nil {
+		return fmt.Errorf("record unknown process %s outcome after structured execution failure: %w", processID, err)
+	}
+	return nil
+}
+
+func evidenceAfterSequence(value any) *uint64 {
+	switch value := value.(type) {
+	case uint64:
+		return &value
+	case *uint64:
+		return value
+	case int:
+		if value >= 0 {
+			sequence := uint64(value)
+			return &sequence
+		}
+	case float64:
+		if value >= 0 && value == float64(uint64(value)) {
+			sequence := uint64(value)
+			return &sequence
+		}
+	}
+	return nil
+}
+
+func evidenceOutput(facts map[string]any) *headTailBuffer {
+	encoded, _ := facts["buffered_output_base64"].(string)
+	if encoded == "" {
+		return nil
+	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil
+	}
+	omitted := 0
+	switch value := facts["omitted_bytes"].(type) {
+	case int:
+		omitted = value
+	case float64:
+		omitted = int(value)
+	}
+	output, err := restoreHeadTailBuffer(unifiedExecOutputMaxBytes, data, omitted)
+	if err != nil {
+		return nil
+	}
+	return output
+}
+
 // The pinned code-mode host accepts only a string for a rejected nested promise.
 // Keep small observations machine-readable in that string; the full byte buffer is
 // retained in the tool result BoundaryRecord, whose payload names the executor intent ID.
@@ -285,29 +379,43 @@ type observedProcessOutput struct {
 }
 
 type observedProcessFailure struct {
-	Message         string                `json:"message"`
-	Method          string                `json:"method"`
-	Phase           string                `json:"phase"`
-	IntentID        string                `json:"intent_id"`
-	ProcessID       string                `json:"process_id"`
-	AfterSeq        *uint64               `json:"after_seq,omitempty"`
-	RemoteOutcome   string                `json:"remote_outcome"`
-	AutomaticReplay bool                  `json:"automatic_replay"`
-	ObservedOutput  observedProcessOutput `json:"observed_output"`
+	Message               string                 `json:"message"`
+	Method                string                 `json:"method"`
+	Phase                 string                 `json:"phase,omitempty"`
+	IntentID              string                 `json:"intent_id,omitempty"`
+	ProcessID             string                 `json:"process_id,omitempty"`
+	ExecutionSessionID    string                 `json:"execution_session_id,omitempty"`
+	AfterSeq              *uint64                `json:"after_seq,omitempty"`
+	RemoteOutcome         string                 `json:"remote_outcome"`
+	RequestOutcome        string                 `json:"request_outcome,omitempty"`
+	AutomaticReplay       bool                   `json:"automatic_replay"`
+	EnvironmentState      string                 `json:"environment_state,omitempty"`
+	CurrentIncarnationUID string                 `json:"current_incarnation_uid,omitempty"`
+	ObservedOutput        *observedProcessOutput `json:"observed_output,omitempty"`
 }
 
 func observedProcessFailureMessage(transport *executorTransportError) (string, error) {
 	return formatObservedProcessFailure(observedProcessFailure{
 		Message: transport.Error(), Method: transport.method, Phase: transport.phase,
-		IntentID: transport.intentID, ProcessID: transport.processID, AfterSeq: transport.afterSequence,
+		IntentID: transport.intentID, ProcessID: transport.processID, ExecutionSessionID: transport.retainedSession, AfterSeq: transport.afterSequence,
 		RemoteOutcome: "unknown", AutomaticReplay: false,
 	}, transport.output)
 }
 
 func formatObservedProcessFailure(failure observedProcessFailure, output *headTailBuffer) (string, error) {
-	if failure.Method != "process/read" || output == nil || output.totalBytes() == 0 {
+	hasObservedOutput := failure.Method == "process/read" && output != nil && output.totalBytes() > 0
+	if !hasObservedOutput && failure.EnvironmentState == "" && failure.CurrentIncarnationUID == "" {
 		return failure.Message, nil
 	}
+	if hasObservedOutput {
+		observed := observedOutputEvidence(output)
+		failure.ObservedOutput = &observed
+	}
+	encoded, err := json.Marshal(failure)
+	return string(encoded), err
+}
+
+func observedOutputEvidence(output *headTailBuffer) observedProcessOutput {
 	retained := output.retained()
 	const shownBytes = 8 * 1024
 	head, tail := retained, []byte(nil)
@@ -321,13 +429,45 @@ func formatObservedProcessFailure(failure observedProcessFailure, output *headTa
 		text += fmt.Sprintf("\n... %d retained bytes not shown; %d earlier bytes omitted ...\n", displayOmitted, output.omitted)
 	}
 	text += lossyUTF8(tail)
-	failure.ObservedOutput = observedProcessOutput{
+	return observedProcessOutput{
 		Text: text, Encoding: "utf8_lossy", RetainedBytes: len(retained), OmittedBytes: output.omitted,
 		DisplayOmittedBytes: displayOmitted, ShownHeadBytes: len(head), ShownTailBytes: len(tail),
 		Truncated: displayOmitted > 0 || output.omitted > 0,
 	}
-	encoded, err := json.Marshal(failure)
+}
+
+func executionFailureMessage(facts map[string]any) (string, error) {
+	message, _ := facts["message"].(string)
+	if message == "" {
+		message = "execution request failed before dispatch"
+	}
+	result := map[string]any{"message": message}
+	for _, key := range []string{
+		"method", "phase", "intent_id", "process_id", "execution_session_id", "after_seq",
+		"remote_outcome", "request_outcome", "automatic_replay", "environment_state", "current_incarnation_uid", "observed_output",
+	} {
+		if value, ok := facts[key]; ok {
+			result[key] = value
+		}
+	}
+	if _, ok := result["observed_output"]; !ok {
+		method, _ := result["method"].(string)
+		if method == "process/read" {
+			if output := evidenceOutput(facts); output != nil && output.totalBytes() > 0 {
+				result["observed_output"] = observedOutputEvidence(output)
+			}
+		}
+	}
+	encoded, err := json.Marshal(result)
 	return string(encoded), err
+}
+
+func executionEnvironmentStateFromError(err error) string {
+	var environment *executorEnvironmentFailureError
+	if errors.As(err, &environment) {
+		return executionEnvironmentStateName(environment.state)
+	}
+	return ""
 }
 
 // Codex rust-v0.162.1 core/src/tools/handlers/unified_exec/exec_command.rs handle_call and
@@ -469,21 +609,23 @@ func (e *Executor) Setup(ctx context.Context, script string, output func(string,
 		return 0, err
 	}
 	if _, err := executorRPC[executorStarted](ctx, e, "process/start", executorStart{ProcessID: processID, Argv: []string{"/bin/sh", "-eu", "-c", script}, Cwd: fileURI(e.cwd), EnvPolicy: e.envPolicy(), Env: e.environment}); err != nil {
-		return 0, err
+		return 0, e.outcomeToolError(ctx, err)
 	}
 	if err := e.store.ProcessResult(ctx, e.owner, processID, nil, protocol.ProcessRunning, nil, false); err != nil {
 		return 0, err
 	}
 	var after *uint64
+	observed := newHeadTailBuffer(unifiedExecOutputMaxBytes)
 	for {
 		pageCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		result, err := executorRPC[executorReadResult](pageCtx, e, "process/read", executorRead{ProcessID: processID, AfterSeq: after, MaxBytes: 65536, WaitMS: 1000})
+		result, err := executorRPC[executorReadResult](pageCtx, e, "process/read", executorRead{ProcessID: processID, AfterSeq: after, MaxBytes: 65536, WaitMS: 1000, ObservedOutput: observed})
 		cancel()
 		if err != nil {
-			return 0, err
+			return 0, e.outcomeToolError(ctx, err)
 		}
 		chunks := result.Chunks
 		for _, chunk := range chunks {
+			observed.push(chunk.Chunk)
 			if err := output(chunk.Stream, chunk.Chunk); err != nil {
 				return 0, err
 			}
@@ -614,7 +756,7 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 	for {
 		waitMS := min(max(int(time.Until(deadline)/time.Millisecond), 0), 1000)
 		pageCtx, cancel := context.WithTimeout(ctx, time.Duration(waitMS+eRPCSlackMS)*time.Millisecond)
-		result, rpcErr := executorRPC[executorReadResult](pageCtx, e, "process/read", executorRead{ProcessID: processID, AfterSeq: after, MaxBytes: 65536, WaitMS: waitMS})
+		result, rpcErr := executorRPC[executorReadResult](pageCtx, e, "process/read", executorRead{ProcessID: processID, AfterSeq: after, MaxBytes: 65536, WaitMS: waitMS, ObservedOutput: output})
 		cancel()
 		if rpcErr != nil {
 			var notDispatched *executorNotDispatchedError
@@ -628,6 +770,10 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 			var rejected *executorRejectedError
 			if errors.As(rpcErr, &rejected) && rejected.method == "process/read" {
 				rejected.afterSequence, rejected.output = after, output
+			}
+			var environment *executorEnvironmentFailureError
+			if errors.As(rpcErr, &environment) && environment.method == "process/read" {
+				environment.afterSequence, environment.output = after, output
 			}
 			return nil, rpcErr
 		}
@@ -689,8 +835,13 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 			lock.Unlock()
 			return progressed, fmt.Errorf("cannot reconcile remote process in state %s", row.Status)
 		}
+		readOutput, err := restoreHeadTailBuffer(unifiedExecOutputMaxBytes, row.BufferedOutput, row.OmittedBytes)
+		if err != nil {
+			lock.Unlock()
+			return progressed, err
+		}
 		pageCtx, cancel := context.WithTimeout(ctx, timeout)
-		result, rpcErr := executorRPC[executorReadResult](pageCtx, e, "process/read", executorRead{ProcessID: row.ID, AfterSeq: row.AfterSequence, MaxBytes: 65536})
+		result, rpcErr := executorRPC[executorReadResult](pageCtx, e, "process/read", executorRead{ProcessID: row.ID, AfterSeq: row.AfterSequence, MaxBytes: 65536, ObservedOutput: readOutput})
 		cancel()
 		if rpcErr != nil {
 			var rejected *executorRejectedError
@@ -711,6 +862,17 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 				if transport != nil {
 					transport.afterSequence = row.AfterSequence
 				}
+				handled := e.outcomeToolError(ctx, rpcErr)
+				var toolOutcome *toolOutcomeError
+				if !errors.As(handled, &toolOutcome) {
+					lock.Unlock()
+					return progressed, handled
+				}
+				lock.Unlock()
+				return true, nil
+			}
+			var failureEvidence executionFailureEvidence
+			if errors.As(rpcErr, &failureEvidence) {
 				handled := e.outcomeToolError(ctx, rpcErr)
 				var toolOutcome *toolOutcomeError
 				if !errors.As(handled, &toolOutcome) {
