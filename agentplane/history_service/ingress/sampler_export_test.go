@@ -216,7 +216,7 @@ func (f samplerExportFixture) openSession(t *testing.T) *centralsampler.Session 
 			Owner:      &sandboxespb.ServiceAccount{Namespace: testNamespace, Name: "test-execution-sandbox"},
 		},
 		ExpectedIncarnationUid: uuid.NewString(),
-	}, samplerOwnerUID, protocol.APIStyleResponses)
+	}, samplerOwnerUID, protocol.APIStyleResponses, "Fixture Agentplane platform guidance.")
 	if err != nil {
 		t.Fatal(err)
 	}
