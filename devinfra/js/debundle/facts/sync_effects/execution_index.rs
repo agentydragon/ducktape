@@ -2627,6 +2627,7 @@ mod iterative_alias_closure_tests {
     };
     use crate::analysis_inputs::NativeIntrinsic;
     use std::collections::{BTreeMap, BTreeSet};
+    use std::sync::Arc;
     use swc_common::SyntaxContext;
     use swc_ecma_ast::Id;
 
