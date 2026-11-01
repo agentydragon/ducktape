@@ -1,15 +1,29 @@
 {
-  "source_devel_commit": "4e01c8387b206e213f3c4cc11d22e484cf27ce2b",
-  "window_start_utc": "2026-10-31T08:30:00Z",
-  "window_end_utc": "2026-10-31T12:30:00Z",
-  "published_at_utc": "2026-11-01T02:41:42.968390+00:00",
+  "source_devel_commit": "58e4261128f61235dd354192a907447882284ceb",
+  "window_start_utc": "2026-10-29T20:50:00Z",
+  "window_end_utc": "2026-11-01T02:30:00Z",
+  "published_at_utc": "2026-11-01T03:52:31.430643+00:00",
   "attribution": "not collected",
-  "cohort_source_devel_commit": "61d18e604e37757ebc9838404a292fec6348181f",
-  "cohort_report_commit": "bef8766ed5b7a42ba5c63526f63a7f6e58063564",
-  "update_scope": "Targeted workspace boot follow-up on 1 November; original cohort window and metrics retained unchanged.",
-  "followup_invocations": [
-    "347b6930-c685-4637-9850-17eb82d9c18e",
-    "e15d7eb9-1828-5a36-ba23-6b67e8646887"
+  "sampling_design": "Four fixed complete 90-minute arrival windows with gaps, not a continuous census or random sample.",
+  "sampling_windows_utc": [
+    {
+      "start": "2026-10-29T20:50:00Z",
+      "end": "2026-10-29T22:20:00Z"
+    },
+    {
+      "start": "2026-10-30T20:50:00Z",
+      "end": "2026-10-30T22:20:00Z"
+    },
+    {
+      "start": "2026-10-31T20:50:00Z",
+      "end": "2026-10-31T22:20:00Z"
+    },
+    {
+      "start": "2026-11-01T01:00:00Z",
+      "end": "2026-11-01T02:30:00Z"
+    }
   ],
-  "presentation_update": "Conditional required-gate headroom widget removed at user request."
+  "sampled_hours": 6,
+  "report_html_sha256": "7a8641178d897f412638ec8864d6d00e409ae805eb78bebd960dc6250c0695b4",
+  "visual_validation_invocation": "c0231dd4-0e60-456b-b456-1d43e7809cba"
 }
