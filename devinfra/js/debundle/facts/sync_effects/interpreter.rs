@@ -4736,11 +4736,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::OwnDescriptorMap(site) => {
                     self.invalidate_own_descriptor_map(*site);
                 }
-                AbstractValue::Value(Value::Alloc(Kind::Function, key)) => {
-                    self.state.tainted_functions.insert(*key);
-                }
-                AbstractValue::Closure(key, _) => {
-                    self.state.tainted_functions.insert(*key);
+                AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                | AbstractValue::Closure(key, _) => {
+                    // Code the interpreter does not follow may run this body:
+                    // whatever it reads through top-level bindings is exposed
+                    // to that code, and so is every body it can reach that way.
+                    if self.state.tainted_functions.insert(*key)
+                        && let Some(callable) = self.inputs.index.callables.get(key)
+                    {
+                        pending.extend(
+                            callable
+                                .reads
+                                .iter()
+                                .filter(|binding| self.inputs.top_bindings.contains(*binding))
+                                .filter_map(|binding| self.state.prefix_values.get(binding))
+                                .flatten()
+                                .cloned(),
+                        );
+                    }
                 }
                 _ => {}
             }
@@ -9001,23 +9014,6 @@ impl Executor<'_, '_> {
         settled
     }
 
-    /// An execution that could not complete may have run any code its reads
-    /// reach: every value of a binding the statement or its summarized
-    /// callees read becomes tainted (design § Heap taint).
-    fn taint_incomplete_reach(&mut self, fact: &StatementFacts, effects: &SynchronousCalls) {
-        let values: Values = fact
-            .reads
-            .eager
-            .iter()
-            .chain(&fact.reads.lazy)
-            .chain(effects.reads.iter().map(|(binding, _)| binding))
-            .filter_map(|binding| self.state.prefix_values.get(binding))
-            .flatten()
-            .cloned()
-            .collect();
-        self.taint_objects(&values);
-    }
-
     pub(super) fn execute_owner(&mut self, owner: SourceUnitOrdinal) -> SynchronousCalls {
         let inputs = self.inputs;
         let index = inputs.index;
@@ -9266,9 +9262,6 @@ impl Executor<'_, '_> {
         }
         outcome.effects.complete = outcome.complete;
         outcome.effects.settled_array_elements = settled_array_elements;
-        if !outcome.complete {
-            self.taint_incomplete_reach(fact, &outcome.effects);
-        }
         // A failed runtime path forfeits the prevalidated private-result proof.
         // Keep the actual execution/effect outcome in either case.
         if !self.state.private_constructor_result_owners.is_empty()
