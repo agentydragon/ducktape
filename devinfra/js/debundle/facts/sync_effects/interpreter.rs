@@ -7811,13 +7811,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let mut opaque_args = args.clone();
         if let ValueExpr::Member(receiver, _, _) = &call.callee {
             let receiver_values = self.evaluate(receiver, env, captures);
-            if receiver_values.iter().any(|value| {
-                matches!(value,
-                AbstractValue::Value(Value::Alloc(Kind::Object, object))
-                if self.state.descriptor_copy_results.contains(object))
-            }) {
-                opaque_args.push(receiver_values);
-            }
+            // The receiver is an input capability too: an opaque method can
+            // invoke its stored callbacks through `this`, including callbacks
+            // nested in collections or retained wrapper/instance values.
+            // Keep the original receiver taint above; callback reachability
+            // does not prove that the foreign call preserves its contents.
+            opaque_args.push(receiver_values);
         }
         if let Some(proof) = self.inputs.index.array_iterations.get(&call.span.into()) {
             let source = self.evaluate(&proof.source.clone(), env, captures);

@@ -1085,7 +1085,10 @@ the prefix environment immediately. Callback discovery visits each closure's cap
 including snapshots shared through several captured bindings. The executor
 interns immutable capture contexts bottom-up, so value-set and invocation-key
 comparisons use canonical identities rather than recursively comparing the
-capture DAG. Callback discovery batches all exports or all arguments into one
+capture DAG. Opaque methods receive their receiver as an input capability;
+callback discovery traverses its stored references as well as the explicit
+arguments. Receiver taint remains independent of this callback reach.
+Callback discovery batches all exports or all arguments into one
 traversal, so aliases share visited sets for objects, closures, and escaped
 values.
 
