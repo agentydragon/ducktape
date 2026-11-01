@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from uuid import UUID
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 
 from finance.plaid.db.link_store import PlaidLinkStorage
+from finance.plaid.db.models import SyncRunRow
 from util.db_url import render_postgresql_url
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 
@@ -15,6 +18,15 @@ from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 # gazelle:include_dep @pypi//asyncpg
 # SQLAlchemy loads psycopg from the admin URL scheme; Gazelle cannot infer that dependency either.
 # gazelle:include_dep @pypi//psycopg
+
+
+async def ensure_test_sync_run(storage: PlaidLinkStorage, *, item_id: str) -> UUID:
+    """Keep test mirror observations under one running Item sync."""
+    async with storage._session_factory() as session:
+        run_id = await session.scalar(
+            select(SyncRunRow.run_id).where(SyncRunRow.item_id == item_id, SyncRunRow.status == "running")
+        )
+    return run_id or await storage.begin_sync_run(trigger="test", item_id=item_id, configured_windows={})
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")

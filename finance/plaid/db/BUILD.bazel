@@ -89,12 +89,14 @@ py_library(
     ],
     deps = [
         ":link_store",
+        ":models",
         "//util:db_url",
         "//util/testing:postgres",
         "@pypi//asyncpg",
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -106,6 +108,8 @@ py_test(
     deps = [
         ":conftest",
         ":link_store",
+        ":models",
+        ":testing",
         "//:conftest",
         "//util:db_url",
         "@pypi//asyncpg",
@@ -125,6 +129,7 @@ py_test(
         ":link_store",
         ":models",
         ":read_model",
+        ":testing",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

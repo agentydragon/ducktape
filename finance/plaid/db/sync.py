@@ -26,7 +26,13 @@ from plaid.model_utils import ModelNormal
 from urllib3.response import HTTPResponse
 
 from finance.plaid.db.client import PlaidClient
-from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
+from finance.plaid.db.link_store import (
+    ApiEvent,
+    PlaidLinkStorage,
+    StoredLink,
+    SyncAlreadyRunningError,
+    SyncLeaseLostError,
+)
 from finance.plaid.db.products import Product
 from finance.plaid.db.secret_store import SecretStore
 from finance.plaid.payloads import (
@@ -133,10 +139,10 @@ async def sync_link(
             webhook_url=webhook_url,
         )
     except asyncio.CancelledError:
-        await storage.finish_sync_run(run_id, status="failed", error_summary="sync task was cancelled")
+        await _finish_failed_run(storage, run_id, "sync task was cancelled")
         raise
     except Exception as exc:
-        await storage.finish_sync_run(run_id, status="failed", error_summary=f"{type(exc).__name__}: {exc}")
+        await _finish_failed_run(storage, run_id, f"{type(exc).__name__}: {exc}")
         raise
     await storage.finish_sync_run(run_id, status="succeeded")
     return run_id
@@ -162,7 +168,9 @@ async def sync_transactions_only(
                 response_model=AccountsGetResponse,
             )
         ).response
-        await storage.apply_accounts(item_id=link.item_id, accounts=accounts_payload.accounts, captured_at=captured_at)
+        await storage.apply_accounts(
+            item_id=link.item_id, accounts=accounts_payload.accounts, captured_at=captured_at, run_id=run_id
+        )
         await _sync_transactions_inner(
             api=api,
             storage=storage,
@@ -173,13 +181,20 @@ async def sync_transactions_only(
             captured_at=captured_at,
         )
     except asyncio.CancelledError:
-        await storage.finish_sync_run(run_id, status="failed", error_summary="sync task was cancelled")
+        await _finish_failed_run(storage, run_id, "sync task was cancelled")
         raise
     except Exception as exc:
-        await storage.finish_sync_run(run_id, status="failed", error_summary=f"{type(exc).__name__}: {exc}")
+        await _finish_failed_run(storage, run_id, f"{type(exc).__name__}: {exc}")
         raise
     await storage.finish_sync_run(run_id, status="succeeded")
     return run_id
+
+
+async def _finish_failed_run(storage: PlaidLinkStorage, run_id: UUID, summary: str) -> None:
+    try:
+        await storage.finish_sync_run(run_id, status="failed", error_summary=summary)
+    except SyncLeaseLostError:
+        logger.info("sync run %s already lost ownership", run_id)
 
 
 async def _sync_link_inner(
@@ -209,6 +224,7 @@ async def _sync_link_inner(
     item_payload = item.item
     await storage.upsert_link(
         item_id=link.item_id,
+        run_id=run_id,
         access_token_secret=link.access_token_secret,
         products_requested=link.products_requested,
         transaction_days_requested=link.transaction_days_requested,
@@ -245,7 +261,9 @@ async def _sync_link_inner(
             response_model=AccountsGetResponse,
         )
     ).response
-    await storage.apply_accounts(item_id=link.item_id, accounts=accounts_payload.accounts, captured_at=captured_at)
+    await storage.apply_accounts(
+        item_id=link.item_id, accounts=accounts_payload.accounts, captured_at=captured_at, run_id=run_id
+    )
 
     if Product.TRANSACTIONS.value in link.products_requested:
         await _sync_transactions_inner(
@@ -288,12 +306,13 @@ async def _sync_link_inner(
                 accounts=holdings.accounts,
                 api_event_id=holdings_result.api_event_id,
                 captured_at=captured_at,
+                run_id=run_id,
             )
             end = captured_at.date()
             start = end - timedelta(days=windows.investment_transaction_days)
             txns = await _fetch_investment_transactions(api, storage, run_id, access_token, link.item_id, start, end)
             await storage.upsert_investment_transactions(
-                item_id=link.item_id, transactions=txns, captured_at=captured_at
+                item_id=link.item_id, transactions=txns, captured_at=captured_at, run_id=run_id
             )
 
     if Product.LIABILITIES.value in link.products_requested:
@@ -317,7 +336,7 @@ async def _sync_link_inner(
             logger.warning("liabilities/get: item %s has no liability accounts; skipping", link.item_id)
         else:
             await storage.append_liability_snapshots(
-                item_id=link.item_id, liabilities=liabilities.liabilities or {}, captured_at=captured_at
+                item_id=link.item_id, liabilities=liabilities.liabilities or {}, captured_at=captured_at, run_id=run_id
             )
 
 
@@ -367,6 +386,7 @@ async def _sync_transactions_inner(
 
         await storage.apply_transaction_delta(
             item_id=item_id,
+            run_id=run_id,
             added=[txn.model_dump(mode="json", exclude_unset=True) for txn in added],
             modified=[txn.model_dump(mode="json", exclude_unset=True) for txn in modified],
             removed=[txn.model_dump(mode="json", exclude_unset=True) for txn in removed],
