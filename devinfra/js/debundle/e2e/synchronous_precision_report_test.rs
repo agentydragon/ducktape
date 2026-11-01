@@ -1161,3 +1161,27 @@ fn external_root_getter_keeps_published_source_callbacks_at_the_read() {
         }));
     }
 }
+
+#[test]
+fn external_binding_alias_proof_excludes_reassignment_private_and_skipped_values() {
+    for setup in [
+        "let alias = syntheticHost; alias = { get read() { return state; } };",
+        "const privateRecord = { get read() { return state; } }; const alias = privateRecord;",
+        "const alias = syntheticHost; function install(value) { Object.defineProperty(value, 'read', { get() { return state; } }); } install(...[alias]);",
+    ] {
+        let source = format!(
+            "globalThis.syntheticHost = {{ read: 'original' }};\n{setup}\nconst observed = alias.read;\nvar state = 'late';\nconsole.log(observed);\ndelete globalThis.syntheticHost;\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "undefined\n");
+        let graph = fixture.dependency_graph();
+        let observed = source_unit_for_binding(&graph, "observed");
+        let state = source_unit_for_binding(&graph, "state");
+        assert!(
+            graph.edges.iter().any(|edge| {
+                edge.source == observed && edge.target == state && edge.constrains_init_order
+            }),
+            "the actual later getter read must retain state: {setup}"
+        );
+    }
+}

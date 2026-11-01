@@ -380,10 +380,28 @@ fn promise_native_input_and_host_timing_are_both_required_at_the_selected_site()
         }),
         "native identity alone must retain the synthetic conflict"
     );
+    let native_only_graph = serde_json::to_value(native_only.dependency_graph()).unwrap();
     assert!(
-        native_input_uses(&serde_json::to_value(native_only.dependency_graph()).unwrap())
-            .is_empty(),
-        "native identity alone must not consume the input or suppress reentry"
+        native_input_uses(&native_only_graph).is_empty(),
+        "native identity alone must not report an admitted invocation"
+    );
+    assert!(host_contract_uses(&native_only_graph).is_empty());
+    assert!(has_unknown_call_target(node_for_binding(
+        &native_only_graph,
+        "gate"
+    )));
+    assert!(
+        node_for_binding(&native_only_graph, "gate")["synchronous_execution"]["inference_uses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|usage| {
+                usage["conclusion"] == "native_own_data_read"
+                    && usage["native_operation_input_refs"]
+                        .as_array()
+                        .is_some_and(|refs| !refs.is_empty())
+            }),
+        "the lookup identity must retain its exact author dependency"
     );
 
     expect_atomic_conflict_rejection(

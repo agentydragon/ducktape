@@ -829,6 +829,8 @@ pub fn data_property(global: &str, name: &str) -> Option<&'static DataProperty> 
 pub fn own_data_property_name(global: &str, name: &str) -> Option<&'static str> {
     data_property(global, name)
         .map(|property| property.name)
+        // Promise's host timing is modeled separately from builtin rows.
+        .or_else(|| (global == "Promise" && name == "resolve").then_some("resolve"))
         .or_else(|| {
             (name == "prototype"
                 && matches!(

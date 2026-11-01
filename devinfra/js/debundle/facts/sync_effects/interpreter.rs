@@ -1369,7 +1369,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         ))
     }
 
-    fn native_member_lookup_is_data(&self, callee: &ValueExpr) -> bool {
+    fn native_member_lookup_is_data(&self, callee: &ValueExpr, site: Option<u32>) -> bool {
         let ValueExpr::Member(receiver, Some(property), MemberKey::Static) = callee else {
             return false;
         };
@@ -1397,16 +1397,79 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 IntrinsicSlot::Global(family),
                 IntrinsicSlot::Static(family, property),
             ],
-            None,
+            site,
             InferenceRule::NativeOwnDataRead,
         ) else {
             return false;
         };
-        self.record_inference_use(
+        // Identity discharges this lookup only. An operation-use record is
+        // reserved for the separately admitted invocation.
+        self.record_proof_dependencies(
             NativeIntegrityGuard::NativeCallIdentity,
-            premise.inference_use,
             &premise.dependencies,
         );
+        self.state
+            .inference_uses
+            .borrow_mut()
+            .insert(premise.inference_use);
+        true
+    }
+
+    /// Reuse the exact identity/lookup proof of the canonical outer call.
+    /// Neither this lookup nor native identity certifies the invocation's
+    /// inputs, timing, purity or throws.
+    fn callee_lookup_is_certified(&self, lookup: &Call) -> bool {
+        if self.native_member_lookup_is_data(&lookup.callee, None) {
+            return true;
+        }
+        if let ValueExpr::Member(receiver, Some(property), MemberKey::Static) = &lookup.callee
+            && let ValueExpr::Binding(namespace) = receiver.as_ref()
+            && self
+                .inputs
+                .index
+                .audited_factory_members
+                .get(namespace)
+                .into_iter()
+                .chain(self.inputs.index.no_reentry_members.get(namespace))
+                .chain(self.inputs.index.no_reentry_record_members.get(namespace))
+                .any(|members| members.contains(property))
+        {
+            // These maps contain only the completed namespace identity,
+            // publication, mutation and namespace_independent_members proofs.
+            return true;
+        }
+        let Some(call) = self
+            .inputs
+            .index
+            .accessor_callee_calls
+            .get(&lookup.span.into())
+        else {
+            return false;
+        };
+        let site = CallSite::from(call.span);
+        if self.native_member_lookup_is_data(&lookup.callee, Some(site.allocation_id())) {
+            return true;
+        }
+        let Some((row, _)) = self.exact_native_call_row(call.kind, &call.callee, site) else {
+            return false;
+        };
+        let premise = native_premise(
+            &self.inputs.index.integrity,
+            row.requires,
+            Some(site.allocation_id()),
+            InferenceRule::NativeCallIdentity,
+        )
+        .expect("exact native call retained its identity premise");
+        // Identity discharges this lookup only. An operation-use record is
+        // reserved for the separately admitted invocation.
+        self.record_proof_dependencies(
+            NativeIntegrityGuard::NativeCallIdentity,
+            &premise.dependencies,
+        );
+        self.state
+            .inference_uses
+            .borrow_mut()
+            .insert(premise.inference_use);
         true
     }
 
@@ -3905,6 +3968,42 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || !self.inputs.facts[candidate.0].var_declared.is_empty()
     }
 
+    /// Follow only initialized, uniquely written canonical binding copies.
+    /// A lost local result or any other initializer is not an external root.
+    fn external_binding_root(&self, binding: &Id) -> bool {
+        let mut current = binding;
+        let mut seen = BTreeSet::new();
+        loop {
+            if !seen.insert(current) || self.inputs.index.reassigned_bindings.contains(current) {
+                return false;
+            }
+            if self.inputs.index.imported_bindings.contains(current)
+                || (!self.inputs.flow.is_declared(current)
+                    && !self.inputs.shadowed.contains(current.0.as_ref()))
+            {
+                return true;
+            }
+            if !self.inputs.single_writer_bindings.contains(current)
+                || !self.state.initialized_bindings.contains(current)
+            {
+                return false;
+            }
+            let Some(writes) = self.inputs.index.binding_declaration_writes.get(current) else {
+                return false;
+            };
+            let [write] = writes.as_slice() else {
+                return false;
+            };
+            let Some(ValueExpr::Binding(source)) = &write.initializer else {
+                return false;
+            };
+            if !write.direct_top_level || !write.simple_identifier {
+                return false;
+            }
+            current = source;
+        }
+    }
+
     /// An unknown descriptor or prototype can make a read invoke any accessor
     /// previously installed by reachable code. Its returned value is Top, but
     /// its synchronous binding effects still occur at this read's prefix.
@@ -3922,9 +4021,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let external_root = matches!(&call.callee,
             ValueExpr::Member(receiver, _, _) if matches!(receiver.as_ref(),
                 ValueExpr::Binding(binding)
-                    if !self.inputs.flow.is_declared(binding)
-                        && !self.inputs.shadowed.contains(binding.0.as_ref())
-                        && !self.inputs.index.reassigned_bindings.contains(binding)))
+                    if self.external_binding_root(binding)))
             && self.inputs.index.dynamic_scope_owners.is_empty()
             && !self.state.reachability.incomplete
             && no_prior_skipped_execution
@@ -7700,11 +7797,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             };
             let values = self.evaluate(receiver, env, captures);
             if values.contains(&AbstractValue::Value(Value::Top))
-                && (self.native_member_lookup_is_data(&call.callee)
-                    || matches!(
-                        self.exact_native_call_row(CallKind::Call, &call.callee, call.span.into()),
-                        Some((_, NativeIdentitySource::Inferred { .. }))
-                    )
+                && (self.callee_lookup_is_certified(call)
                     || self
                         .inputs
                         .index
@@ -7813,7 +7906,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return;
         }
         if call.kind == CallKind::LocalMemberRead {
-            if self.native_member_lookup_is_data(&call.callee) {
+            if self.native_member_lookup_is_data(&call.callee, None) {
                 return;
             }
             if self.closed_enum_member_read(&call.callee) {

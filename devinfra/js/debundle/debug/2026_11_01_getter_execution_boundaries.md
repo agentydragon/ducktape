@@ -61,3 +61,39 @@ installation controls retain the later read's own binding edge.
 The pre-existing whole-lifetime enum `PlainData` proof remains unchanged. These
 states concern ordinary-object allocations (including dense arrays); NativeSet,
 Class and Instance keep separate state and receive no blanket settlement claim.
+
+## Exact lookup certificates after hosted validation
+
+Invocation `3e2890b4-f436-5e60-be09-af9e2ca241a5` found synthetic callee
+lookups executing before existing exact call certificates could apply. The
+canonical index now retains each ordinary member call behind its lookup event.
+Completed namespace identity/publication/mutation checks already require
+`namespace_independent_members`, whose assertion covers inert lookup separately
+from call timing. Only those completed member maps discharge the synthetic
+lookup. Standalone namespace reads retain their ordinary conservative transfer.
+
+Native lookup can consume the original outer call's exact native slot premise,
+including authored site evidence. The lookup records `NativeCallIdentity` or
+`NativeOwnDataRead` with its dependencies; native operation use remains recorded
+at invocation. `Promise.resolve` is a known ordinary own data slot even though
+its host timing uses a separate lane. This grants no row, purity, input admission
+or exception freedom, and the host assertion alone cannot certify a replaced
+slot.
+
+An initialized unique-writer Binding alias may preserve an external import or
+unshadowed global root through the existing canonical declaration-write facts.
+Reassignment, any other initializer, dynamic scope, prior skipped execution and
+concrete object receivers decline this reach proof. The no-sync registration
+control pins the import-alias positive; private, reassigned and post-skip aliases
+pin later getter effects.
+
+Two fixtures now isolate their original purpose. Own-name argument exception
+propagation uses an exact primitive sentinel, avoiding an unrelated unsupported
+catch-object member read while still checking the exact thrown value. The
+empty-Set positive uses a direct neutral global write instead of an unrelated
+`process.env` lookup; its opaque startup Set-slot pollution witness is retained.
+A separate negative keeps the original host lookup, requiring rejection and a
+MemberRead loss at that operation despite successful exact Set construction.
+The rebound-factory negative pins its actual earlier `eager_rebind` rejection
+and absence of a factory certificate; separate callback invocation/conflict
+controls remain in that suite.

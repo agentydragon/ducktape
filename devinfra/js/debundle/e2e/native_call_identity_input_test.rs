@@ -37,7 +37,7 @@ fn empty_set_field_input(source: &str, declaration: &str) -> NativeCallIdentityI
 }
 
 const EMPTY_SET_CLASS: &str = "class Registry {\n  #items = new Set;\n  #armed = false;\n  #onExit = () => this.clear();\n  add(item) { this.#items.add(item); }\n  clear() { this.#items.clear(); }\n  get size() { return this.#items.size; }\n}";
-const EMPTY_SET_SOURCE: &str = "const startupTarget = globalThis.plugin || {};\nstartupTarget.Set = 1;\nconst saved = () => later;\nglobalThis.saved = saved;\nclass Registry {\n  #items = new Set;\n  #armed = false;\n  #onExit = () => this.clear();\n  add(item) { this.#items.add(item); }\n  clear() { this.#items.clear(); }\n  get size() { return this.#items.size; }\n}\nconst registry = new Registry();\nclass Client { run() { return registry.size; } }\nconst client = new Client();\nprocess.env.NEUTRAL = '1';\nconst later = 42;\nconsole.log(registry.size, client.run(), later, globalThis.saved());\nexport { registry, client, later };\n";
+const EMPTY_SET_SOURCE: &str = "const startupTarget = globalThis.plugin || {};\nstartupTarget.Set = 1;\nconst saved = () => later;\nglobalThis.saved = saved;\nclass Registry {\n  #items = new Set;\n  #armed = false;\n  #onExit = () => this.clear();\n  add(item) { this.#items.add(item); }\n  clear() { this.#items.clear(); }\n  get size() { return this.#items.size; }\n}\nconst registry = new Registry();\nclass Client { run() { return registry.size; } }\nconst client = new Client();\nglobalThis.neutral = '1';\nconst later = 42;\nconsole.log(registry.size, client.run(), later, globalThis.saved());\nexport { registry, client, later };\n";
 
 fn empty_set_modules() -> Vec<LogicalModuleEntry> {
     vec![
@@ -104,6 +104,47 @@ fn exact_empty_set_private_field_breaks_false_constructor_reentry_cycle() {
                     .is_some_and(|slots| slots.iter().any(|slot| slot["key"]["string"] == "Set"))
             }))
     );
+}
+
+#[test]
+fn exact_empty_set_input_does_not_certify_an_unrelated_host_getter() {
+    let source =
+        EMPTY_SET_SOURCE.replace("globalThis.neutral = '1';", "process.env.NEUTRAL = '1';");
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(&source, empty_set_modules()).with_native_call_identity_inputs(
+            "static/app",
+            vec![empty_set_field_input(&source, EMPTY_SET_CLASS)],
+        ),
+    );
+    assert!(!rejected.atomic_group_conflicts().is_empty());
+    let graph = rejected.dependency_graph();
+    let registry = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "registry")
+        })
+        .expect("registry declaration");
+    assert!(
+        registry
+            .synchronous_execution
+            .as_ref()
+            .expect("registry execution")
+            .complete
+    );
+    let graph = serde_json::to_value(graph).unwrap();
+    assert!(graph["nodes"].as_array().unwrap().iter().any(|node| {
+        node["source_location"]["start_line"] == 16
+            && node["synchronous_execution"]["precision_losses"]
+                .as_array()
+                .is_some_and(|losses| {
+                    losses
+                        .iter()
+                        .any(|loss| loss["reason"]["operation"] == "member_read")
+                })
+    }));
 }
 
 #[test]
