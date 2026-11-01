@@ -43,6 +43,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     home_assistant_read_egress_rules,
 )
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.haku import ui_egress as haku_ui_egress
 from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.providers.agentplane import policy_set
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
@@ -714,6 +715,23 @@ def add_staging_action_policies(scope: Construct) -> None:
             ORCHESTRATION_PRESETS_SET,
             *_ACCOUNT_READ_SETS,
         ],
+    )
+
+    # haku-ui, Haku's operator UI, as its own principal in haku-sandbox (haku/ui_egress.py): the Home
+    # Assistant and Grocy SF read sets (their egress rules ride in them) plus the one Action Service
+    # route it submits requests on. A subset of claude-ai's grants by construction, and not
+    # claude-ai itself, which auto-approves sandbox create and exec.
+    haku_ui_egress.add_gateway_resources(scope, namespace=_NAMESPACE)
+    _binding(
+        scope,
+        "policybinding-haku-ui",
+        metadata=ApiObjectMetadata(
+            name=haku_ui_egress.SERVICE_ACCOUNT,
+            namespace=_NAMESPACE,
+            annotations={"description": "What haku-ui (haku-sandbox) may reach and have auto-approved."},
+        ),
+        subject=PolicyBindingSpecSubject(namespace=haku_ui_egress.NAMESPACE, name=haku_ui_egress.SERVICE_ACCOUNT),
+        policy_sets=[haku_ui_egress.POLICY, HOME_ASSISTANT_READS_SET, GROCY_SF_READS_SET],
     )
 
     # Haku-like sandboxes get Coinbase only through this explicit combined PolicySet selection.

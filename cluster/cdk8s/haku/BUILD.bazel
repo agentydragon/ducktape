@@ -130,12 +130,30 @@ py_library(
     srcs = ["rbac.py"],
     deps = [
         ":namespace",
+        ":ui_egress",
+        "//agentplane/action_service/policies:resources",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "ui_egress",
+    srcs = ["ui_egress.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//agentplane/crds:policyset",
+        "//cluster/cdk8s/agentplane:actions",
+        "//cluster/cdk8s/agentplane:egress",
+        "//cluster/cdk8s/agentplane:egress_policies",
+        "//cluster/cdk8s/providers/agentplane:policy_set",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
     ],
 )
 

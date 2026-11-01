@@ -43,6 +43,26 @@ Moving haku-ui into `agentplane-staging` instead would need no agentplane change
 would then have to own the Deployment: Haku-authored manifests applied there could run a Pod as
 `claude-ai`.
 
+## Status
+
+- **Step 1 needed no code.** The Action Service already separates `caller_service_account_namespaces`
+  (where labelled ServiceAccounts may call) from `policy_namespace` (where it watches PolicySets and
+  bindings), so adding `haku-sandbox` as a caller namespace is configuration.
+- **Step 2 is `cluster/cdk8s/haku/ui_egress.py`** plus the entries in `agentplane/staging.py` and
+  `actions_staging_policies.py`: the `haku-ui` ServiceAccount (`haku/rbac.py`), the `haku-ui` egress
+  policy and its binding, `haku-sandbox` in both services' allowed namespaces (which also publishes
+  the `agentplane-egress-ca` ConfigMap there), and the gateway ingress rule. The
+  `haku-sandbox-force-proxy-egress` fence already allows cluster-internal traffic, so it needed no
+  change. `test_haku_ui_egress` pins the subset invariant.
+- **Step 3 (haku-state) remains**, and has to supply what a Pod needs to use this: run as `haku-ui`;
+  an `agentplane-egress-sidecar` container with settings pointing at the gateway
+  (`ui_egress.GATEWAY`) and a projected `agentplane-egress-token` volume (audience
+  `WORKLOAD_TOKEN_AUDIENCE`, as in `public_coder/egress.py`); `HTTPS_PROXY=http://127.0.0.1:3128`;
+  and the `agentplane-egress-ca` ConfigMap mounted as the trust store (`SSL_CERT_FILE`). Credentials
+  in the Pod are placeholders: `agentplane-credential-home-assistant-readonly`,
+  `agentplane-credential-grocy-sf-readonly` (basic auth `agentplane-grocy-sf-readonly:…`) and
+  `agentplane-credential-agentplane-workload`.
+
 ## Steps
 
 1. **Action Service:** split caller namespaces from the policy namespace, as above.

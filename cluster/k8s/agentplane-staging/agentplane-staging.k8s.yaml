@@ -1449,6 +1449,7 @@ data:
     allowed_service_account_namespaces:
       - agentplane-staging
       - public-coder-agent
+      - haku-sandbox
     admin_grpc_audience: agentplane-egress-admin
     admin_grpc_callers:
       - agentplane-staging/app
@@ -2225,6 +2226,7 @@ spec:
           values:
             - agentplane-staging
             - public-coder-agent
+            - haku-sandbox
 ---
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
@@ -6168,6 +6170,7 @@ data:
     policy_namespace: agentplane-staging
     caller_service_account_namespaces:
       - agentplane-staging
+      - haku-sandbox
       - public-coder-agent
     direct_wait_seconds: 30
     web_push:
@@ -7034,6 +7037,35 @@ kind: RoleBinding
 metadata:
   name: actions
   namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: actions
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: actions
+    namespace: agentplane-staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: actions
+  namespace: haku-sandbox
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: actions
+  namespace: haku-sandbox
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -10266,6 +10298,61 @@ spec:
   subject:
     name: claude-ai
     namespace: agentplane-staging
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: haku-ui
+  namespace: agentplane-staging
+spec:
+  rules:
+    - clusterInternal: true
+      credentialRef:
+        name: agentplane-workload
+      hosts:
+        - actions.agentplane-staging.svc.cluster.local
+      methods:
+        - GET
+        - POST
+      paths:
+        - /v1/action-requests
+        - /v1/action-requests/**
+      type: egress
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: haku-ui
+  namespace: agentplane-staging
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: egress
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            io.cilium.k8s.policy.serviceaccount: haku-ui
+            k8s:io.kubernetes.pod.namespace: haku-sandbox
+      toPorts:
+        - ports:
+            - port: "8888"
+              protocol: TCP
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicyBinding
+metadata:
+  annotations:
+    description: What haku-ui (haku-sandbox) may reach and have auto-approved.
+  name: haku-ui
+  namespace: agentplane-staging
+spec:
+  policySets:
+    - haku-ui
+    - home-assistant-reads
+    - grocy-sf-reads
+  subject:
+    name: haku-ui
+    namespace: haku-sandbox
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding
