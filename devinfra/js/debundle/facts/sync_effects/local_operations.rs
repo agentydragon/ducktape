@@ -3,6 +3,7 @@
 use super::value_model::ValueExpr;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
+use swc_common::Span;
 use swc_ecma_ast::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,6 +19,12 @@ pub(super) enum LocalExpression {
     Value(ValueExpr),
     Sequence(Arc<[Self]>),
     Assign(Id, Arc<Self>),
+    AssignField {
+        receiver: Id,
+        property: String,
+        value: Arc<Self>,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -77,14 +84,27 @@ impl LocalExpression {
                     .collect::<Option<Arc<[_]>>>()?,
             )),
             Expr::Assign(assignment) if assignment.op == AssignOp::Assign => {
-                let AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) = &assignment.left
-                else {
-                    return None;
-                };
-                Some(Self::Assign(
-                    binding.id.to_id(),
-                    Arc::new(Self::lower(&assignment.right)?),
-                ))
+                let value = Arc::new(Self::lower(&assignment.right)?);
+                match &assignment.left {
+                    AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
+                        Some(Self::Assign(binding.id.to_id(), value))
+                    }
+                    AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
+                        let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
+                            return None;
+                        };
+                        let MemberProp::Ident(property) = &member.prop else {
+                            return None;
+                        };
+                        Some(Self::AssignField {
+                            receiver: receiver.to_id(),
+                            property: property.sym.to_string(),
+                            value,
+                            span: assignment.span,
+                        })
+                    }
+                    _ => None,
+                }
             }
             _ => {
                 let (value, covered) = ValueExpr::from_expr_with_coverage(expression);
@@ -102,6 +122,9 @@ impl LocalExpression {
             Self::Assign(binding, expression) => {
                 bindings.contains_key(binding) && expression.local_targets(bindings)
             }
+            Self::AssignField {
+                receiver, value, ..
+            } => bindings.contains_key(receiver) && value.local_targets(bindings),
         }
     }
 
@@ -114,6 +137,12 @@ impl LocalExpression {
                 }
             }
             Self::Assign(_, expression) => expression.reads(reads),
+            Self::AssignField {
+                receiver, value, ..
+            } => {
+                reads.insert(receiver.clone());
+                value.reads(reads);
+            }
         }
     }
 }
