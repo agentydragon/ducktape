@@ -1,6 +1,6 @@
 # agentplane's sandbox image: the command-line tools of a box that runs commands (<tools.nix>, which
-# the VM guest shares) on the nix-ld substrate FHS binaries need (<../../nix/lib/nix-ld-image.nix>).
-# Its user is uid 1000 `runner`, home /home/runner. The runner image (<../env/images/image.nix>) is this
+# the VM guest shares) on the nix-ld substrate FHS binaries need (<../../../nix/lib/nix-ld-image.nix>).
+# Its user is uid 1000 `runner`, home /home/runner. The runner image (<./image.nix>) is this
 # definition plus both harnesses, and the build image (<build.nix>) this definition plus Bazel and
 # what a build compiles with, so a tool added to <tools.nix> reaches all three and the VM guest.
 #
@@ -13,7 +13,7 @@
 # Load:   docker load < result
 {
   pkgs,
-  # The released `agentplane` command (<../cli/package.nix>), for an image that carries its own.
+  # The released `agentplane` command (<../../cli/package.nix>), for an image that carries its own.
   # The runner image takes it from the runner disk instead (//agentplane/env/images:disk_image).
   agentplaneCli ? null,
   name ? "agentplane-sandbox",
@@ -24,7 +24,7 @@
   extraConfig ? { },
 }:
 let
-  substrate = import ../../nix/lib/nix-ld-image.nix { inherit pkgs; };
+  substrate = import ../../../nix/lib/nix-ld-image.nix { inherit pkgs; };
 
   sandboxEnv = pkgs.buildEnv {
     name = "${name}-env";
@@ -35,7 +35,7 @@ let
       pkgs.cacert
     ]
     ++ import ./tools.nix pkgs
-    # The Action, Notification and egress-rules APIs (<../docs/agent_cli.md>).
+    # The Action, Notification and egress-rules APIs (<../../docs/agent_cli.md>).
     ++ pkgs.lib.optional (agentplaneCli != null) agentplaneCli
     ++ extraPaths;
     pathsToLink = [
