@@ -108,12 +108,12 @@ func (f *threadReadInventoryFake) Get(context.Context, string) (*sandboxespb.San
 	return f.sandbox, f.err
 }
 
-type threadReadRunnerFake struct {
+type threadReadEnvironmentRuntimeFake struct {
 	status *sessionpb.EnvironmentRuntimeStatus
 	err    error
 }
 
-func (f *threadReadRunnerFake) EnvironmentRuntimeStatus(context.Context, string) (*sessionpb.EnvironmentRuntimeStatus, error) {
+func (f *threadReadEnvironmentRuntimeFake) EnvironmentRuntimeStatus(context.Context, string) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	return f.status, f.err
 }
 
@@ -381,7 +381,7 @@ func TestThreadSandboxReadinessRequiresRunningReadyPod(t *testing.T) {
 	}
 }
 
-func TestEnsureThreadArchivableRejectsBusyRunnerButAllowsIdleRunner(t *testing.T) {
+func TestEnsureThreadArchivableRejectsBusyEnvironmentRuntime(t *testing.T) {
 	status, err := structpb.NewStruct(map[string]any{"conditions": []any{
 		map[string]any{"type": "Ready", "status": "True"},
 	}})
@@ -392,20 +392,20 @@ func TestEnsureThreadArchivableRejectsBusyRunnerButAllowsIdleRunner(t *testing.T
 	thread := threads.Thread{ID: id}
 	sandbox := &sandboxespb.Sandbox{
 		OperatingMode: stringPointer("Running"), Status: status,
-		Pod: &sandboxespb.SandboxPod{Name: "runner-pod"},
+		Pod: &sandboxespb.SandboxPod{Name: "environment-runtime-pod"},
 	}
 	inventory := &threadReadInventoryFake{sandbox: sandbox}
-	runner := &threadReadRunnerFake{status: &sessionpb.EnvironmentRuntimeStatus{Sessions: []*sessionpb.SessionStatus{{SessionId: id.String(), Busy: true}}}}
-	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox"}, inventory, runner); !errors.Is(err, errThreadBusy) {
-		t.Fatalf("busy runner archive check = %v, want errThreadBusy", err)
+	environmentRuntime := &threadReadEnvironmentRuntimeFake{status: &sessionpb.EnvironmentRuntimeStatus{Sessions: []*sessionpb.SessionStatus{{SessionId: id.String(), Busy: true}}}}
+	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox"}, inventory, environmentRuntime); !errors.Is(err, errThreadBusy) {
+		t.Fatalf("busy Environment Runtime archive check = %v, want errThreadBusy", err)
 	}
-	runner.status.Sessions[0].Busy = false
-	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox"}, inventory, runner); err != nil {
-		t.Fatalf("idle runner archive check = %v, want nil", err)
+	environmentRuntime.status.Sessions[0].Busy = false
+	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox"}, inventory, environmentRuntime); err != nil {
+		t.Fatalf("idle Environment Runtime archive check = %v, want nil", err)
 	}
 	sandbox.OperatingMode = stringPointer("Suspended")
-	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox"}, inventory, runner); !errors.Is(err, errThreadRunnerUnready) {
-		t.Fatalf("unready Sandbox archive check = %v, want errThreadRunnerUnready", err)
+	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox"}, inventory, environmentRuntime); !errors.Is(err, errThreadEnvironmentRuntimeUnready) {
+		t.Fatalf("unready Environment Runtime archive check = %v, want errThreadEnvironmentRuntimeUnready", err)
 	}
 }
 

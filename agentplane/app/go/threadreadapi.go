@@ -155,7 +155,7 @@ func RegisterThreadReadRoutes(
 	store threadReadStore,
 	history threadReadHistory,
 	inventory threadSandboxInventory,
-	runner threadEnvironmentRuntimeStatusReader,
+	environmentRuntime threadEnvironmentRuntimeStatusReader,
 	updates auth.ChangeSource,
 	updatesConnected func() bool,
 ) error {
@@ -220,7 +220,7 @@ func RegisterThreadReadRoutes(
 		if _, err := makeThreadView(*thread, summary); err != nil {
 			return nil, threadReadHTTPError(err)
 		}
-		if err := ensureThreadArchivable(ctx, *thread, summary, inventory, runner); err != nil {
+		if err := ensureThreadArchivable(ctx, *thread, summary, inventory, environmentRuntime); err != nil {
 			return nil, threadArchiveHTTPError(err)
 		}
 		if _, err := store.Archive(ctx, input.ThreadID); err != nil {
@@ -652,7 +652,7 @@ func makeThreadView(thread threads.Thread, summary historydata.FoldSummary) (thr
 
 func stringPointer(value string) *string { return &value }
 
-func ensureThreadArchivable(ctx context.Context, thread threads.Thread, summary historydata.FoldSummary, inventory threadSandboxInventory, runner threadEnvironmentRuntimeStatusReader) error {
+func ensureThreadArchivable(ctx context.Context, thread threads.Thread, summary historydata.FoldSummary, inventory threadSandboxInventory, environmentRuntime threadEnvironmentRuntimeStatusReader) error {
 	if inventory == nil {
 		return errors.New("Sandbox inventory is unavailable")
 	}
@@ -668,12 +668,12 @@ func ensureThreadArchivable(ctx context.Context, thread threads.Thread, summary 
 		return nil
 	}
 	if !threadSandboxReady(sandbox) {
-		return errThreadRunnerUnready
+		return errThreadEnvironmentRuntimeUnready
 	}
-	if runner == nil {
-		return errors.New("Runner status is unavailable")
+	if environmentRuntime == nil {
+		return errors.New("Environment Runtime status is unavailable")
 	}
-	status, err := runner.EnvironmentRuntimeStatus(ctx, summary.Sandbox)
+	status, err := environmentRuntime.EnvironmentRuntimeStatus(ctx, summary.Sandbox)
 	if err != nil {
 		return err
 	}
@@ -686,8 +686,8 @@ func ensureThreadArchivable(ctx context.Context, thread threads.Thread, summary 
 }
 
 var (
-	errThreadRunnerUnready = errors.New("cannot verify the runner while a Pod exists; wait for its status to become ready or for it to be removed")
-	errThreadBusy          = errors.New("finish or interrupt active work before archiving this thread")
+	errThreadEnvironmentRuntimeUnready = errors.New("cannot verify the Environment Runtime while a Pod exists; wait for its status to become ready or for it to be removed")
+	errThreadBusy                      = errors.New("finish or interrupt active work before archiving this thread")
 )
 
 func threadSandboxReady(sandbox *sandboxespb.Sandbox) bool {
@@ -725,7 +725,7 @@ func classifyThreadReadError(err error) error {
 		return huma.Error400BadRequest(err.Error())
 	case strings.HasPrefix(err.Error(), "no thread "):
 		return huma.Error404NotFound(err.Error())
-	case errors.Is(err, errThreadRunnerUnready), errors.Is(err, errThreadBusy):
+	case errors.Is(err, errThreadEnvironmentRuntimeUnready), errors.Is(err, errThreadBusy):
 		return huma.Error409Conflict(err.Error())
 	case errors.Is(err, historydata.ErrInvalidPage), errors.Is(err, historydata.ErrInvalidSessionID):
 		return huma.Error503ServiceUnavailable("Upstream service unavailable")
@@ -756,7 +756,7 @@ func isHistoryConnectionError(err error) bool {
 }
 
 func threadArchiveHTTPError(err error) error {
-	if errors.Is(err, errThreadBusy) || errors.Is(err, errThreadRunnerUnready) {
+	if errors.Is(err, errThreadBusy) || errors.Is(err, errThreadEnvironmentRuntimeUnready) {
 		return huma.Error409Conflict(err.Error())
 	}
 	return sandboxHTTPError(err)
