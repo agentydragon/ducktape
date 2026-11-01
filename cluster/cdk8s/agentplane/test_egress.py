@@ -166,9 +166,9 @@ def test_session_dispatcher_egress_is_limited_to_the_delegation_rpc_surfaces(
 ) -> None:
     """Only the Session and inventory RPCs get the Sandbox-bound bearer substitution.
 
-    The Gateway listener also hosts unrelated Runner-control RPCs. Compare the complete set of
-    synthesized rules that either reach this Service or consume its credential so a new route,
-    method, destination, or uncredentialed path cannot slip in beside the reviewed allowlist.
+    The Gateway listener also hosts unrelated Runner-control RPCs. Compare normalized permissions
+    for rules that can reach this Service or consume its credential, so rule grouping and ordering
+    are irrelevant while a new route, method, destination, or uncredentialed path still fails.
     """
     destination = "session-dispatcher.agentplane-staging.svc.cluster.local"
     service_url = f"http://{destination}:8080"
@@ -187,47 +187,54 @@ def test_session_dispatcher_egress_is_limited_to_the_delegation_rpc_surfaces(
         "/agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments",
         "/agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment",
     ]
-    expected_rules = [
-        (
-            BASIC_POLICY,
-            {
-                "clusterInternal": True,
-                "credentialRef": {"name": credential_name},
-                "hosts": [destination],
-                "methods": ["POST"],
-                "paths": session_paths,
-                "type": "egress",
-            },
-        ),
-        (
-            BASIC_POLICY,
-            {
-                "clusterInternal": True,
-                "credentialRef": {"name": credential_name},
-                "hosts": [destination],
-                "methods": ["POST"],
-                "paths": discovery_paths,
-                "type": "egress",
-            },
-        ),
-    ]
+    expected_permissions = {
+        (BASIC_POLICY, credential_name, destination, "POST", path, True) for path in (*session_paths, *discovery_paths)
+    }
 
-    actual_rules = [
-        (policy["metadata"]["name"], rule)
-        for policy in staging_manifests
-        if policy["kind"] == "PolicySet"
-        for rule in policy["spec"]["rules"]
-        if destination in rule.get("hosts", []) or rule.get("credentialRef", {}).get("name") == credential_name
-    ]
-    assert actual_rules == expected_rules
+    def host_matches_destination(pattern: str) -> bool:
+        return pattern in {destination, "*"} or (
+            pattern.startswith("*.") and destination.endswith(pattern[1:]) and destination != pattern[2:]
+        )
+
+    actual_permissions: set[tuple[str, str | None, str, str, str, bool]] = set()
+    for policy in staging_manifests:
+        # This separate opt-in set intentionally grants uncredentialed public access to any host.
+        if policy["kind"] != "PolicySet" or policy["metadata"]["name"] == PUBLIC_INTERNET_POLICY:
+            continue
+        for rule in policy["spec"]["rules"]:
+            credential_ref = rule.get("credentialRef", {}).get("name")
+            if not any(host_matches_destination(host) for host in rule.get("hosts", [])) and (
+                credential_ref != credential_name
+            ):
+                continue
+
+            hosts = rule.get("hosts")
+            methods = rule.get("methods")
+            paths = rule.get("paths")
+            assert hosts, rule
+            assert methods, rule
+            assert paths, rule
+            actual_permissions.update(
+                (policy["metadata"]["name"], credential_ref, host, method, path, rule.get("clusterInternal", False))
+                for host in hosts
+                for method in methods
+                for path in paths
+            )
+
+    assert actual_permissions == expected_permissions
 
     credential = _by_name(staging_manifests, "EgressCredential", credential_name)
-    assert credential["spec"]["source"] == {"projectedWorkloadToken": {"audience": audience}}
+    gateway = _by_name(staging_manifests, "Deployment", "runner-gateway")["spec"]["template"]["spec"]
+    gateway_container = one(container for container in gateway["containers"] if container["name"] == "runner-gateway")
+    gateway_env = {entry["name"]: entry["value"] for entry in gateway_container["env"] if "value" in entry}
+    dispatcher_audience = gateway_env["AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_AUDIENCE"]
+    assert dispatcher_audience == audience
+    assert credential["spec"]["source"] == {"projectedWorkloadToken": {"audience": dispatcher_audience}}
     assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}]
     proxy_settings = yaml.safe_load(
         _by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
     )
-    assert proxy_settings["projected_token_audiences"].count(audience) == 1
+    assert proxy_settings["projected_token_audiences"].count(dispatcher_audience) == 1
 
     # Both execution environments pass only the inert placeholder to the agent. The VM carries
     # that value in its guest runner config; the Pod carries it in its runner container env.
