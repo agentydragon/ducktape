@@ -6,6 +6,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -13,6 +14,12 @@ import (
 )
 
 type runnerLifecycleController struct{ l *lifecycle }
+
+func runnerFenceMatches(input runnerInputSpec, intent *runtimepb.LifecycleIntent, generation uint64) bool {
+	return intent != nil && intent.Binding != nil && input.ExecutionFenced &&
+		input.RuntimeBootID == intent.Binding.RuntimeBootId && input.HostBootID == intent.Binding.HostBootId &&
+		input.Generation == intent.Binding.Generation && input.Generation == generation
+}
 
 func (*runnerLifecycleController) Name() string { return runnerControllerName }
 func (*runnerLifecycleController) Inputs() []controller.Input {
@@ -227,9 +234,18 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		c.l.runner.mu.Unlock()
 		return nil
 	}
+	input, found, err := lifecycleRead[runnerInputSpec](ctx, c.l.state, runnerlifecycle.ResourceID)
+	if err != nil {
+		c.l.runner.mu.Unlock()
+		return err
+	}
+	if !found {
+		c.l.runner.mu.Unlock()
+		return nil
+	}
 	nativeChanged := !c.l.runner.nativeStopped
 	c.l.runner.nativeStopped = true
-	fenced := c.l.runner.intent != nil && c.l.runner.intent.ExecutionFenced && c.l.runner.intent.Binding.Generation == desiredState.Generation
+	fenced := runnerFenceMatches(input, c.l.runner.intent, desiredState.Generation)
 	c.l.runner.mu.Unlock()
 	if nativeChanged {
 		c.l.runner.changed()
