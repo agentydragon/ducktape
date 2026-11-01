@@ -3,8 +3,90 @@ package supervision
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
+
+	systemd "github.com/coreos/go-systemd/v22/dbus"
 )
+
+func TestNativeExitStatusRequiresRetainedInvocationEvidence(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		unit        SystemdUnitSnapshot
+		invocation  string
+		wantCode    int
+		wantDone    bool
+		wantFailure bool
+	}{
+		{name: "normal exit", unit: SystemdUnitSnapshot{LoadState: "loaded", InvocationID: "current", ExecMainCode: 1, ExecMainStatus: 23}, invocation: "current", wantCode: 23, wantDone: true},
+		{name: "signal exit", unit: SystemdUnitSnapshot{LoadState: "loaded", InvocationID: "current", ExecMainCode: 2, ExecMainStatus: 9}, invocation: "current", wantCode: 137, wantDone: true},
+		{name: "still running", unit: SystemdUnitSnapshot{LoadState: "loaded", InvocationID: "current", MainPID: 42}, invocation: "current", wantCode: -1},
+		{name: "collected status", unit: SystemdUnitSnapshot{LoadState: "not-found"}, invocation: "current", wantCode: -1, wantFailure: true},
+		{name: "different invocation", unit: SystemdUnitSnapshot{LoadState: "loaded", InvocationID: "successor", ExecMainCode: 1}, invocation: "current", wantCode: -1, wantFailure: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			code, done, err := nativeExitStatus(test.unit, test.invocation)
+			if code != test.wantCode || done != test.wantDone || (err != nil) != test.wantFailure {
+				t.Fatalf("nativeExitStatus() = (%d, %t, %v), want (%d, %t, failure=%t)", code, done, err, test.wantCode, test.wantDone, test.wantFailure)
+			}
+		})
+	}
+}
+
+func TestSystemdStopTimeoutUsesCallerGrace(t *testing.T) {
+	for _, test := range []struct {
+		grace time.Duration
+		want  uint64
+	}{
+		{grace: 0, want: 1},
+		{grace: time.Nanosecond, want: 1},
+		{grace: 1501 * time.Nanosecond, want: 2},
+		{grace: 50 * time.Millisecond, want: 50_000},
+		{grace: stopGrace, want: 5_000_000},
+	} {
+		if got := systemdStopTimeout(test.grace); got != test.want {
+			t.Errorf("systemdStopTimeout(%s) = %d, want %d", test.grace, got, test.want)
+		}
+	}
+}
+
+func TestNativeSystemdStopRequestSetsGraceAndReusesJob(t *testing.T) {
+	job := make(chan string, 1)
+	var operations []string
+	backend := &systemdBackend{
+		name: "native-test.service",
+		setStopTimeout: func(_ context.Context, _ *systemd.Conn, name string, usec uint64) error {
+			operations = append(operations, fmt.Sprintf("timeout:%s:%d", name, usec))
+			return nil
+		},
+		stopUnit: func(_ context.Context, _ *systemd.Conn, name string) (<-chan string, error) {
+			operations = append(operations, "stop:"+name)
+			return job, nil
+		},
+	}
+	grace := 50 * time.Millisecond
+	first, err := backend.requestStop(context.Background(), nil, &grace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := backend.requestStop(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != job || second != first {
+		t.Fatalf("stop completion channels first=%p second=%p, want same job %p", first, second, job)
+	}
+	want := []string{"timeout:native-test.service:50000", "stop:native-test.service"}
+	if len(operations) != len(want) {
+		t.Fatalf("operations=%v, want %v", operations, want)
+	}
+	for i := range want {
+		if operations[i] != want[i] {
+			t.Fatalf("operations=%v, want %v", operations, want)
+		}
+	}
+}
 
 type testSystemdManager struct {
 	snapshots []SystemdUnitSnapshot
