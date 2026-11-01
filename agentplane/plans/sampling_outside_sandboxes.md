@@ -266,10 +266,11 @@ Sessions, identities, history and native state under the staging data-preservati
 Operator, 2026-10-27: investigate whether our own "Codex" is small enough to justify tighter tracking
 of OpenAI APIs. **Baseline merged in
 [PR #12207](https://github.com/agentydragon/ducktape/pull/12207), `/root/postgres_harness_spike`,
-2026-10-27.** The operator-authorized code-mode-only implementation is isolated under
-`agentplane/x/postgres_codex`. The [runnable experiment and measured findings](../debug/postgres_codex_spike.md)
-record 563 physical Python runtime lines, a separate upstream source/dependency inventory, and seven
-passing RBE cases. It reuses real pinned upstream code-mode host, exec-server and apply-patch binaries.
+2026-10-27.** The operator-authorized code-mode-only implementation was isolated under
+`agentplane/x/postgres_codex`; its source was later removed from the tree. The [recorded experiment and
+measured findings](../debug/postgres_codex_spike.md) preserve the results: 563 physical Python runtime
+lines, a separate upstream source/dependency inventory, and seven passing RBE cases. It reused real
+pinned upstream code-mode host, exec-server and apply-patch binaries.
 A persistence-focused Codex fork was not implemented or measured.
 
 The scripted model turn exercises remote shell and patch, then continues in a fresh sampler process

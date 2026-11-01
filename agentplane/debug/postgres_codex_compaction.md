@@ -1,7 +1,8 @@
 # Postgres sampler compaction
 
-The test-only `x/postgres_codex` sampler adds an explicit compaction transition and an opt-in automatic
-trigger. Conversation history and provider/context history now have separate storage: the original
+The test-only `x/postgres_codex` sampler added an explicit compaction transition and an opt-in automatic
+trigger. Its source and Bazel targets have since been removed; this report preserves the historical
+findings. Conversation history and provider/context history had separate storage: the original
 items and intent evidence remain readable after context replacement. The process registry foundation
 is shared with the independently implemented process controls; this slice regenerates handles from
 that registry and refuses live cells.
