@@ -34,8 +34,8 @@ authorized work; the priority list does not dispatch the other tracks.
 
 **Component boundaries:** the [Environment Runtime](../env/runtime/SPEC.md),
 [Harness Host](../env/runtime/harnesshost/SPEC.md) and [Execution service](../env/runtime/execution/SPEC.md)
-have distinct lifecycle responsibilities. Preserve those logical owners in the selected work;
-the operator selected a combined management process in `ENV_MANAGEMENT_PROCESS_CONSOLIDATION_DESIGN`. Session and
+have distinct lifecycle responsibilities within the combined management process
+([current topology](../env/README.md#layout-and-entrypoints)). Preserve those logical owners. Session and
 Environment dispatch remain distinct roles whose binary grouping is for later; the broader
 runtime-model decision does not gate these reliability or delegation slices.
 
@@ -150,32 +150,37 @@ Independent foundations and clients can start against the approved contract; the
 needs both scheduled wake and Session creation/cooperation. Dedicated sampler disruption acceptance
 is not a prerequisite.
 
-**Remaining selected work, status checked 2026-11-01 UTC.** `/root` owns integration review and
-the two unpublished design proposals. No implementation worker is currently assigned. Focused
-regression-test additions and Bazel runs remain authorized for this batch; broad disruption
-exercises remain deferred.
+**Remaining selected work, status checked 2026-11-01 21:49 UTC.** `/root` owns integration review
+and the two unpublished design proposals. `/root/delegation_discovery_receiver` and
+`/root/delegation_result_projections` own the parent CLI and external MCP workflow examples;
+their focused scenarios have passed. External acceptance is in review as
+[#13536](https://github.com/agentydragon/ducktape/pull/13536); parent publication/review and the full
+capstone remain open.
+Focused regression-test additions and Bazel runs remain authorized; broad disruption exercises
+remain deferred.
 
-| Lane             | Owner      | Next reviewable outcome                                                                                      | Prerequisite / stopping point                                                                                              |
-| ---------------- | ---------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| P0 policy review | `/root`    | `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`: concrete caller/target matrix for explicit resume and message wake | Proposal only; stakeholder selection precedes `EXEC_SUSPENDED_RESUME` implementation                                       |
-| P1 delegation    | Unassigned | `SESSION_DELEGATION_TOOLS`: Action/MCP adapters, remaining result projections and realistic reuse workflows  | Preserve the effective caller at every backend, including Discovery; complete guidance/discovery reviews alongside clients |
-| P1 scheduling    | `/root`    | `SCHEDULED_AGENT_WAKE_DESIGN`: the smallest durable daily-wake proposal                                      | Proposal only; delivery/overlap/authority review precedes runtime implementation                                           |
+| Lane               | Owner                                                  | Next reviewable outcome                                                                                 | Prerequisite / stopping point                                                                                             |
+| ------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| P0 concrete faults | Existing PR owner; new output investigation unassigned | `RUNTIME_QUIESCE_WAKE` review and `CODE_MODE_OUTPUT_LOSS` diagnosis                                     | Do not duplicate the quiesce repair or claim it explains every earlier shutdown failure                                   |
+| P0 policy review   | `/root`                                                | `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`: caller/target matrix for explicit resume and message wake     | Proposal only; stakeholder selection precedes `EXEC_SUSPENDED_RESUME`                                                     |
+| P1 delegation      | Workflow workers; `/root` integration                  | `THREAD_CREATE_AUTHORIZATION`: publish the realistic workflows and resolve `SESSION_OPEN_CONFIGURATION` | Backend tools and Discovery are implemented; verify the remaining integrated workflow, not another adapter implementation |
+| P1 scheduling      | `/root`                                                | `SCHEDULED_AGENT_WAKE_DESIGN`: smallest durable daily-wake proposal                                     | Proposal only; delivery/overlap/authority review precedes runtime implementation                                          |
 
-Finish reviews of [#13384](https://github.com/agentydragon/ducktape/pull/13384) and
-[#13392](https://github.com/agentydragon/ducktape/pull/13392) alongside this batch; both current heads
-have passing CI. Platform guidance activation remains a separate deployment hold. After
-the lifecycle policy is selected, resume implementation takes the next P0 slot; tools integration and
-scheduled-wake implementation feed the daily CI capstone. Small `SESSION_LAUNCH_FRICTION` proposals
-remain alongside these tracks as capacity permits. This is a scheduling preference, not additional
-dependency edges.
+Finish the platform-guidance reader [#13384](https://github.com/agentydragon/ducktape/pull/13384)
+alongside these tracks. Its current full CI is red in the VM output-loss scenario described below;
+focused guidance checks passed. Managed guidance and Session-tool staging exposure remain separate
+deployment holds. After lifecycle policy is selected, explicit resume takes the next P0 implementation
+slot. Scheduled wake and usable delegation feed the daily CI capstone. Small
+`SESSION_LAUNCH_FRICTION` proposals remain alongside these tracks as capacity permits. This is a
+scheduling preference, not additional dependency edges.
 
 The original native-cleanup timeout remains unexplained; the closed
 [#13442](https://github.com/agentydragon/ducktape/pull/13442) path-reconstruction workaround is not
 selected. A later, separate [Runtime.Close caller-deadline failure](../env/runtime/debug/2026-11-01_runtime_close_wait_timeout.md)
 also lacks causal evidence. On recurrence, capture shutdown-stage/join evidence before attributing
 either failure or claiming it fixed. Passing later tests does not establish either cause. Eventual
-COSI ownership and process consolidation remain separate operator decisions and do not hold
-delegation, scheduling or resume-policy design.
+COSI ownership remains a separate operator decision. The combined management process and its direct
+component calls are implemented; that does not establish the cause of either earlier failure.
 
 Small launch-UX work can proceed alongside these tracks. Fresh-VM latency and VM-based Bazel are
 next and are independent of each other; image/layering work becomes a prerequisite only when the
@@ -186,12 +191,15 @@ its old ordering does not give it precedence over the selected tracks.
 ```mermaid
 flowchart LR
     subgraph PRIORITY_ZERO[P0: lifecycle authority and explicit resume]
+        CODE_MODE_OUTPUT_LOSS[Preserve observed command output through Code Mode]
+        RUNTIME_QUIESCE_WAKE[Review quiesce notification race repair]
         SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN[Review resume and message-wake authority]
         SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN --> EXEC_SUSPENDED_RESUME[Explicit authorized resume]
     end
     subgraph PRIORITY_ONE[P1: useful daily-agent workflow]
         THREAD_CREATE_AUTHORIZATION[Caller-privilege delegation capstone]
-        THREAD_CREATE_AUTHORIZATION --> DAILY_CI_AGENT[Daily CI product milestone]
+        THREAD_CREATE_AUTHORIZATION --> SESSION_DELEGATION_ACTIVATION[Held: staging tool exposure]
+        SESSION_DELEGATION_ACTIVATION --> DAILY_CI_AGENT[Daily CI product milestone]
         SCHEDULED_AGENT_WAKE_DESIGN[Review durable scheduled wake] --> SCHEDULED_AGENT_WAKE
         SCHEDULED_AGENT_WAKE[Durable scheduled wake] --> DAILY_CI_AGENT
     end
@@ -199,6 +207,30 @@ flowchart LR
     VM_STARTUP_LATENCY[Next: measured fresh-VM startup]
     LOCAL_BAZEL[Next: Bazel client inside a VM]
 ```
+
+### `CODE_MODE_OUTPUT_LOSS` — retain observed command output through Code Mode
+
+**Concrete P0 investigation; unassigned.** Full CI on the guidance reader and activation recorded
+a native `commandExecution` completing with exit code 0 and the expected `VM_MEMORY` record, while
+the corresponding Code Mode `VM_EXEC_RESULT` reported exit code 0 and empty output. The test failed
+parsing that empty result. Evidence is retained in BuildBuddy invocations
+[`09492775`](https://app.buildbuddy.io/invocation/09492775-dbce-5619-be01-9c459c29be1d) and
+[`88eb6917`](https://app.buildbuddy.io/invocation/88eb6917-afac-57b1-9d32-bd712afe597d).
+
+Trace the nested-tool/result and cell yield/wait boundary on current code; the existing artifacts do
+not distinguish those paths. Reproduce the narrow output-loss mechanism and preserve observed bytes
+through it. Do not rerun a mutation to recover output, infer that a command failed, increase the VM
+suite timeout or reopen the waived disruption exercise. Exit with causal evidence and focused
+coverage of the repaired boundary; if reproduction remains elusive, retain the evidence and name
+the remaining visibility gap without claiming a repair.
+
+### `RUNTIME_QUIESCE_WAKE` — avoid a lost notification while waiting for Host quiescence
+
+**In review, [#13528](https://github.com/agentydragon/ducktape/pull/13528), existing PR owner;
+2026-11-01 UTC.** Snapshot the Host report predicate and notification channel under the same Runtime
+lock so a final `QUIESCED` report cannot be missed between checking and subscribing. Focused race
+coverage passed; affected lifecycle CI remains pending. Keep this scoped repair with its owner.
+It does not establish the cause of the earlier native cleanup or `Runtime.Close` deadline failures.
 
 ## 2. Service-owned command admission and later notification presentation
 
@@ -438,8 +470,9 @@ flowchart TD
     SESSION_PLATFORM_GUIDANCE[In review: default platform guidance]
     SESSION_PLATFORM_GUIDANCE_ACTIVATION[Held draft: activate managed sampler guidance]
     PLATFORM_GUIDANCE_OWNERSHIP_DESIGN[Later decision: platform-guidance ownership and composition]
-    SESSION_TARGET_DISCOVERY[In review: existing target discovery]
-    SESSION_DELEGATION_TOOLS[Remaining CLI, MCP and result tools]
+    SESSION_OPEN_CONFIGURATION[Candidate: valid optional opening configuration]
+    SESSION_DELEGATION_ACTIVATION[Held draft: expose staging delegation tools]
+    APP_ENVIRONMENT_DISCOVERY[Later: app inventory through backend Discovery]
     SESSION_TOOL_SURFACE_CONVERGENCE_DESIGN[Later decision: compare Agentplane tool surfaces]
     ENVIRONMENT_SHARED_ACCOUNT[Deferred: shared-SA environment identity]
     ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN[Later decision: catalogue ownership and location]
@@ -452,15 +485,16 @@ flowchart TD
     HISTORY_SANDBOX_RECORD --> THREAD_READ_POLICY
     SESSION_PLATFORM_GUIDANCE --> THREAD_CREATE_AUTHORIZATION
     SESSION_PLATFORM_GUIDANCE -->|operational hold: compatible reader deployed| SESSION_PLATFORM_GUIDANCE_ACTIVATION
-    SESSION_PLATFORM_GUIDANCE_ACTIVATION --> THREAD_CREATE_AUTHORIZATION
-    SESSION_TARGET_DISCOVERY --> THREAD_CREATE_AUTHORIZATION
-    SESSION_DELEGATION_TOOLS --> THREAD_CREATE_AUTHORIZATION
+    SESSION_PLATFORM_GUIDANCE_ACTIVATION -->|operational hold: managed guidance deployed| THREAD_CREATE_AUTHORIZATION
+    SESSION_PLATFORM_GUIDANCE_ACTIVATION -->|operational hold| SESSION_DELEGATION_ACTIVATION
+    SESSION_OPEN_CONFIGURATION -->|release hold: schema-valid openings are usable| SESSION_DELEGATION_ACTIVATION
+    THREAD_CREATE_AUTHORIZATION -->|workflow acceptance| SESSION_DELEGATION_ACTIVATION
     ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN --> ENVIRONMENT_MANAGEMENT
     ENVIRONMENT_SHARED_ACCOUNT --> ENVIRONMENT_MANAGEMENT
     SCHEDULED_AGENT_WAKE[Selected P1: durable scheduled wake]
     DAILY_CI_AGENT[Selected P1 capstone: daily CI-maintenance agent]
     SCHEDULED_AGENT_WAKE --> DAILY_CI_AGENT
-    THREAD_CREATE_AUTHORIZATION --> DAILY_CI_AGENT
+    SESSION_DELEGATION_ACTIVATION --> DAILY_CI_AGENT
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
     ORCHESTRATION_V1_BACKEND_GRANTS[Blocked: orchestration_v1 operations on backend grants]
     THREAD_CREATE_AUTHORIZATION --> ORCHESTRATION_V1_BACKEND_GRANTS
@@ -602,47 +636,51 @@ It is independent of the [default guidance implementation](#session_platform_gui
 and its [managed activation hold](#session_platform_guidance_activation--enable-managed-sampler-platform-guidance),
 and does not block either one or current reliability and delegation work.
 
-### `SESSION_TARGET_DISCOVERY` — discover usable existing environments
+### `SESSION_OPEN_CONFIGURATION` — schema-valid optional opening configuration
 
-**In review, [#13392](https://github.com/agentydragon/ducktape/pull/13392),
-2026-11-01 UTC, based on `devel`; CI and visual review pass at `bbe68d91c320`.**
-Expose bounded same-SA UID-filtered list/get descriptors from Sandbox
-inventory and runtime/configuration owners: full target handle, freshness/readiness, useful paths,
-instructions and offered harness/model/effort values. No new `cwd_policy` API; use existing backend
-path validation. Extract shared config from app-owned defaults; no backend app call. Discovery
-and admission remain separate checks, with same-name/UID replacement refused.
+**Concrete P1 gap found by the workflow workers, 2026-11-01 UTC; unassigned.** The opening Action
+schema permits omitting `reasoning_effort`; its executor forwards an empty string and the Codex
+adapter writes an empty `model_reasoning_effort`. Opening succeeds, but the first input fails at
+`thread/start` with `reasoning_effort must not be empty in model_reasoning_effort`.
 
-### `SESSION_DELEGATION_TOOLS` — usable Session CLI/MCP operations
+Align the owning opening/configuration contract with actual harness behavior: preserve a valid
+backend default for supported omission, or reject unsupported configuration at admission with a
+structured, actionable result. Do not mark a schema-valid request usable when its retained opening
+is guaranteed to fail. Use Discovery's advertised values in examples; that workaround does not
+resolve optional-field semantics. Check native and central paths without manufacturing defaults or
+silently replacing explicit caller choices. Bring a genuine default-policy choice for review.
 
-**Selected P1; no worker is assigned to the remaining client/result surface.** Reuse the
-[Session CLI](../docs/agent_cli.md), shared [`session_client`](../session_client/observe_input.go)
-observation and implemented [Dispatcher/History delegation](../docs/delegated_authorization.md).
-Direct open/submit/lookup, queued cancellation, exact-turn interruption and command-correlated
-observation already have CLI clients.
+Exit with focused coverage for omission, an advertised explicit effort and an invalid explicit
+value at the owning boundary. The existing workflow examples can proceed using discovered values;
+resolve this contract before staging exposure.
 
-Complete Action/MCP exposure for the approved workflow and the remaining Session snapshot/retained
-turn projections. Preserve source, lag/gaps,
-partial facts/errors, opaque cursors and lost-reply recovery IDs. Reuse the owning gRPC mappings and
-extend the direct CLI where simple; where an Action adapter is the first surface, record the exact
-RPC/CLI extraction TODO. Update agent-facing instructions and executable workflows rather than
-depending on private handles. Discovery must authenticate and authorize the original caller too:
-enable the shared delegated receiver contract on its list/get RPCs for Action calls. Direct clients
-retain caller authentication. Never query it under Actions' broad SA or forward an unchecked caller
-string. Keep this integration gap until the Action route is exercised.
+### `SESSION_DELEGATION_ACTIVATION` — enable the reviewed staging tool surface
 
-Use the implemented [shared delegation machinery](../docs/delegated_authorization.md), durable
-Action caller UID and workload proxy route from
-[#13391](https://github.com/agentydragon/ducktape/pull/13391). Preserve audience and target checks;
-proxy reachability grants no cross-target authority, and no real workload token enters the agent
-container. Action adapters call their owning backend with the delegated envelope; receiving backends
-do not call Actions to look up caller identity or approval. Action IDs are not authorization
-capabilities.
+**Held draft, [#13514](https://github.com/agentydragon/ducktape/pull/13514).** The backend
+[Session tools](../action_service/session_delegation/README.md),
+[Discovery](../sandboxes/discovery/README.md) and [CLI reads](../docs/agent_cli.md) are implemented.
+Complete workflow acceptance and the optional opening-configuration repair, then enable the reviewed
+surface only after the managed guidance rollout hold is discharged. The current draft advertises
+seven tools; align its explicit allowlist with the approved retained reads now implemented, and
+validate the rendered catalogue. Preserve `basic` auto-approval plus effective-caller checks; no
+new provisioning, authority or wake permission is implied. Activation and rollback remain separate
+from backend-code merges.
+
+### `APP_ENVIRONMENT_DISCOVERY` — use backend Discovery for the integration app
+
+**Later candidate; operator question, 2026-11-01 UTC.** Replace the app's duplicated environment
+inventory/configuration composition with the same backend Discovery owner used by CLI/MCP.
+The current API is same-SA scoped; the app also needs operator inventory and Pod diagnostics.
+Define explicit backend authority and a complete operator inventory contract before migrating the
+app. Keep diagnostics separate if their ownership differs. Do not broaden ordinary agent list/get
+access or make a backend depend on the app. Review the capability/authority mapping before an API
+change; this is independent of the current delegation release.
 
 ### `SESSION_TOOL_SURFACE_CONVERGENCE_DESIGN` — review a common Agentplane tool surface
 
 **Later decision; operator request, 2026-11-01 UTC.** As capabilities are implemented, compare the
 actual workflows and operations in [`orchestration_v1`](../action_service/orchestration_v1/README.md),
-the existing Session CLI, the proposed Session MCP surface (not callable yet), and the
+the existing Session CLI, the implemented opt-in Session MCP surface, and the
 delegation/environment tools. Do not assume either tool set is a subset of the other. Map launch
 and provisioning, model change, listing, history reads,
 observation, control and recovery, along with workload/CLI/external-MCP usability. Compare the
@@ -659,7 +697,10 @@ the current receiver or tool work.
 
 ### `THREAD_CREATE_AUTHORIZATION` — caller-privilege delegation capstone
 
-**Selected P1 capstone; implementation approved.** Close the existing-environment and external-MCP
+**Selected P1 capstone; implementation approved; two workflow workers active, reported
+2026-11-01 UTC.** Focused external OAuth/MCP and parent-in-environment CLI scenarios have passed;
+external acceptance is in review as [#13536](https://github.com/agentydragon/ducktape/pull/13536),
+with parent publication/review still open. Close the existing-environment and external-MCP
 workflows only when delegated caller enforcement, target discovery, platform guidance and result
 reads/tools work together. Show natural discovery, directory preparation, separate opening/first
 input, correlated result, follow-up, lost-reply recovery and scoped cancellation/interruption.
@@ -694,7 +735,7 @@ History association and public projections must agree on the actual account. Sha
 not create/label/own/delete that SA or manufacture grants/PolicyBindings for it. A recreated SA
 is a different account. A controller-only identity switch is incomplete while readers still
 assume account name equals Sandbox name; update every affected consumer in the same contract.
-`SESSION_TARGET_DISCOVERY` currently follows this Sandbox-owned account relation for its bounded
+Discovery currently follows this Sandbox-owned account relation for its bounded
 same-SA lookup. When this node lands, discovery's list backend must expand to the explicit pinned
 account references while preserving the existing paged list contract.
 
@@ -716,7 +757,8 @@ When selected, implement full published template discovery and typed creation/st
 with a dedicated `environments/create` Action, initially human-approved. Creation requires
 `ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN` and `ENVIRONMENT_SHARED_ACCOUNT`; use the durable verified
 Action caller UID rather than adopting a same-name replacement account or guessing legacy identity.
-Existing-environment list/get belongs to `SESSION_TARGET_DISCOVERY` and proceeds now.
+Existing-environment list/get is already available through backend Discovery and does not wait for
+fresh provisioning.
 
 Keep the API/executor over neutral Sandbox domain code and make the concrete backend/process
 placement part of the catalogue decision. No integration-app dependency. Implement owning gRPC
@@ -1756,8 +1798,7 @@ stop, uncertain start and reconnect sequences against today's generic process co
 the bespoke wiring each alternative replaces and show how ordinary Pod supervision continues to
 work. Operator review precedes implementation planning. This decision does not gate current
 reliability or delegation work; no process consolidation, new binary or COSI refactor is dispatched
-by recording it. Coordinate logical ownership with the separate
-[environment management process decision](#env_management_process_consolidation_design--review-eventual-environment-process-consolidation).
+by recording it. Preserve the implemented [management-process ownership](../env/README.md#layout-and-entrypoints).
 
 ### `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN` — authorize explicit resume and message wake
 
@@ -1900,20 +1941,7 @@ flowchart TD
     ENVIRONMENT_RUNTIME_SERVICE_SPLIT[Unscheduled: split Environment and Harness/Session APIs]
     HISTORY_SERVICE_RENAME[Decision, unscheduled: History as a transcript service]
     SERVICE_SETTINGS_RETHINK[Decision, unscheduled: how Agentplane services are configured]
-    ENV_MANAGEMENT_PROCESS_CONSOLIDATION_DESIGN[In progress: combine environment management components]
 ```
-
-### `ENV_MANAGEMENT_PROCESS_CONSOLIDATION_DESIGN` — combine environment management components
-
-**In progress; operator direction, 2026-11-01 UTC.** Run Environment Runtime, Harness Host and the
-Execution API in one process, with native harnesses and exec-server retaining their distinct VM
-slices and the Pod execution companion remaining separate. Keep logical ownership boundaries,
-independently runnable Execution and execution-only environments. The operator will ensure no old
-Sandboxes are alive during cutover and can delete them; preserve authored data before deletion.
-
-Complete the combined process, replace its private in-process transports with direct calls while
-preserving admission, cancellation and fencing semantics, and verify shutdown and restart in both
-Pod and VM system tests. No uncertain native effects are replayed.
 
 ### `SANDBOX_ENVIRONMENT_RENAME_DESIGN` — review a scoped Sandbox-to-Environment rename
 
@@ -1936,7 +1964,7 @@ cutover is approved here; this proposal is independent of current authorization 
 responsibility: environment identity, bootstrap, component discovery, health and environment lifecycle
 actions belong to the Environment API; Harness/Session admission and operations belong to the
 Harness/Session API. Plan for distinct public gRPC services, with names and method mapping selected in
-the implementation design. Keep the Runtime-to-Host private lifecycle protocol distinct. This split
+the implementation design. Keep the Runtime-to-Host in-process lifecycle contract distinct. This split
 does not decide whether the services use separate binaries or Deployments; that grouping remains
 separate from API ownership. Update Gateway routing, authorization, tests, component specs and system
 overviews with the split. Base the boundary on
