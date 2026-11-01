@@ -2020,6 +2020,37 @@ function shortThreadSwitchRows(threadId: string): Record<string, unknown>[] {
   ];
 }
 
+/** Finished long Bash calls amid variable-height messages, matching the browser integration
+ * history's content and virtualizer load. Tests choose geometry and perform every gesture. */
+function collapsibleCommandRows(threadId: string, below: number): Record<string, unknown>[] {
+  let cursor = 0;
+  const message = (prefix: string, index: number) =>
+    item(
+      ++cursor,
+      `${prefix}-${index}`,
+      ItemKind.ASSISTANT_TEXT,
+      `Window message ${String(index).padStart(3, "0")}: ` + "measured variable-height text ".repeat((index % 4) + 1),
+      { threadId }
+    );
+  const rows = [
+    item(++cursor, "retained-prefix", ItemKind.ASSISTANT_TEXT, "Test retained prefix", { threadId }),
+    ...Array.from({ length: 25 }, (_, index) => message("above", index)),
+    ...["a", "b", "c"].map((name) =>
+      item(++cursor, `resize-tool-${name}`, ItemKind.TOOL_CALL, null, {
+        threadId,
+        tool: "Bash",
+        arguments: JSON.stringify({
+          command: Array.from({ length: 24 }, (_, index) => `echo command line ${index}`).join("\n"),
+          description: `Run tool ${name}`,
+        }),
+        output: Array.from({ length: 60 }, (_, index) => `output line ${index}`).join("\n"),
+      })
+    ),
+    ...Array.from({ length: below }, (_, index) => message("below", index)),
+  ];
+  return [{ ...viewState(cursor, null), thread_id: threadId }, ...rows];
+}
+
 function historyProfileRows(threadId: string, rowCount: number): Record<string, unknown>[] {
   if (!Number.isInteger(rowCount) || rowCount < 1 || rowCount > 5000) {
     throw new RangeError(`History profile row count must be between 1 and 5000: ${rowCount}`);
@@ -3808,6 +3839,12 @@ const visualHarness = {
   },
   threadSetupRunning(): void {
     threadEntityRows = (id) => setupRows(id, true);
+  },
+  collapsibleCommandHistory(): void {
+    threadEntityRows = (id) => collapsibleCommandRows(id, 8);
+  },
+  midThreadCommandHistory(): void {
+    threadEntityRows = (id) => collapsibleCommandRows(id, 40);
   },
   shellCalls(): void {
     threadEntityRows = shellCallRows;

@@ -64,6 +64,8 @@ class Scene(StrEnum):
     AUTOSUSPEND_BUSY = "autosuspendBusy"
     AUTOSUSPEND_STARTING = "autosuspendStarting"
     SHELL_CALLS = "shellCalls"
+    COLLAPSIBLE_COMMAND_HISTORY = "collapsibleCommandHistory"
+    MID_THREAD_COMMAND_HISTORY = "midThreadCommandHistory"
     MARKDOWN_CODE_FENCE = "markdownCodeFence"
     STREAMING_INTERLEAVED = "streamingInterleaved"
     UNFINISHED_REASONING = "unfinishedReasoning"

@@ -2,7 +2,7 @@
 
 load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
-def agentplane_visual_test(name, src, title, shard_count = 1, tags = []):
+def agentplane_visual_test(name, src, title, shard_count = 1, tags = [], test_deps = []):
     """Run one test file against the app's callable fixture harness."""
     py_visual_test(
         name = name,
@@ -17,7 +17,7 @@ def agentplane_visual_test(name, src, title, shard_count = 1, tags = []):
         harness = ":visual_bundle_js",
         shard_count = shard_count,
         tags = tags,
-        test_deps = [
+        test_deps = test_deps + [
             "//agentplane/app/frontend/testing:app",
             "//agentplane/app/frontend/testing:visual_fixtures",
             "//agentplane/app/frontend/testing:visual_assertions",
