@@ -97,6 +97,8 @@ def _deployment(chart: Chart) -> None:
                 metadata=k8s.ObjectMeta(labels=_PODS.selector),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
+                    # The replicated HDD class permits remote access only within hil-ovh.
+                    node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
                     security_context=k8s.PodSecurityContext(
                         fs_group=65532, seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")
                     ),
