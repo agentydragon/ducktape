@@ -6242,13 +6242,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Unknown host code may invoke any callback it received with another
         // currently available callback, so each formal gets the conservative
         // callback set plus a non-callable/unknown possibility.
-        let mut possible_argument = callbacks.clone();
-        possible_argument.insert(AbstractValue::Value(Value::Top));
+        // Allocate only when an invoked function consumes a formal. The input
+        // pool is immutable; constructing this set reads no live heap state.
+        let possible_argument = std::cell::OnceCell::new();
         let args_for = |key: u32, index: &ExecutionIndex| {
             let count = index
                 .callables
                 .get(&key)
                 .map_or(0, |callable| callable.params.len());
+            if count == 0 {
+                return Vec::new();
+            }
+            let possible_argument = possible_argument.get_or_init(|| {
+                let mut values = callbacks.clone();
+                values.insert(AbstractValue::Value(Value::Top));
+                values
+            });
             vec![possible_argument.clone(); count]
         };
         let reentrant_pool = callbacks.iter().any(|callback| {

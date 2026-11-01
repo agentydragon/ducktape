@@ -112,3 +112,53 @@ installed accessor capabilities are traversed in a subsequent pass. No global
 cache, revision equivalence or previously-unsettled-object pruning is used.
 Synthetic controls retain both distinct closure contexts and a new object
 reached through a previously visited closure after a later binding write.
+
+## Canonical checkpoint before lazy callback arguments
+
+Optimized replay compared getter source
+`1b682f953e71d146563897814c7459c695b1ebc0` with the per-pass binding expansion
+deduplication at `43db677fdd8cf5777dff53b0e2b424ff4e478bf6`. Tana's one graph
+and Claude's 75 reported graphs have identical edge multisets and positional
+serialized edges. Both have zero regressed or improved statements; graph
+counts, completeness, purity and gate/atomic/rejection outcomes are unchanged.
+
+| Single run             | Before              | Deduplication       |
+| ---------------------- | ------------------- | ------------------- |
+| Tana wall / peak RSS   | 20:30.15 / 4.71 GiB | 20:02.92 / 4.71 GiB |
+| Claude wall / peak RSS | 2:24.35 / 8.66 GiB  | 2:27.89 / 8.92 GiB  |
+
+Tana's analysis end marker remains near the end of each run (1220.958 and
+1193.871 seconds). These single observations establish the remaining roughly
+twenty-minute analysis cost, not a robust speedup. Short sampled profiles from
+different stages cannot establish whole-run allocation attribution either.
+
+## Lazy per-pool formal arguments
+
+`invoke_callback_pool_once` previously cloned every pool and inserted Top before
+checking whether any actual function invocation would consume a formal. The
+argument set is now local and lazy: the first Function/Closure with a nonzero
+formal count constructs exactly the same immutable pool plus Top. Zero-formal,
+class/deferred-only and immediately bounded-fallback paths do not construct it.
+The constructor reads no live heap or effect state; later invocations still
+follow the same references and observe live heap changes normally.
+
+The per-member guard positions, reason precedence, counters, full fallback
+pool, class/deferred handlers, convergence and post-invocation effects/escape
+transfers are unchanged. There is no cross-pass cache or graph pruning. This
+is an allocation-only candidate with behavior-preservation controls, not a
+baseline semantic regression or a measured performance improvement.
+
+[Focused validation](https://app.buildbuddy.io/invocation/0b04b147-5c38-4a55-9754-032c2d01e8c6)
+passes the named analysis/CLI lint aspects, analysis unit suite and nine real
+CLI suites: precision reporting, callback-pool order, bounded heap fallback,
+class reachability, opaque receivers/publication, own descriptors, intrinsic
+array iteration and local push order. A new small-pool control retains unknown
+formal invocation evidence at `candidate()`'s exact lexical owner and source
+location for both a Function and a captured Closure, with preserved Node
+output. The separately retained pooled-reader edge is a behavior control;
+equality of forwarded arguments follows structurally from the unchanged
+`callbacks + Top` construction. The
+[strengthened precision check](https://app.buildbuddy.io/invocation/cd281603-7b74-452d-b636-8f7098d6000b)
+and named analysis/CLI aspects pass. Existing controls cover zero
+formals, class/deferred paths, recursion/pool/count/depth limits, later
+container/Map/Set/accessor effects and repeated arbitrary-order convergence.
