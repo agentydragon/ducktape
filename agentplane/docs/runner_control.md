@@ -112,7 +112,13 @@ it, under its own token audience, and a historyless client needs only it.
    stalls neither another Session's live entries nor any command.
 2. **Announcement.** The first frame, `announce`, is the Session's `Attached` snapshot: its Session
    ID, the UUID the client minted and passed in `OpenSession`, with spec, harness and setup state
-   and the journal's last cursor. Every call announces again; the first the ingress accepts adds
+   and the journal's last cursor. `Attached.execution_principal`, when present, is the immutable
+   ServiceAccount namespace/name/UID admitted by the Dispatcher for this Session; it is retained with
+   the Runner record and announced independently of the journal writer, Sandbox, or creator. Native
+   announcements must match the authenticated Runner ServiceAccount exactly. Central sampler
+   announcements retain the Dispatcher-provided principal only when it matches the fixed executor
+   account. Older or legacy records without that association remain unassociated; a later current
+   ServiceAccount identity is never inferred for them. Every call announces again; the first the ingress accepts adds
    the Session to its index of Sessions. The ingress answers with an `Acknowledgement` of what it
    has already committed for the Session, cursor zero for a new one.
    **Deviation:** `Attached.incarnation_uid` and `Sealed.incarnation_uid` name the incarnation that

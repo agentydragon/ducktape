@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
@@ -337,6 +338,12 @@ func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionR
 	if request == nil || request.GetSessionId() == "" || request.GetSpec() == nil || ownerUID == "" {
 		return nil, protocol.ErrInvalid
 	}
+	if principal := request.GetExecutionPrincipal(); principal != nil &&
+		(principal.GetAccount().GetNamespace() == "" || principal.GetAccount().GetName() == "" || principal.GetUid() == "" ||
+			principal.GetAccount().GetNamespace() != request.GetExecutor().GetOwner().GetNamespace() ||
+			principal.GetAccount().GetName() != request.GetExecutor().GetOwner().GetName()) {
+		return nil, protocol.ErrInvalid
+	}
 	if _, err := newNativeContext(api); err != nil {
 		return nil, err
 	}
@@ -360,7 +367,22 @@ func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionR
 			if err := (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(existing.Configuration, previous); err != nil {
 				return err
 			}
-			if !proto.Equal(previous, request) {
+			incoming := request
+			if previous.GetExecutionPrincipal() == nil && request.GetExecutionPrincipal() != nil {
+				// A retry cannot assign an owner to a legacy unassociated Session.
+				return ErrConflict
+			}
+			if previous.GetExecutionPrincipal() != nil && request.GetExecutionPrincipal() != nil &&
+				!proto.Equal(previous.GetExecutionPrincipal(), request.GetExecutionPrincipal()) {
+				return ErrConflict
+			}
+			if previous.GetExecutionPrincipal() != nil && request.GetExecutionPrincipal() == nil {
+				// Older retrying Dispatchers may omit the additive field. Compare as if it were present,
+				// while leaving the already retained configuration untouched.
+				incoming = proto.Clone(request).(*samplerpb.OpenSessionRequest)
+				incoming.ExecutionPrincipal = proto.Clone(previous.GetExecutionPrincipal()).(*delegationpb.ServiceAccountIdentity)
+			}
+			if !proto.Equal(previous, incoming) {
 				return ErrConflict
 			}
 			var existingAPI protocol.APIStyle
@@ -890,6 +912,7 @@ func Describe(session *Session) (*samplerpb.GetSessionResponse, error) {
 	attached := &runnerpb.Attached{
 		SessionId: session.ID, Spec: spec, LastCursor: session.Cursor,
 		HarnessState: state, SetupState: session.SetupState, LaunchOutcome: outcome,
+		ExecutionPrincipal: cloneExecutionPrincipal(request.GetExecutionPrincipal()),
 	}
 	if session.ActiveTurn != nil {
 		attached.ActiveTurnId = *session.ActiveTurn
@@ -908,6 +931,13 @@ func Describe(session *Session) (*samplerpb.GetSessionResponse, error) {
 		ExpectedIncarnationUid: request.GetExpectedIncarnationUid(), Blocked: session.Blocked,
 		BlockedReason: blockedReason,
 	}, nil
+}
+
+func cloneExecutionPrincipal(identity *delegationpb.ServiceAccountIdentity) *delegationpb.ServiceAccountIdentity {
+	if identity == nil {
+		return nil
+	}
+	return proto.Clone(identity).(*delegationpb.ServiceAccountIdentity)
 }
 
 func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerUID string, validate func(*Session) error) (*eventlogpb.EventEntry, error) {

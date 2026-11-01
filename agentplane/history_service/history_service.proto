@@ -337,7 +337,9 @@ message ReadNativeFramesRequest {
 
 message WatchSessionSummariesRequest {
   // Present: the stream also sends `session_opened` for every Session recorded at a position after
-  // this one, those already recorded first. 0 names every Session. Absent: it names none.
+  // this one, those already recorded first. For a normal caller, positions count only Sessions
+  // visible to its execution principal. Explicit backend-wide readers use the service-wide cursor.
+  // 0 names every visible Session. Absent: it names none.
   optional uint64 opened_after = 1;
 }
 
@@ -357,8 +359,9 @@ message WatchSessionSummariesResponse {
 // A Session the History Service recorded, on the runner's first push of it.
 message SessionOpened {
   string session_id = 1;
-  // Ascending in recording order, and a position becomes visible only after every lower one, so a
-  // caller that reconnects with the last position it handled misses no Session.
+  // Ascending in recording order within the caller's read scope, and a position becomes visible only
+  // after every lower one in that scope, so a caller reconnecting with the last handled position misses
+  // no visible Session.
   uint64 position = 2;
 }
 

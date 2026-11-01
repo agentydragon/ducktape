@@ -88,14 +88,15 @@ func newServerTimingOut(t *testing.T, lease, requestTimeout time.Duration) testS
 	}
 	history := storage.NewStore(db, true)
 	service := NewService(Options{
-		Reader:  &reads.Reader{DB: db, History: history, NativeFrameReadBatchSize: 200},
-		Wakeups: hub, RequestTimeout: requestTimeout, WatchLease: lease,
+		Reader:         &reads.Reader{DB: db, History: history, NativeFrameReadBatchSize: 200},
+		ReaderAccounts: []auth.Account{{Namespace: testNamespace, Name: "test-reader"}},
+		Wakeups:        hub, RequestTimeout: requestTimeout, WatchLease: lease,
 	})
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := Methods(resolver, []auth.Account{{Namespace: testNamespace, Name: "test-reader"}})
+	methods := Methods(resolver)
 	server := grpc.NewServer(methods.ServerOptions(requestTimeout)...)
 	historypb.RegisterHistoryServiceServer(server, service)
 	go func() { _ = server.Serve(listener) }()
@@ -123,7 +124,7 @@ func bearing(t *testing.T, token string) context.Context {
 func (s testServer) record(t *testing.T) (uuid.UUID, uint64) {
 	t.Helper()
 	sessionID := uuid.New()
-	if _, err := s.history.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
+	if _, err := s.history.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	var position uint64
@@ -141,22 +142,22 @@ func testEntry(cursor uint64) *eventlogpb.EventEntry {
 	}
 }
 
-func TestEveryRPCAdmitsOnlyTheConfiguredCallers(t *testing.T) {
+func TestEveryRPCRequiresAReviewedServiceAccount(t *testing.T) {
 	resolver, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := Methods(resolver, []auth.Account{{Namespace: testNamespace, Name: "test-reader"}})
+	methods := Methods(resolver)
 	register := func(server *grpc.Server) {
 		historypb.RegisterHistoryServiceServer(server, historypb.UnimplementedHistoryServiceServer{})
 	}
 	connection := grpcmethods.Serve(t, methods, register)
 	for _, method := range grpcmethods.Of(historypb.HistoryService_ServiceDesc) {
 		t.Run(method.Name, func(t *testing.T) {
-			// The stand-in servicer answers Unimplemented to a call the policy admitted.
+			// The stand-in servicer answers Unimplemented to any reviewed account in the served namespace.
 			for token, want := range map[string]codes.Code{
 				"": codes.Unauthenticated, "test-token-unknown": codes.Unauthenticated,
-				strangerToken: codes.PermissionDenied, readerToken: codes.Unimplemented,
+				strangerToken: codes.Unimplemented, readerToken: codes.Unimplemented,
 			} {
 				if got := status.Code(method.Call(bearing(t, token), connection)); got != want {
 					t.Errorf("with token %q: %v, want %v", token, got, want)

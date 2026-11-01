@@ -6,6 +6,7 @@ syntax = "proto3";
 package agentplane.runner;
 
 import "agentplane/proto/event_log.proto";
+import "agentplane/proto/delegation.proto";
 import "agentplane/proto/runner.proto";
 import "agentplane/proto/runner_state.proto";
 
@@ -57,6 +58,8 @@ message OpenSessionRequest {
   string session_id = 1;
   agentplane.proto.SessionSpec spec = 2;
   optional string setup_script = 3;  // selected only at creation
+  // The Dispatcher's verified immutable execution principal. A Runner retains it with the Session.
+  agentplane.proto.ServiceAccountIdentity execution_principal = 4;
 }
 
 message OpenSessionResponse {

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"syscall"
 
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/google/uuid"
 )
@@ -141,22 +142,24 @@ type Record struct {
 	Instructions             string
 	SetupScript              string
 	// SetupScriptSHA256 is retained only for records written by older Runner versions.
-	SetupScriptSHA256 *string
-	EventSourceID     string
-	NativeSessionID   *string
+	SetupScriptSHA256  *string
+	EventSourceID      string
+	NativeSessionID    *string
+	ExecutionPrincipal *delegationpb.ServiceAccountIdentity
 }
 
 type sessionRecordJSON struct {
-	Harness                  string  `json:"harness"`
-	CWD                      string  `json:"cwd"`
-	Model                    string  `json:"model"`
-	TotalContextBudgetTokens *int    `json:"total_context_budget_tokens"`
-	ReasoningEffort          string  `json:"reasoning_effort"`
-	Instructions             string  `json:"instructions"`
-	SetupScript              string  `json:"setup_script,omitempty"`
-	SetupScriptSHA256        *string `json:"setup_script_sha256"`
-	EventSourceID            string  `json:"event_source_id"`
-	NativeSessionID          *string `json:"native_session_id"`
+	Harness                  string                               `json:"harness"`
+	CWD                      string                               `json:"cwd"`
+	Model                    string                               `json:"model"`
+	TotalContextBudgetTokens *int                                 `json:"total_context_budget_tokens"`
+	ReasoningEffort          string                               `json:"reasoning_effort"`
+	Instructions             string                               `json:"instructions"`
+	SetupScript              string                               `json:"setup_script,omitempty"`
+	SetupScriptSHA256        *string                              `json:"setup_script_sha256"`
+	EventSourceID            string                               `json:"event_source_id"`
+	NativeSessionID          *string                              `json:"native_session_id"`
+	ExecutionPrincipal       *delegationpb.ServiceAccountIdentity `json:"execution_principal,omitempty"`
 }
 
 func (r Record) MarshalJSON() ([]byte, error) {
@@ -175,6 +178,7 @@ func (r Record) MarshalJSON() ([]byte, error) {
 		ReasoningEffort: r.ReasoningEffort, Instructions: r.Instructions, SetupScript: r.SetupScript,
 		SetupScriptSHA256: setupScriptSHA256,
 		EventSourceID:     r.EventSourceID, NativeSessionID: r.NativeSessionID,
+		ExecutionPrincipal: r.ExecutionPrincipal,
 	})
 }
 
@@ -198,6 +202,11 @@ func (r *Record) UnmarshalJSON(data []byte) error {
 		TotalContextBudgetTokens: wire.TotalContextBudgetTokens, ReasoningEffort: wire.ReasoningEffort,
 		Instructions: wire.Instructions, SetupScript: wire.SetupScript, SetupScriptSHA256: legacySetupScriptSHA256,
 		EventSourceID: wire.EventSourceID, NativeSessionID: wire.NativeSessionID,
+		ExecutionPrincipal: wire.ExecutionPrincipal,
+	}
+	if principal := r.ExecutionPrincipal; principal != nil &&
+		(principal.GetAccount().GetNamespace() == "" || principal.GetAccount().GetName() == "" || principal.GetUid() == "") {
+		return errors.New("invalid persisted execution principal")
 	}
 	return nil
 }

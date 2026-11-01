@@ -24,6 +24,7 @@ import (
 type Service struct {
 	historypb.UnimplementedHistoryServiceServer
 	reader         *reads.Reader
+	readerAccounts map[auth.Account]struct{}
 	wakeups        *wakeups.Hub
 	requestTimeout time.Duration
 	lease          time.Duration
@@ -34,6 +35,8 @@ type Service struct {
 // Options are what a Service reads.
 type Options struct {
 	Reader *reads.Reader
+	// ReaderAccounts retain the existing Pod-bound backend-wide read path.
+	ReaderAccounts []auth.Account
 	// Wakeups listens to raw history, summary changes and Session openings.
 	Wakeups *wakeups.Hub
 	// RequestTimeout bounds a call's backend work and each write to a watch or follow stream.
@@ -43,9 +46,10 @@ type Options struct {
 	WatchLease time.Duration
 }
 
-// Methods admits callers to every HistoryService RPC: each proves, by a bearer resolver reviews, one of callers.
-func Methods(resolver *auth.Resolver, callers []auth.Account) auth.Methods {
-	rule := auth.Accounts(resolver, callers)
+// Methods admits a reviewed ServiceAccount to the read API. The handler scopes ordinary callers to
+// their retained execution principal and keeps the configured Pod-bound backend readers explicit.
+func Methods(resolver *auth.Resolver) auth.Methods {
+	rule := auth.ReviewedServiceAccount(resolver)
 	return auth.Methods{
 		historypb.HistoryService_ReadSessionEvents_FullMethodName:        rule,
 		historypb.HistoryService_FollowSession_FullMethodName:            rule,
@@ -62,8 +66,12 @@ func Methods(resolver *auth.Resolver, callers []auth.Account) auth.Methods {
 
 func NewService(options Options) *Service {
 	draining, drain := context.WithCancel(context.Background())
+	readerAccounts := make(map[auth.Account]struct{}, len(options.ReaderAccounts))
+	for _, account := range options.ReaderAccounts {
+		readerAccounts[account] = struct{}{}
+	}
 	return &Service{
-		reader: options.Reader, wakeups: options.Wakeups,
+		reader: options.Reader, readerAccounts: readerAccounts, wakeups: options.Wakeups,
 		requestTimeout: options.RequestTimeout, lease: options.WatchLease, draining: draining, drain: drain,
 	}
 }
@@ -72,10 +80,32 @@ func NewService(options Options) *Service {
 func (s *Service) Drain() { s.drain() }
 
 // serve runs read under the request timeout.
-func serve[Request, Response any](ctx context.Context, s *Service, request *Request, read func(context.Context, *Request) (*Response, error)) (*Response, error) {
+func (s *Service) scopedReader(ctx context.Context) (*reads.Reader, error) {
+	caller, err := auth.AdmittedReviewedCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if caller.Pod != nil && caller.Pod.IsPodBound() {
+		if _, privileged := s.readerAccounts[caller.ServiceAccount.Account]; privileged {
+			return s.reader.WithReadScope(storage.AllSessions()), nil
+		}
+	}
+	principal := storage.ExecutionPrincipal{
+		Namespace: caller.ServiceAccount.Account.Namespace,
+		Name:      caller.ServiceAccount.Account.Name,
+		UID:       caller.ServiceAccount.ServiceAccountUID,
+	}
+	return s.reader.WithReadScope(storage.OwnedBy(principal)), nil
+}
+
+func serve[Request, Response any](ctx context.Context, s *Service, request *Request, read func(context.Context, *reads.Reader, *Request) (*Response, error)) (*Response, error) {
+	reader, err := s.scopedReader(ctx)
+	if err != nil {
+		return nil, failure(ctx, err)
+	}
 	ctx, cancel := context.WithTimeout(ctx, s.requestTimeout)
 	defer cancel()
-	response, err := read(ctx, request)
+	response, err := read(ctx, reader, request)
 	if err != nil {
 		return nil, failure(ctx, err)
 	}
@@ -83,35 +113,51 @@ func serve[Request, Response any](ctx context.Context, s *Service, request *Requ
 }
 
 func (s *Service) ReadSessionEvents(ctx context.Context, request *historypb.ReadSessionEventsRequest) (*historypb.ReadSessionEventsResponse, error) {
-	return serve(ctx, s, request, s.reader.ReadSessionEvents)
+	return serve(ctx, s, request, func(ctx context.Context, reader *reads.Reader, request *historypb.ReadSessionEventsRequest) (*historypb.ReadSessionEventsResponse, error) {
+		return reader.ReadSessionEvents(ctx, request)
+	})
 }
 
 func (s *Service) ReadSessionObservations(ctx context.Context, request *historypb.ReadSessionObservationsRequest) (*historypb.ReadSessionObservationsResponse, error) {
-	return serve(ctx, s, request, s.reader.ReadSessionObservations)
+	return serve(ctx, s, request, func(ctx context.Context, reader *reads.Reader, request *historypb.ReadSessionObservationsRequest) (*historypb.ReadSessionObservationsResponse, error) {
+		return reader.ReadSessionObservations(ctx, request)
+	})
 }
 
 func (s *Service) GetSessionSummary(ctx context.Context, request *historypb.GetSessionSummaryRequest) (*historypb.SessionSummary, error) {
-	return serve(ctx, s, request, s.reader.GetSessionSummary)
+	return serve(ctx, s, request, func(ctx context.Context, reader *reads.Reader, request *historypb.GetSessionSummaryRequest) (*historypb.SessionSummary, error) {
+		return reader.GetSessionSummary(ctx, request)
+	})
 }
 
 func (s *Service) BatchGetSessionSummaries(ctx context.Context, request *historypb.BatchGetSessionSummariesRequest) (*historypb.BatchGetSessionSummariesResponse, error) {
-	return serve(ctx, s, request, s.reader.BatchGetSessionSummaries)
+	return serve(ctx, s, request, func(ctx context.Context, reader *reads.Reader, request *historypb.BatchGetSessionSummariesRequest) (*historypb.BatchGetSessionSummariesResponse, error) {
+		return reader.BatchGetSessionSummaries(ctx, request)
+	})
 }
 
 func (s *Service) FindSessions(ctx context.Context, request *historypb.FindSessionsRequest) (*historypb.FindSessionsResponse, error) {
-	return serve(ctx, s, request, s.reader.FindSessions)
+	return serve(ctx, s, request, func(ctx context.Context, reader *reads.Reader, request *historypb.FindSessionsRequest) (*historypb.FindSessionsResponse, error) {
+		return reader.FindSessions(ctx, request)
+	})
 }
 
 func (s *Service) ReadThreadEntities(ctx context.Context, request *historypb.ReadThreadEntitiesRequest) (*historypb.ReadThreadEntitiesResponse, error) {
-	return serve(ctx, s, request, s.reader.ReadThreadEntities)
+	return serve(ctx, s, request, func(ctx context.Context, reader *reads.Reader, request *historypb.ReadThreadEntitiesRequest) (*historypb.ReadThreadEntitiesResponse, error) {
+		return reader.ReadThreadEntities(ctx, request)
+	})
 }
 
 func (s *Service) ReadEntityEvidence(ctx context.Context, request *historypb.ReadEntityEvidenceRequest) (*historypb.ReadEntityEvidenceResponse, error) {
-	return serve(ctx, s, request, s.reader.ReadEntityEvidence)
+	return serve(ctx, s, request, func(ctx context.Context, reader *reads.Reader, request *historypb.ReadEntityEvidenceRequest) (*historypb.ReadEntityEvidenceResponse, error) {
+		return reader.ReadEntityEvidence(ctx, request)
+	})
 }
 
 func (s *Service) ReadNativeFrames(ctx context.Context, request *historypb.ReadNativeFramesRequest) (*historypb.ReadNativeFramesResponse, error) {
-	return serve(ctx, s, request, s.reader.ReadNativeFrames)
+	return serve(ctx, s, request, func(ctx context.Context, reader *reads.Reader, request *historypb.ReadNativeFramesRequest) (*historypb.ReadNativeFramesResponse, error) {
+		return reader.ReadNativeFrames(ctx, request)
+	})
 }
 
 // failure answers a failed call. The client gets a fixed message per kind of failure: no SQL, bearer or

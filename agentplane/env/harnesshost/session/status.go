@@ -1,6 +1,7 @@
 package session
 
 import (
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"google.golang.org/protobuf/proto"
@@ -12,23 +13,24 @@ const AutosuspendSetup = "Setup"
 // journal checkpoint, lifecycle phase and native process observation. It is not a
 // transaction across those independently owned authorities.
 type Observation struct {
-	id               string
-	spec             *runnerpb.SessionSpec
-	cursor           uint64
-	activeTurn       string
-	nativeActiveTurn bool
-	setup            runnerpb.SetupState
-	launch           runnerpb.LaunchOutcome
-	incarnation      *string
-	nativeSession    *string
-	failure          *uint64
-	processID        string
-	processState     runnerpb.ProcessState
-	pid              *int64
-	shared           bool
-	ready            bool
-	preparing        bool
-	pending          bool
+	id                 string
+	spec               *runnerpb.SessionSpec
+	cursor             uint64
+	activeTurn         string
+	nativeActiveTurn   bool
+	setup              runnerpb.SetupState
+	launch             runnerpb.LaunchOutcome
+	incarnation        *string
+	nativeSession      *string
+	failure            *uint64
+	processID          string
+	processState       runnerpb.ProcessState
+	executionPrincipal *delegationpb.ServiceAccountIdentity
+	pid                *int64
+	shared             bool
+	ready              bool
+	preparing          bool
+	pending            bool
 }
 
 func copied[T any](value *T) *T {
@@ -52,6 +54,10 @@ func (s *Session) Observe() Observation {
 		processID: s.processID, processState: s.processState, shared: s.codexAppServer != nil,
 		ready:     !s.halting.Finished() && (current.Phase == Ready || current.Phase == Stopping) && current.ProcessID == s.processID && live,
 		preparing: current.Phase == Preparing, pending: len(s.pending) > 0,
+		executionPrincipal: nil,
+	}
+	if s.record.ExecutionPrincipal != nil {
+		result.executionPrincipal = proto.Clone(s.record.ExecutionPrincipal).(*delegationpb.ServiceAccountIdentity)
 	}
 	if live {
 		pid := int64(s.process.PID())
@@ -68,7 +74,7 @@ func (o Observation) Attached() *runnerpb.Attached {
 	if o.pid != nil {
 		harness = runnerpb.HarnessState_HARNESS_STATE_RUNNING
 	}
-	return &runnerpb.Attached{SessionId: o.id, Spec: proto.Clone(o.spec).(*runnerpb.SessionSpec), LastCursor: o.cursor, HarnessState: harness, ActiveTurnId: o.activeTurn, SetupState: o.setup, LaunchOutcome: o.launch, IncarnationUid: copied(o.incarnation)}
+	return &runnerpb.Attached{SessionId: o.id, Spec: proto.Clone(o.spec).(*runnerpb.SessionSpec), LastCursor: o.cursor, HarnessState: harness, ActiveTurnId: o.activeTurn, SetupState: o.setup, LaunchOutcome: o.launch, IncarnationUid: copied(o.incarnation), ExecutionPrincipal: o.executionPrincipal}
 }
 
 func (o Observation) AutosuspendBlockers() []*sandboxpb.AutosuspendBlocker {

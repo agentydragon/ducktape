@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/history_service/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -17,6 +18,10 @@ type followStream = grpc.ServerStreamingServer[historypb.FollowSessionResponse]
 
 func (s *Service) FollowSession(request *historypb.FollowSessionRequest, stream followStream) error {
 	ctx := stream.Context()
+	reader, err := s.scopedReader(ctx)
+	if err != nil {
+		return failure(ctx, err)
+	}
 	sessionID, err := uuid.Parse(request.GetSessionId())
 	if err != nil {
 		return status.Error(codes.InvalidArgument, "invalid session ID")
@@ -31,7 +36,7 @@ func (s *Service) FollowSession(request *historypb.FollowSessionRequest, stream 
 	}
 	defer unsubscribe()
 	readCtx, cancel := context.WithTimeout(leased, s.requestTimeout)
-	after, err := s.reader.History.ResolveFollowStart(readCtx, sessionID, request)
+	after, err := reader.History.ResolveFollowStart(readCtx, sessionID, request)
 	if err != nil {
 		err = failure(readCtx, err)
 	}
@@ -39,7 +44,7 @@ func (s *Service) FollowSession(request *historypb.FollowSessionRequest, stream 
 	if err != nil {
 		return err
 	}
-	call := &followCall{service: s, stream: stream, sessionID: sessionID, request: request, through: after}
+	call := &followCall{service: s, reader: reader, stream: stream, sessionID: sessionID, request: request, through: after}
 	initial := true
 	for {
 		if leased.Err() != nil {
@@ -69,6 +74,7 @@ func (s *Service) FollowSession(request *historypb.FollowSessionRequest, stream 
 
 type followCall struct {
 	service   *Service
+	reader    *reads.Reader
 	stream    followStream
 	sessionID uuid.UUID
 	request   *historypb.FollowSessionRequest
@@ -109,7 +115,7 @@ func (c *followCall) catchUp(ctx context.Context, initial bool) error {
 	sentFrame := false
 	for {
 		readCtx, cancel := context.WithTimeout(ctx, c.service.requestTimeout)
-		page, err := c.service.reader.History.ReadFollowEntries(readCtx, c.sessionID, c.through, c.request.GetKinds(), wantsSettlements(c.request.GetKinds()))
+		page, err := c.reader.History.ReadFollowEntries(readCtx, c.sessionID, c.through, c.request.GetKinds(), wantsSettlements(c.request.GetKinds()))
 		if err != nil {
 			err = failure(readCtx, err)
 		}
@@ -136,7 +142,7 @@ func (c *followCall) catchUp(ctx context.Context, initial bool) error {
 		}
 	}
 	readCtx, cancel := context.WithTimeout(ctx, c.service.requestTimeout)
-	removed, err := c.service.reader.History.ReadFollowRemoved(readCtx, c.sessionID, 0, c.through)
+	removed, err := c.reader.History.ReadFollowRemoved(readCtx, c.sessionID, 0, c.through)
 	if err != nil {
 		err = failure(readCtx, err)
 	}

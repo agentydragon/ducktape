@@ -48,7 +48,7 @@ func (f fixture) session(t *testing.T, history *storage.Store, sandbox string, e
 	t.Helper()
 	sessionID := uuid.New()
 	writer := storage.Writer{Namespace: "test-sandbox-namespace", Name: sandbox, UID: "test-runner-account-uid"}
-	if _, err := history.BindWriter(t.Context(), sessionID, writer, ""); err != nil {
+	if _, err := history.BindWriter(t.Context(), sessionID, writer, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.db.Exec("INSERT INTO thread_history_summary (thread_id) VALUES ($1)", sessionID); err != nil {
