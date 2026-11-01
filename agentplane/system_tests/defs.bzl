@@ -1,6 +1,6 @@
 """Executable suites: explicit scenario modules sharing one configured k3s stack."""
 
-load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_SERVICE_LAYOUTS", "K3S_TAGS", "K3S_VM_DATA", "K3S_VM_ENV")
+load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_SPIKE_PROPERTIES", "K3S_SERVICE_LAYOUTS", "K3S_TAGS", "K3S_VM_DATA", "K3S_VM_ENV")
 load("//devinfra/python:defs.bzl", "py_test")
 
 _HARNESSES_LAYOUT = "//agentplane/system_tests/k3s:harnesses/environment_tools_layout"
@@ -52,7 +52,9 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
     suite_tags = K3S_TAGS + tags
     if persistence_spike:
         env["K3S_PERSISTENCE_SPIKE"] = "1"
-        properties["test.runner-recycling-key"] = "k3s-persistence-pod-spike-v5"
+        properties |= K3S_PERSISTENCE_SPIKE_PROPERTIES | {
+            "test.runner-recycling-key": "k3s-persistence-pod-spike-v6",
+        }
     if config.vm:
         # Six 1.5 GiB guests boot alongside k3s services; request the 20 GB worker estimate.
         properties["EstimatedComputeUnits"] = "8"

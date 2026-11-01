@@ -15,6 +15,11 @@ node, and streams only the blobs containerd lacks ([measurements](debug/stack_ti
 VM system tests use a separate `test.runner-recycling-key` so their disk-backed layers and pod tests'
 tmpfs layers keep separate image stores.
 
+The manual `//agentplane/system_tests/suites:test_pod_persistence_spike` also retains live k3s and
+PKI controllers, with fresh application state per action. Its fingerprint invalidates changed
+baseline inputs; its experimental remote snapshot policy saves the refreshed baseline for later
+actions. Ordinary targets still stop k3s. See the [spike evidence](../../debug/k3s_persistence_spike.md).
+
 Setup, each image import and teardown use the same OpenTelemetry tracer as the scenarios,
 writing completed spans immediately to `test-spans.jsonl` in undeclared outputs. The test log prints
 a summary derived from these spans. See [trace artifacts](../README.md) for stage coverage.

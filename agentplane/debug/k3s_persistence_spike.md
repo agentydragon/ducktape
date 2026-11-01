@@ -1,5 +1,59 @@
 # Hosted RBE k3s persistence spike (2026-11-01)
 
+## Continued spike: automatic baseline refresh
+
+The manual full-Pod target now uses a v6 snapshot family. It retains the runtime input fingerprint
+and clean/dirty ownership marker, and adds `allow-remote-snapshots=true`,
+`remote-snapshot-save-policy=always`, and `snapshot-read-policy=newest` only to manual spike actions.
+This lets a changed baseline rebuild cold and replace the prepared snapshot without a manual key
+bump. Concurrent revisions can replace each other's latest snapshot and cause cold rebuilds; the
+fingerprint prevents reuse of incompatible state. No ordinary target or workflow opts in.
+
+BuildBuddy's public implementation rejects updates to a restored local-only test snapshot before
+applying its save policy, so `always` alone is insufficient. Remote snapshots are required for this
+refresh strategy. `newest` avoids preferring an older local manifest. This is based on
+[save gates](https://github.com/buildbuddy-io/buildbuddy/blob/acaf608b95780c2b0681b0205182c38bf5b6237d/enterprise/server/remote_execution/containers/firecracker/firecracker.go#L1439-L1527)
+and [manifest selection](https://github.com/buildbuddy-io/buildbuddy/blob/acaf608b95780c2b0681b0205182c38bf5b6237d/enterprise/server/remote_execution/snaploader/snaploader.go#L503-L566);
+the hosted deployment version is unconfirmed. The probes below verify the observed hosted behavior.
+
+The fingerprint now includes bootstrap, certificate-installation and iptables helper code as well
+as k3s, stack code, CRDs and PKI manifests/images. Retained API probes have HTTP and subprocess
+deadlines. A post-start failure stops the server until its ownership marker has been written; warm
+full-suite setup also requires the retained PKI Deployment identities to match the saved ones.
+
+The real-k3s lifecycle test passed in
+[1d31b8ce](https://app.buildbuddy.io/invocation/1d31b8ce-0af9-424d-8708-de21087320de):
+post-start identity failure stopped the process and left no marker; the next open was cold; clean
+attachment retained the process/cluster identity; a dirty marker rebuilt and removed an actual
+leaked namespace; changed fingerprints and dead servers rebuilt; a forged reused-PID marker left
+the unrelated process alive. All cleanup completed. Its TestRunner took 67.698 s, with one pytest
+case exercising the sequence, not the 13 application cases.
+
+The bare cross-action probe used the same code paths. A comment-only change to `certificates.py`
+changed its fingerprint without changing behavior, the recycling key or any execution properties:
+
+| Input | Invocation                                                                            | Result                                   | TestRunner wall |
+| ----- | ------------------------------------------------------------------------------------- | ---------------------------------------- | --------------: |
+| A     | [1d31b8ce](https://app.buildbuddy.io/invocation/1d31b8ce-0af9-424d-8708-de21087320de) | Cold, snapshot saved                     |        38.345 s |
+| B     | [18adc39c](https://app.buildbuddy.io/invocation/18adc39c-0100-4a1f-8ef7-f84217432df7) | Changed input rebuilt cold               |        31.122 s |
+| B     | [d91821fb](https://app.buildbuddy.io/invocation/d91821fb-d1ff-46e8-9e67-fea22f4d4942) | Warm, same process/cluster identity as B |        16.901 s |
+
+Every row was a fresh, uncached physical TestRunner with one passing pytest case and a remote
+snapshot save. B's two actions had the same action digest. Native metadata traced B's cold action
+to the A snapshot and its warm action to the B snapshot; VM ID and snapshot-key components matched.
+The temporary input comment was restored exactly after the experiment. Full raw evidence is under
+`/tmp/agents/2026_11_01/ci-refresh/continuation/`; these bare probes do not establish full-suite or
+production CI savings. Snapshot-write time and bytes are not isolated by the collected action
+metadata, so the remote policy's extra cost remains a production decision.
+
+Repeat the lifecycle contract with:
+
+```sh
+bbr test --config=rbe --config=ci --test_tag_filters=-live_openai_api --nocache_test_results --test_output=all //agentplane/system_tests/k3s:test_persistence_lifecycle //agentplane/system_tests/k3s:stack
+```
+
+## Initial v5 full-suite experiment
+
 At source commit `de5f671002f516e952c3dfafcbf06659a4bc731b`, a manual BuildBuddy-hosted
 Firecracker test target retained a live k3s server and cert-manager/trust-manager controllers between
 two complete, independently executed `test_pod.py` actions. Both actions passed all 13 existing Pod
@@ -27,10 +81,9 @@ The cold action saved a local snapshot; neither action proves cross-worker remot
 The native metadata does not isolate snapshot-write time from other post-test TestRunner overhead.
 This is one pair under concurrent CI load, not an estimate of production CI savings.
 
-The manual `test_pod_persistence_spike` target uses a dedicated v5 recycling key. The ordinary Pod
-target and workflow have no persistence policy. The key must change when baseline inputs change:
-the default prepared seed is immutable, so a fingerprint mismatch safely rebuilds cold on every
-action until a new key seeds the updated baseline. The v5 path copies the k3s executable, kubeconfig,
+The initial manual `test_pod_persistence_spike` target used a dedicated v5 recycling key. Its local-only
+prepared seed was immutable, so changed inputs rebuilt cold on every action until a new key was
+chosen. The v6 refresh experiment above addresses that limitation. The spike copies the k3s executable, kubeconfig,
 and logs outside action runfiles, launches k3s in its own process session, and verifies a fingerprint
 of the k3s binary, stack code, CRDs, PKI release YAML, and the PKI OCI index manifests. It checks
 the live API, process start time, node address, and cluster UIDs before attaching. A dirty marker
@@ -59,6 +112,6 @@ key and idempotent deletion; both actions passed and completed cleanup. All raw 
 responses, test logs, action identities, and a machine-readable reviewed summary are under
 `/tmp/agents/2026_11_01/ci-refresh/persist-spike/`. The upcoming
 [latency evidence publication](https://agentydragon.github.io/ducktape/latency/evidence.json)
-is pending. A production change would still need a versioned key
-strategy, cross-worker/eviction evidence, more pairs, and a decision on whether keeping a live
+is pending. A production change still needs snapshot-cost and eviction evidence, more pairs,
+and a decision on whether keeping a live
 cluster in a recycled worker is worth its memory and storage cost.

@@ -9,6 +9,13 @@ K3S_EXEC_PROPERTIES = {
     "EstimatedFreeDiskBytes": "50GB",
 }
 
+# Manual experiment only: refreshing a restored baseline currently requires remote snapshots.
+K3S_PERSISTENCE_SPIKE_PROPERTIES = {
+    "test.allow-remote-snapshots": "true",
+    "test.remote-snapshot-save-policy": "always",
+    "test.snapshot-read-policy": "newest",
+}
+
 # A test that runs a k3s stack in its action. Such a test is an ordinary target otherwise: PR CI
 # runs it when its inputs change, and a pass caches.
 K3S_TAGS = ["requires-network"]

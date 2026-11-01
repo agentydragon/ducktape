@@ -39,14 +39,14 @@ from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_f
 from agentplane.system_tests.cluster import AGENT_SERVICE_ACCOUNT, AUDIENCE, Cluster
 from agentplane.system_tests.k3s import (
     block_storage,
+    bootstrap,
     certificates,
     guest_logs,
+    iptables_rule,
     process_traces,
     rendered_fixture,
     vm_sandboxes,
 )
-from agentplane.system_tests.k3s.bootstrap import Bootstrap
-from agentplane.system_tests.k3s.iptables_rule import ensure_rule
 from agentplane.system_tests.port_forward import PortForward
 from agentplane.system_tests.tracing import tracer
 from agentplane.testing import tls
@@ -66,8 +66,8 @@ CONTAINERD_DEBUG_SOCKET = "/run/k3s/containerd/debug.sock"
 HOSTS_MARKER = "# k3s-env"
 
 
-def run(*command: str, check: bool = True, input_text: str | None = None) -> str:
-    result = subprocess.run(command, capture_output=True, text=True, input=input_text, check=False)
+def run(*command: str, check: bool = True, input_text: str | None = None, timeout: float | None = None) -> str:
+    result = subprocess.run(command, capture_output=True, text=True, input=input_text, check=False, timeout=timeout)
     if check and result.returncode:
         raise RuntimeError(
             f"{command[:3]} exited {result.returncode}\nstderr:\n{result.stderr}\nstdout:\n{result.stdout}"
@@ -151,9 +151,18 @@ class K3s:
         self.data_dir = Path("/var/lib/k3s-env")
         self.node_ip = node_ip()
 
-    def kubectl(self, *args: str, check: bool = True, input_text: str | None = None) -> str:
+    def kubectl(
+        self, *args: str, check: bool = True, input_text: str | None = None, timeout: float | None = None
+    ) -> str:
         return run(
-            str(self.binary), "kubectl", "--kubeconfig", str(self.kubeconfig), *args, check=check, input_text=input_text
+            str(self.binary),
+            "kubectl",
+            "--kubeconfig",
+            str(self.kubeconfig),
+            *args,
+            check=check,
+            input_text=input_text,
+            timeout=timeout,
         )
 
     @tracer.start_as_current_span("system_test.k3s.start")
@@ -209,7 +218,7 @@ class K3s:
             stderr=subprocess.STDOUT,
             start_new_session=detached,
         )
-        bootstrap = Bootstrap(
+        readiness = bootstrap.Bootstrap(
             process=process,
             binary=self.binary,
             kubeconfig=self.kubeconfig,
@@ -217,14 +226,14 @@ class K3s:
             deadline=time.monotonic() + BOOTSTRAP_TIMEOUT_SECONDS,
         )
         try:
-            bootstrap.wait_for(
+            readiness.wait_for(
                 "get", "node/env", "-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}", expected="True"
             )
             # host-gw routes Pod traffic but does not translate it: without this, Pods cannot reach the internet.
             # A recycled runner already has the rule.
             iptables = self.data_dir / "data/current/bin/aux/iptables"  # the copy k3s ships; the host has none
             masquerade = ("POSTROUTING", "-s", POD_CIDR, "!", "-d", POD_CIDR, "-j", "MASQUERADE")
-            ensure_rule(iptables, table="nat", chain=masquerade[0], rule=masquerade[1:])
+            iptables_rule.ensure_rule(iptables, table="nat", chain=masquerade[0], rule=masquerade[1:])
         except BaseException:
             process.terminate()
             try:
@@ -513,43 +522,57 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
     }
 
 
-_SPIKE_ROOT = Path("/var/lib/k3s-persistence-pod-spike-v5")
+_SPIKE_ROOT = Path("/var/lib/k3s-persistence-pod-spike-v6")
 _SPIKE_MARKER = _SPIKE_ROOT / "server.json"
 
 
 def _spike_process_start(pid: int) -> str | None:
     try:
         stat = Path(f"/proc/{pid}/stat").read_text().rsplit(") ", 1)[1].split()
-    except OSError:
+    except FileNotFoundError:
         return None
     return None if stat[0] == "Z" else stat[19]
 
 
 def _spike_identity(k3s: K3s, pid: int) -> dict[str, str | int]:
-    internal_ip = k3s.kubectl(
-        "get", "node", "env", "-o", "jsonpath={.status.addresses[?(@.type=='InternalIP')].address}"
-    )
-    if internal_ip != k3s.node_ip:
-        raise RuntimeError(f"retained node InternalIP {internal_ip} differs from current {k3s.node_ip}")
     ticks = _spike_process_start(pid)
     if ticks is None:
         raise RuntimeError(f"k3s process {pid} exited")
+    # A retained process can be alive with a wedged API. Bound the subprocess as well as kubectl's
+    # HTTP request so the warm-cache check cannot wedge the entire test action.
+    resources = json.loads(k3s.kubectl(
+        "get", "node/env", "namespace/kube-system", "-o", "json", "--request-timeout=5s", timeout=10,
+    ))["items"]  # fmt: skip
+    node = next(resource for resource in resources if resource["kind"] == "Node")
+    namespace = next(resource for resource in resources if resource["kind"] == "Namespace")
+    internal_ip = next(address["address"] for address in node["status"]["addresses"] if address["type"] == "InternalIP")
+    if internal_ip != k3s.node_ip:
+        raise RuntimeError(f"retained node InternalIP {internal_ip} differs from current {k3s.node_ip}")
     return {
         "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
         "pid": pid,
         "process_start_ticks": ticks,
-        "namespace_uid": k3s.kubectl("get", "namespace", "kube-system", "-o", "jsonpath={.metadata.uid}"),
-        "node_uid": k3s.kubectl("get", "node", "env", "-o", "jsonpath={.metadata.uid}"),
+        "namespace_uid": namespace["metadata"]["uid"],
+        "node_uid": node["metadata"]["uid"],
         "node_internal_ip": internal_ip,
     }
 
 
-def _spike_fingerprint(
-    inputs: StackInputs, crds: list[Path], pki: list[dict[str, Any]], pki_images: dict[str, Path]
-) -> str:
-    digest = hashlib.sha256(b"k3s-persistence-pod-spike-v5\0")
-    for path in (inputs.binary, Path(__file__), *crds):
-        digest.update(path.read_bytes())
+def _spike_fingerprint(binary: Path, crds: list[Path], pki: list[dict[str, Any]], pki_images: dict[str, Path]) -> str:
+    digest = hashlib.sha256(b"k3s-persistence-pod-spike-v6\0")
+    for name, path in [
+        ("k3s", binary),
+        ("stack.py", Path(__file__)),
+        ("bootstrap.py", Path(bootstrap.__file__)),
+        ("certificates.py", Path(certificates.__file__)),
+        ("iptables_rule.py", Path(iptables_rule.__file__)),
+        *((f"crds/{path.name}", path) for path in crds),
+    ]:
+        # Names and fixed-size digests frame the inputs, including helper changes that affect the
+        # retained baseline. Stream the k3s executable instead of holding another copy in memory.
+        digest.update(name.encode() + b"\0")
+        with path.open("rb") as source:
+            digest.update(hashlib.file_digest(source, "sha256").digest())
     digest.update(json.dumps(pki, sort_keys=True).encode())
     for reference, rloc in sorted(pki_images.items()):
         digest.update(reference.encode())
@@ -589,7 +612,7 @@ def _spike_stop_owned(k3s: K3s, previous: dict[str, Any]) -> None:
     k3s.cleanup_stopped()
 
 
-def _spike_open(inputs: StackInputs, fingerprint: str, *, layers_in_memory: bool) -> tuple[K3s, dict[str, Any], bool]:
+def _spike_open(source: Path, fingerprint: str, *, layers_in_memory: bool) -> tuple[K3s, dict[str, Any], bool]:
     _SPIKE_ROOT.mkdir(exist_ok=True)
     binary = _SPIKE_ROOT / "k3s"
     k3s = K3s(_SPIKE_ROOT, binary)
@@ -600,16 +623,23 @@ def _spike_open(inputs: StackInputs, fingerprint: str, *, layers_in_memory: bool
         if previous["fingerprint"] == fingerprint and previous["state"] == "clean":
             try:
                 current = _spike_identity(k3s, int(previous["identity"]["pid"]))
-            except OSError, RuntimeError:
-                pass
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                logger.warning("retained k3s is unhealthy; rebuilding the owned baseline: %s", exc)
             else:
                 if current == previous["identity"]:
                     previous["state"] = "dirty"
                     _spike_write_marker(previous)
                     return k3s, previous, True
+                logger.warning("retained k3s identity changed; rebuilding the owned baseline")
+        else:
+            logger.info(
+                "rebuilding k3s baseline: state=%s, inputs_match=%s",
+                previous["state"],
+                previous["fingerprint"] == fingerprint,
+            )
         _spike_stop_owned(k3s, previous)
         _SPIKE_MARKER.unlink()
-    shutil.copy2(inputs.binary, binary)
+    shutil.copy2(source, binary)
     previous_outputs = os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR")
     os.environ["TEST_UNDECLARED_OUTPUTS_DIR"] = str(_SPIKE_ROOT)
     try:
@@ -619,8 +649,13 @@ def _spike_open(inputs: StackInputs, fingerprint: str, *, layers_in_memory: bool
             os.environ.pop("TEST_UNDECLARED_OUTPUTS_DIR", None)
         else:
             os.environ["TEST_UNDECLARED_OUTPUTS_DIR"] = previous_outputs
-    marker = {"state": "dirty", "fingerprint": fingerprint, "identity": _spike_identity(k3s, process.pid)}
-    _spike_write_marker(marker)
+    # Until the marker is durable, this action still owns the process directly. A failed identity
+    # probe or marker write must not leave an unmarked detached server for the next action to reset.
+    with contextlib.ExitStack() as starting:
+        starting.callback(k3s.stop, process)
+        marker = {"state": "dirty", "fingerprint": fingerprint, "identity": _spike_identity(k3s, process.pid)}
+        _spike_write_marker(marker)
+        starting.pop_all()
     return k3s, marker, False
 
 
@@ -643,6 +678,9 @@ def _spike_evidence(
         for doc in pki
         if doc["kind"] == "Deployment"
     }
+    if warm and controllers != marker["pki_controller_uids"]:
+        raise RuntimeError("retained PKI controller identities changed; refusing to mark this baseline clean")
+    marker["pki_controller_uids"] = controllers
     return {
         "outcome": "warm" if warm else "cold",
         "fingerprint": marker["fingerprint"],
@@ -754,8 +792,8 @@ def running_stack(
                 if fixture.vm_sandboxes:
                     raise ValueError("the persistence spike only supports the Pod fixture")
                 k3s, spike_marker, spike_warm = _spike_open(
-                    inputs,
-                    _spike_fingerprint(inputs, crds, cert_manager + trust_manager, pki_images),
+                    inputs.binary,
+                    _spike_fingerprint(inputs.binary, crds, cert_manager + trust_manager, pki_images),
                     layers_in_memory=True,
                 )
             else:
