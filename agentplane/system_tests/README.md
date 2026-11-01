@@ -15,7 +15,7 @@ The session-scoped `deployment` fixture exposes its cluster handle, app URL, tok
 | `//agentplane/system_tests/suites:test_pod`          | egress, messaging, presets, session instructions, suspend/resume, thread stream, Pod credentials and storage |
 | `//agentplane/system_tests/suites:test_dispatcher`   | Dispatcher queue, wake and replica behavior                                                                  |
 | `//agentplane/system_tests/suites/mcp:test_actions`  | MCP Action execution, BFF decisions, launcher ownership and OAuth linkage                                    |
-| `//agentplane/system_tests/suites/mcp:test_services` | Dynamic client registration, policy binding and Pod central sampler                                          |
+| `//agentplane/system_tests/suites/mcp:test_services` | Dynamic client registration, external MCP Connection, policy binding and Pod central sampler                 |
 | `//agentplane/system_tests/suites:test_vm`           | VM Sandbox behavior, runner credentials and systemd supervision                                              |
 
 The shared stack cuts setup and image-import work, while each target now has a coarser cache key: a
@@ -38,7 +38,7 @@ Lifecycle cases create and clean up their own Sandboxes and resources. A host-si
 allocates a fresh loop-backed volume for each VM workspace claim UID, retaining it until stack teardown.
 Suites do not declare volume counts; deleting and recreating a claim never reuses its workspace data.
 
-The MCP cases use two independent stacks: five pytest items in `mcp:test_actions` and four in
+The MCP cases use two independent stacks: five pytest items in `mcp:test_actions` and five in
 `mcp:test_services`. This is the partition measured in the
 [sharding spikes](https://github.com/agentydragon/ducktape/blob/acf041b50a6a14403554854de34c41f95ee419c7/agentplane/system_tests/debug/sharding_spikes_2026_11_01.md).
 Their shared login and policy fixtures live under `suites/mcp/`. The Pod central sampler shares

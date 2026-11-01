@@ -274,7 +274,7 @@ async def operator_links_oauth_mcp_server(
                 authorization_url,
                 dex_browser,
                 operator_credentials,
-                callback_app=operator_bff.base_url,
+                callback_origin=operator_bff.base_url,
                 callback_path="/mcp-linkage/callback",
             )
     except LoginBlockedError as exc:

@@ -142,9 +142,9 @@ def app_origin(base_url: str) -> httpx.URL:
     try:
         url = httpx.URL(base_url)
     except httpx.InvalidURL:
-        raise LoginBlockedError("BLOCKED: invalid BFF app origin") from None
+        raise LoginBlockedError("BLOCKED: invalid app origin") from None
     if not _transport_allowed(url) or url.userinfo or url.query or url.fragment or url.path != "/":
-        raise LoginBlockedError("BLOCKED: BFF login requires an HTTPS app origin without credentials or path")
+        raise LoginBlockedError("BLOCKED: app origin requires an allowed transport without credentials or path")
     return _origin(url)
 
 
@@ -166,8 +166,8 @@ class DexPasswordLogin:
 
     Dex's local connector puts its short-lived authorization request ID in the form action query.
     Retaining that action unchanged is essential; credentials are added only to a same-origin
-    HTTPS local-login POST.  Both the app bootstrap and the separate MCP authorization use this
-    narrow provider adapter.
+    HTTPS local-login POST. Both the operator app login and a separate OAuth authorization use
+    this narrow provider adapter.
     """
 
     dex: httpx.URL
@@ -222,14 +222,14 @@ async def follow_dex_authorization(
     browser: httpx.AsyncClient,
     credentials: OperatorCredentials,
     *,
-    callback_app: httpx.URL,
+    callback_origin: httpx.URL,
     callback_path: str,
 ) -> tuple[str, str]:
     """Authorize a separate OAuth client through a fresh Dex local-password browser.
 
-    The browser never follows the application callback: it returns its state/code to the
-    application client that initiated the linkage.  That keeps app-session cookies out of Dex and
-    leaves callback validation and the token exchange at the existing BFF boundary.
+    The browser never follows the client callback: it returns state and code to the OAuth client
+    that initiated authorization. That keeps app-session cookies out of Dex and leaves callback
+    validation and the token exchange with the OAuth client.
     """
 
     __tracebackhide__ = True
@@ -237,7 +237,7 @@ async def follow_dex_authorization(
         "system_test.operator_login.dex_authorization", record_exception=False, set_status_on_exception=False
     ):
         return await _follow_dex_authorization(
-            authorization_url, browser, credentials, callback_app=callback_app, callback_path=callback_path
+            authorization_url, browser, credentials, callback_origin=callback_origin, callback_path=callback_path
         )
 
 
@@ -246,7 +246,7 @@ async def _follow_dex_authorization(
     browser: httpx.AsyncClient,
     credentials: OperatorCredentials,
     *,
-    callback_app: httpx.URL,
+    callback_origin: httpx.URL,
     callback_path: str,
 ) -> tuple[str, str]:
     __tracebackhide__ = True
@@ -258,7 +258,7 @@ async def _follow_dex_authorization(
     if not _transport_allowed(issuer) or issuer.userinfo or issuer.query or issuer.fragment:
         raise LoginBlockedError("BLOCKED: operator Secret has an invalid HTTPS issuer")
     dex = _origin(issuer)
-    app = app_origin(str(callback_app))
+    callback = app_origin(str(callback_origin))
     if (
         not _transport_allowed(authorization)
         or authorization.userinfo
@@ -266,16 +266,16 @@ async def _follow_dex_authorization(
         or _origin(authorization) != dex
         or authorization.path != _DEX_AUTHORIZATION_PATH
     ):
-        raise LoginBlockedError("BLOCKED: MCP authorization did not target the configured Dex authorization endpoint")
-    if callback_path != "/mcp-linkage/callback":
-        raise LoginBlockedError("BLOCKED: MCP authorization callback path is not allowed")
+        raise LoginBlockedError("BLOCKED: OAuth authorization did not target the configured Dex authorization endpoint")
+    if callback_path not in {"/mcp-linkage/callback", "/auth/callback"}:
+        raise LoginBlockedError("BLOCKED: OAuth callback path is not allowed")
     if browser.cookies or "Authorization" in browser.headers:
         raise LoginBlockedError(
             "BLOCKED: Dex linkage requires a fresh browser without app session or bearer credentials"
         )
-    original_state = _required_query_value(authorization, "state", stage="MCP authorization")
-    # Do not rebuild the URL: the BFF-owned state and PKCE challenge enter Dex byte-for-byte here.
-    _required_query_value(authorization, "code_challenge", stage="MCP authorization")
+    original_state = _required_query_value(authorization, "state", stage="OAuth authorization")
+    # Do not rebuild the URL: the OAuth client's state and PKCE challenge enter Dex unchanged.
+    _required_query_value(authorization, "code_challenge", stage="OAuth authorization")
     password_login = DexPasswordLogin(dex)
 
     response = await browser.get(authorization)
@@ -289,16 +289,16 @@ async def _follow_dex_authorization(
                 raise LoginBlockedError("BLOCKED: Dex returned a redirect without a location")
             target = response.url.join(location)
             if not _transport_allowed(target) or target.userinfo or target.fragment:
-                raise LoginBlockedError("BLOCKED: Dex returned an unsafe MCP authorization redirect")
+                raise LoginBlockedError("BLOCKED: Dex returned an unsafe OAuth authorization redirect")
             if _origin(target) == dex and _DEX_OAUTH_PATH.fullmatch(target.path):
                 response = await browser.get(target)
                 continue
-            if _origin(target) == app and target.path == callback_path:
+            if _origin(target) == callback and target.path == callback_path:
                 state = _required_query_value(target, "state", stage="Dex callback")
                 if state != original_state:
-                    raise LoginBlockedError("BLOCKED: Dex callback changed the BFF OAuth state")
+                    raise LoginBlockedError("BLOCKED: Dex callback changed the OAuth client state")
                 return state, _required_query_value(target, "code", stage="Dex callback")
-            raise LoginBlockedError("BLOCKED: Dex returned a redirect outside the MCP callback")
+            raise LoginBlockedError("BLOCKED: Dex returned a redirect outside the OAuth callback")
         if response.status_code != 200:
             raise LoginBlockedError(f"BLOCKED: Dex authorization returned HTTP {response.status_code}")
         response = await password_login.submit(browser, response, credentials)

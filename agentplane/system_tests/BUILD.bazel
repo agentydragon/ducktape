@@ -187,6 +187,7 @@ py_test(
     deps = [
         ":cluster",
         ":conftest",
+        ":mcp_connection",
         ":operator_login",
         "//:conftest",
         "//agentplane/app:oidc",
@@ -577,5 +578,23 @@ py_test(
         "@pypi//opentelemetry_api",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "mcp_connection",
+    srcs = ["mcp_connection.py"],
+    deps = [
+        ":operator_login",
+        "//agentplane/mcp_edge:connection_service_pb2",
+        "//agentplane/proto:sandboxes_pb2",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//httpx2",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
+        "@pypi//protobuf",
+        "@pypi//py_key_value_aio",
+        "@pypi//pydantic",
     ],
 )
