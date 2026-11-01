@@ -18,6 +18,7 @@ import (
 	"github.com/sethvargo/go-retry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
@@ -130,6 +131,12 @@ func run(ctx context.Context, config Config, start codexexecserver.Start) (resul
 }
 
 func runWithReady(ctx context.Context, config Config, start codexexecserver.Start, ready func(executorpb.ExecutorServer)) (result error) {
+	return runWithServer(ctx, config, start, ready, func(server *grpc.Server, listener net.Listener) error {
+		return server.Serve(listener)
+	})
+}
+
+func runWithServer(ctx context.Context, config Config, start codexexecserver.Start, ready func(executorpb.ExecutorServer), serve func(*grpc.Server, net.Listener) error) (result error) {
 	lifetime, cancel := context.WithCancel(ctx)
 	defer cancel()
 	instance, err := start(lifetime)
@@ -208,19 +215,24 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 	}
 	healthpb.RegisterHealthServer(server, healthServer)
 	served := make(chan error, 1)
-	go func() { served <- server.Serve(listener) }()
+	go func() { served <- serve(server, listener) }()
 	if ready != nil {
-		ready(adapter)
+		err = waitEmbeddedHealth(lifetime, config.Socket(), served)
+		if err == nil {
+			ready(adapter)
+		}
 	}
-	select {
-	case err = <-served:
-	case <-lifetime.Done():
+	if err == nil {
 		select {
-		case err = <-backendDone:
-			if err == nil {
-				err = errors.New("execution backend stopped")
+		case err = <-served:
+		case <-lifetime.Done():
+			select {
+			case err = <-backendDone:
+				if err == nil {
+					err = errors.New("execution backend stopped")
+				}
+			default:
 			}
-		default:
 		}
 	}
 	if errors.Is(err, codexexecserver.ErrExecutionBackendLost) {
@@ -238,6 +250,49 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 	defer finish()
 	graceful.Stop(shutdown, server)
 	return err
+}
+
+func waitEmbeddedHealth(ctx context.Context, socket string, served <-chan error) error {
+	conn, err := grpc.NewClient("unix://"+socket, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("connect to embedded Execution health socket: %w", err)
+	}
+	defer conn.Close()
+	client := healthpb.NewHealthClient(conn)
+	readiness, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	err = retry.Do(readiness, retry.NewConstant(20*time.Millisecond), func(ctx context.Context) error {
+		select {
+		case serveErr := <-served:
+			if serveErr == nil {
+				serveErr = errors.New("health server stopped")
+			}
+			return fmt.Errorf("embedded Execution health server exited before readiness: %w", serveErr)
+		default:
+		}
+		checkCtx, finish := context.WithTimeout(ctx, 100*time.Millisecond)
+		defer finish()
+		response, err := client.Check(checkCtx, &healthpb.HealthCheckRequest{})
+		if err != nil {
+			return retry.RetryableError(err)
+		}
+		if response.GetStatus() != healthpb.HealthCheckResponse_SERVING {
+			return retry.RetryableError(errors.New("embedded Execution health is not serving"))
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("embedded Execution health readiness: %w", err)
+	}
+	select {
+	case serveErr := <-served:
+		if serveErr == nil {
+			serveErr = errors.New("health server stopped")
+		}
+		return fmt.Errorf("embedded Execution health server exited at readiness: %w", serveErr)
+	default:
+	}
+	return nil
 }
 
 // Filesystem access to the standalone Executor socket authenticates the environment owner.

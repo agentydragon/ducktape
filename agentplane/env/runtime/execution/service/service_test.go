@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -258,6 +259,99 @@ func TestEmbeddedServicePublishesDirectAdapterAndHealthOnlySocket(t *testing.T) 
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("embedded service did not join after shutdown")
+	}
+}
+
+func TestEmbeddedReadinessWaitsForServingHealth(t *testing.T) {
+	config := Config{ExecutorURL: testExecutorEndpoint(t), SocketPath: filepath.Join(t.TempDir(), "e.sock")}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	servingAllowed := make(chan struct{})
+	serveEntered := make(chan struct{})
+	ready := make(chan struct{}, 1)
+	finished := make(chan error, 1)
+	go func() {
+		finished <- runWithServer(ctx, config, func(context.Context) (*supervision.Instance, error) {
+			return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { return nil }}, nil
+		}, func(executorpb.ExecutorServer) { ready <- struct{}{} }, func(server *grpc.Server, listener net.Listener) error {
+			close(serveEntered)
+			select {
+			case <-servingAllowed:
+				return server.Serve(listener)
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		})
+	}()
+	select {
+	case <-serveEntered:
+	case err := <-finished:
+		t.Fatalf("service exited before Serve was entered: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("service did not reach Serve")
+	}
+	select {
+	case <-ready:
+		t.Fatal("adapter published before Health.Check could be served")
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(servingAllowed)
+	select {
+	case <-ready:
+	case err := <-finished:
+		t.Fatalf("service exited before healthy publication: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("adapter was not published after Health.Check could be served")
+	}
+	cancel()
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatalf("service shutdown: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("service did not join after cancellation")
+	}
+}
+
+func TestEmbeddedServeFailureDoesNotPublishBeforeBackendFence(t *testing.T) {
+	config := Config{ExecutorURL: testExecutorEndpoint(t), SocketPath: filepath.Join(t.TempDir(), "e.sock")}
+	serveErr := errors.New("health server failed to start")
+	ready := make(chan struct{}, 1)
+	stopEntered := make(chan struct{})
+	releaseStop := make(chan struct{})
+	finished := make(chan error, 1)
+	go func() {
+		finished <- runWithServer(t.Context(), config, func(context.Context) (*supervision.Instance, error) {
+			return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error {
+				close(stopEntered)
+				<-releaseStop
+				return nil
+			}}, nil
+		}, func(executorpb.ExecutorServer) { ready <- struct{}{} }, func(*grpc.Server, net.Listener) error { return serveErr })
+	}()
+	select {
+	case <-stopEntered:
+	case err := <-finished:
+		t.Fatalf("service returned before backend fence: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("service did not enter backend fence after Serve failure")
+	}
+	select {
+	case <-ready:
+		t.Fatal("adapter published after health server failed")
+	case err := <-finished:
+		t.Fatalf("service returned before backend fence: %v", err)
+	default:
+	}
+	close(releaseStop)
+	select {
+	case err := <-finished:
+		if !errors.Is(err, serveErr) {
+			t.Fatalf("service error = %v, want Serve failure", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("service did not join after backend fence")
 	}
 }
 
