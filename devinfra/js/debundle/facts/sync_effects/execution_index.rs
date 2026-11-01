@@ -792,8 +792,9 @@ fn collect_pattern_assignments(
     match pattern {
         Pat::Ident(binding) => assignments.push((binding.id.to_id(), value.clone())),
         Pat::Assign(assign) => {
-            let value =
-                ValueExpr::Alternatives(vec![value.clone(), ValueExpr::from_expr(&assign.right)]);
+            let value = ValueExpr::Alternatives(
+                [value.clone(), ValueExpr::from_expr(&assign.right)].into(),
+            );
             collect_pattern_assignments(&assign.left, &value, assignments);
         }
         Pat::Rest(rest) => {
@@ -828,10 +829,9 @@ fn collect_pattern_assignments(
                                 .value
                                 .as_deref()
                                 .map_or(projected.clone(), |default| {
-                                    ValueExpr::Alternatives(vec![
-                                        projected,
-                                        ValueExpr::from_expr(default),
-                                    ])
+                                    ValueExpr::Alternatives(
+                                        [projected, ValueExpr::from_expr(default)].into(),
+                                    )
                                 });
                         assignments.push((property.key.id.to_id(), projected));
                     }
@@ -888,10 +888,9 @@ fn collect_assign_target_assignments(
                                 .value
                                 .as_deref()
                                 .map_or(projected.clone(), |default| {
-                                    ValueExpr::Alternatives(vec![
-                                        projected,
-                                        ValueExpr::from_expr(default),
-                                    ])
+                                    ValueExpr::Alternatives(
+                                        [projected, ValueExpr::from_expr(default)].into(),
+                                    )
                                 });
                         assignments.push((property.key.id.to_id(), projected));
                     }
@@ -2244,7 +2243,7 @@ fn intrinsic_roots(
             // native value. Preserve this value-input extension only when a
             // field actually carries the selected ordinary input.
             let mut references = BTreeSet::new();
-            for (_, field) in fields {
+            for (_, field) in fields.iter() {
                 for root in intrinsic_roots(
                     field,
                     roots,
@@ -2424,7 +2423,7 @@ fn intrinsic_roots(
             let mut input_roots = NativeReceiverRoots::new();
             let mut ordinary_refs = BTreeSet::new();
             let mut has_callable_return_roots = false;
-            for value in std::iter::once(callee.as_ref()).chain(args) {
+            for value in std::iter::once(callee.as_ref()).chain(args.iter()) {
                 let value_roots = intrinsic_roots(
                     value,
                     roots,
@@ -2676,7 +2675,7 @@ mod iterative_alias_closure_tests {
                 holder.clone(),
                 ValueExpr::ObjectLiteral(
                     7,
-                    vec![
+                    [
                         (
                             Some("owner".to_owned()),
                             ValueExpr::Binding(namespace.clone()),
@@ -2685,7 +2684,8 @@ mod iterative_alias_closure_tests {
                             Some("member".to_owned()),
                             ValueExpr::Binding(candidate.clone()),
                         ),
-                    ],
+                    ]
+                    .into(),
                 ),
             ),
             (candidate.clone(), ValueExpr::Unknown),
@@ -2770,13 +2770,14 @@ mod iterative_alias_closure_tests {
                 holder.clone(),
                 ValueExpr::ObjectLiteral(
                     9,
-                    vec![
+                    [
                         (Some("member".to_owned()), ValueExpr::Binding(alias.clone())),
                         (
                             Some("other".to_owned()),
                             ValueExpr::Binding(unrelated.clone()),
                         ),
-                    ],
+                    ]
+                    .into(),
                 ),
             ),
         ];
@@ -2949,7 +2950,7 @@ fn evaluate_receiver_value(
             let mut ordinary_refs = BTreeSet::new();
             result.fact.safe = true;
             result.fact.complete = true;
-            for (_, field) in fields {
+            for (_, field) in fields.iter() {
                 let field = evaluate_receiver_value(field, context, rules);
                 result.pending |= field.pending;
                 result.fact.safe &= field.fact.safe;
@@ -3099,7 +3100,7 @@ fn evaluate_receiver_value(
                     ordinary_refs.insert((reference.clone(), *available_after));
                 }
             }
-            for argument in args {
+            for argument in args.iter() {
                 let argument = evaluate_receiver_value(argument, context, rules);
                 result.pending |= argument.pending;
                 result.fact.complete &= argument.fact.complete;
@@ -3208,7 +3209,7 @@ fn evaluate_receiver_value(
                 .capture_dependencies
                 .extend(callee.fact.capture_dependencies);
             result.fact.opaque = true;
-            for argument in args {
+            for argument in args.iter() {
                 let argument = evaluate_receiver_value(argument, context, rules);
                 result.pending |= argument.pending;
                 result.fact.complete &= argument.fact.complete;
@@ -6256,12 +6257,12 @@ impl ExecutionIndex {
             }
             ValueExpr::Call(callee, arguments, _) | ValueExpr::New(callee, arguments, _) => {
                 self.global_property_reads(callee, context, reads);
-                for argument in arguments {
+                for argument in arguments.iter() {
                     self.global_property_reads(argument, context, reads);
                 }
             }
             ValueExpr::ObjectLiteral(_, properties) => {
-                for (_, value) in properties {
+                for (_, value) in properties.iter() {
                     self.global_property_reads(value, context, reads);
                 }
             }
@@ -6269,7 +6270,7 @@ impl ExecutionIndex {
                 self.global_property_reads(inner, context, reads);
             }
             ValueExpr::Primitive(values) | ValueExpr::Alternatives(values) => {
-                for value in values {
+                for value in values.iter() {
                     self.global_property_reads(value, context, reads);
                 }
             }
@@ -11541,10 +11542,9 @@ impl Visit for ExecutionIndex {
             assignment.visit_children_with(self);
             return;
         };
-        self.destructuring_source = Some(ValueExpr::Alternatives(vec![
-            source.clone(),
-            ValueExpr::from_expr(&assignment.right),
-        ]));
+        self.destructuring_source = Some(ValueExpr::Alternatives(
+            [source.clone(), ValueExpr::from_expr(&assignment.right)].into(),
+        ));
         self.namespace_privacy.target_depth += 1;
         assignment.left.visit_with(self);
         self.namespace_privacy.target_depth -= 1;
@@ -11658,17 +11658,20 @@ impl Visit for ExecutionIndex {
                 // A logical assignment stores the right side or keeps the
                 // property's current value.
                 AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign => {
-                    ValueExpr::Alternatives(vec![
-                        ValueExpr::Member(
-                            Arc::new(ValueExpr::from_expr(&member.obj)),
-                            static_prop(&member.prop),
-                            MemberKey::of(&member.prop),
-                            member.span.into(),
-                        ),
-                        right,
-                    ])
+                    ValueExpr::Alternatives(
+                        [
+                            ValueExpr::Member(
+                                Arc::new(ValueExpr::from_expr(&member.obj)),
+                                static_prop(&member.prop),
+                                MemberKey::of(&member.prop),
+                                member.span.into(),
+                            ),
+                            right,
+                        ]
+                        .into(),
+                    )
                 }
-                _ => ValueExpr::Primitive(vec![right]),
+                _ => ValueExpr::Primitive([right].into()),
             };
             self.intrinsic_writes.push(IntrinsicWriteTarget {
                 value: Some(value),
@@ -12105,9 +12108,11 @@ impl Visit for ExecutionIndex {
                     if let ValueExpr::ObjectLiteral(_, properties) =
                         ValueExpr::from_expr(&source.expr)
                     {
-                        for (key, _) in properties {
-                            if let Some(key) = key.filter(|key| key != "__proto__") {
-                                target.additional_keys.push(PropertyKeyExpr::String(key));
+                        for (key, _) in properties.iter() {
+                            if let Some(key) = key.as_ref().filter(|key| *key != "__proto__") {
+                                target
+                                    .additional_keys
+                                    .push(PropertyKeyExpr::String(key.clone()));
                             }
                         }
                     }

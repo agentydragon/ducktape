@@ -58,7 +58,7 @@ fn contained_roots(
     let mut roots = prototype_intrinsic_roots(value, aliases, index, declared);
     match value {
         ValueExpr::ObjectLiteral(_, properties) => {
-            for (_, value) in properties {
+            for (_, value) in properties.iter() {
                 roots.extend(contained_roots(value, aliases, index, declared));
             }
         }
@@ -115,7 +115,7 @@ fn contained_roots(
         }
         ValueExpr::Call(callee, args, _) | ValueExpr::New(callee, args, _) => {
             roots.extend(contained_roots(callee, aliases, index, declared));
-            for argument in args {
+            for argument in args.iter() {
                 roots.extend(contained_roots(argument, aliases, index, declared));
             }
         }
@@ -139,7 +139,7 @@ fn contained_root_bindings(value: &ValueExpr, index: &ExecutionIndex, bindings: 
     value.bindings(bindings);
     match value {
         ValueExpr::ObjectLiteral(_, properties) => {
-            for (_, value) in properties {
+            for (_, value) in properties.iter() {
                 contained_root_bindings(value, index, bindings);
             }
         }
@@ -181,7 +181,7 @@ fn contained_root_bindings(value: &ValueExpr, index: &ExecutionIndex, bindings: 
         }
         ValueExpr::Call(callee, args, _) | ValueExpr::New(callee, args, _) => {
             contained_root_bindings(callee, index, bindings);
-            for argument in args {
+            for argument in args.iter() {
                 contained_root_bindings(argument, index, bindings);
             }
         }

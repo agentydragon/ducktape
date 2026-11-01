@@ -2914,7 +2914,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if self.inputs.flow.is_declared(object_intrinsic) {
             return None;
         }
-        let [ValueExpr::Call(define_callee, define_args, define_site)] = freeze_args.as_slice()
+        let [ValueExpr::Call(define_callee, define_args, define_site)] = freeze_args.as_ref()
         else {
             return None;
         };
@@ -2929,7 +2929,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             ValueExpr::ObjectLiteral(object, fields),
             ValueExpr::Member(symbol_receiver, Some(tag), MemberKey::Static, _),
             ValueExpr::ObjectLiteral(descriptor, descriptor_fields),
-        ] = define_args.as_slice()
+        ] = define_args.as_ref()
         else {
             return None;
         };
@@ -2941,7 +2941,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || self.inputs.flow.is_declared(symbol)
             || !self.inputs.index.null_proto_data_objects.contains(object)
             || !self.inputs.index.plain_data_objects.contains(descriptor)
-            || !matches!(descriptor_fields.as_slice(), [(Some(name), ValueExpr::NonCallable(_))] if name == "value")
+            || !matches!(descriptor_fields.as_ref(), [(Some(name), ValueExpr::NonCallable(_))] if name == "value")
             || !self
                 .inputs
                 .index
@@ -2952,7 +2952,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         let mut stored_bindings = BTreeSet::new();
         let mut names = BTreeSet::new();
-        for (name, value) in fields {
+        for (name, value) in fields.iter() {
             let Some(name) = name else {
                 if self.inputs.index.null_proto_data_objects.contains(object)
                     && !names.contains("__proto__")
@@ -3112,7 +3112,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return None;
         };
         (self.inputs.index.callback_factory_imports.contains(factory)
-            && matches!(args.as_slice(), [ValueExpr::Alloc(Kind::Function, _)])
+            && matches!(args.as_ref(), [ValueExpr::Alloc(Kind::Function, _)])
             && fact.declared.contains(binding)
             && self.inputs.index.top_definite_initializers[fact.ordinal.0].contains(binding)
             && call.kind == CallKind::Call
@@ -3346,7 +3346,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         else {
             return None;
         };
-        let [ValueExpr::ObjectLiteral(_, properties)] = args.as_slice() else {
+        let [ValueExpr::ObjectLiteral(_, properties)] = args.as_ref() else {
             return None;
         };
         properties.iter().find_map(|(property, value)| {
@@ -3499,7 +3499,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let params: BTreeMap<_, _> = callable
             .params
             .iter()
-            .zip(args)
+            .zip(args.iter())
             .map(|(param, arg)| (param.binding.clone().unwrap(), arg))
             .collect();
         let mut class_reads = BTreeSet::new();
@@ -3730,7 +3730,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         class_reads.insert(class.clone());
         *allocations.entry((key, args.len())).or_insert(0) += 1;
-        for arg in args {
+        for arg in args.iter() {
             match arg {
                 ValueExpr::New(..) => {
                     if !self.checked_constructor_return(arg, params, true, class_reads, allocations)
@@ -6920,7 +6920,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             ValueExpr::ObjectLiteral(key, properties) => {
                 if self.inputs.index.exact_object_spread_copies.contains(key)
-                    && let [(None, source)] = properties.as_slice()
+                    && let [(None, source)] = properties.as_ref()
                 {
                     let source = self.evaluate(source, env, captures);
                     if let Some(properties) = self.ordinary_data_properties(&source) {
@@ -7121,7 +7121,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     return Values::from([AbstractValue::Value(Value::Unavailable)]);
                 }
                 let inline_callback =
-                    matches!(args.as_slice(), [ValueExpr::Alloc(Kind::Function, _)]);
+                    matches!(args.as_ref(), [ValueExpr::Alloc(Kind::Function, _)]);
                 let expressions = args;
                 let mut args: Vec<Values> = args
                     .iter()
@@ -7438,7 +7438,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             ValueExpr::Primitive(operands) => {
                 let mut can_complete = true;
                 let mut may_throw = false;
-                for operand in operands {
+                for operand in operands.iter() {
                     let mut values = self.evaluate(operand, env, captures);
                     if values.remove(&AbstractValue::Value(Value::Unavailable)) {
                         may_throw = true;

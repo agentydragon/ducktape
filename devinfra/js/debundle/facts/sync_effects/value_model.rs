@@ -376,14 +376,14 @@ impl MemberKey {
 pub(super) enum ValueExpr {
     Binding(Id),
     Alloc(Kind, u32),
-    ObjectLiteral(u32, Vec<(Option<String>, Self)>),
+    ObjectLiteral(u32, Arc<[(Option<String>, Self)]>),
     Undefined,
     /// A primitive of the given types: a literal, a template, or a value
     /// known only to be primitive.
     NonCallable(PrimKinds),
     Member(Arc<Self>, Option<String>, MemberKey, CallSite),
-    Call(Arc<Self>, Vec<Self>, CallSite),
-    New(Arc<Self>, Vec<Self>, CallSite),
+    Call(Arc<Self>, Arc<[Self]>, CallSite),
+    New(Arc<Self>, Arc<[Self]>, CallSite),
     /// Source spelling of `Object.getPrototypeOf([][Symbol.iterator]())`.
     /// Native identity remains conditional on Object, Array, and Symbol.
     ArrayIteratorPrototype(Arc<Self>),
@@ -393,7 +393,7 @@ pub(super) enum ValueExpr {
     /// An operator result is primitive on successful evaluation. This is a
     /// value-kind fact, not a purity claim: keep operands so calls and
     /// unavailable reads inside them still flow through the evaluator.
-    Primitive(Vec<Self>),
+    Primitive(Arc<[Self]>),
     /// Both strict equality operators produce an unknown Boolean without coercion.
     StrictEquality(Arc<Self>, Arc<Self>),
     Void(Arc<Self>),
@@ -401,7 +401,7 @@ pub(super) enum ValueExpr {
         test: Arc<Self>,
         alternatives: Arc<[Self; 2]>,
     },
-    Alternatives(Vec<Self>),
+    Alternatives(Arc<[Self]>),
     Unknown,
 }
 
@@ -652,20 +652,23 @@ impl ValueExpr {
                     // Keep a known local call's returned callable reachable.
                     // The undefined alternative overapproximates optional
                     // short-circuiting without dropping the invocation path.
-                    Self::Alternatives(vec![
-                        Self::Undefined,
-                        // Preserve the prior unknown publication capability;
-                        // timing precision must not admit namespace contracts.
-                        Self::Unknown,
-                        Self::Call(
-                            Arc::new(Self::lower(&call.callee, covered)),
-                            call.args
-                                .iter()
-                                .map(|arg| Self::lower(&arg.expr, covered))
-                                .collect(),
-                            call.span.into(),
-                        ),
-                    ])
+                    Self::Alternatives(
+                        [
+                            Self::Undefined,
+                            // Preserve the prior unknown publication capability;
+                            // timing precision must not admit namespace contracts.
+                            Self::Unknown,
+                            Self::Call(
+                                Arc::new(Self::lower(&call.callee, covered)),
+                                call.args
+                                    .iter()
+                                    .map(|arg| Self::lower(&arg.expr, covered))
+                                    .collect(),
+                                call.span.into(),
+                            ),
+                        ]
+                        .into(),
+                    )
                 }
                 OptChainBase::Member(member) => {
                     let mut options = vec![
@@ -682,7 +685,7 @@ impl ValueExpr {
                     {
                         options.push(Self::Unknown);
                     }
-                    Self::Alternatives(options)
+                    Self::Alternatives(options.into())
                 }
                 // Spread calls have no modeled result shape.
                 _ => Self::Unknown,
@@ -765,26 +768,32 @@ impl ValueExpr {
                     BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
                 ) =>
             {
-                Self::Alternatives(vec![
+                Self::Alternatives(
+                    [
+                        Self::lower(&bin.left, covered),
+                        Self::lower(&bin.right, covered),
+                    ]
+                    .into(),
+                )
+            }
+            Expr::Bin(bin) => Self::Primitive(
+                [
                     Self::lower(&bin.left, covered),
                     Self::lower(&bin.right, covered),
-                ])
-            }
-            Expr::Bin(bin) => Self::Primitive(vec![
-                Self::lower(&bin.left, covered),
-                Self::lower(&bin.right, covered),
-            ]),
+                ]
+                .into(),
+            ),
             Expr::Unary(unary) if unary.op == UnaryOp::Void => {
                 Self::Void(Arc::new(Self::lower(&unary.arg, covered)))
             }
-            Expr::Unary(unary) => Self::Primitive(vec![Self::lower(&unary.arg, covered)]),
-            Expr::Update(update) => Self::Primitive(vec![Self::lower(&update.arg, covered)]),
+            Expr::Unary(unary) => Self::Primitive([Self::lower(&unary.arg, covered)].into()),
+            Expr::Update(update) => Self::Primitive([Self::lower(&update.arg, covered)].into()),
             Expr::Seq(seq) => seq
                 .exprs
                 .last()
                 .map_or(Self::Unknown, |expr| Self::lower(expr, covered)),
             Expr::Assign(assign) => Self::lower(&assign.right, covered),
-            Expr::Lit(Lit::Regex(regex)) => Self::ObjectLiteral(regex.span.lo.0, Vec::new()),
+            Expr::Lit(Lit::Regex(regex)) => Self::ObjectLiteral(regex.span.lo.0, Arc::default()),
             Expr::Lit(literal) => Self::NonCallable(match literal {
                 Lit::Str(_) => PrimKinds::STRING,
                 Lit::Num(_) => PrimKinds::NUMBER,
@@ -819,22 +828,22 @@ impl ValueExpr {
             Self::Member(object, _, _, _) => object.bindings(result),
             Self::Call(callee, args, _) | Self::New(callee, args, _) => {
                 callee.bindings(result);
-                for arg in args {
+                for arg in args.iter() {
                     arg.bindings(result);
                 }
             }
             Self::Alternatives(options) => {
-                for option in options {
+                for option in options.iter() {
                     option.bindings(result);
                 }
             }
             Self::Primitive(operands) => {
-                for operand in operands {
+                for operand in operands.iter() {
                     operand.bindings(result);
                 }
             }
             Self::ObjectLiteral(_, properties) => {
-                for (_, value) in properties {
+                for (_, value) in properties.iter() {
                     value.bindings(result);
                 }
             }
