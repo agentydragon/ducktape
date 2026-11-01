@@ -27,7 +27,7 @@ from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.runner.configuration import CA_BUNDLE, JAVA_TRUST_STORE, KUBECONFIG
 from agentplane.sandboxes.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s.agentplane import egress, notifications, telemetry
+from cluster.cdk8s.agentplane import egress, notifications, session_dispatcher, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
@@ -44,6 +44,7 @@ _EGRESS_TOKEN_DIR = "/var/run/agentplane-egress"
 _SUBSTITUTABLE_AUDIENCE_FILES = {
     egress.KUBERNETES_AUDIENCE: "kubernetes-token",
     notifications.TOKEN_AUDIENCE: "notifications-token",
+    session_dispatcher.TOKEN_AUDIENCE: "session-dispatcher-token",
     RUNNER_INGRESS_AUDIENCE: "runner-ingress-token",
 }
 SIDECAR_LISTEN_PORT = 3128

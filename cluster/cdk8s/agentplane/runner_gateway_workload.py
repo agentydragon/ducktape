@@ -40,6 +40,7 @@ from cluster.cdk8s.agentplane import (
     app as app_component,
     central_sampler,
     database,
+    egress,
     notifications,
     runner_gateway,
     runner_sandbox,
@@ -289,6 +290,9 @@ class RunnerGateway(Construct):
                     if self.env.central_sampler is not None
                     else []
                 ),
+                # Managed Sandboxes reach the Dispatcher through the central proxy; the substituted
+                # Sandbox-audience bearer remains the Gateway's caller identity.
+                egress.proxy(namespace).pods.admit(dispatcher.pod_port),
                 self.sandbox_controller_pods.admit(proxy.pod_port),
                 *(
                     pods.admit(dispatcher.pod_port, dispatcher_http.pod_port)

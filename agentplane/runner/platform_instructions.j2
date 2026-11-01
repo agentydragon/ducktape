@@ -27,18 +27,20 @@ Use the configured proxy and CA trust. Service addresses and authentication are:
 | --- | --- | --- |
 | Egress rules | {{ egress_api_url }} | `agentplane-credential-agentplane-workload` |
 | Actions | {{ actions_service_url }} | `agentplane-credential-agentplane-workload` |
+| Sessions and environments | {{ sessions_service_url }} | `agentplane-credential-agentplane-session-dispatcher-workload` |
 | Notifications | {{ notifications_service_url }} | `agentplane-credential-agentplane-notifications-workload` |
 
-The `agentplane` command calls these APIs for you. `agentplane actions`, `agentplane notifications`
-and `agentplane egress` read the base URLs and placeholders above from your `AGENTPLANE_*`
-environment variables, so a command needs no URL, header or proxy flag. Start with
+The `agentplane` command calls these APIs for you. Its service commands read the base URLs and
+placeholders above from your `AGENTPLANE_*` environment variables, so a command needs no URL, header
+or proxy flag. Start with
 `agentplane --help`; each command's `--help` says what it does and what its exit status means.
 
-Each service serves `/llms.txt` for its overview and links to workflow guides. For a harness
-without the command, and for the routes it lacks, each links an HTTP reference from its index, and
-Actions and Notifications serve `/openapi.json` for request/response schemas. Read the relevant
-service's index when starting a workflow, then only the guides needed for that task; you do not need
-to fetch every index at startup.
+The Egress, Actions, and Notifications HTTP services serve `/llms.txt` for overviews and links to
+workflow guides. Actions and Notifications also serve `/openapi.json` for request/response schemas.
+The Session Dispatcher exposes gRPC methods only, with no HTTP index. Check `agentplane --help` for
+the commands available in this image; when it lists `sessions`, use `agentplane sessions --help`.
+Read a relevant HTTP service's index when starting a workflow, then only the guides needed for that
+task; you do not need to fetch every index at startup.
 
 | Task | Starting point |
 | --- | --- |
@@ -46,6 +48,7 @@ to fetch every index at startup.
 | Find an Action and its arguments | `agentplane actions list`, then `agentplane actions show GROUP/ACTION` |
 | Establish expected auto-approval | `agentplane actions policy`: match the exact Action and intended arguments |
 | Submit, recover, cancel, or follow an Action | Actions `/llms.txt`: lifecycle and recovery guides |
+| Open or manage a Session | Check `agentplane --help`; if this image lists `sessions`, use `agentplane sessions --help` |
 | Check Kubernetes access or request a temporary grant | `kubectl auth can-i`; Actions `/llms.txt`: Kubernetes and grants guide |
 | Subscribe to Actions or GitHub, or handle an inbox notice | `agentplane notifications --help`; Notifications `/llms.txt` |
 

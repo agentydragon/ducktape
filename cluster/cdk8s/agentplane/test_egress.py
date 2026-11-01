@@ -161,6 +161,98 @@ def test_notifications_use_their_own_projected_audience(staging_manifests: list[
     assert notification_settings["token_audience"] == notifications.TOKEN_AUDIENCE
 
 
+def test_session_dispatcher_egress_is_limited_to_the_delegation_rpc_surfaces(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
+    """Only the Session and inventory RPCs get the Sandbox-bound bearer substitution.
+
+    The Gateway listener also hosts unrelated Runner-control RPCs. Compare normalized permissions
+    for rules that can reach this Service or consume its credential, so rule grouping and ordering
+    are irrelevant while a new route, method, destination, or uncredentialed path still fails.
+    """
+    destination = "session-dispatcher.agentplane-staging.svc.cluster.local"
+    service_url = f"http://{destination}:8080"
+    credential_name = "agentplane-session-dispatcher-workload"
+    audience = "session-dispatcher"
+    credential_placeholder = f"agentplane-credential-{credential_name}"
+    session_paths = [
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/OpenSession",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSessionOpening",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn",
+    ]
+    discovery_paths = [
+        "/agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments",
+        "/agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment",
+    ]
+    expected_permissions = {
+        (BASIC_POLICY, credential_name, destination, "POST", path, True) for path in (*session_paths, *discovery_paths)
+    }
+
+    def host_matches_destination(pattern: str) -> bool:
+        return pattern in {destination, "*"} or (
+            pattern.startswith("*.") and destination.endswith(pattern[1:]) and destination != pattern[2:]
+        )
+
+    actual_permissions: set[tuple[str, str | None, str, str, str, bool]] = set()
+    for policy in staging_manifests:
+        if policy["kind"] != "PolicySet":
+            continue
+        for rule in policy["spec"]["rules"]:
+            credential_ref = rule.get("credentialRef", {}).get("name")
+            # This separate opt-in set intentionally grants uncredentialed public access to any host.
+            if policy["metadata"]["name"] == PUBLIC_INTERNET_POLICY and credential_ref is None:
+                continue
+            if not any(host_matches_destination(host) for host in rule.get("hosts", [])) and (
+                credential_ref != credential_name
+            ):
+                continue
+
+            hosts = rule.get("hosts")
+            methods = rule.get("methods")
+            paths = rule.get("paths")
+            assert hosts, rule
+            assert methods, rule
+            assert paths, rule
+            actual_permissions.update(
+                (policy["metadata"]["name"], credential_ref, host, method, path, rule.get("clusterInternal", False))
+                for host in hosts
+                for method in methods
+                for path in paths
+            )
+
+    assert actual_permissions == expected_permissions
+
+    credential = _by_name(staging_manifests, "EgressCredential", credential_name)
+    gateway = _by_name(staging_manifests, "Deployment", "runner-gateway")["spec"]["template"]["spec"]
+    gateway_container = one(container for container in gateway["containers"] if container["name"] == "runner-gateway")
+    gateway_env = {entry["name"]: entry["value"] for entry in gateway_container["env"] if "value" in entry}
+    dispatcher_audience = gateway_env["AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_AUDIENCE"]
+    assert dispatcher_audience == audience
+    assert credential["spec"]["source"] == {"projectedWorkloadToken": {"audience": dispatcher_audience}}
+    assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}]
+    proxy_settings = yaml.safe_load(
+        _by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
+    )
+    assert proxy_settings["projected_token_audiences"].count(dispatcher_audience) == 1
+
+    # Both execution environments pass only the inert placeholder to the agent. The VM carries
+    # that value in its guest runner config; the Pod carries it in its runner container env.
+    pod_template = _by_name(staging_manifests, "SandboxTemplate", "runner-ducktape")
+    pod_runner = one(
+        container for container in pod_template["spec"]["pod"]["spec"]["containers"] if container["name"] == "runner"
+    )
+    pod_env = {entry["name"]: entry["value"] for entry in pod_runner["env"] if "value" in entry}
+    assert pod_env["AGENTPLANE_SESSIONS_URL"] == service_url
+    assert pod_env["AGENTPLANE_SESSIONS_CREDENTIAL"] == credential_placeholder
+
+    vm_runner = json.loads(_by_name(staging_manifests, "ConfigMap", "runner-vm-config")["data"]["runner.json"])
+    assert vm_runner["harness_environment"]["values"]["AGENTPLANE_SESSIONS_URL"] == service_url
+    assert vm_runner["harness_environment"]["values"]["AGENTPLANE_SESSIONS_CREDENTIAL"] == credential_placeholder
+
+
 def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(staging_manifests: list[dict[str, Any]]) -> None:
     """The bot can finish a pull request, not only open one.
 

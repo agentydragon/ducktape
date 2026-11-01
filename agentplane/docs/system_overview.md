@@ -15,9 +15,14 @@ ingress; selected Anthropic API models use a dedicated mounted key and a host-pi
 flowchart LR
     app[Integration app]
     subgraph unified[Runner Gateway]
-        dispatcher[Dispatcher API and durable delivery]
+        dispatcher[Dispatcher API, durable delivery and EnvironmentDiscovery]
         gateway[Runner proxy and state observation]
     end
+    pod[Managed Pod agent process and CLI]
+    sidecar[Egress sidecar]
+    guest[Managed VM agent process and CLI]
+    relay[VM launcher relay]
+    egress[Egress proxy]
     central[Experimental central sampler]
     sandboxctl[Sandbox Controller]
     k8s[Kubernetes API]
@@ -28,7 +33,18 @@ flowchart LR
     dispatcher -->|central opens + commands: Sampler gRPC| central
     sandboxctl -->|Quiesce| gateway
     dispatcher -->|watch + guarded wake| k8s
+    pod -.->|Session and environment gRPC over HTTPS_PROXY/CONNECT| sidecar
+    guest -.->|Session and environment gRPC over HTTPS_PROXY/CONNECT| relay
+    sidecar -.-> egress
+    relay -.-> egress
+    egress -.->|Exact RPC paths; substituted Sandbox bearer| dispatcher
 ```
+
+Managed Pod and VM callers receive only the inert `AGENTPLANE_SESSIONS_CREDENTIAL` placeholder. The
+`AGENTPLANE_SESSIONS_URL` targets `session-dispatcher.<namespace>.svc.cluster.local:8080`. The egress sidecar
+or VM launcher relay holds the short-lived `session-dispatcher` audience token; the central proxy substitutes
+it on the allowlisted SessionDispatcher and EnvironmentDiscovery RPC paths. Backend checks of the Sandbox
+identity and object UID remain authoritative; network reachability grants no Session authority.
 
 ## Central code-mode sampling (opt in)
 

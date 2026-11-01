@@ -67,7 +67,7 @@ flowchart LR
     app[Integration API]
     subgraph services[Agentplane services]
         direction TB
-        gw[Runner Gateway: queue, proxy and observation]
+        gw[Runner Gateway: Dispatcher, proxy and observation]
         sandboxctl[Sandbox Controller]
         policy[Policy Controller]
         hs[History Service]
@@ -89,6 +89,7 @@ flowchart LR
         runtime -->|private lifecycle and native RPC| runner
         runtime -->|lifecycle and execution RPC| execution
         execution -->|companion ownership| podexec
+        agent[Managed agent process and CLI]
         podexec[Codex executor container]
         sidecar[Egress sidecar]
       end
@@ -98,6 +99,7 @@ flowchart LR
         vmexecution[Execution Service]
         vmruntime -->|private lifecycle and native RPC| guest
         vmruntime -->|lifecycle and execution RPC| vmexecution
+        guest_agent[Managed agent process and CLI]
         manager[systemd manager]
         vmexec[Codex executor service]
         vmruntime -->|service lifetime| manager
@@ -160,8 +162,10 @@ flowchart LR
     sandboxctl --> k8s
     sandboxctl --> gw
     runner -->|local Codex JSON-RPC over WebSocket, isolated mode| podexec
+    runner -->|starts| agent
     podexec --> sidecar
     guest -->|local Codex JSON-RPC over WebSocket, isolated mode| vmexec
+    guest -->|starts| guest_agent
     vmexec --> relay
     runner --> sidecar --> egress
     guest --> relay --> egress
@@ -173,8 +177,11 @@ flowchart LR
     gw -->|mTLS Runner and Executor gRPC| vmruntime
     runner -.->|dials RunnerIngress.Push| sidecar
     sidecar -.->|outbound ingress route| hs
+    agent -.->|Session and EnvironmentDiscovery gRPC through HTTPS_PROXY/CONNECT| sidecar
     guest -.->|dials RunnerIngress.Push| relay
     relay -.->|outbound ingress route| hs
+    guest_agent -.->|Session and EnvironmentDiscovery gRPC through HTTPS_PROXY/CONNECT| relay
+    egress -.->|allowlisted gRPC methods, substituted Sandbox bearer| gw
 
     egress --> llm
 
