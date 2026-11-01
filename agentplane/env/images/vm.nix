@@ -85,8 +85,6 @@ let
       })
       [
         "agentplane-environment-runtime.service"
-        "agentplane-harness-host.service"
-        "agentplane-execution-service.service"
         "agentplane.slice"
         "agentplane-workloads.slice"
         "agentplane-executors.slice"

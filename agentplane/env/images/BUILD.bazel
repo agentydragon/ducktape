@@ -13,7 +13,6 @@ pkg_tar(
         "//agentplane/cli:agentplane",
         "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
         "//agentplane/env/runtime/execution/cmd:agentplane-execution-service",
-        "//agentplane/env/runtime/harnesshost/cmd:agentplane-harness-host",
     ],
     mode = "0755",
     package_dir = "/bin",

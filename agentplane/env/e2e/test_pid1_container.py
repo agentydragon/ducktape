@@ -102,8 +102,6 @@ async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str, b
 async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, abrupt: bool) -> None:
     load_oci_image(debian_slim.IMAGE)
     runner = get_required_path(launches.RUNTIME_BINARY).resolve()
-    host = get_required_path(launches.HOST_BINARY).resolve()
-    execution = get_required_path(launches.EXECUTION_BINARY).resolve()
     fixture = get_required_path(
         "_main/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
     ).resolve()
@@ -133,13 +131,10 @@ async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, 
         .with_kwargs(network_mode="host", user=f"{os.getuid()}:{os.getgid()}", pids_limit=128, mem_limit="256m")
         .with_volume_mapping(str(tmp_path), "/proof", mode="rw")
         .with_volume_mapping(str(runner), "/environment-runtime", mode="ro")
-        .with_volume_mapping(str(host), "/harness-host", mode="ro")
-        .with_volume_mapping(str(execution), "/execution-service", mode="ro")
         .with_volume_mapping(str(fixture), "/pid1-proof", mode="ro")
         .with_env("OTEL_SDK_DISABLED", "true")
         .with_command(
-            "/environment-runtime --harness-host-binary /harness-host --execution-service-binary /execution-service "
-            "--config /proof/environment-runtime.json --launch-file /proof/launch.json"
+            "/environment-runtime --config /proof/environment-runtime.json --launch-file /proof/launch.json"
         )
     )
     with container:

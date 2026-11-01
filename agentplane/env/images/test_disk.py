@@ -26,7 +26,6 @@ def test_environment_disk_holds_the_executables(tmp_path: Path) -> None:
         "agentplane",
         "agentplane-environment-runtime",
         "agentplane-execution-service",
-        "agentplane-harness-host",
     ):
         assert os.access(tmp_path / "bin" / name, os.X_OK)
 
