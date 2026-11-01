@@ -97,3 +97,18 @@ MemberRead loss at that operation despite successful exact Set construction.
 The rebound-factory negative pins its actual earlier `eager_rebind` rejection
 and absence of a factory certificate; separate callback invocation/conflict
 controls remain in that suite.
+
+## Per-pass retained-read expansion
+
+A real 979-sample CPU profile of the optimized 668 replay showed repeated
+`unsettle` callable-read expansion and prefix lookups/clones. Distinct closure
+contexts can share a callable's read bindings. The walk now expands each
+binding's current prefix values once per pass; every distinct closure still
+visits its own captured references. This changes no reach result: the pass
+only inserts unsettled objects or revokes audited results, and neither action
+changes prefix values or retained-reference edges. The local expansion set is
+discarded on return, so later prefix rebinding, new object properties and newly
+installed accessor capabilities are traversed in a subsequent pass. No global
+cache, revision equivalence or previously-unsettled-object pruning is used.
+Synthetic controls retain both distinct closure contexts and a new object
+reached through a previously visited closure after a later binding write.

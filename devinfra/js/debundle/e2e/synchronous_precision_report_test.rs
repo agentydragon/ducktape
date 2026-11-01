@@ -1185,3 +1185,37 @@ fn external_binding_alias_proof_excludes_reassignment_private_and_skipped_values
         );
     }
 }
+
+#[test]
+fn skipped_reach_keeps_distinct_captures_and_later_prefix_references() {
+    for (source, readers, expected) in [
+        (
+            "var shared = { label: 'shared' };\nfunction capture(record) { return () => [record, shared]; }\nconst first = { name: 'first' };\nconst second = { name: 'second' };\nconst callbacks = [capture(first), capture(second)];\nfunction install(callbacks) { for (const callback of callbacks) { const [record] = callback(); Object.defineProperty(record, 'name', { get() { return state; } }); } }\ninstall(...[callbacks]);\nconst left = first.name;\nconst right = second.name;\nvar state = 'late';\nconsole.log(left, right);\n",
+            vec!["left", "right"],
+            "undefined undefined\n",
+        ),
+        (
+            "let current = { name: 'first' };\nconst reader = () => current;\nfunction install(callback) { Object.defineProperty(callback(), 'name', { get() { return state; } }); }\ninstall(...[reader]);\nconst second = { name: 'second' };\nconst before = second.name;\ncurrent = second;\ninstall(...[reader]);\nconst observed = second.name;\nvar state = 'late';\nconsole.log(before, observed);\n",
+            vec!["observed"],
+            "second undefined\n",
+        ),
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output(&fixture, expected);
+        if readers == ["observed"] {
+            assert_eq!(execution(&fixture, "before")["complete"], true);
+        }
+        let graph = fixture.dependency_graph();
+        let state = source_unit_for_binding(&graph, "state");
+        for reader in readers {
+            assert_reason(
+                &execution(&fixture, reader),
+                serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
+            );
+            let reader = source_unit_for_binding(&graph, reader);
+            assert!(graph.edges.iter().any(|edge| {
+                edge.source == reader && edge.target == state && edge.constrains_init_order
+            }));
+        }
+    }
+}
