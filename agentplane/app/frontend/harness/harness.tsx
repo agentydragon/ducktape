@@ -3288,8 +3288,73 @@ routes.push(
   ],
   [
     "GET",
+    /^\/upstream\/app\/v1\/threads\/([0-9a-f-]+)$/,
+    (match) => {
+      const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === match[1]);
+      return thread === undefined
+        ? Response.json({ detail: "thread not found" }, { status: 404 })
+        : {
+            threadId: thread.id,
+            createdAt: thread.created_at,
+            ...(thread.name === null ? {} : { name: thread.name }),
+            archived: thread.archived,
+          };
+    },
+  ],
+  [
+    "GET",
     /^\/upstream\/history\/v1\/sessions\/([0-9a-f-]+)\/summary$/,
-    (match) => ({ sessionId: match[1], committedCursor: "34", foldedThrough: "34" }),
+    (match) => {
+      const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === match[1]);
+      if (thread === undefined) return Response.json({ detail: "session not found" }, { status: 404 });
+      const feedStatus =
+        thread.feed_status === "active"
+          ? "FEED_STATUS_ACTIVE"
+          : thread.feed_status === "ended"
+            ? "FEED_STATUS_ENDED"
+            : thread.feed_status === "failed"
+              ? "FEED_STATUS_FAILED"
+              : undefined;
+      return {
+        sessionId: thread.id,
+        committedCursor: "34",
+        foldedThrough: "34",
+        ...(thread.last_event_at === null
+          ? {}
+          : { firstEventAt: thread.created_at, lastEventAt: thread.last_event_at }),
+        ...(thread.last_model_activity_at === null ? {} : { lastModelActivityAt: thread.last_model_activity_at }),
+        ...(thread.last_turn_status === null ? {} : { lastTurnStatus: thread.last_turn_status }),
+        ...(thread.idle_since === null ? {} : { idleSince: thread.idle_since }),
+        ...(feedStatus === undefined ? {} : { feedStatus }),
+        ...(thread.sandbox
+          ? {
+              sandbox: {
+                namespace: "agentplane-visual",
+                name: thread.sandbox,
+                ...(thread.sandbox_uid === null ? {} : { uid: thread.sandbox_uid }),
+              },
+            }
+          : {}),
+        ...(thread.harness === null
+          ? {}
+          : {
+              attached: {
+                sessionId: thread.id,
+                spec: {
+                  harness: thread.harness,
+                  cwd: thread.cwd ?? "",
+                  model: thread.model ?? "",
+                  reasoningEffort: thread.reasoning_effort ?? "",
+                },
+                lastCursor: "34",
+                harnessState: thread.harness_state ?? "HARNESS_STATE_UNSPECIFIED",
+                activeTurnId: thread.active_turn_id ?? "",
+                setupState: thread.setup_state ?? "SETUP_STATE_UNSPECIFIED",
+                launchOutcome: thread.launch_outcome ?? "LAUNCH_OUTCOME_UNSPECIFIED",
+              },
+            }),
+      };
+    },
   ],
   [
     "GET",
