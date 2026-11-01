@@ -314,7 +314,6 @@ py_test(
         "@pypi//grpcio",
         "@pypi//httpx",
         "@pypi//protobuf",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

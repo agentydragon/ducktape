@@ -67,11 +67,6 @@ type streamSandboxInventory interface {
 	Get(context.Context, string) (*sandboxespb.Sandbox, error)
 }
 
-type streamThreadStore interface {
-	threadReadStore
-	ArchivedCount(context.Context) (int, error)
-}
-
 type streamHistoryStore interface {
 	threadReadHistory
 	ReadWatermark(context.Context, uuid.UUID) (uint64, error)
@@ -85,7 +80,7 @@ type StreamingDependencies struct {
 	UpdatesConnected func() bool
 	Live             streamLiveInventory
 	Sandboxes        streamSandboxInventory
-	Threads          streamThreadStore
+	Threads          threadReadStore
 	History          streamHistoryStore
 	HistoryFollower  interface {
 		FollowSession(context.Context, *historypb.FollowSessionRequest) (grpc.ServerStreamingClient[historypb.FollowSessionResponse], error)
@@ -111,7 +106,6 @@ type StreamingDependencies struct {
 func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependencies) {
 	routes := newStreamingRoutes(server, dependencies)
 	server.RegisterRawRoute("GET /live/sandboxes", http.HandlerFunc(routes.liveSandboxes), false)
-	server.RegisterRawRoute("GET /live/threads", http.HandlerFunc(routes.liveThreads), false)
 	server.RegisterRawRoute("GET /live/sandboxes/{name}", http.HandlerFunc(routes.liveSandbox), false)
 	server.RegisterRawRoute("GET /live/sandboxes/{name}/egress/decisions", http.HandlerFunc(routes.liveDecisions), false)
 	server.RegisterRawRoute("GET /threads/{thread_id}/events/stream", http.HandlerFunc(routes.threadEvents), false)
@@ -133,14 +127,12 @@ type streamingRoutes struct {
 	deps   StreamingDependencies
 
 	sandboxLists   *frameTopics[struct{}, []byte]
-	threadLists    *frameTopics[threadListKey, []byte]
 	sandboxDetails *frameTopics[sandboxDetailKey, sandboxDetail]
 }
 
 func newStreamingRoutes(server *HTTPServer, deps StreamingDependencies) *streamingRoutes {
 	r := &streamingRoutes{server: server, deps: deps}
 	r.sandboxLists = newFrameTopics(r.logger, r.produceSandboxList)
-	r.threadLists = newFrameTopics(r.logger, r.produceThreadList)
 	r.sandboxDetails = newFrameTopics(r.logger, r.produceSandboxDetail)
 	return r
 }
@@ -160,14 +152,6 @@ type kindFailureView struct {
 type sandboxListFrame struct {
 	Sandboxes []SandboxView   `json:"sandboxes"`
 	Watch     watchHealthView `json:"watch"`
-}
-
-type liveThreadsFrame struct {
-	Threads          []threadView    `json:"threads"`
-	More             bool            `json:"more"`
-	ArchivedCount    int             `json:"archived_count"`
-	UpdatesConnected bool            `json:"updates_connected"`
-	Watch            watchHealthView `json:"watch"`
 }
 
 type liveSandboxFrame struct {
@@ -207,16 +191,6 @@ func (r *streamingRoutes) logger() *slog.Logger {
 		return r.deps.Logger
 	}
 	return slog.Default()
-}
-
-// threadListKey is every input of a /live/threads frame.
-type threadListKey struct {
-	limit           int
-	search          string
-	searching       bool
-	includeArchived bool
-	openThread      uuid.UUID
-	hasOpenThread   bool
 }
 
 // sandboxDetailKey is every input of a /live/sandboxes/{name} frame except its Action policy, which depends on the
@@ -266,100 +240,6 @@ func (r *streamingRoutes) produceSandboxList(ctx context.Context, _ struct{}, pu
 			return nil
 		}
 	}
-}
-
-func (r *streamingRoutes) liveThreads(w http.ResponseWriter, request *http.Request) {
-	if r.deps.Live == nil || r.deps.Threads == nil || r.deps.History == nil {
-		writeDetailError(w, http.StatusServiceUnavailable, "live thread inventory is unavailable")
-		return
-	}
-	key := threadListKey{limit: 50}
-	if text := request.URL.Query().Get("limit"); text != "" {
-		value, err := strconv.Atoi(text)
-		if err != nil || value < 1 || value > threadMaxPageSize {
-			writeDetailError(w, http.StatusUnprocessableEntity, "limit must be between 1 and 200")
-			return
-		}
-		key.limit = value
-	}
-	if _, present := request.URL.Query()["search"]; present {
-		key.search = request.URL.Query().Get("search")
-		if key.search == "" {
-			writeDetailError(w, http.StatusUnprocessableEntity, "search must contain at least 1 character")
-			return
-		}
-		key.searching = true
-	}
-	includeArchived, err := parseOptionalBool(request.URL.Query(), "include_archived", false)
-	if err != nil {
-		writeDetailError(w, http.StatusUnprocessableEntity, "include_archived must be a boolean")
-		return
-	}
-	key.includeArchived = includeArchived
-	if value := request.URL.Query().Get("open_thread"); value != "" {
-		id, parseErr := uuid.Parse(value)
-		if parseErr != nil {
-			writeDetailError(w, http.StatusUnprocessableEntity, "open_thread must be a UUID")
-			return
-		}
-		key.openThread, key.hasOpenThread = id, true
-	}
-	ctx, cancel := r.requestLifetime(request)
-	defer cancel()
-	frames, unsubscribe := r.threadLists.subscribe(key)
-	defer unsubscribe()
-	streamLiveFrames(r, w, ctx, frames, encodedFrame)
-}
-
-// produceThreadList re-reads the thread window on each thread notification, which History summary changes and a
-// listener reconnect also send. Kubernetes inventory changes do not touch it: Sandboxes come from /live/sandboxes.
-func (r *streamingRoutes) produceThreadList(ctx context.Context, key threadListKey, publish func([]byte)) error {
-	updates, stopUpdates, err := r.subscribeThreadUpdates()
-	if err != nil {
-		return err
-	}
-	defer stopUpdates()
-	for {
-		page, err := r.threadWindow(ctx, key)
-		if err != nil {
-			return err
-		}
-		archived, err := r.deps.Threads.ArchivedCount(ctx)
-		if err != nil {
-			return err
-		}
-		data, err := json.Marshal(liveThreadsFrame{
-			Threads: page.Threads, More: page.NextPageToken != nil, ArchivedCount: archived,
-			UpdatesConnected: r.updatesConnected(), Watch: healthView(r.deps.Live.Health()),
-		})
-		if err != nil {
-			return err
-		}
-		publish(data)
-		if _, ended := waitLiveChange(ctx, nil, updates); ended {
-			return nil
-		}
-	}
-}
-
-func (r *streamingRoutes) threadWindow(ctx context.Context, key threadListKey) (threadPage, error) {
-	listing := threadListing{IncludeArchived: key.includeArchived}
-	if key.searching {
-		listing.Search = &key.search
-	}
-	page, err := listThreadViews(ctx, r.deps.Threads, r.deps.History, listing, key.limit, nil)
-	if err != nil || !key.hasOpenThread {
-		return page, err
-	}
-	for _, thread := range page.Threads {
-		if thread.ID == key.openThread {
-			return page, nil
-		}
-	}
-	if opened, getErr := getThreadView(ctx, r.deps.Threads, r.deps.History, key.openThread); getErr == nil {
-		page.Threads = append(page.Threads, opened)
-	}
-	return page, nil
 }
 
 func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Request) {

@@ -6,13 +6,20 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { SandboxView, ThreadView } from "./schema";
-import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./threads/live";
+import type * as ThreadClientModule from "./threads/client";
+import { listThreadWindow } from "./threads/client";
+import { RoutedThreadsLiveProvider } from "./threads/live";
 import { SandboxesLiveProvider, type SandboxesSnapshot } from "./sandboxes/live";
 import { Sidebar } from "./sidebar";
 import { threadViewRecorder } from "./threads/thread_view_recorder";
 import { ConnectionIndicator, DEGRADED_AFTER_MS } from "./stream_status";
 import type { InboxNoticeState, SessionNoticeStates } from "./notification_types";
-import { latestOn, reconnected, type ServedWatch, serveEventStreams } from "./testing/watch";
+import { latestOn, reconnected, ServedWatch, serveEventStreams } from "./testing/watch";
+
+vi.mock("./threads/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof ThreadClientModule>()),
+  listThreadWindow: vi.fn(),
+}));
 
 const NO_NOTICES: Omit<InboxNoticeState, "inboxId" | "sessionId"> = { queued: 0, unacknowledged: 0 };
 
@@ -98,40 +105,27 @@ function LocationProbe(): JSX.Element {
   return <div data-testid="location">{location.pathname}</div>;
 }
 
-/** What the server would push for this listing: the newest `limit` of the threads it matches, then
- * the open thread if it is not among them. */
-function snapshot(threads: ThreadView[], url = "/live/threads"): ThreadsSnapshot {
-  const query = new URL(url, "http://test").searchParams;
-  const search = query.get("search")?.toLowerCase();
-  const limit = Number(query.get("limit") ?? threads.length);
-  const matching = threads.filter(
-    (candidate) =>
-      (query.get("include_archived") === "true" || !candidate.archived) &&
-      (search === undefined || (candidate.name ?? "").toLowerCase().includes(search))
-  );
-  const listed = matching.slice(0, limit);
-  const open = threads.find((candidate) => candidate.id === query.get("open_thread"));
-  return {
-    threads: open === undefined || listed.includes(open) ? listed : [...listed, open],
-    more: matching.length > limit,
-    archived_count: threads.filter((candidate) => candidate.archived).length,
-    updates_connected: true,
-    watch: { healthy: true, failing: {} },
-  };
-}
-
 /** What the server would push on /live/sandboxes. */
 function inventory(sandboxes: Record<string, SandboxView>): SandboxesSnapshot {
   return { sandboxes: Object.values(sandboxes), watch: { healthy: true, failing: {} } };
 }
 
 /** The server's end of the streams on one path: it writes down the latest connection. */
-interface StreamEnd {
+interface ThreadWatchEnd {
   served: ServedWatch[];
   pathname: string;
 }
 
-async function pushSnapshot(stream: StreamEnd, value: ThreadsSnapshot | SandboxesSnapshot): Promise<void> {
+let listedThreads: ThreadView[] = [];
+
+async function pushThreadChange(stream: ThreadWatchEnd, connected = true): Promise<void> {
+  await act(async () => latestOn(stream.served, stream.pathname).send({ changed: {}, updatesConnected: connected }));
+}
+
+async function pushSandboxSnapshot(
+  stream: { served: ServedWatch[]; pathname: string },
+  value: SandboxesSnapshot
+): Promise<void> {
   await act(async () => latestOn(stream.served, stream.pathname).event("snapshot", JSON.stringify(value)));
 }
 
@@ -147,11 +141,12 @@ async function render(
 ): Promise<{
   onOpenSettings: ReturnType<typeof vi.fn>;
   onClose: ReturnType<typeof vi.fn>;
-  stream: StreamEnd;
-  sandboxStream: StreamEnd;
+  stream: ThreadWatchEnd;
+  sandboxStream: { served: ServedWatch[]; pathname: string };
   noticeUrls: string[];
 }> {
   const noticeUrls: string[] = [];
+  const threadServed: ServedWatch[] = [];
   const served = serveEventStreams((stream) => {
     const { pathname, searchParams } = stream.url;
     if (pathname === "/threads/notices/stream") {
@@ -174,8 +169,45 @@ async function render(
       stream.event("snapshot", JSON.stringify(inventory(sandboxes)));
       return;
     }
-    expect(pathname).toBe("/live/threads");
-    stream.event("snapshot", JSON.stringify(snapshot(threads, stream.url.href)));
+    throw new Error(`Unexpected event stream route: ${pathname}`);
+  });
+  listedThreads = threads;
+  const eventFetch = globalThis.fetch;
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input), "http://test");
+    if (new Headers(init?.headers).get("Accept") === "application/x-ndjson") {
+      if (
+        url.pathname === "/upstream/app/v1/threads:watch" ||
+        url.pathname === "/upstream/history/v1/session-summaries:watch"
+      ) {
+        const watch = new ServedWatch(String(input), init?.signal ?? undefined);
+        threadServed.push(watch);
+        if (!reconnected(threadServed, watch)) {
+          watch.send(
+            url.pathname === "/upstream/app/v1/threads:watch"
+              ? { changed: {}, updatesConnected: true }
+              : { changed: {} }
+          );
+        }
+        return Promise.resolve(watch.response);
+      }
+    }
+    return eventFetch(input, init);
+  });
+  vi.mocked(listThreadWindow).mockImplementation(async (listing, openThreadId) => {
+    const matching = listedThreads.filter(
+      (candidate) =>
+        (listing.includeArchived || !candidate.archived) &&
+        (listing.search === null || (candidate.name ?? "").toLowerCase().includes(listing.search.toLowerCase()))
+    );
+    const visible = matching.slice(0, listing.limit);
+    const openThread = listedThreads.find((candidate) => candidate.id === openThreadId);
+    if (openThread && !visible.some((candidate) => candidate.id === openThread.id)) visible.push(openThread);
+    return {
+      threads: visible,
+      more: matching.length > listing.limit,
+      archived_count: listedThreads.filter((candidate) => candidate.archived).length,
+    };
   });
   fetchMock.mockImplementation((request: Request) => {
     const url = new URL(request.url);
@@ -225,7 +257,7 @@ async function render(
   return {
     onOpenSettings,
     onClose,
-    stream: { served, pathname: "/live/threads" },
+    stream: { served: threadServed, pathname: "/upstream/app/v1/threads:watch" },
     sandboxStream: { served, pathname: "/live/sandboxes" },
     noticeUrls,
   };
@@ -257,8 +289,9 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(1);
 
   const renamed = { ...running, name: "Renamed in another replica" };
-  await pushSnapshot(stream, snapshot([renamed]));
-  await pushSnapshot(
+  listedThreads = [renamed];
+  await pushThreadChange(stream);
+  await pushSandboxSnapshot(
     sandboxStream,
     inventory({
       "test-sandbox": sandbox("test-sandbox", {
@@ -278,7 +311,7 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   expect(container.textContent).toContain("0 threads");
   expect(fetchMock).not.toHaveBeenCalled();
 
-  await pushSnapshot(sandboxStream, inventory({}));
+  await pushSandboxSnapshot(sandboxStream, inventory({}));
   expect(container.querySelector('a[href="/sandboxes/test-sandbox"]')).toBeNull();
   await act(async () => row(renamed.name).click());
   expect(location()).toBe("/threads/t-1");
@@ -297,9 +330,7 @@ it("shows chevrons in the shared status indicator when a fresh sidebar thread ha
   expect(indicator?.getAttribute("data-status")).toBe("running");
   expect(indicator?.querySelector("svg")).not.toBeNull();
 
-  const stale = snapshot([active]);
-  stale.watch = { healthy: false, failing: { pods: { error: "test-failure", since: new Date().toISOString() } } };
-  await pushSnapshot(stream, stale);
+  await pushThreadChange(stream, false);
   const staleIndicator = container.querySelector(
     '.agentplane-thread-status-indicator[aria-label="No live harness confirmed"]'
   );
@@ -329,19 +360,14 @@ it("keeps retained rows but withdraws live indicators when any update source is 
   expect(container.textContent).toContain("Retained thread");
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(0);
 
-  await pushSnapshot(stream, { ...snapshot(threads), updates_connected: false });
+  await pushThreadChange(stream, false);
   expect(container.querySelector('[data-connection="stale"]')?.getAttribute("aria-label")).toContain(
     "thread updates disconnected"
   );
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(0);
 
-  const stale = snapshot(threads);
-  stale.watch = { healthy: false, failing: { pods: { error: "test-failure", since: new Date().toISOString() } } };
-  await pushSnapshot(stream, stale);
-  expect(container.querySelector('[data-connection="stale"]')?.getAttribute("aria-label")).toContain("watch failing");
-  expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(0);
-
-  await pushSnapshot(stream, snapshot([{ ...threads[0], name: "Current thread" }]));
+  listedThreads = [{ ...threads[0], name: "Current thread" }];
+  await pushThreadChange(stream, true);
   expect(container.textContent).not.toContain("Retained thread");
   expect(container.querySelector("[data-connection]")).toBeNull();
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(1);

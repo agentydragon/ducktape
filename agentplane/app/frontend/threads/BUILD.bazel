@@ -806,11 +806,19 @@ ts_library(
     srcs = ["live.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:schema",
+        "//agentplane/app/frontend:stream_reader",
+        "//agentplane/app/frontend:stream_status",
+        "//agentplane/app/frontend:watch_stream",
+        "//agentplane/app/thread_metadata:thread_metadata_pb",
+        "//agentplane/history_service:history_service_pb",
     ],
 )
 

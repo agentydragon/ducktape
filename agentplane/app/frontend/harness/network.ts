@@ -152,17 +152,17 @@ export function liveNdjsonWatch(
   path: string,
   initial: readonly unknown[],
   updates: () => readonly unknown[],
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
+  drop = false
 ): Response {
+  const text = (results: readonly unknown[]): string =>
+    results.map((result) => `${JSON.stringify({ result })}\n`).join("");
   return streamResponse(
     "application/x-ndjson",
-    ndjson(initial),
+    text(initial),
     signal,
-    {
-      path,
-      updates: () => ndjson(updates()),
-    },
-    false
+    drop ? null : { path, updates: () => text(updates()) },
+    drop
   );
 }
 

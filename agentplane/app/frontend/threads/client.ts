@@ -6,10 +6,17 @@ import { api, displayableError, fetchWithLogin, HttpError, ok } from "../client"
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { TurnStatusSchema } from "../../../proto/event_pb";
 import { HarnessSchema, HarnessStateSchema, LaunchOutcomeSchema, SetupStateSchema } from "../../../proto/runner_pb";
-import { ThreadMetadataSchema, type ThreadMetadata } from "../../thread_metadata/thread_metadata_pb";
 import {
+  ListThreadMetadataResponseSchema,
+  ThreadMetadataSchema,
+  type ThreadMetadata,
+} from "../../thread_metadata/thread_metadata_pb";
+import {
+  BatchGetSessionSummariesRequestSchema,
+  BatchGetSessionSummariesResponseSchema,
   EntityKeySchema,
   FeedStatusSchema,
+  FindSessionsResponseSchema,
   GetSessionSummaryRequestSchema,
   ReadEntityEvidenceRequestSchema,
   ReadEntityEvidenceResponseSchema,
@@ -31,6 +38,12 @@ import {
 } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
 type ThreadView = ThreadViewSchema;
+export interface ThreadListing {
+  limit: number;
+  search: string | null;
+  includeArchived: boolean;
+}
+export type ThreadWindow = { threads: ThreadView[]; more: boolean; archived_count: number };
 export type ObservationEntry = { cursor: string; entry: JsonValue };
 export type ObservationPage = {
   observations: Array<{ cursor: string; kind: string }>;
@@ -450,26 +463,33 @@ export async function getThread(threadId: string): Promise<ThreadView> {
 }
 
 /** Join app-owned metadata with History's generated Session summary at the browser boundary. */
-export async function findThread(threadId: string): Promise<ThreadView | null> {
+export async function findThread(threadId: string, signal?: AbortSignal): Promise<ThreadView | null> {
   const encodedId = encodeURIComponent(threadId);
   const [metadata, summary] = await Promise.all([
     fetchProto(
       `/upstream/app/v1/threads/${encodedId}`,
       (json) => fromJson(ThreadMetadataSchema, json),
-      `Thread metadata for ${threadId}`
+      `Thread metadata for ${threadId}`,
+      signal
     ),
     fetchProto(
       `/upstream/history/v1/sessions/${encodedId}/summary`,
       (json) => fromJson(SessionSummarySchema, json),
-      `History summary for ${threadId}`
+      `History summary for ${threadId}`,
+      signal
     ),
   ]);
   if (!metadata || !summary || !summary.sandbox?.name) return null;
   return composeThreadView(metadata, summary);
 }
 
-async function fetchProto<T>(path: string, parse: (json: JsonValue) => T, label: string): Promise<T | null> {
-  const response = await fetchWithLogin(new URL(path, window.location.href));
+async function fetchProto<T>(
+  path: string,
+  parse: (json: JsonValue) => T,
+  label: string,
+  signal?: AbortSignal
+): Promise<T | null> {
+  const response = await fetchWithLogin(new URL(path, window.location.href), { signal });
   if (response.status === 404) return null;
   if (!response.ok) {
     let detail = response.statusText;
@@ -511,9 +531,14 @@ function composeThreadView(metadata: ThreadMetadata, summary: SessionSummary): T
     FEED_STATUS_ENDED: "ended",
     FEED_STATUS_FAILED: "failed",
   };
-  const feedStatusName = attachment ? enumName(summary.feedStatus, FeedStatusSchema, "FeedStatus") : null;
+  // An attached Session can precede the first runner feed observation. History represents
+  // that valid state with FEED_STATUS_UNSPECIFIED, which the old Thread view exposed as null.
+  const feedStatusName =
+    attachment && summary.feedStatus !== 0 ? enumName(summary.feedStatus, FeedStatusSchema, "FeedStatus") : null;
   const feedStatus = feedStatusName === null ? null : feedStatusNames[feedStatusName];
-  if (attachment && !feedStatus) throw new Error(`History Service returned an unknown FeedStatus: ${feedStatusName}`);
+  if (feedStatusName !== null && !feedStatus) {
+    throw new Error(`History Service returned an unknown FeedStatus: ${feedStatusName}`);
+  }
 
   return {
     id: metadata.threadId,
@@ -538,6 +563,94 @@ function composeThreadView(metadata: ThreadMetadata, summary: SessionSummary): T
     last_turn_status:
       summary.lastTurnStatus === undefined ? null : enumName(summary.lastTurnStatus, TurnStatusSchema, "TurnStatus"),
   } as ThreadView;
+}
+
+/** Pages app-owned Thread rows, joins History summaries, and keeps the former live-list semantics. */
+export async function listThreadWindow(
+  listing: ThreadListing,
+  openThreadId: string | null,
+  signal?: AbortSignal
+): Promise<ThreadWindow> {
+  if (listing.limit < 1) throw new Error("Thread list limit must be positive");
+
+  const search = listing.search?.toLowerCase() ?? null;
+  const sandboxMatches = new Set<string>();
+  if (listing.search !== null) {
+    const query = new URLSearchParams({ sandbox_name_contains: listing.search });
+    const found = fromJson(FindSessionsResponseSchema, await historyJson(`/sessions:find?${query}`, { signal }));
+    for (const session of found.sessions) sandboxMatches.add(session.sessionId);
+  }
+
+  const threads: ThreadView[] = [];
+  const seenTokens = new Set<string>();
+  let archivedCount = 0;
+  let pageToken = "";
+  let more = false;
+  for (;;) {
+    const query = new URLSearchParams({ include_archived: String(listing.includeArchived), limit: "200" });
+    if (pageToken !== "") query.set("page_token", pageToken);
+    const metadata = await fetchProto(
+      `/upstream/app/v1/threads?${query}`,
+      (json) => fromJson(ListThreadMetadataResponseSchema, json),
+      "Thread metadata list",
+      signal
+    );
+    if (!metadata) throw new Error("Thread metadata list was not found");
+    if (pageToken === "") archivedCount = metadata.archivedCount;
+
+    const ids = metadata.threads.map((thread) => thread.threadId);
+    const summaries =
+      ids.length === 0
+        ? []
+        : fromJson(
+            BatchGetSessionSummariesResponseSchema,
+            await historyJson("/sessions:batchGetSummaries", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(
+                toJson(
+                  BatchGetSessionSummariesRequestSchema,
+                  create(BatchGetSessionSummariesRequestSchema, { sessionIds: ids })
+                )
+              ),
+              signal,
+            })
+          ).summaries;
+    const byID = new Map(summaries.map((summary) => [summary.sessionId, summary]));
+    for (const metadataRow of metadata.threads) {
+      const summary = byID.get(metadataRow.threadId);
+      if (!summary) continue;
+      const matchesSearch =
+        search === null ||
+        (metadataRow.name?.toLowerCase().includes(search) ?? false) ||
+        metadataRow.threadId.toLowerCase().startsWith(search) ||
+        sandboxMatches.has(metadataRow.threadId);
+      if (!matchesSearch) continue;
+      if (!summary.sandbox?.name) throw new Error("History Session has no Sandbox identity");
+      threads.push(composeThreadView(metadataRow, summary));
+      if (threads.length > listing.limit) {
+        more = true;
+        break;
+      }
+    }
+    if (more || metadata.nextPageToken === "") break;
+    if (seenTokens.has(metadata.nextPageToken) || metadata.nextPageToken === pageToken) {
+      throw new Error("Thread metadata page token did not advance");
+    }
+    seenTokens.add(metadata.nextPageToken);
+    pageToken = metadata.nextPageToken;
+  }
+
+  const visible = threads.slice(0, listing.limit);
+  if (openThreadId !== null && !visible.some((thread) => thread.id === openThreadId)) {
+    try {
+      const opened = await findThread(openThreadId, signal);
+      if (opened) visible.push(opened);
+    } catch (reason) {
+      if (signal?.aborted) throw reason;
+    }
+  }
+  return { threads: visible, more, archived_count: archivedCount };
 }
 
 /** Set the thread's name; null (or a blank, which the API normalises) leaves it unnamed. */

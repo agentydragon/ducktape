@@ -3,6 +3,7 @@ syntax = "proto3";
 package agentplane.app;
 
 import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
 // ThreadMetadataService exposes only the integration app's persisted Thread metadata.
@@ -11,14 +12,21 @@ service ThreadMetadataService {
   // Get metadata for an app-owned Thread.
   rpc GetThreadMetadata(GetThreadMetadataRequest) returns (ThreadMetadata) {
     option (google.api.http) = {
-      get: "/upstream/app/v1/threads/{thread_id}"
+      get: "/v1/threads/{thread_id}"
     };
   }
 
   // List app-owned Thread metadata newest first.
   rpc ListThreadMetadata(ListThreadMetadataRequest) returns (ListThreadMetadataResponse) {
     option (google.api.http) = {
-      get: "/upstream/app/v1/threads"
+      get: "/v1/threads"
+    };
+  }
+
+  // A Thread metadata change invalidates the caller's list; the caller reads it again.
+  rpc WatchThreadMetadata(WatchThreadMetadataRequest) returns (stream WatchThreadMetadataResponse) {
+    option (google.api.http) = {
+      get: "/v1/threads:watch"
     };
   }
 }
@@ -46,4 +54,14 @@ message ListThreadMetadataRequest {
 message ListThreadMetadataResponse {
   repeated ThreadMetadata threads = 1;
   string next_page_token = 2;
+  int32 archived_count = 3;
+}
+
+message WatchThreadMetadataRequest {}
+
+message WatchThreadMetadataResponse {
+  // Sent when the stream opens and whenever app-owned Thread metadata may have changed.
+  google.protobuf.Empty changed = 1;
+  // Whether the PostgreSQL notification listener is connected to the Thread change channel.
+  bool updates_connected = 2;
 }

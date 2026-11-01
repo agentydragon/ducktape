@@ -1190,35 +1190,6 @@ func (f *liveFramesFixture) awaitProducerStopped(t *testing.T) {
 	}
 }
 
-func TestLiveThreadStreamsComputeEachThreadUpdateOnceAndIgnoreKubernetes(t *testing.T) {
-	f := newLiveFramesFixture()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	responses, wait := openLiveStreams(ctx, f.routes.liveThreads, func() *http.Request {
-		return httptest.NewRequest(http.MethodGet, "/live/threads?limit=10", nil)
-	}, 3)
-
-	waitForEveryStream(t, responses, liveFramesFirstThread.String())
-	f.assertReads(t, "initial frame", 0, 1)
-
-	// Sandboxes come from /live/sandboxes: a Kubernetes change neither reads the inventory nor re-reads threads.
-	deadline := metav1.NewTime(time.Date(2026, 10, 20, 1, 4, 3, 0, time.UTC))
-	f.live.change(liveFramesSnapshot(&deadline))
-	f.store.setRows(threads.Thread{ID: liveFramesSecondThread}, threads.Thread{ID: liveFramesFirstThread})
-	f.updates.changes <- struct{}{}
-	waitForEveryStream(t, responses, liveFramesSecondThread.String())
-	f.assertReads(t, "thread update", 0, 2)
-	for _, response := range responses {
-		if body := response.String(); strings.Contains(body, `"sandboxes"`) || strings.Contains(body, "idle_suspend_at") {
-			t.Fatalf("thread stream carried Sandboxes: %s", body)
-		}
-	}
-
-	cancel()
-	wait()
-	f.awaitProducerStopped(t)
-}
-
 func TestLiveSandboxStreamsShareThreadReadsAcrossViewers(t *testing.T) {
 	f := newLiveFramesFixture()
 	ctx, cancel := context.WithCancel(context.Background())

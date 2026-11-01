@@ -20,7 +20,6 @@ import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../ac
 import type { BindingView, Decision, PolicySetView } from "../sandboxes/client";
 import type { DecisionsSnapshot, SandboxSnapshot, SandboxesSnapshot } from "../sandboxes/live";
 import type { WatchHealth } from "../live";
-import type { ThreadsSnapshot } from "../threads/live";
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
 import "@mantine/core/styles.css";
 
@@ -3293,12 +3292,25 @@ routes.push(
       const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === match[1]);
       return thread === undefined
         ? Response.json({ detail: "thread not found" }, { status: 404 })
-        : {
-            threadId: thread.id,
-            createdAt: thread.created_at,
-            ...(thread.name === null ? {} : { name: thread.name }),
-            archived: thread.archived,
-          };
+        : threadMetadataProtoJson(mapThread(thread));
+    },
+  ],
+  [
+    "GET",
+    /^\/upstream\/app\/v1\/threads$/,
+    (_match, query) => {
+      const all = THREADS_WITH_SANDBOXES.map(mapThread);
+      const archivedCount = all.filter((thread) => thread.archived).length;
+      const includeArchived = query.get("include_archived") === "true";
+      const listed = all.filter((thread) => includeArchived || !thread.archived);
+      const offset = Number(query.get("page_token") ?? "0");
+      const limit = Number(query.get("limit") ?? "50");
+      const threads = listed.slice(offset, offset + limit);
+      return {
+        threads: threads.map(threadMetadataProtoJson),
+        nextPageToken: offset + threads.length < listed.length ? String(offset + threads.length) : "",
+        archivedCount,
+      };
     },
   ],
   [
@@ -3307,52 +3319,34 @@ routes.push(
     (match) => {
       const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === match[1]);
       if (thread === undefined) return Response.json({ detail: "session not found" }, { status: 404 });
-      const feedStatus =
-        thread.feed_status === "active"
-          ? "FEED_STATUS_ACTIVE"
-          : thread.feed_status === "ended"
-            ? "FEED_STATUS_ENDED"
-            : thread.feed_status === "failed"
-              ? "FEED_STATUS_FAILED"
-              : undefined;
+      return historySummaryProtoJson(mapThread(thread));
+    },
+  ],
+  [
+    "GET",
+    /^\/upstream\/history\/v1\/sessions:find$/,
+    (_match, query) => {
+      const search = query.get("sandbox_name_contains")?.toLowerCase();
       return {
-        sessionId: thread.id,
-        committedCursor: "34",
-        foldedThrough: "34",
-        ...(thread.last_event_at === null
-          ? {}
-          : { firstEventAt: thread.created_at, lastEventAt: thread.last_event_at }),
-        ...(thread.last_model_activity_at === null ? {} : { lastModelActivityAt: thread.last_model_activity_at }),
-        ...(thread.last_turn_status === null ? {} : { lastTurnStatus: thread.last_turn_status }),
-        ...(thread.idle_since === null ? {} : { idleSince: thread.idle_since }),
-        ...(feedStatus === undefined ? {} : { feedStatus }),
-        ...(thread.sandbox
-          ? {
-              sandbox: {
-                namespace: "agentplane-visual",
-                name: thread.sandbox,
-                ...(thread.sandbox_uid === null ? {} : { uid: thread.sandbox_uid }),
-              },
-            }
-          : {}),
-        ...(thread.harness === null
-          ? {}
-          : {
-              attached: {
-                sessionId: thread.id,
-                spec: {
-                  harness: thread.harness,
-                  cwd: thread.cwd ?? "",
-                  model: thread.model ?? "",
-                  reasoningEffort: thread.reasoning_effort ?? "",
-                },
-                lastCursor: "34",
-                harnessState: thread.harness_state ?? "HARNESS_STATE_UNSPECIFIED",
-                activeTurnId: thread.active_turn_id ?? "",
-                setupState: thread.setup_state ?? "SETUP_STATE_UNSPECIFIED",
-                launchOutcome: thread.launch_outcome ?? "LAUNCH_OUTCOME_UNSPECIFIED",
-              },
-            }),
+        sessions: THREADS_WITH_SANDBOXES.map(mapThread)
+          .filter((thread) => search === undefined || thread.sandbox.toLowerCase().includes(search))
+          .map((thread) => ({
+            sessionId: thread.id,
+            sandbox: { namespace: "agentplane-visual", name: thread.sandbox },
+          })),
+      };
+    },
+  ],
+  [
+    "POST",
+    /^\/upstream\/history\/v1\/sessions:batchGetSummaries$/,
+    (_match, _query, _signal, body) => {
+      const request = body === undefined ? {} : (JSON.parse(body) as { sessionIds?: string[] });
+      const wanted = new Set(request.sessionIds ?? []);
+      return {
+        summaries: THREADS_WITH_SANDBOXES.map(mapThread)
+          .filter((thread) => wanted.has(thread.id))
+          .map(historySummaryProtoJson),
       };
     },
   ],
@@ -3411,6 +3405,63 @@ routes.push(
 
 const HEALTHY: WatchHealth = { healthy: true, failing: {} };
 
+function threadMetadataProtoJson(thread: ThreadView): Record<string, unknown> {
+  return {
+    threadId: thread.id,
+    createdAt: thread.created_at,
+    ...(thread.name === null ? {} : { name: thread.name }),
+    archived: thread.archived,
+  };
+}
+
+function historySummaryProtoJson(thread: ThreadView): Record<string, unknown> {
+  const feedStatus =
+    thread.feed_status === "active"
+      ? "FEED_STATUS_ACTIVE"
+      : thread.feed_status === "ended"
+        ? "FEED_STATUS_ENDED"
+        : thread.feed_status === "failed"
+          ? "FEED_STATUS_FAILED"
+          : undefined;
+  return {
+    sessionId: thread.id,
+    committedCursor: String(thread.last_cursor),
+    foldedThrough: String(thread.last_cursor),
+    ...(thread.last_event_at === null ? {} : { firstEventAt: thread.created_at, lastEventAt: thread.last_event_at }),
+    ...(thread.last_model_activity_at === null ? {} : { lastModelActivityAt: thread.last_model_activity_at }),
+    ...(thread.last_turn_status === null ? {} : { lastTurnStatus: thread.last_turn_status }),
+    ...(thread.idle_since === null ? {} : { idleSince: thread.idle_since }),
+    ...(feedStatus === undefined ? {} : { feedStatus }),
+    ...(thread.sandbox
+      ? {
+          sandbox: {
+            namespace: "agentplane-visual",
+            name: thread.sandbox,
+            ...(thread.sandbox_uid === null ? {} : { uid: thread.sandbox_uid }),
+          },
+        }
+      : {}),
+    ...(thread.harness === null
+      ? {}
+      : {
+          attached: {
+            sessionId: thread.id,
+            spec: {
+              harness: thread.harness,
+              cwd: thread.cwd ?? "",
+              model: thread.model ?? "",
+              reasoningEffort: thread.reasoning_effort ?? "",
+            },
+            lastCursor: String(thread.last_cursor),
+            harnessState: thread.harness_state ?? "HARNESS_STATE_UNSPECIFIED",
+            activeTurnId: thread.active_turn_id ?? "",
+            setupState: thread.setup_state ?? "SETUP_STATE_UNSPECIFIED",
+            launchOutcome: thread.launch_outcome ?? "LAUNCH_OUTCOME_UNSPECIFIED",
+          },
+        }),
+  };
+}
+
 /** A watch whose requests are failing: what the `_stale` scenarios have to show rather than hide. */
 const FAILING: WatchHealth = {
   healthy: false,
@@ -3433,29 +3484,6 @@ function watch(): WatchHealth {
 
 /** What the live stream at `url` sends, when it opens and whenever a fixture publishes it again. */
 function liveEvents(url: URL): ServerSentEvent[] {
-  if (url.pathname === "/live/threads") {
-    // The listing the server would push: the newest `limit` matches, then the open thread.
-    const all = THREADS_WITH_SANDBOXES.map(mapThread);
-    const search = url.searchParams.get("search")?.toLowerCase();
-    const limit = Number(url.searchParams.get("limit"));
-    const matching = all.filter(
-      (thread) =>
-        (url.searchParams.get("include_archived") === "true" || !thread.archived) &&
-        (search === undefined ||
-          (thread.name ?? "").toLowerCase().includes(search) ||
-          thread.sandbox.toLowerCase().includes(search))
-    );
-    const listed = matching.slice(0, limit);
-    const open = all.find((thread) => thread.id === url.searchParams.get("open_thread"));
-    const snapshot: ThreadsSnapshot = {
-      threads: open === undefined || listed.includes(open) ? listed : [...listed, open],
-      more: matching.length > limit,
-      archived_count: all.filter((thread) => thread.archived).length,
-      updates_connected: !flags.has("threadDatabaseDisconnected"),
-      watch: watch(),
-    };
-    return [{ event: "snapshot", data: snapshot }];
-  }
   if (/^\/live\/sandboxes\/[^/]+\/egress\/decisions$/.test(url.pathname)) {
     return [{ event: "snapshot", data: egressDecisions() }];
   }
@@ -3526,9 +3554,7 @@ function liveEvents(url: URL): ServerSentEvent[] {
 
 /** Whether the stream at `url` drops once it has sent its events. */
 function drops(url: URL): boolean {
-  // A dropped Thread listing takes the notice stream down with it, so the badges show stale too.
-  if (url.pathname === "/live/threads" || url.pathname === "/threads/notices/stream")
-    return flags.has("threadStreamDropped");
+  if (url.pathname === "/threads/notices/stream") return flags.has("threadStreamDropped");
   if (url.pathname === "/live/sandboxes") return flags.has("inventoryStreamDropped");
   if (/^\/sandboxes\/[^/]+\/notifications\/stream$/.test(url.pathname))
     return flags.has("notificationStatusUnavailable");
@@ -3553,6 +3579,33 @@ routes.unshift([
   },
 ]);
 
+routes.unshift(
+  [
+    "GET",
+    /^\/upstream\/app\/v1\/threads:watch$/,
+    (_match, _query, signal) =>
+      liveNdjsonWatch(
+        "/upstream/app/v1/threads:watch",
+        [{ changed: {}, updatesConnected: !flags.has("threadDatabaseDisconnected") }],
+        () => [{ changed: {}, updatesConnected: !flags.has("threadDatabaseDisconnected") }],
+        signal,
+        flags.has("threadStreamDropped")
+      ),
+  ],
+  [
+    "GET",
+    /^\/upstream\/history\/v1\/session-summaries:watch$/,
+    (_match, _query, signal) =>
+      liveNdjsonWatch(
+        "/upstream/history/v1/session-summaries:watch",
+        [{ changed: {} }],
+        () => [{ changed: {} }],
+        signal,
+        flags.has("threadStreamDropped")
+      ),
+  ]
+);
+
 // Mutable mock service state; Python fixture methods change it before mounting React.
 let previewAction: ActionRequestView | null = null;
 let queueOpenResponses = false;
@@ -3576,7 +3629,8 @@ function projectQueuedSession(): void {
   THREADS.push(projected);
   THREADS_WITH_SANDBOXES.push(projected);
   publishStreams("/live/sandboxes/ready-sandbox");
-  publishStreams("/live/threads");
+  publishStreams("/upstream/app/v1/threads:watch");
+  publishStreams("/upstream/history/v1/session-summaries:watch");
 }
 
 function mount(element: ReactNode): void {

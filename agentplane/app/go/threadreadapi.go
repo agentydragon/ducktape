@@ -8,11 +8,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/httperror"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
@@ -25,8 +29,11 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -37,6 +44,7 @@ const (
 type threadReadStore interface {
 	GetThread(context.Context, uuid.UUID) (*threads.Thread, error)
 	ListPage(context.Context, int, *threads.PageCursor, bool) (threads.Page, error)
+	ArchivedCount(context.Context) (int, error)
 	Rename(context.Context, uuid.UUID, *string) (threads.Thread, error)
 	Archive(context.Context, uuid.UUID) (threads.Thread, error)
 	Unarchive(context.Context, uuid.UUID) (threads.Thread, error)
@@ -148,8 +156,12 @@ func RegisterThreadReadRoutes(
 	history threadReadHistory,
 	inventory threadSandboxInventory,
 	runner threadRunnerStatusReader,
-) {
-	registerThreadMetadataGateway(server, store)
+	updates auth.ChangeSource,
+	updatesConnected func() bool,
+) error {
+	if err := registerThreadMetadataGateway(server, store, updates, updatesConnected); err != nil {
+		return err
+	}
 	api := server.ProtectedAPI()
 	huma.Register[threadRenameInput, threadViewOutput](api, huma.Operation{
 		OperationID: "renameThread", Method: http.MethodPatch, Path: "/threads/{thread_id}", Tags: []string{"threads"},
@@ -225,20 +237,71 @@ func RegisterThreadReadRoutes(
 		}
 		return nil, nil
 	})
+	return nil
 }
 
 type threadMetadataService struct {
 	threadmetadatapb.UnimplementedThreadMetadataServiceServer
-	store threadReadStore
+	store            threadReadStore
+	updates          auth.ChangeSource
+	updatesConnected func() bool
+	drainDone        <-chan struct{}
 }
 
-func registerThreadMetadataGateway(server *HTTPServer, store threadReadStore) {
-	mux := gatewayruntime.NewServeMux()
-	if err := threadmetadatapb.RegisterThreadMetadataServiceHandlerServer(context.Background(), mux, &threadMetadataService{store: store}); err != nil {
-		panic(fmt.Errorf("register generated Thread Metadata gateway: %w", err))
+func registerThreadMetadataGateway(server *HTTPServer, store threadReadStore, updates auth.ChangeSource, updatesConnected func() bool) error {
+	if store == nil {
+		// Schema export and route-registration tests use nil dependencies and do not serve these raw
+		// generated routes. The runtime always supplies a store.
+		return nil
 	}
-	server.RegisterRawRoute("GET /upstream/app/v1/threads", mux, false)
-	server.RegisterRawRoute("GET /upstream/app/v1/threads/{thread_id}", mux, false)
+	socketDir, err := os.MkdirTemp("", "agentplane-thread-metadata-")
+	if err != nil {
+		return fmt.Errorf("create app Thread Metadata gRPC socket directory: %w", err)
+	}
+	socketPath := filepath.Join(socketDir, "grpc.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		_ = os.RemoveAll(socketDir)
+		return fmt.Errorf("listen for app Thread Metadata gRPC: %w", err)
+	}
+	grpcServer := grpc.NewServer()
+	mux := gatewayruntime.NewServeMux()
+	service := &threadMetadataService{
+		store: store, updates: updates, updatesConnected: updatesConnected, drainDone: server.DrainDone(),
+	}
+	threadmetadatapb.RegisterThreadMetadataServiceServer(grpcServer, service)
+	go func() { _ = grpcServer.Serve(listener) }()
+	dialer := &net.Dialer{}
+	connection, err := grpc.NewClient(
+		"passthrough:///thread-metadata",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, "unix", socketPath)
+		}),
+	)
+	if err != nil {
+		grpcServer.Stop()
+		_ = os.RemoveAll(socketDir)
+		return fmt.Errorf("connect generated Thread Metadata gateway: %w", err)
+	}
+	if err := threadmetadatapb.RegisterThreadMetadataServiceHandlerClient(
+		context.Background(), mux, threadmetadatapb.NewThreadMetadataServiceClient(connection),
+	); err != nil {
+		_ = connection.Close()
+		grpcServer.Stop()
+		_ = os.RemoveAll(socketDir)
+		return fmt.Errorf("register generated Thread Metadata gateway: %w", err)
+	}
+	server.addCleanup(func() {
+		_ = connection.Close()
+		grpcServer.Stop()
+		_ = os.RemoveAll(socketDir)
+	})
+	gateway := http.StripPrefix("/upstream/app", mux)
+	server.RegisterRawRoute("GET /upstream/app/v1/threads", gateway, false)
+	server.RegisterRawRoute("GET /upstream/app/v1/threads/{thread_id}", gateway, false)
+	server.RegisterRawRoute("GET /upstream/app/v1/threads:watch", gateway, false)
+	return nil
 }
 
 func (s *threadMetadataService) GetThreadMetadata(ctx context.Context, request *threadmetadatapb.GetThreadMetadataRequest) (*threadmetadatapb.ThreadMetadata, error) {
@@ -278,7 +341,13 @@ func (s *threadMetadataService) ListThreadMetadata(ctx context.Context, request 
 	if err != nil {
 		return nil, status.Error(codes.Internal, "list Thread metadata")
 	}
-	response := &threadmetadatapb.ListThreadMetadataResponse{Threads: make([]*threadmetadatapb.ThreadMetadata, 0, len(page.Threads))}
+	archivedCount, err := s.store.ArchivedCount(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "count archived Threads")
+	}
+	response := &threadmetadatapb.ListThreadMetadataResponse{
+		Threads: make([]*threadmetadatapb.ThreadMetadata, 0, len(page.Threads)), ArchivedCount: int32(archivedCount),
+	}
 	for _, thread := range page.Threads {
 		response.Threads = append(response.Threads, threadMetadataProto(thread))
 	}
@@ -289,6 +358,41 @@ func (s *threadMetadataService) ListThreadMetadata(ctx context.Context, request 
 		}
 	}
 	return response, nil
+}
+
+func (s *threadMetadataService) WatchThreadMetadata(
+	_ *threadmetadatapb.WatchThreadMetadataRequest,
+	stream grpc.ServerStreamingServer[threadmetadatapb.WatchThreadMetadataResponse],
+) error {
+	if s.updates == nil {
+		return status.Error(codes.Unavailable, "Thread metadata updates are unavailable")
+	}
+	updates, unsubscribe, err := s.updates.Subscribe(threads.UpdatesChannel)
+	if err != nil {
+		return status.Error(codes.Internal, "subscribe to Thread metadata updates")
+	}
+	defer unsubscribe()
+	sendChanged := func() error {
+		connected := s.updatesConnected != nil && s.updatesConnected()
+		return stream.Send(&threadmetadatapb.WatchThreadMetadataResponse{
+			Changed: &emptypb.Empty{}, UpdatesConnected: connected,
+		})
+	}
+	if err := sendChanged(); err != nil {
+		return err
+	}
+	for {
+		select {
+		case <-stream.Context().Done():
+			return status.FromContextError(stream.Context().Err()).Err()
+		case <-s.drainDone:
+			return nil
+		case <-updates:
+			if err := sendChanged(); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 func threadMetadataProto(thread threads.Thread) *threadmetadatapb.ThreadMetadata {

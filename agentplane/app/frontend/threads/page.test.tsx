@@ -17,7 +17,15 @@ import type * as ModelCatalogModule from "../model_catalog";
 import type * as SandboxClientModule from "../sandboxes/client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import { api } from "../client";
-import { dispatchFromJson, submitInput, changeModel, changeReasoningEffort, interruptTurn, getThread } from "./client";
+import {
+  dispatchFromJson,
+  submitInput,
+  changeModel,
+  changeReasoningEffort,
+  interruptTurn,
+  getThread,
+  listThreadWindow,
+} from "./client";
 import { models } from "../model_catalog";
 import { resumeSandbox } from "../sandboxes/client";
 import { historyRows, rowKey } from "./history_rows";
@@ -35,7 +43,7 @@ import { testItem } from "./testing/entity";
 import { badgeLabels, entity, reference, serving, THREAD, threadState, toggle, viewState } from "./testing/state";
 import { ThreadSyncContext, type ThreadEntity, type ThreadState, type ThreadSync } from "./thread_sync";
 import { TopbarContext } from "../topbar";
-import { reconnected, serveEventStreams, type ServedWatch, stubWatchFetch } from "../testing/watch";
+import { reconnected, serveEventStreams, ServedWatch, stubWatchFetch } from "../testing/watch";
 
 vi.mock("./client", async (importOriginal) => ({
   ...(await importOriginal<typeof ThreadClientModule>()),
@@ -44,6 +52,7 @@ vi.mock("./client", async (importOriginal) => ({
   changeReasoningEffort: vi.fn(),
   interruptTurn: vi.fn(),
   getThread: vi.fn(),
+  listThreadWindow: vi.fn(),
 }));
 vi.mock("../model_catalog", async (importOriginal) => ({
   ...(await importOriginal<typeof ModelCatalogModule>()),
@@ -172,19 +181,7 @@ beforeEach(() => {
     stream.event(
       "snapshot",
       JSON.stringify({
-        // The server still sends its own copy of the Sandboxes on /live/threads. The page reads only
-        // /live/sandboxes, so this copy contradicts it.
-        sandboxes: pathname === "/live/threads" ? [inventorySandbox("Running")] : sandboxes,
-        ...(pathname === "/live/threads"
-          ? {
-              threads: threadRows ?? [
-                { ...THREAD, harness_state: "HARNESS_STATE_RUNNING", feed_status: sharedFeed, ...sharedThread },
-              ],
-              more: false,
-              archived_count: 0,
-              updates_connected: true,
-            }
-          : {}),
+        sandboxes,
         watch: {
           healthy: inventoryFresh,
           failing: inventoryFresh ? {} : { sandboxes: { error: "test-failure", since: "2026-10-30T12:00:00Z" } },
@@ -193,6 +190,32 @@ beforeEach(() => {
     );
     if (inventoryDrops) stream.drop();
   });
+  const sandboxFetch = globalThis.fetch;
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    if (new Headers(init?.headers).get("Accept") === "application/x-ndjson") {
+      const url = new URL(String(input), window.location.href);
+      if (
+        url.pathname === "/upstream/app/v1/threads:watch" ||
+        url.pathname === "/upstream/history/v1/session-summaries:watch"
+      ) {
+        const stream = new ServedWatch(String(input), init?.signal ?? undefined);
+        if (url.pathname === "/upstream/app/v1/threads:watch") {
+          stream.send({ changed: {}, updatesConnected: true });
+        } else {
+          stream.send({ changed: {} });
+        }
+        return Promise.resolve(stream.response);
+      }
+    }
+    return sandboxFetch(input, init);
+  });
+  vi.mocked(listThreadWindow).mockImplementation(async () => ({
+    threads: threadRows ?? [
+      { ...THREAD, harness_state: "HARNESS_STATE_RUNNING", feed_status: sharedFeed, ...sharedThread },
+    ],
+    more: false,
+    archived_count: 0,
+  }));
 });
 
 afterEach(async () => {

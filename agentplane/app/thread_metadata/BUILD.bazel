@@ -9,6 +9,7 @@ proto_library(
     srcs = ["thread_metadata.proto"],
     deps = [
         "@googleapis//google/api:annotations_proto",
+        "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",
     ],
 )

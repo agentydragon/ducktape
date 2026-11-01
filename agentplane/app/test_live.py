@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -10,14 +10,13 @@ import grpc
 import httpx
 import pytest
 import pytest_bazel
-from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.history import SessionHistory
-from agentplane.app.testing.models import DecisionsSnapshot, DecisionsUnavailable, ThreadView, WatchHealth
+from agentplane.app.testing.models import DecisionsSnapshot, DecisionsUnavailable
 from agentplane.app.testing.replication_process import AppProcess, SandboxesAccess, app_process
 from agentplane.app.testing.thread_test_support import ThreadHTTP
 from agentplane.egress import egress_admin_pb2_grpc
@@ -29,14 +28,6 @@ from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
 # gazelle:include_dep @pypi//protobuf
-
-
-class ThreadsSnapshot(BaseModel):
-    threads: list[ThreadView]
-    more: bool
-    archived_count: int
-    updates_connected: bool
-    watch: WatchHealth
 
 
 @pytest.fixture
@@ -89,14 +80,15 @@ async def _snapshots(response: httpx.Response) -> AsyncIterator[str]:
             yield line.removeprefix("data: ")
 
 
-async def _next_threads(
-    stream: AsyncIterator[str], predicate: Callable[[ThreadsSnapshot], bool] = lambda _: True
-) -> ThreadsSnapshot:
-    async for data in stream:
-        frame = ThreadsSnapshot.model_validate_json(data)
-        if predicate(frame):
-            return frame
-    raise AssertionError("thread stream ended before the expected snapshot")
+async def _watch_results(response: httpx.Response) -> AsyncIterator[dict[str, object]]:
+    response.raise_for_status()
+    async for line in response.aiter_lines():
+        if line:
+            envelope = json.loads(line)
+            result = envelope.get("result") if isinstance(envelope, dict) else None
+            if not isinstance(result, dict):
+                raise AssertionError(f"watch returned an invalid result envelope: {envelope!r}")
+            yield result
 
 
 async def _next_decisions(stream: AsyncIterator[str]) -> DecisionsSnapshot:
@@ -109,7 +101,9 @@ async def test_the_streams_need_a_caller(app: AppProcess) -> None:
             "/live/sandboxes",
             "/live/sandboxes/runner-1/egress/decisions",
             "/live/sandboxes/runner-1",
-            "/live/threads",
+            "/upstream/app/v1/threads",
+            "/upstream/app/v1/threads:watch",
+            "/upstream/history/v1/session-summaries:watch",
         ):
             assert (await unauthenticated.get(route)).status_code == 401
 
@@ -139,7 +133,7 @@ async def test_threads_the_history_service_cannot_list_are_said_so_in_the_frame(
         assert snapshot["threads"] == {"kind": "unavailable", "code": "UNAVAILABLE"}
 
 
-async def test_global_thread_stream_follows_replica_commits(
+async def test_thread_metadata_watch_follows_replica_commits(
     http: httpx.AsyncClient,
     namespace: SandboxNamespace,
     event_logs: SessionHistory,
@@ -161,38 +155,47 @@ async def test_global_thread_stream_follows_replica_commits(
         store = ThreadHTTP(other)
         async with (
             asyncio.timeout(15),
-            http.stream("GET", "/live/threads", params={"include_archived": "true"}) as response,
+            http.stream(
+                "GET", "/upstream/app/v1/threads:watch", headers={"Accept": "application/x-ndjson"}
+            ) as response,
         ):
-            stream = _snapshots(response)
-            initial = await _next_threads(stream)
-            assert initial.threads == []
-            assert initial.updates_connected
+            stream = _watch_results(response)
+            initial = await anext(stream)
+            assert initial["changed"] == {}
+            assert initial["updatesConnected"] is True
             # A Thread of a Sandbox without a Pod archives without asking a runner.
             thread_id = await event_logs.seed("shelved", "test-global-thread")
-            seeded = await _next_threads(stream, lambda frame: bool(frame.threads))
-            assert [thread.id for thread in seeded.threads] == [thread_id]
+            assert (await anext(stream))["changed"] == {}
+            await store.wait(thread_id)
+            page = (await http.get("/upstream/app/v1/threads", params={"include_archived": "true"})).json()
+            assert [thread["threadId"] for thread in page["threads"]] == [str(thread_id)]
             await store.rename(thread_id, "Renamed in another app replica")
-            await _next_threads(stream, lambda frame: frame.threads[0].name == "Renamed in another app replica")
+            assert (await anext(stream))["changed"] == {}
+            page = (await http.get("/upstream/app/v1/threads", params={"include_archived": "true"})).json()
+            assert page["threads"][0]["name"] == "Renamed in another app replica"
             await store.archive(thread_id)
-            archived = await _next_threads(stream, lambda frame: frame.threads[0].archived)
-            assert archived.archived_count == 1
+            assert (await anext(stream))["changed"] == {}
+            page = (await http.get("/upstream/app/v1/threads", params={"include_archived": "true"})).json()
+            assert page["threads"][0]["archived"] is True
+            assert page["archivedCount"] == 1
 
 
-async def test_global_thread_stream_carries_its_window_and_the_open_thread(
+async def test_thread_metadata_list_returns_newest_page_and_archived_count(
     http: httpx.AsyncClient, event_logs: SessionHistory, store: ThreadHTTP
 ) -> None:
     oldest, middle, newest = [await event_logs.seed("runner-1", f"test-window-thread-{n}") for n in range(3)]
     for thread_id in (oldest, middle, newest):
         await store.wait(thread_id)
-    async with (
-        asyncio.timeout(10),
-        http.stream("GET", "/live/threads", params={"limit": 1, "open_thread": str(oldest)}) as response,
-    ):
-        window = await _next_threads(_snapshots(response))
-        assert ([thread.id for thread in window.threads], window.more) == ([newest, oldest], True)
+    page = (await http.get("/upstream/app/v1/threads", params={"limit": 1})).json()
+    assert ([thread["threadId"] for thread in page["threads"]], bool(page["nextPageToken"])) == ([str(newest)], True)
+    assert page.get("archivedCount", 0) == 0
+    page = (await http.get("/upstream/app/v1/threads", params={"limit": 1, "page_token": page["nextPageToken"]})).json()
+    assert ([thread["threadId"] for thread in page["threads"]], bool(page["nextPageToken"])) == ([str(middle)], True)
+    page = (await http.get("/upstream/app/v1/threads", params={"limit": 1, "page_token": page["nextPageToken"]})).json()
+    assert ([thread["threadId"] for thread in page["threads"]], page.get("nextPageToken", "")) == ([str(oldest)], "")
 
 
-async def test_global_thread_stream_reports_listener_loss_then_rereads_after_reconnect(
+async def test_thread_metadata_watch_reports_listener_loss_and_reconnect(
     event_logs: SessionHistory,
     engine: AsyncEngine,
     database_reconnect_gate: tuple[str, asyncio.Event],
@@ -211,10 +214,10 @@ async def test_global_thread_stream_reports_listener_loss_then_rereads_after_rec
         ) as app,
         httpx.AsyncClient(base_url=app.url, cookies=app.cookies, headers={"Origin": app.url}) as http,
         asyncio.timeout(10),
-        http.stream("GET", "/live/threads") as response,
+        http.stream("GET", "/upstream/app/v1/threads:watch", headers={"Accept": "application/x-ndjson"}) as response,
     ):
-        stream = _snapshots(response)
-        assert (await _next_threads(stream)).updates_connected
+        stream = _watch_results(response)
+        assert (await anext(stream))["updatesConnected"] is True
         # Keep the established pool connections alive, but hold the listener's replacement
         # connection until the browser has observed the outage.
         reconnect.clear()
@@ -226,11 +229,13 @@ async def test_global_thread_stream_reports_listener_loss_then_rereads_after_rec
                 )
             )
             assert terminated.scalars().all() == [True]
-        await _next_threads(stream, lambda frame: not frame.updates_connected)
+        assert (await anext(stream))["updatesConnected"] is False
         thread_id = await event_logs.seed("runner-1", "test-during-listener-gap")
         reconnect.set()
-        recovered = await _next_threads(stream, lambda frame: frame.updates_connected and bool(frame.threads))
-        assert [thread.id for thread in recovered.threads] == [thread_id]
+        recovered = await anext(stream)
+        assert recovered["updatesConnected"] is True
+        page = (await http.get("/upstream/app/v1/threads")).json()
+        assert [thread["threadId"] for thread in page["threads"]] == [str(thread_id)]
 
 
 @pytest.fixture

@@ -43,7 +43,9 @@ service HistoryService {
   }
   // Tells the caller when fold state it may hold changed, which names nothing: re-read what you hold.
   // On request it also names each Session the History Service records.
-  rpc WatchSessionSummaries(WatchSessionSummariesRequest) returns (stream WatchSessionSummariesResponse);
+  rpc WatchSessionSummaries(WatchSessionSummariesRequest) returns (stream WatchSessionSummariesResponse) {
+    option (google.api.http) = {get: "/v1/session-summaries:watch"};
+  }
 }
 
 message FollowSessionRequest {

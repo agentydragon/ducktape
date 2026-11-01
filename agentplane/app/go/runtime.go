@@ -317,7 +317,9 @@ func run(ctx context.Context, config Config) error {
 	RegisterPolicyRoutes(server, config, inventory, policies)
 	RegisterSessionRoutes(server, config, inventory, appBridge, threadStore)
 	RegisterRunnerRoutes(server, appBridge)
-	RegisterThreadReadRoutes(server, threadStore, history, inventory, appBridge)
+	if err := RegisterThreadReadRoutes(server, threadStore, history, inventory, appBridge, wakeupHub, wakeupHub.Connected); err != nil {
+		return fmt.Errorf("register Thread routes: %w", err)
+	}
 	if err := threadcommands.RegisterRoutes(server.ProtectedAPI(), threadcommands.Dependencies{
 		Threads: threadStore, History: history, Readiness: appBridge, Dispatcher: dispatcher,
 		Models: config.Models.Harnesses,
@@ -528,6 +530,7 @@ type processWorker struct {
 }
 
 func serve(ctx context.Context, config Config, app *HTTPServer, appAuth *auth.Auth, workers []processWorker) error {
+	defer app.Close()
 	listener, err := netlistener.Open(config.ListenAddress)
 	if err != nil {
 		return fmt.Errorf("listen for app HTTP: %w", err)
