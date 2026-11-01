@@ -55,7 +55,7 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 8,
         "x": 0,
         "y": 7
       },
@@ -94,8 +94,8 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 4,
+        "w": 8,
+        "x": 8,
         "y": 7
       },
       "datasource": "${DS_MIMIR}",
@@ -133,8 +133,8 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 8,
+        "w": 8,
+        "x": 16,
         "y": 7
       },
       "datasource": "${DS_MIMIR}",
@@ -172,9 +172,9 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 7
+        "w": 8,
+        "x": 0,
+        "y": 11
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -211,9 +211,9 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 7
+        "w": 8,
+        "x": 8,
+        "y": 11
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -250,9 +250,9 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 7
+        "w": 8,
+        "x": 16,
+        "y": 11
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -291,7 +291,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 11
+        "y": 15
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -337,7 +337,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 11
+        "y": 15
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -383,7 +383,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 24
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -658,7 +658,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 34
       },
       "panels": []
     },
@@ -671,7 +671,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 35
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -730,7 +730,7 @@
         "h": 14,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 47
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -882,7 +882,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 57
+        "y": 61
       },
       "panels": []
     },
@@ -895,7 +895,7 @@
         "h": 11,
         "w": 24,
         "x": 0,
-        "y": 58
+        "y": 62
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
