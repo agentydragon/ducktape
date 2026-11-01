@@ -807,7 +807,7 @@ fn collect_pattern_assignments(
                             ValueExpr::Unknown,
                             |name| {
                                 ValueExpr::Member(
-                                    Box::new(value.clone()),
+                                    Arc::new(value.clone()),
                                     Some(name),
                                     MemberKey::Computed(None),
                                     swc_common::DUMMY_SP.into(),
@@ -818,7 +818,7 @@ fn collect_pattern_assignments(
                     }
                     ObjectPatProp::Assign(property) => {
                         let projected = ValueExpr::Member(
-                            Box::new(value.clone()),
+                            Arc::new(value.clone()),
                             Some(property.key.id.sym.to_string()),
                             MemberKey::Computed(None),
                             swc_common::DUMMY_SP.into(),
@@ -867,7 +867,7 @@ fn collect_assign_target_assignments(
                             ValueExpr::Unknown,
                             |name| {
                                 ValueExpr::Member(
-                                    Box::new(value.clone()),
+                                    Arc::new(value.clone()),
                                     Some(name),
                                     MemberKey::Computed(None),
                                     swc_common::DUMMY_SP.into(),
@@ -878,7 +878,7 @@ fn collect_assign_target_assignments(
                     }
                     ObjectPatProp::Assign(property) => {
                         let projected = ValueExpr::Member(
-                            Box::new(value.clone()),
+                            Arc::new(value.clone()),
                             Some(property.key.id.sym.to_string()),
                             MemberKey::Computed(None),
                             swc_common::DUMMY_SP.into(),
@@ -2627,6 +2627,7 @@ mod iterative_alias_closure_tests {
     };
     use crate::analysis_inputs::NativeIntrinsic;
     use std::collections::{BTreeMap, BTreeSet};
+    use std::sync::Arc;
     use swc_common::SyntaxContext;
     use swc_ecma_ast::Id;
 
@@ -2665,7 +2666,7 @@ mod iterative_alias_closure_tests {
             (
                 projected.clone(),
                 ValueExpr::Member(
-                    Box::new(ValueExpr::Binding(holder.clone())),
+                    Arc::new(ValueExpr::Binding(holder.clone())),
                     Some("member".to_owned()),
                     MemberKey::Static,
                     swc_common::DUMMY_SP.into(),
@@ -2759,7 +2760,7 @@ mod iterative_alias_closure_tests {
             (
                 projected.clone(),
                 ValueExpr::Member(
-                    Box::new(ValueExpr::Binding(holder.clone())),
+                    Arc::new(ValueExpr::Binding(holder.clone())),
                     Some("member".to_owned()),
                     MemberKey::Static,
                     swc_common::DUMMY_SP.into(),
@@ -10049,7 +10050,7 @@ impl ExecutionIndex {
         self.record_call(Call {
             kind: CallKind::AccessorCalleeLookup,
             callee: ValueExpr::Member(
-                Box::new(ValueExpr::from_expr(&member.obj)),
+                Arc::new(ValueExpr::from_expr(&member.obj)),
                 static_prop(&member.prop),
                 MemberKey::of(&member.prop),
                 member.span.into(),
@@ -11281,7 +11282,7 @@ impl Visit for ExecutionIndex {
             self.record_call(Call {
                 kind: CallKind::LocalMemberRead,
                 callee: ValueExpr::Member(
-                    Box::new(ValueExpr::from_expr(&member.obj)),
+                    Arc::new(ValueExpr::from_expr(&member.obj)),
                     static_prop(&member.prop),
                     MemberKey::of(&member.prop),
                     member.span.into(),
@@ -11659,7 +11660,7 @@ impl Visit for ExecutionIndex {
                 AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign => {
                     ValueExpr::Alternatives(vec![
                         ValueExpr::Member(
-                            Box::new(ValueExpr::from_expr(&member.obj)),
+                            Arc::new(ValueExpr::from_expr(&member.obj)),
                             static_prop(&member.prop),
                             MemberKey::of(&member.prop),
                             member.span.into(),
@@ -11705,7 +11706,7 @@ impl Visit for ExecutionIndex {
                     ValueExpr::Binding(binding.id.to_id())
                 }
                 AssignTarget::Simple(SimpleAssignTarget::Member(member)) => ValueExpr::Member(
-                    Box::new(ValueExpr::from_expr(&member.obj)),
+                    Arc::new(ValueExpr::from_expr(&member.obj)),
                     static_prop(&member.prop),
                     MemberKey::of(&member.prop),
                     member.span.into(),
