@@ -9834,7 +9834,12 @@
     "observed_at_utc": "2026-11-01T02:31:19.304744+00:00",
     "previous_report_commit": "bef8766ed5b7a42ba5c63526f63a7f6e58063564",
     "inspected_devel_commit": "4e01c8387b206e213f3c4cc11d22e484cf27ce2b",
-    "scope": "Original cohort window, populations, distributions and experimental findings retained without recomputation; two subsequent selected guests are separate diagnostic observations, not a matched comparison."
+    "scope": "Original cohort window, populations, distributions and experimental findings retained without recomputation; two subsequent selected guests are separate diagnostic observations, not a matched comparison.",
+    "presentation_update": {
+      "at_utc": "2026-11-01T02:41:42.968390+00:00",
+      "change": "Removed the conditional required-gate headroom widget, explanatory paragraph, controls, embedded cohort copy and JavaScript at user request.",
+      "base_report_commit": "f4ef1fd7501d9b7b192fc527bce57a9c04f5de65"
+    }
   },
   "boot_device_discovery": {
     "checked_at_utc": "2026-11-01T02:31:19.304744+00:00",
@@ -10158,7 +10163,7 @@
     "scope": "Temporary source-worktree preview supplies authored report to normal RBE visual harness. No source implementation or sibling report namespace is changed.",
     "review_notes": "Reviewed all twelve final captures. Ten match the reviewed preceding b3a736ef preview byte-for-byte; the two updated shipped-work captures were reviewed separately."
   },
-  "report_validation": {
+  "pre_widget_removal_render_validation": {
     "html_sha256": "73b216a3224cc6b3150214a85c7c12c9d68797a1a4a12371b3918f28abb66410",
     "invocation_id": "2fbf8adb-d426-48f2-a14e-0224b3bc89e6",
     "target": "//devinfra/ci/reports/x/device_boot_preview:test_report",
@@ -10244,5 +10249,10 @@
       }
     ],
     "scope": "Temporary RBE preview of exact authored standalone HTML; preview harness is not published as source code."
+  },
+  "report_validation": {
+    "html_sha256": "fc8049427138ef75b1d9e92ca22b102c23289d79b36f6c7547a0cdf91aeb60db",
+    "scope": "Deletion of the complete self-contained conditional-headroom widget only; report measurements and remaining presentation unchanged.",
+    "review": "Reviewed deletion diff and absence of widget controls, embedded data and JavaScript. No new browser run for this deletion."
   }
 }
