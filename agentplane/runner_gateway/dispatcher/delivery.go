@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -65,7 +66,7 @@ type WakeController interface {
 
 type DeliveryRunner interface {
 	RunnerCommands
-	OpenSession(context.Context, SandboxSnapshot, string, *runnerpb.SessionSpec, *string) error
+	OpenSession(context.Context, SandboxSnapshot, string, *runnerpb.SessionSpec, *string, *delegationpb.ServiceAccountIdentity) error
 }
 
 type LeaseOwner interface {
@@ -385,12 +386,47 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 		w.forgetOwner(uid, owner)
 		return err
 	}
-	if opening != nil {
-		ready, err := w.prepareOpening(ctx, opening, sandbox, owner)
+	queuedOpening := opening
+	principalOpening := opening
+	if principalOpening == nil {
+		principalOpening, err = w.Store.GetOpening(ctx, sessionID)
+		if errors.Is(err, ErrNotFound) {
+			principalOpening = nil
+		} else if err != nil {
+			return err
+		}
+	}
+	if principalOpening != nil && principalOpening.ExecutionPrincipal != nil {
+		account, found, err := w.executionAccount(ctx, sandbox)
+		if err != nil {
+			return err
+		}
+		expected := principalOpening.ExecutionPrincipal
+		if !found && expected.UID == "" && head == nil {
+			return w.Store.NoteOpeningWaiting(ctx, principalOpening.SessionID, owner, "execution_identity_pending")
+		}
+		if !found || account.Account != expected.Account || expected.Account != (Account{Namespace: sandbox.Namespace, Name: sandbox.Name}) {
+			return w.failExecutionIdentity(ctx, principalOpening, head, owner)
+		}
+		if expected.UID == "" && head == nil {
+			principalOpening, err = w.Store.BindExecutionPrincipal(ctx, principalOpening.SessionID, principalOpening.SandboxUID,
+				expected.Account.Namespace, expected.Account.Name, account.UID)
+			if err != nil {
+				return err
+			}
+			expected = principalOpening.ExecutionPrincipal
+			queuedOpening = principalOpening
+		}
+		if account.UID != expected.UID || expected.UID == "" {
+			return w.failExecutionIdentity(ctx, principalOpening, head, owner)
+		}
+	}
+	if queuedOpening != nil {
+		ready, err := w.prepareOpening(ctx, queuedOpening, sandbox, owner)
 		if err != nil || !ready {
 			return err
 		}
-		if w.deliverOpening(ctx, opening, sandbox, owner) {
+		if w.deliverOpening(ctx, queuedOpening, sandbox, owner) {
 			w.enqueue(sessionID)
 		}
 	} else {
@@ -398,11 +434,34 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 		if err != nil || !ready {
 			return err
 		}
-		if w.deliverCommand(ctx, head, sandbox, owner) {
+		if w.deliverCommand(ctx, head, sandbox, owner, principalOpening) {
 			w.enqueue(sessionID)
 		}
 	}
 	return nil
+}
+
+func (w *DeliveryWorker) executionAccount(ctx context.Context, sandbox SandboxSnapshot) (ServiceAccountIdentity, bool, error) {
+	reader, ok := w.Catalog.(ExecutionAccountReader)
+	if !ok {
+		return ServiceAccountIdentity{}, false, errors.New("Sandbox execution account reader unavailable")
+	}
+	return reader.GetExecutionAccount(ctx, sandbox)
+}
+
+func (w *DeliveryWorker) failExecutionIdentity(ctx context.Context, opening *Opening, head *Dispatch, owner Owner) error {
+	if head == nil {
+		_, err := w.Store.SettleOpening(ctx, opening.SessionID, owner, []string{QueueState}, FailedState, "execution_identity_changed")
+		if err == nil {
+			w.clearRetry(opening.SessionID)
+		}
+		return err
+	}
+	_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{QueueState}, FailedState, "execution_identity_changed", nil)
+	if err == nil {
+		w.clearRetry(head.SessionID)
+	}
+	return err
 }
 
 func (w *DeliveryWorker) clearRetry(sessionID string) {
@@ -483,7 +542,7 @@ func (w *DeliveryWorker) retryStorage(ctx context.Context, fn func() error) {
 	}
 }
 
-func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, sandbox SandboxSnapshot, owner Owner) bool {
+func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, sandbox SandboxSnapshot, owner Owner, opening *Opening) bool {
 	ctx = observability.WithTraceparent(ctx, head.Traceparent)
 	ctx, span := observability.Start(
 		ctx, "Dispatcher Deliver Command",
@@ -501,6 +560,25 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 	}
 	if claimed == nil {
 		return false
+	}
+	if opening != nil && opening.ExecutionPrincipal != nil {
+		account, found, identityErr := w.executionAccount(ctx, sandbox)
+		if identityErr != nil {
+			w.retryStorage(ctx, func() error {
+				_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{DeliveringState}, QueueState, "execution_identity_unavailable", nil)
+				return err
+			})
+			w.backoff(head.SessionID, head.CommandID)
+			return true
+		}
+		if !found || account.Account != opening.ExecutionPrincipal.Account || account.UID != opening.ExecutionPrincipal.UID {
+			w.retryStorage(ctx, func() error {
+				_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{DeliveringState}, FailedState, "execution_identity_changed", nil)
+				return err
+			})
+			w.clearRetry(head.SessionID)
+			return true
+		}
 	}
 	admission, callErr := w.Runner.Deliver(ctx, sandbox, head.SessionID, head.Command)
 	if callErr != nil {
@@ -540,7 +618,28 @@ func (w *DeliveryWorker) deliverOpening(ctx context.Context, opening *Opening, s
 	if claimed == nil {
 		return false
 	}
-	callErr := w.Runner.OpenSession(ctx, sandbox, opening.SessionID, opening.Spec, opening.SetupScript)
+	if opening.ExecutionPrincipal != nil {
+		account, found, identityErr := w.executionAccount(ctx, sandbox)
+		if identityErr != nil {
+			w.retryStorage(ctx, func() error {
+				_, err := w.Store.SettleOpening(ctx, opening.SessionID, owner, []string{DeliveringState}, QueueState, "execution_identity_unavailable")
+				return err
+			})
+			w.backoff(opening.SessionID, key)
+			return true
+		}
+		if !found || account.Account != opening.ExecutionPrincipal.Account || opening.ExecutionPrincipal.UID == "" ||
+			account.UID != opening.ExecutionPrincipal.UID {
+			w.retryStorage(ctx, func() error {
+				_, err := w.Store.SettleOpening(ctx, opening.SessionID, owner, []string{DeliveringState}, FailedState, "execution_identity_changed")
+				return err
+			})
+			w.clearRetry(opening.SessionID)
+			return true
+		}
+	}
+	callErr := w.Runner.OpenSession(ctx, sandbox, opening.SessionID, opening.Spec, opening.SetupScript,
+		openingExecutionPrincipal(opening.ExecutionPrincipal))
 	if callErr != nil {
 		span.SetStatus(otelcodes.Error, "runner session opening failed")
 	}

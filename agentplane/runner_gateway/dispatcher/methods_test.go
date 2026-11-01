@@ -52,19 +52,19 @@ func bearing(t *testing.T, token string) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
 }
 
-func TestEveryRPCAdmitsOnlyTheDispatcherCallers(t *testing.T) {
+func TestEveryRPCAdmitsServedServiceAccounts(t *testing.T) {
 	resolver, err := auth.NewResolver(methodsAPI.TokenReviews(), methodsAudience, []string{dispatcherCaller.Namespace})
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := Methods(resolver, []auth.Account{dispatcherCaller})
+	methods := Methods(resolver)
 	connection := grpcmethods.Serve(t, methods, registerStandIn)
 	for _, method := range grpcmethods.Of(dispatcherpb.SessionDispatcher_ServiceDesc) {
 		t.Run(method.Name, func(t *testing.T) {
 			// The stand-in servicer answers Unimplemented to a call the policy admitted.
 			for token, want := range map[string]codes.Code{
 				"": codes.Unauthenticated, "test-token-unknown": codes.Unauthenticated,
-				strangerToken: codes.PermissionDenied, dispatcherCallerToken: codes.Unimplemented,
+				strangerToken: codes.Unimplemented, dispatcherCallerToken: codes.Unimplemented,
 			} {
 				if got := status.Code(method.Call(bearing(t, token), connection)); got != want {
 					t.Errorf("with token %q: %v, want %v", token, got, want)

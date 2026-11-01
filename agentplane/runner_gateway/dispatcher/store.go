@@ -38,9 +38,23 @@ var (
 	ErrQueueFull       = errors.New("session queue is full")
 	ErrNotFound        = errors.New("dispatch not found")
 	ErrNotCancellable  = errors.New("delivery already began")
+	ErrNotAuthorized   = errors.New("caller does not own the Session")
 )
 
 type Account struct{ Namespace, Name string }
+
+// ServiceAccountIdentity is a TokenReview-proven ServiceAccount plus its immutable UID.
+type ServiceAccountIdentity struct {
+	Account
+	UID string
+}
+
+// CallerIdentity distinguishes the caller's actual ServiceAccount from the explicit, Pod-bound
+// backend path that retains the existing app/notification/Actions authority.
+type CallerIdentity struct {
+	ServiceAccountIdentity
+	Privileged bool
+}
 
 type Dispatch struct {
 	Position                int64
@@ -60,15 +74,21 @@ type Dispatch struct {
 
 type Opening struct {
 	SessionID, SandboxName, SandboxUID string
-	WakeEligible                       bool
-	WakeCaller                         *Account
-	WakeFromIncarnation                *string
-	WakeRequestedAt                    *time.Time
-	Spec                               *runnerpb.SessionSpec
-	SetupScript                        *string
-	State, Reason                      string
-	Traceparent                        string
-	CreatedAt, UpdatedAt               time.Time
+	// ExecutionPrincipal is the immutable logical owner of the Session. A nil account means a
+	// legacy row with no trustworthy owner; an empty UID with a set account is a privileged open
+	// waiting to bind the controller-owned ServiceAccount.
+	ExecutionPrincipal *ServiceAccountIdentity
+	// Creator records the authenticated caller that brokered the opening, separately from its owner.
+	Creator              *ServiceAccountIdentity
+	WakeEligible         bool
+	WakeCaller           *Account
+	WakeFromIncarnation  *string
+	WakeRequestedAt      *time.Time
+	Spec                 *runnerpb.SessionSpec
+	SetupScript          *string
+	State, Reason        string
+	Traceparent          string
+	CreatedAt, UpdatedAt time.Time
 }
 
 // Owner is a fresh Kubernetes Lease proof paired with the committed DB generation.
@@ -120,14 +140,45 @@ const dispatchColumns = `position, command_id, session_id, sandbox_name, sandbox
 	wake_eligible, wake_caller_namespace, wake_caller_name, wake_from_incarnation,
 	wake_requested_at, operation, command, state, reason, admission, traceparent, created_at, updated_at`
 
+const qualifiedDispatchColumns = `d.position, d.command_id, d.session_id, d.sandbox_name, d.sandbox_uid::text,
+	d.wake_eligible, d.wake_caller_namespace, d.wake_caller_name, d.wake_from_incarnation,
+	d.wake_requested_at, d.operation, d.command, d.state, d.reason, d.admission, d.traceparent, d.created_at, d.updated_at`
+
 func scanDispatch(row interface{ Scan(...any) error }) (*Dispatch, error) {
+	return scanDispatchColumns(row)
+}
+
+func scanDispatchWithOwner(row interface{ Scan(...any) error }) (*Dispatch, *ServiceAccountIdentity, error) {
+	var ownerNS, ownerName, ownerUID sql.NullString
+	dispatch, err := scanDispatchColumns(row, &ownerNS, &ownerName, &ownerUID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if ownerNS.Valid != ownerName.Valid || ownerUID.Valid && !ownerNS.Valid {
+		return nil, nil, errors.New("terminal Session principal association is incomplete")
+	}
+	var owner *ServiceAccountIdentity
+	if ownerNS.Valid {
+		owner = &ServiceAccountIdentity{Account: Account{ownerNS.String, ownerName.String}}
+		if ownerUID.Valid {
+			owner.UID = ownerUID.String
+		}
+	}
+	return dispatch, owner, nil
+}
+
+func scanDispatchColumns(row interface{ Scan(...any) error }, additional ...any) (*Dispatch, error) {
 	d := &Dispatch{}
 	var callerNS, callerName, incarnation, reason sql.NullString
 	var wakeAt sql.NullTime
 	var commandBytes, admissionBytes []byte
-	err := row.Scan(&d.Position, &d.CommandID, &d.SessionID, &d.SandboxName, &d.SandboxUID,
+	columns := []any{
+		&d.Position, &d.CommandID, &d.SessionID, &d.SandboxName, &d.SandboxUID,
 		&d.WakeEligible, &callerNS, &callerName, &incarnation, &wakeAt, &d.Operation,
-		&commandBytes, &d.State, &reason, &admissionBytes, &d.Traceparent, &d.CreatedAt, &d.UpdatedAt)
+		&commandBytes, &d.State, &reason, &admissionBytes, &d.Traceparent, &d.CreatedAt, &d.UpdatedAt,
+	}
+	columns = append(columns, additional...)
+	err := row.Scan(columns...)
 	if err != nil {
 		return nil, err
 	}
@@ -160,6 +211,16 @@ func scanDispatch(row interface{ Scan(...any) error }) (*Dispatch, error) {
 // command IDs return the original row even after a Sandbox was recreated under
 // the same name, matching the Python store's exact retry contract.
 func (s *Store) Enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID string, command *commandpb.Command, wakeCaller *Account) (*Dispatch, error) {
+	return s.enqueue(ctx, sessionID, sandboxName, sandboxUID, command, wakeCaller, nil)
+}
+
+// EnqueueForCaller applies the Session's retained owner and target binding in the same transaction
+// that appends a normal caller's command. Pod-bound privileged backends retain their explicit path.
+func (s *Store) EnqueueForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, command *commandpb.Command, wakeCaller *Account, caller CallerIdentity) (*Dispatch, error) {
+	return s.enqueue(ctx, sessionID, sandboxName, sandboxUID, command, wakeCaller, &caller)
+}
+
+func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID string, command *commandpb.Command, wakeCaller *Account, caller *CallerIdentity) (*Dispatch, error) {
 	if command == nil || command.GetCommandId() == "" || sessionID == "" || sandboxName == "" {
 		return nil, errors.New("command_id, session_id and sandbox are required")
 	}
@@ -175,6 +236,31 @@ func (s *Store) Enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 	err = transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		if err := sessionLock(ctx, tx, sessionID); err != nil {
 			return err
+		}
+		if caller != nil {
+			var targetName, targetUID string
+			var principalNS, principalName, principalUID sql.NullString
+			err := tx.QueryRowContext(ctx, `SELECT sandbox_name,sandbox_uid::text,
+				execution_account_namespace,execution_account_name,execution_account_uid::text
+				FROM session_opening WHERE session_id=$1`, sessionID).Scan(
+				&targetName, &targetUID, &principalNS, &principalName, &principalUID,
+			)
+			if errors.Is(err, sql.ErrNoRows) {
+				if !caller.Privileged {
+					return ErrNotFound
+				}
+			} else if err != nil {
+				return err
+			} else {
+				if targetName != sandboxName || targetUID != sandboxUID {
+					return ErrNotAuthorized
+				}
+				if !caller.Privileged && (!principalUID.Valid || principalUID.String != caller.UID ||
+					!principalNS.Valid || !principalName.Valid ||
+					principalNS.String != caller.Account.Namespace || principalName.String != caller.Account.Name) {
+					return ErrNotAuthorized
+				}
+			}
 		}
 		// A command ID is global, even when two senders race through different
 		// Session locks.
@@ -231,9 +317,30 @@ func (s *Store) GetDispatch(ctx context.Context, id string) (*Dispatch, error) {
 	return d, err
 }
 
+func (s *Store) GetDispatchForCaller(ctx context.Context, id string, caller CallerIdentity) (*Dispatch, error) {
+	query := `SELECT ` + qualifiedDispatchColumns + ` FROM dispatch d
+		LEFT JOIN session_opening o ON o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
+		WHERE d.command_id=$1 AND ($2 OR (o.execution_account_namespace=$3 AND
+			o.execution_account_name=$4 AND o.execution_account_uid=$5))`
+	d, err := scanDispatch(s.DB.QueryRowContext(ctx, query, id, caller.Privileged,
+		caller.Account.Namespace, caller.Account.Name, caller.UID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return d, err
+}
+
 // ListDispatches returns the Dispatches of one Session or Sandbox, oldest first; a non-empty commandIDs
 // narrows them to those commands.
 func (s *Store) ListDispatches(ctx context.Context, sessionID, sandboxName string, commandIDs []string) ([]*Dispatch, error) {
+	return s.listDispatches(ctx, sessionID, sandboxName, commandIDs, nil)
+}
+
+func (s *Store) ListDispatchesForCaller(ctx context.Context, sessionID, sandboxName string, commandIDs []string, caller CallerIdentity) ([]*Dispatch, error) {
+	return s.listDispatches(ctx, sessionID, sandboxName, commandIDs, &caller)
+}
+
+func (s *Store) listDispatches(ctx context.Context, sessionID, sandboxName string, commandIDs []string, caller *CallerIdentity) ([]*Dispatch, error) {
 	if (sessionID == "") == (sandboxName == "") {
 		return nil, errors.New("exactly one dispatch scope is required")
 	}
@@ -241,12 +348,24 @@ func (s *Store) ListDispatches(ctx context.Context, sessionID, sandboxName strin
 	if sandboxName != "" {
 		column, value = "sandbox_name", sandboxName
 	}
-	query, arguments := "SELECT "+dispatchColumns+" FROM dispatch WHERE "+column+"=$1", []any{value}
+	columns := dispatchColumns
+	query, arguments := "SELECT "+columns+" FROM dispatch d", []any{}
+	if caller != nil {
+		query = "SELECT " + qualifiedDispatchColumns + " FROM dispatch d"
+		query += " LEFT JOIN session_opening o ON o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name"
+	}
+	query += " WHERE d." + column + "=$1"
+	arguments = append(arguments, value)
 	if len(commandIDs) > 0 {
-		query += " AND command_id = ANY($2)"
+		query += " AND d.command_id = ANY($2)"
 		arguments = append(arguments, pq.Array(commandIDs))
 	}
-	rows, err := s.DB.QueryContext(ctx, query+" ORDER BY position", arguments...)
+	if caller != nil {
+		query += fmt.Sprintf(" AND ($%d OR (o.execution_account_namespace=$%d AND o.execution_account_name=$%d AND o.execution_account_uid=$%d))",
+			len(arguments)+1, len(arguments)+2, len(arguments)+3, len(arguments)+4)
+		arguments = append(arguments, caller.Privileged, caller.Account.Namespace, caller.Account.Name, caller.UID)
+	}
+	rows, err := s.DB.QueryContext(ctx, query+" ORDER BY d.position", arguments...)
 	if err != nil {
 		return nil, err
 	}
@@ -263,11 +382,30 @@ func (s *Store) ListDispatches(ctx context.Context, sessionID, sandboxName strin
 }
 
 func (s *Store) Cancel(ctx context.Context, id string) (*Dispatch, error) {
+	return s.cancel(ctx, id, nil)
+}
+
+func (s *Store) CancelForCaller(ctx context.Context, id string, caller CallerIdentity) (*Dispatch, error) {
+	return s.cancel(ctx, id, &caller)
+}
+
+func (s *Store) cancel(ctx context.Context, id string, caller *CallerIdentity) (*Dispatch, error) {
 	var result *Dispatch
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		var err error
-		result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state=$1, reason='sender', updated_at=now()
-			WHERE command_id=$2 AND state=$3 RETURNING `+dispatchColumns, CancelledState, id, QueueState))
+		if caller == nil {
+			result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state=$1, reason='sender', updated_at=now()
+				WHERE command_id=$2 AND state=$3 RETURNING `+dispatchColumns, CancelledState, id, QueueState))
+		} else {
+			result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch d SET state=$1, reason='sender', updated_at=now()
+				WHERE d.command_id=$2 AND d.state=$3 AND ($4 OR EXISTS (
+					SELECT 1 FROM session_opening o WHERE o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
+					AND o.execution_account_namespace=$5 AND o.execution_account_name=$6 AND o.execution_account_uid=$7))
+				RETURNING d.position,d.command_id,d.session_id,d.sandbox_name,d.sandbox_uid::text,
+					d.wake_eligible,d.wake_caller_namespace,d.wake_caller_name,d.wake_from_incarnation,
+					d.wake_requested_at,d.operation,d.command,d.state,d.reason,d.admission,d.traceparent,d.created_at,d.updated_at`,
+				CancelledState, id, QueueState, caller.Privileged, caller.Account.Namespace, caller.Account.Name, caller.UID))
+		}
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
@@ -282,26 +420,49 @@ func (s *Store) Cancel(ctx context.Context, id string) (*Dispatch, error) {
 	if result != nil {
 		return result, nil
 	}
-	if _, err := s.GetDispatch(ctx, id); err != nil {
-		return nil, err
+	if caller == nil {
+		if _, err = s.GetDispatch(ctx, id); err != nil {
+			return nil, err
+		}
+	} else {
+		if _, err = s.GetDispatchForCaller(ctx, id, *caller); err != nil {
+			return nil, err
+		}
 	}
 	return nil, ErrNotCancellable
 }
 
-const openingColumns = `session_id, sandbox_name, sandbox_uid::text, wake_eligible,
+const openingColumns = `session_id, sandbox_name, sandbox_uid::text, execution_account_namespace,
+	execution_account_name, execution_account_uid::text, creator_account_namespace,
+	creator_account_name, creator_account_uid::text, wake_eligible,
 	wake_caller_namespace, wake_caller_name, wake_from_incarnation, wake_requested_at,
 	spec, setup_script, state, reason, traceparent, created_at, updated_at`
 
 func scanOpening(row interface{ Scan(...any) error }) (*Opening, error) {
 	o := &Opening{}
+	var ownerNS, ownerName, ownerUID, creatorNS, creatorName, creatorUID sql.NullString
 	var callerNS, callerName, incarnation, script, reason sql.NullString
 	var wakeAt sql.NullTime
 	var spec []byte
-	err := row.Scan(&o.SessionID, &o.SandboxName, &o.SandboxUID, &o.WakeEligible,
+	err := row.Scan(&o.SessionID, &o.SandboxName, &o.SandboxUID, &ownerNS, &ownerName, &ownerUID,
+		&creatorNS, &creatorName, &creatorUID, &o.WakeEligible,
 		&callerNS, &callerName, &incarnation, &wakeAt, &spec, &script, &o.State,
 		&reason, &o.Traceparent, &o.CreatedAt, &o.UpdatedAt)
 	if err != nil {
 		return nil, err
+	}
+	if ownerNS.Valid != ownerName.Valid || ownerUID.Valid && !ownerNS.Valid || creatorNS.Valid != creatorName.Valid ||
+		creatorNS.Valid != creatorUID.Valid {
+		return nil, errors.New("Session principal association is incomplete")
+	}
+	if ownerNS.Valid {
+		o.ExecutionPrincipal = &ServiceAccountIdentity{Account: Account{ownerNS.String, ownerName.String}}
+		if ownerUID.Valid {
+			o.ExecutionPrincipal.UID = ownerUID.String
+		}
+	}
+	if creatorNS.Valid {
+		o.Creator = &ServiceAccountIdentity{Account: Account{creatorNS.String, creatorName.String}, UID: creatorUID.String}
 	}
 	if callerNS.Valid && callerName.Valid {
 		o.WakeCaller = &Account{callerNS.String, callerName.String}
@@ -326,6 +487,21 @@ func scanOpening(row interface{ Scan(...any) error }) (*Opening, error) {
 }
 
 func (s *Store) OpenSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *runnerpb.SessionSpec, setupScript *string, wakeCaller *Account) (*Opening, error) {
+	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, wakeCaller, nil, nil)
+}
+
+// OpenSessionWithIdentity stores the immutable target execution account and the distinct caller
+// that created the opening. A nil execution UID is permitted only for a privileged open-before-ready
+// request; the worker can bind it only after verifying the managed ServiceAccount's owner reference.
+func (s *Store) OpenSessionWithIdentity(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *runnerpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal, creator *ServiceAccountIdentity) (*Opening, error) {
+	if executionPrincipal == nil || creator == nil || executionPrincipal.Account.Namespace == "" ||
+		executionPrincipal.Account.Name == "" || creator.Account.Namespace == "" || creator.Account.Name == "" || creator.UID == "" {
+		return nil, errors.New("execution principal and creator identity are required")
+	}
+	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, wakeCaller, executionPrincipal, creator)
+}
+
+func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *runnerpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal, creator *ServiceAccountIdentity) (*Opening, error) {
 	if sessionID == "" || sandboxName == "" || spec == nil {
 		return nil, errors.New("session_id, sandbox and spec are required")
 	}
@@ -357,11 +533,23 @@ func (s *Store) OpenSession(ctx context.Context, sessionID, sandboxName, sandbox
 		if wakeCaller != nil {
 			ns, name = wakeCaller.Namespace, wakeCaller.Name
 		}
+		var ownerNS, ownerName, ownerUID, creatorNS, creatorName, creatorUID any
+		if executionPrincipal != nil {
+			ownerNS, ownerName = executionPrincipal.Account.Namespace, executionPrincipal.Account.Name
+			if executionPrincipal.UID != "" {
+				ownerUID = executionPrincipal.UID
+			}
+		}
+		if creator != nil {
+			creatorNS, creatorName, creatorUID = creator.Account.Namespace, creator.Account.Name, creator.UID
+		}
 		result, err = scanOpening(tx.QueryRowContext(ctx, `INSERT INTO session_opening
-			(session_id,sandbox_name,sandbox_uid,wake_eligible,wake_caller_namespace,wake_caller_name,
+			(session_id,sandbox_name,sandbox_uid,execution_account_namespace,execution_account_name,execution_account_uid,
+			 creator_account_namespace,creator_account_name,creator_account_uid,wake_eligible,wake_caller_namespace,wake_caller_name,
 			 spec,setup_script,state,traceparent,created_at,updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now()) RETURNING `+openingColumns,
-			sessionID, sandboxName, sandboxUID, wakeCaller != nil, ns, name, data, setupScript, QueueState,
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,now(),now()) RETURNING `+openingColumns,
+			sessionID, sandboxName, sandboxUID, ownerNS, ownerName, ownerUID, creatorNS, creatorName, creatorUID,
+			wakeCaller != nil, ns, name, data, setupScript, QueueState,
 			observability.Traceparent(ctx)))
 		if err != nil {
 			return err
@@ -384,6 +572,76 @@ func (s *Store) GetOpening(ctx context.Context, id string) (*Opening, error) {
 		return nil, ErrNotFound
 	}
 	return o, err
+}
+
+func (s *Store) GetOpeningForCaller(ctx context.Context, id string, caller CallerIdentity) (*Opening, error) {
+	query := `SELECT ` + openingColumns + ` FROM session_opening WHERE session_id=$1 AND ($2 OR
+		(execution_account_namespace=$3 AND execution_account_name=$4 AND execution_account_uid=$5))`
+	o, err := scanOpening(s.DB.QueryRowContext(ctx, query, id, caller.Privileged,
+		caller.Account.Namespace, caller.Account.Name, caller.UID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return o, err
+}
+
+// BindExecutionPrincipal fixes the UID of a pending managed account exactly once. The expected
+// account name and Sandbox UID are part of the predicate, so reconciliation cannot adopt another
+// Sandbox's account or overwrite a prior binding.
+func (s *Store) BindExecutionPrincipal(ctx context.Context, sessionID, sandboxUID, accountNamespace, accountName, accountUID string) (*Opening, error) {
+	if sessionID == "" || sandboxUID == "" || accountNamespace == "" || accountName == "" || accountUID == "" {
+		return nil, errors.New("Session, Sandbox and ServiceAccount identities are required")
+	}
+	var result *Opening
+	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
+		var err error
+		result, err = scanOpening(tx.QueryRowContext(ctx, `UPDATE session_opening SET execution_account_uid=$5,updated_at=now()
+			WHERE session_id=$1 AND sandbox_uid=$2 AND execution_account_namespace=$3 AND execution_account_name=$4
+			AND execution_account_uid IS NULL RETURNING `+openingColumns,
+			sessionID, sandboxUID, accountNamespace, accountName, accountUID))
+		if errors.Is(err, sql.ErrNoRows) {
+			result, err = scanOpening(tx.QueryRowContext(ctx, `SELECT `+openingColumns+` FROM session_opening
+				WHERE session_id=$1 AND sandbox_uid=$2 AND execution_account_namespace=$3 AND execution_account_name=$4
+				AND execution_account_uid=$5`, sessionID, sandboxUID, accountNamespace, accountName, accountUID))
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNotAuthorized
+			}
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		return notify(ctx, tx)
+	})
+	return result, err
+}
+
+func (s *Store) AuthorizeTarget(ctx context.Context, sessionID, sandboxName, sandboxUID string, caller CallerIdentity) error {
+	var targetName, targetUID string
+	var principalNS, principalName, principalUID sql.NullString
+	err := s.DB.QueryRowContext(ctx, `SELECT sandbox_name,sandbox_uid::text,execution_account_namespace,
+		execution_account_name,execution_account_uid::text FROM session_opening WHERE session_id=$1`, sessionID).
+		Scan(&targetName, &targetUID, &principalNS, &principalName, &principalUID)
+	if errors.Is(err, sql.ErrNoRows) {
+		if caller.Privileged {
+			return nil
+		}
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if targetName != sandboxName || targetUID != sandboxUID {
+		return ErrNotAuthorized
+	}
+	if caller.Privileged {
+		return nil
+	}
+	if !principalNS.Valid || !principalName.Valid || !principalUID.Valid || principalNS.String != caller.Account.Namespace ||
+		principalName.String != caller.Account.Name || principalUID.String != caller.UID {
+		return ErrNotAuthorized
+	}
+	return nil
 }
 
 func (s *Store) OpeningHeads(ctx context.Context) ([]*Opening, error) {

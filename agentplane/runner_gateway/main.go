@@ -216,7 +216,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		return err
 	}
 	dispatchAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.DispatcherAudience,
-		accountNamespaces(c.DispatcherCallers, nil))
+		accountNamespaces(c.DispatcherCallers, &auth.Account{Namespace: c.Namespace}))
 	if err != nil {
 		return err
 	}
@@ -282,11 +282,12 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		return ctx.Err()
 	}
 	service := &dispatcher.Service{
-		Store: store, WakeCallers: accountSet(c.WakeCallers), Sandboxes: catalog, Runner: runner,
+		Store: store, DispatcherCallers: accountSet(c.DispatcherCallers), WakeCallers: accountSet(c.WakeCallers),
+		Sandboxes: catalog, Runner: runner,
 		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
 	methods := auth.HealthMethods()
-	maps.Copy(methods, dispatcher.Methods(dispatchAuth, c.DispatcherCallers))
+	maps.Copy(methods, dispatcher.Methods(dispatchAuth))
 	maps.Copy(methods, g.Methods())
 	server := grpc.NewServer(append(
 		methods.ServerOptions(0),

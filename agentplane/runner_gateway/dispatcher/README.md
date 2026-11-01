@@ -21,8 +21,8 @@ The manual queue, replica and wake probes are documented in the
 - **HTTP/JSON form**: every RPC also answers over HTTP on the Gateway's optional `http_listen_address` setting,
   [generated from the proto](../../docs/grpc_services.md#httpjson-facades): reads under `/v1/dispatches`
   and `/v1/sessions/{session_id}/opening`, commands as `POST /v1/sessions/{session_id}:<verb>` and
-  `POST /v1/dispatches/{command_id}:cancel`. The Dispatcher admits only the configured ServiceAccounts
-  on either form; a browser reaches it through the app, whose Thread checks stay in front of commands.
+  `POST /v1/dispatches/{command_id}:cancel`. Both transports use the same ServiceAccount TokenReview and
+  per-Session owner checks; a browser reaches it through the app, whose Thread checks stay in front of commands.
 - **Delivery states** say where a command is: `QUEUED_IN_DISPATCHER`, `DELIVERING_TO_RUNNER`,
   `RUNNER_ADMITTED`, `HARNESS_CONFIRMED`, `NO_OP`, `FAILED`, `CANCELLED_IN_DISPATCHER`, `UNKNOWN` (a deleted Sandbox's). A
   `Dispatch`'s `reason` says what a queued command waits for or where a terminal one ended.
@@ -42,6 +42,19 @@ The manual queue, replica and wake probes are documented in the
   reaching the required-UID Dispatcher is rejected with `INVALID_ARGUMENT` when it omits `sandbox_uid`. To roll back,
   restore the old Dispatcher before rolling back app and Action callers. Existing Session openings and running Sessions
   are unaffected.
+- **Caller authority**: a normal workload token must prove the target Sandbox's exact controller-owned
+  execution ServiceAccount UID. New Sessions retain that UID as their immutable logical principal, and
+  retain the actual opening caller separately as creator/broker. Normal command writes, cancellation,
+  and interrupt also require the recorded principal to match the live managed account UID. A queued
+  delivery rechecks that UID immediately before calling the Runner. Normal receipt reads and watches
+  filter by the retained UID and do not require a live Sandbox or account. The configured backend
+  accounts keep their existing privileged behavior only when TokenReview also proves a Pod binding;
+  an account-only token for the same name uses normal per-Session authority.
+- **Open before Ready**: a configured Pod-bound backend can open a Session before the controller has
+  created the execution ServiceAccount. The opening stores the expected target account with its UID
+  pending. Delivery binds that UID only after confirming the account has a controller OwnerReference
+  to the exact Sandbox UID. Legacy openings with no recorded owner remain unowned by normal callers and
+  are never adopted based on a matching current account name.
 - **Queue**: no TTL; at most `max_queued_per_session` queued commands per Session, then
   `RESOURCE_EXHAUSTED`. A command for a Sandbox that does not exist is refused `NOT_FOUND` and stores nothing.
 - **Sandbox deleted** (seen on the Sandbox watch): queued commands end `FAILED` (`sandbox_deleted`), delivering
@@ -75,8 +88,8 @@ The manual queue, replica and wake probes are documented in the
   `Ready`; `InterruptTurn` never wakes. A queued command or session opening
   that remains unready for ten minutes after its budgeted wake request becomes `FAILED`, with the
   Sandbox's current `Ready` condition reason and message recorded for the sender. The queue row is
-  retained, and quota wait time does not count toward the deadline. The budget does not expand the
-  caller allowlist. The initial limit is ten wake attempts per minute per authenticated caller; tuning
+  retained, and quota wait time does not count toward the deadline. The budget does not grant wake
+  eligibility to other caller accounts. The initial limit is ten wake attempts per minute per authenticated caller; tuning
   remains a follow-up.
 
 Delivery wakes on a stored command (PostgreSQL `NOTIFY`), a Sandbox change (the `ListWatch` on
@@ -86,7 +99,16 @@ the Sandboxes with pending work that it does not own.
 ## Deviations and gaps
 
 - `HARNESS_CONFIRMED` has no writer, so inputs stay `RUNNER_ADMITTED`.
-- Any account in `caller_accounts` may send to any Sandbox.
+- Runner Pods still reach external services through the existing egress proxy and do not have a
+  Dispatcher route or Dispatcher bearer projected into their sidecar. The next transport integration
+  should add the Dispatcher audience to the sidecar-only projection in
+  [`sandbox_pod.py`](../../../cluster/cdk8s/agentplane/sandbox_pod.py), add the exact Dispatcher
+  route and credential mapping in [`egress.py`](../../../cluster/cdk8s/agentplane/egress.py), and
+  connect a concrete MCP/client caller to the HTTPS proxy placeholder. Do not expose the real bearer
+  to the agent container or add direct Runner egress. The MCP/client caller and History provenance
+  propagation are not part of this Dispatcher authorization change.
+
+The detailed ownership, compatibility and transport contract is in [SPEC.md](SPEC.md).
 
 ## Running
 

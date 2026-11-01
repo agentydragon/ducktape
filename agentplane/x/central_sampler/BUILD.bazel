@@ -18,6 +18,7 @@ proto_library(
     name = "sampler_proto",
     srcs = ["sampler.proto"],
     deps = [
+        "//agentplane/proto:delegation_proto",
         "//agentplane/proto:event_log_proto",
         "//agentplane/proto:runner_proto",
         "//agentplane/proto:sandboxes_proto",
@@ -215,6 +216,7 @@ go_proto_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb",
     proto = ":sampler_proto",
     deps = [
+        "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
@@ -398,6 +400,7 @@ go_library(
         "//agentplane/postgres/lease",
         "//agentplane/postgres/wakeups",
         "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",

@@ -24,6 +24,7 @@ const (
 type TerminalEvent struct {
 	ID       string
 	Dispatch *dispatcherpb.Dispatch
+	Owner    *ServiceAccountIdentity
 }
 
 func terminalPayloads(event TerminalEvent) ([]string, error) {
@@ -47,6 +48,9 @@ func terminalPayloads(event TerminalEvent) ([]string, error) {
 		}
 		body, err := proto.Marshal(&notificationpb.TerminalNotificationPart{
 			EventId: event.ID, Part: uint32(i), PartCount: uint32(partCount), Data: serialized[start:end],
+			ExecutionAccountNamespace: executionAccountField(event.Owner, "namespace"),
+			ExecutionAccountName:      executionAccountField(event.Owner, "name"),
+			ExecutionAccountUid:       executionAccountField(event.Owner, "uid"),
 		})
 		if err != nil {
 			return nil, err
@@ -97,12 +101,16 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]TerminalEv
 			}
 		}
 		if len(positions) > 0 {
-			rows, err := tx.QueryContext(ctx, `SELECT `+dispatchColumns+` FROM dispatch WHERE position=ANY($1) ORDER BY position`, pq.Array(positions))
+			rows, err := tx.QueryContext(ctx, `SELECT `+qualifiedDispatchColumns+`,
+				o.execution_account_namespace,o.execution_account_name,o.execution_account_uid
+				FROM dispatch d LEFT JOIN session_opening o ON o.session_id=d.session_id
+				AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
+				WHERE d.position=ANY($1) ORDER BY d.position`, pq.Array(positions))
 			if err != nil {
 				return err
 			}
 			for rows.Next() {
-				row, err := scanDispatch(rows)
+				row, owner, err := scanDispatchWithOwner(rows)
 				if err != nil {
 					rows.Close()
 					return err
@@ -112,7 +120,7 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]TerminalEv
 					rows.Close()
 					return err
 				}
-				events = append(events, TerminalEvent{uuid.NewString(), snapshot})
+				events = append(events, TerminalEvent{ID: uuid.NewString(), Dispatch: snapshot, Owner: owner})
 			}
 			err = rows.Err()
 			rows.Close()
@@ -151,6 +159,22 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]TerminalEv
 		return nil
 	})
 	return events, err
+}
+
+func executionAccountField(owner *ServiceAccountIdentity, field string) string {
+	if owner == nil {
+		return ""
+	}
+	switch field {
+	case "namespace":
+		return owner.Account.Namespace
+	case "name":
+		return owner.Account.Name
+	case "uid":
+		return owner.UID
+	default:
+		return ""
+	}
 }
 
 func (s *Store) ListSandboxUIDs(ctx context.Context) (map[string]struct{}, error) {

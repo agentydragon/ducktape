@@ -6,6 +6,7 @@ import (
 	"time"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
@@ -47,10 +48,10 @@ func (r *ProxyRunner) withClient(ctx context.Context, sandbox SandboxSnapshot, c
 	}, call)
 }
 
-func (r *ProxyRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot, sessionID string, spec *runnerpb.SessionSpec, setupScript *string) error {
+func (r *ProxyRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot, sessionID string, spec *runnerpb.SessionSpec, setupScript *string, executionPrincipal *delegationpb.ServiceAccountIdentity) error {
 	return r.withClient(ctx, sandbox, func(ctx context.Context, client runnerservicepb.RunnerClient) error {
 		_, err := client.OpenSession(ctx, &runnerservicepb.OpenSessionRequest{
-			SessionId: sessionID, Spec: spec, SetupScript: setupScript,
+			SessionId: sessionID, Spec: spec, SetupScript: setupScript, ExecutionPrincipal: executionPrincipal,
 		})
 		return err
 	})

@@ -90,10 +90,13 @@ func openDatabase(ctx context.Context, databaseURL string, connections int) (*sq
 	return db, nil
 }
 
-func readerNamespaces(accounts []auth.Account) []string {
-	namespaces := make(map[string]struct{}, len(accounts))
+func readerNamespaces(accounts []auth.Account, servedNamespaces []string) []string {
+	namespaces := make(map[string]struct{}, len(accounts)+len(servedNamespaces))
 	for _, account := range accounts {
 		namespaces[account.Namespace] = struct{}{}
+	}
+	for _, namespace := range servedNamespaces {
+		namespaces[namespace] = struct{}{}
 	}
 	result := make([]string, 0, len(namespaces))
 	for namespace := range namespaces {
@@ -140,7 +143,7 @@ func run(ctx context.Context, c config) error {
 
 // serve answers the read API on listener and the runner ingress on ingressListener until ctx ends.
 func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, ingressListener net.Listener) error {
-	readerAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.TokenAudience, readerNamespaces(c.ReaderAccounts))
+	readerAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.TokenAudience, readerNamespaces(c.ReaderAccounts, c.Ingress.WriterNamespaces))
 	if err != nil {
 		return err
 	}
@@ -178,12 +181,13 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 	history := storage.NewStore(readDB, false)
 	service := api.NewService(api.Options{
 		Reader:         &reads.Reader{DB: readDB, History: history, NativeFrameReadBatchSize: c.NativeFrameReadBatchSize},
+		ReaderAccounts: c.ReaderAccounts,
 		Wakeups:        hub,
 		RequestTimeout: seconds(c.RequestTimeoutSeconds), WatchLease: seconds(c.WatchLeaseSeconds),
 	})
 	methods := auth.HealthMethods()
 	// A watch or follow carries no deadline of its own, so the request timeout bounds its admission.
-	maps.Copy(methods, api.Methods(readerAuth, c.ReaderAccounts))
+	maps.Copy(methods, api.Methods(readerAuth))
 	server := grpc.NewServer(append(methods.ServerOptions(seconds(c.RequestTimeoutSeconds)), observability.GRPCServerOption())...)
 	historypb.RegisterHistoryServiceServer(server, service)
 	healthServer := health.NewServer()

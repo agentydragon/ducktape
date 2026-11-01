@@ -441,6 +441,7 @@ proto_library(
     srcs = ["runner_service.proto"],
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/proto:delegation_proto",
         "//agentplane/proto:event_log_proto",
         "//agentplane/proto:runner_proto",
         "//agentplane/proto:runner_state_proto",
@@ -470,6 +471,7 @@ go_proto_library(
     proto = ":runner_service_proto",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/proto:runner_state_go_proto",

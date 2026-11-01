@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
@@ -21,6 +22,16 @@ import (
 type CentralTarget struct {
 	Target    string `mapstructure:"target"`
 	TokenFile string `mapstructure:"token_file"`
+}
+
+func openingExecutionPrincipal(identity *ServiceAccountIdentity) *delegationpb.ServiceAccountIdentity {
+	if identity == nil {
+		return nil
+	}
+	return &delegationpb.ServiceAccountIdentity{
+		Account: &sandboxpb.ServiceAccount{Namespace: identity.Account.Namespace, Name: identity.Account.Name},
+		Uid:     identity.UID,
+	}
 }
 
 type openingReader interface {
@@ -84,12 +95,12 @@ func (r *RoutingRunner) withClient(ctx context.Context, call func(context.Contex
 	return call(metadata.NewOutgoingContext(ctx, metadata.MD{}), samplerpb.NewSamplerClient(conn))
 }
 
-func (r *RoutingRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot, id string, spec *runnerpb.SessionSpec, setup *string) error {
+func (r *RoutingRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot, id string, spec *runnerpb.SessionSpec, setup *string, executionPrincipal *delegationpb.ServiceAccountIdentity) error {
 	if err := ValidateRuntime(spec, setup, r.Target); err != nil {
 		return err
 	}
 	if !centralSpec(spec) {
-		return r.Native.OpenSession(ctx, sandbox, id, spec, setup)
+		return r.Native.OpenSession(ctx, sandbox, id, spec, setup, executionPrincipal)
 	}
 	if sandbox.Incarnation == "" {
 		return status.Error(codes.FailedPrecondition, "executor incarnation is not available")
@@ -97,7 +108,8 @@ func (r *RoutingRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot
 	return r.withClient(ctx, func(ctx context.Context, client samplerpb.SamplerClient) error {
 		_, err := client.OpenSession(ctx, &samplerpb.OpenSessionRequest{
 			SessionId: id, Spec: spec, ExpectedIncarnationUid: sandbox.Incarnation, SetupScript: setup,
-			Executor: &sandboxpb.SandboxDestination{Owner: &sandboxpb.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}, Sandbox: sandbox.Name, SandboxUid: sandbox.UID},
+			ExecutionPrincipal: executionPrincipal,
+			Executor:           &sandboxpb.SandboxDestination{Owner: &sandboxpb.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}, Sandbox: sandbox.Name, SandboxUid: sandbox.UID},
 		})
 		return err
 	})

@@ -10,6 +10,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/workspace"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
@@ -33,6 +34,9 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 		return nil, status.Error(codes.InvalidArgument, "spec is required")
 	}
 	if _, err := retained.ValidateSessionID(request.SessionId); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if err := validateExecutionPrincipal(request.GetExecutionPrincipal()); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	if r.isClosing() || !r.lifecycle.accepting() {
@@ -88,6 +92,9 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 		if request.SetupScript != nil && !record.MatchesSetupScript(request.GetSetupScript()) {
 			return nil, status.Error(codes.AlreadyExists, "session exists with a different setup script")
 		}
+		if !compatibleExecutionPrincipal(record.ExecutionPrincipal, request.GetExecutionPrincipal()) {
+			return nil, status.Error(codes.AlreadyExists, "session exists with a different execution principal")
+		}
 		s, err := r.sessions.Load(r.ctx, request.SessionId)
 		if err != nil {
 			return nil, rpcError(err)
@@ -101,6 +108,9 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 	record, err := retained.NewRecord(spec, request.GetSetupScript(), budget)
 	if err != nil {
 		return nil, rpcError(err)
+	}
+	if request.GetExecutionPrincipal() != nil {
+		record.ExecutionPrincipal = proto.Clone(request.GetExecutionPrincipal()).(*delegationpb.ServiceAccountIdentity)
 	}
 	admitted := false
 	s, err := r.sessions.ReserveFresh(r.ctx, request.SessionId, func() error {
@@ -132,6 +142,25 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 	}
 	r.changed()
 	return &runnerservicepb.OpenSessionResponse{Attached: s.Attached()}, nil
+}
+
+func validateExecutionPrincipal(principal *delegationpb.ServiceAccountIdentity) error {
+	if principal == nil {
+		return nil
+	}
+	if principal.GetAccount().GetNamespace() == "" || principal.GetAccount().GetName() == "" || principal.GetUid() == "" {
+		return errors.New("execution_principal must include an account namespace, account name, and UID")
+	}
+	return nil
+}
+
+// A retry may omit a principal after it was durably recorded, but it may not replace one or assign
+// an identity to an older unassociated record.
+func compatibleExecutionPrincipal(retained, incoming *delegationpb.ServiceAccountIdentity) bool {
+	if retained == nil {
+		return incoming == nil
+	}
+	return incoming == nil || proto.Equal(retained, incoming)
 }
 
 func (r *Runner) admit(ctx context.Context, id string, c *commandpb.Command) (entry *eventlogpb.EventEntry, resultErr error) {

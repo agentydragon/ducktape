@@ -2,6 +2,7 @@ syntax = "proto3";
 package agentplane.x.central_sampler;
 
 import "agentplane/proto/event_log.proto";
+import "agentplane/proto/delegation.proto";
 import "agentplane/proto/runner.proto";
 import "agentplane/proto/sandboxes.proto";
 import "agentplane/runner/runner_service.proto";
@@ -27,6 +28,8 @@ message OpenSessionRequest {
   string expected_incarnation_uid = 4;
   // Runs once in the bound executor's working directory before sampling starts.
   optional string setup_script = 5;
+  // Supplied by the Dispatcher and retained separately from the authenticated sampler writer.
+  agentplane.proto.ServiceAccountIdentity execution_principal = 6;
 }
 message OpenSessionResponse { agentplane.proto.Attached attached = 1; }
 message GetSessionRequest { string session_id = 1; }

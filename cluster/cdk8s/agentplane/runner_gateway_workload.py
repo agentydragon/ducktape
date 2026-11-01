@@ -325,6 +325,9 @@ class RunnerGateway(Construct):
             rules=[
                 # Flux can apply RBAC before the image rolls: older Gateways still read workloads directly.
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
+                # SessionDispatcher checks the live UID of the Sandbox-owned execution account
+                # before normal writes and immediately before queued delivery.
+                RolePolicyRule(resources=[cast(IApiResource, ApiResource.SERVICE_ACCOUNTS)], verbs=["get"]),
                 RolePolicyRule(
                     resources=[
                         custom_resource("kubevirt.io", "virtualmachineinstances"),

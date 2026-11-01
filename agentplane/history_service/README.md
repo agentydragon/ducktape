@@ -1,10 +1,12 @@
 # History Service
 
 Serves retained Session history: the raw runner Event log and its observation metadata, keyed by
-public Session ID. It authenticates callers by projected ServiceAccount token (TokenReview) and
-serves only the configured reader accounts, today the integration app's and the Notification
-Service's. A Session UUID by itself
-grants nothing. Consumers use `client.py`; `testing/go_service.py` runs the built Go service over a test
+public Session ID. Every normal caller is authenticated by projected ServiceAccount token
+(TokenReview), and can read only Sessions whose retained execution principal has the same
+ServiceAccount namespace, name and UID. This read authority does not depend on a live Sandbox.
+Configured backend readers retain their explicit Pod-bound, service-wide read path; a ServiceAccount
+token alone does not grant it. A Session UUID by itself grants nothing. Consumers use `client.py`;
+`testing/go_service.py` runs the built Go service over a test
 database for their tests, which read the fold's tables through `fold/models.py` and validate the rows
 browsers sync with `fold/views.py`.
 
@@ -100,15 +102,22 @@ Each replica subscribes followers to the wakeup hub's
 followers; reconnecting the LISTEN connection also wakes them to cover lost notifications.
 Cleanup writers must record removed ranges and notify that channel in the same transaction.
 
-Authorization checks `reader_accounts` on opening; the lease bounds continued reading after a
-reader is revoked. Errors carry a gRPC status and fixed detail:
+Normal read scope is applied in SQL before pagination, projection, or evidence lookup. It covers
+summary reads and batches, Sandbox discovery, raw event and observation pages, Thread entities,
+entity evidence, native frame lookup, follows and their removed ranges, and opened-Session watch
+events. Normal watch positions are ordinals over the caller's retained Sessions, so a cursor does
+not reveal gaps from another principal; configured backend readers retain the existing service-wide
+opening cursor. Each RPC is admitted by the workload-auth resolver, whose accepted TokenReview verdict is
+cached only for its configured short TTL. Watch/follow streams end at their lease so continued reads
+require a newly authorized call. Configured `reader_accounts` remain restricted to their actual
+Pod-bound proof for the backend-wide policy. Errors carry a gRPC status and fixed detail:
 
 | Status              | Cause                                                                             |
 | ------------------- | --------------------------------------------------------------------------------- |
-| `NOT_FOUND`         | History never recorded the Session.                                               |
+| `NOT_FOUND`         | The Session is missing or outside the caller's execution-principal scope.         |
 | `OUT_OF_RANGE`      | `after_cursor` exceeds the committed tail.                                        |
 | `INVALID_ARGUMENT`  | Invalid Session UUID, absent start, zero back count, or unspecified/unknown kind. |
-| `PERMISSION_DENIED` | The authenticated caller is outside `reader_accounts`.                            |
+| `PERMISSION_DENIED` | The RPC method is not admitted by this service's method policy.                   |
 | `UNAUTHENTICATED`   | Missing or invalid caller credentials.                                            |
 
 ## Session writer and execution Sandbox
@@ -122,7 +131,7 @@ fill an older record; a different UID is refused. `FindSessions` supports both n
 exact UID lookup, including deleted Sandboxes. Legacy rows and ServiceAccounts without a Sandbox
 controller owner remain without a UID.
 
-A Session belongs to one Sandbox for its whole life and never moves to another; its history outlives the Sandbox. Replacing a Pod or VM keeps the Sandbox and its Sessions, and a teardown seal ends that incarnation, not the Session.
+A Session belongs to one Sandbox for its whole life and never moves to another; its history outlives the Sandbox. Separately, a nullable retained execution principal records the exact ServiceAccount incarnation under which the Session runs. New Dispatcher openings carry that identity through runner and central-sampler admission into History. It is independent of the authenticated journal writer, creator, and Sandbox identity. The first trusted association is immutable: conflicting owners fail, and an absent legacy owner is never inferred from the Sandbox name or current ServiceAccount. Old announcements without the identity cannot erase a pinned owner; old rows and announcements without trustworthy identity remain unavailable to normal same-principal reads. Rolling back the service leaves these additive owner columns in place because the association cannot be reconstructed. Replacing a Pod or VM keeps the Sandbox and its Sessions, and a teardown seal ends that incarnation, not the Session.
 
 ## Delta settlement
 
@@ -213,7 +222,9 @@ Both listener settings accept TCP addresses or inherited descriptors as document
 
 `ingress.sampler_accounts` explicitly admits central sampler accounts (empty by default). Their
 `sampler_announce` authenticates the producer separately from the executor Sandbox and keeps both
-identities fixed. Native announcements cannot claim central metadata. The same cursor, exact-replay,
+identities fixed. A central execution principal is retained only from the Dispatcher-provided
+identity on the admitted sampler path; the executor account name is not used to guess its UID.
+Native announcements cannot claim central metadata. The same cursor, exact-replay,
 writer fencing and commit-before-ack rules apply. Central outboxes retain evidence in sampler
 PostgreSQL while History is unavailable. Raw boundary and execution-progress observations remain
 retained evidence; source-linked normalized Events drive the ordinary Thread fold. History does
