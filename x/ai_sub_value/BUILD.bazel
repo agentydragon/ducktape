@@ -60,9 +60,15 @@ py_library(
     deps = [
         ":analyze",
         ":bootstrap",
+        ":plan_history",
         "@pypi//numpy",
         "@pypi//scipy",
     ],
+)
+
+py_library(
+    name = "plan_history",
+    srcs = ["plan_history.py"],
 )
 
 py_binary(
@@ -78,6 +84,7 @@ py_test(
         ":analyze",
         ":bootstrap",
         ":estimate_capacity",
+        ":plan_history",
         "//:conftest",
         "@pypi//numpy",
         "@pypi//pytest",
@@ -114,15 +121,20 @@ py_test(
 py_library(
     name = "report_data",
     srcs = ["report_data.py"],
-    deps = [":analyze"],
+    deps = [
+        ":analyze",
+        ":plan_history",
+    ],
 )
 
 py_test(
     name = "test_report_data",
     srcs = ["test_report_data.py"],
     deps = [
+        ":plan_history",
         ":report_data",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

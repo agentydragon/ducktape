@@ -19,6 +19,12 @@ from x.ai_sub_value.analyze import (
     summarize_daily,
     summarize_quota,
 )
+from x.ai_sub_value.plan_history import (
+    CodexPlanPeriod,
+    codex_plan_at,
+    read_codex_plan_history,
+    validate_reported_codex_plan_types,
+)
 
 TOKEN_FIELDS = (
     "uncached_input_tokens",
@@ -100,16 +106,42 @@ def assemble_usage(sources: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
     }
 
 
-def quota_weekly(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    groups: dict[tuple[str, int, str], dict[str, Poll]] = defaultdict(dict)
+def quota_weekly(
+    rows: list[dict[str, Any]], codex_plan_periods: list[CodexPlanPeriod] | None = None
+) -> list[dict[str, Any]]:
+    groups: dict[tuple[str, int, str, CodexPlanPeriod | None], dict[str, Poll]] = defaultdict(dict)
+    reported_plan_types: dict[tuple[str, int, str, CodexPlanPeriod | None], set[str]] = defaultdict(set)
     for row in rows:
-        groups[(row["provider"], row["window_seconds"], row["window_name"])][row["event_id"]] = Poll(
-            parse_time(row["observed_at"]),
-            row["used_percent"],
-            parse_time(row["reset_at"]) if row["reset_at"] else None,
+        at = parse_time(row["observed_at"])
+        plan_period = None
+        if row["provider"] == "codex" and not row["window_name"]:
+            if not codex_plan_periods:
+                raise ValueError("Codex quota summaries require a timestamped --codex-plan-history input")
+            plan_period = codex_plan_at(at, codex_plan_periods)
+            if plan_period is None:
+                raise ValueError(
+                    f"Codex quota poll at {at.isoformat()} is outside the supplied plan history; "
+                    "extend the history so every Codex poll has an exact plan label"
+                )
+        group = (row["provider"], row["window_seconds"], row["window_name"], plan_period)
+        groups[group][row["event_id"]] = Poll(
+            at, row["used_percent"], parse_time(row["reset_at"]) if row["reset_at"] else None
         )
+        if row.get("reported_plan_type"):
+            reported_plan_types[group].add(str(row["reported_plan_type"]))
+    for (*_, plan_period), reported in reported_plan_types.items():
+        if plan_period is not None:
+            validate_reported_codex_plan_types(plan_period, reported)
     result: list[dict[str, Any]] = []
-    for (provider, seconds, name), polls in sorted(groups.items()):
+    for (provider, seconds, name, plan_period), polls in sorted(
+        groups.items(),
+        key=lambda item: (
+            item[0][0],
+            item[0][1],
+            item[0][2] or "",
+            item[0][3].start if item[0][3] else datetime.min.replace(tzinfo=UTC),
+        ),
+    ):
         grouped: dict[str, dict[str, Any]] = {}
         for before, after in pairwise(sorted(polls.values(), key=lambda poll: poll.at)):
             week = (after.at.date() - timedelta(days=after.at.weekday())).isoformat()
@@ -120,6 +152,8 @@ def quota_weekly(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "provider": provider,
                     "window_seconds": seconds,
                     "name": name,
+                    "subscription_plan": plan_period.plan if plan_period else None,
+                    "provider_reported_plan_types": sorted(reported_plan_types[(provider, seconds, name, plan_period)]),
                     "observed_increase_pp": 0,
                     "restored_headroom_pp": 0,
                     "observed_drops": 0,
@@ -172,6 +206,7 @@ def main() -> None:
     parser.add_argument("--cloud-weekly", type=Path, required=True)
     parser.add_argument("--langfuse-weekly", type=Path, required=True)
     parser.add_argument("--capacity", type=Path, required=True)
+    parser.add_argument("--codex-plan-history", type=Path)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
 
@@ -180,6 +215,7 @@ def main() -> None:
         return read_rows(plain if plain.exists() else plain.with_suffix(plain.suffix + ".gz"))
 
     quota_rows = extracted("quota-polls.jsonl")
+    codex_plan_periods = read_codex_plan_history(args.codex_plan_history) if args.codex_plan_history else None
     quota, timeline = summarize_quota(quota_rows)
     usage = assemble_usage(
         {
@@ -192,7 +228,7 @@ def main() -> None:
         "generated_at": datetime.now(UTC).isoformat(),
         "quota": quota,
         "timeline": timeline,
-        "quota_weekly": quota_weekly(quota_rows),
+        "quota_weekly": quota_weekly(quota_rows, codex_plan_periods),
         "codex_daily": summarize_daily(extracted("codex-daily.jsonl")),
         "accounting": summarize_accounting(extracted("raw-accounting.jsonl")),
         "usage": usage,

@@ -18,6 +18,13 @@ Supply these files in `evidence/` before running the notebook:
 - `quota-polls.jsonl.gz`, `claude-scoped-quota.jsonl.gz` and
   `raw-accounting.jsonl.gz`: quota and accounting observations from the adjacent
   SQL queries.
+- `codex-plan-history.json`: a local JSON timeline of the exact ChatGPT Codex
+  plan and quota regime for each interval covered by Codex quota polls. Add a
+  new period when a tier or its included quota changes, using the effective
+  timestamp. The pull exports the provider's broad `plan_type` category (such
+  as `pro`), which cannot distinguish Pro 200 from Pro 500. Codex estimates and
+  weekly quota summaries fail closed if a poll is uncovered or a provider
+  category change crosses an annotated period.
 - `native-usage-5m.json.gz`, `cloud-usage-5m.json.gz` and
   `langfuse-usage-five-minute.json.gz`: normalized five-minute token aggregates.
 - `weekly-model-usage.csv`: provider/model/source/payment-lane weekly totals
@@ -66,6 +73,13 @@ Calibration retains monotonic poll spans below saturation, with consistent
 reset metadata, gaps of at most 15 minutes, companion-gauge coverage and stable
 paid counters. Only a crossing span is discarded at a detected break. Undetected
 between-poll resets remain possible.
+
+Codex quota fits and weekly gauge summaries are segmented by the exact plan and
+quota-regime periods in `evidence/codex-plan-history.json`. This prevents a
+mid-sample plan or allowance change from changing quota-per-token coefficients
+without being visible in the result. The plan history is an account-level
+annotation; do not infer Pro 100/200/500 from the upstream `plan_type: pro`
+field. A generic category change within a declared period also fails closed.
 
 The primary regression uses poll-aligned pieces at a 60-minute elapsed-time
 target, retaining short tails. Whole-run, 30-, 60- and 120-minute diagnostics

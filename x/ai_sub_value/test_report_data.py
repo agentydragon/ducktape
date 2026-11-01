@@ -1,7 +1,9 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
 import pytest_bazel
 
+from x.ai_sub_value.plan_history import CodexPlanPeriod
 from x.ai_sub_value.report_data import assemble_usage, quota_weekly
 
 
@@ -71,6 +73,36 @@ def test_weekly_quota_uses_every_poll_and_excludes_reset_and_gap_pairs() -> None
     assert result["restored_headroom_pp"] == 30
     assert result["observed_drops"] == 1
     assert result["broken_pairs"] == 2
+
+
+def test_weekly_codex_quota_splits_at_manual_plan_change() -> None:
+    start = datetime(2026, 1, 5, tzinfo=UTC)
+    transition = start + timedelta(minutes=10)
+    reset = start + timedelta(days=7)
+    rows = [
+        {
+            "event_id": str(i),
+            "provider": "codex",
+            "window_seconds": 604800,
+            "window_name": "",
+            "observed_at": (start + timedelta(minutes=5 * i)).isoformat(),
+            "used_percent": 10 + 2 * i,
+            "reset_at": reset.isoformat(),
+            "reported_plan_type": "pro",
+        }
+        for i in range(5)
+    ]
+    periods = [CodexPlanPeriod(start, transition, "Pro 200"), CodexPlanPeriod(transition, None, "Pro 500")]
+    result = quota_weekly(rows, periods)
+    assert [(row["subscription_plan"], row["observed_increase_pp"]) for row in result] == [
+        ("Pro 200", 2),
+        ("Pro 500", 4),
+    ]
+    assert all(row["provider_reported_plan_types"] == ["pro"] for row in result)
+
+    rows[0]["reported_plan_type"] = "plus"
+    with pytest.raises(ValueError, match="plan_type changed within annotated period"):
+        quota_weekly(rows, [CodexPlanPeriod(start, None, "Pro 200")])
 
 
 if __name__ == "__main__":

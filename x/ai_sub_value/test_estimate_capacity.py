@@ -34,6 +34,7 @@ from x.ai_sub_value.estimate_capacity import (
     split_monotonic_runs,
     stable_money_ranges,
 )
+from x.ai_sub_value.plan_history import CodexPlanPeriod, read_codex_plan_history
 
 START = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -280,6 +281,69 @@ def test_fable_scoped_gauge_includes_inactive_flagged_polls() -> None:
     assert result["scoped_quota_audit"]["inactive_polls"] == 1
     assert result["scoped_quota_audit"]["included_polls"] == 13
     assert result["results"][0]["scenarios"][0]["intervals"] == 1
+
+
+def test_codex_plan_change_splits_calibration_even_when_provider_plan_type_does_not() -> None:
+    transition = START + timedelta(hours=1)
+    periods = [CodexPlanPeriod(START, transition, "Pro 200"), CodexPlanPeriod(transition, None, "Pro 500")]
+    reset = START + timedelta(days=7)
+    quota = [
+        {
+            "event_id": str(i),
+            "provider": "codex",
+            "window_name": "",
+            "window_seconds": 604800,
+            "observed_at": (START + timedelta(minutes=5 * i)).isoformat(),
+            "used_percent": i if i < 12 else 2 * (i - 12),
+            "reset_at": reset.isoformat(),
+            "reported_plan_type": "pro",
+        }
+        for i in range(25)
+    ]
+    bins = [
+        UsageBin(START + timedelta(minutes=5 * i), "openai", "gpt-example", 1000, "native", "unknown")
+        for i in range(25)
+    ]
+    with pytest.raises(ValueError, match="timestamped --codex-plan-history"):
+        build_estimates(quota, bins, {}, bootstrap_samples=2, sensitivity_samples=2, chunk_minutes=60)
+
+    result = build_estimates(
+        quota, bins, {}, bootstrap_samples=2, sensitivity_samples=2, chunk_minutes=60, codex_plan_periods=periods
+    )
+    codex = [item for item in result["results"] if item["provider"] == "codex"]
+    assert [(item["subscription_plan"], item["provider_reported_plan_types"]) for item in codex] == [
+        ("Pro 200", ["pro"]),
+        ("Pro 500", ["pro"]),
+    ]
+    assert [item["matched_from"] for item in codex] == [START.isoformat(), transition.isoformat()]
+
+    changed_category = [{**row, "reported_plan_type": "pro" if i < 12 else "plus"} for i, row in enumerate(quota)]
+    with pytest.raises(ValueError, match="plan_type changed within annotated period"):
+        build_estimates(
+            changed_category,
+            bins,
+            {},
+            bootstrap_samples=2,
+            sensitivity_samples=2,
+            chunk_minutes=60,
+            codex_plan_periods=[CodexPlanPeriod(START, None, "Pro 200")],
+        )
+
+
+def test_codex_plan_history_reader_rejects_overlapping_periods(tmp_path: Path) -> None:
+    path = tmp_path / "codex-plan-history.json"
+    path.write_text(
+        json.dumps(
+            {
+                "periods": [
+                    {"start": START.isoformat(), "end": (START + timedelta(days=2)).isoformat(), "plan": "Pro 200"},
+                    {"start": (START + timedelta(days=1)).isoformat(), "end": None, "plan": "Pro 500"},
+                ]
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="must not overlap"):
+        read_codex_plan_history(path)
 
 
 def test_native_web_equal_token_cost_has_consistent_interaction_fit() -> None:

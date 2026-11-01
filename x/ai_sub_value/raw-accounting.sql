@@ -6,6 +6,7 @@ SELECT observed_at, source,
        JSONExtractRaw(raw, 'extra_usage') AS claude_legacy_extra,
        JSONExtractRaw(normalized_body, 'last_output', 'result', 'paid_credits') AS codex_paid,
        JSONExtractRaw(normalized_body, 'last_output', 'result', 'available_reset_credits') AS banked_resets,
+       JSONExtractString(raw, 'plan_type') AS codex_reported_plan_type,
        JSONExtractRaw(raw, 'seven_day_breakdown') AS surface_breakdown
 FROM aiquota.raw_http_observations
 WHERE length(quota_windows) > 0 AND observed_at <= now64(3)
