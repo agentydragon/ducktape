@@ -91,6 +91,10 @@ The PR descriptions contain the exact remote test/build invocations and BuildBud
 
 ## Access beyond Actions
 
+For service-mediated caller authorization, use the approved
+[delegated authorization design](delegated_authorization.md). It defines the actor/caller boundary,
+explicit authentication mode and per-method trust; the shared protocol remains to implement.
+
 Hosted agents reach other Agentplane services with the same Sandbox-token authentication, and an
 external harness may be granted access beyond Actions without becoming a hosted Sandbox or Thread;
 conversation search and reading are examples, not the boundary. The constraints on that extension:

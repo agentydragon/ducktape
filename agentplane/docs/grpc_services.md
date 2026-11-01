@@ -53,7 +53,7 @@ follows it; code that differs converges on it.
 
 ## Authentication
 
-- Callers send `authorization: Bearer <token>` metadata, reading the projected token file for every
+- Direct callers send `authorization: Bearer <token>` metadata, reading the projected token file for every
   call: projected tokens rotate.
 - A Go server admits callers in one interceptor, `auth.Methods.ServerOptions`
   (`agentplane/workload_auth/go/auth`): `auth.Methods` maps every served method's full name to a
@@ -65,6 +65,11 @@ follows it; code that differs converges on it.
 - A door that authorizes on more than the account calls `Resolver.Resolve` itself (the runner
   ingress binds a Session to its writer; runner control resolves the Sandbox Pod). Services never
   carry their own copy of the bearer parsing.
+
+Calls made on behalf of another SA follow the approved
+[delegated authorization design](delegated_authorization.md): preserve authenticated actor and
+effective caller separately and apply the caller's ordinary authorization. Its shared protocol is
+not implemented yet; ordinary service credentials plus an ad hoc caller header are not a substitute.
 
 ## Errors
 
