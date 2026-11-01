@@ -52,7 +52,9 @@ own transaction); a full queue applies backpressure to the stream.
 
 `FollowSession` reads raw runner entries in cursor order and can keep sending them as they commit.
 Go callers use the generated `historypb.HistoryServiceClient`, as for the other History RPCs.
-The browser continues following fold tables through Electric.
+The browser continues following fold tables through Electric. Unary reads used by the browser also
+have generated ProtoJSON HTTP bindings (`/v1/sessions/...`); the integration app forwards those
+same-origin requests to this service with its projected History token.
 
 Each request chooses exactly one start:
 

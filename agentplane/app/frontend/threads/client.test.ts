@@ -2,7 +2,15 @@
 import { afterEach, expect, it, vi } from "vitest";
 
 import { api } from "../client";
-import { interruptTurn, submitInput, CommandSubmissionRefused, threadObservations } from "./client";
+import {
+  interruptTurn,
+  submitInput,
+  CommandSubmissionRefused,
+  threadObservationEntry,
+  threadEvidence,
+  threadNativeFrames,
+  threadObservations,
+} from "./client";
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
 afterEach(() => {
@@ -11,22 +19,193 @@ afterEach(() => {
 });
 
 it.each(["before", "after"] as const)("preserves %s archive cursors above JS integer precision", async (direction) => {
-  const requests: URL[] = [];
-  const middleware = {
-    onRequest({ request }: { request: Request }) {
-      requests.push(new URL(request.url, "https://app.invalid"));
-      return Response.json({ observations: [], next_before_cursor: null, next_after_cursor: null });
-    },
-  };
-  api.use(middleware);
-  try {
-    await threadObservations("test-thread", { [direction]: "9007199254740993" });
-    expect(requests).toHaveLength(1);
-    expect(requests[0].searchParams.get(`${direction}_cursor`)).toBe("9007199254740993");
-    expect(requests[0].searchParams.get("limit")).toBe("30");
-  } finally {
-    api.eject(middleware);
+  const requests: Request[] = [];
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init);
+    requests.push(request);
+    const url = new URL(request.url);
+    const bound = BigInt(url.searchParams.get(`${direction}_cursor`) ?? "0");
+    const cursors =
+      direction === "before"
+        ? Array.from({ length: 30 }, (_, index) => (bound - 30n + BigInt(index)).toString())
+        : [(bound + 1n).toString()];
+    return Promise.resolve(
+      Response.json({
+        lastCursor: (direction === "before" ? bound - 1n : bound + 1n).toString(),
+        observations: cursors.map((cursor) => ({ cursor, kind: "test" })),
+        settled: [],
+      })
+    );
+  });
+  await threadObservations("test-thread", { [direction]: "9007199254740993" });
+  expect(requests).toHaveLength(1);
+  const url = new URL(requests[0]!.url);
+  expect(url.pathname).toBe("/upstream/history/v1/sessions/test-thread/observations");
+  expect(url.searchParams.get(`${direction}_cursor`)).toBe("9007199254740993");
+  expect(url.searchParams.get("limit")).toBe("30");
+});
+
+it.each([
+  {
+    label: "latest",
+    request: {},
+    observations: [
+      { cursor: "31", kind: "harness_stderr" },
+      { cursor: "34", kind: "item_completed" },
+    ],
+    settled: [
+      { first: "1", last: "30" },
+      { first: "32", last: "33" },
+    ],
+    cursors: ["31", "34"],
+  },
+  {
+    label: "older",
+    request: { before: "32" },
+    observations: [{ cursor: "31", kind: "harness_stderr" }],
+    settled: [{ first: "1", last: "30" }],
+    cursors: ["31"],
+  },
+  {
+    label: "newer",
+    request: { after: "31" },
+    observations: [{ cursor: "34", kind: "item_completed" }],
+    settled: [{ first: "32", last: "33" }],
+    cursors: ["34"],
+  },
+])(
+  "accepts short $label History pages when settlements cover missing cursors",
+  async ({ request, observations, settled, cursors }) => {
+    vi.stubGlobal("fetch", () => Promise.resolve(Response.json({ lastCursor: "34", observations, settled })));
+    await expect(threadObservations("test-thread", request)).resolves.toMatchObject({
+      observations: cursors.map((cursor) => ({ cursor })),
+    });
   }
+);
+
+it("reads one History event with generated requests and keeps the 64-bit cursor exact", async () => {
+  const requests: Request[] = [];
+  const cursor = "9007199254740993";
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init);
+    requests.push(request);
+    const path = new URL(request.url).pathname;
+    if (path.endsWith("/summary")) {
+      return Promise.resolve(Response.json({ sessionId: "test-thread", foldedThrough: cursor }));
+    }
+    if (path.endsWith("/observations")) {
+      return Promise.resolve(Response.json({ lastCursor: cursor, observations: [], settled: [] }));
+    }
+    return Promise.resolve(
+      Response.json({
+        lastCursor: cursor,
+        entries: [{ cursor, event: {} }],
+        settlements: [],
+        removed: [],
+      })
+    );
+  });
+
+  await expect(threadObservationEntry("test-thread", cursor)).resolves.toMatchObject({
+    cursor,
+    entry: { cursor },
+  });
+  expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
+    "/upstream/history/v1/sessions/test-thread/summary",
+    "/upstream/history/v1/sessions/test-thread/observations",
+    "/upstream/history/v1/sessions/test-thread/events",
+  ]);
+  const eventUrl = new URL(requests[2]!.url);
+  expect(eventUrl.searchParams.get("after_cursor")).toBe("9007199254740992");
+  expect(eventUrl.searchParams.get("limit")).toBe("1");
+});
+
+it("treats a settled History cursor as an absent observation", async () => {
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init);
+    const path = new URL(request.url).pathname;
+    if (path.endsWith("/summary")) return Promise.resolve(Response.json({ foldedThrough: 20 }));
+    if (path.endsWith("/observations")) {
+      return Promise.resolve(Response.json({ lastCursor: 20, observations: [], settled: [] }));
+    }
+    return Promise.resolve(
+      Response.json({
+        lastCursor: 20,
+        entries: [{ cursor: "11", event: {} }],
+        settlements: [{ ranges: [{ first: "10", last: "10" }] }],
+        removed: [],
+      })
+    );
+  });
+
+  await expect(threadObservationEntry("test-thread", "10")).rejects.toMatchObject({ status: 404 });
+});
+
+it("uses generated History requests and adapts evidence and native frame pages", async () => {
+  const requests: Request[] = [];
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init);
+    requests.push(request);
+    return Promise.resolve(
+      request.url.includes("entity-evidence")
+        ? Response.json({
+            observations: [{ observationCursor: "9007199254740993", hasNative: true }],
+            nextAfterCursor: "9007199254740993",
+          })
+        : Response.json({
+            frames: [{ sourceSequence: "9007199254740994", entry: { cursor: "9007199254740994" } }],
+            nextAfterSequence: "9007199254740994",
+          })
+    );
+  });
+
+  await expect(
+    threadEvidence(
+      "session-id",
+      { projectionEpoch: "history-v1", entityKind: "item", entityId: "item-id" },
+      "9007199254740992"
+    )
+  ).resolves.toEqual({
+    observations: [{ observation_cursor: "9007199254740993", has_native: true }],
+    next_after_cursor: "9007199254740993",
+  });
+  await expect(
+    threadNativeFrames(
+      "session-id",
+      { projectionEpoch: "history-v1", entityKind: "item", entityId: "item-id" },
+      "9007199254740993",
+      "9007199254740992"
+    )
+  ).resolves.toEqual({
+    frames: [
+      {
+        source_sequence: "9007199254740994",
+        availability: "present",
+        entry: { cursor: "9007199254740994" },
+      },
+    ],
+    next_after_sequence: "9007199254740994",
+  });
+
+  for (const [request, route] of [
+    [requests[0]!, "/upstream/history/v1/sessions/session-id/entity-evidence"],
+    [requests[1]!, "/upstream/history/v1/sessions/session-id/native-frames"],
+  ] as const) {
+    expect(request.method).toBe("POST");
+    expect(new URL(request.url).pathname).toBe(route);
+    const body = await request.clone().json();
+    expect(body).not.toHaveProperty("sessionId");
+    expect(body).toMatchObject({
+      projectionEpoch: "history-v1",
+      entity: { entityKind: "item", entityId: "item-id" },
+      limit: 30,
+    });
+  }
+  expect(await requests[0]!.clone().json()).toMatchObject({ afterCursor: "9007199254740992" });
+  expect(await requests[1]!.clone().json()).toMatchObject({
+    observationCursor: "9007199254740993",
+    afterSequence: "9007199254740992",
+  });
 });
 const input = { commandId: "immutable-command", text: "keep this input" };
 

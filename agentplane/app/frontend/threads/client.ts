@@ -1,4 +1,4 @@
-import { fromJson, type JsonValue } from "@bufbuild/protobuf";
+import { create, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 
 import type {
   EvidencePage,
@@ -7,8 +7,22 @@ import type {
   ObservationPage,
   ThreadView as ThreadViewSchema,
 } from "../schema";
-import { api, displayableError, fetchWithLogin, ok } from "../client";
+import { api, displayableError, fetchWithLogin, HttpError, ok } from "../client";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
+import {
+  EntityKeySchema,
+  ReadEntityEvidenceRequestSchema,
+  ReadEntityEvidenceResponseSchema,
+  ReadNativeFramesRequestSchema,
+  ReadNativeFramesResponseSchema,
+  ReadSessionEventsRequestSchema,
+  ReadSessionEventsResponseSchema,
+  ReadSessionObservationsRequestSchema,
+  ReadSessionObservationsResponseSchema,
+  GetSessionSummaryRequestSchema,
+  SessionSummarySchema,
+  type ReadSessionObservationsResponse,
+} from "../../../history_service/history_service_pb";
 import {
   DispatchSchema,
   InterruptTurnResponseSchema,
@@ -35,6 +49,7 @@ export type ThreadEntityState =
         active_turn_id: string | null;
         harness_state: string | null;
       };
+
       operational: {
         status: "active" | "ended" | "failed";
         last_verified_cursor: string;
@@ -62,18 +77,141 @@ export type ThreadEntityView = {
   text_ref: ThreadPayloadRef | null;
   state: ThreadEntityState;
 };
+
+async function historyJson(path: string, init: RequestInit = {}): Promise<JsonValue> {
+  const response = await fetchWithLogin(new URL(`/upstream/history/v1${path}`, window.location.href), {
+    ...init,
+    headers: { Accept: "application/json", ...init.headers },
+  });
+  if (!response.ok) {
+    throw new HttpError(response, await response.json().catch(() => null));
+  }
+  return (await response.json()) as JsonValue;
+}
+
+function historyBodyWithoutSessionId(value: JsonValue): string {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("History request did not serialize to a JSON object");
+  }
+  const body = { ...value };
+  delete body.sessionId;
+  return JSON.stringify(body);
+}
+
+function nextStored(cursor: bigint, ranges: ReadonlyArray<{ first: bigint; last: bigint }>): bigint {
+  let following = cursor + 1n;
+  for (const range of [...ranges].sort((left, right) =>
+    left.first < right.first ? -1 : left.first > right.first ? 1 : 0
+  )) {
+    if (range.first <= following && following <= range.last) following = range.last + 1n;
+  }
+  return following;
+}
+
+function observationPage(response: ReadSessionObservationsResponse): ObservationPage {
+  return {
+    observations: response.observations.map((observation) => ({
+      cursor: observation.cursor.toString(),
+      kind: observation.kind,
+    })),
+    next_before_cursor:
+      response.observations[0] && response.observations[0].cursor > 1n
+        ? response.observations[0].cursor.toString()
+        : null,
+    next_after_cursor:
+      response.observations.length > 0 &&
+      nextStored(response.observations.at(-1)!.cursor, response.settled) <= response.lastCursor
+        ? response.observations.at(-1)!.cursor.toString()
+        : null,
+  };
+}
+
+function validateObservationPage(
+  response: ReadSessionObservationsResponse,
+  before: bigint | undefined,
+  after: bigint | undefined,
+  limit: number
+): void {
+  const cursors = response.observations.map((observation) => observation.cursor);
+  let walk = cursors;
+  let within: boolean;
+  let shortOk: boolean;
+  if (after !== undefined) {
+    if (after > response.lastCursor) throw new Error("History observation cursor exceeds the History watermark");
+    walk = [after, ...cursors];
+    const last = walk.at(-1)!;
+    within = cursors.length === 0 || cursors.at(-1)! <= response.lastCursor;
+    shortOk = nextStored(last, response.settled) > response.lastCursor;
+  } else {
+    let end = response.lastCursor;
+    if (before !== undefined && before <= end) end = before === 0n ? 0n : before - 1n;
+    within = cursors.length === 0 || (cursors.at(-1)! <= end && end < nextStored(cursors.at(-1)!, response.settled));
+    shortOk =
+      cursors.length > 0 ? nextStored(0n, response.settled) === cursors[0] : nextStored(0n, response.settled) > end;
+  }
+  let contiguous = true;
+  for (let index = 1; index < walk.length; index++) {
+    if (walk[index] !== nextStored(walk[index - 1]!, response.settled)) {
+      contiguous = false;
+      break;
+    }
+  }
+  if (!within || !contiguous || (cursors.length !== limit && !shortOk)) {
+    throw new Error("History Service returned an invalid observation page");
+  }
+}
 export async function threadObservationEntry(
   threadId: string,
   cursor: string,
   signal?: AbortSignal
 ): Promise<ObservationEntry> {
-  return ok(
-    await api.GET("/threads/{thread_id}/observations/{cursor}", {
-      // openapi-fetch serializes path values without converting them to JS numbers.
-      params: { path: { thread_id: threadId, cursor: cursor as unknown as number } },
-      signal,
-    })
+  const requestedCursor = BigInt(cursor);
+  if (requestedCursor < 1n) {
+    throw new HttpError(new Response(null, { status: 404 }), `no observation at ${cursor} in this thread`);
+  }
+
+  const sessionId = encodeURIComponent(threadId);
+  const summaryRequest = create(GetSessionSummaryRequestSchema, { sessionId: threadId });
+  const summary = fromJson(
+    SessionSummarySchema,
+    await historyJson(`/sessions/${encodeURIComponent(summaryRequest.sessionId)}/summary`, { signal })
   );
+  const watermarkUrl = new URL(`/sessions/${sessionId}/observations`, window.location.href);
+  watermarkUrl.searchParams.set("limit", "1");
+  const watermark = fromJson(
+    ReadSessionObservationsResponseSchema,
+    await historyJson(watermarkUrl.pathname + watermarkUrl.search, { signal })
+  );
+  if (requestedCursor > watermark.lastCursor) {
+    if (requestedCursor <= summary.foldedThrough) {
+      throw new Error(`History Service has not committed cursor ${cursor} used by its fold`);
+    }
+    throw new HttpError(new Response(null, { status: 404 }), `no observation at ${cursor} in this thread`);
+  }
+
+  const eventsRequest = create(ReadSessionEventsRequestSchema, {
+    sessionId: threadId,
+    afterCursor: requestedCursor - 1n,
+    limit: 1,
+  });
+  const eventsUrl = new URL(`/sessions/${sessionId}/events`, window.location.href);
+  eventsUrl.searchParams.set("after_cursor", eventsRequest.afterCursor.toString());
+  eventsUrl.searchParams.set("limit", String(eventsRequest.limit));
+  const page = fromJson(
+    ReadSessionEventsResponseSchema,
+    await historyJson(eventsUrl.pathname + eventsUrl.search, { signal })
+  );
+  const unstored = [...page.settlements.flatMap((settlement) => settlement.ranges), ...page.removed];
+  if (nextStored(requestedCursor - 1n, unstored) !== requestedCursor) {
+    throw new HttpError(new Response(null, { status: 404 }), `no observation at ${cursor} in this thread`);
+  }
+  if (page.entries.length !== 1 || page.entries[0]!.cursor !== requestedCursor) {
+    throw new Error(`History Service did not return requested cursor ${cursor}`);
+  }
+  return {
+    cursor: requestedCursor.toString(),
+    entry: toJson(EventEntrySchema, page.entries[0]!) as ObservationEntry["entry"],
+  };
 }
 
 export async function threadObservations(
@@ -81,15 +219,27 @@ export async function threadObservations(
   cursor: { before?: string; after?: string },
   signal?: AbortSignal
 ): Promise<ObservationPage> {
-  return ok(
-    await api.GET("/threads/{thread_id}/observations", {
-      params: {
-        path: { thread_id: threadId },
-        query: { before_cursor: cursor.before, after_cursor: cursor.after, limit: 30 },
-      },
-      signal,
-    })
+  const request = create(ReadSessionObservationsRequestSchema, {
+    sessionId: threadId,
+    beforeCursor: cursor.before === undefined ? undefined : BigInt(cursor.before),
+    afterCursor: cursor.after === undefined ? undefined : BigInt(cursor.after),
+    limit: 30,
+  });
+  const url = new URL(`/sessions/${encodeURIComponent(threadId)}/observations`, window.location.href);
+  url.searchParams.set("limit", String(request.limit));
+  if (request.beforeCursor !== undefined) url.searchParams.set("before_cursor", request.beforeCursor.toString());
+  if (request.afterCursor !== undefined) url.searchParams.set("after_cursor", request.afterCursor.toString());
+  const response = fromJson(
+    ReadSessionObservationsResponseSchema,
+    await historyJson(url.pathname + url.search, { signal })
   );
+  validateObservationPage(
+    response,
+    cursor.before === undefined ? undefined : BigInt(cursor.before),
+    cursor.after === undefined ? undefined : BigInt(cursor.after),
+    30
+  );
+  return observationPage(response);
 }
 
 export async function threadEvidence(
@@ -98,21 +248,29 @@ export async function threadEvidence(
   afterCursor = "0",
   signal?: AbortSignal
 ): Promise<EvidencePage> {
-  return ok(
-    await api.GET("/threads/{thread_id}/evidence", {
-      params: {
-        path: { thread_id: threadId },
-        query: {
-          projection_epoch: scope.projectionEpoch,
-          entity_kind: scope.entityKind,
-          entity_id: scope.entityId,
-          after_cursor: afterCursor,
-          limit: 30,
-        },
-      },
+  const request = create(ReadEntityEvidenceRequestSchema, {
+    sessionId: threadId,
+    projectionEpoch: scope.projectionEpoch,
+    entity: create(EntityKeySchema, { entityKind: scope.entityKind, entityId: scope.entityId }),
+    afterCursor: BigInt(afterCursor),
+    limit: 30,
+  });
+  const response = fromJson(
+    ReadEntityEvidenceResponseSchema,
+    await historyJson(`/sessions/${encodeURIComponent(threadId)}/entity-evidence`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: historyBodyWithoutSessionId(toJson(ReadEntityEvidenceRequestSchema, request)),
       signal,
     })
   );
+  return {
+    observations: response.observations.map((observation) => ({
+      observation_cursor: observation.observationCursor.toString(),
+      has_native: observation.hasNative,
+    })),
+    next_after_cursor: response.nextAfterCursor?.toString() ?? null,
+  };
 }
 
 export async function threadNativeFrames(
@@ -122,21 +280,31 @@ export async function threadNativeFrames(
   afterSequence = "0",
   signal?: AbortSignal
 ): Promise<NativeFramePage> {
-  return ok(
-    await api.GET("/threads/{thread_id}/evidence/{observation_cursor}/frames", {
-      params: {
-        path: { thread_id: threadId, observation_cursor: observationCursor },
-        query: {
-          projection_epoch: scope.projectionEpoch,
-          entity_kind: scope.entityKind,
-          entity_id: scope.entityId,
-          after_sequence: afterSequence,
-          limit: 30,
-        },
-      },
+  const request = create(ReadNativeFramesRequestSchema, {
+    sessionId: threadId,
+    projectionEpoch: scope.projectionEpoch,
+    entity: create(EntityKeySchema, { entityKind: scope.entityKind, entityId: scope.entityId }),
+    observationCursor: BigInt(observationCursor),
+    afterSequence: BigInt(afterSequence),
+    limit: 30,
+  });
+  const response = fromJson(
+    ReadNativeFramesResponseSchema,
+    await historyJson(`/sessions/${encodeURIComponent(threadId)}/native-frames`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: historyBodyWithoutSessionId(toJson(ReadNativeFramesRequestSchema, request)),
       signal,
     })
   );
+  return {
+    frames: response.frames.map((frame) => ({
+      source_sequence: frame.sourceSequence.toString(),
+      availability: frame.entry ? "present" : "unavailable",
+      entry: frame.entry ? (toJson(EventEntrySchema, frame.entry) as Record<string, unknown>) : {},
+    })),
+    next_after_sequence: response.nextAfterSequence?.toString() ?? null,
+  };
 }
 
 /** An explicit 4xx command rejection: unlike a lost reply, this is not an admission receipt. */

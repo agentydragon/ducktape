@@ -48,7 +48,9 @@ it directly as the requesting operator. The [Session Dispatcher](../runner_gatew
 owns opening and durable command delivery; the [Runner Gateway](../runner_gateway/README.md) owns the
 runner control stream and authorized live Runner proxy; the
 [History Service](../history_service/README.md) owns the Session Event archive and its Thread fold.
-The app is a client of each service for its distinct operation.
+The app is a client of each service for its distinct operation. The browser's pure History reads
+use the generated ProtoJSON HTTP surface under `/upstream/history/v1/`; the app forwards them to
+History over gRPC with its projected service token, which stays server-side.
 Notifications depends on that backend and Actions, not this app. The app's own state is browser
 sessions and its `thread` table: each Thread, keyed by its Session's ID, with the name and archive
 state an operator sets; like any state the app holds, these are candidates to move into a dedicated

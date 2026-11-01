@@ -248,6 +248,7 @@ flowchart LR
 
     browser -->|HTML, assets and service worker| frontend
     browser -->|API + shape requests, same origin| app
+    browser -->|generated ProtoJSON History reads| app
     app -->|gRPC reads and watch| history
     app -->|proxied shape request| electric
     electric -->|shape response data| app
@@ -261,9 +262,12 @@ flowchart LR
 ```
 
 The app initiates each Electric HTTP request and streams the shape response through to the browser.
+Generated History HTTP routes at the app's `/upstream/history/v1/` prefix let the browser call
+annotated unary History reads; the app forwards them over gRPC with its projected service token.
 The separate `History PostgreSQL → Electric → app → browser` arrows show replicated and returned data.
 The HTTPS Gateway routes static files directly to the frontend Service and all API, login and stream
-requests to the app Service. The frontend has no backend credentials or outbound service calls.
+requests to the app Service. The frontend has no backend credentials and makes no outbound service
+calls; its History reads use the app's same-origin facade.
 
 ## Notifications
 

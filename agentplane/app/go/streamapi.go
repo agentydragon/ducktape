@@ -96,6 +96,7 @@ type StreamingDependencies struct {
 	DispatcherHTTP   streamingUpstream
 	ActionHTTP       streamingUpstream
 	ConnectionHTTP   streamingUpstream
+	HistoryHTTP      streamingUpstream
 	Notifications    sandboxNotificationWatcher
 	NotificationWait time.Duration
 	Egress           egressDecisionWatcher
@@ -121,6 +122,9 @@ func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependenc
 	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete} {
 		server.RegisterRawRoute(method+" /upstream/actions/{path...}", http.HandlerFunc(routes.actionFacade), true)
 		server.RegisterRawRoute(method+" /upstream/connections/{path...}", http.HandlerFunc(routes.connectionFacade), true)
+	}
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		server.RegisterRawRoute(method+" /upstream/history/{path...}", http.HandlerFunc(routes.historyFacade), false)
 	}
 }
 
@@ -816,6 +820,19 @@ func (r *streamingRoutes) actionFacade(w http.ResponseWriter, request *http.Requ
 
 func (r *streamingRoutes) connectionFacade(w http.ResponseWriter, request *http.Request) {
 	r.operatorFacade(w, request, r.deps.ConnectionHTTP, "Connection facade")
+}
+
+func (r *streamingRoutes) historyFacade(w http.ResponseWriter, request *http.Request) {
+	path := request.PathValue("path")
+	if !proxy.GeneratedFacadeRouteAllowed(request.Method, path) {
+		writeDetailError(w, http.StatusNotFound, "unknown History facade route")
+		return
+	}
+	if r.deps.HistoryHTTP == nil {
+		writeDetailError(w, http.StatusServiceUnavailable, "History facade is not configured")
+		return
+	}
+	r.forwardFacade(w, request, request.Context(), r.deps.HistoryHTTP, path, "")
 }
 
 func (r *streamingRoutes) operatorFacade(w http.ResponseWriter, request *http.Request, upstream streamingUpstream, label string) {
