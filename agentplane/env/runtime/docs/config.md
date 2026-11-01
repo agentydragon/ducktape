@@ -47,7 +47,7 @@ Environment Runtime environment changes or state ownership begins.
 | `workspace_root`                  | Optional absolute directory constraining Session working directories. Omission permits requested absolute paths directly.          |
 | `control`                         | Required Environment Runtime listener with `listen_address` (`host:port`) and explicit `security` (`mtls` or `insecure`).          |
 | `ingress`                         | Required History ingress endpoint with `target` (`host:port`) and `bearer`; it remains independent of Environment Runtime control. |
-| `platform_instructions`           | Required deployment-wide Session guidance, rendered from the shared `session_instructions/platform_instructions.j2`.                                               |
+| `platform_instructions`           | Required deployment-wide Session guidance, rendered from the shared `session_instructions/platform_instructions.j2`.               |
 | `environment_runtime_environment` | Optional `inherit` names and `values` map applied to Environment Runtime itself.                                                   |
 | `harness_environment`             | Required `inherit` names and `values` map defining the native process environment.                                                 |
 | `claude`, `codex`                 | Optional provider objects: absolute `binary`, HTTP(S) `base_url`, and `token_env`. An omitted provider is disabled.                |

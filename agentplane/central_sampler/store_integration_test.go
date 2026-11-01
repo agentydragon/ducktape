@@ -60,8 +60,8 @@ func TestStoreOpeningFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 	briefing := "\n  Fixture caller briefing.\n"
 	request := &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(),
-		Spec: &runnerpb.SessionSpec{
-			Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model", Instructions: briefing,
+		Spec: &sessionpb.SessionSpec{
+			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model", Instructions: briefing,
 		},
 		Executor: &sandboxespb.SandboxDestination{
 			Owner:   &sandboxespb.ServiceAccount{Namespace: "fixture-executor-namespace", Name: "fixture-execution-account"},
@@ -161,8 +161,8 @@ func TestStoreOpeningWithoutPlatformGuidanceKeepsCallerPromptAcrossActivation(t 
 	store := newTestStore(t)
 	request := &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(),
-		Spec: &runnerpb.SessionSpec{
-			Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model", Instructions: "\n  Fixture raw caller prompt.\n",
+		Spec: &sessionpb.SessionSpec{
+			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model", Instructions: "\n  Fixture raw caller prompt.\n",
 		},
 		Executor: &sandboxespb.SandboxDestination{
 			Owner:   &sandboxespb.ServiceAccount{Namespace: "fixture", Name: "fixture-executor"},

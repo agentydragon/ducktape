@@ -132,4 +132,3 @@ go_test(
         "@org_golang_google_protobuf//types/known/emptypb",
     ],
 )
-

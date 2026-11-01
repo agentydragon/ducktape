@@ -26,7 +26,6 @@ from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
 
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.egress.resources import placeholder_of
 from agentplane.env import config as configuration
 from agentplane.env.config import (
     CONFIG_FILE,
@@ -232,7 +231,7 @@ class EnvironmentSandbox(Construct):
                     vm_state_volume, layout_type="BlockFilesystem", storage_class=workspace_storage_class
                 ),
                 platform_instructions=platform_instructions(
-                    env, session_runtime=SessionRuntime.NATIVE_RUNNER, egress_api_service=egress_api_service
+                    env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_api_service=egress_api_service
                 ),
                 harness_env=template.agent_cli_env,
                 session_reconcile_concurrency=session_reconcile_concurrency,
@@ -401,7 +400,7 @@ class EnvironmentSandboxTemplate(Construct):
             ),
             ingress=Endpoint(target=ingress.local_target, bearer=platform_routes.ROUTE_BEARER),
             platform_instructions=platform_instructions(
-                self.env, session_runtime=SessionRuntime.NATIVE_RUNNER, egress_api_service=self.egress_api_service
+                self.env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_api_service=self.egress_api_service
             ),
             harness_environment=configuration.EnvironmentVariables(
                 inherit=tuple(dict.fromkeys((*self.env.harness_inherited_env, *harness_env))),

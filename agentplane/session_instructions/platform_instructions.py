@@ -10,7 +10,7 @@ PLATFORM_INSTRUCTIONS_TEMPLATE = "agentplane/session_instructions/platform_instr
 
 
 class SessionRuntime(StrEnum):
-    NATIVE_RUNNER = "native_runner"
+    NATIVE_HARNESS = "native_harness"
     CENTRAL_SAMPLER = "central_sampler"
 
 
