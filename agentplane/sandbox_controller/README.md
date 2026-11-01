@@ -37,7 +37,7 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
   state PVC (by the Sandbox label) and the templates it names (by a field index) map back to it.
 - [`vm.go`](vm.go): a VM Sandbox's VirtualMachine (types from `kubevirt.io/api`), its run strategy,
   and the VMI and virt-launcher Pod its status comes from.
-- [`runner_credential.go`](runner_credential.go): Certificate requests, incarnation binding,
+- [`environment_runtime_credential.go`](environment_runtime_credential.go): Certificate requests, incarnation binding,
   credential mounts and cleanup of retired generations.
 - [`state_volume.go`](state_volume.go): the state layout contract, PVC creation record and identity binding.
 - [`workspace.go`](workspace.go): workspace layout validation, its PVC creation record and persisted claim binding.

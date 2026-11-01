@@ -34,7 +34,7 @@ provenance separate. A delegated actor is never installed in the legacy `Caller`
 continues to mean a directly authenticated Pod-bound principal. The effective caller is account
 identity only and cannot prove a Pod binding.
 
-[`go/grpc`](go/grpc/client.go) provides `DialDelegated` and `WithDelegation`. The dialer reads the
+[`grpc`](grpc/client.go) provides `DialDelegated` and `WithDelegation`. The dialer reads the
 destination-audience token file for each call, emits the distinct `Agentplane-Delegated` scheme and
 binary envelope, rejects duplicate authorization/envelope metadata, and disables retries. It does
 not install the ordinary Bearer interceptor. Existing direct clients continue using their current
