@@ -355,6 +355,62 @@ func TestEmbeddedServeFailureDoesNotPublishBeforeBackendFence(t *testing.T) {
 	}
 }
 
+func TestEmbeddedBackendLossDuringHealthWaitKeepsFenceEvidence(t *testing.T) {
+	config := Config{ExecutorURL: testExecutorEndpoint(t), SocketPath: filepath.Join(t.TempDir(), "e.sock")}
+	backendDone := make(chan error, 1)
+	serveEntered := make(chan struct{})
+	releaseServe := make(chan struct{})
+	stopEntered := make(chan struct{})
+	releaseStop := make(chan struct{})
+	ready := make(chan struct{}, 1)
+	finished := make(chan error, 1)
+	go func() {
+		finished <- runWithServer(t.Context(), config, func(context.Context) (*supervision.Instance, error) {
+			return &supervision.Instance{Done: backendDone, Stop: func(context.Context) error {
+				close(stopEntered)
+				<-releaseStop
+				return nil
+			}}, nil
+		}, func(executorpb.ExecutorServer) { ready <- struct{}{} }, func(*grpc.Server, net.Listener) error {
+			close(serveEntered)
+			<-releaseServe
+			return nil
+		})
+	}()
+	select {
+	case <-serveEntered:
+	case err := <-finished:
+		t.Fatalf("service exited before health wait: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("service did not enter health wait")
+	}
+	backendDone <- errors.Join(codexexecserver.ErrExecutionBackendLost, errors.New("native backend exited"))
+	select {
+	case <-stopEntered:
+	case err := <-finished:
+		t.Fatalf("service returned before native fence: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("backend loss did not begin native fence")
+	}
+	select {
+	case <-ready:
+		t.Fatal("adapter published despite backend loss during health wait")
+	case err := <-finished:
+		t.Fatalf("service returned before native fence: %v", err)
+	default:
+	}
+	close(releaseServe)
+	close(releaseStop)
+	select {
+	case err := <-finished:
+		if !errors.Is(err, ErrFencedBackendLoss) {
+			t.Fatalf("service error = %v, want fenced backend loss", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("service did not return after native fence")
+	}
+}
+
 func testExecutorEndpoint(t *testing.T) string {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

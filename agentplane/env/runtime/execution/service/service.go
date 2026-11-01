@@ -220,6 +220,19 @@ func runWithServer(ctx context.Context, config Config, start codexexecserver.Sta
 		err = waitEmbeddedHealth(lifetime, config.Socket(), served)
 		if err == nil {
 			ready(adapter)
+		} else if errors.Is(err, context.Canceled) {
+			// Backend loss cancels lifetime after publishing its exact loss
+			// evidence. Preserve that evidence even when the health probe was
+			// still waiting; otherwise a fenced loss becomes an unproven exit.
+			select {
+			case backendErr := <-backendDone:
+				if backendErr == nil {
+					err = errors.New("execution backend stopped")
+				} else {
+					err = backendErr
+				}
+			default:
+			}
 		}
 	}
 	if err == nil {
