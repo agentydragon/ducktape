@@ -926,7 +926,7 @@ func TestStoreAbandonedProcessPreservesEvidenceAndLeavesScheduler(t *testing.T) 
 	if err := store.RetainProcessOutput(t.Context(), owner, "1234-unknown", 9, []byte("observed output"), true, ptrInt(17)); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.AbandonProcess(t.Context(), owner, "1234-unknown", nil, nil, "unknown", "retained-executor"); err != nil {
+	if err := store.AbandonProcess(t.Context(), owner, "1234-unknown", nil, nil, NestedUnknown, "retained-executor"); err != nil {
 		t.Fatal(err)
 	}
 	process, err := store.ProcessByModelSession(t.Context(), owner, 1234)

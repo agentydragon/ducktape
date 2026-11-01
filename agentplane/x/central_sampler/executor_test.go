@@ -222,6 +222,12 @@ func TestTypedReadEnvironmentFailurePreservesUnknownProcessEvidence(t *testing.T
 	if !errors.As(err, &outcome) {
 		t.Fatalf("write_stdin error=%v, want catchable environment refusal", err)
 	}
+	outerEvidence, ok := outcome.evidence.(executionFailureEvidence)
+	if !ok || outerEvidence.RemoteOutcome != NestedUnknown || outerEvidence.RequestOutcome == nil || *outerEvidence.RequestOutcome != NestedNotDispatched ||
+		outerEvidence.AfterSeq == nil || *outerEvidence.AfterSeq != 8 || outerEvidence.BufferedOutputBase64 == nil ||
+		!bytes.Equal(*outerEvidence.BufferedOutputBase64, []byte("output before suspension\n")) {
+		t.Fatalf("outer tool failure lost typed unknown-process evidence: %+v", outcome.evidence)
+	}
 	var message struct {
 		EnvironmentState   string                `json:"environment_state"`
 		RemoteOutcome      string                `json:"remote_outcome"`
@@ -267,6 +273,97 @@ func TestTypedReadEnvironmentFailurePreservesUnknownProcessEvidence(t *testing.T
 		t.Fatalf("nested read intent did not retain pre-dispatch evidence: %+v", evidence)
 	}
 	assertNoUnresolvedNestedIntents(t, store, owner)
+}
+
+func TestTypedNotDispatchedStartSettlesWithZeroCursor(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	if err := store.RegisterModelProcess(t.Context(), owner, "not-dispatched-start", 1402, false); err != nil {
+		t.Fatal(err)
+	}
+	zero := uint64(0)
+	output := newHeadTailBuffer(16)
+	output.push(nil)
+	executor := newFakeExecutor(t, store, owner, &fakeExecutionClient{})
+	err := executor.outcomeToolError(t.Context(), &executorNotDispatchedError{
+		method: executorMethodProcessStart, processID: "not-dispatched-start", retainedSession: "retained-executor",
+		afterSequence: &zero, output: output, cause: errors.New("executor session unavailable"),
+	})
+	var outcome *toolOutcomeError
+	if !errors.As(err, &outcome) {
+		t.Fatalf("not-dispatched start error=%v, want a catchable tool outcome", err)
+	}
+	evidence, ok := outcome.evidence.(executionFailureEvidence)
+	if !ok || evidence.RemoteOutcome != NestedNotDispatched || evidence.RequestOutcome == nil || *evidence.RequestOutcome != NestedNotDispatched ||
+		evidence.AfterSeq == nil || *evidence.AfterSeq != 0 || evidence.BufferedOutput == nil || *evidence.BufferedOutput != "" ||
+		evidence.BufferedOutputBase64 == nil || *evidence.BufferedOutputBase64 == nil || len(*evidence.BufferedOutputBase64) != 0 ||
+		evidence.TransportError != "executor session unavailable" {
+		t.Fatalf("not-dispatched start lost typed zero/empty evidence: %+v", outcome.evidence)
+	}
+	process, err := store.Process(t.Context(), owner, "not-dispatched-start")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if process.Status != protocol.ProcessExited || process.AfterSequence == nil || *process.AfterSequence != 0 {
+		t.Fatalf("known not-dispatched start was not settled with its zero cursor: %+v", process)
+	}
+	assertNoUnresolvedNestedIntents(t, store, owner)
+}
+
+func TestExecutionFailureEvidencePreservesCursorAndOutputPresence(t *testing.T) {
+	largeCursor := uint64(1<<53 + 17)
+	outputBytes := []byte{0, 'x', 0xff}
+	output := newHeadTailBuffer(16)
+	output.push(outputBytes)
+	evidence := executionFailureRecord{
+		method: executorMethodProcessRead, remoteOutcome: NestedUnknown,
+		afterSequence: &largeCursor, output: output,
+	}.toolEvidence()
+	encoded, err := json.Marshal(evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(encoded, []byte(`"after_seq":9007199254741009`)) {
+		t.Fatalf("large cursor was narrowed in JSON projection: %s", encoded)
+	}
+	var decoded executionFailureEvidence
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.AfterSeq == nil || *decoded.AfterSeq != largeCursor || decoded.BufferedOutputBase64 == nil ||
+		!bytes.Equal(*decoded.BufferedOutputBase64, outputBytes) {
+		t.Fatalf("typed projection changed cursor or full output: %+v", decoded)
+	}
+
+	zero := uint64(0)
+	empty := newHeadTailBuffer(16)
+	empty.push([]byte{})
+	emptyEvidence := executionFailureRecord{method: executorMethodProcessRead, afterSequence: &zero, output: empty}.toolEvidence()
+	emptyJSON, err := json.Marshal(emptyEvidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var emptyFields map[string]json.RawMessage
+	if err := json.Unmarshal(emptyJSON, &emptyFields); err != nil {
+		t.Fatal(err)
+	}
+	if string(emptyFields["after_seq"]) != "0" || string(emptyFields["buffered_output"]) != `""` ||
+		string(emptyFields["buffered_output_base64"]) != `""` || string(emptyFields["buffered_bytes"]) != "0" {
+		t.Fatalf("present empty output or zero cursor changed in JSON projection: %s", emptyJSON)
+	}
+
+	absentJSON, err := json.Marshal(executionFailureRecord{method: executorMethodProcessRead, afterSequence: &zero}.toolEvidence())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var absentFields map[string]json.RawMessage
+	if err := json.Unmarshal(absentJSON, &absentFields); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"buffered_output", "buffered_output_base64", "buffered_bytes", "omitted_bytes"} {
+		if _, present := absentFields[field]; present {
+			t.Fatalf("absent output unexpectedly projected %q: %s", field, absentJSON)
+		}
+	}
 }
 
 func TestTypedWriteEnvironmentFailureDoesNotReplayInput(t *testing.T) {
@@ -367,7 +464,11 @@ func TestRejectedProcessReadDuringToolAbandonsOnlyThatHandle(t *testing.T) {
 		t.Fatalf("write_stdin error=%v, want a rejected nested tool promise", err)
 	}
 	var outcome *toolOutcomeError
-	if !errors.As(err, &outcome) || outcome.evidence["remote_outcome"] != "unknown" || outcome.evidence["automatic_replay"] != false {
+	evidence, evidenceIsMap := map[string]any(nil), false
+	if errors.As(err, &outcome) {
+		evidence, evidenceIsMap = outcome.evidence.(map[string]any)
+	}
+	if !errors.As(err, &outcome) || !evidenceIsMap || evidence["remote_outcome"] != NestedUnknown || evidence["automatic_replay"] != false {
 		t.Fatalf("missing process rejection evidence=%+v", outcome)
 	}
 	stale, err := store.Process(t.Context(), owner, "expired-native-process")
@@ -694,7 +795,8 @@ func TestTransportFailureExposesObservedProcessOutputAndCursor(t *testing.T) {
 		string(process.BufferedOutput) != "stdout before failure\n" {
 		t.Fatalf("observed output/cursor were not retained: %+v", process)
 	}
-	if encoded, _ := rejected.evidence["buffered_output_base64"].(string); encoded != base64.StdEncoding.EncodeToString(output.retained()) {
+	evidence, evidenceIsTyped := rejected.evidence.(executionFailureEvidence)
+	if !evidenceIsTyped || evidence.BufferedOutputBase64 == nil || !bytes.Equal(*evidence.BufferedOutputBase64, output.retained()) {
 		t.Fatalf("full output is missing from FollowEvents evidence: %+v", rejected.evidence)
 	}
 }
@@ -800,10 +902,10 @@ func TestObservedProcessFailureMarksBothOutputTruncationLayers(t *testing.T) {
 		afterSequence: &cursor, output: output, cause: errors.New("connection closed"),
 	}
 	evidence := transport.evidence("")
-	full, err := base64.StdEncoding.DecodeString(evidence["buffered_output_base64"].(string))
-	if err != nil || !bytes.Equal(full, output.retained()) || evidence["omitted_bytes"] != 16*1024 {
+	if evidence.BufferedOutputBase64 == nil || !bytes.Equal(*evidence.BufferedOutputBase64, output.retained()) ||
+		evidence.OmittedBytes == nil || *evidence.OmittedBytes != 16*1024 {
 		t.Fatalf("truncated output cannot be retrieved exactly from evidence: bytes=%d omitted=%v err=%v",
-			len(full), evidence["omitted_bytes"], err)
+			len(output.retained()), evidence.OmittedBytes, nil)
 	}
 }
 
@@ -942,8 +1044,8 @@ func TestExecutorRetriesUnknownCursorReadAtMostOnce(t *testing.T) {
 }
 
 func TestExecutorDoesNotReplayMutationAfterLostReply(t *testing.T) {
-	for _, method := range []string{"process/start", "process/write"} {
-		t.Run(method, func(t *testing.T) {
+	for _, method := range []executionMethod{executorMethodProcessStart, executorMethodProcessWrite} {
+		t.Run(string(method), func(t *testing.T) {
 			store, owner := claimedExecutorStore(t)
 			client := &fakeExecutionClient{}
 			starts, writes := 0, 0
@@ -957,7 +1059,7 @@ func TestExecutorDoesNotReplayMutationAfterLostReply(t *testing.T) {
 			}
 			e := newFakeExecutor(t, store, owner, client)
 			var params any
-			if method == "process/start" {
+			if method == executorMethodProcessStart {
 				params = executorStart{ProcessID: "lost-start", Argv: []string{"touch", "once"}, Cwd: "file:///tmp"}
 			} else {
 				params = executorWrite{ProcessID: "existing", Chunk: []byte("x"), WriteID: "write-once"}
@@ -967,7 +1069,7 @@ func TestExecutorDoesNotReplayMutationAfterLostReply(t *testing.T) {
 			if !errors.As(err, &transport) || !strings.Contains(transport.Error(), "remote effect outcome is unknown") {
 				t.Fatalf("mutation result=%v", err)
 			}
-			if starts != boolInt(method == "process/start") || writes != boolInt(method == "process/write") {
+			if starts != boolInt(method == executorMethodProcessStart) || writes != boolInt(method == executorMethodProcessWrite) {
 				t.Fatalf("mutation replayed: starts=%d writes=%d", starts, writes)
 			}
 			if transport.intentID == "" {

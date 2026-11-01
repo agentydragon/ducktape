@@ -43,7 +43,7 @@ func (e *toolError) Error() string { return e.message }
 
 type toolOutcomeError struct {
 	*toolError
-	evidence map[string]any
+	evidence any
 }
 
 func (e *toolOutcomeError) Unwrap() error { return e.toolError }

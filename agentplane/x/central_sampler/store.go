@@ -711,7 +711,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 
 		abandonedIntentIDs := make([]string, 0, len(unresolved))
 		for _, intent := range unresolved {
-			abandonedIntent := map[string]any{"status": IntentResultAbandoned, "remote_outcome": "unknown", "automatic_replay": false}
+			abandonedIntent := map[string]any{"status": IntentResultAbandoned, "remote_outcome": NestedUnknown, "automatic_replay": false}
 			if intent.kind == IntentSampling {
 				abandonedIntent["provider_completion_unknown"] = true
 				abandonedIntent["output_committed"] = false
@@ -816,7 +816,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 		}
 		recoveryEvidence := map[string]any{
 			"status": "recovered", "operator_note": note, "javascript_state_reset": true,
-			"remote_outcome": "unknown", "automatic_replay": false,
+			"remote_outcome": NestedUnknown, "automatic_replay": false,
 			"abandoned_intent_ids": abandonedIntentIDs,
 		}
 		if pendingSampling {
@@ -1704,7 +1704,7 @@ func (s *Store) RecordNested(ctx context.Context, owner Owner, kind IntentKind, 
 	return id, err
 }
 
-func (s *Store) FinishNested(ctx context.Context, owner Owner, intentID string, result map[string]any) error {
+func (s *Store) FinishNested(ctx context.Context, owner Owner, intentID string, result any) error {
 	wire, err := marshal(result)
 	if err != nil {
 		return err
@@ -1847,7 +1847,7 @@ func (s *Store) RebindExecutorIncarnation(ctx context.Context, owner Owner, sand
 		session.Configuration = wire
 		if err := s.recordEvidence(ctx, tx, owner, conversation, session, uuid.NewString(), "executor", "incarnation_changed", map[string]any{
 			"sandbox_uid": sandboxUID, "previous_incarnation_uid": previousUID, "replacement_incarnation_uid": replacementUID,
-			"remote_outcome": "unknown", "automatic_replay": false,
+			"remote_outcome": NestedUnknown, "automatic_replay": false,
 		}); err != nil {
 			return err
 		}
@@ -1883,9 +1883,9 @@ func (s *Store) retireExecutorSession(ctx context.Context, tx *sql.Tx, owner Own
 		return err
 	}
 	for _, process := range processes {
-		outcome := "unknown"
-		if process.ID == notDispatchedProcessID && process.Status == "starting" {
-			outcome = "not_dispatched"
+		outcome := NestedUnknown
+		if process.ID == notDispatchedProcessID && process.Status == protocol.ProcessStarting {
+			outcome = NestedNotDispatched
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET status='abandoned' WHERE id=$1 AND conversation_id=$2`, process.ID, conversation.ID); err != nil {
 			return err
@@ -2865,8 +2865,8 @@ func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string
 
 // AbandonProcess stops scheduling a remote handle whose remote outcome is unknown while
 // retaining every observed byte and exit code for inspection. It never records a remote exit.
-func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID string, afterSequence *uint64, output *headTailBuffer, remoteOutcome, executorSessionID string) error {
-	if remoteOutcome != "unknown" && remoteOutcome != "not_dispatched" {
+func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID string, afterSequence *uint64, output *headTailBuffer, remoteOutcome NestedOutcome, executorSessionID string) error {
+	if remoteOutcome != NestedUnknown && remoteOutcome != NestedNotDispatched {
 		return protocol.ErrInvalid
 	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {

@@ -94,7 +94,7 @@ func (e *Executor) viewImage(ctx context.Context, arguments json.RawMessage) (*v
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(e.cwd, path)
 	}
-	metadata, err := executorRPC[executorFSMetadata](ctx, e, "fs/getMetadata", executorFSGetMetadata{Path: fileURI(path)})
+	metadata, err := executorRPC[executorFSMetadata](ctx, e, executorMethodFSGetMetadata, executorFSGetMetadata{Path: fileURI(path)})
 	if rejected := (*executorRejectedError)(nil); errors.As(err, &rejected) {
 		return nil, &toolError{fmt.Sprintf("unable to locate image at `%s`: %s", path, rejected.message)}
 	} else if err != nil {
@@ -127,11 +127,11 @@ func (e *Executor) readFile(ctx context.Context, path string) ([]byte, error) {
 	// Codex rust-v0.162.1 exec-server/src/remote_file_stream.rs open: a simple UUID fits the
 	// server's 32-byte handle limit.
 	handle := strings.ReplaceAll(uuid.NewString(), "-", "")
-	if _, err := executorRPC[executorFSOpened](ctx, e, "fs/open", executorFSOpen{HandleID: handle, Path: fileURI(path), Mode: "read"}); err != nil {
+	if _, err := executorRPC[executorFSOpened](ctx, e, executorMethodFSOpen, executorFSOpen{HandleID: handle, Path: fileURI(path), Mode: "read"}); err != nil {
 		return nil, err
 	}
 	data, err := e.readBlocks(ctx, handle)
-	_, closeErr := executorRPC[executorEmpty](ctx, e, "fs/close", executorFSClose{HandleID: handle})
+	_, closeErr := executorRPC[executorEmpty](ctx, e, executorMethodFSClose, executorFSClose{HandleID: handle})
 	if rejected := (*executorRejectedError)(nil); errors.As(closeErr, &rejected) {
 		// Upstream also ignores close failures; the rejection is journaled.
 		slog.Warn("exec-server rejected fs/close", "handle", handle, "error", closeErr)
@@ -144,7 +144,7 @@ func (e *Executor) readFile(ctx context.Context, path string) ([]byte, error) {
 func (e *Executor) readBlocks(ctx context.Context, handle string) ([]byte, error) {
 	var data []byte
 	for {
-		block, err := executorRPCWithEvidence[executorFSBlock](ctx, e, "fs/readBlock",
+		block, err := executorRPCWithEvidence[executorFSBlock](ctx, e, executorMethodFSReadBlock,
 			executorFSReadBlock{HandleID: handle, Offset: uint64(len(data)), Len: viewImageBlockBytes}, blockEvidence)
 		if err != nil {
 			return nil, err
