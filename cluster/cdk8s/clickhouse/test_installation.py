@@ -29,5 +29,19 @@ def test_aiquota_history_reader_is_minted_and_scoped_to_typed_quota_history(scra
     assert "password" in secret["spec"]["target"]["template"]["data"]
 
 
+def test_shared_client_services_select_the_same_replica_during_incident(scratch_app: App) -> None:
+    chi_docs = CdkTesting.synth(installation.clickhouse_chart(scratch_app))
+    service_docs = CdkTesting.synth(installation.service_chart(scratch_app))
+    chi = next(doc for doc in chi_docs if doc["kind"] == "ClickHouseInstallation")
+    client_service = next(doc for doc in service_docs if doc["kind"] == "Service")
+    template_name = chi["spec"]["defaults"]["templates"]["serviceTemplate"]
+    template = next(t for t in chi["spec"]["templates"]["serviceTemplates"] if t["name"] == template_name)
+    gate = template["spec"]["selector"]
+    assert gate == {"clickhouse.altinity.com/replica": "1"}
+    assert client_service["spec"]["selector"].items() >= gate.items()
+    assert template["spec"]["type"] == "ClusterIP"
+    assert {port["name"] for port in template["spec"]["ports"]} == {"http", "tcp"}
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
