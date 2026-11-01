@@ -2377,8 +2377,8 @@ Generate TypeScript request/response messages and codecs from the same protos; r
 OpenAPI-derived contracts, mirrored wire types and handwritten route implementations as callers move.
 UI-specific view models and adapters may remain.
 
-Scope includes frontend configuration; Sandbox inventory, lifecycle, policy and Runner status;
-Session opening; Thread mutations and commands; Action policy, caller grants and system status;
+Remaining scope includes frontend configuration; Sandbox inventory, lifecycle, policy and Runner status;
+Session opening; Thread metadata mutations; Action policy, caller grants and system status;
 and app-owned live snapshots, event, notice, notification and console streams. Inventory the raw
 streams and Electric synchronization path explicitly: migrate app-owned API contracts to generated
 facades, while recording any protocol-specific transport that must remain. Login/OAuth redirects,
@@ -2388,8 +2388,10 @@ surfaces, not application RPCs to convert mechanically.
 **Prerequisites:** no dependency on the separate History-read facade track or a service rename.
 Before each independently reviewable migration, identify the owning service and preserve the app's
 client-only boundary; backend responsibilities still in the app belong with their backend authority.
-Give Thread archive checks, Thread-to-Sandbox resolution and model-catalog validation an explicit
-home before replacing the Thread command routes. Preserve authorization, CSRF at the browser proxy,
+The app serves the human frontend; agents and services call owning backends through native gRPC.
+For each remaining wrapper, explicitly retain, move or remove its checks according to ownership.
+Historical outcome reconciliation does not require a History preflight on command submission.
+Preserve authorization, CSRF at the browser proxy,
 error semantics, client-chosen Session identity and unknown-outcome recovery, and stream
 retry/reconnect behavior. Keep the current same-origin app proxy; direct browser access and
 per-operator delegated attribution remain separate decisions.

@@ -6,6 +6,13 @@ alternatives in [API transports](../docs/runner_delivery_and_harness_design.md#a
 The per-service tracks are in the [task DAG](task_dag.md#service-api-transport-tracks). This plan
 holds what is still open.
 
+The four Thread command writes (`SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, and
+`InterruptTurn`) use generated Dispatcher routes through the operator-session proxy. The duplicate
+Thread handlers and their History/model-catalog preflights were removed in
+[#13469](https://github.com/agentydragon/ducktape/pull/13469). Retained commands pin their Sandbox
+name and UID; uncertain outcomes reconcile against Dispatcher and History. The app serves the human
+frontend; agent and service callers use native gRPC at the owning backend.
+
 ## Open
 
 - **History reads.** History has no facade; the app still mirrors `ReadEntityEvidenceResponse`,
@@ -14,12 +21,12 @@ holds what is still open.
 - **Thread checks on History reads.** `thread_observations` answers 404 for a Session no Thread links;
   a proxied read answers for any Session the History Service holds. All operators are equal here, so
   this is a behavior to keep or drop on purpose, not a hole.
-- **Dispatcher commands.** They have generated routes, but the browser sends them through the app's
-  typed Thread routes until the checks there (archive, Thread to Sandbox lookup, model-catalog
-  validation before `SubmitInput`) have a home that is not a hand-written route: the app-contract
-  migration. The operator selected protobuf-defined app APIs with generated HTTP facades on
-  2026-10-31; `APP_API_GRPC_FACADE` in the [task DAG](task_dag.md#app_api_grpc_facade--uniform-app-grpc-apis-with-generated-http-facades)
-  covers the app's own views, commands and streams, including the home for these checks.
+- **Remaining app contracts.** `APP_API_GRPC_FACADE` in the
+  [task DAG](task_dag.md#app_api_grpc_facade--uniform-app-grpc-apis-with-generated-http-facades)
+  covers the remaining app views, mutations and streams. Session opening still applies browser
+  presets and creates Thread metadata before calling Dispatcher; separate that human-facing
+  orchestration from native workload admission and reconciliation. Decide which checks each
+  remaining wrapper needs, at its owning boundary, rather than preserve them as transport requirements.
 - **Error codes in the browser.** `sandbox_page.tsx` and `connections/management.tsx` (three times)
   branch on HTTP status; they move to the body's gRPC `code`, which `HttpError` then carries.
 - **Attribution.** Services see the app, not the operator; the Dispatcher's per-caller wake budget is
