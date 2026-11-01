@@ -18,6 +18,7 @@ import (
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
@@ -42,8 +43,6 @@ import (
 
 const (
 	RuntimeUnitName                            = "agentplane-environment-runtime.service"
-	HostUnitName                               = "agentplane-harness-host.service"
-	HostLifetimeDir                            = "/run/agentplane-harness-host-lifetime"
 	RuntimeScopeID  supervision.SystemdScopeID = supervision.SystemdEnvironmentRuntimeScopeID
 	HostScopeID     supervision.SystemdScopeID = "harness-host"
 )
@@ -54,9 +53,7 @@ const (
 	generationMetadata  = "agentplane-environment-generation"
 )
 
-// Config contains the resolved environment configuration and the two existing configuration-file
-// paths. Runtime and Host read the same immutable config/launch inputs; Runtime
-// constructs each embedded Execution API lifetime from those inputs.
+// Config contains the resolved environment and embedded Host configuration.
 type Config struct {
 	Control            configuration.EnvironmentRuntimeControlConfiguration
 	StateDir           string
@@ -70,7 +67,8 @@ type Config struct {
 	InitializationCwd  string
 	ConfigPath         string
 	LaunchPath         string
-	HostBinary         string
+	HostConfig         harnesshost.Config
+	HostIngress        configuration.Endpoint
 	RuntimeSocket      string
 	HostSocket         string
 	ExecutionSocket    string
@@ -82,6 +80,11 @@ type childProcess interface {
 	Stop(context.Context) error
 	Stdout() io.Reader
 	Stderr() io.Reader
+}
+
+type hostLifetime interface {
+	Stop(context.Context) error
+	Wait(context.Context) (int, error)
 }
 
 type childExit struct {
@@ -158,7 +161,6 @@ type Runtime struct {
 	execCalls            map[uint64]context.CancelFunc
 	execCallID           uint64
 	execution            childProcess
-	hostUnit             unitInvocation
 	executionFence       bool
 	fenceInFlight        *runtimepb.Binding
 	closing              bool
@@ -169,7 +171,8 @@ type Runtime struct {
 	failureErr           error
 	control              *control.Server
 	waitBootstrap        func(context.Context) error
-	hostProcess          childProcess
+	hostLifetime         hostLifetime
+	hostExited           bool
 	hostExit             chan childExit
 	processOutputWait    sync.WaitGroup
 	closeOnce            sync.Once
@@ -417,10 +420,9 @@ func (r *Runtime) finishClose() error {
 	if sealUID != "" {
 		incarnationUID = sealUID
 	}
-	connected := r.host != nil && r.host.connected
+	connected := r.host != nil && r.host.connected && !r.hostExited
 	executionExists := r.executionOwner != nil
-	hostProcessExists := r.hostProcess != nil
-	hostUnitExists := r.hostUnit.ID != "" || r.hostUnit.reference != nil
+	hostLifetimeExists := r.hostLifetime != nil
 	var binding *runtimepb.Binding
 	var intentMode runtimepb.LifecycleIntent_Mode
 	if connected {
@@ -442,6 +444,7 @@ func (r *Runtime) finishClose() error {
 	}
 	fenceCtx, cancelFence := context.WithTimeout(context.Background(), executionFenceGrace)
 	defer cancelFence()
+	var hostRunErr error
 	if connected {
 		if err := r.waitForHostNativeStopped(fenceCtx, binding); err != nil {
 			return fmt.Errorf("Harness Host did not prove native work stopped: %w", err)
@@ -455,21 +458,36 @@ func (r *Runtime) finishClose() error {
 				return fmt.Errorf("Harness Host did not flush the sealed generation: %w", err)
 			}
 		}
-	} else if executionExists || hostProcessExists || hostUnitExists {
+	} else if hostLifetimeExists {
+		// A lost private channel is still a service failure, but the embedded
+		// Host can prove cleanup directly. Join it before fencing Execution.
+		if err := r.hostLifetime.Stop(fenceCtx); err != nil {
+			return fmt.Errorf("Runtime lost its Host lifecycle connection and native cleanup is unproved: %w", err)
+		}
+		_, hostRunErr = r.hostLifetime.Wait(fenceCtx)
+		r.cancelExecutionCalls()
+		if err := r.waitForExecutionCalls(fenceCtx); err != nil {
+			return fmt.Errorf("drain Execution calls after Host lifecycle loss: %w", err)
+		}
+		if err := r.stopExecution(fenceCtx); err != nil {
+			return fmt.Errorf("fence Execution after Host lifecycle loss: %w", err)
+		}
+		hostRunErr = errors.Join(errors.New("Harness Host lifecycle connection was lost"), hostRunErr)
+	} else if executionExists {
 		return errors.New("Runtime lost its Host lifecycle connection before proving native cleanup")
 	}
 
-	if err := r.stopHost(fenceCtx); err != nil {
-		return fmt.Errorf("stop and fence Harness Host: %w", err)
-	}
 	if connected {
-		r.mu.Lock()
-		if r.host != nil && r.host.conn != nil {
-			_ = r.host.conn.Close()
-			r.host.connected = false
+		if err := r.stopHost(fenceCtx); err != nil {
+			return fmt.Errorf("stop and fence Harness Host: %w", err)
 		}
-		r.mu.Unlock()
 	}
+	r.mu.Lock()
+	if r.host != nil && r.host.conn != nil {
+		_ = r.host.conn.Close()
+		r.host.connected = false
+	}
+	r.mu.Unlock()
 	if err := r.waitBootstrapSettled(); err != nil {
 		return err
 	}
@@ -477,6 +495,14 @@ func (r *Runtime) finishClose() error {
 	<-r.lifecycleDone
 	r.lifecycleWorkers.Wait()
 	r.processOutputWait.Wait()
+	if r.config.Supervision == "pid1" {
+		// The Runtime owns the whole Pod PID namespace. Join both management
+		// controllers before killing any escaped native descendants, then retain
+		// the state-owner lock until the namespace fence has completed.
+		if err := r.supervisor.FenceNamespace(context.Background()); err != nil {
+			return fmt.Errorf("fence Pod PID namespace: %w", err)
+		}
+	}
 	var errs []error
 	if r.bootstrapHost != nil {
 		errs = append(errs, r.bootstrapHost.CloseLog())
@@ -484,7 +510,7 @@ func (r *Runtime) finishClose() error {
 	if err := errors.Join(errs...); err != nil {
 		return err
 	}
-	return r.owner.Close()
+	return errors.Join(hostRunErr, r.owner.Close())
 }
 
 func (r *Runtime) waitBootstrapSettled() error {
@@ -513,19 +539,8 @@ func (r *Runtime) waitBootstrapSettled() error {
 
 func (r *Runtime) stopHost(ctx context.Context) error {
 	r.mu.Lock()
-	process, invocation := r.hostProcess, r.hostUnit
+	process := r.hostLifetime
 	r.mu.Unlock()
-	if invocation.ID != "" || invocation.reference != nil {
-		if err := r.deps.fenceUnit(ctx, HostUnitName, invocation); err != nil {
-			return err
-		}
-		r.mu.Lock()
-		if r.hostUnit.reference == invocation.reference && r.hostUnit.ID == invocation.ID {
-			r.hostUnit = unitInvocation{}
-		}
-		r.mu.Unlock()
-		return nil
-	}
 	if process == nil {
 		return nil
 	}

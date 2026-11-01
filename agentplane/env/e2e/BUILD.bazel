@@ -415,13 +415,18 @@ py_test(
         "//agentplane/env/e2e/testing:gateway",
         "//agentplane/env/e2e/testing:launches",
         "//agentplane/env/e2e/testing:process_fixtures",
+        "//agentplane/env/runtime/control:environment_runtime_pb2",
         "//agentplane/environment_runtime_transport:config",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/proto:session_pb2",
         "//third_party/containers:debian_slim",
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:container_logs",
         "//util/testing:undeclared_outputs",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )

@@ -13,6 +13,11 @@ private directory. Deployment mounts and filesystem access remain authoritative.
 Each native Session, shared Codex app-server and isolated workspace helper receives its 5-second
 stop grace at launch; later `Stop(ctx)` calls use that immutable process policy.
 
+In a Pod, Host uses Runtime's PID1 supervisor so one reaper owns every child wait. In a VM, Host's
+native services keep their distinct `harness-host` scope in the workload slice, but the owner unit
+and invocation marker are those of Environment Runtime. Runtime joins Host cleanup and fences the
+Pod PID namespace before releasing the environment owner.
+
 The lifecycle stream begins with HostHello (Host boot ID and Session socket). Runtime sends a
 LifecycleIntent bound to Runtime boot ID, Host boot ID and nonzero generation. Host reports readiness,
 native cleanup and EnvironmentRuntimeFacts with that exact binding. Mode/identity changes require a new generation;

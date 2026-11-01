@@ -28,6 +28,8 @@ type Config struct {
 	HarnessEnvironment                           map[string]string
 	Claude, Codex                                *harness.LaunchConfig
 	VMProcessLauncher                            *supervision.SystemdLauncher
+	VMProcessOwner                               supervision.SystemdOwner
+	ProcessSupervisor                            *supervision.Supervisor
 	ExecServerURL                                string
 	CodexAppServerReadiness                      codexappserver.Readiness
 	WorkspaceRoot, InitializationCwd             string

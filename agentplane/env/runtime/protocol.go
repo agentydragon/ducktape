@@ -224,7 +224,7 @@ func (r *Runtime) cancelExecutionCalls() {
 func (r *Runtime) waitForExecutionCalls(ctx context.Context) error {
 	for {
 		r.mu.Lock()
-		if failure := r.failureLocked(); failure != nil {
+		if failure := r.failureLocked(); failure != nil && !r.closing {
 			r.mu.Unlock()
 			return failure
 		}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 )
 
 type serviceConfiguration struct {
@@ -71,11 +72,14 @@ func runService(ctx context.Context, config serviceConfiguration) error {
 		Claude:                      settings.Claude,
 		Codex:                       settings.Codex,
 		VMProcessLauncher:           settings.VMProcessLauncher,
-		ExecServerURL:               execServerURL,
-		CodexAppServerReadiness:     settings.CodexAppServerReadiness,
-		WorkspaceRoot:               settings.WorkspaceRoot,
-		InitializationCwd:           settings.InitializationCwd,
-		DebugCheckpoint:             settings.DebugCheckpoint,
+		VMProcessOwner: supervision.SystemdOwner{
+			Unit: "agentplane-harness-host.service", LifetimeDirectory: "/run/agentplane-harness-host-lifetime", ScopeID: "harness-host",
+		},
+		ExecServerURL:           execServerURL,
+		CodexAppServerReadiness: settings.CodexAppServerReadiness,
+		WorkspaceRoot:           settings.WorkspaceRoot,
+		InitializationCwd:       settings.InitializationCwd,
+		DebugCheckpoint:         settings.DebugCheckpoint,
 	})
 	if err != nil {
 		return err

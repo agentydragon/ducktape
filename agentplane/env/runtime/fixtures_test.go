@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -87,8 +86,8 @@ func newLifecycleRunner(t *testing.T, config runtimeTestConfig) *Runtime {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	child := &localHostProcess{cancel: cancel, done: make(chan struct{})}
-	r.hostProcess = child
+	child := &localHostLifetime{cancel: cancel, done: make(chan struct{})}
+	r.hostLifetime = child
 	go func() { child.err = host.Run(ctx, configuration.Endpoint{Target: historyTarget}); close(child.done) }()
 	t.Cleanup(func() {
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
@@ -180,14 +179,13 @@ func waitClose(t *testing.T, done <-chan error) error {
 	}
 }
 
-type localHostProcess struct {
+type localHostLifetime struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 	err    error
 }
 
-func (p *localHostProcess) Start(context.Context) error { return nil }
-func (p *localHostProcess) Wait(ctx context.Context) (int, error) {
+func (p *localHostLifetime) Wait(ctx context.Context) (int, error) {
 	select {
 	case <-p.done:
 		return 0, p.err
@@ -196,10 +194,8 @@ func (p *localHostProcess) Wait(ctx context.Context) (int, error) {
 	}
 }
 
-func (p *localHostProcess) Stop(ctx context.Context) error {
+func (p *localHostLifetime) Stop(ctx context.Context) error {
 	p.cancel()
 	_, err := p.Wait(ctx)
 	return err
 }
-func (p *localHostProcess) Stdout() io.Reader { return strings.NewReader("") }
-func (p *localHostProcess) Stderr() io.Reader { return strings.NewReader("") }

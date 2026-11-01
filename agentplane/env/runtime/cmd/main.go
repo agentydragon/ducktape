@@ -10,6 +10,8 @@ import (
 	"syscall"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
+	"github.com/agentydragon/ducktape/agentplane/env/harnesshost"
+	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/workspace"
 	runtime "github.com/agentydragon/ducktape/agentplane/env/runtime"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/observability"
@@ -64,6 +66,9 @@ func internalMode(args []string) (bool, int) {
 	if args[0] == supervision.SupervisorMode {
 		return true, supervision.SupervisorMain(args[1:])
 	}
+	if args[0] == workspace.HelperMode {
+		return true, workspace.Main(args[1:])
+	}
 	if args[0] != vmResourcePropertiesMode {
 		return false, 0
 	}
@@ -88,7 +93,6 @@ func runService(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("agentplane-environment-runtime", flag.ContinueOnError)
 	configPath := flags.String("config", "", "Versioned environment configuration JSON")
 	launchPath := flags.String("launch-file", "", "Sandbox identity and bootstrap JSON")
-	hostBinary := flags.String("harness-host-binary", "", "Harness Host executable (defaults to a sibling binary)")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -98,7 +102,7 @@ func runService(ctx context.Context, args []string) error {
 	if flags.NArg() != 0 || *configPath == "" || *launchPath == "" {
 		return errors.New("--config and --launch-file are required; positional arguments are forbidden")
 	}
-	settings, _, err := configuration.Load(*configPath, *launchPath)
+	settings, ingress, err := configuration.Load(*configPath, *launchPath)
 	if err != nil {
 		return err
 	}
@@ -118,7 +122,16 @@ func runService(ctx context.Context, args []string) error {
 		Supervision: settings.Supervision, PodPID1: settings.PodPID1, VMProcessLauncher: settings.VMProcessLauncher,
 		CodexExecServer: settings.CodexExecServer, CodexBinary: codexBinary,
 		HarnessEnvironment: settings.HarnessEnvironment, InitializationCwd: settings.InitializationCwd,
-		ConfigPath: *configPath, LaunchPath: *launchPath, HostBinary: *hostBinary,
+		ConfigPath: *configPath, LaunchPath: *launchPath,
+		HostIngress: ingress,
+		HostConfig: harnesshost.Config{
+			StateDir: settings.StateDir, SessionReconcileConcurrency: settings.SessionReconcileConcurrency,
+			Launch: settings.Launch, HarnessEnvironment: settings.HarnessEnvironment,
+			Claude: settings.Claude, Codex: settings.Codex, VMProcessLauncher: settings.VMProcessLauncher,
+			CodexAppServerReadiness: settings.CodexAppServerReadiness,
+			WorkspaceRoot:           settings.WorkspaceRoot, InitializationCwd: settings.InitializationCwd,
+			DebugCheckpoint: settings.DebugCheckpoint,
+		},
 	})
 	if err != nil {
 		return err

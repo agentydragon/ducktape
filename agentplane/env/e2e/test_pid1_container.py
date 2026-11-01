@@ -10,11 +10,14 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from agentplane.env.config import Configuration, Endpoint, EnvironmentVariables, PodEnvironment
+from agentplane.env.config import Configuration, Endpoint, EnvironmentVariables, Harness, PodEnvironment
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.process_fixtures import wait_for_exit
+from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.environment_runtime_transport.config import Insecure
+from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
+from agentplane.proto import session_pb2
 from third_party.containers import debian_slim
 from util.bazel.runfiles import get_required_path
 from util.oci import load_oci_image
@@ -157,6 +160,77 @@ async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, 
             fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
             fcntl.flock(probe, fcntl.LOCK_UN)
         (undeclared_outputs_dir() / f"production-runner-pid1-{abrupt}.json").write_text(json.dumps(result))
+
+
+async def test_production_pid1_embedded_host_reaps_setup(
+    tmp_path: Path, gateway: Gateway, history_service: GoHistoryService
+) -> None:
+    """A Host-owned setup child must use Runtime's PID1 reaper and fence escaped descendants."""
+    load_oci_image(debian_slim.IMAGE)
+    runner = get_required_path(launches.RUNTIME_BINARY).resolve()
+    fixture = get_required_path(
+        "_main/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
+    ).resolve()
+    control = gateway.endpoint
+    assert isinstance(control.security, Insecure)
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "workspaces").mkdir()
+    config = Configuration(
+        version=2,
+        state_dir="/proof/state",
+        initialization_cwd="/proof/state",
+        workspace_root="/proof/state/workspaces",
+        control=control,
+        ingress=Endpoint(target=history_service.ingress_target, bearer=await history_service.writer_token(WRITER)),
+        platform_instructions="PID1 Host proof",
+        harness_environment=EnvironmentVariables(
+            values={"PATH": "/bin:/usr/bin", "HOME": "/proof/state", "OPENAI_API_KEY": "test-key"}
+        ),
+        codex=Harness(binary="/bin/false", base_url="http://127.0.0.1:8082/v1", token_env="OPENAI_API_KEY"),
+        environment=PodEnvironment(supervision="pid1"),
+    )
+    (tmp_path / "environment-runtime.json").write_text(config.model_dump_json(exclude_none=True))
+    (tmp_path / "launch.json").write_text(
+        json.dumps({"sandbox": {"namespace": "proof", "name": "pid1-host", "uid": "pid1-host-uid"}})
+    )
+    container = (
+        LoggedContainer(debian_slim.IMAGE.tag, test_name="production-pid1-embedded-host")
+        .with_kwargs(network_mode="host", user=f"{os.getuid()}:{os.getgid()}", pids_limit=128, mem_limit="256m")
+        .with_volume_mapping(str(tmp_path), "/proof", mode="rw")
+        .with_volume_mapping(str(runner), "/environment-runtime", mode="ro")
+        .with_volume_mapping(str(fixture), "/pid1-proof", mode="ro")
+        .with_env("OTEL_SDK_DISABLED", "true")
+        .with_env("PID1_PROOF_BACKEND", "pid1")
+        .with_env("OPENAI_API_KEY", "test-key")
+        .with_command(
+            "/environment-runtime --config /proof/environment-runtime.json --launch-file /proof/launch.json"
+        )
+    )
+    with container:
+        wrapped = container.get_wrapped_container()
+        await gateway.control.connect(control, "pid1-host-uid")
+        stub = await gateway.control.runner()
+        await stub.OpenSession(
+            environment_runtime_pb2.OpenSessionRequest(
+                session_id="host-pid1-setup",
+                spec=session_pb2.SessionSpec(
+                    harness=session_pb2.HARNESS_CODEX,
+                    cwd="/proof/state/workspaces/project",
+                    model="pid1-proof-model",
+                    reasoning_effort="low",
+                ),
+                setup_script="exec /pid1-proof --pid1-proof-native crash",
+            )
+        )
+        await asyncio.to_thread(_wait_native_tree, tmp_path)
+        descendants = await asyncio.to_thread(_descendant_pids, container, "pid1")
+        assert len(descendants) == 2
+        await asyncio.to_thread(wrapped.kill, signal="SIGTERM")
+        result = await asyncio.to_thread(wrapped.wait, timeout=15)
+        assert result["StatusCode"] == 0
+        for pid in descendants:
+            await asyncio.wait_for(wait_for_exit(pid), timeout=5)
 
 
 def _wait_native_tree(directory: Path) -> None:

@@ -26,6 +26,7 @@ go_library(
         "//agentplane/env/runtime/execution:executor_go_proto",
         "//agentplane/env/runtime/execution/codexexecserver",
         "//agentplane/env/runtime/execution/service",
+        "//agentplane/env/runtime/harnesshost",
         "//agentplane/env/runtime/lifecycle",
         "//agentplane/env/runtime/supervision",
         "//agentplane/env/scripts",

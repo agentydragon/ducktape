@@ -8,6 +8,8 @@ go_binary(
     pure = "on",
     deps = [
         "//agentplane/env/configuration",
+        "//agentplane/env/harnesshost",
+        "//agentplane/env/harnesshost/workspace",
         "//agentplane/env/runtime",
         "//agentplane/env/runtime/supervision",
         "//agentplane/observability",
