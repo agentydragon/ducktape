@@ -1,0 +1,794 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="shared.css" />
+  </head>
+  <body>
+    <title>Agentplane New-Thread Landing</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      main {
+        max-width: 980px;
+      }
+      .lede {
+        max-width: 68ch;
+      }
+      .section-note {
+        max-width: 72ch;
+      }
+      .device {
+        display: flex;
+        overflow: hidden;
+        width: 780px;
+        height: 520px;
+      }
+      .dot {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+      }
+      .state-icon.pending {
+        color: var(--warn);
+      }
+      .bubble-stub.pending {
+        opacity: 0.55;
+      }
+      .new-thread-body {
+        overflow-y: auto;
+        padding: 20px 24px;
+      }
+      .segmented {
+        display: inline-flex;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        padding: 2px;
+        background: var(--surface-2);
+        align-self: flex-start;
+      }
+      .segmented .seg {
+        padding: 5px 12px;
+        border-radius: 7px;
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      .segmented .seg.active {
+        background: var(--surface);
+        color: var(--ink);
+        box-shadow: 0 1px 2px rgba(20, 24, 33, 0.08);
+      }
+      .field-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        flex: 1 1 140px;
+      }
+      .field label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      .field .hint {
+        font-size: 10.5px;
+        color: var(--faint);
+      }
+      .picker {
+        font-size: 12.5px;
+        justify-content: space-between;
+      }
+      .picker svg {
+        flex: 0 0 auto;
+        width: 11px;
+        height: 11px;
+      }
+      .text-field {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 12.5px;
+        color: var(--faint);
+        background: var(--surface);
+      }
+      .new-sandbox-form {
+        border: 1px solid var(--border-soft);
+        border-radius: 10px;
+        padding: 12px;
+        background: var(--surface-2);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .form-section-label {
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--faint);
+      }
+      .new-thread-input {
+        min-height: 64px;
+      }
+      .new-thread-input.filled {
+        color: var(--ink);
+      }
+
+      details.advanced summary {
+        cursor: pointer;
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--muted);
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      details.advanced summary::-webkit-details-marker {
+        display: none;
+      }
+      details.advanced summary .chev {
+        transform: rotate(0deg);
+        transition: transform 120ms ease;
+        display: inline-flex;
+      }
+      details.advanced[open] summary .chev {
+        transform: rotate(90deg);
+      }
+      details.advanced .advanced-body {
+        margin-top: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .system-prompt-input {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 12.5px;
+        color: var(--faint);
+        min-height: 44px;
+        background: var(--surface);
+      }
+
+      /* ---- provisioning status stack ---- */
+      .status-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        border: 1px solid var(--border-soft);
+        border-radius: 10px;
+        padding: 12px 14px;
+        background: var(--surface-2);
+        max-width: 420px;
+      }
+      .status-line {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12.5px;
+        color: var(--muted);
+      }
+      .status-line .mark {
+        width: 14px;
+        height: 14px;
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .status-line.done .mark {
+        color: var(--ok);
+      }
+      .status-line.active .mark svg {
+        animation: spin 1s linear infinite;
+      }
+      .status-line.active {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .status-line.pending {
+        color: var(--faint);
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .status-line.active .mark svg {
+          animation: none;
+        }
+      }
+      .state-card {
+        padding: 14px;
+      }
+      .state-tag {
+        margin-bottom: 12px;
+      }
+      table {
+        font-size: 13px;
+      }
+      thead th {
+        padding: 9px 12px;
+      }
+      tbody td {
+        padding: 10px 12px;
+      }
+    </style>
+
+    <main>
+      <header>
+        <p class="eyebrow">x/agentplane · UISHELL_NEWTHREAD_LANDING / UISHELL_NEWTHREAD_SANDBOX</p>
+        <h1>One page, three states — not a wizard</h1>
+        <p class="lede">
+          The sidebar's "+" (unscoped) and a Sandbox page's own "+ New thread" (pre-scoped) open the
+          <em>same</em> page as an open thread — same composer, same composer-row (status dot, model, and reasoning
+          effort pickers), same layout — just in a state where no Sandbox/Thread is bound yet. That state lets the
+          operator target an existing Sandbox or describe a new one; pressing Enter submits the draft immediately,
+          provisions whatever is missing, and then rebinds the page to the real thread in place. The picker area above
+          the composer is the only thing that changes shape — the composer and its row of controls never move and are
+          never replaced by different components, only reused earlier than they're reused today.
+        </p>
+      </header>
+
+      <section>
+        <h2>State A — picking a target, existing Sandbox</h2>
+        <div class="stage">
+          <div class="device">
+            <div class="sidebar">
+              <div class="sidebar-header">
+                Threads
+                <span class="new-thread-btn active" title="New thread">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  </svg>
+                </span>
+              </div>
+              <div class="sidebar-body">
+                <div class="group-label">
+                  <span class="state-icon running" title="Running"
+                    ><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2.2v7.6l6-3.8-6-3.8Z" /></svg
+                  ></span>
+                  demo-a1b2
+                  <span style="margin-left: auto; font-size: 11px; color: var(--faint)">2 threads</span>
+                </div>
+                <div class="row"><span class="dot ok"></span><span class="name">List the repository files</span></div>
+              </div>
+              <div class="sidebar-footer">
+                <span class="gear-btn"
+                  ><svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="2.3" stroke="currentColor" stroke-width="1.3" /></svg
+                ></span>
+              </div>
+            </div>
+            <div class="pane">
+              <div class="breadcrumb"><span class="title-crumb">New thread</span></div>
+              <div class="new-thread-body">
+                <div class="segmented">
+                  <span class="seg active">Existing sandbox</span>
+                  <span class="seg">New sandbox</span>
+                </div>
+                <div class="picker">
+                  demo-a1b2 · running · public-coder
+                  <svg viewBox="0 0 12 12" fill="none">
+                    <path d="M3 4.5 6 7.5 9 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  </svg>
+                </div>
+                <details class="advanced">
+                  <summary>
+                    <span class="chev"
+                      ><svg viewBox="0 0 12 12" fill="none">
+                        <path
+                          d="M3 2.5 8 6l-5 3.5"
+                          stroke="currentColor"
+                          stroke-width="1.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        /></svg></span
+                    >Advanced
+                  </summary>
+                  <div class="advanced-body">
+                    <label style="font-size: 11px; font-weight: 600; color: var(--muted)">System prompt</label>
+                    <div class="system-prompt-input">Inherited from public-coder — override for this thread only…</div>
+                  </div>
+                </details>
+                <div class="new-thread-input">Describe what you want done…</div>
+                <div class="composer-row">
+                  <div class="cluster">
+                    <span class="dot gray" title="Not yet attached"></span>
+                    <span class="picker">
+                      claude-sonnet-5
+                      <svg viewBox="0 0 12 12" fill="none">
+                        <path d="M3 4.5 6 7.5 9 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                      </svg>
+                    </span>
+                    <span class="picker">
+                      Reasoning: medium
+                      <svg viewBox="0 0 12 12" fill="none">
+                        <path d="M3 4.5 6 7.5 9 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                      </svg>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <p class="composer-stub" style="margin: 0 16px 16px">
+                Enter starts the thread on demo-a1b2, Ctrl+Enter for a new line
+              </p>
+            </div>
+          </div>
+        </div>
+        <p class="section-note">
+          Reusing the composer-row already shipped in <code>app_shell.html</code>/<code>session.tsx</code> — status dot,
+          model picker, and (once <code>REASONING_EFFORT_RUNTIME</code> lands) reasoning effort — rather than a second,
+          form-shaped picker for either: they're already runtime-editable controls under the composer, so starting a
+          thread just means using them before a thread exists yet instead of inventing a parallel set of dropdowns. The
+          segmented control replaces the old single "+ New sandbox from preset" affordance with an explicit either/or:
+          pick a Sandbox that already exists (any state — see the open question in Behavior notes about suspended ones —
+          or still provisioning), or describe a new one. The picked Sandbox's own preset shows alongside its name and
+          state, when it has one. Reached pre-scoped from a Sandbox's own page (<code>UISHELL_NEWTHREAD_SANDBOX</code>),
+          the segmented control and Sandbox picker are both hidden — the target is already fixed, exactly like the
+          existing "pre-scoped" state card in <code>app_shell.html</code>. "Advanced" is collapsed by default: a
+          system-prompt override is rare enough not to earn permanent space next to the actual prompt it would otherwise
+          be confused with.
+        </p>
+      </section>
+
+      <section>
+        <h2>State B — new sandbox, form expanded, draft typed</h2>
+        <div class="stage">
+          <div class="device">
+            <div class="sidebar">
+              <div class="sidebar-header">
+                Threads
+                <span class="new-thread-btn active" title="New thread">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  </svg>
+                </span>
+              </div>
+              <div class="sidebar-body">
+                <div class="group-label">
+                  <span class="state-icon running" title="Running"
+                    ><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2.2v7.6l6-3.8-6-3.8Z" /></svg
+                  ></span>
+                  demo-a1b2
+                  <span style="margin-left: auto; font-size: 11px; color: var(--faint)">2 threads</span>
+                </div>
+              </div>
+              <div class="sidebar-footer">
+                <span class="gear-btn"
+                  ><svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="2.3" stroke="currentColor" stroke-width="1.3" /></svg
+                ></span>
+              </div>
+            </div>
+            <div class="pane">
+              <div class="breadcrumb"><span class="title-crumb">New thread</span></div>
+              <div class="new-thread-body">
+                <div class="segmented">
+                  <span class="seg">Existing sandbox</span>
+                  <span class="seg active">New sandbox</span>
+                </div>
+                <div class="new-sandbox-form">
+                  <span class="form-section-label">Sandbox</span>
+                  <div class="field-row">
+                    <div class="field">
+                      <label>Preset</label>
+                      <div class="picker">
+                        public-coder
+                        <svg viewBox="0 0 12 12" fill="none">
+                          <path
+                            d="M3 4.5 6 7.5 9 4.5"
+                            stroke="currentColor"
+                            stroke-width="1.4"
+                            stroke-linecap="round"
+                          />
+                        </svg>
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label>Name</label>
+                      <div class="text-field">investigate-ci</div>
+                    </div>
+                    <div class="field">
+                      <label>Policies</label>
+                      <div class="text-field">github, docs-site</div>
+                    </div>
+                  </div>
+                  <span class="form-section-label">Thread</span>
+                  <div class="field-row">
+                    <div class="field">
+                      <label>Harness</label>
+                      <div class="text-field">claude</div>
+                      <span class="hint">Picking a harness updates the model/reasoning options below</span>
+                    </div>
+                  </div>
+                </div>
+                <details class="advanced">
+                  <summary>
+                    <span class="chev"
+                      ><svg viewBox="0 0 12 12" fill="none">
+                        <path
+                          d="M3 2.5 8 6l-5 3.5"
+                          stroke="currentColor"
+                          stroke-width="1.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        /></svg></span
+                    >Advanced
+                  </summary>
+                  <div class="advanced-body">
+                    <label style="font-size: 11px; font-weight: 600; color: var(--muted)">System prompt</label>
+                    <div class="system-prompt-input">Inherited from public-coder — override for this thread only…</div>
+                  </div>
+                </details>
+                <div class="new-thread-input filled">Look into why the flaky CI job fails on prod-x7f2.</div>
+                <div class="composer-row">
+                  <div class="cluster">
+                    <span class="dot gray" title="Not yet attached"></span>
+                    <span class="picker">
+                      claude-sonnet-5
+                      <svg viewBox="0 0 12 12" fill="none">
+                        <path d="M3 4.5 6 7.5 9 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                      </svg>
+                    </span>
+                    <span class="picker">
+                      Reasoning: medium
+                      <svg viewBox="0 0 12 12" fill="none">
+                        <path d="M3 4.5 6 7.5 9 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                      </svg>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <p class="composer-stub" style="margin: 0 16px 16px">
+                Enter creates the sandbox, then starts the thread, Ctrl+Enter for a new line
+              </p>
+            </div>
+          </div>
+        </div>
+        <p class="section-note">
+          Same Sandbox fields as <code>sandboxes.tsx</code>'s existing "New sandbox" form (preset, name, policies,
+          action policy sets — preset pre-fills, every field stays editable), minus model/reasoning effort/standing
+          instructions: those move to the composer-row and its "Advanced" disclosure below, the same controls an
+          already-open thread uses, rather than a separate one-off set of dropdowns that would need its own sync logic
+          with the real composer the moment the thread exists. Harness stays in the form because it decides which models
+          and reasoning efforts the composer-row below even offers.
+        </p>
+      </section>
+
+      <section>
+        <h2>State C — submitted: provisioning, composer holds the queued turn</h2>
+        <div class="stage">
+          <div class="device">
+            <div class="sidebar">
+              <div class="sidebar-header">
+                Threads
+                <span class="new-thread-btn" title="New thread">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  </svg>
+                </span>
+              </div>
+              <div class="sidebar-body">
+                <div class="group-label">
+                  <span class="state-icon pending" title="Provisioning"
+                    ><svg viewBox="0 0 12 12" fill="none">
+                      <circle
+                        cx="6"
+                        cy="6"
+                        r="4.4"
+                        stroke="currentColor"
+                        stroke-width="1.3"
+                        stroke-dasharray="4 3"
+                      /></svg
+                  ></span>
+                  investigate-ci
+                  <span style="margin-left: auto; font-size: 11px; color: var(--faint)">provisioning…</span>
+                </div>
+                <div class="group-label">
+                  <span class="state-icon running" title="Running"
+                    ><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2.2v7.6l6-3.8-6-3.8Z" /></svg
+                  ></span>
+                  demo-a1b2
+                  <span style="margin-left: auto; font-size: 11px; color: var(--faint)">2 threads</span>
+                </div>
+              </div>
+              <div class="sidebar-footer">
+                <span class="gear-btn"
+                  ><svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="2.3" stroke="currentColor" stroke-width="1.3" /></svg
+                ></span>
+              </div>
+            </div>
+            <div class="pane">
+              <div class="breadcrumb">
+                <span class="sandbox-crumb">investigate-ci</span><span class="sep">/</span
+                ><span class="title-crumb">New thread</span>
+              </div>
+              <div class="pane-body">
+                <div class="bubble-stub pending">Look into why the flaky CI job fails on prod-x7f2.</div>
+              </div>
+              <div style="margin: 0 16px 16px">
+                <div class="status-stack">
+                  <div class="status-line done">
+                    <span class="mark"
+                      ><svg viewBox="0 0 12 12" fill="none">
+                        <path
+                          d="M2.5 6.2 5 8.7l4.5-5"
+                          stroke="currentColor"
+                          stroke-width="1.6"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        /></svg></span
+                    >Sandbox created
+                  </div>
+                  <div class="status-line active">
+                    <span class="mark"
+                      ><svg viewBox="0 0 12 12" fill="none">
+                        <circle
+                          cx="6"
+                          cy="6"
+                          r="4.4"
+                          stroke="currentColor"
+                          stroke-width="1.4"
+                          stroke-dasharray="5 4"
+                        /></svg></span
+                    >Waiting for pod…
+                  </div>
+                  <div class="status-line pending"><span class="mark">·</span>Starting thread</div>
+                </div>
+              </div>
+              <div class="new-thread-input" style="margin: 0 16px 16px">Describe what you want done…</div>
+              <div class="composer-row">
+                <div class="cluster">
+                  <span class="dot warn" title="Provisioning"></span>
+                  <span class="picker">
+                    claude-sonnet-5
+                    <svg viewBox="0 0 12 12" fill="none">
+                      <path d="M3 4.5 6 7.5 9 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                    </svg>
+                  </span>
+                  <span class="picker">
+                    Reasoning: medium
+                    <svg viewBox="0 0 12 12" fill="none">
+                      <path d="M3 4.5 6 7.5 9 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                    </svg>
+                  </span>
+                </div>
+              </div>
+              <p class="composer-stub" style="margin: 0 16px 16px">
+                Enter is queued, not sent, until the thread starts — Ctrl+Enter for a new line
+              </p>
+            </div>
+          </div>
+        </div>
+        <p class="section-note">
+          The just-submitted draft becomes the first bubble immediately, in the exact spot it'll occupy once the thread
+          is real — dimmed to read as "sent, not yet delivered" rather than disappearing into a spinner. Below it, a
+          status stack narrates the sequence instead of one opaque "Creating…" label, because each step (Sandbox object
+          created → Pod ready → session opened) is a real wait with its own failure mode worth surfacing separately. The
+          composer itself stays fully usable — the operator can keep typing ahead — only <em>submitting</em> is held
+          until the thread exists; there's nothing to disable visually, just an Enter that's a no-op for now.
+        </p>
+      </section>
+
+      <section>
+        <h2>State D — bound: the new thread is live</h2>
+        <div class="stage">
+          <div class="device">
+            <div class="sidebar">
+              <div class="sidebar-header">
+                Threads
+                <span class="new-thread-btn" title="New thread">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  </svg>
+                </span>
+              </div>
+              <div class="sidebar-body">
+                <div class="group-label">
+                  <span class="state-icon running" title="Running"
+                    ><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2.2v7.6l6-3.8-6-3.8Z" /></svg
+                  ></span>
+                  investigate-ci
+                  <span style="margin-left: auto; font-size: 11px; color: var(--faint)">1 thread</span>
+                </div>
+                <div class="row current">
+                  <span class="dot ok"></span><span class="name">Look into why the flaky CI job fails…</span>
+                </div>
+                <div class="group-label">
+                  <span class="state-icon running" title="Running"
+                    ><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2.2v7.6l6-3.8-6-3.8Z" /></svg
+                  ></span>
+                  demo-a1b2
+                  <span style="margin-left: auto; font-size: 11px; color: var(--faint)">2 threads</span>
+                </div>
+              </div>
+              <div class="sidebar-footer">
+                <span class="gear-btn"
+                  ><svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="2.3" stroke="currentColor" stroke-width="1.3" /></svg
+                ></span>
+              </div>
+            </div>
+            <div class="pane">
+              <div class="breadcrumb">
+                <span class="sandbox-crumb">investigate-ci</span><span class="sep">/</span
+                ><span class="title-crumb">Look into why the flaky CI job fails…</span>
+              </div>
+              <div class="pane-body">
+                <div class="bubble-stub">Look into why the flaky CI job fails on prod-x7f2.</div>
+                <div class="reply-stub">Checking the last ten runs of that job…</div>
+              </div>
+              <div class="new-thread-input" style="margin: 0 16px 16px">Enter sends, Ctrl+Enter for a new line</div>
+              <div class="composer-row">
+                <div class="cluster">
+                  <span class="dot ok" title="Attached · Harness running"></span>
+                  <span class="picker">
+                    claude-sonnet-5
+                    <svg viewBox="0 0 12 12" fill="none">
+                      <path d="M3 4.5 6 7.5 9 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                    </svg>
+                  </span>
+                  <span class="picker">
+                    Reasoning: medium
+                    <svg viewBox="0 0 12 12" fill="none">
+                      <path d="M3 4.5 6 7.5 9 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                    </svg>
+                  </span>
+                </div>
+                <div class="cluster">
+                  <span class="composer-icon-btn" title="More">
+                    <svg viewBox="0 0 16 16" fill="none">
+                      <circle cx="8" cy="3.2" r="1.3" fill="currentColor" />
+                      <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+                      <circle cx="8" cy="12.8" r="1.3" fill="currentColor" />
+                    </svg>
+                  </span>
+                  <span class="composer-icon-btn" title="Interrupt">
+                    <svg viewBox="0 0 16 16" fill="none">
+                      <rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" />
+                    </svg>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="section-note">
+          Same DOM subtree that was showing the target picker a moment ago now shows the real transcript — the picker
+          area and status stack unmount, the transcript/composer mount in their place, and the sidebar gains the new
+          thread row and highlights it as current. The composer-row gains the kebab menu and interrupt button (nothing
+          to interrupt or configure before a harness exists) but keeps the same model and reasoning-effort pickers
+          already visible in States A–C, now live: <code>REASONING_EFFORT_RUNTIME</code> means picking a new value here
+          mid-thread behaves exactly like the model picker already does. The URL was already
+          <code>/sandboxes/investigate-ci/sessions/&lt;id&gt;</code>
+          from the moment the submission was made (see Behavior notes below) — this transition is a local live-stream
+          state change, not a navigation. Reloading at any point, including mid-provision, lands back on this same URL
+          and the same live stream, picking up wherever provisioning has gotten to.
+        </p>
+      </section>
+
+      <section>
+        <h2>State machine</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>State</th>
+                <th>Picker area</th>
+                <th>Composer</th>
+                <th>Sidebar</th>
+                <th>URL</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="element">Picking (A/B)</td>
+                <td class="muted">Segmented control + Sandbox picker or new-sandbox form</td>
+                <td class="muted">
+                  Enabled, empty or draft; composer-row's dot is gray ("not yet attached"), model/reasoning options
+                  follow the picked Sandbox or Harness
+                </td>
+                <td class="muted">"+" highlighted active, no new row</td>
+                <td class="muted">unscoped: none changed · pre-scoped: that Sandbox's page</td>
+              </tr>
+              <tr>
+                <td class="element">Provisioning (C)</td>
+                <td class="muted">Status stack (Sandbox created → Pod ready → Thread starting), server-driven</td>
+                <td class="muted">
+                  Fully usable, draft shown as a pending bubble above it; Enter is a no-op until the thread exists —
+                  nothing is grayed out, there's simply nothing to send yet
+                </td>
+                <td class="muted">New group appears, "provisioning" state icon, no thread row yet</td>
+                <td class="muted">
+                  already the real thread URL — minted client-side on submit, before anything exists server-side
+                </td>
+              </tr>
+              <tr>
+                <td class="element">Bound (D)</td>
+                <td class="muted">Gone — real transcript in its place</td>
+                <td class="muted">Enabled, normal composer; composer-row gains the kebab menu and interrupt button</td>
+                <td class="muted">New thread row, marked current</td>
+                <td class="muted">unchanged — same URL as Provisioning, just further along the same live stream</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>Behavior notes</h2>
+        <ul class="notes">
+          <li>
+            <b>One composer component, three call sites.</b> The sidebar's unscoped "+"
+            (<code>UISHELL_NEWTHREAD_LANDING</code>), a Sandbox page's pre-scoped "+ New thread"
+            (<code>UISHELL_NEWTHREAD_SANDBOX</code>), and an already-bound open thread (<code>session.tsx</code>) render
+            the same component in three states, not three components — a pre-scoped entry starts in State A/B with the
+            segmented control and Sandbox picker hidden and that Sandbox already fixed, exactly the "no sandbox/preset
+            picker" card already sketched in <code>app_shell.html</code>.
+          </li>
+          <li>
+            <b>Provisioning has to be server-owned, not client-sequenced.</b> Closing the browser right after pressing
+            Enter must still leave a thread that shows up running when reopened later — so "wait for the pod, then open
+            the session, then send the first turn" cannot live in a <code>useEffect</code> watching the live stream; it
+            has to run durably on the server, independent of any client connection. <code>openSession</code>'s own
+            reachability check (<code>bridge.py</code>'s <code>runner_address</code>) already requires
+            <code>state === "running"</code> with a pod IP — today nothing but the frontend performs that wait, which is
+            exactly the gap. A server-side worker (naturally an extension of <code>bridge.py</code>'s existing
+            per-sandbox watch, since it already observes each sandbox becoming reachable) needs to own opening the
+            session and sending the first turn once the pod is up. This is a real backend change, not a frontend-only
+            feature — see <code>NEWTHREAD_DURABLE</code> in <code>../task_dag.md</code>.
+          </li>
+          <li>
+            <b>The client mints the session id up front</b> (same pattern <code>sandbox_page.tsx</code>'s
+            <code>createSession</code> already uses — <code>s-${crypto.randomUUID()}</code>) and gets back a stable URL
+            to bind to immediately on submit, before the sandbox or session exist yet — not deferred to State D.
+            Reopening that URL later, from any device, reconnects to the same live stream and shows the same in-progress
+            or by-then-completed thread; there is no separate "in-flight submission" state that a reload can lose.
+          </li>
+          <li>
+            <b>The draft is captured optimistically on Enter</b>, before any network call — so it survives as the
+            pending bubble even if the very first request (creating the Sandbox) fails; a failure surfaces inline in the
+            status stack (replacing the failed step with an error line and a Retry), and the draft stays intact for the
+            operator to retry rather than needing to be retyped.
+          </li>
+          <li>
+            <b>The composer is never disabled, only submission is.</b> While provisioning (State C), the operator can
+            keep typing — there's no reason to lock the text field just because sending is pointless until the thread
+            exists. Enter simply does nothing until then; nothing needs to look grayed out.
+          </li>
+          <li>
+            <b>Model and reasoning effort are the composer-row's controls, not a second form.</b> Both already read
+            state (model) or will (reasoning effort — see <code>REASONING_EFFORT_RUNTIME</code> in
+            <code>../task_dag.md</code>) that's editable after a thread exists; States A–C show that same control before
+            one does, pre-filled from the picked Sandbox's current session (existing-sandbox path) or the chosen Harness
+            (new-sandbox path). There's deliberately no separate "Model"/"Reasoning effort" field in either the Sandbox
+            picker or the new-sandbox form — that would be a second source of truth to keep in sync with the real
+            composer-row the moment the thread binds.
+          </li>
+          <li>
+            <b>Open question, not decided here: should the existing-Sandbox picker allow picking a suspended one?</b>
+            If so, submitting would need to resume it first — the same provisioning status stack as State C, just
+            starting from a "Resuming sandbox…" step instead of "Sandbox created". Left for later.
+          </li>
+        </ul>
+      </section>
+
+      <footer>
+        Mock for <code>x/agentplane/plans/task_dag.md</code>'s <code>UISHELL_NEWTHREAD_LANDING</code>,
+        <code>UISHELL_NEWTHREAD_SANDBOX</code>, and <code>NEWTHREAD_DURABLE</code>; the composer-row's reasoning-effort
+        picker previews <code>REASONING_EFFORT_RUNTIME</code> · not wired to real state
+      </footer>
+    </main>
+  </body>
+</html>
