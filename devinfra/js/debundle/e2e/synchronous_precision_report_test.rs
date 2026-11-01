@@ -248,25 +248,59 @@ fn skipped_local_mutations_invalidate_reads_in_the_same_statement() {
 #[test]
 fn opaque_body_does_not_cache_property_values_before_its_skipped_code() {
     let fixture = run_fixture(FixtureOpts::new(
-        r#"function change(value) { value.name = { toString() { return 'changed'; } }; }
+        r#"function change(value) { value.name = { get current() { return state; }, toString() { return 'changed'; } }; }
 function read(record) {
   const selected = (change(...[record]), record.name);
   return selected;
 }
+
 const value = read({ name: 'original' });
+const observed = value.current;
+var state = 'late';
 const coerced = { [value]: true };
-console.log(Object.keys(coerced)[0]);
+console.log(observed, Object.keys(coerced)[0]);
 "#,
         vec![],
     ));
-    assert_preserved_entry_output(&fixture, "changed\n");
+    assert_preserved_entry_output(&fixture, "undefined changed\n");
+    assert_reason(
+        &execution(&fixture, "observed"),
+        serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
+    );
     let graph = fixture.dependency_graph();
+    let observed = source_unit_for_binding(&graph, "observed");
+    let state = source_unit_for_binding(&graph, "state");
+    assert!(graph.edges.iter().any(|edge| {
+        edge.source == observed && edge.target == state && edge.constrains_init_order
+    }));
     let coerced = source_unit_for_binding(&graph, "coerced");
     let node = graph.nodes.iter().find(|node| node.id == coerced).unwrap();
     assert_eq!(
         serde_json::to_value(node).unwrap()["purity"]["kind"],
         "not_pure"
     );
+}
+
+#[test]
+fn skipped_operation_events_preserve_same_owner_getter_effects() {
+    for source in [
+        "const record = { name: 'original' };\nfunction tag(_, value) { Object.defineProperty(value, 'name', { get() { return state; } }); }\nconst selected = (tag`${record}`, record.name);\nvar state = 'changed';\nconsole.log(selected);\n",
+        "const record = { name: 'original' };\nconst trigger = { get value() { return 0; }, set value(_) { Object.defineProperty(record, 'name', { get() { return state; } }); } };\nconst selected = (trigger.value++, record.name);\nvar state = 'changed';\nconsole.log(selected);\n",
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output(&fixture, "undefined\n");
+        let report = execution(&fixture, "selected");
+        assert_reason(
+            &report,
+            serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
+        );
+        let graph = fixture.dependency_graph();
+        let selected = source_unit_for_binding(&graph, "selected");
+        let state = source_unit_for_binding(&graph, "state");
+        assert!(graph.edges.iter().any(|edge| {
+            edge.source == selected && edge.target == state && edge.constrains_init_order
+        }));
+    }
 }
 
 #[test]
@@ -1071,5 +1105,59 @@ fn untracked_identity_paths_keep_prototype_absence_conservative() {
                     && mutation["properties"].is_null()),
             "{capability}: {report}"
         );
+    }
+}
+
+#[test]
+fn silent_primitive_push_invalidates_contents_without_inventing_a_getter() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const record = [0];\nconst first = record.push(1);\nconst second = record.push(2);\nconst copied = record.map(value => value);\nconst snapshot = Object.getOwnPropertyDescriptors(record);\nconsole.log(copied.join(','), snapshot.length.value);\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "0,1,2 3\n");
+    for binding in ["first", "second"] {
+        assert_eq!(execution(&fixture, binding)["complete"], true, "{binding}");
+    }
+    for binding in ["copied", "snapshot"] {
+        assert_eq!(execution(&fixture, binding)["complete"], false, "{binding}");
+    }
+}
+
+#[test]
+fn local_method_receiver_precision_excludes_implicit_captures() {
+    for body in [
+        "this.name = 'changed';",
+        "const change = () => { this.name = 'changed'; }; return change;",
+    ] {
+        let source = format!(
+            "const record = {{ name: 'original', change() {{ {body} }} }};\nconst returned = record.change();\nif (returned) returned();\nconst selected = record.name;\nconsole.log(selected);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "changed\n");
+        assert_reason(
+            &execution(&fixture, "selected"),
+            serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
+        );
+    }
+}
+
+#[test]
+fn external_root_getter_keeps_published_source_callbacks_at_the_read() {
+    for source in [
+        "globalThis.syntheticHost = { get read() { return state; } };\nconst observed = syntheticHost.read;\nvar state = 'late';\nconsole.log(observed);\ndelete globalThis.syntheticHost;\n",
+        "globalThis.syntheticHost = {};\nObject.defineProperty(globalThis.syntheticHost, 'read', { get() { return state; } });\nconst observed = syntheticHost.read;\nvar state = 'late';\nconsole.log(observed);\ndelete globalThis.syntheticHost;\n",
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output(&fixture, "undefined\n");
+        assert_reason(
+            &execution(&fixture, "observed"),
+            serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
+        );
+        let graph = fixture.dependency_graph();
+        let observed = source_unit_for_binding(&graph, "observed");
+        let state = source_unit_for_binding(&graph, "state");
+        assert!(graph.edges.iter().any(|edge| {
+            edge.source == observed && edge.target == state && edge.constrains_init_order
+        }));
     }
 }

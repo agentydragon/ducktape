@@ -823,6 +823,33 @@ pub fn data_property(global: &str, name: &str) -> Option<&'static DataProperty> 
         .find(|property| property.global == global && property.name == name)
 }
 
+/// A known non-accessor own slot, without supplying its value or a fresh
+/// identity. Constructor prototype properties are data properties even though
+/// their mutable object values have no entry in `PropertyValue`.
+pub fn own_data_property_name(global: &str, name: &str) -> Option<&'static str> {
+    data_property(global, name)
+        .map(|property| property.name)
+        .or_else(|| {
+            (name == "prototype"
+                && matches!(
+                    global,
+                    "Error"
+                        | "Function"
+                        | "Object"
+                        | "Array"
+                        | "RegExp"
+                        | "Symbol"
+                        | "Promise"
+                        | "Map"
+                        | "Set"
+                        | "WeakMap"
+                        | "WeakSet"
+                        | "FinalizationRegistry"
+                ))
+            .then_some("prototype")
+        })
+}
+
 /// Every global binding a row or data property names. A source binding of
 /// one of these names shadows the intrinsic.
 pub static GLOBALS: LazyLock<BTreeSet<&'static str>> = LazyLock::new(|| {

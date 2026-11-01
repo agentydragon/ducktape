@@ -1084,6 +1084,7 @@ enum CallKind {
     ObjectSpread,
     LocalMemberRead,
     AccessorCalleeLookup,
+    OpaqueExecution,
     InProtocol,
     InstanceOfProtocol,
     DeepDestructuringProtocol,
@@ -10345,7 +10346,13 @@ impl Visit for ExecutionIndex {
 
     fn visit_with_stmt(&mut self, statement: &WithStmt) {
         self.dynamic_scope_owners.insert(self.owner);
-        statement.visit_children_with(self);
+        statement.obj.visit_with(self);
+        self.record_source_protocol(
+            CallKind::OpaqueExecution,
+            ValueExpr::from_expr(&statement.obj),
+            statement.span,
+        );
+        statement.body.visit_with(self);
         self.mark_opaque();
     }
 
@@ -11745,6 +11752,11 @@ impl Visit for ExecutionIndex {
             ));
             self.mark_dynamic_property_effect(Some(&member.obj));
         }
+        self.record_source_protocol(
+            CallKind::OpaqueExecution,
+            ValueExpr::from_expr(&expression.arg),
+            expression.span,
+        );
         self.mark_opaque();
     }
 
@@ -12099,6 +12111,7 @@ impl Visit for ExecutionIndex {
                     }),
             });
         } else {
+            self.record_source_protocol(CallKind::OpaqueExecution, ValueExpr::Unknown, call.span);
             self.mark_opaque();
         }
     }
@@ -12116,6 +12129,21 @@ impl Visit for ExecutionIndex {
             expression.visit_with(self);
         }
         template.type_params.visit_with(self);
+        self.record_source_protocol(
+            CallKind::OpaqueExecution,
+            ValueExpr::Alternatives(
+                std::iter::once(ValueExpr::from_expr(&template.tag))
+                    .chain(
+                        template
+                            .tpl
+                            .exprs
+                            .iter()
+                            .map(|expr| ValueExpr::from_expr(expr)),
+                    )
+                    .collect(),
+            ),
+            template.span,
+        );
         self.mark_opaque();
     }
 

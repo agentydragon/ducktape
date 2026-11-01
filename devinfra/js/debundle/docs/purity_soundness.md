@@ -750,14 +750,19 @@ descriptor and prototype proofs, and dense-array admission.
 Adding unsettled objects advances the prefix revision so invocation memos cannot
 reuse an earlier property proof.
 
-Invalidation also occurs inside one source statement or callable body: an
-incomplete call invalidates its reached values before the next flattened
-operation. An opaque owner or body invalidates its read roots before execution,
-because unsupported syntax such as a tagged call may have no separate transfer
-event. This can conservatively invalidate a read that precedes that syntax.
+Invalidation also occurs inside one source statement or callable body: a
+transfer that skips effects invalidates its reached values before the next
+flattened operation. Earlier incompleteness stays in the cumulative outcome,
+but does not make a later modeled transfer invalidate its inputs. The canonical
+index retains explicit opaque-operation events for tagged invocation, update,
+`with` scope entry and unsupported callee forms. These events invalidate the
+operand, environment and owner-read roots at the skipped operation. Optional
+calls and spread calls/constructions retain their existing typed transfers;
+their owner opacity flags alone do not prove an earlier skipped mutation.
 
-A later property read returns Top and records a global `member_read` precision
-loss. It also promotes possible getter effects from available source owners and
+A later read from an unsettled or tainted object, or an unknown receiver,
+returns Top and records a global `member_read` precision loss. It also promotes
+possible getter effects from available source owners and
 retained callbacks at that read, including a method's callee lookup. Promoted
 rebinds and reached objects invalidate state before the next operation. Merely
 returning Top would miss a getter's synchronous effects: skipped code can call
@@ -765,6 +770,39 @@ returning Top would miss a getter's synchronous effects: skipped code can call
 every intrinsic identity. Neither A11 nor `intrinsics_never_written` forbids
 those ordinary-object mutations. `no_accessor_install_callables` covers selected
 computed calls only, so it supplies no general exemption here.
+
+For a still-settled receiver with a known but unsupported member, its retained
+member and applied getter capabilities supply the effects before the receiver
+is tainted. Losing precision on that read does not by itself prove an arbitrary
+getter was installed beforehand. Exact member values are unavailable after
+taint; this effect capture does not exempt them from the settlement check.
+
+Local initializers are currently pre-evaluated to retain capabilities. At a
+skipped operation, their aliases retain those capabilities and gain Top; an old
+primitive value cannot certify a later read after skipped code replaced it with
+a getter-bearing object. Cumulative outcome completeness preserves earlier
+losses while each operation's own completeness controls this invalidation.
+
+A proven silent primitive array `push` has a narrower successor: contents become
+unknown, while its accessor and prototype behavior remains settled. Exact index,
+length, enumeration and descriptor snapshots and dense iteration are refused;
+later primitive pushes can still use their separate callback-silence proof.
+This state is monotone and advances the prefix revision only when first added,
+so repeated abstract evaluation cannot append fictitious exact slots.
+
+The implicit receiver of a known local method need not be tainted when its
+canonical callable has no calls, opacity, generator behavior or `arguments`
+access, and no callable in its source owner captures `this` or a meta property.
+This narrow proof concerns only that unused input capability. Ordinary explicit
+binding effects still execute; any implicit capture retains receiver taint.
+
+A direct unshadowed, undeclared and unreassigned global root can reenter through
+the tracked exported/escaped callback pool without acquiring arbitrary private
+getter owners. This narrower reach applies only before uncertain execution,
+without dynamic scope or a concrete ordinary-object receiver. Any actual
+incomplete transfer widens the execution state and disables the exemption.
+Local and derived Top values retain the broad fallback: skipped code can have
+created a private getter-bearing graph whose identity was lost.
 
 This settlement model covers the interpreter's `Alloc(Object)` values. Native
 Sets, classes and instances retain their separate taint and exposure models;
