@@ -381,14 +381,15 @@ flowchart TD
     HISTORY_SANDBOX_RECORD[Unscheduled: History's Sandbox record and history tags]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
     HISTORY_SANDBOX_ASSOCIATION_SOURCE[Unscheduled: an authoritative Sandbox UID source for History]
-    SESSION_OPEN_UID_FENCE[In review: UID-fenced opening]
     SESSION_PLATFORM_GUIDANCE[In review: default platform guidance]
-    SESSION_CALLER_AUTHORITY[In flight: trusted same-SA authority]
+    SESSION_CALLER_AUTHORITY[In review: trusted same-SA authority]
+    SESSION_CALLER_WAKE_POLICY[Decision: wake authority for same-SA calls]
     SESSION_PRINCIPAL_READS[Retained same-principal History reads]
-    SESSION_TARGET_DISCOVERY[Ready: existing target discovery]
-    SESSION_DELEGATION_TOOLS[In flight: CLI, remaining MCP delegation tools]
-    SESSION_DELEGATION_TRANSPORT[Ready: workload proxy route for Session calls]
-    ACTION_CALLER_UID[Deferred: retain approved caller UID]
+    SESSION_TARGET_DISCOVERY[In flight: existing target discovery]
+    SESSION_DELEGATION_TOOLS[CLI in review, remaining MCP delegation tools]
+    SESSION_DELEGATION_TRANSPORT[In flight: workload proxy route for Session calls]
+    DELEGATED_AUTHORIZATION[Approved: shared delegated authorization]
+    ACTION_CALLER_UID[Required for caller-delegating Actions: retain caller UID]
     ENVIRONMENT_SHARED_ACCOUNT[Deferred: shared-SA environment identity]
     ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN[Later decision: catalogue ownership and location]
     ENVIRONMENT_MANAGEMENT[Deferred: environment catalogue and creation]
@@ -398,7 +399,6 @@ flowchart TD
     MULTIAGENT_MODEL --> AGENT_LAUNCH_POLICY_DESIGN
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
     HISTORY_SANDBOX_RECORD --> THREAD_READ_POLICY
-    SESSION_OPEN_UID_FENCE --> THREAD_CREATE_AUTHORIZATION
     SESSION_PLATFORM_GUIDANCE --> THREAD_CREATE_AUTHORIZATION
     SESSION_CALLER_AUTHORITY --> SESSION_PRINCIPAL_READS
     SESSION_CALLER_AUTHORITY --> THREAD_CREATE_AUTHORIZATION
@@ -406,6 +406,8 @@ flowchart TD
     SESSION_TARGET_DISCOVERY --> THREAD_CREATE_AUTHORIZATION
     SESSION_DELEGATION_TOOLS --> THREAD_CREATE_AUTHORIZATION
     SESSION_DELEGATION_TRANSPORT --> THREAD_CREATE_AUTHORIZATION
+    DELEGATED_AUTHORIZATION -.->|if Action adapters selected| SESSION_DELEGATION_TOOLS
+    ACTION_CALLER_UID -.->|if Action adapters selected| SESSION_DELEGATION_TOOLS
     ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN --> ENVIRONMENT_MANAGEMENT
     ACTION_CALLER_UID --> ENVIRONMENT_MANAGEMENT
     ENVIRONMENT_SHARED_ACCOUNT --> ENVIRONMENT_MANAGEMENT
@@ -514,15 +516,6 @@ start against the approved contracts while enforcing backends are built in paral
 caller exposure waits for those checks. A real data/protocol prerequisite still gates work that
 cannot be specified until it exists. File conflicts alone do not serialize independent PRs.
 
-### `SESSION_OPEN_UID_FENCE` — UID-fence Dispatcher opening
-
-**In review, [#13383](https://github.com/agentydragon/ducktape/pull/13383),
-`/root/delegation_open_uid`, 2026-10-31.** Require the expected Sandbox UID in the
-existing `OpenSession` RPC, enforce it at backend admission and preserve it in deduplication.
-Update every caller and the contract together. The rollout/rollback description must state the
-mixed-version behavior; existing running Sessions are not opening calls. This does not itself
-open the Dispatcher to normal callers.
-
 ### `SESSION_PLATFORM_GUIDANCE` — platform guidance independent of presets
 
 **In review, [#13384](https://github.com/agentydragon/ducktape/pull/13384),
@@ -535,7 +528,8 @@ base prompts. Opening/setup does not manufacture a first input or model turn.
 
 ### `SESSION_CALLER_AUTHORITY` — same-SA admission and immutable Session authority
 
-**In flight, `/root/delegation_dispatcher_authority`, 2026-10-31.** Admit workload and explicitly account-scoped
+**In review, [#13390](https://github.com/agentydragon/ducktape/pull/13390),
+`/root/delegation_dispatcher_authority`, 2026-10-31.** Admit workload and explicitly account-scoped
 external callers through the shared authentication machinery. Normal access uses any verified
 SA in the configured served namespaces, without another per-SA caller allowlist. Privileged
 backend bypass still requires its explicit allowed Pod-bound service identity. At opening, verify the target's
@@ -544,6 +538,16 @@ creator labels and target identity. Enforce it on commands, lookup, list/watch, 
 and turn-specific interruption. Keep explicit privileged backend/broker paths distinct.
 Unassociated existing records require an explicit trusted association before normal caller access;
 do not infer ownership by name, from a replacement SA or from a parent edge.
+
+### `SESSION_CALLER_WAKE_POLICY` — wake authorization for same-SA Session calls
+
+**Decision under stakeholder review, 2026-10-31; no wake-policy change dispatched.** The existing
+`wake_callers` setting admits backend SAs separately from a target's `wakeOnSend` flag. A newly
+admitted normal caller can enqueue work for its suspended target without causing it to resume.
+Select whether exact same-SA callers should also wake their own opted-in target (recommended),
+preserving the explicit backend/broker path, or retain the allowlist and document the need for
+another actor to resume it. The current question awaits clarification/selection. Ready-target
+discovery, proxy wiring and Session authorization proceed independently of this choice.
 
 ### `SESSION_PRINCIPAL_READS` — narrow retained same-principal History access
 
@@ -555,7 +559,9 @@ live Sandbox. This approved slice does not wait for held broader cross-SA archiv
 
 ### `SESSION_TARGET_DISCOVERY` — discover usable existing environments
 
-**Ready; selected P1.** Expose bounded same-SA UID-filtered list/get descriptors from Sandbox
+**In flight, `/root/delegation_target_discovery`, operator dispatch 2026-10-31.** Implement as
+an independent PR, with an early review of API ownership, authentication and runtime/configuration
+sources before broad changes. Expose bounded same-SA UID-filtered list/get descriptors from Sandbox
 inventory and runtime/configuration owners: full target handle, freshness/readiness, useful paths,
 instructions and offered harness/model/effort values. No new `cwd_policy` API; use existing backend
 path validation. Extract shared config from app-owned defaults; no backend app call. Discovery
@@ -563,9 +569,10 @@ and admission remain separate checks, with same-name/UID replacement refused.
 
 ### `SESSION_DELEGATION_TOOLS` — usable Session CLI/MCP operations
 
-**In flight, `/root/delegation_session_cli`, 2026-10-31:** direct Dispatcher CLI commands,
-stacked on #13383. MCP and compact History/result projection remain to dispatch; full workflow
-exposure waits for backend enforcement.
+**CLI in review, [#13386](https://github.com/agentydragon/ducktape/pull/13386),
+`/root/delegation_session_cli`, 2026-10-31:** direct Dispatcher commands against `devel`, following
+the merged UID contract. MCP and compact History/result projection remain to dispatch; full
+workflow exposure waits for backend enforcement.
 Expose open, submit, get, command-correlated observe, retained turn reads, queued cancel and exact
 turn interruption. Existing direct Dispatcher gRPC mappings and CLI support should land now where
 simple. Extract neutral result projections, preserving source, lag/gaps, partial facts/errors,
@@ -575,7 +582,7 @@ instructions/tool descriptions and executable workflows rather than depending on
 
 ### `SESSION_DELEGATION_TRANSPORT` — workload Session calls through the existing proxy
 
-**Ready; source audit, `/root/delegation_dispatcher_authority`, 2026-10-31.** Reuse the
+**In flight, `/root/delegation_proxy_wiring`, operator dispatch 2026-10-31; independent PR.** Reuse the
 Actions CLI's `HTTPS_PROXY`/CONNECT path and inert bearer placeholder for Dispatcher gRPC.
 Project the configured Dispatcher-audience token into the egress sidecar only; extend the existing
 credential substitution, scoped service route and network policies as required. Publish matching
@@ -609,9 +616,23 @@ tool call does not prove agent usability. Reuse existing work/PR evidence when d
 open another fix. Set the concrete schedule, model, credentials and notification destination before
 activation; activation is follow-up work after this planning review.
 
+### `DELEGATED_AUTHORIZATION` — shared actor/caller authorization protocol
+
+**Design approved by the operator, 2026-10-31; implementation not dispatched.** Implement the
+[shared contract](../docs/delegated_authorization.md) in the gRPC auth/client packages: distinct
+delegated authentication mode, typed caller/provenance envelope, per-method trusted actors and
+caller namespace scope, live UID checks, and separate actor/effective-caller contexts. Delegated
+calls always use normal caller authorization even if the actor has a privileged backend role.
+Older receivers must reject the scheme and clients must never downgrade. Preserve provenance in
+durable admissions and existing no-replay recovery. Acceptance covers the design's denial,
+replacement, revocation and mixed-version cases without requiring the app or a backend-to-Actions
+lookup. Shared implementation may proceed independently of caller UID persistence; caller-delegating
+Action exposure needs both. Direct CLI/MCP caller-authenticated work does not wait for either.
+
 ### `ACTION_CALLER_UID` — retain the caller identity through approval and execution
 
-**Deferred with fresh provisioning; also required if a selected retained Action adapter needs caller UID.**
+**Required before caller-delegating Action adapters execute; implementation not dispatched.**
+The [approved protocol](../docs/delegated_authorization.md) needs the durable verified caller identity.
 Direct Session gRPC/CLI work does not wait for this. Action authentication obtains a verified SA UID but currently
 retains only namespace/name in the request/worker caller. Persist the verified UID at admission
 and carry it through approval, receipt and execution payloads. An approved delayed creation must

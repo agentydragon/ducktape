@@ -37,6 +37,9 @@ the Runner's SQLite journal.
 Servicers, clients, auth, errors and server wiring follow [one pattern](docs/grpc_services.md).
 Service-to-service RPC uses native gRPC; browser HTTP and direct-client facades follow the
 [HTTP/gRPC boundary policy](docs/service_boundaries.md#http-and-grpc-boundaries).
+Design calls on behalf of another SA against the approved
+[delegated authorization contract](docs/delegated_authorization.md); keep actor and effective caller
+separate and reuse shared machinery instead of inventing forwarded-identity headers.
 
 ## System overview diagram
 

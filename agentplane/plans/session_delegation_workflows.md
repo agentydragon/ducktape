@@ -55,6 +55,13 @@ wait for a human Decision. An Action adapter's automatic execution must use
 the same verified caller and backend checks; an Action wrapper cannot substitute its own broader
 service authority.
 
+**Approved delegated-authorization protocol, 2026-10-31:** an Action adapter authenticates as
+Actions and carries the original caller's pinned SA identity in the shared
+[delegation envelope](../docs/delegated_authorization.md). The backend checks the actor's explicit
+permission to delegate and applies normal authorization to the effective caller, with no privileged
+fallback. Shared protocol implementation and durable Action caller UID retention precede exposure
+of such adapters; direct CLI/MCP caller-authenticated paths do not wait for them.
+
 The [tool reference](#tool-contract-derived-from-the-workflows) specifies the authorization and
 approval rule for every proposed operation.
 

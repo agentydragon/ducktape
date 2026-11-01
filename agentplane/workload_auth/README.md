@@ -25,3 +25,7 @@ the Go resolver has no default audience.
 
 Operator and browser-session authentication use separate mechanisms and do not produce a workload
 principal.
+
+The approved [delegated authorization design](../docs/delegated_authorization.md) specifies the
+shared extension for services calling on behalf of another SA. It is not implemented by the
+resolver or interceptors yet.
