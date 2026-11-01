@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -15,58 +15,6 @@ py_library(
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = ["@pypi//pydantic"],
-)
-
-py_library(
-    name = "kubernetes_views",
-    srcs = ["kubernetes_views.py"],
-    deps = [
-        "//agentplane:crd_group",
-        "//agentplane:sandbox_resource",
-        "//agentplane/proto:sandboxes_pb2",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
-    ],
-)
-
-py_library(
-    name = "reader",
-    srcs = ["reader.py"],
-    deps = [
-        ":errors",
-        ":kubernetes_views",
-        "//agentplane:sandbox_resource",
-        "//agentplane/proto:sandboxes_pb2",
-        "//util:kubernetes",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
-    ],
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    deps = ["//agentplane/testing:kubernetes_apiserver_fixtures"],
-)
-
-py_test(
-    name = "test_inventory",
-    srcs = ["test_inventory.py"],
-    deps = [
-        ":conftest",
-        ":errors",
-        "//:conftest",
-        "//agentplane:crd_group",
-        "//agentplane:sandbox_resource",
-        "//agentplane/proto:sandboxes_pb2",
-        "//agentplane/sandboxes/testing:kubernetes",
-        "//agentplane/testing:kubernetes_apiserver",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
 )
 
 py_library(

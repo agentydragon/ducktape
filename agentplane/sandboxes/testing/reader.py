@@ -9,7 +9,7 @@ from agentplane import sandbox_resource
 from agentplane.proto.sandboxes_pb2 import Sandbox, SandboxDestination
 from agentplane.sandbox_resource import read_sandbox
 from agentplane.sandboxes.errors import SandboxNotFoundError
-from agentplane.sandboxes.kubernetes_views import sandbox_view
+from agentplane.sandboxes.testing.kubernetes_views import sandbox_view
 from util.kubernetes import CustomObjectsClient
 
 

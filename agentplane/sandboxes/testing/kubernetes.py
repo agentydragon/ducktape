@@ -17,7 +17,7 @@ from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.sandboxes.launch import SandboxIdentity
-from agentplane.sandboxes.reader import SandboxReader
+from agentplane.sandboxes.testing.reader import SandboxReader
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.tls import runner_identity_uri

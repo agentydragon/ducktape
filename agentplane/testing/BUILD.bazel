@@ -120,6 +120,7 @@ py_library(
         "//agentplane/runner:__pkg__",
         "//agentplane/runner_gateway:__pkg__",
         "//agentplane/sandboxes:__pkg__",
+        "//agentplane/sandboxes/testing:__pkg__",
         "//agentplane/x/central_sampler:__pkg__",
         "//agentplane/x/runner_layering:__pkg__",
     ],

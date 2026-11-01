@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(
     default_testonly = True,
@@ -6,21 +6,73 @@ package(
 )
 
 py_library(
+    name = "kubernetes_views",
+    srcs = ["kubernetes_views.py"],
+    deps = [
+        "//agentplane:crd_group",
+        "//agentplane:sandbox_resource",
+        "//agentplane/proto:sandboxes_pb2",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "reader",
+    srcs = ["reader.py"],
+    deps = [
+        ":kubernetes_views",
+        "//agentplane:sandbox_resource",
+        "//agentplane/proto:sandboxes_pb2",
+        "//agentplane/sandboxes:errors",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = ["//agentplane/testing:kubernetes_apiserver_fixtures"],
+)
+
+py_library(
     name = "kubernetes",
     testonly = True,
     srcs = ["kubernetes.py"],
     deps = [
+        ":reader",
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
         "//agentplane:subjects",
         "//agentplane/proto:sandboxes_pb2",
         "//agentplane/sandboxes:launch",
-        "//agentplane/sandboxes:reader",
         "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:tls",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_inventory",
+    srcs = ["test_inventory.py"],
+    deps = [
+        ":conftest",
+        ":kubernetes",
+        "//:conftest",
+        "//agentplane:crd_group",
+        "//agentplane:sandbox_resource",
+        "//agentplane/proto:sandboxes_pb2",
+        "//agentplane/sandboxes:errors",
+        "//agentplane/testing:kubernetes_apiserver",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
