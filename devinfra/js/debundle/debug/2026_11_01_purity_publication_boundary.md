@@ -53,3 +53,25 @@ Final-value and default-export controls retain subsequent callback binding
 edges. Available roots for the remainder of the current owner's value
 evaluation retain their existing earlier join; only the completed prior-effect
 frontier moves to finalization.
+
+## Canonical comparison
+
+The reviewed publication patch `570404da73` was compared with its exact base
+`790219b482` on both canonical captures. Every dependency-edge array and edge
+multiset matched: Tana 1/1 chunks and Claude 75/75 chunks. No statements became
+pure or impure, and neither capture had a regressed or improved statement.
+
+| Capture |     Edges | Impure statements | Rejected chunks | Atomic conflicts |
+| ------- | --------: | ----------------: | --------------: | ---------------: |
+| Tana    | 2,351,286 |               907 |               1 |                1 |
+| Claude  | 3,384,785 |             3,555 |               6 |                5 |
+
+These are unchanged graph/verdict observations for that exact source pair.
+Tana base execution used the official project/analyze/run `--analysis` path;
+the candidate used one-shot `run`. Their resource timings are not comparable
+performance evidence. The failed ENOSPC attempt and immediate project-argument
+failure were excluded. Comparison artifacts are
+`purity-{tana,claude}-{comparison.md,edges.txt,regressions.txt}` in the cutover
+scratch directory; the orchestrator retains the valid capture and saved
+analysis. The later rebase preserves this patch's production changes and
+integrates the existing compressed graph reader in its e2e bug gate.
