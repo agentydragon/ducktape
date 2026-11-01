@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
-	"errors"
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/postgres"
@@ -102,47 +101,31 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]TerminalEv
 			}
 		}
 		if len(positions) > 0 {
-			rows, err := tx.QueryContext(ctx, `SELECT `+dispatchColumns+` FROM dispatch WHERE position=ANY($1) ORDER BY position`, pq.Array(positions))
+			rows, err := tx.QueryContext(ctx, `SELECT `+qualifiedDispatchColumns+`,
+				o.execution_account_namespace,o.execution_account_name,o.execution_account_uid
+				FROM dispatch d LEFT JOIN session_opening o ON o.session_id=d.session_id
+				AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
+				WHERE d.position=ANY($1) ORDER BY d.position`, pq.Array(positions))
 			if err != nil {
 				return err
 			}
-			var snapshots []*Dispatch
 			for rows.Next() {
-				row, err := scanDispatch(rows)
+				row, owner, err := scanDispatchWithOwner(rows)
 				if err != nil {
 					rows.Close()
 					return err
 				}
-				snapshots = append(snapshots, row)
+				snapshot, err := DescribeDispatch(row)
+				if err != nil {
+					rows.Close()
+					return err
+				}
+				events = append(events, TerminalEvent{ID: uuid.NewString(), Dispatch: snapshot, Owner: owner})
 			}
 			err = rows.Err()
 			rows.Close()
 			if err != nil {
 				return err
-			}
-			for _, row := range snapshots {
-				snapshot, err := DescribeDispatch(row)
-				if err != nil {
-					return err
-				}
-				var ownerNS, ownerName, ownerUID sql.NullString
-				ownerErr := tx.QueryRowContext(ctx, `SELECT execution_account_namespace,execution_account_name,
-					execution_account_uid FROM session_opening WHERE session_id=$1 AND sandbox_uid=$2`,
-					row.SessionID, sandboxUID).Scan(&ownerNS, &ownerName, &ownerUID)
-				if ownerErr != nil && ownerErr != sql.ErrNoRows {
-					return ownerErr
-				}
-				var owner *ServiceAccountIdentity
-				if ownerNS.Valid != ownerName.Valid || ownerUID.Valid && !ownerNS.Valid {
-					return errors.New("terminal Session principal association is incomplete")
-				}
-				if ownerNS.Valid {
-					owner = &ServiceAccountIdentity{Account: Account{ownerNS.String, ownerName.String}}
-					if ownerUID.Valid {
-						owner.UID = ownerUID.String
-					}
-				}
-				events = append(events, TerminalEvent{ID: uuid.NewString(), Dispatch: snapshot, Owner: owner})
 			}
 		}
 		for _, event := range events {

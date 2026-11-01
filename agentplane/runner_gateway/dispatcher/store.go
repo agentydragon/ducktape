@@ -145,13 +145,40 @@ const qualifiedDispatchColumns = `d.position, d.command_id, d.session_id, d.sand
 	d.wake_requested_at, d.operation, d.command, d.state, d.reason, d.admission, d.traceparent, d.created_at, d.updated_at`
 
 func scanDispatch(row interface{ Scan(...any) error }) (*Dispatch, error) {
+	return scanDispatchColumns(row)
+}
+
+func scanDispatchWithOwner(row interface{ Scan(...any) error }) (*Dispatch, *ServiceAccountIdentity, error) {
+	var ownerNS, ownerName, ownerUID sql.NullString
+	dispatch, err := scanDispatchColumns(row, &ownerNS, &ownerName, &ownerUID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if ownerNS.Valid != ownerName.Valid || ownerUID.Valid && !ownerNS.Valid {
+		return nil, nil, errors.New("terminal Session principal association is incomplete")
+	}
+	var owner *ServiceAccountIdentity
+	if ownerNS.Valid {
+		owner = &ServiceAccountIdentity{Account: Account{ownerNS.String, ownerName.String}}
+		if ownerUID.Valid {
+			owner.UID = ownerUID.String
+		}
+	}
+	return dispatch, owner, nil
+}
+
+func scanDispatchColumns(row interface{ Scan(...any) error }, additional ...any) (*Dispatch, error) {
 	d := &Dispatch{}
 	var callerNS, callerName, incarnation, reason sql.NullString
 	var wakeAt sql.NullTime
 	var commandBytes, admissionBytes []byte
-	err := row.Scan(&d.Position, &d.CommandID, &d.SessionID, &d.SandboxName, &d.SandboxUID,
+	columns := []any{
+		&d.Position, &d.CommandID, &d.SessionID, &d.SandboxName, &d.SandboxUID,
 		&d.WakeEligible, &callerNS, &callerName, &incarnation, &wakeAt, &d.Operation,
-		&commandBytes, &d.State, &reason, &admissionBytes, &d.Traceparent, &d.CreatedAt, &d.UpdatedAt)
+		&commandBytes, &d.State, &reason, &admissionBytes, &d.Traceparent, &d.CreatedAt, &d.UpdatedAt,
+	}
+	columns = append(columns, additional...)
+	err := row.Scan(columns...)
 	if err != nil {
 		return nil, err
 	}

@@ -510,11 +510,11 @@ func (s *Service) CancelDispatch(ctx context.Context, request *dispatcherpb.Canc
 	if err != nil {
 		return nil, apiError(err)
 	}
-	opening, openErr := s.Store.GetOpening(ctx, queued.SessionID)
-	if openErr != nil && !errors.Is(openErr, ErrNotFound) {
-		return nil, apiError(openErr)
-	}
-	if openErr == nil {
+	if !caller.Privileged {
+		opening, openErr := s.Store.GetOpening(ctx, queued.SessionID)
+		if openErr != nil {
+			return nil, apiError(openErr)
+		}
 		current, err := s.sandbox(ctx, opening.SandboxName)
 		if err != nil {
 			return nil, err
@@ -522,8 +522,6 @@ func (s *Service) CancelDispatch(ctx context.Context, request *dispatcherpb.Canc
 		if err := s.requireLiveExecution(ctx, opening, current, caller); err != nil {
 			return nil, err
 		}
-	} else if !caller.Privileged {
-		return nil, apiError(ErrNotFound)
 	}
 	row, err := s.Store.CancelForCaller(ctx, request.GetCommandId(), caller)
 	if err != nil {
