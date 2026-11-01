@@ -2095,18 +2095,39 @@ pub(super) fn object_own_data_read_property(
     value: &ValueExpr,
     is_declared: impl Fn(&Id) -> bool,
 ) -> Option<&'static str> {
-    let ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) = value else {
+    let [
+        IntrinsicSlot::Global(NativeIntrinsic::Object),
+        IntrinsicSlot::Static(NativeIntrinsic::Object, property),
+    ] = native_own_data_read_slots(value, is_declared)?
+    else {
         return None;
     };
-    let ValueExpr::Binding(object) = receiver.as_ref() else {
-        return None;
-    };
-    if object.0.as_ref() != "Object" || is_declared(object) {
-        return None;
-    }
     builtins::data_property("Object", property)
         .filter(|data| data.value == builtins::PropertyValue::Function)
         .map(|data| data.name)
+}
+
+/// Slot obligations for an exact native own-data lookup. Receiver and key
+/// evaluation remain with the indexed operation's caller.
+pub(super) fn native_own_data_read_slots(
+    value: &ValueExpr,
+    is_declared: impl Fn(&Id) -> bool,
+) -> Option<[IntrinsicSlot; 2]> {
+    let ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) = value else {
+        return None;
+    };
+    let ValueExpr::Binding(binding) = receiver.as_ref() else {
+        return None;
+    };
+    if is_declared(binding) {
+        return None;
+    }
+    let family = NativeIntrinsic::for_global_binding(binding.0.as_ref())?;
+    let property = builtins::own_data_property_name(binding.0.as_ref(), property)?;
+    Some([
+        IntrinsicSlot::Global(family),
+        IntrinsicSlot::Static(family, property),
+    ])
 }
 
 fn receiver_uses_intrinsic_alias(
@@ -5614,9 +5635,9 @@ struct ExecutionIndex {
     /// Slot flags of the completed census and validated inputs; set with
     /// `semantic_facts`.
     integrity: IntegrityFlags,
-    /// Exact top-level own-data reads of the global `Object` by initializer
-    /// start, with the property each reads.
-    native_own_data_reads: BTreeMap<u32, &'static str>,
+    /// Native own-data lookups from the canonical operation index, with the
+    /// slots required at each read's source position.
+    native_own_data_reads: BTreeMap<u32, [IntrinsicSlot; 2]>,
     class_values: BTreeMap<u32, ClassValueFacts>,
     class_owners: BTreeMap<u32, SourceUnitOrdinal>,
     class_bindings: BTreeMap<u32, Id>,
@@ -9823,17 +9844,16 @@ impl ExecutionIndex {
         self.all_native_point_effects = all;
     }
 
-    /// An exact top-level `Object.<property>` own-data read: the original
-    /// `%Object%` binding and `%Object.<property>%` slot, intact or asserted at
-    /// that read.
+    /// The exact native binding and own-data slot, intact or asserted at this
+    /// read. Dynamic name resolution cannot establish the receiver identity.
     fn native_own_data_read_premise(&self, span: Span) -> Option<NativePremise> {
-        let property = self.native_own_data_reads.get(&span.lo.0)?;
+        if !self.dynamic_scope_owners.is_empty() {
+            return None;
+        }
+        let slots = self.native_own_data_reads.get(&span.lo.0)?;
         native_premise(
             &self.integrity,
-            &[
-                IntrinsicSlot::Global(NativeIntrinsic::Object),
-                IntrinsicSlot::Static(NativeIntrinsic::Object, property),
-            ],
+            slots,
             Some(span.lo.0),
             crate::reports::schema::InferenceRule::NativeOwnDataRead,
         )

@@ -1645,6 +1645,15 @@ A native premise is an integrity flag on an intrinsic slot: `%Set%`,
 intact when no write in the closed whole-program write census (§ Inferred
 native property-key domains) can reach it; it is unknown otherwise.
 
+An indexed eager static read of an unshadowed native binding's known own data
+property shares its exact binding and property-slot proof across synchronous
+execution, purity and heap ordering. This includes reads in computed class
+keys, such as `Symbol.dispose`. Receiver and key evaluation, other class
+initialization effects and invocation of the resulting value retain their
+ordinary checks. A shadowed binding, dynamic scope or unproved slot integrity
+keeps conservative lookup effects. Exact author inputs retain their declared
+operation and source-site scope.
+
 A `%Set%` or `%Object.freeze%` slot is an own data property of the global
 object or of a census constructor or namespace. A property write, update,
 delete or reflective definition changes only its receiver's own property under

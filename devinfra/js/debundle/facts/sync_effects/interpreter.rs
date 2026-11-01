@@ -10,7 +10,7 @@ use super::runtime_inference::{ProgramPoint, RuntimeOperation, RuntimeQueries, R
 use super::{
     Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, LocalConstructor,
     MemberValueWrite, NativeIntrinsic, NativePointEffects, Parameter, RetainedCallbackCall,
-    native_call_identity_key, object_own_data_read_property,
+    native_call_identity_key, native_own_data_read_slots, object_own_data_read_property,
 };
 use crate::analysis_inputs::{AnalysisInputs, NativeInputKind, ProofDependencies};
 use crate::facts::ExportReentryPolicy;
@@ -1480,33 +1480,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn native_member_lookup_is_data(&self, callee: &ValueExpr, site: Option<u32>) -> bool {
-        let ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) = callee else {
-            return false;
-        };
-        let ValueExpr::Binding(binding) = receiver.as_ref() else {
-            return false;
-        };
-        if self.inputs.flow.is_declared(binding)
-            || self.inputs.shadowed.contains(binding.0.as_ref())
-            || !self.inputs.index.dynamic_scope_owners.is_empty()
-        {
+        if !self.inputs.index.dynamic_scope_owners.is_empty() {
             return false;
         }
-        let Some(family) = NativeIntrinsic::for_global_binding(binding.0.as_ref()) else {
-            return false;
-        };
-        let Some(property) = crate::facts::abstract_domain::builtins::own_data_property_name(
-            binding.0.as_ref(),
-            property,
-        ) else {
+        let Some(slots) = native_own_data_read_slots(callee, |binding| {
+            self.inputs.flow.is_declared(binding)
+                || self.inputs.shadowed.contains(binding.0.as_ref())
+        }) else {
             return false;
         };
         let Some(premise) = native_premise(
             &self.inputs.index.integrity,
-            &[
-                IntrinsicSlot::Global(family),
-                IntrinsicSlot::Static(family, property),
-            ],
+            &slots,
             site,
             InferenceRule::NativeOwnDataRead,
         ) else {
@@ -9097,20 +9082,17 @@ pub(crate) fn prepare_synchronous_call_index_with_source_facts(
     let mut native_own_data_read_candidates: BTreeMap<SourceUnitOrdinal, Vec<Span>> =
         BTreeMap::new();
     let mut native_own_data_reads = BTreeMap::new();
-    for writes in index.binding_declaration_writes.values() {
-        if let [write] = writes.as_slice()
-            && write.direct_top_level
-            && write.simple_identifier
-            && let Some(initializer) = &write.initializer
-            && let Some(property) =
-                object_own_data_read_property(initializer, |id| flow.is_declared(id))
-            && let Some(span) = write.initializer_span
+    for call in index.top_calls.iter().flatten() {
+        if call.kind == CallKind::LocalMemberRead
+            && let Some(slots) = native_own_data_read_slots(&call.callee, |binding| {
+                flow.is_declared(binding) || shadowed.contains(binding.0.as_ref())
+            })
         {
             native_own_data_read_candidates
-                .entry(write.owner)
+                .entry(call.owner)
                 .or_default()
-                .push(span);
-            native_own_data_reads.insert(span.lo.0, property);
+                .push(call.span);
+            native_own_data_reads.insert(call.span.lo.0, slots);
         }
     }
     index.native_own_data_reads = native_own_data_reads;

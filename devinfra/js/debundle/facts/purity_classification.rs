@@ -42,7 +42,7 @@ impl StatementPurityContext<'_> {
                 "initializer writes a shared var binding".to_string(),
             ));
         }
-        // The exact native-reference initializer uses the same semantic
+        // Each indexed eager native-reference read uses the same semantic
         // certificate for purity as for heap and synchronous timing. A known
         // replacement or unsupported read must not inherit the older
         // name-based static-reference purity verdict.
