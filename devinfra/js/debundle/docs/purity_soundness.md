@@ -750,6 +750,12 @@ descriptor and prototype proofs, and dense-array admission.
 Adding unsettled objects advances the prefix revision so invocation memos cannot
 reuse an earlier property proof.
 
+Invalidation also occurs inside one source statement or callable body: an
+incomplete call invalidates its reached values before the next flattened
+operation. An opaque owner or body invalidates its read roots before execution,
+because unsupported syntax such as a tagged call may have no separate transfer
+event. This can conservatively invalidate a read that precedes that syntax.
+
 A later property read returns Top and records a global `member_read` precision
 loss. It also promotes possible getter effects from available source owners and
 retained callbacks at that read, including a method's callee lookup. Promoted

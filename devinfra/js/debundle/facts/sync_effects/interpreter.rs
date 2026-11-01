@@ -7346,6 +7346,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return outcome;
         }
         if callable.opaque {
+            // Some unsupported syntax (for example a tagged call) has only
+            // the existing opaque-body flag, without a flattened call event.
+            // Its skipped effects may precede any later read in this body.
+            let reached: Values = env
+                .values()
+                .flatten()
+                .chain(
+                    callable
+                        .reads
+                        .iter()
+                        .filter_map(|binding| self.state.prefix_values.get(binding))
+                        .flatten(),
+                )
+                .cloned()
+                .collect();
+            self.unsettle(&reached);
             outcome.unsupported(
                 ExecutionOperation::OpaqueExecution,
                 callable.owner,
@@ -7497,6 +7513,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             unreachable!("call transfers produce outcomes");
         };
         *outcome = *result;
+        if !outcome.complete {
+            // A truncated transfer can mutate its inputs before the next
+            // flattened operation in this same top-level statement or body.
+            let mut reached = self.evaluate(&call.callee, env, captures);
+            for argument in &call.args {
+                reached.extend(self.evaluate(argument, env, captures));
+            }
+            reached.extend(
+                outcome
+                    .effects
+                    .reads
+                    .iter()
+                    .filter_map(|(binding, _)| self.state.prefix_values.get(binding))
+                    .flatten()
+                    .cloned(),
+            );
+            self.unsettle(&reached);
+        }
     }
 
     pub(super) fn execute_call_transfer(
@@ -9549,6 +9583,12 @@ impl Executor<'_, '_> {
                 self.validated_metadata_decoration(application, &top_env, &top_captures)
             })
         });
+        if index.opaque_top.contains(&fact.ordinal) {
+            // The owner flag also covers skipped syntax with no call event.
+            // Invalidate after publishing this owner's possible assignments,
+            // before another operation can read one of those objects.
+            self.unsettle_incomplete_reach(fact, &outcome.effects);
+        }
         if let (Some(application), Some(validated)) = (metadata_application, validated_metadata) {
             self.summarize_metadata_decoration(application, validated, fact.ordinal, &mut outcome);
         } else {

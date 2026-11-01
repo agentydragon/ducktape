@@ -226,6 +226,50 @@ fn skipped_post_initializer_writes_disable_the_closed_enum_certificate() {
 }
 
 #[test]
+fn skipped_local_mutations_invalidate_reads_in_the_same_statement() {
+    for mutation in ["change(...[record])", "tag`${record}`"] {
+        let source = format!(
+            "const record = {{ name: 'original' }};\n\
+             function change(value) {{ value.name = 'changed'; }}\n\
+             function tag(_, value) {{ value.name = 'changed'; }}\n\
+             const selected = ({mutation}, record.name);\n\
+             console.log(selected);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "changed\n");
+        let report = execution(&fixture, "selected");
+        assert_reason(
+            &report,
+            serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
+        );
+    }
+}
+
+#[test]
+fn opaque_body_does_not_cache_property_values_before_its_skipped_code() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function change(value) { value.name = { toString() { return 'changed'; } }; }
+function read(record) {
+  const selected = (change(...[record]), record.name);
+  return selected;
+}
+const value = read({ name: 'original' });
+const coerced = { [value]: true };
+console.log(Object.keys(coerced)[0]);
+"#,
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "changed\n");
+    let graph = fixture.dependency_graph();
+    let coerced = source_unit_for_binding(&graph, "coerced");
+    let node = graph.nodes.iter().find(|node| node.id == coerced).unwrap();
+    assert_eq!(
+        serde_json::to_value(node).unwrap()["purity"]["kind"],
+        "not_pure"
+    );
+}
+
+#[test]
 fn stable_ts_enum_primitive_member_is_safe_as_computed_property_key() {
     let source = r#"var Status = ((values) => ((values.READY = "ready"), values))(Status || {});
 const preferences = { [Status.READY]: true };
