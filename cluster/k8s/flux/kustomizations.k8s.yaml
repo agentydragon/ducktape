@@ -3014,8 +3014,6 @@ spec:
       namespace: ducktape-flux
     - name: piraeus-cluster
       namespace: ducktape-flux
-    - name: seaweedfs-operator
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/oci-cache
   prune: true
