@@ -73,7 +73,7 @@ adds that mode only to an authenticated `Rule` explicitly installed for the meth
 remains available. `Admitted` returns a typed direct or delegated admission, while
 `EffectiveCaller` returns only the SA identity handlers use for ordinary resource checks. The
 legacy `Caller` accessor stays Pod-bound and is not populated for delegated requests. The
-`workload_auth/go/grpc` client reads its destination token for each call and has no ordinary Bearer
+`workload_auth/grpc` client reads its destination token for each call and has no ordinary Bearer
 fallback. These shared primitives do not opt a production method or client into delegation by
 themselves; Action Service and SessionDispatcher integration remains a separate change.
 
