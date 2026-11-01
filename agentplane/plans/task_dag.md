@@ -1894,11 +1894,8 @@ flowchart TD
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     SANDBOX_ENVIRONMENT_RENAME_DESIGN[Later proposed: scope Sandbox to Environment naming]
-    RUNNER_RENAME[Selected: Environment Runtime protocol and resource names]
-    RUNNER_IMAGES_RENAME[Selected: tools images stop being called runner]
     RUNNER_GATEWAY_RENAME[Unscheduled: Runner Gateway becomes Environment Gateway]
     ENVIRONMENT_RUNTIME_SERVICE_SPLIT[Unscheduled: split Environment and Harness/Session APIs]
-    RUNNER_RENAME --> ENVIRONMENT_RUNTIME_SERVICE_SPLIT
     HISTORY_SERVICE_RENAME[Decision, unscheduled: History as a transcript service]
     SERVICE_SETTINGS_RETHINK[Decision, unscheduled: how Agentplane services are configured]
     ENV_MANAGEMENT_PROCESS_CONSOLIDATION_DESIGN[Decision, later: environment management process grouping]
@@ -1935,61 +1932,17 @@ domain from Sandbox to Environment once its model and boundaries settle.** This 
 rename is selected. Start from the [Session/runtime model](session_runtime_model.md) and inventory
 Agentplane-owned domain objects, public API/proto/CLI/UI/config names, Kubernetes resource names and
 CRDs, storage and migrations, generated manifests, documentation and callers. The upstream
-agent-sandbox `Sandbox` CRD remains separately owned. Coordinate Agentplane-owned naming with
-[`RUNNER_RENAME`](#runner_rename--environment-runtime-protocol-and-resource-naming), while Action
-execution boxes keep their distinct [`ACTION_BOX_RENAME`](#action_box_rename--action-boxes-stop-being-called-sandboxes)
-scope.
+agent-sandbox `Sandbox` CRD remains separately owned. Action execution boxes keep their distinct
+[`ACTION_BOX_RENAME`](#action_box_rename--action-boxes-stop-being-called-sandboxes) scope.
 
 **Exit:** review a scoped vocabulary map and, if a rename is recommended, an ordered API/resource
 and reference migration that preserves identities and stored data. Do not use a global text
 replacement or implicitly rename upstream APIs/resources. No implementation or wire/CRD/storage
 cutover is approved here; this proposal is independent of current authorization and reliability work.
 
-### `RUNNER_RENAME` — Environment Runtime protocol and resource naming
-
-**Selected by the operator, 2026-10-31.** Rename the per-Sandbox Runner process to Environment
-Runtime. Harness Host and Execution Service keep their selected names and ownership. Make a direct
-protocol/resource cutover after every affected Sandbox workload is stopped. Staging Sandbox objects
-have been deleted by the operator; before cutover, verify descendant Pods/VMs and active connection
-Leases are gone, and inventory whether their PVCs remain before resuming or reusing staging
-environments. Deleting PVCs is not required for this rename: preserve Session records, journals,
-native continuations, History acknowledgements and the existing `StateDir/sessions` layout.
-Because owner-lock paths change, old workloads must be stopped before a new Runtime or Host reuses
-their state volume; the old lock files are left unused. Preserve the VM Runtime scope hash so its
-supervisor can still discover pre-rename transient units.
-
-Move `runner_service.proto` to `agentplane/env/runtime/control/environment_runtime.proto` and rename
-the public package/service to `agentplane.env.runtime.control.EnvironmentRuntime`. Keep the private
-Runtime-to-Host lifecycle protocol distinct. Rename `runner_state.proto` to
-`environment_runtime_state.proto` and `RunnerFacts` to `EnvironmentRuntimeFacts`; rename
-`runner.proto` to `session.proto` while preserving retained Session message identities, field numbers
-and encodings, and rename API-only status types. Rename `runner_ingress.proto` to
-`session_ingress.proto` and `RunnerIngress` to `SessionJournalIngress`. Remove old RPC compatibility
-without changing durable Session data. Update generated clients, health service names, Gateway
-proxy/client method paths, sandbox clients, controller quiescing, History and every other consumer in
-the same source change.
-
-Rename Environment Runtime identity surfaces: connection Lease suffix/label and boot-ID annotation,
-Sandbox workload/container/port labels, mTLS identity, config file path (`environment-runtime.json`),
-mounted binary directory (`/run/agentplane/environment/bin`), Runtime owner lock
-(`StateDir/.agentplane-environment-runtime-owner`) and Host owner lock
-(`StateDir/harness-host/.agentplane-harness-host-owner`). Update readers and writers together,
-preserving Sandbox UIDs and the Lease's last-connected evidence. Put Runtime control and configuration
-under `env/runtime`, the Python schema module at `env/config.py`, Harness Host test fixtures under
-`env/harnesshost/testing/`, Execution test fixtures under `env/execution/testing/`, and shared Session
-contracts in their shared API package. Test support stays in test-specific directories such as
-`testing/` with `package(default_testonly = True)`. Split the old Runner docs among Runtime, Harness
-Host, Execution, images and shared-supervision owners. Rename `agentplane/runner_transport` to
-`agentplane/environment_runtime_transport` and `sandboxes/runnerclient` to
-`sandboxes/environmentruntimeclient`; transport remains shared because the control-plane Gateway uses
-it. Do not move that package entirely under Runtime. The Runner Gateway's own deployment/resource
-name, token audience, SPIFFE identity and image are out of scope; update its clients only as needed
-to consume the renamed Runtime protocol. Keep this independent of Session/Environment dispatch
-regrouping and execution-recovery work.
-
 ### `ENVIRONMENT_RUNTIME_SERVICE_SPLIT` — separate environment and Harness/Session APIs
 
-**Unscheduled; depends on `RUNNER_RENAME`.** Split the renamed public Environment Runtime API by
+**Unscheduled.** Split the renamed public Environment Runtime API by
 responsibility: environment identity, bootstrap, component discovery, health and environment lifecycle
 actions belong to the Environment API; Harness/Session admission and operations belong to the
 Harness/Session API. Plan for distinct public gRPC services, with names and method mapping selected in
@@ -1999,21 +1952,14 @@ separate from API ownership. Update Gateway routing, authorization, tests, compo
 overviews with the split. Base the boundary on
 [`session_runtime_model.md`](session_runtime_model.md#role-boundaries-and-routing).
 
-### `RUNNER_IMAGES_RENAME` — tools images stop being called runner
-
-**Selected by the operator, 2026-10-31; operator direction, 2026-10-20 05:48 UTC: "rename those images and stuff named after \"runner\" since they no longer even contain it".** Rename the Pod tools image to `environment-tools` and the VM guest to `environment-vm`, including their Nix outputs, image derivations, workflows, repositories, Flux policies/pins, SandboxTemplates and docs. The separate `agentplane-runner-disk` image keeps its name and continues to carry service binaries and the `agentplane` CLI. Publish each renamed image before switching a template/configuration reference to it, and coordinate this ordering with `RUNNER_RENAME`. The Runner Gateway image is excluded with the rest of that component's naming identity and remains in `RUNNER_GATEWAY_RENAME`.
-
-Include the k3s fixture's Bazel-built runner-disk image reference and its fixture-local `runner` template.
-
-### `RUNNER_GATEWAY_RENAME` — rename the Runner Gateway after the Runtime cutover
+### `RUNNER_GATEWAY_RENAME` — rename the Runner Gateway
 
 **Unscheduled by operator direction, 2026-10-31.** Later, rename the control-plane Gateway to
 Environment Gateway, including its package/binary/image, Kubernetes Deployment and Services, labels,
 settings and projected-token paths, token audience, SPIFFE identity/certificates, image automation and
-Flux pins, docs and tests. This is not required for the Environment Runtime protocol/resource cutover:
-keep the existing Runner Gateway deployment and security identities while updating its client stubs
-and RPC routing to the new Environment Runtime API. Do not combine this item with the selected
-Runtime or tools-image cutover.
+Flux pins, docs and tests. The Environment Runtime protocol/resource and tools-image cutovers are
+complete; this item covers only the Gateway's own naming and security identity. Its clients already use
+the renamed Runtime API.
 
 ### `HISTORY_SERVICE_RENAME` — History as a transcript service
 
