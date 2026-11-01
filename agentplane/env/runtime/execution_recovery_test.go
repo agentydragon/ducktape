@@ -8,37 +8,248 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
+	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
+	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+	"go.uber.org/zap"
 )
 
-type recoveryTestHandle struct {
-	exited    chan childExit
-	fenced    chan struct{}
-	fenceOnce sync.Once
-	mu        sync.Mutex
-	expected  bool
+type controllerExecutionHandle struct {
+	exited   chan childExit
+	stop     func(context.Context) error
+	mu       sync.Mutex
+	expected bool
+	once     sync.Once
 }
 
-func (h *recoveryTestHandle) Executor() executorpb.ExecutorServer {
+func newControllerExecutionHandle(stop func(context.Context) error) *controllerExecutionHandle {
+	return &controllerExecutionHandle{exited: make(chan childExit, 1), stop: stop}
+}
+
+func (h *controllerExecutionHandle) Executor() executorpb.ExecutorServer {
 	return &executorpb.UnimplementedExecutorServer{}
 }
 
-func (h *recoveryTestHandle) StopAndFence(context.Context) error {
+func (h *controllerExecutionHandle) StopAndFence(ctx context.Context) error {
 	h.mu.Lock()
 	h.expected = true
 	h.mu.Unlock()
-	h.fenceOnce.Do(func() { close(h.fenced) })
-	return nil
+	var err error
+	if h.stop != nil {
+		err = h.stop(ctx)
+	}
+	if err == nil {
+		h.once.Do(func() { close(h.exited) })
+	}
+	return err
 }
-func (h *recoveryTestHandle) ProcessExit() <-chan childExit { return h.exited }
-func (h *recoveryTestHandle) stopRequested() bool {
+
+func (h *controllerExecutionHandle) ProcessExit() <-chan childExit { return h.exited }
+
+func (h *controllerExecutionHandle) stopRequested() bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.expected
 }
 
+func newExecutionControllerRuntime(t *testing.T, start func(context.Context, Config, string) (executionHandle, error)) *Runtime {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	store := state.WrapCore(namespaced.NewState(inmem.Build))
+	engine, err := cosiruntime.NewRuntime(store, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &Runtime{
+		config:         Config{CodexExecServer: &codexexecserver.Config{URL: "ws://127.0.0.1:1"}},
+		intent:         &runtimepb.LifecycleIntent{Mode: runtimepb.LifecycleIntent_RUNNING, IncarnationUid: "incarnation"},
+		lifecycleState: store, changes: make(chan struct{}), fatal: make(chan error, 1),
+		execCalls: make(map[uint64]context.CancelFunc), execStreams: make(map[uint64]context.CancelFunc),
+		deps: runtimeDeps{startExecution: start},
+	}
+	r.executionLifecycle = &executionLifecycle{r: r, ctx: ctx, state: store}
+	if err := r.executionLifecycle.initialize(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.RegisterQController(&executionController{host: r.executionLifecycle}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- engine.Run(ctx) }()
+	t.Cleanup(func() {
+		stopCtx, finish := context.WithTimeout(context.Background(), time.Second)
+		defer finish()
+		_ = r.stopExecution(stopCtx)
+		cancel()
+		<-done
+		r.lifecycleWorkers.Wait()
+	})
+	return r
+}
+
+func waitExecutionState(t *testing.T, r *Runtime, condition func(executionState) bool) executionState {
+	t.Helper()
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
+	for {
+		changed := r.changesSince()
+		current, _, err := cosiExecutionState(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if condition(current) {
+			return current
+		}
+		select {
+		case <-changed:
+		case <-deadline.C:
+			t.Fatalf("Execution lifecycle did not settle: %+v", current)
+		}
+	}
+}
+
+func cosiExecutionState(r *Runtime) (executionState, bool, error) {
+	return cosi.Read(context.Background(), r.lifecycleState, executionStateResource(executionState{}))
+}
+
+func TestExecutionControllerFencesBeforeReplacementAndDoesNotReplay(t *testing.T) {
+	var starts atomic.Int32
+	started := make(chan *controllerExecutionHandle, 3)
+	fenceEntered := make(chan struct{})
+	releaseFence := make(chan struct{})
+	r := newExecutionControllerRuntime(t, func(context.Context, Config, string) (executionHandle, error) {
+		count := starts.Add(1)
+		handle := newControllerExecutionHandle(nil)
+		if count == 1 {
+			handle.stop = func(ctx context.Context) error {
+				close(fenceEntered)
+				select {
+				case <-releaseFence:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+		}
+		started <- handle
+		return handle, nil
+	})
+	if err := r.startExecutionForUID(t.Context(), "incarnation"); err != nil {
+		t.Fatal(err)
+	}
+	first := <-started
+	first.exited <- childExit{}
+	select {
+	case <-fenceEntered:
+	case <-time.After(time.Second):
+		t.Fatal("backend loss did not begin fence")
+	}
+	current := waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionStopping })
+	if current.FencedGeneration == current.Generation || starts.Load() != 1 {
+		t.Fatalf("successor before fence proof: state=%+v starts=%d", current, starts.Load())
+	}
+	r.mu.Lock()
+	ready := r.executionServer != nil || !r.executionRecovering
+	r.mu.Unlock()
+	if ready {
+		t.Fatal("lost backend remained ready while fence was pending")
+	}
+	close(releaseFence)
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("fenced loss did not launch successor")
+	}
+	current = waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionReady && s.Generation == 2 })
+	if current.FencedGeneration != 1 {
+		t.Fatalf("replacement missing prior fence evidence: %+v", current)
+	}
+	if starts.Load() != 2 {
+		t.Fatalf("unexpected replay or launch: starts=%d", starts.Load())
+	}
+}
+
+func TestExecutionControllerFailedFenceIsTerminal(t *testing.T) {
+	fenceErr := errors.New("executor cgroup still populated")
+	var starts atomic.Int32
+	started := make(chan *controllerExecutionHandle, 1)
+	r := newExecutionControllerRuntime(t, func(context.Context, Config, string) (executionHandle, error) {
+		starts.Add(1)
+		handle := newControllerExecutionHandle(func(context.Context) error { return fenceErr })
+		started <- handle
+		return handle, nil
+	})
+	if err := r.startExecutionForUID(t.Context(), "incarnation"); err != nil {
+		t.Fatal(err)
+	}
+	first := <-started
+	first.exited <- childExit{}
+	current := waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionFailed })
+	if current.FencedGeneration == current.Generation || starts.Load() != 1 {
+		t.Fatalf("uncertain fence permitted successor: state=%+v starts=%d", current, starts.Load())
+	}
+	r.mu.Lock()
+	owner := r.executionOwner
+	r.mu.Unlock()
+	if owner != first {
+		t.Fatal("failed fence discarded prior owner")
+	}
+	if err := r.startExecutionForUID(t.Context(), "next-incarnation"); err == nil {
+		t.Fatal("terminal failed fence admitted new incarnation")
+	}
+}
+
+func TestExecutionControllerStopSuppressesRecoveryAndJoinsCanceledWait(t *testing.T) {
+	started := make(chan *controllerExecutionHandle, 2)
+	fenceEntered := make(chan struct{})
+	releaseFence := make(chan struct{})
+	var starts atomic.Int32
+	r := newExecutionControllerRuntime(t, func(context.Context, Config, string) (executionHandle, error) {
+		starts.Add(1)
+		handle := newControllerExecutionHandle(func(ctx context.Context) error {
+			close(fenceEntered)
+			select {
+			case <-releaseFence:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		})
+		started <- handle
+		return handle, nil
+	})
+	if err := r.startExecutionForUID(t.Context(), "incarnation"); err != nil {
+		t.Fatal(err)
+	}
+	first := <-started
+	first.exited <- childExit{}
+	select {
+	case <-fenceEntered:
+	case <-time.After(time.Second):
+		t.Fatal("loss did not begin fence")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := r.stopExecution(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled waiter = %v", err)
+	}
+	close(releaseFence)
+	if err := r.stopExecution(t.Context()); err != nil {
+		t.Fatalf("accepted stop did not finish: %v", err)
+	}
+	if starts.Load() != 1 {
+		t.Fatalf("quiesce restarted backend %d times", starts.Load())
+	}
+	current := waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionStopped })
+	if current.FencedGeneration != current.Generation {
+		t.Fatalf("stop lacked fence evidence: %+v", current)
+	}
+}
 func TestFencedExecutionLossRestartsAPIForSameIncarnation(t *testing.T) {
 	url, opened, _ := startNativeExecutionTestServer(t, false)
 	config := executionRuntimeConfig(t, url, nil)
@@ -127,203 +338,86 @@ func TestFencedExecutionLossRestartsAPIForSameIncarnation(t *testing.T) {
 	_ = newStream.CloseSend()
 }
 
-func TestExecutionServiceUnexpectedNonzeroExitIsFatalWithoutReplacement(t *testing.T) {
-	handle := &localExecutionHandle{exited: make(chan childExit, 2)}
-	r := &Runtime{
-		executionOwner: handle,
-		executionUID:   "test-incarnation",
-		intent: &runtimepb.LifecycleIntent{
-			Mode: runtimepb.LifecycleIntent_RUNNING, IncarnationUid: "test-incarnation",
-		},
-		changes: make(chan struct{}), fatal: make(chan error, 1),
-		deps: runtimeDeps{startExecution: func(context.Context, Config, string) (executionHandle, error) {
-			return nil, errors.New("must not replace an unfenced process")
-		}},
-	}
-	go r.watchExecutionProcess(handle, "test-incarnation", handle)
-	handle.exitWithoutFence(1)
-	select {
-	case err := <-r.fatal:
-		if err == nil {
-			t.Fatal("nonzero Execution exit did not report a fatal error")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("Runtime did not fail after an Execution exit without fence proof")
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.executionOwner != handle || r.executionUID != "test-incarnation" {
-		t.Fatal("Runtime discarded the old Execution owner without fence proof")
-	}
-	if r.executionRecovering {
-		t.Fatal("Runtime treated a nonzero exit as recoverable")
-	}
-}
-
-func TestFencedExecutionLossDuringQuiesceDoesNotRestartAndClearsOwner(t *testing.T) {
-	old := &recoveryTestHandle{
-		exited: make(chan childExit, 1), fenced: make(chan struct{}),
-	}
+func TestExecutionControllerLossDuringQuiesceDoesNotRestart(t *testing.T) {
 	var starts atomic.Int32
-	r := &Runtime{
-		config:         Config{CodexExecServer: &codexexecserver.Config{URL: "ws://executor.invalid"}},
-		executionOwner: old, executionServer: old.Executor(), executionUID: "test-incarnation",
-		intent:  &runtimepb.LifecycleIntent{Mode: runtimepb.LifecycleIntent_QUIESCING, IncarnationUid: "test-incarnation"},
-		changes: make(chan struct{}), fatal: make(chan error, 1),
-		execCalls: make(map[uint64]context.CancelFunc), execStreams: make(map[uint64]context.CancelFunc),
-		deps: runtimeDeps{startExecution: func(context.Context, Config, string) (executionHandle, error) {
-			starts.Add(1)
-			return &recoveryTestHandle{
-				fenced: make(chan struct{}),
-			}, nil
-		}},
+	started := make(chan *controllerExecutionHandle, 2)
+	r := newExecutionControllerRuntime(t, func(context.Context, Config, string) (executionHandle, error) {
+		starts.Add(1)
+		handle := newControllerExecutionHandle(nil)
+		started <- handle
+		return handle, nil
+	})
+	if err := r.startExecutionForUID(t.Context(), "incarnation"); err != nil {
+		t.Fatal(err)
 	}
-	go r.watchExecutionProcess(old, "test-incarnation", old)
-	old.exited <- childExit{code: 0}
-	select {
-	case <-old.fenced:
-	case <-time.After(time.Second):
-		t.Fatal("Runtime did not fence the cleanly exited service while quiescing")
-	}
-	waitForExecutionOwner(t, r, nil)
-	if got := starts.Load(); got != 0 {
-		t.Fatalf("Runtime started %d replacements while quiescing; want none", got)
-	}
-
-	if err := r.startExecutionForUID(context.Background(), "test-incarnation"); err != nil {
-		t.Fatalf("resume same incarnation after fenced quiesce: %v", err)
-	}
-	if got := starts.Load(); got != 1 {
-		t.Fatalf("resume start count = %d, want one fresh service", got)
+	first := <-started
+	r.mu.Lock()
+	r.intent.Mode = runtimepb.LifecycleIntent_QUIESCING
+	r.mu.Unlock()
+	first.exited <- childExit{}
+	current := waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionStopped && s.FencedGeneration == s.Generation })
+	if starts.Load() != 1 {
+		t.Fatalf("quiescing launched successor: state=%+v starts=%d", current, starts.Load())
 	}
 	r.mu.Lock()
-	got := r.executionOwner
+	r.intent.Mode = runtimepb.LifecycleIntent_RUNNING
 	r.mu.Unlock()
-	if got == nil || got == old {
-		t.Fatal("same-incarnation resume reused the fenced service handle")
+	if err := r.startExecutionForUID(t.Context(), "incarnation"); err != nil {
+		t.Fatalf("new epoch could not start after fence: %v", err)
 	}
-	if err := got.StopAndFence(context.Background()); err != nil {
-		t.Fatalf("fence replacement service: %v", err)
+	if starts.Load() != 2 {
+		t.Fatalf("new epoch starts=%d, want 2", starts.Load())
 	}
 }
 
-func TestEmbeddedExecutionLossFencesBackendBeforeReplacement(t *testing.T) {
-	events := make(chan string, 4)
+func TestExecutionControllerCanceledStartupJoinsFenceBeforeNewEpoch(t *testing.T) {
+	started := make(chan struct{})
 	releaseFence := make(chan struct{})
-	old := &executionServiceHandle{executor: &executorpb.UnimplementedExecutorServer{}, exited: make(chan childExit, 1)}
-	old.fence = func(ctx context.Context) error {
-		events <- "fence-start"
-		select {
-		case <-releaseFence:
-			events <- "fence-complete"
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
 	var starts atomic.Int32
-	var replacementHandle *executionServiceHandle
-	r := &Runtime{
-		config:         Config{CodexExecServer: &codexexecserver.Config{URL: "ws://executor.invalid"}},
-		executionOwner: old, executionServer: old.Executor(), executionUID: "test-incarnation",
-		intent:  &runtimepb.LifecycleIntent{Mode: runtimepb.LifecycleIntent_RUNNING, IncarnationUid: "test-incarnation"},
-		changes: make(chan struct{}), fatal: make(chan error, 1),
-		execCalls: make(map[uint64]context.CancelFunc), execStreams: make(map[uint64]context.CancelFunc),
-		deps: runtimeDeps{startExecution: func(context.Context, Config, string) (executionHandle, error) {
-			starts.Add(1)
-			replacementHandle = &executionServiceHandle{executor: &executorpb.UnimplementedExecutorServer{}, exited: make(chan childExit, 1)}
-			events <- "replacement-ready"
-			return replacementHandle, nil
-		}},
-	}
-	go r.watchExecutionProcess(old, "test-incarnation", old)
-	old.exited <- childExit{}
-	select {
-	case event := <-events:
-		if event != "fence-start" {
-			t.Fatalf("first recovery event = %q, want fence-start", event)
+	r := newExecutionControllerRuntime(t, func(ctx context.Context, _ Config, _ string) (executionHandle, error) {
+		if starts.Add(1) == 1 {
+			close(started)
+			<-ctx.Done()
+			<-releaseFence
+			return nil, errors.Join(ErrFencedStartup, ctx.Err())
 		}
+		return newControllerExecutionHandle(nil), nil
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	waiter := make(chan error, 1)
+	go func() { waiter <- r.startExecutionForUID(ctx, "incarnation") }()
+	select {
+	case <-started:
 	case <-time.After(time.Second):
-		t.Fatal("embedded Execution loss did not request a backend fence")
+		t.Fatal("initial startup did not begin")
 	}
-	r.mu.Lock()
-	ownerBeforeFence := r.executionOwner
-	r.mu.Unlock()
-	if ownerBeforeFence != old || starts.Load() != 0 {
-		t.Fatal("Runtime replaced or released the embedded owner before backend fence proof")
+	cancel()
+	if err := <-waiter; !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled startup waiter = %v", err)
+	}
+	stopDone := make(chan error, 1)
+	go func() { stopDone <- r.stopExecution(context.Background()) }()
+	select {
+	case err := <-stopDone:
+		t.Fatalf("stop returned before canceled startup fence: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if starts.Load() != 1 {
+		t.Fatalf("new start before old fence: %d", starts.Load())
 	}
 	close(releaseFence)
-	for _, want := range []string{"fence-complete", "replacement-ready"} {
-		select {
-		case event := <-events:
-			if event != want {
-				t.Fatalf("recovery event = %q, want %q", event, want)
-			}
-		case <-time.After(time.Second):
-			t.Fatalf("recovery did not reach %s", want)
-		}
-	}
-	waitForExecutionOwner(t, r, replacementHandle)
-	if got := starts.Load(); got != 1 {
-		t.Fatalf("replacement count = %d, want one", got)
-	}
-}
-
-func TestEmbeddedExecutionFenceFailureRetainsOwnerAndIsFatal(t *testing.T) {
-	fenceFailure := errors.New("native executor cgroup remained populated")
-	old := &executionServiceHandle{executor: &executorpb.UnimplementedExecutorServer{}, exited: make(chan childExit, 1), fence: func(context.Context) error {
-		return fenceFailure
-	}}
-	starts := atomic.Int32{}
-	r := &Runtime{
-		config:         Config{CodexExecServer: &codexexecserver.Config{URL: "ws://executor.invalid"}},
-		executionOwner: old, executionServer: old.Executor(), executionUID: "test-incarnation",
-		intent:  &runtimepb.LifecycleIntent{Mode: runtimepb.LifecycleIntent_RUNNING, IncarnationUid: "test-incarnation"},
-		changes: make(chan struct{}), fatal: make(chan error, 1),
-		execCalls: make(map[uint64]context.CancelFunc), execStreams: make(map[uint64]context.CancelFunc),
-		deps: runtimeDeps{startExecution: func(context.Context, Config, string) (executionHandle, error) {
-			starts.Add(1)
-			return nil, errors.New("must not replace an unfenced native executor")
-		}},
-	}
-	go r.watchExecutionProcess(old, "test-incarnation", old)
-	old.exited <- childExit{}
 	select {
-	case err := <-r.fatal:
-		if !errors.Is(err, fenceFailure) {
-			t.Fatalf("Runtime failure = %v, want fence failure %v", err, fenceFailure)
+	case err := <-stopDone:
+		if err != nil {
+			t.Fatal(err)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("Runtime did not fail after embedded backend fence failed")
+	case <-time.After(3 * time.Second):
+		t.Fatal("stop did not join canceled startup")
 	}
-	r.mu.Lock()
-	owner, uid := r.executionOwner, r.executionUID
-	r.mu.Unlock()
-	if owner != old || uid != "test-incarnation" {
-		t.Fatal("Runtime released embedded ownership without process fence proof")
+	if err := r.startExecutionForUID(t.Context(), "incarnation"); err != nil {
+		t.Fatalf("successor epoch start: %v", err)
 	}
-	if got := starts.Load(); got != 0 {
-		t.Fatalf("Runtime started %d replacements after fence failure, want none", got)
-	}
-}
-
-func waitForExecutionOwner(t *testing.T, r *Runtime, want executionHandle) {
-	t.Helper()
-	deadline := time.NewTimer(time.Second)
-	defer deadline.Stop()
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
-	for {
-		r.mu.Lock()
-		owner, recovering := r.executionOwner, r.executionRecovering
-		r.mu.Unlock()
-		if owner == want && !recovering {
-			return
-		}
-		select {
-		case <-ticker.C:
-		case <-deadline.C:
-			t.Fatalf("Execution owner/recovery did not settle: owner=%T recovering=%v", owner, recovering)
-		}
+	if starts.Load() != 2 {
+		t.Fatalf("successor epoch starts=%d", starts.Load())
 	}
 }

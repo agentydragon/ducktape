@@ -99,7 +99,6 @@ type Runtime struct {
 
 	mu                   sync.Mutex
 	transitionMu         sync.Mutex
-	executionMu          sync.Mutex
 	owner                *environmentOwner
 	state                *EnvironmentState
 	lifecycleState       state.State
@@ -113,6 +112,7 @@ type Runtime struct {
 	processes            *supervision.Host
 	scripts              *scripts.Runner
 	bootstrapHost        *bootstrap.Host
+	executionLifecycle   *executionLifecycle
 	desired              lifecycle.Desired
 	bootID               string
 	supervisor           *supervision.Supervisor
@@ -231,13 +231,13 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 		desired: lifecycle.Desired{Mode: lifecycle.Quiescing, Generation: 1}, closeDone: make(chan struct{}),
 		execStreams: make(map[uint64]context.CancelFunc), execCalls: make(map[uint64]context.CancelFunc),
 	}
+	if r.deps.startExecution == nil {
+		r.deps.startExecution = r.startExecutionService
+	}
 	if err := r.initializeLifecycle(runtimeCtx); err != nil {
 		cancelRuntime()
 		_ = owner.Close()
 		return nil, err
-	}
-	if r.deps.startExecution == nil {
-		r.deps.startExecution = r.startExecutionService
 	}
 	r.control = control.New(control.Config{
 		SandboxUID: config.Launch.Sandbox.UID, BootID: r.bootID,
@@ -281,6 +281,12 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	if err := r.bootstrapHost.Initialize(ctx); err != nil {
 		return err
 	}
+	if r.config.CodexExecServer != nil {
+		r.executionLifecycle = &executionLifecycle{r: r, ctx: ctx, state: r.lifecycleState}
+		if err := r.executionLifecycle.initialize(ctx); err != nil {
+			return err
+		}
+	}
 	if err := lifecycle.PublishDesired(ctx, r.lifecycleState, r.desired); err != nil {
 		return err
 	}
@@ -293,6 +299,11 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	r.closeCoordinator = &runtimeCloseController{r: r}
 	if err := engine.RegisterController(r.closeCoordinator); err != nil {
 		return err
+	}
+	if r.executionLifecycle != nil {
+		if err := engine.RegisterQController(&executionController{host: r.executionLifecycle}); err != nil {
+			return err
+		}
 	}
 	go func() {
 		defer close(r.lifecycleDone)
@@ -330,6 +341,9 @@ func (r *Runtime) Close(ctx context.Context) error {
 	r.closing = true
 	r.changedLocked()
 	r.mu.Unlock()
+	if r.executionLifecycle != nil {
+		r.executionLifecycle.cancelStart()
+	}
 	r.closeOnce.Do(func() {
 		go func() {
 			r.closeErr = r.finishClose()
@@ -661,58 +675,13 @@ func (r *Runtime) adoptIncarnation(ctx context.Context, uid string) error {
 }
 
 func (r *Runtime) startExecutionForUID(ctx context.Context, uid string) error {
-	r.executionMu.Lock()
-	defer r.executionMu.Unlock()
-	return r.startExecutionForUIDLocked(ctx, uid)
-}
-
-func (r *Runtime) startExecutionForUIDLocked(ctx context.Context, uid string) error {
 	if r.config.CodexExecServer == nil {
 		return nil
 	}
-	r.mu.Lock()
-	current := r.executionOwner
-	currentUID := r.executionUID
-	recovering := r.executionRecovering
-	r.mu.Unlock()
-	if current != nil && currentUID == uid {
-		if recovering {
-			return status.Error(codes.Unavailable, "Execution API is recovering after a fenced backend loss")
-		}
-		return nil
-	}
-	if current != nil {
-		if err := r.stopExecutionLocked(ctx); err != nil {
-			return fmt.Errorf("fence prior Execution service: %w", err)
-		}
-	}
-	handle, err := r.deps.startExecution(ctx, r.config, uid)
-	if err != nil {
+	if err := r.executionLifecycle.request(ctx, uid); err != nil {
 		return err
 	}
-	if handle == nil || handle.Executor() == nil {
-		if handle != nil {
-			return errors.Join(errors.New("Execution API did not provide a ready adapter"), handle.StopAndFence(context.Background()))
-		}
-		return errors.New("Execution API did not provide a ready adapter")
-	}
-	r.mu.Lock()
-	if r.closing {
-		r.mu.Unlock()
-		return errors.Join(status.Error(codes.Unavailable, "environment Runtime is closing"), handle.StopAndFence(context.Background()))
-	}
-	r.executionOwner, r.executionServer, r.executionUID = handle, handle.Executor(), uid
-	r.executionRecovering = false
-	r.idleSince = nil
-	r.changedLocked()
-	r.mu.Unlock()
-	if monitor, ok := handle.(interface {
-		ProcessExit() <-chan childExit
-		stopRequested() bool
-	}); ok && monitor.ProcessExit() != nil {
-		go r.watchExecutionProcess(handle, uid, monitor)
-	}
-	return nil
+	return r.executionLifecycle.wait(ctx, uid)
 }
 
 func (r *Runtime) publishIntent(ctx context.Context, desiredMode lifecycle.Mode, intentMode runtimepb.LifecycleIntent_Mode, uid, sealUID string) (*runtimepb.Binding, error) {
@@ -727,6 +696,9 @@ func (r *Runtime) publishIntent(ctx context.Context, desiredMode lifecycle.Mode,
 	}
 	r.desired = desired
 	intent := r.setIntentLocked(intentMode, uid, sealUID, false)
+	if intentMode != runtimepb.LifecycleIntent_RUNNING && r.executionLifecycle != nil {
+		r.executionLifecycle.cancelStart()
+	}
 	if intentMode == runtimepb.LifecycleIntent_RUNNING {
 		r.lastRunning = proto.Clone(intent.Binding).(*runtimepb.Binding)
 	}
@@ -750,113 +722,13 @@ func (r *Runtime) requestBootstrap(ctx context.Context) error {
 }
 
 func (r *Runtime) stopExecution(ctx context.Context) error {
-	r.executionMu.Lock()
-	defer r.executionMu.Unlock()
-	return r.stopExecutionLocked(ctx)
-}
-
-func (r *Runtime) stopExecutionLocked(ctx context.Context) error {
-	r.mu.Lock()
-	handle := r.executionOwner
-	r.mu.Unlock()
-	if handle == nil {
+	if r.executionLifecycle == nil {
 		return nil
 	}
-	if err := handle.StopAndFence(ctx); err != nil {
+	if err := r.executionLifecycle.request(context.Background(), ""); err != nil {
 		return err
 	}
-	r.mu.Lock()
-	if r.executionOwner == handle {
-		r.executionOwner, r.executionServer, r.executionUID = nil, nil, ""
-		r.executionRecovering = false
-		r.changedLocked()
-	}
-	r.mu.Unlock()
-	return nil
-}
-
-func (r *Runtime) watchExecutionProcess(handle executionHandle, uid string, monitor interface {
-	ProcessExit() <-chan childExit
-	stopRequested() bool
-},
-) {
-	exit, ok := <-monitor.ProcessExit()
-	if !ok || monitor.stopRequested() {
-		return
-	}
-	r.mu.Lock()
-	current := r.executionOwner == handle && r.executionUID == uid
-	if !current || r.closing {
-		r.mu.Unlock()
-		return
-	}
-	if exit.code != 0 || exit.err != nil {
-		r.mu.Unlock()
-		r.fail(fmt.Errorf("embedded Execution API exited without a successful backend fence (status=%d): %v", exit.code, exit.err))
-		return
-	}
-	// A fenced backend loss still needs an exact fence
-	// when the environment is already draining. Recovery owns that fence and
-	// clears the old handle before a same-incarnation RUNNING transition can
-	// reuse it. It only starts a replacement if RUNNING is still current after
-	// the fence completes.
-	r.executionRecovering = true
-	r.idleSince = nil
-	cancels := make([]context.CancelFunc, 0, len(r.execCalls)+len(r.execStreams))
-	for _, cancel := range r.execCalls {
-		cancels = append(cancels, cancel)
-	}
-	for _, cancel := range r.execStreams {
-		cancels = append(cancels, cancel)
-	}
-	r.changedLocked()
-	r.mu.Unlock()
-	for _, cancel := range cancels {
-		cancel()
-	}
-	go r.recoverFencedExecution(handle, uid)
-}
-
-func (r *Runtime) recoverFencedExecution(handle executionHandle, uid string) {
-	ctx, cancel := context.WithTimeout(context.Background(), executionFenceGrace)
-	defer cancel()
-	r.transitionMu.Lock()
-	defer r.transitionMu.Unlock()
-	r.executionMu.Lock()
-	defer r.executionMu.Unlock()
-
-	r.mu.Lock()
-	if r.executionOwner != handle || r.executionUID != uid || !r.executionRecovering {
-		r.mu.Unlock()
-		return
-	}
-	r.mu.Unlock()
-
-	if err := r.waitForExecutionCalls(ctx); err != nil {
-		r.fail(fmt.Errorf("drain Execution calls after fenced backend loss: %w", err))
-		return
-	}
-	if err := handle.StopAndFence(ctx); err != nil {
-		r.fail(fmt.Errorf("prove Execution service fence after backend health loss: %w", err))
-		return
-	}
-	r.mu.Lock()
-	if r.executionOwner == handle {
-		r.executionOwner, r.executionServer, r.executionUID = nil, nil, ""
-	}
-	closing := r.closing
-	stillRunning := r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_RUNNING && r.intent.IncarnationUid == uid
-	if closing || !stillRunning {
-		r.executionRecovering = false
-		r.changedLocked()
-		r.mu.Unlock()
-		return
-	}
-	r.mu.Unlock()
-
-	if err := r.startExecutionForUIDLocked(ctx, uid); err != nil {
-		r.fail(fmt.Errorf("restart fenced Execution service for the same incarnation: %w", err))
-	}
+	return r.executionLifecycle.wait(ctx, "")
 }
 
 func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, error) {

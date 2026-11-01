@@ -17,6 +17,11 @@ const (
 	executionServiceSetupAllowance = 90*time.Second + 30*time.Second
 )
 
+// ErrFencedStartup marks an interrupted embedded start whose service lifetime
+// has already been joined and fenced. A later WatchState epoch may request it
+// again without adopting work from the canceled epoch.
+var ErrFencedStartup = errors.New("embedded Execution startup was fenced")
+
 // executionServiceHandle owns one in-process Go Execution API lifetime. The
 // typed adapter is published only after backend readiness; backend cleanup
 // must finish before this handle can be replaced.
@@ -137,7 +142,10 @@ func (r *Runtime) startExecutionService(ctx context.Context, config Config, inca
 	stopUnready := func(cause error) (executionHandle, error) {
 		fenceCtx, cancel := context.WithTimeout(context.Background(), executionFenceGrace)
 		defer cancel()
-		return nil, errors.Join(cause, handle.StopAndFence(fenceCtx))
+		if err := handle.StopAndFence(fenceCtx); err != nil {
+			return nil, errors.Join(cause, err)
+		}
+		return nil, errors.Join(ErrFencedStartup, cause)
 	}
 	readyCtx, cancel := context.WithTimeout(ctx, executionServiceReadyTimeout(serviceConfig.Readiness.Timeout))
 	defer cancel()
