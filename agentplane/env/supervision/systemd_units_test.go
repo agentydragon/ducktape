@@ -71,6 +71,117 @@ func TestSystemdFenceEvidence(t *testing.T) {
 	}
 }
 
+func TestSystemdFenceLostInvocationUsesOnlyCapturedEmptyDomain(t *testing.T) {
+	groupReadError := errors.New("cgroup evidence unavailable")
+	for _, test := range []struct {
+		name      string
+		snapshot  SystemdUnitSnapshot
+		expected  SystemdFence
+		empty     bool
+		readErr   error
+		wantError bool
+		wantRead  bool
+	}{
+		{
+			name:     "loaded stopped unit with empty captured domain",
+			snapshot: SystemdUnitSnapshot{LoadState: "loaded", ActiveState: "inactive"},
+			expected: SystemdFence{Ordered: true, InvocationID: "old", ControlGroup: "/old"},
+			empty:    true, wantRead: true,
+		},
+		{
+			name:     "collected unit with empty captured domain",
+			snapshot: SystemdUnitSnapshot{LoadState: "not-found"},
+			expected: SystemdFence{Ordered: true, InvocationID: "old", ControlGroup: "/old"},
+			empty:    true, wantRead: true,
+		},
+		{
+			name:      "missing captured domain remains unknown",
+			snapshot:  SystemdUnitSnapshot{LoadState: "loaded", ActiveState: "inactive", ControlGroup: "/replacement"},
+			expected:  SystemdFence{Ordered: true, InvocationID: "old"},
+			wantError: true,
+		},
+		{
+			name:      "populated captured domain remains unknown",
+			snapshot:  SystemdUnitSnapshot{LoadState: "loaded", ActiveState: "failed"},
+			expected:  SystemdFence{Ordered: true, InvocationID: "old", ControlGroup: "/old"},
+			wantError: true, wantRead: true,
+		},
+		{
+			name:     "unreadable captured domain remains unknown",
+			snapshot: SystemdUnitSnapshot{LoadState: "not-found"},
+			expected: SystemdFence{Ordered: true, InvocationID: "old", ControlGroup: "/old"},
+			readErr:  groupReadError, wantError: true, wantRead: true,
+		},
+		{
+			name:      "live manager pid with lost identity remains unknown",
+			snapshot:  SystemdUnitSnapshot{LoadState: "loaded", ActiveState: "active", MainPID: 42},
+			expected:  SystemdFence{Ordered: true, InvocationID: "old", ControlGroup: "/old"},
+			wantError: true,
+		},
+		{
+			name:      "outstanding manager job with lost identity remains unknown",
+			snapshot:  SystemdUnitSnapshot{LoadState: "loaded", ActiveState: "inactive", JobID: 9},
+			expected:  SystemdFence{Ordered: true, InvocationID: "old", ControlGroup: "/old"},
+			wantError: true,
+		},
+		{
+			name:     "successful completion still requires invocation result",
+			snapshot: SystemdUnitSnapshot{LoadState: "loaded", ActiveState: "inactive"},
+			expected: SystemdFence{Ordered: true, InvocationID: "old", ControlGroup: "/old", RequireSuccess: true},
+			empty:    true, wantError: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m := &testSystemdManager{snapshots: []SystemdUnitSnapshot{test.snapshot}}
+			reads := 0
+			err := fenceSystemdUnit(context.Background(), m, "test.service", test.expected, func(group string) (bool, error) {
+				reads++
+				if group != test.expected.ControlGroup {
+					t.Fatalf("inspected cgroup %q, want captured cgroup %q", group, test.expected.ControlGroup)
+				}
+				return test.empty, test.readErr
+			})
+			if (err != nil) != test.wantError || (reads > 0) != test.wantRead || m.stops != 0 {
+				t.Fatalf("error=%v cgroup reads=%d stops=%d", err, reads, m.stops)
+			}
+			if test.readErr != nil && !errors.Is(err, test.readErr) {
+				t.Fatalf("error=%v does not retain cgroup error %v", err, test.readErr)
+			}
+		})
+	}
+}
+
+func TestSystemdFenceCapturesDomainForUncertainStartCleanup(t *testing.T) {
+	m := &testSystemdManager{result: "done", snapshots: []SystemdUnitSnapshot{
+		{LoadState: "loaded", ActiveState: "active", InvocationID: "started", ControlGroup: "/started", MainPID: 42},
+		{LoadState: "loaded", ActiveState: "inactive"},
+	}}
+	var inspected string
+	err := fenceSystemdUnit(context.Background(), m, "test.service", SystemdFence{Ordered: true}, func(group string) (bool, error) {
+		inspected = group
+		return true, nil
+	})
+	if err != nil || m.stops != 1 || inspected != "/started" {
+		t.Fatalf("error=%v stops=%d inspected=%q", err, m.stops, inspected)
+	}
+}
+
+func TestSystemdFenceRejectsSuccessorEvenWhenOldDomainIsEmpty(t *testing.T) {
+	m := &testSystemdManager{snapshots: []SystemdUnitSnapshot{{
+		LoadState: "loaded", ActiveState: "inactive", InvocationID: "successor", ControlGroup: "/successor",
+	}}}
+	reads := 0
+	err := fenceSystemdUnit(context.Background(), m, "test.service", SystemdFence{
+		Ordered: true, InvocationID: "old", ControlGroup: "/old",
+	}, func(string) (bool, error) {
+		reads++
+		return true, nil
+	})
+	if err == nil || reads != 0 || m.stops != 0 {
+		t.Fatalf("error=%v cgroup reads=%d stops=%d", err, reads, m.stops)
+	}
+}
+
 func TestSystemdFenceWaitsForSavedDomain(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -113,12 +113,14 @@ func removeSocket(path string) error {
 func (r *Runtime) startHost(ctx context.Context) error {
 	if r.config.Supervision == "systemd" {
 		invocation, err := r.deps.startUnit(ctx, HostUnitName)
+		if invocation.reference != nil || invocation.ID != "" {
+			r.mu.Lock()
+			r.hostUnit = invocation
+			r.mu.Unlock()
+		}
 		if err != nil {
 			return err
 		}
-		r.mu.Lock()
-		r.hostUnit = invocation
-		r.mu.Unlock()
 		return nil
 	}
 	binary := r.config.HostBinary
