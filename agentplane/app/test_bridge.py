@@ -275,7 +275,6 @@ def _has_turn_status(entries: list[dict[str, Any]], status: str) -> bool:
 @pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
 async def test_stream_recovery_reports_the_content_the_model_receives(
     app: AppProcess,
-    agent_auth: dict[str, str],
     sandbox_runner: SandboxRunner,
     model: ScriptedModel,
     runner: RunningRunner,
@@ -286,7 +285,9 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
 ) -> None:
     seed_prompt, seed_answer = "Remember the seed prompt", "SEED_ANSWER_FOR_STREAM_RECOVERY"
     partial = "PARTIAL_STREAM_MUST_STAY_UNFINISHED"
-    async with httpx.AsyncClient(base_url=app.url, timeout=60, headers=agent_auth) as http:
+    async with httpx.AsyncClient(
+        base_url=app.url, timeout=60, cookies=app.cookies, headers={"Origin": app.url}
+    ) as http:
         thread_id = await _open_thread_with_seed(
             http, model, spec, sandbox_runner.destination.sandbox_uid, seed_prompt=seed_prompt, seed_answer=seed_answer
         )
@@ -424,7 +425,6 @@ async def _wait_for_conversation_reconciliation(
 @pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
 async def test_tool_recovery_reports_context_without_repeating_side_effects(
     app: AppProcess,
-    agent_auth: dict[str, str],
     sandbox_runner: SandboxRunner,
     model: ScriptedModel,
     runner: RunningRunner,
@@ -454,7 +454,9 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
             event_pb2.RECOVERY_DISPOSITION_REVISED,
         }
     )
-    async with httpx.AsyncClient(base_url=app.url, timeout=60, headers=agent_auth) as http:
+    async with httpx.AsyncClient(
+        base_url=app.url, timeout=60, cookies=app.cookies, headers={"Origin": app.url}
+    ) as http:
         thread_id = await _open_thread_with_seed(
             http, model, spec, sandbox_runner.destination.sandbox_uid, seed_prompt=seed_prompt, seed_answer=seed_answer
         )
@@ -542,7 +544,6 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
 @pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
 async def test_resume_after_tool_completion_preserves_the_result_and_does_not_repeat_it(
     app: AppProcess,
-    agent_auth: dict[str, str],
     sandbox_runner: SandboxRunner,
     model: ScriptedModel,
     runner: RunningRunner,
@@ -561,7 +562,9 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         f"printf '%s\\n' {shlex.quote(token)} >> {shlex.quote(str(marker))}; printf '%s' {shlex.quote(tool_output)}"
     )
     partial = "PARTIAL_AFTER_COMPLETED_TOOL"
-    async with httpx.AsyncClient(base_url=app.url, timeout=60, headers=agent_auth) as http:
+    async with httpx.AsyncClient(
+        base_url=app.url, timeout=60, cookies=app.cookies, headers={"Origin": app.url}
+    ) as http:
         thread_id = await _open_thread_with_seed(
             http, model, spec, sandbox_runner.destination.sandbox_uid, seed_prompt=seed_prompt, seed_answer=seed_answer
         )
