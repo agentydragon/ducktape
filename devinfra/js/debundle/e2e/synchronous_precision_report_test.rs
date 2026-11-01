@@ -544,6 +544,56 @@ fn large_callback_pool_reports_the_actual_pool_bound() {
     assert_eq!(loss["reach"], global_reach("escaped_callback_pool"));
 }
 
+#[test]
+fn small_callback_pool_formals_keep_callbacks_and_unknown_values() {
+    for relay in [
+        "function relay(candidate) { candidate(); }",
+        "function factory(captured) { return function relay(candidate) { captured(); candidate(); }; }\nconst relay = factory(read);",
+    ] {
+        let source = format!(
+            "function read() {{ return later; }}\n{relay}\nconst result = JSON.stringify([relay, read]);\nconst later = 7;\nconsole.log(result);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "[null,null]\n");
+        // Localize Top to this formal's invocation, not JSON.stringify or
+        // the captured callback's separate invocation.
+        let result_execution = execution(&fixture, "result");
+        let candidate_location = serde_json::json!({
+            "source_path": "static/app.js",
+            "start_line": 2,
+            "end_line": 2,
+            "start_column": relay.find("candidate();").unwrap() + 1,
+        });
+        let matching = result_execution["precision_losses"]
+            .as_array()
+            .expect("precision losses")
+            .iter()
+            .filter(|loss| {
+                loss["reason"] == serde_json::json!({"code": "unknown_call_target"})
+                    && loss["statement_ordinal"] == 1
+                    && loss["source_location"] == candidate_location
+            })
+            .count();
+        assert_eq!(
+            matching, 1,
+            "formal invocation lost its unknown target at {candidate_location}: {result_execution}"
+        );
+        // The directly pooled reader also retains its early read. Argument
+        // forwarding equality follows from the unchanged callbacks + Top set.
+        let graph = fixture.dependency_graph();
+        let result = source_unit_for_binding(&graph, "result");
+        let later = source_unit_for_binding(&graph, "later");
+        assert!(
+            graph.edges.iter().any(|edge| {
+                edge.source == result
+                    && edge.target == later
+                    && edge.binding.as_deref() == Some("later")
+            }),
+            "pool lost the early reader"
+        );
+    }
+}
+
 fn global_reach(cause: &str) -> Value {
     serde_json::json!({"kind": "global", "cause": cause})
 }
