@@ -598,7 +598,7 @@ func TestConfiguredReadinessControlsEmbeddedBackendProbes(t *testing.T) {
 	go func() {
 		finished <- runWithServer(ctx, config, func(context.Context) (*supervision.Instance, error) {
 			return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { return nil }}, nil
-		}, func(executorpb.ExecutorServer) { ready <- struct{}{} }, func(server *grpc.Server, listener net.Listener) error {
+		}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(server *grpc.Server, listener net.Listener) error {
 			return server.Serve(listener)
 		})
 	}()
@@ -667,7 +667,7 @@ func TestConfiguredReadinessDeadlineAndCancellationFenceBackend(t *testing.T) {
 		go func() {
 			finished <- runWithServer(ctx, config, func(context.Context) (*supervision.Instance, error) {
 				return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { close(stopped); return nil }}, nil
-			}, func(executorpb.ExecutorServer) { ready <- struct{}{} }, func(server *grpc.Server, listener net.Listener) error {
+			}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(server *grpc.Server, listener net.Listener) error {
 				return server.Serve(listener)
 			})
 		}()
@@ -723,7 +723,7 @@ func TestConfiguredReadinessDeadlineAndCancellationFenceBackend(t *testing.T) {
 		go func() {
 			finished <- runWithServer(ctx, config, func(context.Context) (*supervision.Instance, error) {
 				return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { close(stopped); return cleanupErr }}, nil
-			}, func(executorpb.ExecutorServer) { ready <- struct{}{} }, func(server *grpc.Server, listener net.Listener) error {
+			}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(server *grpc.Server, listener net.Listener) error {
 				return server.Serve(listener)
 			})
 		}()
