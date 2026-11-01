@@ -1806,7 +1806,12 @@
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000007",
-     "state": "failed"
+     "state": "failed",
+     "error": {
+      "kind": "sandbox_unavailable",
+      "message": "test box é 🚀 \"not\" ready\n",
+      "retry": 1.5
+     }
     },
     "isError": true
    }
@@ -2009,7 +2014,11 @@
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000008",
-     "state": "execution_unknown"
+     "state": "execution_unknown",
+     "error": {
+      "kind": "execution_outcome_unknown",
+      "message": "test lost"
+     }
     },
     "isError": true
    }
@@ -3396,7 +3405,12 @@
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000007",
-     "state": "failed"
+     "state": "failed",
+     "error": {
+      "kind": "sandbox_unavailable",
+      "message": "test box é 🚀 \"not\" ready\n",
+      "retry": 1.5
+     }
     },
     "isError": true
    }
@@ -6529,7 +6543,12 @@
     ],
     "structuredContent": {
      "request_id": "00000000-0000-0000-0000-000000000007",
-     "state": "failed"
+     "state": "failed",
+     "error": {
+      "kind": "sandbox_unavailable",
+      "message": "test box é 🚀 \"not\" ready\n",
+      "retry": 1.5
+     }
     },
     "isError": true
    }

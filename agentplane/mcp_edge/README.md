@@ -7,6 +7,12 @@ It calls the Action Service over gRPC using the currently bound, labeled Service
 The Action Service keeps upstream MCP linkage and CIMD, but does not serve external `/mcp`, OAuth,
 or ConnectionService endpoints.
 
+For a failed Action or an unknown execution outcome, `get_action_result` and direct Action tools
+return `isError: true` and structured content containing `request_id`, `state`, and the retained
+execution `error` object when present. These are the same error details included in the text
+fallback and caller-authorized Action receipt; clients can inspect them without parsing text.
+An unknown outcome still requires inspecting effects before requesting another execution.
+
 ## Authority
 
 The Connection API verifies the app's request-bound operator OIDC bearer independently of MCP

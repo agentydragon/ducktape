@@ -27,8 +27,9 @@ func structuredResult(view any) (*mcp.CallToolResult, error) {
 
 // requestState is the structured content of an answer that is not the Action's result.
 type requestState struct {
-	RequestID uuid.UUID `json:"request_id"`
-	State     string    `json:"state"`
+	RequestID uuid.UUID        `json:"request_id"`
+	State     string           `json:"state"`
+	Error     *structpb.Struct `json:"error,omitempty"`
 }
 
 func textResult(text string, structured requestState, isError bool) (*mcp.CallToolResult, error) {
@@ -73,6 +74,7 @@ func actionResult(request *pb.ActionRequest, executor pb.ExecutorKind, maxWaitSe
 		if err != nil {
 			return nil, err
 		}
+		stateView.Error = execution.GetError()
 		if request.GetState() == pb.ActionState_ACTION_STATE_FAILED {
 			return textResult(prefix+"failed without a result: "+string(failure), stateView, true)
 		}
