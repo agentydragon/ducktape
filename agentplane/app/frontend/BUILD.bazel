@@ -2,6 +2,7 @@
 # gazelle:exclude test_visual_notifications.py
 # gazelle:exclude test_visual_disclosures.py
 # gazelle:exclude test_visual_history.py
+# gazelle:exclude test_visual_history_layout.py
 # gazelle:exclude test_visual_policies.py
 # gazelle:exclude test_visual_navigation.py
 # gazelle:exclude test_visual_scenes.py
@@ -974,6 +975,14 @@ agentplane_visual_test(
     src = "test_visual_history.py",
     shard_count = 2,
     title = "Agentplane: history",
+)
+
+agentplane_visual_test(
+    name = "visual_history_layout",
+    src = "test_visual_history_layout.py",
+    shard_count = 2,
+    test_deps = ["//agentplane/app/frontend/testing:history_interactions"],
+    title = "Agentplane: history layout",
 )
 
 agentplane_visual_test(

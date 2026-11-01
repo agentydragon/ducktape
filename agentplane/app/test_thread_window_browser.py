@@ -10,6 +10,7 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Page, Request, Route, TimeoutError as PlaywrightTimeoutError, expect
 
+from agentplane.app.frontend.testing.history_interactions import frames
 from agentplane.app.testing import thread_view_marks
 from agentplane.app.testing.replication_source import SANDBOX
 from agentplane.app.testing.thread_browser import (
@@ -17,7 +18,6 @@ from agentplane.app.testing.thread_browser import (
     append_items,
     capture_reading_anchor,
     expect_reading_anchor,
-    frames,
     message_composer,
     wheel_and_capture_anchor_at_scrollend,
 )

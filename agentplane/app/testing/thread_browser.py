@@ -271,11 +271,6 @@ def message_composer(page: Page) -> Locator:
     return page.get_by_role("textbox", name="Message", exact=True)
 
 
-async def frames(page: Page) -> None:
-    """Waits for the paint after the next layout, and any effect or observer it runs."""
-    await page.evaluate("() => window.__threadPage.frames()")
-
-
 async def capture_reading_anchor(area: Locator) -> dict[str, str | float]:
     """The first row whose bottom is below the viewport top, and its position -- the reader's
     place, sampled once two consecutive frames agree so a pending re-measure right after a

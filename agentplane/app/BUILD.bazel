@@ -330,6 +330,7 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
+        "//agentplane/app/frontend/testing:history_interactions",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:http2_proxy",
         "//agentplane/app/testing:replication_process",
@@ -438,6 +439,7 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
+        "//agentplane/app/frontend/testing:history_interactions",
         "//agentplane/app/testing:replication_source",
         "//agentplane/app/testing:thread_browser",
         "//agentplane/app/testing:thread_view_marks",
