@@ -3113,16 +3113,32 @@ const OBSERVATION_ENTRIES: Record<string, () => Record<string, unknown>> = {
   "34": () => archivedCompletion(34),
 };
 
-function observationPage(threadId: string) {
-  return {
-    observations: [
-      { cursor: "31", kind: "harness_stderr" },
-      { cursor: "34", kind: "item_completed" },
-    ],
-    next_before_cursor: null,
-    next_after_cursor: null,
-    thread_id: threadId,
-  };
+const OBSERVATIONS = [
+  { cursor: "31", kind: "harness_stderr" },
+  { cursor: "34", kind: "item_completed" },
+] as const;
+const SETTLED_RANGES = [
+  { first: 1n, last: 30n },
+  { first: 32n, last: 33n },
+] as const;
+
+function historyObservationPage(query: URLSearchParams) {
+  const after = BigInt(query.get("after_cursor") ?? "0");
+  const beforeValue = query.get("before_cursor");
+  const before = beforeValue === null ? undefined : BigInt(beforeValue);
+  const limit = Number(query.get("limit") ?? "30");
+  const observations = OBSERVATIONS.filter((observation) => {
+    const cursor = BigInt(observation.cursor);
+    return cursor > after && (before === undefined || cursor < before);
+  })
+    .slice(-limit)
+    .map((observation) => ({ cursor: observation.cursor, kind: observation.kind }));
+  const end = before === undefined || before > 34n ? 34n : before - 1n;
+  const settled = SETTLED_RANGES.filter((range) => range.first <= end && range.last > after).map((range) => ({
+    first: range.first.toString(),
+    last: range.last.toString(),
+  }));
+  return { lastCursor: "34", observations, settled };
 }
 
 const CONNECTIONS_WATCH = "/upstream/connections/v1/operator/connections:watch";
@@ -3264,22 +3280,50 @@ routes.push(
   ],
   [
     "GET",
-    /^\/threads\/([0-9a-f-]+)\/evidence$/,
-    () => ({ observations: [{ observation_cursor: "31", has_native: true }], next_after_cursor: null }),
+    /^\/upstream\/history\/v1\/sessions\/([0-9a-f-]+)\/summary$/,
+    (match) => ({ sessionId: match[1], committedCursor: "34", foldedThrough: "34" }),
   ],
   [
     "GET",
-    /^\/threads\/([0-9a-f-]+)\/evidence\/([0-9]+)\/frames$/,
-    (_match) => ({
-      frames: [
-        {
-          source_sequence: "31",
-          availability: "present",
-          entry: archivedStderr(31),
-        },
-      ],
-      next_after_sequence: null,
-    }),
+    /^\/upstream\/history\/v1\/sessions\/([0-9a-f-]+)\/observations$/,
+    (_match, query) => historyObservationPage(query),
+  ],
+  [
+    "GET",
+    /^\/upstream\/history\/v1\/sessions\/([0-9a-f-]+)\/events$/,
+    (_match, query) => {
+      const after = BigInt(query.get("after_cursor") ?? "0");
+      const limit = Number(query.get("limit") ?? "128");
+      const entries = Object.entries(OBSERVATION_ENTRIES)
+        .filter(([cursor]) => BigInt(cursor) > after)
+        .slice(0, limit)
+        .map(([, entry]) => entry());
+      return { lastCursor: "34", entries, settlements: [], removed: [] };
+    },
+  ],
+  [
+    "POST",
+    /^\/upstream\/history\/v1\/sessions\/([0-9a-f-]+)\/entity-evidence$/,
+    (_match, _query, _signal, body) => {
+      const request = body === undefined ? {} : (JSON.parse(body) as { afterCursor?: string });
+      return {
+        observations: BigInt(request.afterCursor ?? "0") < 31n ? [{ observationCursor: "31", hasNative: true }] : [],
+      };
+    },
+  ],
+  [
+    "POST",
+    /^\/upstream\/history\/v1\/sessions\/([0-9a-f-]+)\/native-frames$/,
+    (_match, _query, _signal, body) => {
+      const request =
+        body === undefined ? {} : (JSON.parse(body) as { observationCursor?: string; afterSequence?: string });
+      return {
+        frames:
+          request.observationCursor === "31" && BigInt(request.afterSequence ?? "0") < 31n
+            ? [{ sourceSequence: "31", entry: archivedStderr(31) }]
+            : [],
+      };
+    },
   ],
   // No runner here admits a command, so one the page delivers on load stays unadmitted.
   [
@@ -3289,12 +3333,6 @@ routes.push(
       flags.has("commandAdmissionTimedOut")
         ? Response.json({ detail: "runner admission was not confirmed within 15 seconds" }, { status: 504 })
         : UNANSWERED,
-  ],
-  ["GET", /^\/threads\/([0-9a-f-]+)\/observations$/, (match) => observationPage(match[1])],
-  [
-    "GET",
-    /^\/threads\/([0-9a-f-]+)\/observations\/([0-9]+)$/,
-    (match) => ({ cursor: match[2], entry: OBSERVATION_ENTRIES[match[2]]() }),
   ]
 );
 

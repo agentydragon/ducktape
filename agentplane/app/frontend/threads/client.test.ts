@@ -45,6 +45,44 @@ it.each(["before", "after"] as const)("preserves %s archive cursors above JS int
   expect(url.searchParams.get("limit")).toBe("30");
 });
 
+it.each([
+  {
+    label: "latest",
+    request: {},
+    observations: [
+      { cursor: "31", kind: "harness_stderr" },
+      { cursor: "34", kind: "item_completed" },
+    ],
+    settled: [
+      { first: "1", last: "30" },
+      { first: "32", last: "33" },
+    ],
+    cursors: ["31", "34"],
+  },
+  {
+    label: "older",
+    request: { before: "32" },
+    observations: [{ cursor: "31", kind: "harness_stderr" }],
+    settled: [{ first: "1", last: "30" }],
+    cursors: ["31"],
+  },
+  {
+    label: "newer",
+    request: { after: "31" },
+    observations: [{ cursor: "34", kind: "item_completed" }],
+    settled: [{ first: "32", last: "33" }],
+    cursors: ["34"],
+  },
+])(
+  "accepts short $label History pages when settlements cover missing cursors",
+  async ({ request, observations, settled, cursors }) => {
+    vi.stubGlobal("fetch", () => Promise.resolve(Response.json({ lastCursor: "34", observations, settled })));
+    await expect(threadObservations("test-thread", request)).resolves.toMatchObject({
+      observations: cursors.map((cursor) => ({ cursor })),
+    });
+  }
+);
+
 it("reads one History event with generated requests and keeps the 64-bit cursor exact", async () => {
   const requests: Request[] = [];
   const cursor = "9007199254740993";

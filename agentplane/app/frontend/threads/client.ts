@@ -146,7 +146,8 @@ function validateObservationPage(
     let end = response.lastCursor;
     if (before !== undefined && before <= end) end = before === 0n ? 0n : before - 1n;
     within = cursors.length === 0 || (cursors.at(-1)! <= end && end < nextStored(cursors.at(-1)!, response.settled));
-    shortOk = (cursors.length > 0 && cursors[0] === 1n) || (cursors.length === 0 && end < 1n);
+    shortOk =
+      cursors.length > 0 ? nextStored(0n, response.settled) === cursors[0] : nextStored(0n, response.settled) > end;
   }
   let contiguous = true;
   for (let index = 1; index < walk.length; index++) {
