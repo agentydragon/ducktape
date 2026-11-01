@@ -57,7 +57,20 @@ def _storage(chart: Chart) -> s3.PrivateBucket:
     )
 
 
-def _deployment(chart: Chart, *, storage: s3.PrivateBucket) -> None:
+def _deployment(chart: Chart) -> None:
+    # One writer: BoltDB and its corresponding blob files live on the same volume.
+    k8s.KubePersistentVolumeClaim(
+        chart,
+        "cache-pvc",
+        metadata=k8s.ObjectMeta(
+            name="zot-cache", namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
+        ),
+        spec=k8s.PersistentVolumeClaimSpec(
+            access_modes=["ReadWriteOnce"],
+            storage_class_name="piraeus-hdd-2",
+            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("100Gi")}),
+        ),
+    )
     k8s.KubeDeployment(
         chart,
         "deployment",
@@ -69,9 +82,8 @@ def _deployment(chart: Chart, *, storage: s3.PrivateBucket) -> None:
                 "description": (
                     "Zot OCI pull-through cache. On-demand mirror for docker.io, ghcr.io, quay.io,"
                     " registry.k8s.io and gcr.io addressed by path prefix (/docker-hub, /ghcr, /quay, /k8s,"
-                    " /gcr). Durable content in the SeaweedFS registry-cache bucket (S3); dedupe index in the"
-                    " oci-cache-valkey RedisReplication. No PVC — the only local state is ephemeral upload"
-                    " staging on emptyDir, so the pod reschedules freely. The in-cluster Service is"
+                    " /gcr). Content and local BoltDB indexes share a replicated Piraeus filesystem. The"
+                    " in-cluster Service is"
                     " intentionally unauthenticated for Docker registry-mirror compatibility; the public"
                     " endpoint is authenticated by the nginx sidecar."
                 )
@@ -96,12 +108,6 @@ def _deployment(chart: Chart, *, storage: s3.PrivateBucket) -> None:
                             args=["serve", "/etc/zot/config.json"],
                             ports=[
                                 k8s.ContainerPort(name=HTTP.port.name, container_port=HTTP.pod_port, protocol="TCP")
-                            ],
-                            # docker/distribution S3 driver reads the AWS default credential
-                            # chain when accesskey/secretkey are omitted from config.json.
-                            env=[
-                                storage.access_key.env_var("AWS_ACCESS_KEY_ID"),
-                                storage.secret_key.env_var("AWS_SECRET_ACCESS_KEY"),
                             ],
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path="/etc/zot", read_only=True),
@@ -178,7 +184,7 @@ def _deployment(chart: Chart, *, storage: s3.PrivateBucket) -> None:
                             ),
                         ),
                         k8s.Volume(
-                            name="cache", empty_dir=k8s.EmptyDirVolumeSource(size_limit=k8s.Quantity.from_string("5Gi"))
+                            name="cache", persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name="zot-cache")
                         ),
                     ],
                 ),
@@ -190,7 +196,9 @@ def _deployment(chart: Chart, *, storage: s3.PrivateBucket) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAMESPACE, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO)
-    _deployment(chart, storage=_storage(chart))
+    # Retain the previous backend until the filesystem cutover has been verified.
+    _storage(chart)
+    _deployment(chart)
     k8s.KubeService(
         chart,
         "service",
@@ -252,11 +260,8 @@ def chart(app: App) -> Chart:
         name=_VALKEY,
         namespace=_NAMESPACE,
         description=(
-            "Shared dedupe/metadata cache for the Zot OCI pull-through cache. Zot's cacheDriver points here"
-            " (remoteCache); the durable content lives in S3, so this holds only rebuildable metadata/dedupe"
-            " state. Losing it is acceptable but may cause brief cache misses or require a Zot restart/Valkey"
-            " flush for stale metadb entries. Uses OVH HDD node-local storage so the operator can rebuild a"
-            " fresh Valkey replica without depending on the SeaweedFS CSI path."
+            "Former S3-backed Zot dedupe/metadata cache, retained temporarily during the filesystem cutover."
+            " The new filesystem uses independent local indexes and does not connect to this instance."
         ),
         memory_request=Size.mebibytes(64),
         cpu_limit=Cpu.millis(200),
