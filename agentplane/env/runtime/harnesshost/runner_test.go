@@ -89,7 +89,7 @@ func TestOpenSessionRetryUsesPersistedSetupAfterSealPublicationFailure(t *testin
 		failure: failure,
 	}
 	resources.fail.Store(true)
-	r, err := newRunner(lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), resources)
+	r, err := newTestRunner(lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), resources)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,7 +395,7 @@ func failedInitialOperationRunner(t *testing.T, failTeardown bool) (*Runner, *in
 	}
 	store.failInitial.Store(true)
 	store.failTeardown.Store(failTeardown)
-	r, err := newRunner(lifecycleConfig(t, proxy.URL, workspace, nil, binary), store)
+	r, err := newTestRunner(lifecycleConfig(t, proxy.URL, workspace, nil, binary), store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -613,7 +613,7 @@ func newLifecycleRunner(t *testing.T, config Config) *Runner {
 
 func newLifecycleRunnerWithState(t *testing.T, config Config, store state.State) *Runner {
 	t.Helper()
-	r, err := newRunner(config, store)
+	r, err := newTestRunner(config, store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -657,10 +657,10 @@ func TestScriptOutputFailureStopsProcessAndReturnsCause(t *testing.T) {
 func TestScriptRunPreservesEnvironmentStreamsAndExitStatus(t *testing.T) {
 	t.Setenv("SCRIPT_RUNNER_INHERITED", "before")
 	t.Setenv("SCRIPT_RUNNER_CONFIG", "ambient")
-	r, err := New(Config{
+	r, err := newTestRunner(Config{
 		StateDir:           t.TempDir(),
 		HarnessEnvironment: map[string]string{"SCRIPT_RUNNER_CONFIG": "configured"},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
