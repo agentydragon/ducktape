@@ -1,5 +1,5 @@
 {
-  "source_devel_commit": "55bdc1da22c84f3bcf0dff44567fb20159caad5b",
+  "source_devel_commit": "8a4df4b1c32bf60b526020efa4a34f3882132b9b",
   "snapshots": [
     {
       "name": "oct29",
@@ -25818,16 +25818,13 @@
     "sampling": "Four fixed disjoint 90-minute complete arrival windows; six sampled hours, not a continuous or random census.",
     "classification": "Exact final/current PR head matches only, full paginated file diff; other heads unknown. Nine known heads target stack branches; other base-policy states unverified.",
     "signals": "Status creation clocks matched to deterministic exact run/attempt invocation IDs. API accessibility positive at query time only, no earliest availability/delivery/harness clock.",
-    "occupancy": "Completed assigned jobs clipped to each window; core scope in all four, visuals added only to busy/latest; lower bound."
+    "occupancy": "Completed assigned jobs clipped to each window; core scope in all four, visuals added only to busy/latest; lower bound.",
+    "implementation_update": "Implementation-status update and two selected hosted executions; retained fleet cohort unchanged. No combined-revision or matched before/after speedup measurement."
   },
   "report_validation": {
-    "invocation_id": "ee85bf8d-9e79-4717-84de-aed49dc42048",
-    "invocation_url": "https://app.buildbuddy.io/invocation/ee85bf8d-9e79-4717-84de-aed49dc42048",
-    "target": "//devinfra/ci/reports/x/latency_preview:test_report",
-    "status": "PASSED",
-    "cases": 2,
-    "failures": 0,
-    "errors": 0,
+    "invocation_id": "26f129a9-fae2-4fc7-ab3b-74946cf769b1",
+    "report_html_sha256": "510477a290e1c7836ce2121c6f1a6b3f0ae695aa0c094dbfcb89afa6eb176dfd",
+    "result": "2 desktop/mobile render cases passed, zero errors/failures/skips",
     "viewports": [
       {
         "width": 1280,
@@ -25838,125 +25835,13 @@
         "height": 844
       }
     ],
-    "report_html_sha256": "93a3bccd308f5fd4be43f57ea878f1a15228dfcd1274927ade24d2bc31cb2e86",
-    "automated_checks": [
-      "shared deterministic browser and render/network health",
-      "charts generated with expected phase bars",
-      "every VM/Pod run selector maps to the right invocation and timeline",
-      "all internal links exist",
-      "no horizontal document overflow after opening all details",
-      "rendered HTML SHA256 equals published source bytes"
-    ],
-    "visual_review": "Reviewed18 desktop/mobile captures: overview, decisions, budget,13 Pod cases, VM/Pod comparison+timeline, retained VM profiles, reruns and prior work.Eight final captures are byte-identical to the previously inspected render; ten changed captures were re-reviewed, including visible scale/retry-policy notes and retained sections.",
-    "screenshots": [
-      {
-        "name": "decisions-1280.png",
-        "sha256": "9d9a5acd2fc2ed4600a532fb255024638127119ad43998640750acb8d3babdb0",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/9d9a5acd2fc2ed4600a532fb255024638127119ad43998640750acb8d3babdb0/286530",
-        "visually_reviewed": true
-      },
-      {
-        "name": "decisions-390.png",
-        "sha256": "e3ecaa7051e911b24ac21a21b9966596f3b35cbab7c2267af0f96510f9646940",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/e3ecaa7051e911b24ac21a21b9966596f3b35cbab7c2267af0f96510f9646940/317684",
-        "visually_reviewed": true
-      },
-      {
-        "name": "overview-1280.png",
-        "sha256": "5234304b431834d97c92228f71910645b85e2291444438af1127060dfb9cb909",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/5234304b431834d97c92228f71910645b85e2291444438af1127060dfb9cb909/148012",
-        "visually_reviewed": true
-      },
-      {
-        "name": "overview-390.png",
-        "sha256": "552f0e1142ae09422b8df0b7ea3b177ecbf4cdf00f0119171929d931a53c29b1",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/552f0e1142ae09422b8df0b7ea3b177ecbf4cdf00f0119171929d931a53c29b1/105828",
-        "visually_reviewed": true
-      },
-      {
-        "name": "pod-case-chart-1280.png",
-        "sha256": "009abe187ca781be5230c377bd62884d2163480138e8cbf3bc0db6511290e4ff",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/009abe187ca781be5230c377bd62884d2163480138e8cbf3bc0db6511290e4ff/39230",
-        "visually_reviewed": true
-      },
-      {
-        "name": "pod-case-chart-390.png",
-        "sha256": "e5a1d20c982cedeb4b2bf87087efb9c763458341eb1265b93a315a01b40e2cf7",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/e5a1d20c982cedeb4b2bf87087efb9c763458341eb1265b93a315a01b40e2cf7/31088",
-        "visually_reviewed": true
-      },
-      {
-        "name": "pod-comparison-1280.png",
-        "sha256": "7dcb6c68e4271249502aa54e4964511200bcebfc190158223d3edf24f84b6494",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/7dcb6c68e4271249502aa54e4964511200bcebfc190158223d3edf24f84b6494/136576",
-        "visually_reviewed": true
-      },
-      {
-        "name": "pod-comparison-390.png",
-        "sha256": "cc73c00d6730de37fd7cfef700031e2651ce1bcf7da474ee92bf18f8233dab47",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/cc73c00d6730de37fd7cfef700031e2651ce1bcf7da474ee92bf18f8233dab47/110303",
-        "visually_reviewed": true
-      },
-      {
-        "name": "prior-1280.png",
-        "sha256": "a98bdaaf2f986a92744daaf5655c12c0a58a17db2a72e37ac735506db7ffc508",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/a98bdaaf2f986a92744daaf5655c12c0a58a17db2a72e37ac735506db7ffc508/343917",
-        "visually_reviewed": true
-      },
-      {
-        "name": "prior-390.png",
-        "sha256": "9a725a3f048070d58e1441d9e95e9db80c0bb4611e9bfb0ef9b516bd654bbd6c",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/9a725a3f048070d58e1441d9e95e9db80c0bb4611e9bfb0ef9b516bd654bbd6c/415071",
-        "visually_reviewed": true
-      },
-      {
-        "name": "reruns-1280.png",
-        "sha256": "7c1ba4a8e05f968a86a84d2974e13f203185381e24a59d66aa6ec2e25cb2d4bd",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/7c1ba4a8e05f968a86a84d2974e13f203185381e24a59d66aa6ec2e25cb2d4bd/154036",
-        "visually_reviewed": true
-      },
-      {
-        "name": "reruns-390.png",
-        "sha256": "f9ac1343edc98406f6f9b9a41347f8ea27761d297e23557fec295ce9b83eb86f",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/f9ac1343edc98406f6f9b9a41347f8ea27761d297e23557fec295ce9b83eb86f/174051",
-        "visually_reviewed": true
-      },
-      {
-        "name": "suite-budget-chart-1280.png",
-        "sha256": "b53a91fd853ca9399987cf2e37f3fa45224ad1e8ce5b29e7a7bbd9c7e80a6f92",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/b53a91fd853ca9399987cf2e37f3fa45224ad1e8ce5b29e7a7bbd9c7e80a6f92/31802",
-        "visually_reviewed": true
-      },
-      {
-        "name": "suite-budget-chart-390.png",
-        "sha256": "1554b8e0e84e9cc922276e9beaf03bd33f6b84c560213c990ea573341f0fa55a",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/1554b8e0e84e9cc922276e9beaf03bd33f6b84c560213c990ea573341f0fa55a/23880",
-        "visually_reviewed": true
-      },
-      {
-        "name": "vm-1280.png",
-        "sha256": "659153515080e9019529ebf65edbe404e1c57bb02f6fd75694356e628c33fba7",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/659153515080e9019529ebf65edbe404e1c57bb02f6fd75694356e628c33fba7/556262",
-        "visually_reviewed": true
-      },
-      {
-        "name": "vm-390.png",
-        "sha256": "1ac2ce0a7097e130d2881a17a9343f492de25eeda5279a4acb7b27177fa83ba1",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/1ac2ce0a7097e130d2881a17a9343f492de25eeda5279a4acb7b27177fa83ba1/607869",
-        "visually_reviewed": true
-      },
-      {
-        "name": "vm-comparison-1280.png",
-        "sha256": "6184d5f583d1a38b990151312e286b7b9c91ec7ae556f16d9f6f857fb1c853ae",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/6184d5f583d1a38b990151312e286b7b9c91ec7ae556f16d9f6f857fb1c853ae/99501",
-        "visually_reviewed": true
-      },
-      {
-        "name": "vm-comparison-390.png",
-        "sha256": "f98b1fa90b611bf743b6213d36750e123312ddfcd724527223369719cf43df23",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/f98b1fa90b611bf743b6213d36750e123312ddfcd724527223369719cf43df23/80099",
-        "visually_reviewed": true
-      }
+    "visual_review": "Overview, shipped changes, new phase chart and next experiments inspected at both widths.",
+    "checks": [
+      "8 new phase-chart segments",
+      "All historical comparison/timeline selectors exercised",
+      "No missing internal anchors",
+      "No horizontal overflow with details expanded",
+      "Rendered HTML hash equals published bytes"
     ]
   },
   "retained_cohort_source_devel_commit": "58e4261128f61235dd354192a907447882284ceb",
@@ -32277,5 +32162,223 @@
       "adoption_gap": "manual runner reports one aggregate pytest item; production needs per-case reporting/filtering and failure/cancellation checks"
     },
     "published_analysis_at_utc": "2026-11-01T06:41:32.355231+00:00"
+  },
+  "implementation_update": {
+    "observed_at_utc": "2026-11-01T08:45:37.410364+00:00",
+    "source_devel_commit": "8a4df4b1c32bf60b526020efa4a34f3882132b9b",
+    "baseline_report_commit": "f1af47e031",
+    "scope": "Implementation-status update and two selected hosted executions; retained fleet cohort unchanged. No combined-revision or matched before/after speedup measurement.",
+    "pull_requests": [
+      {
+        "number": 13434,
+        "title": "Disable Codex plugins in Agentplane",
+        "url": "https://github.com/agentydragon/ducktape/pull/13434",
+        "state": "MERGED",
+        "headRefOid": "563d5127fdee367408fd2c2cc3f54d357c6c75ab",
+        "mergedAt": "2026-11-01T04:20:39Z",
+        "mergeCommit": {
+          "oid": "03625c1359bf1332ae00f142b0e419402dd1aaf5"
+        }
+      },
+      {
+        "number": 13436,
+        "title": "Disable Codex analytics and unused integrations in Agentplane",
+        "url": "https://github.com/agentydragon/ducktape/pull/13436",
+        "state": "MERGED",
+        "headRefOid": "71c65b33c28c8945104012a9fa11895f3139c599",
+        "mergedAt": "2026-11-01T04:37:19Z",
+        "mergeCommit": {
+          "oid": "adf5d53af84a45f892c0e943553cff5e00d8363a"
+        }
+      },
+      {
+        "number": 13447,
+        "title": "Split MCP system tests across two CI workers",
+        "url": "https://github.com/agentydragon/ducktape/pull/13447",
+        "state": "MERGED",
+        "headRefOid": "c070a9d007344dab1f8e8d26ecbc40074e9dc41b",
+        "mergedAt": "2026-11-01T05:40:04Z",
+        "mergeCommit": {
+          "oid": "3e7632670fa5d007db50f8660940fdcd6749ab3d"
+        }
+      },
+      {
+        "number": 13466,
+        "title": "Run independent Pod system-test cases concurrently",
+        "url": "https://github.com/agentydragon/ducktape/pull/13466",
+        "state": "MERGED",
+        "headRefOid": "daa60cef7cf27fb4d77ad4d501084daf65cc1df1",
+        "mergedAt": "2026-11-01T07:21:04Z",
+        "mergeCommit": {
+          "oid": "eba35ca9ad298fd0b76f8b810d8f04d28b43bfe9"
+        }
+      },
+      {
+        "number": 13471,
+        "title": "Mark native resource measurements manual",
+        "url": "https://github.com/agentydragon/ducktape/pull/13471",
+        "state": "MERGED",
+        "headRefOid": "14c005bd8577b937b90744c03a8f7c2ab4655f14",
+        "mergedAt": "2026-11-01T07:49:05Z",
+        "mergeCommit": {
+          "oid": "a1107f2ac431d38f68eae390174a563ef38ad4b4"
+        }
+      },
+      {
+        "number": 13474,
+        "title": "Move finished command layout browser cases into frontend fixtures",
+        "url": "https://github.com/agentydragon/ducktape/pull/13474",
+        "state": "MERGED",
+        "headRefOid": "e7f41a5608a0df14ad2f9bc44b88f6d634ea11db",
+        "mergedAt": "2026-11-01T09:11:12Z",
+        "mergeCommit": {
+          "oid": "0a5b114cf8a233ed5fc3cbf38888d126e1c09f35"
+        }
+      },
+      {
+        "number": 13475,
+        "title": "Remove duplicate VM central sampler scenario",
+        "url": "https://github.com/agentydragon/ducktape/pull/13475",
+        "state": "MERGED",
+        "headRefOid": "b5e43ab9cd0cc72546a6f4f0b052d18c869a5727",
+        "mergedAt": "2026-11-01T09:09:18Z",
+        "mergeCommit": {
+          "oid": "abc699c6a56f70dab820d964ac8aadf77dc86629"
+        }
+      },
+      {
+        "number": 13476,
+        "title": "Fold VM credential checks into turn guests",
+        "url": "https://github.com/agentydragon/ducktape/pull/13476",
+        "state": "MERGED",
+        "headRefOid": "ade6a81524f4666713296530d78775deb2c2071f",
+        "mergedAt": "2026-11-01T09:35:23Z",
+        "mergeCommit": {
+          "oid": "0d7f1465a5c6a08058ab3c6586c6168d603910cc"
+        }
+      },
+      {
+        "number": 13479,
+        "title": "Reuse Pod runners across compatible protocol scenarios",
+        "url": "https://github.com/agentydragon/ducktape/pull/13479",
+        "state": "MERGED",
+        "headRefOid": "51df46ad17e8587b3d7327e279a79f2b650e82fe",
+        "mergedAt": "2026-11-01T09:27:43Z",
+        "mergeCommit": {
+          "oid": "8a19f32c1ca34c3035d1d5bbad8bf294a90aa80c"
+        }
+      }
+    ],
+    "hosted_runs": [
+      {
+        "suite": "vm",
+        "label": "VM: three guests",
+        "pull_request": 13476,
+        "invocation_id": "73b7c5cd-4344-54de-8137-7990e06a11d6",
+        "tested_commit": "8288210be9d5359ab3995905a8f05624741bbd6d",
+        "source_head": "ade6a81524f4666713296530d78775deb2c2071f",
+        "tested_parents": [
+          "7f0e907d7fee194c0351a93de56037e7070b4b14",
+          "ade6a81524f4666713296530d78775deb2c2071f"
+        ],
+        "action_digest": {
+          "hash": "fd3403a6818ffd225bd1cfdfd6fbaafc22b620736b950f151e88552581a284a1",
+          "sizeBytes": "534"
+        },
+        "execution_id": "/uploads/e8d22c43-86fc-48e7-a672-03479d78faf0/blobs/fd3403a6818ffd225bd1cfdfd6fbaafc22b620736b950f151e88552581a284a1/534",
+        "invocation_link_type": 1,
+        "execution_start_utc": "2026-11-01T08:30:03.793934Z",
+        "execution_end_utc": "2026-11-01T08:35:07.322716Z",
+        "action_seconds": 303.528782,
+        "setup_seconds": 102.812378,
+        "cases_seconds": 169.863295,
+        "shared_teardown_envelope_seconds": 7.118118,
+        "launch_other_seconds": 23.73499099999999,
+        "cpu_seconds": 1069.956161,
+        "peak_memory_bytes": 7212810240,
+        "junit_tests": 1,
+        "junit_errors": 0,
+        "junit_failures": 0,
+        "junit_skipped": 0,
+        "span_count": 98,
+        "spans_sha256": "8562b5f104f8f8e6b8299f943e73f3dbcd6965fafc2d92d7213420bd78b2e75b",
+        "xml_sha256": "af5d3b72408bc3e59d013c404184469efbd68173b6af92d9af176d5538d80621",
+        "invocation_outcome": "SUCCESS",
+        "sample_count": 1
+      },
+      {
+        "suite": "pod",
+        "label": "Pod: shared protocol runners",
+        "pull_request": 13479,
+        "invocation_id": "275b8175-9517-5b38-9abc-a198fe43b5dd",
+        "tested_commit": "fef316d81410d6cad40e340456579be37e982ca6",
+        "source_head": "51df46ad17e8587b3d7327e279a79f2b650e82fe",
+        "tested_parents": [
+          "dcec89735235e6632550ad29f8e297b08257e5a0",
+          "51df46ad17e8587b3d7327e279a79f2b650e82fe"
+        ],
+        "action_digest": {
+          "hash": "c5df4a90a4e1070d2775b07df1920977a3614945e71822d8b774e3ccec4da59f",
+          "sizeBytes": "502"
+        },
+        "execution_id": "/uploads/089a4d5f-a75e-4424-8b57-c93edebda27d/blobs/c5df4a90a4e1070d2775b07df1920977a3614945e71822d8b774e3ccec4da59f/502",
+        "invocation_link_type": 1,
+        "execution_start_utc": "2026-11-01T08:08:06.898611Z",
+        "execution_end_utc": "2026-11-01T08:13:11.185952Z",
+        "action_seconds": 304.287341,
+        "setup_seconds": 134.292313,
+        "cases_seconds": 144.289139,
+        "shared_teardown_envelope_seconds": 9.393191,
+        "launch_other_seconds": 16.31269800000001,
+        "cpu_seconds": 819.240108,
+        "peak_memory_bytes": 5030531072,
+        "junit_tests": 13,
+        "junit_errors": 0,
+        "junit_failures": 0,
+        "junit_skipped": 0,
+        "span_count": 288,
+        "spans_sha256": "1ddf3403cb04d3c0fb8b8408be0a1b6bb79b09ac754b3ee84b9c3c137a3088de",
+        "xml_sha256": "b0680c62cc909d875756feca04ad78d5504f5ad4cca2b2fa55d1c70c90dfa4ce",
+        "invocation_outcome": "REMOTE_ERROR",
+        "sample_count": 1,
+        "protocol_reuse": {
+          "observed_pairs": 1,
+          "configured_max_pairs": 2,
+          "cases_served": 4,
+          "fresh_session_opens": 10,
+          "stable_identity_checked_before_leases": true,
+          "cleanup_before_k3s_stop": true,
+          "storage_before_pool_creation": true
+        }
+      }
+    ],
+    "failed_attempts": [
+      {
+        "pull_request": 13479,
+        "invocation_id": "275b8175-9517-5b38-9abc-a198fe43b5dd",
+        "outcome": "REMOTE_ERROR",
+        "boundary": "VM target failed at RBE snapshot pause with Firecracker socket connection refused; Pod target passed 13 cases.",
+        "retry_invocation_id": "2e379da2-05bf-55d2-87e9-189b9041d032",
+        "retry_outcome": "SUCCESS",
+        "cause_below_boundary": "unproven"
+      },
+      {
+        "pull_request": 13476,
+        "invocation_id": "9ad0d786-88b8-56a9-817b-95548b50fb0b",
+        "outcome": "test_vm teardown failure",
+        "boundary": "OOM guest boot monitor exited before intentional OOM; readiness receipt missing. Scenario assertions passed.",
+        "followup_invocation_id": "73b7c5cd-4344-54de-8137-7990e06a11d6",
+        "followup_outcome": "SUCCESS",
+        "followup_changes": "Updated base incorporates sampler removal; obsolete-base retry canceled. Passing followup does not isolate cause or flake rate."
+      }
+    ],
+    "measurement_limits": [
+      "Two observations are from different PR heads, workers and image-store states; they do not test the combined merged revision.",
+      "Fresh means an originating TestRunner execution; containerd image caches may be warm.",
+      "Shared teardown is the wall envelope from final case completion through k3s stop, including deferred pooled-runner cleanup and gaps.",
+      "Launch/other is the action residual after setup, case envelope and shared teardown; it also contains uncovered gaps.",
+      "Nested and concurrent spans are not summed; CPU seconds and peak memory are separate resource measurements.",
+      "GitHub merge metadata is retained as reported; remote clocks are not calibrated or joined into a new latency metric."
+    ]
   }
 }
