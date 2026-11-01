@@ -744,11 +744,15 @@ reaches `Object.defineProperty`, `Object.setPrototypeOf`, `Reflect` or a
 `Proxy`, is in `tainted_objects` at `Prefix(n)`. Tainting follows stored
 references, so a tainted container taints what it holds. A callback the
 interpreter runs on behalf of unknown code taints what it passes onward like
-any other call, and its return value is tainted. A body a bounded fallback
-summarizes without running taints every value it passes, writes through,
-stores, assigns or returns, and the same for each function it can reach
-through a binding it reads. `facts/at_init_fallback_tests.rs` pins each route
-against the plain-array element state.
+any other call, and its return value is tainted.
+
+Code the interpreter does not run, the rest of an incomplete statement or a
+body a bounded fallback summarizes, may mutate anything the statement or that
+body reaches. Those objects, and what they and the bodies they hold reach,
+join `unsettled_objects`. No unknown code holds them, so member reads keep
+their prefix values; element state refuses them like tainted objects.
+`facts/at_init_fallback_tests.rs` pins each route against the plain-array
+element state.
 
 Known gap: an operation the interpreter does not model (an unsupported member
 read, iteration or coercion protocol) can run accessor, iterator or

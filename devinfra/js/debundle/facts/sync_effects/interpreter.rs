@@ -322,39 +322,6 @@ fn absorb_effects<T: Ord>(
     target.extend(source);
 }
 
-/// The values a body exposes to whoever runs it with unknown arguments:
-/// passed to a call or as its receiver, written through, stored, assigned or
-/// returned. Reads that feed none of these expose nothing.
-fn exposed_expressions(callable: &Callable) -> Vec<&ValueExpr> {
-    let mut exposed: Vec<&ValueExpr> = Vec::new();
-    for call in &callable.calls {
-        if matches!(
-            call.kind,
-            CallKind::LocalMemberRead | CallKind::AccessorCalleeLookup
-        ) {
-            continue;
-        }
-        match &call.callee {
-            // A method call passes its receiver as `this`.
-            ValueExpr::Member(receiver, _, _) => exposed.push(receiver),
-            callee => exposed.push(callee),
-        }
-        exposed.extend(&call.args);
-    }
-    exposed.extend(&callable.dynamic_property_receivers);
-    for (_, _, value) in &callable.member_value_writes {
-        exposed.push(value);
-    }
-    for write in &callable.callback_result_writes {
-        exposed.push(&write.receiver);
-        exposed.push(&write.value);
-    }
-    exposed.extend(&callable.returns);
-    exposed.extend(&callable.namespace_escape_values);
-    exposed.extend(callable.local_assignments.iter().map(|(_, value)| value));
-    exposed
-}
-
 #[derive(Debug, Clone, Default)]
 struct ReachabilityState {
     unknown_call_seen: bool,
@@ -718,6 +685,10 @@ pub(super) struct ExecutionState {
     array_iteration_unsupported: bool,
     array_intrinsic_mutated: bool,
     tainted_objects: BTreeSet<u32>,
+    /// Objects code the interpreter did not run may have reached and mutated.
+    /// Unlike `tainted_objects`, no unknown code holds them, so reads keep
+    /// their prefix values; only settled element state refuses them.
+    unsettled_objects: BTreeSet<u32>,
     tainted_native_sets: BTreeSet<u32>,
     tainted_functions: BTreeSet<u32>,
     tainted_classes: BTreeSet<u32>,
@@ -4744,111 +4715,39 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         AbstractValue::DeferredCallbacks(self.intern_callback_set(values))
     }
 
-    /// The settled values `expression` can hand to code the interpreter does
-    /// not follow, without evaluating any call: a top-level binding's values,
-    /// a static member of one, and every operand of anything else.
-    fn exposed_values(&self, expression: &ValueExpr, values: &mut Values) {
-        match expression {
-            ValueExpr::Binding(binding) => {
-                if let Some(bound) = self.state.prefix_values.get(binding) {
-                    values.extend(bound.iter().cloned());
-                }
+    /// Code the interpreter did not run may have reached `values`: every
+    /// object they reach, through stored references or through what a
+    /// reachable body reads, may since hold anything.
+    fn unsettle(&mut self, values: &Values) {
+        let mut pending: Vec<_> = values.iter().cloned().collect();
+        let mut visited = BTreeSet::new();
+        while let Some(value) = pending.pop() {
+            if !visited.insert(value.clone()) {
+                continue;
             }
-            ValueExpr::Member(object, Some(property), MemberKey::Static) => {
-                let ValueExpr::Binding(binding) = object.as_ref() else {
-                    return self.exposed_values(object, values);
-                };
-                for value in self.state.prefix_values.get(binding).into_iter().flatten() {
-                    let AbstractValue::Value(Value::Alloc(Kind::Object, site)) = value else {
-                        values.insert(value.clone());
-                        continue;
-                    };
-                    match self.state.prefix_object_properties.get(site) {
-                        Some(properties) if properties.contains_key(&Some(property.clone())) => {
-                            for key in [Some(property.clone()), None] {
-                                values.extend(properties.get(&key).into_iter().flatten().cloned());
-                            }
-                        }
-                        _ => {
-                            values.insert(value.clone());
-                        }
+            match &value {
+                AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                    self.state.unsettled_objects.insert(*object);
+                }
+                AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                | AbstractValue::Closure(key, _) => {
+                    if let Some(callable) = self.inputs.index.callables.get(key) {
+                        pending.extend(
+                            callable
+                                .reads
+                                .iter()
+                                .filter_map(|binding| self.state.prefix_values.get(binding))
+                                .flatten()
+                                .cloned(),
+                        );
                     }
                 }
+                _ => {}
             }
-            ValueExpr::Alloc(kind, site) => {
-                values.insert(AbstractValue::Value(Value::Alloc(*kind, *site)));
-            }
-            ValueExpr::ObjectLiteral(site, properties) => {
-                values.insert(AbstractValue::Value(Value::Alloc(Kind::Object, *site)));
-                for (_, value) in properties {
-                    self.exposed_values(value, values);
-                }
-            }
-            ValueExpr::Member(object, _, _)
-            | ValueExpr::ArrayIteratorPrototype(object)
-            | ValueExpr::SetIteratorPrototype(object) => self.exposed_values(object, values),
-            ValueExpr::Call(callee, args, _) | ValueExpr::New(callee, args, _) => {
-                self.exposed_values(callee, values);
-                for arg in args {
-                    self.exposed_values(arg, values);
-                }
-            }
-            ValueExpr::Primitive(operands) | ValueExpr::Alternatives(operands) => {
-                for operand in operands {
-                    self.exposed_values(operand, values);
-                }
-            }
-            ValueExpr::Undefined | ValueExpr::NonCallable(_) | ValueExpr::Unknown => {}
+            self.visit_stored_references(&value, true, |reference| {
+                pending.push(reference.clone());
+            });
         }
-    }
-
-    /// Bodies a bounded fallback summarizes instead of running may still run
-    /// with unknown arguments: taint what each exposes (passes, writes
-    /// through, stores, assigns or returns) and treat every body it can call
-    /// through a binding it reads the same way.
-    fn taint_unexecuted_bodies(&mut self, callbacks: &Values) {
-        let mut pending: Vec<u32> = callbacks
-            .iter()
-            .filter_map(|callback| match callback {
-                AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                | AbstractValue::Closure(key, _) => Some(*key),
-                _ => None,
-            })
-            .collect();
-        let mut seen = BTreeSet::new();
-        let mut exposed = Values::new();
-        while let Some(key) = pending.pop() {
-            if !seen.insert(key) {
-                continue;
-            }
-            let Some(callable) = self.inputs.index.callables.get(&key) else {
-                continue;
-            };
-            for expression in exposed_expressions(callable) {
-                self.exposed_values(expression, &mut exposed);
-            }
-            for receiver in callable
-                .member_writes
-                .iter()
-                .map(|(receiver, _)| receiver)
-                .chain(&callable.escaped_bindings)
-            {
-                self.exposed_values(&ValueExpr::Binding(receiver.clone()), &mut exposed);
-            }
-            for value in callable
-                .reads
-                .iter()
-                .filter_map(|binding| self.state.prefix_values.get(binding))
-                .flatten()
-            {
-                if let AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                | AbstractValue::Closure(key, _) = value
-                {
-                    pending.push(*key);
-                }
-            }
-        }
-        self.taint_objects(&exposed);
     }
 
     fn taint_objects(&mut self, values: &Values) {
@@ -6078,8 +5977,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         // The summarized bodies run on these inputs without the interpreter
         // following what they do to them.
-        self.taint_objects(&args.iter().flatten().cloned().collect());
-        self.taint_unexecuted_bodies(&callbacks);
+        let mut reached: Values = args.iter().flatten().cloned().collect();
+        reached.extend(callbacks.iter().cloned());
+        self.unsettle(&reached);
         let mut roots = BTreeSet::new();
         for callback in &callbacks {
             let key = match callback {
@@ -8969,6 +8869,7 @@ pub(crate) fn annotate_synchronous_calls(
         array_iteration_unsupported: false,
         array_intrinsic_mutated: false,
         tainted_objects: BTreeSet::new(),
+        unsettled_objects: BTreeSet::new(),
         tainted_native_sets: BTreeSet::new(),
         tainted_functions: BTreeSet::new(),
         tainted_classes: BTreeSet::new(),
@@ -9092,7 +8993,10 @@ impl Executor<'_, '_> {
             let arrays = values.iter().all(|value| match value {
                 AbstractValue::Value(Value::Alloc(Kind::Object, array)) => {
                     match self.state.dense_arrays.get(array) {
-                        Some(dense) if !self.state.tainted_objects.contains(array) => {
+                        Some(dense)
+                            if !self.state.tainted_objects.contains(array)
+                                && !self.state.unsettled_objects.contains(array) =>
+                        {
                             elements.extend(dense.slots.iter().flatten().cloned());
                             true
                         }
@@ -9119,6 +9023,7 @@ impl Executor<'_, '_> {
                     };
                     if !inputs.index.plain_data_objects.contains(object)
                         || self.state.tainted_objects.contains(object)
+                        || self.state.unsettled_objects.contains(object)
                         || self.state.applied_accessors.contains_key(object)
                         || self.state.dense_arrays.contains_key(object)
                         || others.contains(element)
@@ -9149,6 +9054,23 @@ impl Executor<'_, '_> {
             }
         }
         settled
+    }
+
+    /// An execution that could not complete may have run code the interpreter
+    /// did not follow on any value the statement or its summarized callees
+    /// read (purity_soundness § Settled heap taint).
+    fn unsettle_incomplete_reach(&mut self, fact: &StatementFacts, effects: &SynchronousCalls) {
+        let values: Values = fact
+            .reads
+            .eager
+            .iter()
+            .chain(&fact.reads.lazy)
+            .chain(effects.reads.iter().map(|(binding, _)| binding))
+            .filter_map(|binding| self.state.prefix_values.get(binding))
+            .flatten()
+            .cloned()
+            .collect();
+        self.unsettle(&values);
     }
 
     pub(super) fn execute_owner(&mut self, owner: SourceUnitOrdinal) -> SynchronousCalls {
@@ -9399,6 +9321,9 @@ impl Executor<'_, '_> {
         }
         outcome.effects.complete = outcome.complete;
         outcome.effects.settled_array_elements = settled_array_elements;
+        if !outcome.complete {
+            self.unsettle_incomplete_reach(fact, &outcome.effects);
+        }
         // A failed runtime path forfeits the prevalidated private-result proof.
         // Keep the actual execution/effect outcome in either case.
         if !self.state.private_constructor_result_owners.is_empty()
