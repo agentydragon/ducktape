@@ -41,6 +41,7 @@ type receipt struct {
 	UpdatedAt shown[time.Time]      `json:"updated_at,omitzero"`
 	Input     shown[requestInput]   `json:"input,omitzero"`
 	Caller    shown[serviceAccount] `json:"caller,omitzero"`
+	CallerUID shown[*string]        `json:"caller_uid,omitzero"`
 	Decision  shown[*decision]      `json:"decision,omitzero"`
 	Execution shown[*execution]     `json:"execution,omitzero"`
 }
@@ -129,7 +130,8 @@ type event struct {
 }
 
 type callerActor struct {
-	Account serviceAccount `json:"account"`
+	Account   serviceAccount `json:"account"`
+	CallerUID *string        `json:"caller_uid,omitempty"`
 }
 
 type policyView struct {
@@ -269,6 +271,8 @@ func (d *viewDecoder) receiptView(request *pb.ActionRequest, fields []string) re
 			})
 		case "caller":
 			view.Caller = show(accountView(request.GetCaller()))
+		case "caller_uid":
+			view.CallerUID = show(request.CallerUid)
 		case "decision":
 			view.Decision = show(d.decisionView(request.GetDecision()))
 		case "execution":
@@ -366,7 +370,7 @@ func (d *viewDecoder) eventView(from *pb.ActionEvent) event {
 	switch actor := from.GetActor().GetPrincipal().(type) {
 	case nil:
 	case *pb.Principal_Caller:
-		view.Actor = callerActor{Account: accountView(actor.Caller)}
+		view.Actor = callerActor{Account: accountView(actor.Caller), CallerUID: from.GetActor().CallerUid}
 	case *pb.Principal_Operator:
 		view.Actor = operator{Issuer: actor.Operator.GetIssuer(), Subject: actor.Operator.GetSubject()}
 	default:

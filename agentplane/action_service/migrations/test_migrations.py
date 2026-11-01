@@ -48,7 +48,7 @@ def test_concurrent_and_repeated_service_migration_mode(postgres_admin_url: str,
                     == 1
                 )
                 assert (
-                    conn.scalar(text("SELECT max(version_id) FROM action_service_goose_version WHERE is_applied")) == 7
+                    conn.scalar(text("SELECT max(version_id) FROM action_service_goose_version WHERE is_applied")) == 8
                 )
                 assert (
                     conn.scalar(

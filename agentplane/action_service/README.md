@@ -23,8 +23,12 @@ generated [`ConnectionService`](../mcp_edge/connection_service.proto) defines it
 Consent can select only a ServiceAccount in the current labeled Action callers view. The MCP edge
 resolves a Connection grant to its currently bound ServiceAccount before admitting a bearer.
 ActionRequests use that ServiceAccount as the caller and do not record Connection or grant
-provenance. Rebinding changes which ServiceAccount future uses of existing tokens act as; unbinding
-revokes the Connection's grants. Requests already submitted continue through the Action lifecycle.
+provenance. Admission also records the verified ServiceAccount UID beside its namespace and name,
+so a receipt and execution retain the exact account incarnation. Requests admitted by writers that
+do not store a UID, including older replicas during rollout, remain unknown and cannot be used for
+caller delegation. Rebinding changes which ServiceAccount
+future uses of existing tokens act as; unbinding revokes the Connection's grants. Requests already
+submitted continue through the Action lifecycle.
 The operator can list or watch Connections, rename, rebind, and unbind them; the
 integration app presents the operator UI ([consent UI](../app/README.md)). See the
 [ConnectionService implementation](../mcp_edge/connections/service.go) and
@@ -72,6 +76,19 @@ issuance share the code-exchange transaction. See the
 [authorization store](../mcp_edge/connections/authorizations.go),
 [consent API](../mcp_edge/connection_service.proto), and
 [OAuth code exchange](../mcp_edge/authserver/tokens.go).
+
+## Caller UID provenance
+
+The current admission path retains the ServiceAccount UID returned by verified workload
+authentication. The `caller_uid` receipt field and caller event actor field preserve that UID. An
+absent API field or null selected MCP field means its writer did not record the UID; an unselected
+MCP field is omitted. Never fill the UID from a current ServiceAccount lookup.
+Caller-delegating executors must refuse requests whose stored UID is absent.
+
+Ownership reads, PolicySet matching, and request idempotency continue using caller namespace and name.
+A ServiceAccount recreated under the same name can still read the older request and receives the
+existing idempotency conflict when reusing its key, but the receipt keeps the original UID and does
+not rebind the request to the replacement. Request-linked Decisions do not duplicate caller data.
 
 ## Decision providers
 
@@ -199,7 +216,7 @@ default to `id`/`state`/`version`/
 `created_at`/`updated_at` on the receipt -- `state` alone already distinguishes
 pending/allowed/denied/dispatching/running/succeeded/failed/cancelled without naming `execution` --
 widened by naming `input` (the submitted `idempotency_key`/`action`/`arguments`/`title`/
-`description`, echoed back as one unit), `caller`, `decision`, or `execution`.
+`description`, echoed back as one unit), `caller`, `caller_uid`, `decision`, or `execution`.
 Naming only the wide fields you want **replaces** the default rather
 than adding to it, so keeping the compact fields alongside a widened one means naming both.
 `cancel_action_request`'s nested `request` is gated the same way, under its own `include_fields`.
@@ -463,10 +480,11 @@ separate from the integration app's database.
 
 Goose version 7 creates the final typed schema on an empty database. A database that completed
 version 6 is adopted in place: the migration validates its history and schema, then records version
-7 without replaying DDL or rewriting Action rows. Existing Goose versions 1–6 and Alembic history
-remain intact. Databases behind version 6, or with a partial or unmarked schema, must first be
-repaired with the earlier migration-capable image. Do not renumber this baseline; subsequent schema
-changes use later Goose versions.
+7 without replaying DDL or rewriting Action rows. Version 8 adds nullable `caller_uid` provenance;
+existing requests remain unknown and are never backfilled. Existing Goose versions 1–6 and Alembic
+history remain intact. Databases behind version 6, or with a partial or unmarked schema, must first
+be repaired with the earlier migration-capable image. Do not renumber this baseline; subsequent
+schema changes use later Goose versions.
 
 Action identities use `action_group`/`action_name` columns, event actors use binary `Principal`
 messages, and decision policy evidence uses binary `PolicyEvidence` messages. Arguments, results and
@@ -474,7 +492,7 @@ errors retain JSONB. The rolling Deployment keeps the existing replica serving w
 apply migrations. Goose's session lock serializes concurrent starts; every schema change must
 remain compatible with the old and new service versions during that overlap. A database with historical
 versions 1–6 retains its rollback path to a typed-storage-compatible version 6 image. A fresh
-version 7 database requires a rollback image that understands the version 7 baseline, or a
+version 8 database requires a rollback image that understands the version 8 schema, or a
 coordinated database restore. See the
 [version 6 cutover evidence](debug/2026_10_28_native_storage_cutover.md) and
 [version 7 baseline verification](debug/2026_10_28_final_schema_baseline.md).

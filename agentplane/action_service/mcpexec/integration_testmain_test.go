@@ -46,7 +46,7 @@ const awaitBound = 30 * time.Second
 const testGroup = "test-group"
 
 var (
-	caller   = store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}
+	caller   = store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}, ServiceAccountUID: "test-caller-uid"}
 	operator = store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
 )
 

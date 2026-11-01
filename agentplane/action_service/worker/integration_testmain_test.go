@@ -37,7 +37,7 @@ func TestMain(m *testing.M) {
 const awaitBound = 30 * time.Second
 
 var (
-	caller         = store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}
+	caller         = store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}, ServiceAccountUID: "test-caller-uid"}
 	operator       = store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
 	actionIdentity = store.ActionIdentity{Group: "test-group", Name: "test-action"}
 )

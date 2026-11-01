@@ -35,9 +35,11 @@ type Principal interface {
 	isPrincipal()
 }
 
-// CallerPrincipal is a workload that proved one ServiceAccount.
+// CallerPrincipal is a workload that proved one ServiceAccount. The UID is authenticated provenance; Account remains
+// the name-scoped handle used by existing policy and request ownership semantics.
 type CallerPrincipal struct {
-	Account ServiceAccount `json:"account"`
+	Account           ServiceAccount `json:"account"`
+	ServiceAccountUID string         `json:"service_account_uid"`
 }
 
 // OperatorPrincipal is the human behind the operator surface, as its issuer verified them.
@@ -189,7 +191,10 @@ type ActionRequest struct {
 	Description *string
 	// Caller is the ServiceAccount that submitted the request.
 	Caller ServiceAccount
-	State  action_servicepb.ActionState
+	// CallerUID is the verified ServiceAccount UID at admission. Nil means the admitting writer did not record it;
+	// it is unknown and must not be reconstructed from a currently existing account with the same name.
+	CallerUID *string
+	State     action_servicepb.ActionState
 	// Version counts the request's transitions from 1; an Event's sequence is the version it records.
 	Version   int64
 	CreatedAt time.Time
@@ -269,10 +274,14 @@ type ExecutionClaim struct {
 // ExecutionRequest is the payload handed to the one executor dispatch, as stored.
 type ExecutionRequest struct {
 	RequestID uuid.UUID
-	Action    ActionIdentity
+	// ExecutionID is the UUID of the durable action_execution row, not its lease token.
+	ExecutionID uuid.UUID
+	Action      ActionIdentity
 	// Arguments is a JSON object.
 	Arguments json.RawMessage
 	Caller    ServiceAccount
+	// CallerUID is nil when the request's admitting writer did not record the UID.
+	CallerUID *string
 }
 
 // ExecutionOutcome is the terminal outcome an executor delivers.

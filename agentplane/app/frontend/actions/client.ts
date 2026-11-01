@@ -262,6 +262,7 @@ function actionRequestFromMessage(message: ActionRequest): ActionRequestView {
     title: message.title,
     description: message.description ?? null,
     caller: { namespace: caller.namespace, name: caller.name },
+    caller_uid: message.callerUid ?? null,
     state: actionState(message.state),
     version: safeInt64(message.version, "request version"),
     created_at: timestampJson(message.createdAt, "ActionRequest.created_at"),

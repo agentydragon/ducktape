@@ -16,6 +16,7 @@ import (
 
 // executionLock is an Execution's row, locked for update.
 type executionLock struct {
+	ID    uuid.UUID
 	State ExecutionState
 	// Lease is nil until the Execution is claimed.
 	Lease *Lease
@@ -28,8 +29,8 @@ func lockExecution(ctx context.Context, q querier, id uuid.UUID) (executionLock,
 	var executorID *string
 	var token uuid.NullUUID
 	err := q.QueryRowContext(ctx,
-		`SELECT state, executor_id, lease_token FROM action_execution WHERE request_id = $1 FOR UPDATE`, id).
-		Scan(&state, &executorID, &token)
+		`SELECT id, state, executor_id, lease_token FROM action_execution WHERE request_id = $1 FOR UPDATE`, id).
+		Scan(&lock.ID, &state, &executorID, &token)
 	if errors.Is(err, sql.ErrNoRows) {
 		return executionLock{}, ErrNotFound
 	}
@@ -176,7 +177,10 @@ func (s *Store) MarkRunning(ctx context.Context, id uuid.UUID) (ExecutionRequest
 		if err := advance(ctx, tx, &row, action_servicepb.ActionState_ACTION_STATE_RUNNING, at, nil); err != nil {
 			return err
 		}
-		payload = ExecutionRequest{RequestID: row.ID, Action: row.Action, Arguments: row.Arguments, Caller: row.Caller}
+		payload = ExecutionRequest{
+			RequestID: row.ID, ExecutionID: execution.ID, Action: row.Action, Arguments: row.Arguments,
+			Caller: row.Caller, CallerUID: row.CallerUID,
+		}
 		return nil
 	})
 	return payload, err

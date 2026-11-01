@@ -19,7 +19,7 @@ const awaitBound = 30 * time.Second
 
 var (
 	testOperator = store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
-	testCaller   = store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}
+	testCaller   = store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}, ServiceAccountUID: "test-caller-uid"}
 )
 
 // delivery is a Notifier's database, with the requests and subscriptions in it, and the push service it delivers to.

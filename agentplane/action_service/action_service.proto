@@ -54,9 +54,10 @@ service ActionService {
   // message says why. Nothing is stored: no operator is asked, nothing is left to cancel and `idempotency_key` stays
   // unused.
   //
-  // `idempotency_key` is unique per calling ServiceAccount and is accepted once. A repeat fails `ALREADY_EXISTS`
-  // instead of replaying the first response; recover a lost response with `ListActionRequests` by key, and never
-  // resubmit under a new key.
+  // `idempotency_key` is unique per calling ServiceAccount namespace/name and is accepted once. A ServiceAccount
+  // recreated with the same name retains this existing read and idempotency scope; its UID does not rebind an older
+  // request, whose receipt retains the original caller UID. A repeat fails `ALREADY_EXISTS` instead of replaying the
+  // first response; recover a lost response with `ListActionRequests` by key, and never resubmit under a new key.
   rpc SubmitActionRequest(SubmitActionRequestRequest) returns (SubmitActionRequestResponse) {
     option (google.api.http) = {post: "/v1/action-requests" body: "*"};
   }
@@ -365,6 +366,9 @@ message ActionRequest {
   Decision decision = 13;
   // Absent until the request is allowed.
   Execution execution = 14;
+  // The verified UID of the exact caller ServiceAccount incarnation at admission. Absent when the admitting writer
+  // did not record it; it is unknown and must not be inferred from a same-name live account.
+  optional string caller_uid = 15;
 }
 
 // The Action a request names.
@@ -535,6 +539,8 @@ message Principal {
     agentplane.proto.ServiceAccount caller = 1;
     Operator operator = 2;
   }
+  // The verified UID of a caller actor. Absent when the event writer did not record it and for operator actors.
+  optional string caller_uid = 3;
 }
 
 // The discovery and ownership unit: one executor and its Actions.

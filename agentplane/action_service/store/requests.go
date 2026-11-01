@@ -23,7 +23,7 @@ type querier interface {
 
 type rowScanner interface{ Scan(...any) error }
 
-const requestColumns = `id, idempotency_key, action_group, action_name, arguments, title, description, caller_namespace, caller_name,
+const requestColumns = `id, idempotency_key, action_group, action_name, arguments, title, description, caller_namespace, caller_name, caller_uid,
 	state, version, created_at, updated_at, history_at`
 
 // requestRow is a request with the position in history its first non-pending Event gave it.
@@ -60,10 +60,15 @@ func utc(t *time.Time) *time.Time {
 func scanRequest(row rowScanner) (requestRow, error) {
 	var r requestRow
 	var arguments []byte
+	var callerUID sql.NullString
 	var state string
 	if err := row.Scan(&r.ID, &r.IdempotencyKey, &r.Action.Group, &r.Action.Name, &arguments, &r.Title, &r.Description, &r.Caller.Namespace,
-		&r.Caller.Name, &state, &r.Version, &r.CreatedAt, &r.UpdatedAt, &r.HistoryAt); err != nil {
+		&r.Caller.Name, &callerUID, &state, &r.Version, &r.CreatedAt, &r.UpdatedAt, &r.HistoryAt); err != nil {
 		return requestRow{}, err
+	}
+	if callerUID.Valid {
+		uid := callerUID.String
+		r.CallerUID = &uid
 	}
 	if err := r.Action.Validate(); err != nil {
 		return requestRow{}, fmt.Errorf("request %s typed Action identity: %w", r.ID, err)
@@ -91,6 +96,7 @@ func getRequest(ctx context.Context, q querier, id uuid.UUID, lock bool) (reques
 	return row, err
 }
 
+// mayBeReadBy preserves name-scoped ownership. UID pins request provenance but does not change existing read scope.
 func (r requestRow) mayBeReadBy(principal ReadPrincipal) bool {
 	switch principal := principal.(type) {
 	case CallerPrincipal:
@@ -262,7 +268,13 @@ func appendEvent(ctx context.Context, tx *sql.Tx, row requestRow, actor Principa
 func recordedActor(principal Principal) (*action_servicepb.Principal, error) {
 	switch principal := principal.(type) {
 	case CallerPrincipal:
-		return &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: principal.Account.Proto()}}, nil
+		if principal.ServiceAccountUID == "" {
+			return nil, invalid("a recorded caller needs its verified ServiceAccount UID")
+		}
+		uid := principal.ServiceAccountUID
+		return &action_servicepb.Principal{
+			Principal: &action_servicepb.Principal_Caller{Caller: principal.Account.Proto()}, CallerUid: &uid,
+		}, nil
 	case OperatorPrincipal:
 		return &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{Issuer: principal.Issuer, Subject: principal.Subject}}}, nil
 	default:
@@ -270,14 +282,18 @@ func recordedActor(principal Principal) (*action_servicepb.Principal, error) {
 	}
 }
 
-// Submit stores an admitted request for the caller. The caller's idempotency key is spent whatever the envelope
-// says: a second submission under it is a ConflictIdempotencyKeyUsed, and the request is read back by key.
+// Submit stores an admitted request for the caller. The UID pins its account incarnation, while ownership and the
+// caller's idempotency key remain scoped by namespace/name: a second submission under the key is a
+// ConflictIdempotencyKeyUsed, and the original request is read back by key.
 func (s *Store) Submit(ctx context.Context, caller CallerPrincipal, input ActionRequestInput, admission Admission) (ActionRequest, error) {
 	if err := input.Validate(); err != nil {
 		return ActionRequest{}, err
 	}
 	if err := validateServiceAccount(caller.Account); err != nil {
 		return ActionRequest{}, err
+	}
+	if caller.ServiceAccountUID == "" {
+		return ActionRequest{}, invalid("caller ServiceAccount UID is required")
 	}
 	if admission.Vote != nil {
 		if err := admission.Vote.Validate(); err != nil {
@@ -289,12 +305,12 @@ func (s *Store) Submit(ctx context.Context, caller CallerPrincipal, input Action
 		at := now()
 		row, err := scanRequest(tx.QueryRowContext(ctx, `
 			INSERT INTO action_request (id, idempotency_key, action_group, action_name, arguments, title,
-				description, caller_namespace, caller_name, state, version, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, 'decision_pending', 1, $10, $10)
+				description, caller_namespace, caller_name, caller_uid, state, version, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, 'decision_pending', 1, $11, $11)
 			ON CONFLICT (caller_namespace, caller_name, idempotency_key) DO NOTHING
 			RETURNING `+requestColumns,
 			admission.RequestID, input.IdempotencyKey, input.Action.Group, input.Action.Name, string(input.Arguments),
-			input.Title, input.Description, caller.Account.Namespace, caller.Account.Name, at))
+			input.Title, input.Description, caller.Account.Namespace, caller.Account.Name, caller.ServiceAccountUID, at))
 		if errors.Is(err, sql.ErrNoRows) {
 			return &ConflictError{
 				Reason:  ConflictIdempotencyKeyUsed,
@@ -447,8 +463,8 @@ func (q *query) arg(value any) string {
 	return fmt.Sprintf("$%d", len(q.args))
 }
 
-// readableBy is the condition mayBeReadBy applies: a caller reads its own requests, an operator and a service
-// reader every owner's.
+// readableBy is the condition mayBeReadBy applies: a caller reads requests by namespace/name, an operator and a
+// service reader every owner's. Caller UID is provenance and does not change this existing ownership scope.
 func (q *query) readableBy(principal ReadPrincipal) []string {
 	switch principal := principal.(type) {
 	case CallerPrincipal:

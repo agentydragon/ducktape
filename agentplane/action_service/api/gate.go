@@ -120,7 +120,9 @@ func (g *Gate) authenticate(ctx context.Context) (admission, error) {
 	if !g.callers.Admits(workload.Account) {
 		return admission{}, unauthenticated
 	}
-	return admission{principal: store.CallerPrincipal{Account: account}}, nil
+	return admission{principal: store.CallerPrincipal{
+		Account: account, ServiceAccountUID: workload.ServiceAccountUID,
+	}}, nil
 }
 
 // Operator is the issuer and subject of the operator the Gate admitted a call of an operator-only service as.

@@ -45,8 +45,8 @@ func newFixture(t *testing.T) fixture {
 }
 
 var (
-	caller      = CallerPrincipal{Account: ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}
-	otherCaller = CallerPrincipal{Account: ServiceAccount{Namespace: "test-namespace", Name: "test-other-caller"}}
+	caller      = CallerPrincipal{Account: ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}, ServiceAccountUID: "test-caller-uid"}
+	otherCaller = CallerPrincipal{Account: ServiceAccount{Namespace: "test-namespace", Name: "test-other-caller"}, ServiceAccountUID: "test-other-caller-uid"}
 	operator    = OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
 	reader      = ServiceReaderPrincipal{Account: ServiceAccount{Namespace: "test-namespace", Name: "test-reader"}}
 )
