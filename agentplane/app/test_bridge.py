@@ -23,7 +23,6 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 from sqlalchemy import select
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app.testing.dispatcher_client import SessionDispatcherClient
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.runner_gateway import admitted, delivered_opening
@@ -35,6 +34,7 @@ from agentplane.runner.testing.failure_journal import FailureEvidence
 from agentplane.runner.testing.process import RunningRunner, kill_harness
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
@@ -257,7 +257,8 @@ async def _open_thread_with_seed(
 ) -> str:
     thread_id = await _create(http, spec, uuid4(), sandbox_uid)
     accepted = await http.post(
-        f"/threads/{thread_id}/submit-input", json={"commandId": "seed-input", "text": seed_prompt}
+        f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
+        json={"sandbox": SANDBOX, "sandboxUid": sandbox_uid, "commandId": "seed-input", "text": seed_prompt},
     )
     assert accepted.status_code == 200, accepted.text
     request = await _next_model_request(model)
@@ -274,7 +275,6 @@ def _has_turn_status(entries: list[dict[str, Any]], status: str) -> bool:
 @pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
 async def test_stream_recovery_reports_the_content_the_model_receives(
     app: AppProcess,
-    agent_auth: dict[str, str],
     sandbox_runner: SandboxRunner,
     model: ScriptedModel,
     runner: RunningRunner,
@@ -285,12 +285,20 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
 ) -> None:
     seed_prompt, seed_answer = "Remember the seed prompt", "SEED_ANSWER_FOR_STREAM_RECOVERY"
     partial = "PARTIAL_STREAM_MUST_STAY_UNFINISHED"
-    async with httpx.AsyncClient(base_url=app.url, timeout=60, headers=agent_auth) as http:
+    async with httpx.AsyncClient(
+        base_url=app.url, timeout=60, cookies=app.cookies, headers={"Origin": app.url}
+    ) as http:
         thread_id = await _open_thread_with_seed(
             http, model, spec, sandbox_runner.destination.sandbox_uid, seed_prompt=seed_prompt, seed_answer=seed_answer
         )
         accepted = await http.post(
-            f"/threads/{thread_id}/submit-input", json={"commandId": "streaming-input", "text": "Start a long answer"}
+            f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
+            json={
+                "sandbox": SANDBOX,
+                "sandboxUid": sandbox_runner.destination.sandbox_uid,
+                "commandId": "streaming-input",
+                "text": "Start a long answer",
+            },
         )
         assert accepted.status_code == 200, accepted.text
         request = await _next_model_request(model)
@@ -304,8 +312,13 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
         assert items[item_id].state["completion"] is None
         turn_id, before = await _interrupt_and_recover(http, runner, sandbox_runner, thread_id, stop_mode)
         accepted = await http.post(
-            f"/threads/{thread_id}/submit-input",
-            json={"commandId": "stream-recovery-input", "text": "Continue after recovery"},
+            f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
+            json={
+                "sandbox": SANDBOX,
+                "sandboxUid": sandbox_runner.destination.sandbox_uid,
+                "commandId": "stream-recovery-input",
+                "text": "Continue after recovery",
+            },
         )
         assert accepted.status_code == 200, accepted.text
         request = await _next_model_request(model)
@@ -347,11 +360,16 @@ async def _interrupt_and_recover(
         await _kill_harness(sandbox_runner, thread_id)
     elif mode == "interrupt":
         response = await http.post(
-            f"/threads/{thread_id}/interrupt-turn", json={"commandId": "interrupt-for-recovery", "turnId": turn_id}
+            f"/upstream/dispatcher/v1/sessions/{thread_id}:interruptTurn",
+            json={
+                "sandbox": SANDBOX,
+                "sandboxUid": sandbox_runner.destination.sandbox_uid,
+                "commandId": "interrupt-for-recovery",
+                "turnId": turn_id,
+            },
         )
         assert response.status_code == 200, response.text
-        assert response.json()["kind"] == "interrupt_result"
-        assert response.json()["result"]["state"] == "DELIVERY_STATE_RUNNER_ADMITTED"
+        assert response.json()["state"] == "DELIVERY_STATE_RUNNER_ADMITTED"
     else:
         await runner.restart()
     expected = "TURN_STATUS_PROCESS_LOST" if mode == "kill" else "TURN_STATUS_INTERRUPTED"
@@ -407,7 +425,6 @@ async def _wait_for_conversation_reconciliation(
 @pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
 async def test_tool_recovery_reports_context_without_repeating_side_effects(
     app: AppProcess,
-    agent_auth: dict[str, str],
     sandbox_runner: SandboxRunner,
     model: ScriptedModel,
     runner: RunningRunner,
@@ -437,13 +454,20 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
             event_pb2.RECOVERY_DISPOSITION_REVISED,
         }
     )
-    async with httpx.AsyncClient(base_url=app.url, timeout=60, headers=agent_auth) as http:
+    async with httpx.AsyncClient(
+        base_url=app.url, timeout=60, cookies=app.cookies, headers={"Origin": app.url}
+    ) as http:
         thread_id = await _open_thread_with_seed(
             http, model, spec, sandbox_runner.destination.sandbox_uid, seed_prompt=seed_prompt, seed_answer=seed_answer
         )
         accepted = await http.post(
-            f"/threads/{thread_id}/submit-input",
-            json={"commandId": "tool-input", "text": "Run the blocking side effect once"},
+            f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
+            json={
+                "sandbox": SANDBOX,
+                "sandboxUid": sandbox_runner.destination.sandbox_uid,
+                "commandId": "tool-input",
+                "text": "Run the blocking side effect once",
+            },
         )
         assert accepted.status_code == 200, accepted.text
         request = await _next_model_request(model)
@@ -473,7 +497,13 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
         item_id = incomplete_tools[0].entity_id
         turn_id, before = await _interrupt_and_recover(http, runner, sandbox_runner, thread_id, stop_mode)
         accepted = await http.post(
-            f"/threads/{thread_id}/submit-input", json={"commandId": "tool-recovery-input", "text": recovery_prompt}
+            f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
+            json={
+                "sandbox": SANDBOX,
+                "sandboxUid": sandbox_runner.destination.sandbox_uid,
+                "commandId": "tool-recovery-input",
+                "text": recovery_prompt,
+            },
         )
         assert accepted.status_code == 200, accepted.text
         request = await _next_model_request(model)
@@ -514,7 +544,6 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
 @pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
 async def test_resume_after_tool_completion_preserves_the_result_and_does_not_repeat_it(
     app: AppProcess,
-    agent_auth: dict[str, str],
     sandbox_runner: SandboxRunner,
     model: ScriptedModel,
     runner: RunningRunner,
@@ -533,13 +562,20 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         f"printf '%s\\n' {shlex.quote(token)} >> {shlex.quote(str(marker))}; printf '%s' {shlex.quote(tool_output)}"
     )
     partial = "PARTIAL_AFTER_COMPLETED_TOOL"
-    async with httpx.AsyncClient(base_url=app.url, timeout=60, headers=agent_auth) as http:
+    async with httpx.AsyncClient(
+        base_url=app.url, timeout=60, cookies=app.cookies, headers={"Origin": app.url}
+    ) as http:
         thread_id = await _open_thread_with_seed(
             http, model, spec, sandbox_runner.destination.sandbox_uid, seed_prompt=seed_prompt, seed_answer=seed_answer
         )
         accepted = await http.post(
-            f"/threads/{thread_id}/submit-input",
-            json={"commandId": "completed-tool-input", "text": "Run one completed tool"},
+            f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
+            json={
+                "sandbox": SANDBOX,
+                "sandboxUid": sandbox_runner.destination.sandbox_uid,
+                "commandId": "completed-tool-input",
+                "text": "Run one completed tool",
+            },
         )
         assert accepted.status_code == 200, accepted.text
         request = await _next_model_request(model)
@@ -583,8 +619,13 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         assert len(completed_tools) == 1
         assert completed_tools[0].state["tool_succeeded"] is True
         accepted = await http.post(
-            f"/threads/{thread_id}/submit-input",
-            json={"commandId": "completed-tool-recovery-input", "text": recovery_prompt},
+            f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
+            json={
+                "sandbox": SANDBOX,
+                "sandboxUid": sandbox_runner.destination.sandbox_uid,
+                "commandId": "completed-tool-recovery-input",
+                "text": recovery_prompt,
+            },
         )
         assert accepted.status_code == 200, accepted.text
         request = await _next_model_request(model)
@@ -654,7 +695,13 @@ async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
             assert (await next_message(lines)).event == "attached"
 
             first_submit = await survivor_http.post(
-                f"/threads/{thread}/submit-input", json={"commandId": "input-1", "text": "FIRST_REPLICA_TURN"}
+                f"/upstream/dispatcher/v1/sessions/{thread}:submitInput",
+                json={
+                    "sandbox": SANDBOX,
+                    "sandboxUid": sandbox.uid,
+                    "commandId": "input-1",
+                    "text": "FIRST_REPLICA_TURN",
+                },
             )
             assert first_submit.status_code == 200, first_submit.text
             await model.reply(await model.request(), Text("FIRST_REPLICA_TURN"))
@@ -664,7 +711,13 @@ async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
             await app.kill()
             assert app.process.returncode == -signal.SIGKILL
             second_submit = await survivor_http.post(
-                f"/threads/{thread}/submit-input", json={"commandId": "input-2", "text": "AFTER_OWNER_EXIT"}
+                f"/upstream/dispatcher/v1/sessions/{thread}:submitInput",
+                json={
+                    "sandbox": SANDBOX,
+                    "sandboxUid": sandbox.uid,
+                    "commandId": "input-2",
+                    "text": "AFTER_OWNER_EXIT",
+                },
             )
             assert second_submit.status_code == 200, second_submit.text
             request = await model.request()
@@ -729,10 +782,15 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
     assert opened_cursor == 0
     async with history.fence_ingress(thread_id):
         seed_response = await http.post(
-            f"/threads/{thread_id}/submit-input", json={"commandId": "seed-before-archive", "text": "SEED"}
+            f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
+            json={
+                "sandbox": SANDBOX,
+                "sandboxUid": sandbox_runner.destination.sandbox_uid,
+                "commandId": "seed-before-archive",
+                "text": "SEED",
+            },
         )
         assert seed_response.status_code == 200, seed_response.text
-        assert seed_response.json()["kind"] == "dispatch"
         seed = await admitted(
             session_dispatcher, ParseDict(seed_response.json()["dispatch"], session_dispatcher_pb2.Dispatch())
         )
@@ -755,10 +813,15 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
                 (summary,) = await sandbox_runner.list_sessions()
                 assert summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED
         receipt_response = await http.post(
-            f"/threads/{thread_id}/submit-input", json={"commandId": "after-archive-lag", "text": "CONTINUE"}
+            f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
+            json={
+                "sandbox": SANDBOX,
+                "sandboxUid": sandbox_runner.destination.sandbox_uid,
+                "commandId": "after-archive-lag",
+                "text": "CONTINUE",
+            },
         )
         assert receipt_response.status_code == 200, receipt_response.text
-        assert receipt_response.json()["kind"] == "dispatch"
         receipt = await admitted(
             session_dispatcher, ParseDict(receipt_response.json()["dispatch"], session_dispatcher_pb2.Dispatch())
         )

@@ -11,6 +11,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.app.testing.models import SandboxView
 from agentplane.proto import runner_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.agent import WORKING_DIRECTORY, Agent, scripted_turn_with_admission_and_history
 from agentplane.system_tests.cluster import Cluster
@@ -75,10 +76,16 @@ async def _wait_suspended(client: Client, name: str) -> None:
 
 
 async def _open_agent(
-    client: Client, view: SandboxView, harness: runner_pb2.Harness, model_name: str, *, cwd: str = WORKING_DIRECTORY
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    view: SandboxView,
+    harness: runner_pb2.Harness,
+    model_name: str,
+    *,
+    cwd: str = WORKING_DIRECTORY,
 ) -> Agent:
     agent = await Agent.open(
-        client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model_name, cwd=cwd
+        client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model_name, cwd=cwd
     )
     await client.wait_for_thread_feed(agent.thread_id, timeout_s=REQUEST_SECONDS)
     return agent
@@ -128,6 +135,7 @@ async def cert_manager_reissues_a_deleted_tls_secret(cluster: Cluster) -> None:
 async def pod_mtls_session_survives_replacement_and_keeps_history(
     cluster: Cluster,
     client: Client,
+    dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
     harness: runner_pb2.Harness,
     offered_model: str,
@@ -140,7 +148,7 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
         cluster, f"runner-{old_credential_id}", view.name, str(view.uid), old_credential_id, view.namespace
     )
 
-    agent = await _open_agent(client, view, harness, offered_model)
+    agent = await _open_agent(client, dispatcher, view, harness, offered_model)
     model = scripted.model(view.pod.name, harness)
     marker = f"POD_CONTEXT_{uuid4().hex}"
     turn, history_before, _ = await scripted_turn_with_admission_and_history(

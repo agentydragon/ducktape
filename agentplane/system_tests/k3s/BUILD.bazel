@@ -234,6 +234,7 @@ py_library(
         ":rendered_fixture",
         ":vm_sandboxes",
         "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:port_forward",
         "//agentplane/system_tests:tracing",
         "//agentplane/testing:tls",
         "//util/bazel:runfiles",

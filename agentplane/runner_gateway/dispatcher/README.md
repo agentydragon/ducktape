@@ -22,7 +22,7 @@ The manual queue, replica and wake probes are documented in the
   [generated from the proto](../../docs/grpc_services.md#httpjson-facades): reads under `/v1/dispatches`
   and `/v1/sessions/{session_id}/opening`, commands as `POST /v1/sessions/{session_id}:<verb>` and
   `POST /v1/dispatches/{command_id}:cancel`. Both transports use the same ServiceAccount TokenReview and
-  per-Session owner checks; a browser reaches it through the app, whose Thread checks stay in front of commands.
+  per-Session owner checks; a browser reaches it through the app's authenticated command facade.
 - **Delivery states** say where a command is: `QUEUED_IN_DISPATCHER`, `DELIVERING_TO_RUNNER`,
   `RUNNER_ADMITTED`, `HARNESS_CONFIRMED`, `NO_OP`, `FAILED`, `CANCELLED_IN_DISPATCHER`, `UNKNOWN` (a deleted Sandbox's). A
   `Dispatch`'s `reason` says what a queued command waits for or where a terminal one ended.

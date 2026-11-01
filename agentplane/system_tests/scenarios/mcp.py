@@ -29,6 +29,7 @@ from agentplane.app.testing.models import ActionPolicyView, CallerGrantView, San
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.proto import runner_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests import mcp_servers
 from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, WORKING_DIRECTORY, Agent
 from agentplane.system_tests.cluster import Cluster
@@ -111,6 +112,7 @@ class ScriptedAgent:
     async def open(
         cls,
         client: Client,
+        dispatcher: SessionDispatcherClient,
         sandbox: SandboxView,
         *,
         harness: runner_pb2.Harness,
@@ -118,7 +120,9 @@ class ScriptedAgent:
         upstream: ScriptedUpstream,
     ) -> ScriptedAgent:
         assert sandbox.pod is not None
-        agent = await Agent.open(client, sandbox=sandbox.name, sandbox_uid=sandbox.uid, harness=harness, model=model)
+        agent = await Agent.open(
+            client, dispatcher, sandbox=sandbox.name, sandbox_uid=sandbox.uid, harness=harness, model=model
+        )
         return cls(agent=agent, model=upstream.model(sandbox.pod.name, harness))
 
     async def run(self, *args: str) -> action_service_pb2.ActionRequest:
@@ -226,6 +230,7 @@ class PolicyObjects:
 
 async def agent_executes_mcp_action(
     client: Client,
+    dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
     harness: runner_pb2.Harness,
     offered_model: str,
@@ -236,7 +241,7 @@ async def agent_executes_mcp_action(
     await policy_objects.bind(
         view, "exact-echo", [{"type": "exact_actions", "actions": {mcp_servers.EVERYTHING_GROUP: [mcp_servers.ECHO]}}]
     )
-    agent = await ScriptedAgent.open(client, view, harness=harness, model=offered_model, upstream=scripted)
+    agent = await ScriptedAgent.open(client, dispatcher, view, harness=harness, model=offered_model, upstream=scripted)
     marker = f"MCP0-{uuid4()}"
     receipt = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, marker, wait=True)
     assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED
@@ -248,6 +253,7 @@ async def operator_links_oauth_mcp_server(
     operator_bff: httpx.AsyncClient,
     operator_credentials: OperatorCredentials,
     client: Client,
+    dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
     harness: runner_pb2.Harness,
     offered_model: str,
@@ -281,7 +287,7 @@ async def operator_links_oauth_mcp_server(
     await policy_objects.bind(
         view, "oauth-echo", [{"type": "exact_actions", "actions": {mcp_servers.OAUTH: [mcp_servers.ECHO]}}]
     )
-    agent = await ScriptedAgent.open(client, view, harness=harness, model=offered_model, upstream=scripted)
+    agent = await ScriptedAgent.open(client, dispatcher, view, harness=harness, model=offered_model, upstream=scripted)
     marker = f"MCP-OAUTH-{uuid4()}"
     receipt = await agent.submit_echo(mcp_servers.OAUTH, marker, wait=True)
     assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED
@@ -319,13 +325,14 @@ async def agent_mcp_bff_decision(
     operator_bff: httpx.AsyncClient,
     operator_credentials: OperatorCredentials,
     client: Client,
+    dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
     harness: runner_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:
     view = await sandbox(f"systest-mcp-{harness}")
-    agent = await ScriptedAgent.open(client, view, harness=harness, model=offered_model, upstream=scripted)
+    agent = await ScriptedAgent.open(client, dispatcher, view, harness=harness, model=offered_model, upstream=scripted)
     # Denial runs first on a fresh session; the next request must still wait for its own decision.
     for verdict in (action_service_pb2.VERDICT_DENY, action_service_pb2.VERDICT_ALLOW):
         # Nothing binds this Sandbox to a policy set, so every Action of its waits for the operator.
@@ -459,6 +466,7 @@ async def _decide_pending(
 async def policy_binding_auto_approves_the_bound_sandbox(
     operator_bff: httpx.AsyncClient,
     client: Client,
+    dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
     harness: runner_pb2.Harness,
     offered_model: str,
@@ -486,7 +494,7 @@ async def policy_binding_auto_approves_the_bound_sandbox(
             }
         ],
     )
-    agent = await ScriptedAgent.open(client, view, harness=harness, model=offered_model, upstream=scripted)
+    agent = await ScriptedAgent.open(client, dispatcher, view, harness=harness, model=offered_model, upstream=scripted)
 
     marker = f"MCP-POLICY-{uuid4()}"
     approved = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, marker, wait=True)
@@ -557,6 +565,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
     cluster: Cluster,
     operator_bff: httpx.AsyncClient,
     client: Client,
+    dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
     harness: runner_pb2.Harness,
     offered_model: str,
@@ -568,7 +577,9 @@ async def launcher_drives_only_the_sandbox_it_launched(
     without asking again. The launched Sandbox's own account, another incarnation of the name and the
     deleted Sandbox still wait for the operator; a Session in a different Sandbox is refused."""
     launcher_view = await sandbox(f"systest-launcher-{harness}")
-    launcher = await ScriptedAgent.open(client, launcher_view, harness=harness, model=offered_model, upstream=scripted)
+    launcher = await ScriptedAgent.open(
+        client, dispatcher, launcher_view, harness=harness, model=offered_model, upstream=scripted
+    )
     name = f"systest-launched-{harness}"
     launch = await launcher.submit(
         ORCHESTRATION_GROUP,

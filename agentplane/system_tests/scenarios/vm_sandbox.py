@@ -17,6 +17,7 @@ from agentplane.app.testing.client import Client
 from agentplane.native.codex import wire
 from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.proto import runner_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.agent import TURN_SECONDS, Agent, Turn, scripted_turn_with_admission_and_history
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.k3s.guest_logs import check_boot, systemd_supervision_passed
@@ -164,6 +165,7 @@ async def _command(
 async def vm_sandbox_turn(
     cluster: Cluster,
     client: Client,
+    dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
     harness: runner_pb2.Harness,
     offered_model: str,
@@ -182,7 +184,7 @@ async def vm_sandbox_turn(
     with tracer.start_as_current_span(
         "system_test.session.open", attributes={"harness": runner_pb2.Harness.Name(harness), "sandbox.name": view.name}
     ):
-        agent = await session_setup_is_supervised(client, view.name, view.uid, harness, offered_model)
+        agent = await session_setup_is_supervised(client, dispatcher, view.name, view.uid, harness, offered_model)
     with tracer.start_as_current_span("system_test.turn"):
         turn, _, _ = await scripted_turn_with_admission_and_history(
             client,
@@ -236,6 +238,7 @@ async def _capture_native_profile(cluster: Cluster, sandbox_name: str, sandbox_u
 async def codex_tool_oom(
     cluster: Cluster,
     client: Client,
+    dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
     offered_model: str,
     scripted: ScriptedUpstream,
@@ -253,6 +256,7 @@ async def codex_tool_oom(
         ):
             agent = await Agent.open(
                 client,
+                dispatcher,
                 sandbox=view.name,
                 sandbox_uid=view.uid,
                 harness=runner_pb2.HARNESS_CODEX,

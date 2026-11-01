@@ -112,7 +112,9 @@ func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependenc
 	server.RegisterRawRoute("GET /threads/notices/stream", http.HandlerFunc(routes.threadNotices), true)
 	server.RegisterRawRoute("GET /sandboxes/{name}/notifications/stream", http.HandlerFunc(routes.sandboxNotifications), true)
 	server.RegisterRawRoute("GET /sandboxes/{name}/console/stream", http.HandlerFunc(routes.console), true)
-	server.RegisterRawRoute("GET /upstream/dispatcher/{path...}", http.HandlerFunc(routes.dispatcher), true)
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		server.RegisterRawRoute(method+" /upstream/dispatcher/{path...}", http.HandlerFunc(routes.dispatcher), true)
+	}
 	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete} {
 		server.RegisterRawRoute(method+" /upstream/actions/{path...}", http.HandlerFunc(routes.actionFacade), true)
 		server.RegisterRawRoute(method+" /upstream/connections/{path...}", http.HandlerFunc(routes.connectionFacade), true)
@@ -690,7 +692,7 @@ func (r *streamingRoutes) dispatcher(w http.ResponseWriter, request *http.Reques
 
 func (r *streamingRoutes) forwardDispatcher(w http.ResponseWriter, request *http.Request, ctx context.Context) {
 	if err := r.deps.DispatcherHTTP.ForwardHTTP(w, request, ctx, request.PathValue("path"), ""); err != nil {
-		writeUpstreamOpenError(w, http.MethodGet, request, err)
+		writeUpstreamOpenError(w, request.Method, request, err)
 	}
 }
 

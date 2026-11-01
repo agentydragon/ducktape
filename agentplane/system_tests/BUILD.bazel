@@ -15,11 +15,11 @@ py_library(
         ":tracing",
         "//agentplane/app/testing:client",
         "//agentplane/app/testing:models",
-        "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/testing:scripted_model",
         "@pypi//httpx",
         "@pypi//protobuf",
@@ -35,6 +35,7 @@ py_library(
     deps = [
         ":case_batch",
         ":cluster",
+        ":dispatcher_transport",
         ":native_artifacts",
         ":offered_models",
         ":ollama_warmup",
@@ -44,12 +45,43 @@ py_library(
         ":tracing",
         "//agentplane/app/testing:client",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//util:net",
         "//util/testing:otel_tracing",
         "//util/testing:undeclared_outputs",
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",
         "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "dispatcher_transport",
+    testonly = True,
+    srcs = ["dispatcher_transport.py"],
+    deps = [
+        ":cluster",
+        ":port_forward",
+        ":tracing",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+    ],
+)
+
+py_library(
+    name = "port_forward",
+    testonly = True,
+    srcs = ["port_forward.py"],
+)
+
+py_test(
+    name = "test_port_forward",
+    srcs = ["test_port_forward.py"],
+    deps = [
+        ":conftest",
+        ":port_forward",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -78,6 +110,7 @@ py_test(
         "//agentplane/env/harnesshost:harness",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest_bazel",
@@ -116,6 +149,7 @@ py_test(
         "//agentplane/native/codex:wire",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//util/testing:undeclared_outputs",
         "@pypi//httpx",
         "@pypi//more_itertools",
@@ -178,6 +212,7 @@ py_test(
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/testing:scripted_model",
         "@pypi//httpx",
         "@pypi//protobuf",
@@ -442,6 +477,7 @@ py_library(
         ":vm_configuration",
         "//agentplane/app/testing:client",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "@pypi//protobuf",
     ],
 )

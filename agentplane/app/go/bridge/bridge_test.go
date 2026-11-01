@@ -16,7 +16,6 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -36,9 +35,7 @@ func (f *fakeSandboxGetter) Get(_ context.Context, name string) (*sandboxespb.Sa
 type fakeDispatcher struct {
 	openRequest *dispatcherpb.OpenSessionRequest
 	opening     *dispatcherpb.SessionOpening
-	requests    []any
 	err         error
-	commandErr  error
 }
 
 func (f *fakeDispatcher) OpenSession(_ context.Context, request *dispatcherpb.OpenSessionRequest) (*dispatcherpb.OpenSessionResponse, error) {
@@ -56,38 +53,6 @@ func (f *fakeDispatcher) GetSessionOpening(_ context.Context, _ *dispatcherpb.Ge
 	return &dispatcherpb.GetSessionOpeningResponse{Opening: f.opening}, nil
 }
 
-func (f *fakeDispatcher) SubmitInput(_ context.Context, request *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
-	f.requests = append(f.requests, proto.Clone(request))
-	if f.commandErr != nil {
-		return nil, f.commandErr
-	}
-	return &dispatcherpb.SubmitInputResponse{Dispatch: &dispatcherpb.Dispatch{CommandId: request.GetCommandId()}}, nil
-}
-
-func (f *fakeDispatcher) ChangeModel(_ context.Context, request *dispatcherpb.ChangeModelRequest) (*dispatcherpb.ChangeModelResponse, error) {
-	f.requests = append(f.requests, proto.Clone(request))
-	if f.commandErr != nil {
-		return nil, f.commandErr
-	}
-	return &dispatcherpb.ChangeModelResponse{Dispatch: &dispatcherpb.Dispatch{CommandId: request.GetCommandId()}}, nil
-}
-
-func (f *fakeDispatcher) ChangeReasoningEffort(_ context.Context, request *dispatcherpb.ChangeReasoningEffortRequest) (*dispatcherpb.ChangeReasoningEffortResponse, error) {
-	f.requests = append(f.requests, proto.Clone(request))
-	if f.commandErr != nil {
-		return nil, f.commandErr
-	}
-	return &dispatcherpb.ChangeReasoningEffortResponse{Dispatch: &dispatcherpb.Dispatch{CommandId: request.GetCommandId()}}, nil
-}
-
-func (f *fakeDispatcher) InterruptTurn(_ context.Context, request *dispatcherpb.InterruptTurnRequest) (*dispatcherpb.InterruptTurnResponse, error) {
-	f.requests = append(f.requests, proto.Clone(request))
-	if f.commandErr != nil {
-		return nil, f.commandErr
-	}
-	return &dispatcherpb.InterruptTurnResponse{State: dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED}, nil
-}
-
 type fakeRunner struct {
 	list   *runnerpb.ListSessionsResponse
 	status *runnerpb.RunnerStatus
@@ -103,18 +68,6 @@ func (f *fakeRunner) ListSessions(_ context.Context, sandbox *sandboxespb.Sandbo
 func (f *fakeRunner) RunnerStatus(_ context.Context, sandbox *sandboxespb.Sandbox) (*runnerpb.RunnerStatus, error) {
 	f.got = sandbox
 	return f.status, f.err
-}
-
-type fakeReadiness struct {
-	exists   bool
-	snapshot *FeedSnapshot
-	err      error
-	feedErr  error
-}
-
-func (f *fakeReadiness) Exists(context.Context, uuid.UUID) (bool, error) { return f.exists, f.err }
-func (f *fakeReadiness) FeedState(context.Context, uuid.UUID) (*FeedSnapshot, error) {
-	return f.snapshot, f.feedErr
 }
 
 func TestParseSessionSpecOverlaysDefaultsAndRejectsUnknownFields(t *testing.T) {
@@ -145,7 +98,7 @@ func TestOpenSessionPreservesIdentitySpecAndOptionalSetupScript(t *testing.T) {
 	dispatcher := &fakeDispatcher{opening: &dispatcherpb.SessionOpening{
 		SessionId: sessionID.String(), Sandbox: "operator-sandbox", SandboxUid: "sandbox-uid",
 	}}
-	bridge, err := New(&fakeSandboxGetter{}, nil, dispatcher, nil)
+	bridge, err := New(&fakeSandboxGetter{}, nil, dispatcher)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +141,7 @@ func TestOpenSessionForwardsNilUUIDLikePythonRoute(t *testing.T) {
 	dispatcher := &fakeDispatcher{opening: &dispatcherpb.SessionOpening{
 		SessionId: uuid.Nil.String(), Sandbox: "operator-sandbox", SandboxUid: "sandbox-uid",
 	}}
-	bridge, err := New(&fakeSandboxGetter{}, nil, dispatcher, nil)
+	bridge, err := New(&fakeSandboxGetter{}, nil, dispatcher)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +158,7 @@ func TestOpenSessionForwardsNilUUIDLikePythonRoute(t *testing.T) {
 func TestOpenSessionTimeoutCarriesStableIdempotencyKey(t *testing.T) {
 	sessionID := uuid.New()
 	dispatcher := &fakeDispatcher{err: &RequestTimeoutError{Cause: context.DeadlineExceeded}}
-	bridge, err := New(&fakeSandboxGetter{}, nil, dispatcher, nil)
+	bridge, err := New(&fakeSandboxGetter{}, nil, dispatcher)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +176,7 @@ func TestSessionOpeningHidesWrongSandboxAndSession(t *testing.T) {
 		{SessionId: uuid.NewString(), Sandbox: "operator-sandbox"},
 		{},
 	} {
-		bridge, err := New(&fakeSandboxGetter{}, nil, &fakeDispatcher{opening: opening}, nil)
+		bridge, err := New(&fakeSandboxGetter{}, nil, &fakeDispatcher{opening: opening})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -238,116 +191,13 @@ func TestSessionOpeningHidesWrongSandboxAndSession(t *testing.T) {
 	}
 }
 
-func TestCommandReadyChecksThreadAndRejectedFeed(t *testing.T) {
-	threadID := uuid.New()
-	bridge, err := New(&fakeSandboxGetter{}, nil, &fakeDispatcher{}, &fakeReadiness{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := bridge.CommandReady(context.Background(), threadID); err == nil {
-		t.Fatal("missing Thread was admitted")
-	} else {
-		var missing *ThreadNotFoundError
-		if !errors.As(err, &missing) || missing.ThreadID != threadID {
-			t.Fatalf("error = %T %v, want ThreadNotFoundError", err, err)
-		}
-	}
-	readiness := &fakeReadiness{exists: true, snapshot: &FeedSnapshot{End: &FeedError{Message: "cursor 17 was rejected"}}}
-	bridge, err = New(&fakeSandboxGetter{}, nil, &fakeDispatcher{}, readiness)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := bridge.CommandReady(context.Background(), threadID); err == nil || err.Error() != "runner history is rejected: cursor 17 was rejected" {
-		t.Fatalf("rejected feed error = %v", err)
-	}
-	readiness.snapshot = nil
-	if err := bridge.CommandReady(context.Background(), threadID); err != nil {
-		t.Fatalf("nil feed snapshot should be admissible: %v", err)
-	}
-}
-
-func TestCommandMethodsCheckReadinessAndPreservePayloads(t *testing.T) {
-	sessionID := uuid.New()
-	dispatcher := &fakeDispatcher{}
-	bridge, err := New(&fakeSandboxGetter{}, nil, dispatcher, &fakeReadiness{exists: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	input, err := bridge.SubmitInput(context.Background(), "operator-sandbox", sessionID, "input-1", "hello")
-	if err != nil || input.GetCommandId() != "input-1" {
-		t.Fatalf("SubmitInput = %v, %v", input, err)
-	}
-	model, err := bridge.ChangeModel(context.Background(), "operator-sandbox", sessionID, "model-1", "vendor/model")
-	if err != nil || model.GetCommandId() != "model-1" {
-		t.Fatalf("ChangeModel = %v, %v", model, err)
-	}
-	effort, err := bridge.ChangeReasoningEffort(context.Background(), "operator-sandbox", sessionID, "effort-1", "high")
-	if err != nil || effort.GetCommandId() != "effort-1" {
-		t.Fatalf("ChangeReasoningEffort = %v, %v", effort, err)
-	}
-	interrupted, err := bridge.InterruptTurn(context.Background(), "operator-sandbox", sessionID, "interrupt-1", "turn-7")
-	if err != nil || interrupted.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED {
-		t.Fatalf("InterruptTurn = %v, %v", interrupted, err)
-	}
-	if len(dispatcher.requests) != 4 {
-		t.Fatalf("got %d dispatcher calls, want 4", len(dispatcher.requests))
-	}
-	if got := dispatcher.requests[0].(*dispatcherpb.SubmitInputRequest); got.GetSandbox() != "operator-sandbox" || got.GetSessionId() != sessionID.String() || got.GetText() != "hello" {
-		t.Fatalf("SubmitInput request = %v", got)
-	}
-	if got := dispatcher.requests[1].(*dispatcherpb.ChangeModelRequest); got.GetModel() != "vendor/model" {
-		t.Fatalf("ChangeModel request = %v", got)
-	}
-	if got := dispatcher.requests[2].(*dispatcherpb.ChangeReasoningEffortRequest); got.GetEffort() != "high" {
-		t.Fatalf("ChangeReasoningEffort request = %v", got)
-	}
-	if got := dispatcher.requests[3].(*dispatcherpb.InterruptTurnRequest); got.GetTurnId() != "turn-7" {
-		t.Fatalf("InterruptTurn request = %v", got)
-	}
-
-	blockedDispatcher := &fakeDispatcher{}
-	blocked, err := New(&fakeSandboxGetter{}, nil, blockedDispatcher, &fakeReadiness{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := blocked.SubmitInput(context.Background(), "operator-sandbox", sessionID, "blocked", "hello"); err == nil {
-		t.Fatal("command for a missing Thread reached the Dispatcher")
-	}
-	if len(blockedDispatcher.requests) != 0 {
-		t.Fatalf("blocked command reached Dispatcher: %v", blockedDispatcher.requests)
-	}
-}
-
-func TestCommandTimeoutCarriesCommandIDAndGRPCStatusesAreTyped(t *testing.T) {
-	sessionID := uuid.New()
-	dispatcher := &fakeDispatcher{commandErr: &RequestTimeoutError{Cause: context.DeadlineExceeded}}
-	bridge, err := New(&fakeSandboxGetter{}, nil, dispatcher, &fakeReadiness{exists: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = bridge.SubmitInput(context.Background(), "operator-sandbox", sessionID, "stable-command-id", "hello")
-	var timeout *DispatcherRequestTimeoutError
-	if !errors.As(err, &timeout) || timeout.CommandID != "stable-command-id" || !strings.Contains(err.Error(), "command 'stable-command-id'") {
-		t.Fatalf("timeout = %#v, error = %v", timeout, err)
-	}
-	if _, ok := translatedRPCError(status.Error(codes.FailedPrecondition, "runner refused")).(*RefusedError); !ok {
-		t.Fatal("FAILED_PRECONDITION did not map to RefusedError")
-	}
-	if _, ok := translatedRPCError(status.Error(codes.Unavailable, "runner offline")).(*ServiceError); !ok {
-		t.Fatal("UNAVAILABLE did not map to ServiceError")
-	}
-	if _, ok := translatedRPCError(status.Error(codes.DeadlineExceeded, "deadline")).(*RequestTimeoutError); !ok {
-		t.Fatal("DEADLINE_EXCEEDED did not map to RequestTimeoutError")
-	}
-}
-
 func TestRunnerRoutesUseCurrentSandboxIdentityAndReturnProxiedValues(t *testing.T) {
 	sandbox := &sandboxespb.Sandbox{Name: "operator-sandbox", Uid: "sandbox-uid", Namespace: "operators"}
 	list := &runnerpb.ListSessionsResponse{Sessions: []*runnerpb.SessionSummary{{SessionId: uuid.NewString()}}}
 	status := &runnerpb.RunnerStatus{RunnerBootId: "boot-1"}
 	runner := &fakeRunner{list: list, status: status}
 	getter := &fakeSandboxGetter{sandbox: sandbox}
-	bridge, err := New(getter, runner, &fakeDispatcher{}, nil)
+	bridge, err := New(getter, runner, &fakeDispatcher{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -484,26 +334,6 @@ func (s *dispatcherTestServer) GetSessionOpening(ctx context.Context, request *d
 	return &dispatcherpb.GetSessionOpeningResponse{Opening: &dispatcherpb.SessionOpening{SessionId: request.GetSessionId(), Sandbox: "operator-sandbox"}}, nil
 }
 
-func (s *dispatcherTestServer) SubmitInput(ctx context.Context, request *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
-	s.capture(ctx)
-	return &dispatcherpb.SubmitInputResponse{Dispatch: &dispatcherpb.Dispatch{CommandId: request.GetCommandId()}}, nil
-}
-
-func (s *dispatcherTestServer) ChangeModel(ctx context.Context, request *dispatcherpb.ChangeModelRequest) (*dispatcherpb.ChangeModelResponse, error) {
-	s.capture(ctx)
-	return &dispatcherpb.ChangeModelResponse{Dispatch: &dispatcherpb.Dispatch{CommandId: request.GetCommandId()}}, nil
-}
-
-func (s *dispatcherTestServer) ChangeReasoningEffort(ctx context.Context, request *dispatcherpb.ChangeReasoningEffortRequest) (*dispatcherpb.ChangeReasoningEffortResponse, error) {
-	s.capture(ctx)
-	return &dispatcherpb.ChangeReasoningEffortResponse{Dispatch: &dispatcherpb.Dispatch{CommandId: request.GetCommandId()}}, nil
-}
-
-func (s *dispatcherTestServer) InterruptTurn(ctx context.Context, _ *dispatcherpb.InterruptTurnRequest) (*dispatcherpb.InterruptTurnResponse, error) {
-	s.capture(ctx)
-	return &dispatcherpb.InterruptTurnResponse{State: dispatcherpb.DeliveryState_DELIVERY_STATE_NO_OP}, nil
-}
-
 func TestDispatcherClientUsesRotatingBearerAndMapsDeadline(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -527,18 +357,6 @@ func TestDispatcherClientUsesRotatingBearerAndMapsDeadline(t *testing.T) {
 	if _, err := client.OpenSession(context.Background(), &dispatcherpb.OpenSessionRequest{SessionId: id, Sandbox: "operator-sandbox", SandboxUid: "sandbox-uid"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.SubmitInput(context.Background(), &dispatcherpb.SubmitInputRequest{CommandId: "input", SessionId: id, Sandbox: "operator-sandbox"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := client.ChangeModel(context.Background(), &dispatcherpb.ChangeModelRequest{CommandId: "model", SessionId: id, Sandbox: "operator-sandbox"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := client.ChangeReasoningEffort(context.Background(), &dispatcherpb.ChangeReasoningEffortRequest{CommandId: "effort", SessionId: id, Sandbox: "operator-sandbox"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := client.InterruptTurn(context.Background(), &dispatcherpb.InterruptTurnRequest{CommandId: "interrupt", SessionId: id, Sandbox: "operator-sandbox"}); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := client.GetSessionOpening(context.Background(), &dispatcherpb.GetSessionOpeningRequest{SessionId: id}); err != nil {
 		t.Fatal(err)
 	}
@@ -548,7 +366,7 @@ func TestDispatcherClientUsesRotatingBearerAndMapsDeadline(t *testing.T) {
 	if _, err := client.GetSessionOpening(context.Background(), &dispatcherpb.GetSessionOpeningRequest{SessionId: id}); err != nil {
 		t.Fatal(err)
 	}
-	if len(service.seenBearer) != 7 || service.seenBearer[0] != "Bearer token-one" || service.seenBearer[6] != "Bearer token-two" {
+	if len(service.seenBearer) != 3 || service.seenBearer[0] != "Bearer token-one" || service.seenBearer[2] != "Bearer token-two" {
 		t.Fatalf("dispatcher bearer values = %v", service.seenBearer)
 	}
 

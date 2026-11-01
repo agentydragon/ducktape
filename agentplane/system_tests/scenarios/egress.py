@@ -36,6 +36,7 @@ from agentplane.app.testing.models import SandboxView
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.decisions import Decision, Outcome
 from agentplane.proto import runner_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 from agentplane.system_tests import probe_credential, runtime_grant
 from agentplane.system_tests.agent import Agent
@@ -125,7 +126,12 @@ async def _decision_for(client: Client, sandbox: str, host: str, *, after: datet
 
 
 async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
-    cluster: Cluster, client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
+    cluster: Cluster,
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    sandbox: Sandboxes,
+    harness: runner_pb2.Harness,
+    model: str,
 ) -> None:
     """The whole path in one turn: the agent asks what it may reach, uses the credential it is told
     about without ever holding it, is authenticated as that credential's account, and is refused
@@ -134,7 +140,7 @@ async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     Nothing here tells the agent the placeholder. If it comes back as the account, discovery worked.
     """
     view = await sandbox(f"systest-probe-{harness}", policies=[probe_credential.POLICY_SET, GITHUB_CLONE])
-    agent = await Agent.open(client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model)
+    agent = await Agent.open(client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model)
     turn = await agent.run(_probe(f"http://egress.{cluster.namespace}.svc.cluster.local/v1/rules"))
     probe = turn.report(Probe)
 
@@ -160,6 +166,7 @@ async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
 async def the_model_call_itself_goes_through_the_proxy(
     cluster: Cluster,
     client: Client,
+    dispatcher: SessionDispatcherClient,
     view: SandboxView,
     harness: runner_pb2.Harness,
     offered_model: str,
@@ -181,7 +188,9 @@ async def the_model_call_itself_goes_through_the_proxy(
     """
     assert view.pod is not None
     model = scripted.model(view.pod.name, harness)
-    agent = await Agent.open(client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=offered_model)
+    agent = await Agent.open(
+        client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=offered_model
+    )
     async with asyncio.TaskGroup() as turns:
         answered = turns.create_task(agent.run("Reply with the single word: ok."))
         await model.reply(await model.request(), Text("ok"))
@@ -224,6 +233,7 @@ async def _granted_request(cluster: Cluster) -> tuple[str, str]:
 async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
     cluster: Cluster,
     client: Client,
+    dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
     harness: runner_pb2.Harness,
     offered_model: str,
@@ -234,7 +244,9 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
     view = await sandbox(f"systest-bind-{harness}")
     assert view.pod is not None
     model = scripted.model(view.pod.name, harness)
-    agent = await Agent.open(client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=offered_model)
+    agent = await Agent.open(
+        client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=offered_model
+    )
     command = f"curl -sS -o /dev/null -w '%{{http_code}}\\n' http://{host}{path}"
 
     await agent.run_shell(model, command)

@@ -38,51 +38,6 @@ func (c *DispatcherClient) connection(ctx context.Context, call func(context.Con
 	return translatedRPCError(call(ctx, dispatcherpb.NewSessionDispatcherClient(conn)))
 }
 
-// SubmitInput admits one input command. Retries must reuse its command ID.
-func (c *DispatcherClient) SubmitInput(ctx context.Context, request *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
-	var response *dispatcherpb.SubmitInputResponse
-	err := c.connection(ctx, func(ctx context.Context, client dispatcherpb.SessionDispatcherClient) error {
-		var err error
-		response, err = client.SubmitInput(ctx, request)
-		return err
-	})
-	return response, err
-}
-
-// ChangeModel admits one model change. Retries must reuse its command ID.
-func (c *DispatcherClient) ChangeModel(ctx context.Context, request *dispatcherpb.ChangeModelRequest) (*dispatcherpb.ChangeModelResponse, error) {
-	var response *dispatcherpb.ChangeModelResponse
-	err := c.connection(ctx, func(ctx context.Context, client dispatcherpb.SessionDispatcherClient) error {
-		var err error
-		response, err = client.ChangeModel(ctx, request)
-		return err
-	})
-	return response, err
-}
-
-// ChangeReasoningEffort admits one reasoning-effort change. Retries must reuse
-// its command ID.
-func (c *DispatcherClient) ChangeReasoningEffort(ctx context.Context, request *dispatcherpb.ChangeReasoningEffortRequest) (*dispatcherpb.ChangeReasoningEffortResponse, error) {
-	var response *dispatcherpb.ChangeReasoningEffortResponse
-	err := c.connection(ctx, func(ctx context.Context, client dispatcherpb.SessionDispatcherClient) error {
-		var err error
-		response, err = client.ChangeReasoningEffort(ctx, request)
-		return err
-	})
-	return response, err
-}
-
-// InterruptTurn sends one identified turn interruption.
-func (c *DispatcherClient) InterruptTurn(ctx context.Context, request *dispatcherpb.InterruptTurnRequest) (*dispatcherpb.InterruptTurnResponse, error) {
-	var response *dispatcherpb.InterruptTurnResponse
-	err := c.connection(ctx, func(ctx context.Context, client dispatcherpb.SessionDispatcherClient) error {
-		var err error
-		response, err = client.InterruptTurn(ctx, request)
-		return err
-	})
-	return response, err
-}
-
 // OpenSession calls the durable, idempotent Session-opening RPC exactly once.
 // A RequestTimeoutError indicates that callers must reconcile or retry with
 // the same Session ID.

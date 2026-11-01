@@ -6,6 +6,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.app.testing.client import Client
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.sandbox import Sandboxes
@@ -33,10 +34,15 @@ def storage_layout() -> storage.StorageLayout:
 
 @pytest.mark.scripted_model
 async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
-    cluster: Cluster, client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream, executor: Executor
+    cluster: Cluster,
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    sandbox: Sandboxes,
+    scripted: ScriptedUpstream,
+    executor: Executor,
 ) -> None:
     await suspend_resume.two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
-        cluster, client, sandbox, scripted, executor
+        cluster, client, dispatcher, sandbox, scripted, executor
     )
 
 

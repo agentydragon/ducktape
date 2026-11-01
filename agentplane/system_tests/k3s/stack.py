@@ -23,7 +23,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import threading
 import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -46,6 +45,7 @@ from agentplane.system_tests.k3s import (
 )
 from agentplane.system_tests.k3s.bootstrap import Bootstrap
 from agentplane.system_tests.k3s.iptables_rule import ensure_rule
+from agentplane.system_tests.port_forward import PortForward
 from agentplane.system_tests.tracing import tracer
 from agentplane.testing import tls
 from util.bazel.runfiles import get_required_path
@@ -458,24 +458,18 @@ def _mcp_inputs(work: Path, dex_host: str) -> rendered_fixture.McpInputs:
 def _port_forward(k3s: K3s, namespace: str, service: str, origin: str, port: int) -> Iterator[None]:
     """Forward the loopback `origin` to `service`'s `port` from when kubectl says it listens."""
     local = urlsplit(origin)
-    with subprocess.Popen(
-        [
-            *(str(k3s.binary), "kubectl", "--kubeconfig", str(k3s.kubeconfig), "port-forward", "-n", namespace),
-            *(f"--address={local.hostname}", f"service/{service}", f"{local.port}:{port}"),
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    ) as forward:
-        try:
-            assert forward.stdout is not None
-            if not (line := forward.stdout.readline()).startswith("Forwarding from"):
-                raise RuntimeError(f"kubectl port-forward {service}: {line!r}")
-            # Its log of each connection, which would fill the pipe unread.
-            threading.Thread(target=shutil.copyfileobj, args=(forward.stdout, sys.stdout), daemon=True).start()
-            yield
-        finally:
-            forward.terminate()
+    if local.hostname is None or local.port is None:
+        raise ValueError(f"port-forward origin needs a hostname and port: {origin!r}")
+    with PortForward(
+        (str(k3s.binary), "kubectl", "--kubeconfig", str(k3s.kubeconfig), "port-forward", "-n", namespace),
+        resource=f"service/{service}",
+        local_address=local.hostname,
+        local_port=local.port,
+        remote_port=port,
+        readiness_timeout_s=30,
+        output=sys.stdout.write,
+    ):
+        yield
 
 
 @tracer.start_as_current_span("system_test.network.resolve")

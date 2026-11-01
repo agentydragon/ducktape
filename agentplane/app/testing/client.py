@@ -335,21 +335,6 @@ class Client:
         summary = await self._json("GET", f"/upstream/history/v1/sessions/{thread_id}/summary")
         return thread_view_from_proto_json(metadata, summary)
 
-    async def submit_input(
-        self, thread_id: UUID, command_id: str, text: str
-    ) -> session_dispatcher_pb2.Dispatch | event_log_pb2.EventEntry:
-        """Submit an input by its stable ID and return durable or archived admission evidence."""
-        answered = await self._json(
-            "POST", f"/threads/{thread_id}/submit-input", json={"commandId": command_id, "text": text}
-        )
-        match answered["kind"]:
-            case "dispatch":
-                return ParseDict(answered["dispatch"], session_dispatcher_pb2.Dispatch())
-            case "archived_admission":
-                return ParseDict(answered["admission"], event_log_pb2.EventEntry())
-            case kind:
-                raise ValueError(f"unrecognized command submission kind: {kind!r}")
-
     async def events(
         self, thread_id: UUID, *, after: int, read_seconds: float, awaiting_command_id: str | None = None
     ) -> AsyncGenerator[event_log_pb2.EventEntry]:

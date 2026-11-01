@@ -12,6 +12,7 @@ from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.testing.client import Client
 from agentplane.env.harnesshost.harness import Harness
 from agentplane.proto import event_pb2, runner_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.ollama_catalog import ollama_cases
 from agentplane.system_tests.sandbox import Sandboxes
@@ -26,7 +27,12 @@ def _id(case: tuple[runner_pb2.Harness, str]) -> str:
 
 
 async def _exercise_case(
-    client: Client, sandbox: Sandboxes, catalog: ModelCatalog, harness: runner_pb2.Harness, route: str
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    sandbox: Sandboxes,
+    catalog: ModelCatalog,
+    harness: runner_pb2.Harness,
+    route: str,
 ) -> None:
     case_id = _id((harness, route))
     evidence: dict[str, object] = {"case": case_id, "route": route, "status": "started"}
@@ -35,7 +41,9 @@ async def _exercise_case(
         assert route in offered, f"route absent from offered models for {case_id}"
         view = await sandbox("systest-ollama-smoke")
         evidence["sandbox"] = view.name
-        agent = await Agent.open(client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=route)
+        agent = await Agent.open(
+            client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=route
+        )
         evidence["thread_id"] = str(agent.thread_id)
         async with asyncio.timeout(300):
             turn = await agent.run(
@@ -90,7 +98,7 @@ async def _exercise_case(
             await asyncio.sleep(hold_seconds)
 
 
-async def test_ollama_tool_call(client: Client, sandbox: Sandboxes) -> None:
+async def test_ollama_tool_call(client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes) -> None:
     catalog = await client.models()
     cases = ollama_cases(catalog)
     selected = os.environ.get("OLLAMA_SMOKE_CASE")
@@ -99,7 +107,7 @@ async def test_ollama_tool_call(client: Client, sandbox: Sandboxes) -> None:
         if not cases:
             raise ValueError(f"unknown OLLAMA_SMOKE_CASE: {selected}")
     for harness, route in cases:
-        await _exercise_case(client, sandbox, catalog, harness, route)
+        await _exercise_case(client, dispatcher, sandbox, catalog, harness, route)
 
 
 if __name__ == "__main__":

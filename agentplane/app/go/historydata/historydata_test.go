@@ -6,9 +6,6 @@ import (
 	"testing"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
-	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -252,28 +249,5 @@ func TestFindSessionsUsesSandboxUIDFilter(t *testing.T) {
 	filter, ok := reader.findSessions.GetSandbox().(*historypb.FindSessionsRequest_SandboxUid)
 	if !ok || filter.SandboxUid != uid {
 		t.Fatalf("FindSessions Sandbox filter = %T (%v), want UID %q", reader.findSessions.GetSandbox(), reader.findSessions.GetSandbox(), uid)
-	}
-}
-
-func TestAdmittedCommandRequiresTheExactImmutableCommand(t *testing.T) {
-	id := uuid.New()
-	original := &commandpb.Command{CommandId: "retry-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}
-	reader := &fakeHistoryReader{
-		entities: &historypb.ReadThreadEntitiesResponse{Entities: []*historypb.ThreadEntity{{ViewJson: `{"entity_kind":"command","entity_id":"retry-1","cursor":1}`}}},
-		events: &historypb.ReadSessionEventsResponse{LastCursor: 1, Entries: []*eventlogpb.EventEntry{{
-			Cursor: 1, Origin: &eventlogpb.EventOrigin{Sequence: 1},
-			Event: &eventpb.Event{Observation: &eventpb.Event_CommandAdmitted{CommandAdmitted: &eventpb.CommandAdmitted{Command: original}}},
-		}}},
-	}
-	store, err := New(reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.AdmittedCommand(t.Context(), id, original); err != nil {
-		t.Fatalf("exact retry: %v", err)
-	}
-	different := &commandpb.Command{CommandId: "retry-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "different"}}}
-	if _, err := store.AdmittedCommand(t.Context(), id, different); !errors.Is(err, ErrCommandConflict) {
-		t.Fatalf("different retry error = %v, want ErrCommandConflict", err)
 	}
 }

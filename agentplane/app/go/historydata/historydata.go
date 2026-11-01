@@ -10,14 +10,11 @@ import (
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/settledcursors"
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
-	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -27,7 +24,6 @@ var (
 	ErrEvidenceNotFound = errors.New("History entity evidence not found")
 	ErrInvalidPage      = errors.New("History Service returned an invalid page")
 	ErrInvalidSessionID = errors.New("History Service returned an invalid Session ID")
-	ErrCommandConflict  = errors.New("command ID was already admitted with different work")
 )
 
 // Reader is the generated History Service read boundary. The concrete client is
@@ -435,66 +431,4 @@ func (s *Store) NativeFrames(ctx context.Context, id uuid.UUID, epoch, kind, ent
 		result.NextAfterSequence = &value
 	}
 	return result, nil
-}
-
-// AdmittedCommand finds a command's durable History admission before deciding whether the exact
-// request is an idempotent archived retry. The projection locates the cursor; the immutable event
-// log remains the authority for the original Command body.
-func (s *Store) AdmittedCommand(ctx context.Context, id uuid.UUID, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
-	if command == nil || command.GetCommandId() == "" {
-		return nil, errors.New("command and stable command ID are required")
-	}
-	page, err := s.reader.ReadThreadEntities(ctx, &historypb.ReadThreadEntitiesRequest{
-		SessionId: id.String(),
-		Window: &historypb.ReadThreadEntitiesRequest_Keys{Keys: &historypb.EntityKeys{Keys: []*historypb.EntityKey{{
-			EntityKind: "command", EntityId: command.GetCommandId(),
-		}}}},
-	})
-	if status.Code(err) == codes.FailedPrecondition || status.Code(err) == codes.NotFound {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if len(page.GetEntities()) == 0 {
-		return nil, nil
-	}
-	if len(page.GetEntities()) != 1 {
-		return nil, fmt.Errorf("%w: History Service returned duplicate command entities", ErrInvalidPage)
-	}
-	var view struct {
-		EntityKind string `json:"entity_kind"`
-		EntityID   string `json:"entity_id"`
-		Cursor     uint64 `json:"cursor"`
-	}
-	if err := json.Unmarshal([]byte(page.GetEntities()[0].GetViewJson()), &view); err != nil {
-		return nil, fmt.Errorf("decode History command entity: %w", err)
-	}
-	if view.EntityKind != "command" || view.EntityID != command.GetCommandId() || view.Cursor == 0 {
-		return nil, fmt.Errorf("%w: command entity did not identify its admission cursor", ErrInvalidPage)
-	}
-	entries, err := s.reader.ReadSessionEvents(ctx, &historypb.ReadSessionEventsRequest{
-		SessionId: id.String(), AfterCursor: view.Cursor - 1, Limit: 1,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if settledcursors.NextStored(view.Cursor-1, settledcursors.Unstored(entries)) != view.Cursor {
-		return nil, errors.New("command summary has no archived admission")
-	}
-	if len(entries.GetEntries()) != 1 {
-		return nil, fmt.Errorf("%w: command admission page did not contain exactly one event", ErrInvalidPage)
-	}
-	entry := entries.GetEntries()[0]
-	if entry.GetCursor() != view.Cursor || entry.GetOrigin().GetSequence() != view.Cursor {
-		return nil, fmt.Errorf("%w: History Service returned a different command cursor", ErrInvalidPage)
-	}
-	admitted := entry.GetEvent().GetCommandAdmitted()
-	if admitted == nil || admitted.GetCommand().GetCommandId() != command.GetCommandId() {
-		return nil, errors.New("command summary has no matching archived admission")
-	}
-	if !proto.Equal(admitted.GetCommand(), command) {
-		return nil, fmt.Errorf("%w: %q", ErrCommandConflict, command.GetCommandId())
-	}
-	return entry, nil
 }

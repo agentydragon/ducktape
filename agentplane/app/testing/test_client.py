@@ -18,7 +18,6 @@ from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, Trace
 from agentplane.app.testing import client as client_module
 from agentplane.app.testing.client import Client, SessionStreamError
 from agentplane.proto import event_log_pb2
-from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 
 # A server answers one connection per call: `(after, writer)`. Raw sockets, because what is under
 # test is how the client reads a connection that dies, which an ASGI transport cannot produce.
@@ -50,7 +49,16 @@ async def _app(
     async def serve(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         request = (await reader.readuntil(b"\r\n\r\n")).decode()
         if requests is not None:
-            requests.append(request)
+            length = next(
+                (
+                    int(line.split(":", 1)[1])
+                    for line in request.splitlines()
+                    if line.lower().startswith("content-length:")
+                ),
+                0,
+            )
+            body = (await reader.readexactly(length)).decode() if length else ""
+            requests.append(request + body)
         after = int(request.split("after=")[1].split(" ")[0].split("&")[0]) if "after=" in request else 0
         try:
             await remaining.pop(0)(after, writer)
@@ -83,25 +91,6 @@ async def _rest_then_end(after: int, writer: asyncio.StreamWriter) -> None:
 
 async def _unavailable(after: int, writer: asyncio.StreamWriter) -> None:
     await _respond(writer, "503 Service Unavailable")
-
-
-async def test_command_accepts_the_dispatchers_durable_receipt() -> None:
-    command_id = "resume-by-input"
-    receipt = session_dispatcher_pb2.Dispatch(
-        command_id=command_id, session_id=str(uuid4()), state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
-    )
-
-    async def accepted(_after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(
-            writer,
-            "200 OK",
-            json.dumps({"kind": "dispatch", "dispatch": MessageToDict(receipt)}).encode(),
-            "application/json",
-        )
-
-    async with _app(accepted) as (client, _):
-        result = await client.submit_input(uuid4(), command_id, "Continue")
-    assert result == receipt
 
 
 async def test_client_propagates_active_trace_context() -> None:
@@ -173,23 +162,6 @@ async def test_app_config_client_adapts_proto_json_to_test_views() -> None:
     assert catalog.harnesses == {"HARNESS_CODEX": ["model-a"]}
     assert views[0].session_defaults.harness == "HARNESS_CODEX"
     assert views[0].session_defaults.reasoning_effort is None
-
-
-async def test_command_accepts_an_archived_admission_without_a_dispatch() -> None:
-    command_id = "archived"
-    admission = event_log_pb2.EventEntry(cursor=1)
-
-    async def archived(_after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(
-            writer,
-            "200 OK",
-            json.dumps({"kind": "archived_admission", "admission": MessageToDict(admission)}).encode(),
-            "application/json",
-        )
-
-    async with _app(archived) as (client, _):
-        result = await client.submit_input(uuid4(), command_id, "Continue")
-    assert result == admission
 
 
 async def test_resumes_after_the_last_entry_when_the_stream_closes_without_an_end_frame() -> None:

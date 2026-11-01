@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.session_setup import run_setup
 from agentplane.system_tests.vm_configuration import RESOURCES
@@ -41,7 +42,12 @@ while ! test -e child-ready; do sleep 0.01; done
 
 
 async def session_setup_is_supervised(
-    client: Client, sandbox_name: str, sandbox_uid: UUID, harness: runner_pb2.Harness, model: str
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    sandbox_name: str,
+    sandbox_uid: UUID,
+    harness: runner_pb2.Harness,
+    model: str,
 ) -> Agent:
     session_id = uuid4()
     # A fresh nested path exercises Runner's workspace helper rather than a pre-created cwd.
@@ -121,7 +127,7 @@ async def session_setup_is_supervised(
     )
     assert checked == "SETUP_DOMAIN_EMPTY\n", (checked, errors)
     assert not errors, errors
-    return Agent(client, thread_id=session_id, cursor=0)
+    return Agent(client, dispatcher, thread_id=session_id, cursor=0, sandbox=sandbox_name, sandbox_uid=str(sandbox_uid))
 
 
 # gazelle:include_dep @pypi//protobuf

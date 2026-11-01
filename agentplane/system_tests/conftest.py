@@ -17,9 +17,11 @@ from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests import native_artifacts, scenario, scripted_upstream
 from agentplane.system_tests.case_batch import CASE_RESULT
 from agentplane.system_tests.cluster import AGENT_SERVICE_ACCOUNT, AUDIENCE, Cluster, mint_token
+from agentplane.system_tests.dispatcher_transport import native_client
 from agentplane.system_tests.offered_models import models_offered_for
 from agentplane.system_tests.ollama_warmup import warm_ollama
 from agentplane.system_tests.sandbox import Sandboxes, sandbox_scope
@@ -110,6 +112,13 @@ async def client(
                         "system_test.diagnostics", attributes={"sandbox.uid": str(uid)}
                     ):
                         await native_artifacts.capture(opened, sandbox_uid=uid)
+
+
+@pytest.fixture
+async def dispatcher(cluster: Cluster, tmp_path: Path) -> AsyncIterator[SessionDispatcherClient]:
+    """Native Dispatcher client using an already authorized, Pod-bound test service identity."""
+    async with native_client(cluster, tmp_path / "dispatcher-token") as client:
+        yield client
 
 
 @pytest.fixture(params=[runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX], ids=["claude", "codex"])

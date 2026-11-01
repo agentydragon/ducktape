@@ -29,7 +29,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/go/status"
-	"github.com/agentydragon/ducktape/agentplane/app/go/threadcommands"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
@@ -177,8 +176,7 @@ func run(ctx context.Context, config Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Session Dispatcher: %w", err)
 	}
-	readiness := threadReadiness{threads: threadStore, history: history}
-	appBridge, err := bridge.New(inventory, runner, dispatcher, readiness)
+	appBridge, err := bridge.New(inventory, runner, dispatcher)
 	if err != nil {
 		return fmt.Errorf("configure Runner bridge: %w", err)
 	}
@@ -320,12 +318,6 @@ func run(ctx context.Context, config Config) error {
 	if err := RegisterThreadReadRoutes(server, threadStore, history, inventory, appBridge, wakeupHub, wakeupHub.Connected); err != nil {
 		return fmt.Errorf("register Thread routes: %w", err)
 	}
-	if err := threadcommands.RegisterRoutes(server.ProtectedAPI(), threadcommands.Dependencies{
-		Threads: threadStore, History: history, Readiness: appBridge, Dispatcher: dispatcher,
-		Models: config.Models.Harnesses,
-	}); err != nil {
-		return fmt.Errorf("register Thread command routes: %w", err)
-	}
 	RegisterOperatorRoutes(server, policies, federator, actionClient, actionCallbackHTTP, config.ActionFederation.ServiceURL)
 	RegisterStatusRoutes(server, serviceStatus)
 	server.RegisterRawRoute("POST /telemetry/v1/traces", traceRelayHandler(), true)
@@ -357,11 +349,6 @@ func run(ctx context.Context, config Config) error {
 		{name: "session-openings", run: sessionOpenings.Run},
 	}
 	return serve(ctx, config, server, appAuth, workers)
-}
-
-type threadReadiness struct {
-	threads *threads.Store
-	history *historydata.Store
 }
 
 // historyWatchAdapter narrows the generated streaming client to the local worker interface.
@@ -413,23 +400,6 @@ func (s threadScopeStore) SubscribeThreadChanges(_ context.Context, _ string) (<
 		return closed, func() {}
 	}
 	return signal, unsubscribe
-}
-
-func (r threadReadiness) Exists(ctx context.Context, id uuid.UUID) (bool, error) {
-	thread, err := r.threads.GetThread(ctx, id)
-	return thread != nil, err
-}
-
-func (r threadReadiness) FeedState(ctx context.Context, id uuid.UUID) (*bridge.FeedSnapshot, error) {
-	summary, err := r.history.GetSummary(ctx, id)
-	if err != nil || summary.Feed == nil || summary.Feed.Status != historypb.FeedStatus_FEED_STATUS_FAILED {
-		return nil, err
-	}
-	message := ""
-	if summary.Feed.End != nil {
-		message = summary.Feed.End.Message
-	}
-	return &bridge.FeedSnapshot{End: &bridge.FeedError{Message: message}}, nil
 }
 
 func postgresDriverURL(value string) string {

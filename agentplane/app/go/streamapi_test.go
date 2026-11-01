@@ -402,6 +402,38 @@ func TestHistoryFacadeRequiresAnAuthenticatedCaller(t *testing.T) {
 	}
 }
 
+func TestDispatcherFacadeRejectsWorkloadCommandPOSTs(t *testing.T) {
+	authentication := newStreamTestAuth(t)
+	server := NewHTTPServer(authentication)
+	forwarded := 0
+	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, _ *http.Request, _ context.Context, _, _ string) error {
+		forwarded++
+		w.WriteHeader(http.StatusAccepted)
+		return nil
+	}}
+	RegisterStreamingRoutes(server, StreamingDependencies{DispatcherHTTP: upstream})
+	const prefix = "/upstream/dispatcher/v1/sessions/9b6d568a-2253-43d7-a7d4-190e98359594"
+	const body = `{"commandId":"stable","sandbox":"demo","sandboxUid":"uid-1"}`
+
+	unauthenticated := httptest.NewRecorder()
+	server.Handler(authentication).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodPost, prefix+":submitInput", strings.NewReader(body)))
+	if unauthenticated.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous command status = %d, want 401", unauthenticated.Code)
+	}
+	for _, method := range []string{"submitInput", "changeModel", "changeReasoningEffort", "interruptTurn"} {
+		request := httptest.NewRequest(http.MethodPost, prefix+":"+method, strings.NewReader(body))
+		request.Header.Set("Authorization", "Bearer accepted")
+		response := httptest.NewRecorder()
+		server.Handler(authentication).ServeHTTP(response, request)
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("workload-token %s status = %d %s, want 403", method, response.Code, response.Body.String())
+		}
+	}
+	if forwarded != 0 {
+		t.Fatalf("workload request reached Dispatcher %d times", forwarded)
+	}
+}
+
 func TestConsoleRelayStreamsBase64OutputAndClosesOnCancellation(t *testing.T) {
 	reader, writer := io.Pipe()
 	response := newStreamingRecorder()

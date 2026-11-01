@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { create } from "@bufbuild/protobuf";
+import { create, toJson } from "@bufbuild/protobuf";
 import type { LangfuseSearchSettings, SandboxView, ThreadView, TraceSearchSettings } from "../schema";
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
 import { MantineProvider } from "@mantine/core";
@@ -18,6 +18,8 @@ import type * as SandboxClientModule from "../sandboxes/client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import { api } from "../client";
 import {
+  type CommandSubmission,
+  type CommandTarget,
   dispatchFromJson,
   submitInput,
   changeModel,
@@ -44,6 +46,8 @@ import { badgeLabels, entity, reference, serving, THREAD, threadState, toggle, v
 import { ThreadSyncContext, type ThreadEntity, type ThreadState, type ThreadSync } from "./thread_sync";
 import { TopbarContext } from "../topbar";
 import { reconnected, serveEventStreams, ServedWatch, stubWatchFetch } from "../testing/watch";
+
+const COMMAND_TARGET = { sandbox: THREAD.sandbox, sandboxUid: "20000000-0000-4000-8000-000000000001" };
 
 vi.mock("./client", async (importOriginal) => ({
   ...(await importOriginal<typeof ThreadClientModule>()),
@@ -415,19 +419,19 @@ function buttonIn(row: Element | null | undefined, text: string): HTMLButtonElem
 
 function sentOperations(): unknown[] {
   const sent = [
-    ...vi.mocked(submitInput).mock.calls.map(([, , text], index) => ({
+    ...vi.mocked(submitInput).mock.calls.map(([, , , text], index) => ({
       order: vi.mocked(submitInput).mock.invocationCallOrder[index],
       operation: { case: "submitInput", value: { text } },
     })),
-    ...vi.mocked(changeModel).mock.calls.map(([, , model], index) => ({
+    ...vi.mocked(changeModel).mock.calls.map(([, , , model], index) => ({
       order: vi.mocked(changeModel).mock.invocationCallOrder[index],
       operation: { case: "changeModel", value: { model } },
     })),
-    ...vi.mocked(changeReasoningEffort).mock.calls.map(([, , effort], index) => ({
+    ...vi.mocked(changeReasoningEffort).mock.calls.map(([, , , effort], index) => ({
       order: vi.mocked(changeReasoningEffort).mock.invocationCallOrder[index],
       operation: { case: "changeReasoningEffort", value: { effort } },
     })),
-    ...vi.mocked(interruptTurn).mock.calls.map(([, , turnId], index) => ({
+    ...vi.mocked(interruptTurn).mock.calls.map(([, , , turnId], index) => ({
       order: vi.mocked(interruptTurn).mock.invocationCallOrder[index],
       operation: { case: "interruptTurn", value: { turnId } },
     })),
@@ -1212,22 +1216,28 @@ function admission(value: Command): EventEntry {
 
 async function admit(
   _threadId: string,
+  _target: CommandTarget,
   commandId: string,
   text: string
-): Promise<{ kind: "archived_admission"; admission: EventEntry }> {
+): Promise<CommandSubmission> {
+  const command = create(CommandSchema, {
+    commandId,
+    operation: { case: "submitInput", value: { text } },
+  });
   return {
-    kind: "archived_admission",
-    admission: admission(
-      create(CommandSchema, {
-        commandId,
-        operation: { case: "submitInput", value: { text } },
-      })
-    ),
+    kind: "dispatch",
+    dispatch: dispatchFromJson({
+      commandId,
+      sessionId: THREAD.id,
+      ...COMMAND_TARGET,
+      state: "DELIVERY_STATE_RUNNER_ADMITTED",
+      admission: toJson(EventEntrySchema, admission(command)),
+    }),
   };
 }
 
 function sentIds(): string[] {
-  return vi.mocked(submitInput).mock.calls.map(([, commandId]) => commandId);
+  return vi.mocked(submitInput).mock.calls.map(([, , commandId]) => commandId);
 }
 
 function pendingRow(container: Element, commandId: string): HTMLElement {
@@ -1249,7 +1259,7 @@ function retry(container: HTMLDivElement, commandId: string): HTMLButtonElement 
 }
 
 it("does not send a retained command whose admission it already holds", async () => {
-  const store = new LocalCommands(THREAD.id);
+  const store = new LocalCommands(THREAD.id, COMMAND_TARGET);
   store.remember(message("retained-admitted"));
   store.acknowledge(message("retained-admitted"), admission(message("retained-admitted")));
   // Its unadmitted sibling being sent shows the mount's delivery ran.
@@ -1278,12 +1288,13 @@ it.each([
   ],
 ])("shows a queued Dispatcher receipt for %s without offering a retry", async (reason, expectedLabel) => {
   const queued = message("queued-by-dispatcher");
-  new LocalCommands(THREAD.id).remember(queued);
+  new LocalCommands(THREAD.id, COMMAND_TARGET).remember(queued);
   vi.mocked(submitInput).mockResolvedValue({
     kind: "dispatch",
     dispatch: dispatchFromJson({
       commandId: queued.commandId,
       sessionId: THREAD.id,
+      ...COMMAND_TARGET,
       state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
       reason,
       updatedAt: "2026-10-14T12:00:00Z",
@@ -1303,11 +1314,12 @@ it.each([
 
 it("shows the cause when a send-triggered Sandbox wake misses its deadline", async () => {
   const failed = message("wake-deadline");
-  new LocalCommands(THREAD.id).remember(failed);
+  new LocalCommands(THREAD.id, COMMAND_TARGET).remember(failed);
   const reason = "wake_deadline_expired: Ready=False/Unschedulable: 0/2 nodes are available: PVC is not bound";
   const dispatch = dispatchFromJson({
     commandId: failed.commandId,
     sessionId: THREAD.id,
+    ...COMMAND_TARGET,
     state: "DELIVERY_STATE_FAILED",
     reason,
     updatedAt: "2026-10-14T12:00:00Z",
@@ -1326,12 +1338,20 @@ it("shows the cause when a send-triggered Sandbox wake misses its deadline", asy
 });
 
 function dispatchReceipt(commandId: string, state: string, reason: string, updatedAt: string) {
-  return dispatchFromJson({ commandId, sessionId: THREAD.id, state, reason, updatedAt, admission: null });
+  return dispatchFromJson({
+    commandId,
+    sessionId: THREAD.id,
+    ...COMMAND_TARGET,
+    state,
+    reason,
+    updatedAt,
+    admission: null,
+  });
 }
 
 // A Dispatch as the watch carries it: proto-JSON leaves out what is unset, such as a reason or admission.
 function dispatchRow(commandId: string, state: string, reason: string | undefined, updatedAt: string) {
-  return { commandId, sessionId: THREAD.id, state, reason, updatedAt };
+  return { commandId, sessionId: THREAD.id, ...COMMAND_TARGET, state, reason, updatedAt };
 }
 
 async function openedWatch(): Promise<ServedWatch> {
@@ -1350,7 +1370,7 @@ async function sendDispatches(rows: object[]): Promise<void> {
 
 it("replaces a queued Dispatcher receipt with the failure its stream reports", async () => {
   const waiting = message("queued-then-failed");
-  new LocalCommands(THREAD.id).remember(waiting);
+  new LocalCommands(THREAD.id, COMMAND_TARGET).remember(waiting);
   const queued = dispatchReceipt(
     waiting.commandId,
     "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
@@ -1377,7 +1397,7 @@ it("replaces a queued Dispatcher receipt with the failure its stream reports", a
 
 it("follows the dispatches of queued commands only until they settle", async () => {
   const waiting = message("followed-until-admitted");
-  new LocalCommands(THREAD.id).remember(waiting);
+  new LocalCommands(THREAD.id, COMMAND_TARGET).remember(waiting);
   const queued = dispatchReceipt(
     waiting.commandId,
     "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
@@ -1398,7 +1418,7 @@ it("follows the dispatches of queued commands only until they settle", async () 
 
 it("calls a command the Dispatcher holds no row for unknown, as after Sandbox deletion", async () => {
   const waiting = message("row-deleted-with-sandbox");
-  new LocalCommands(THREAD.id).remember(waiting);
+  new LocalCommands(THREAD.id, COMMAND_TARGET).remember(waiting);
   vi.mocked(submitInput).mockResolvedValue({
     kind: "dispatch",
     dispatch: dispatchReceipt(
@@ -1418,7 +1438,7 @@ it("calls a command the Dispatcher holds no row for unknown, as after Sandbox de
 });
 
 it("opens compact command detail on touch and closes on blur or Escape", async () => {
-  new LocalCommands(THREAD.id).remember(message("touch"));
+  new LocalCommands(THREAD.id, COMMAND_TARGET).remember(message("touch"));
   const container = await render();
   const progress = pendingRow(container, "touch").querySelector<HTMLElement>(".agentplane-command-progress");
   const indicator = progress?.querySelector<HTMLButtonElement>(".agentplane-command-progress-hit");
@@ -1450,14 +1470,14 @@ it("opens compact command detail on touch and closes on blur or Escape", async (
 
 it("lets the browser cancel only a locally queued, never-sent message", async () => {
   const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
-  new LocalCommands(THREAD.id).remember(message("unsent"));
+  new LocalCommands(THREAD.id, COMMAND_TARGET).remember(message("unsent"));
   const container = await render();
   expect(vi.mocked(submitInput)).not.toHaveBeenCalled();
   const row = pendingRow(container, "unsent");
   expect(buttonIn(row, "Cancel")).toBeDefined();
   expect(buttonIn(row, "Retry")).toBeUndefined();
   await act(async () => buttonIn(row, "Cancel")?.click());
-  expect(new LocalCommands(THREAD.id).getSnapshot().commands).toEqual([]);
+  expect(new LocalCommands(THREAD.id, COMMAND_TARGET).getSnapshot().commands).toEqual([]);
   online.mockReturnValue(true);
   await act(async () => window.dispatchEvent(new Event("online")));
   expect(vi.mocked(submitInput)).not.toHaveBeenCalled();
@@ -1465,18 +1485,18 @@ it("lets the browser cancel only a locally queued, never-sent message", async ()
 
 it("does not offer Cancel once an offline command has begun its first HTTP attempt", async () => {
   const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
-  new LocalCommands(THREAD.id).remember(message("queued"));
+  new LocalCommands(THREAD.id, COMMAND_TARGET).remember(message("queued"));
   const container = await render();
   expect(buttonIn(pendingRow(container, "queued"), "Cancel")).toBeDefined();
   online.mockReturnValue(true);
   await act(async () => window.dispatchEvent(new Event("online")));
   expect(sentIds()).toEqual(["queued"]);
-  expect(new LocalCommands(THREAD.id).cancelUnsent("queued")).toBe(false);
+  expect(new LocalCommands(THREAD.id, COMMAND_TARGET).cancelUnsent("queued")).toBe(false);
   expect(buttonIn(pendingRow(container, "queued"), "Cancel")).toBeUndefined();
 });
 
 it("shows a delivery that outlives its deadline as unconfirmed and retriable", async () => {
-  new LocalCommands(THREAD.id).remember(message("hung"));
+  new LocalCommands(THREAD.id, COMMAND_TARGET).remember(message("hung"));
   let expire!: (reason: unknown) => void;
   vi.mocked(submitInput)
     .mockReturnValueOnce(
@@ -1507,14 +1527,14 @@ it("shows a delivery that outlives its deadline as unconfirmed and retriable", a
 });
 
 it("leaves a command whose delivery reply was lost unconfirmed", async () => {
-  new LocalCommands(THREAD.id).remember(message("lost"));
+  new LocalCommands(THREAD.id, COMMAND_TARGET).remember(message("lost"));
   vi.mocked(submitInput).mockRejectedValueOnce(new Error("Command admission unconfirmed: 503"));
   const container = await render();
   expect(progressLabel(container, "lost")).toBe("Dispatcher receipt unconfirmed: Command admission unconfirmed: 503");
 });
 
 it("redelivers an unconfirmed command when the browser comes back online", async () => {
-  new LocalCommands(THREAD.id).remember(message("offline"));
+  new LocalCommands(THREAD.id, COMMAND_TARGET).remember(message("offline"));
   vi.mocked(submitInput)
     .mockRejectedValueOnce(new Error("the sandbox's runner is not answering"))
     .mockImplementationOnce(admit);
@@ -1529,7 +1549,7 @@ it("redelivers an unconfirmed command when the browser comes back online", async
 
 it("moves a local control into chronological history once projected and retains its effected outcome", async () => {
   const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
-  new LocalCommands(THREAD.id).remember(
+  new LocalCommands(THREAD.id, COMMAND_TARGET).remember(
     create(CommandSchema, {
       commandId: "inline-model",
       operation: { case: "changeModel", value: { model: "next-model" } },
@@ -1561,7 +1581,7 @@ it("moves a local control into chronological history once projected and retains 
   expect(settled.querySelector('[data-stage="local"]')).toBeNull();
   expect(settled.querySelector(".agentplane-command-check")).not.toBeNull();
   expect(settled.textContent).toContain("Change model to next-model");
-  expect(new LocalCommands(THREAD.id).getSnapshot().commands).toHaveLength(0);
+  expect(new LocalCommands(THREAD.id, COMMAND_TARGET).getSnapshot().commands).toHaveLength(0);
   online.mockRestore();
 });
 

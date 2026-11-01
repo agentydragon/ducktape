@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from agentplane.app.testing.client import Client
 from agentplane.notification_service import notifications_pb2
 from agentplane.proto import runner_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests import send_grant
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.cluster import Cluster
@@ -89,6 +90,7 @@ async def _follow(agent: Agent, model: ScriptedModel[Any], message_id: str) -> n
 async def an_agent_messages_another_which_reads_and_acknowledges_it(
     cluster: Cluster,
     client: Client,
+    dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
     harness: runner_pb2.Harness,
     offered_model: str,
@@ -105,10 +107,10 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
     recipient_model = scripted.model(recipient.pod.name, harness)
     sender_model = scripted.model(sender.pod.name, harness)
     recipient_agent = await Agent.open(
-        client, sandbox=recipient.name, sandbox_uid=recipient.uid, harness=harness, model=offered_model
+        client, dispatcher, sandbox=recipient.name, sandbox_uid=recipient.uid, harness=harness, model=offered_model
     )
     sender_agent = await Agent.open(
-        client, sandbox=sender.name, sandbox_uid=sender.uid, harness=harness, model=offered_model
+        client, dispatcher, sandbox=sender.name, sandbox_uid=sender.uid, harness=harness, model=offered_model
     )
 
     send = (

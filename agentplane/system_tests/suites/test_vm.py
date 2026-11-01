@@ -10,6 +10,7 @@ import pytest_bazel
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.k3s.vm_trace_contract import assert_vm_process_trace_contract
 from agentplane.system_tests.offered_models import models_offered_for
@@ -53,7 +54,11 @@ async def _wait_for_vm_process_trace_contract() -> None:
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
 async def test_vm_scenarios(
-    cluster: Cluster, client: Client, scenario_resources: ScenarioResources, scripted: ScriptedUpstream
+    cluster: Cluster,
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    scenario_resources: ScenarioResources,
+    scripted: ScriptedUpstream,
 ) -> None:
     harnesses = [runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX]
     models = await models_offered_for(client, harnesses)
@@ -61,7 +66,7 @@ async def test_vm_scenarios(
     async def turn(harness: runner_pb2.Harness, template: str) -> None:
         async with scenario_resources() as (owned_client, sandbox):
             await vm_sandbox.vm_sandbox_turn(
-                cluster, owned_client, sandbox, harness, models[harness], scripted, template
+                cluster, owned_client, dispatcher, sandbox, harness, models[harness], scripted, template
             )
 
     async def oom() -> None:
@@ -69,6 +74,7 @@ async def test_vm_scenarios(
             await vm_sandbox.codex_tool_oom(
                 cluster,
                 owned_client,
+                dispatcher,
                 sandbox,
                 models[runner_pb2.HARNESS_CODEX],
                 scripted,

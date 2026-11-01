@@ -16,6 +16,7 @@ from agentplane.app.testing.models import SandboxView
 from agentplane.env.harnesshost.harness import Harness
 from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.agent import TURN_SECONDS, WORKING_DIRECTORY, Agent, Turn, runner_startup_retries
 from agentplane.system_tests.cluster import Cluster
@@ -105,6 +106,7 @@ class _ResumeRun:
 
     cluster: Cluster
     client: Client
+    dispatcher: SessionDispatcherClient
     view: SandboxView
     template: str
     original_incarnation: str
@@ -120,12 +122,15 @@ class _ResumeRun:
     passed: bool = False
 
     @classmethod
-    async def start(cls, cluster: Cluster, client: Client, sandbox: Sandboxes, *, template: str) -> _ResumeRun:
+    async def start(
+        cls, cluster: Cluster, client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes, *, template: str
+    ) -> _ResumeRun:
         view = await sandbox(f"systest-resume-{template}-{uuid4().hex[:8]}", template=template)
         assert view.pod is not None
         run = cls(
             cluster=cluster,
             client=client,
+            dispatcher=dispatcher,
             view=view,
             template=template,
             original_incarnation=view.pod.uid,
@@ -147,6 +152,7 @@ class _ResumeRun:
         assert offered, f"the deployment offers no model for {harness_name}"
         agent = await Agent.open(
             self.client,
+            self.dispatcher,
             sandbox=self.view.name,
             sandbox_uid=self.view.uid,
             harness=harness,
@@ -190,19 +196,18 @@ class _ResumeRun:
             for harness, agent in self.agents.items():
                 self.suspended_history[harness] = await _history(self.client, agent.thread_id, completed_turns=None)
                 _assert_prefix(self.seeded_history[harness], self.suspended_history[harness])
-                # A lost response is retried from the archive: no runner answers while the Sandbox is suspended.
+                # Dispatcher returns its durable receipt without contacting the suspended runner.
                 (seed,) = [entry for entry in self.seeded_history[harness] if entry.event.HasField("command_admitted")]
                 command = seed.event.command_admitted.command
-                assert (
-                    await self.client.submit_input(agent.thread_id, command.command_id, command.submit_input.text)
-                    == seed
-                )
+                receipt = await agent.submit_input(command.command_id, command.submit_input.text)
+                assert receipt.command_id == command.command_id
+                assert receipt.admission == seed
             self.checks.extend(
                 [
                     "seed_turns_completed",
                     "storage_volumes_retained_during_suspend",
                     "seed_history_prefix_retained",
-                    "seed_input_retry_answered_from_archive",
+                    "seed_input_retry_answered_by_dispatcher",
                 ]
             )
             self.save()
@@ -283,11 +288,16 @@ def _marker(harness: runner_pb2.Harness) -> str:
 
 
 async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
-    cluster: Cluster, client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream, executor: Executor
+    cluster: Cluster,
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    sandbox: Sandboxes,
+    scripted: ScriptedUpstream,
+    executor: Executor,
 ) -> None:
     """One replacement of the Sandbox's Pod, or of a VM's launcher, exercises both native stores."""
     template, cwd = executor.template, executor.cwd
-    run = await _ResumeRun.start(cluster, client, sandbox, template=template)
+    run = await _ResumeRun.start(cluster, client, dispatcher, sandbox, template=template)
     markers = {harness: _marker(harness) for harness in (runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX)}
     models = {harness: scripted.model(run.pod_name, harness) for harness in markers}
     for harness, marker in markers.items():
@@ -316,10 +326,14 @@ async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
 
 
 async def codex_standing_instructions_after_suspend_and_compact(
-    cluster: Cluster, client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
+    cluster: Cluster,
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    sandbox: Sandboxes,
+    scripted: ScriptedUpstream,
 ) -> None:
     standing = "SESSION_STANDING_ORDER: consult Agentplane before declaring access unavailable."
-    run = await _ResumeRun.start(cluster, client, sandbox, template=POD_TEMPLATE)
+    run = await _ResumeRun.start(cluster, client, dispatcher, sandbox, template=POD_TEMPLATE)
     agent = await run.open(runner_pb2.HARNESS_CODEX, cwd=WORKING_DIRECTORY, instructions=standing)
     model = scripted.model(run.pod_name, runner_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)

@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from agentplane.app.testing.client import Client
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests import scenario
 from agentplane.system_tests.agent import TURN_SECONDS
 from agentplane.system_tests.cluster import Cluster
@@ -36,6 +37,7 @@ class Resources:
     base_url: str
     token: str
     scripted: ScriptedUpstream
+    dispatcher: SessionDispatcherClient
     borrow: pod_runners.Borrow
 
     @asynccontextmanager
@@ -74,7 +76,7 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(resources: R
         await run_harness_pair(
             client,
             lambda harness, model: agent_messaging.an_agent_messages_another_which_reads_and_acknowledges_it(
-                resources.cluster, client, sandboxes, harness, model, resources.scripted
+                resources.cluster, client, resources.dispatcher, sandboxes, harness, model, resources.scripted
             ),
         )
 
@@ -84,7 +86,7 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(resources: 
         await run_harness_pair(
             client,
             lambda harness, model: egress.a_policy_granted_after_the_sandbox_is_running_takes_effect(
-                resources.cluster, client, sandboxes, harness, model, resources.scripted
+                resources.cluster, client, resources.dispatcher, sandboxes, harness, model, resources.scripted
             ),
         )
 
@@ -94,7 +96,13 @@ async def the_model_call_itself_goes_through_the_proxy(resources: Resources) -> 
         await run_harness_pair(
             client,
             lambda harness, model: egress.the_model_call_itself_goes_through_the_proxy(
-                resources.cluster, client, runners.for_harness(harness), harness, model, resources.scripted
+                resources.cluster,
+                client,
+                resources.dispatcher,
+                runners.for_harness(harness),
+                harness,
+                model,
+                resources.scripted,
             ),
         )
 
@@ -102,7 +110,7 @@ async def the_model_call_itself_goes_through_the_proxy(resources: Resources) -> 
 async def a_preset_launches_an_initialized_editable_codex_thread(resources: Resources) -> None:
     async with resources.open() as (client, sandboxes):
         await launch_presets.a_preset_launches_an_initialized_editable_codex_thread(
-            client, sandboxes, resources.scripted
+            client, resources.dispatcher, sandboxes, resources.scripted
         )
 
 
@@ -116,7 +124,7 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(resources: Res
             await run_harness_pair(
                 client,
                 lambda harness, model: runner_credentials.pod_mtls_session_survives_replacement_and_keeps_history(
-                    resources.cluster, client, sandboxes, harness, model, resources.scripted
+                    resources.cluster, client, resources.dispatcher, sandboxes, harness, model, resources.scripted
                 ),
             )
 
@@ -127,7 +135,7 @@ async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session
             client,
             lambda harness, model: (
                 session_instructions.the_standing_instruction_reaches_the_model_and_only_in_its_own_session(
-                    client, runners.for_harness(harness), harness, model, resources.scripted
+                    client, resources.dispatcher, runners.for_harness(harness), harness, model, resources.scripted
                 )
             ),
         )
@@ -146,14 +154,19 @@ async def fresh_workspace_storage_survives_replacement(resources: Resources) -> 
 async def codex_standing_instructions_after_suspend_and_compact(resources: Resources) -> None:
     async with resources.open() as (client, sandboxes):
         await suspend_resume.codex_standing_instructions_after_suspend_and_compact(
-            resources.cluster, client, sandboxes, resources.scripted
+            resources.cluster, client, resources.dispatcher, sandboxes, resources.scripted
         )
 
 
 async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(resources: Resources) -> None:
     async with resources.open() as (client, sandboxes):
         await suspend_resume.two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
-            resources.cluster, client, sandboxes, resources.scripted, Executor(template="runner", cwd="/state/work")
+            resources.cluster,
+            client,
+            resources.dispatcher,
+            sandboxes,
+            resources.scripted,
+            Executor(template="runner", cwd="/state/work"),
         )
 
 
@@ -167,7 +180,7 @@ async def every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event
         await run_harness_pair(
             client,
             lambda harness, model: thread_stream.every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event(
-                client, http, runners.for_harness(harness), harness, model, resources.scripted
+                client, resources.dispatcher, http, runners.for_harness(harness), harness, model, resources.scripted
             ),
         )
 
@@ -180,7 +193,7 @@ async def turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_inp
             client,
             lambda harness, model: (
                 thread_stream.turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn(
-                    client, http, runners.for_harness(harness), harness, model, resources.scripted
+                    client, resources.dispatcher, http, runners.for_harness(harness), harness, model, resources.scripted
                 )
             ),
         )

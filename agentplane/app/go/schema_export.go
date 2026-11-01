@@ -5,12 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/agentydragon/ducktape/agentplane/app/go/bridge"
-	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
-	"github.com/agentydragon/ducktape/agentplane/app/go/threadcommands"
-	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 )
 
 // exportOpenAPI registers the application's typed routes and writes the OpenAPI document
@@ -28,12 +24,6 @@ func exportOpenAPI(writer io.Writer) error {
 	RegisterRunnerRoutes(server, nil)
 	if err := RegisterThreadReadRoutes(server, nil, nil, nil, nil, nil, nil); err != nil {
 		return fmt.Errorf("register Thread routes: %w", err)
-	}
-	if err := threadcommands.RegisterRoutes(server.ProtectedAPI(), threadcommands.Dependencies{
-		Threads: (*threads.Store)(nil), History: (*historydata.Store)(nil), Readiness: (*bridge.RunnerBridge)(nil),
-		Dispatcher: (*bridge.DispatcherClient)(nil),
-	}); err != nil {
-		return fmt.Errorf("register thread command routes: %w", err)
 	}
 	RegisterOperatorRoutes(server, nil, nil, nil, nil, "")
 	RegisterStatusRoutes(server, nil)

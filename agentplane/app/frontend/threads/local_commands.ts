@@ -3,11 +3,13 @@ import { create, equals, fromJson, toJson, type JsonValue } from "@bufbuild/prot
 import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import {
+  DeliveryState,
   DispatchSchema,
   InterruptTurnResponseSchema,
   type Dispatch,
   type InterruptTurnResponse,
 } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import type { CommandTarget } from "./client";
 
 /** A typed operation retained for lost-response recovery; Command protobuf belongs to the journal. */
 type PlainOperation =
@@ -27,6 +29,8 @@ function sameCommand(left: PendingCommand, right: PendingCommand): boolean {
 
 export interface LocalCommand {
   command: PendingCommand;
+  /** Immutable destination captured before the first HTTP attempt. Legacy records lack it. */
+  target: CommandTarget | null;
   submittedAt: number;
   /** Persisted before an HTTP attempt; older records are conservatively treated as attempted. */
   attempted: boolean;
@@ -59,6 +63,19 @@ function decode(text: string): LocalCommand {
       ? (fromJson(CommandSchema, saved as JsonValue) as PendingCommand)
       : (saved as PendingCommand);
   if (!command.commandId || !command.operation.case) throw new Error("Invalid locally retained Command");
+  const target = value.target;
+  if (
+    target !== undefined &&
+    target !== null &&
+    (typeof target !== "object" ||
+      Array.isArray(target) ||
+      typeof (target as Record<string, unknown>).sandbox !== "string" ||
+      typeof (target as Record<string, unknown>).sandboxUid !== "string" ||
+      !(target as CommandTarget).sandbox ||
+      !(target as CommandTarget).sandboxUid)
+  ) {
+    throw new Error("Invalid locally retained Sandbox destination");
+  }
   const admission = value.admission === null ? null : fromJson(EventEntrySchema, value.admission as JsonValue);
   if (admission) checkAdmission(command, admission);
   let dispatch: Dispatch | null = null;
@@ -91,6 +108,7 @@ function decode(text: string): LocalCommand {
     submittedAt: value.submittedAt,
     attempted: value.attempted ?? true,
     command,
+    target: (target as CommandTarget | null | undefined) ?? null,
     admission,
     dispatch,
     interruptResult,
@@ -102,6 +120,7 @@ function encode(value: LocalCommand): string {
     submittedAt: value.submittedAt,
     attempted: value.attempted,
     command: value.command,
+    target: value.target,
     admission: value.admission ? toJson(EventEntrySchema, value.admission) : null,
     dispatch: value.dispatch ? toJson(DispatchSchema, value.dispatch) : null,
     interruptResult: value.interruptResult ? toJson(InterruptTurnResponseSchema, value.interruptResult) : null,
@@ -124,14 +143,17 @@ export function checkAdmission(command: PendingCommand, admission: EventEntry): 
 
 /** Browser recovery only: persistence here makes no server-side delivery promise. Each command
  * and pending input echo has its own key so simultaneous submissions in different tabs cannot
- * overwrite one another. The immutable Thread scope is also the HTTP submission target. */
+ * overwrite one another. The destination is captured with each command, never looked up on retry. */
 export class LocalCommands {
   private readonly prefix: string;
   private readonly echoPrefix: string;
   private snapshot: LocalCommandSnapshot = { commands: [], inputEchoes: [], error: null };
   private readonly listeners = new Set<() => void>();
 
-  constructor(readonly threadId: string) {
+  constructor(
+    readonly threadId: string,
+    private readonly target: CommandTarget | null
+  ) {
     this.prefix = `agentplane.pending:${encodeURIComponent(threadId)}:`;
     this.echoPrefix = `agentplane.input-echo:${encodeURIComponent(threadId)}:`;
     this.reload();
@@ -160,7 +182,17 @@ export class LocalCommands {
       if (!sameCommand(existing.command, command)) {
         throw new Error("A local command id cannot be reused with a different payload");
       }
+      if (
+        existing.target &&
+        this.target &&
+        (existing.target.sandbox !== this.target.sandbox || existing.target.sandboxUid !== this.target.sandboxUid)
+      ) {
+        throw new Error("A local command id cannot be reused with a different Sandbox destination");
+      }
       return existing;
+    }
+    if (!this.target?.sandbox || !this.target.sandboxUid) {
+      throw new Error("Thread has no known Sandbox destination; command was not saved or sent");
     }
     if (this.snapshot.commands.length + this.snapshot.inputEchoes.length >= MAX_RETAINED_COMMANDS) {
       throw new Error(
@@ -169,6 +201,7 @@ export class LocalCommands {
     }
     const value: LocalCommand = {
       command,
+      target: this.target,
       submittedAt: Date.now(),
       attempted: false,
       admission: null,
@@ -245,6 +278,14 @@ export class LocalCommands {
     if (stored === null) return;
     const existing = decode(stored);
     if (!sameCommand(existing.command, command)) throw new Error("Local command payload changed");
+    if (
+      dispatch.sessionId !== this.threadId ||
+      (existing.target &&
+        dispatch.state !== DeliveryState.UNKNOWN &&
+        (dispatch.sandbox !== existing.target.sandbox || dispatch.sandboxUid !== existing.target.sandboxUid))
+    ) {
+      throw new Error("Dispatcher receipt has a different Sandbox destination");
+    }
     const previousUpdate = existing.dispatch?.updatedAt;
     const nextUpdate = dispatch.updatedAt;
     if (

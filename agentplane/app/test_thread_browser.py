@@ -93,17 +93,9 @@ async def route_once(page: Page, url: str, handler: Callable[[Route], Awaitable[
 
 
 def dispatched_command_id(body: str) -> str:
-    """The command whose Dispatch the tagged HTTP receipt carries."""
+    """The command whose Dispatch the generated HTTP receipt carries."""
     value = json.loads(body)
-    assert value["kind"] == "dispatch", value
     return json_format.ParseDict(value["dispatch"], session_dispatcher_pb2.Dispatch()).command_id
-
-
-def archived_admission(body: str) -> event_log_pb2.EventEntry:
-    """The archived admission the tagged HTTP receipt carries."""
-    value = json.loads(body)
-    assert value["kind"] == "archived_admission", value
-    return json_format.ParseDict(value["admission"], event_log_pb2.EventEntry())
 
 
 async def _review_screenshot(page: Page, name: str, label: str) -> None:
@@ -1711,7 +1703,10 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
 def _posted_input(request: Request) -> command_pb2.Command:
     assert request.post_data is not None
     body = json.loads(request.post_data)
-    assert set(body) == {"commandId", "text"}
+    assert set(body) == {"commandId", "text", "sandbox", "sandboxUid"}
+    assert body["sandbox"] == SANDBOX
+    assert isinstance(body["sandboxUid"], str)
+    assert body["sandboxUid"]
     return command_pb2.Command(command_id=body["commandId"], submit_input=command_pb2.SubmitInput(text=body["text"]))
 
 
@@ -1725,7 +1720,7 @@ async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(t
         intercepted.put_nowait(route.request)
         await route.abort()
 
-    await route_once(page, "**/threads/*/submit-input", lose_request)
+    await route_once(page, "**/upstream/dispatcher/v1/sessions/*:submitInput", lose_request)
     composer = message_composer(page)
     await composer.fill("Test input retained across an unsent request")
     await composer.press("Enter")
@@ -1744,6 +1739,7 @@ async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(t
     redelivery = await redelivered.value
     assert redelivery.post_data is not None
     assert _posted_input(redelivery) == command
+    assert json.loads(redelivery.post_data) == json.loads(original.post_data)
     async with asyncio.timeout(15):
         assert await source.runner.commands.get() == command
     await expect_pending_message_bubble(page, command.submit_input.text)
@@ -1792,7 +1788,7 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
         finally:
             reply_finished.set()
 
-    await route_once(page, "**/threads/*/submit-input", hold_reply)
+    await route_once(page, "**/upstream/dispatcher/v1/sessions/*:submitInput", hold_reply)
     try:
         composer = message_composer(page)
         await composer.fill("Test input saved without its HTTP reply")
@@ -1833,7 +1829,7 @@ async def test_lost_runner_receipt_reconciles_from_thread_without_retry(thread_b
         receipts.put_nowait(receipt)
         await route.fulfill(status=504, content_type="application/json", body='{"detail":"outcome uncertain"}')
 
-    await route_once(page, "**/threads/*/submit-input", lose_receipt)
+    await route_once(page, "**/upstream/dispatcher/v1/sessions/*:submitInput", lose_receipt)
     composer = message_composer(page)
     await composer.fill("Test late admission from feed")
     await composer.press("Enter")
@@ -1858,13 +1854,15 @@ async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(th
     await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     requests: asyncio.Queue[command_pb2.Command] = asyncio.Queue()
+    submitted_bodies: list[dict[str, object]] = []
 
     async def lose_receipt(route: Route) -> None:
         assert route.request.post_data is not None
+        submitted_bodies.append(json.loads(route.request.post_data))
         requests.put_nowait(_posted_input(route.request))
         await route.fulfill(status=504, content_type="application/json", body='{"detail":"outcome uncertain"}')
 
-    await route_once(page, "**/threads/*/submit-input", lose_receipt)
+    await route_once(page, "**/upstream/dispatcher/v1/sessions/*:submitInput", lose_receipt)
     try:
         composer = message_composer(page)
         await composer.fill("Test uncertain admission")
@@ -1878,11 +1876,12 @@ async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(th
         await expect(bubble.locator('[data-stage="failed"]')).to_have_count(0)
         await expect(bubble.get_by_role("button", name="Retry", exact=True)).to_be_visible()
 
-        async with page.expect_request("**/threads/*/submit-input") as retried:
+        async with page.expect_request("**/upstream/dispatcher/v1/sessions/*:submitInput") as retried:
             await bubble.get_by_role("button", name="Retry", exact=True).click()
         retry = await retried.value
         assert retry.post_data is not None
         assert _posted_input(retry) == original
+        assert json.loads(retry.post_data) == submitted_bodies[0]
         async with asyncio.timeout(15):
             assert await source.runner.commands.get() == original
         await expect_pending_message_bubble(page, original.submit_input.text)
@@ -1927,7 +1926,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await drop_reply.wait()
         await route.abort()
 
-    await route_once(page, "**/threads/*/submit-input", lose_committed_reply)
+    await route_once(page, "**/upstream/dispatcher/v1/sessions/*:submitInput", lose_committed_reply)
     try:
         composer = message_composer(page)
         await composer.fill("Test input whose admission neither browser channel observed")
@@ -1948,17 +1947,17 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         pending = page.get_by_role("region", name="Input messages")
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
         # The committed receipt is lost, and replay is held, so reload must recover the same command
-        # from the archive.
+        # from Dispatcher.
         await expect(pending.locator('[data-stage="unconfirmed"]')).to_be_visible()
         await expect(page.locator('.transcript-user-bubble[data-message-phase="local"]')).to_have_count(1)
 
         # Reload abandons the held Electric response. The new document delivers the same local
-        # Command again, and the app answers from its archive while replay is still held.
+        # Command again, and Dispatcher answers its durable row while replay is still held.
         async with page.expect_response(response.url) as redelivered:
             await page.reload()
         redelivery = await redelivered.value
         assert redelivery.status == 200
-        assert archived_admission(await redelivery.text()) == admission
+        assert dispatched_command_id(await redelivery.text()) == command.command_id
         async with asyncio.timeout(15):
             assert (await app.replay_held()).cursor >= 5
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
@@ -2006,7 +2005,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
 
     composer = message_composer(page)
     await composer.fill("Test input admitted ahead of the browser prefix")
-    async with page.expect_response(lambda response: response.url.endswith("/submit-input")) as replied:
+    async with page.expect_response(lambda response: response.url.endswith(":submitInput")) as replied:
         await composer.press("Enter")
     response = await replied.value
     async with asyncio.timeout(15):
@@ -2052,7 +2051,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
     submissions: list[Request] = []
 
     def record_submission(request: Request) -> None:
-        if request.url.endswith("/submit-input"):
+        if request.url.endswith(":submitInput"):
             submissions.append(request)
 
     page.on("request", record_submission)
@@ -2064,7 +2063,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         await drop_reply.wait()
         await route.abort()
 
-    await route_once(page, "**/threads/*/submit-input", lose_committed_reply)
+    await route_once(page, "**/upstream/dispatcher/v1/sessions/*:submitInput", lose_committed_reply)
     try:
         composer = message_composer(page)
         await composer.fill("Test input pending across Electric reconnect")

@@ -286,13 +286,14 @@ unrelated request fields.
 
 ### Dispatcher admission, runner result
 
-The browser retains a command id and payload before sending. The app submits it to Dispatcher and
-reports it as queued when the response confirms a durable `Dispatch`. That is sender intent, not
+The browser retains a command id, payload and original Sandbox name/UID before sending through
+the app proxy to the generated Dispatcher HTTP/JSON facade. It reports the command as queued when
+the response confirms a durable `Dispatch`. That is sender intent, not
 runner admission; the runner later journals `CommandAdmitted` and pushes it to History. The app reads
 Dispatcher state through its dispatch endpoint and the conversation outcome through History.
 
-A timeout leaves the result uncertain. The browser retries the same command id and payload against
-Dispatcher, which returns the existing record or rejects a conflict. The worker uses the same id
+A timeout leaves the result uncertain. The browser retries the same command id, payload and pinned
+Sandbox identity against Dispatcher, which returns the existing record or rejects a conflict. The worker uses the same id
 when delivering to the runner, whose journal deduplicates admitted commands. This provides durable
 queueing while the Sandbox is not ready; it does not preserve an unadmitted command after the
 Dispatcher's Sandbox-deletion outcome or prove native execution.
@@ -308,8 +309,8 @@ sequenceDiagram
     participant R as Runner and journal
     participant HS as History Service
     participant H as Codex harness
-    F->>A: POST /threads/T/change-model<br/>commandId:M, model:new-model
-    A->>SD: ChangeModel {command_id:M, session_id:T, model:new-model}
+    F->>A: POST /upstream/dispatcher/v1/sessions/T:changeModel<br/>commandId:M, sandbox:S, sandboxUid:U, model:new-model
+    A->>SD: Generated ChangeModel {command_id:M, session_id:T, sandbox:S, sandbox_uid:U, model:new-model}
     SD->>SD: Persist Dispatch M
     SD-->>A: Dispatch M queued
     A-->>F: HTTP 200, Dispatch M
@@ -328,8 +329,8 @@ sequenceDiagram
     A-->>F: SSE snapshot, Dispatch M runner-admitted
     A-->>F: SSE id:41, data:E41
     Note over F,H: Picker still shows applied old model. M is pending
-    F->>A: POST /threads/T/submit-input<br/>commandId:I, text:Continue the task
-    A->>SD: SubmitInput {command_id:I, session_id:T, text:Continue the task}
+    F->>A: POST /upstream/dispatcher/v1/sessions/T:submitInput<br/>commandId:I, sandbox:S, sandboxUid:U, text:Continue the task
+    A->>SD: Generated SubmitInput {command_id:I, session_id:T, sandbox:S, sandbox_uid:U, text:Continue the task}
     SD->>SD: Persist Dispatch I
     SD->>G: SubmitInput for T
     G->>R: SubmitInput over the control stream
@@ -414,7 +415,7 @@ sequenceDiagram
     participant R as Runner
     participant HS as History Service
     F->>F: Persist typed operation C and id for retry
-    F->>A: POST /threads/T/submit-input, commandId:C and text
+    F->>A: POST /upstream/dispatcher/v1/sessions/T:submitInput<br/>commandId:C, sandbox:S, sandboxUid:U and text
     A->>SD: SubmitInput C
     SD->>SD: Commit Dispatch C
     SD-->>A: Dispatch C
@@ -432,7 +433,7 @@ sequenceDiagram
         SD-->>A: Dispatch C, then CaughtUp
         A-->>F: the same frames; continue watching History for outcomes
     else No durable Dispatch is found
-        F->>A: POST same Command C with same ID and payload
+        F->>A: POST same Command C with same ID, payload and Sandbox UID
         A->>SD: per-operation RPC for C
         SD->>SD: Create the one durable Dispatch for C
         SD-->>A: Dispatch C

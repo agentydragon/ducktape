@@ -58,14 +58,10 @@ func (e *RequestTimeoutError) Unwrap() error { return e.Cause }
 // reconcile or retry a timed-out Dispatcher mutation.
 type DispatcherRequestTimeoutError struct {
 	SessionID uuid.UUID
-	CommandID string
 	Cause     error
 }
 
 func (e *DispatcherRequestTimeoutError) Error() string {
-	if e.CommandID != "" {
-		return fmt.Sprintf("Dispatcher result for command '%s' was not confirmed; outcome uncertain", e.CommandID)
-	}
 	return fmt.Sprintf("Dispatcher result for session '%s' was not confirmed; outcome uncertain", e.SessionID)
 }
 
