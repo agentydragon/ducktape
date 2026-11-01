@@ -28,7 +28,6 @@ from agentplane.app.testing.models import SandboxView
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, Agent
-from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.tracing import tracer
 from agentplane.testing.scripted_model import Text
@@ -197,12 +196,11 @@ async def an_unknown_thread_is_not_found(http: httpx.AsyncClient) -> None:
 async def every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event(
     client: Client,
     http: httpx.AsyncClient,
-    sandbox: Sandboxes,
+    view: SandboxView,
     harness: runner_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:
-    view = await sandbox(f"systest-tabs-{harness}")
     assert view.pod is not None
     model = scripted.model(view.pod.name, harness)
     thread_id = await _open(client, view, harness, offered_model)
@@ -261,13 +259,12 @@ async def every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event
 async def turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn(
     client: Client,
     http: httpx.AsyncClient,
-    sandbox: Sandboxes,
+    view: SandboxView,
     harness: runner_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:
     """No tab is open while either turn runs: the runner's feed, not a watcher, is what archives them."""
-    view = await sandbox(f"systest-unwatched-{harness}")
     assert view.pod is not None
     model = scripted.model(view.pod.name, harness)
     thread_id = await _open(client, view, harness, offered_model)

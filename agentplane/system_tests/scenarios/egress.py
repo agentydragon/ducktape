@@ -160,7 +160,7 @@ async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
 async def the_model_call_itself_goes_through_the_proxy(
     cluster: Cluster,
     client: Client,
-    sandbox: Sandboxes,
+    view: SandboxView,
     harness: runner_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
@@ -179,7 +179,6 @@ async def the_model_call_itself_goes_through_the_proxy(
     The sandbox names no policy. `basic` reaching the ingress anyway is what the app's
     default PolicySets are for.
     """
-    view = await sandbox(f"systest-model-{harness}")
     assert view.pod is not None
     model = scripted.model(view.pod.name, harness)
     agent = await Agent.open(client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=offered_model)

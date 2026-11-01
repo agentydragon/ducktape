@@ -193,6 +193,7 @@ py_library(
     srcs = ["session_instructions.py"],
     deps = [
         "//agentplane/app/testing:client",
+        "//agentplane/app/testing:models",
         "//agentplane/proto:runner_pb2",
         "//agentplane/system_tests:agent",
         "//agentplane/system_tests:sandbox",
@@ -257,7 +258,6 @@ py_library(
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "//agentplane/system_tests:agent",
-        "//agentplane/system_tests:sandbox",
         "//agentplane/system_tests:scripted_upstream",
         "//agentplane/system_tests:tracing",
         "//agentplane/testing:scripted_model",

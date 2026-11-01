@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 
 from agentplane.app.testing.client import Client
+from agentplane.app.testing.models import SandboxView
 from agentplane.proto import runner_pb2
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.sandbox import Sandboxes
@@ -76,11 +77,10 @@ async def the_model_obeys_the_standing_instruction_its_session_was_opened_with(
 
 
 async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session(
-    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
+    client: Client, view: SandboxView, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
 ) -> None:
     """Two sessions on one sandbox, as in the real-model scenario: what each sends the model shows
     whether the app, the Dispatcher and the runner carried the instruction, and to that session only."""
-    view = await sandbox(f"systest-instructions-{harness}")
     assert view.pod is not None
     model = scripted.model(view.pod.name, harness)
 
