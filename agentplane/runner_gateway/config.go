@@ -86,6 +86,7 @@ func loadConfig() (config, error) {
 	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
 		return config{}, errors.New("invalid Runner Gateway settings")
 	}
+	c.RuntimeCatalog.Models.NormalizeHarnessNames()
 	if c.PodName == "" {
 		var err error
 		if c.PodName, err = os.Hostname(); err != nil {

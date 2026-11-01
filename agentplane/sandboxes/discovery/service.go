@@ -5,6 +5,7 @@ package discovery
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -106,6 +107,7 @@ func (s *Service) ListEnvironments(ctx context.Context, request *discoverypb.Lis
 		if status.Code(err) == codes.NotFound {
 			return response, nil
 		}
+		slog.ErrorContext(ctx, "Environment discovery Sandbox read failed", "error", err)
 		return nil, status.Error(codes.Unavailable, "Sandbox inventory is unavailable")
 	}
 	if deleting(view.Resource) {
@@ -113,6 +115,7 @@ func (s *Service) ListEnvironments(ctx context.Context, request *discoverypb.Lis
 	}
 	execution, found, err := s.sandboxes.ExecutionAccount(ctx, view.Identity)
 	if err != nil {
+		slog.ErrorContext(ctx, "Environment discovery execution account read failed", "error", err)
 		return nil, status.Error(codes.Unavailable, "Sandbox execution account is unavailable")
 	}
 	if found && callerMatches(identity, execution) {
@@ -135,13 +138,18 @@ func (s *Service) GetEnvironment(ctx context.Context, request *discoverypb.GetEn
 	}
 	view, err := s.sandboxes.Get(ctx, target.GetName())
 	if err != nil {
-		return nil, err
+		if status.Code(err) == codes.NotFound {
+			return nil, status.Error(codes.NotFound, "environment not found")
+		}
+		slog.ErrorContext(ctx, "Environment discovery Sandbox read failed", "error", err)
+		return nil, status.Error(codes.Unavailable, "Sandbox inventory is unavailable")
 	}
 	if view.Identity.UID != target.GetUid() || deleting(view.Resource) {
 		return nil, status.Error(codes.NotFound, "environment not found")
 	}
 	execution, found, err := s.sandboxes.ExecutionAccount(ctx, view.Identity)
 	if err != nil {
+		slog.ErrorContext(ctx, "Environment discovery execution account read failed", "error", err)
 		return nil, status.Error(codes.Unavailable, "Sandbox execution account is unavailable")
 	}
 	if !found || !callerMatches(identity, execution) {

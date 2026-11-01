@@ -2,6 +2,8 @@
 // the app and existing-environment discovery.
 package runtimeconfig
 
+import "strings"
+
 type Provenance string
 
 const ProvenanceDeploymentConfig Provenance = "DEPLOYMENT_CONFIG"
@@ -10,6 +12,16 @@ const ProvenanceDeploymentConfig Provenance = "DEPLOYMENT_CONFIG"
 type ModelCatalog struct {
 	Models    []ModelOption       `mapstructure:"models" json:"models"`
 	Harnesses map[string][]string `mapstructure:"harnesses" json:"harnesses"`
+}
+
+// NormalizeHarnessNames restores canonical harness identifiers after generic map decoders fold
+// their keys. The discovery and app APIs expose the uppercase enum names configured by cdk8s.
+func (c *ModelCatalog) NormalizeHarnessNames() {
+	normalized := make(map[string][]string, len(c.Harnesses))
+	for harness, models := range c.Harnesses {
+		normalized[strings.ToUpper(harness)] = models
+	}
+	c.Harnesses = normalized
 }
 
 type ModelOption struct {

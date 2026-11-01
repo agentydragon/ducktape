@@ -52,6 +52,7 @@ task; you do not need to fetch every index at startup.
 | Open or manage a Session | Check `agentplane --help`; if this image lists `sessions`, use `agentplane sessions --help` |
 | Check Kubernetes access or request a temporary grant | `kubectl auth can-i`; Actions `/llms.txt`: Kubernetes and grants guide |
 | Subscribe to Actions or GitHub, or handle an inbox notice | `agentplane notifications --help`; Notifications `/llms.txt` |
+| Discover an existing environment (when `agentplane --help` lists `environments`) | `agentplane environments list`, then `agentplane environments get NAMESPACE NAME UID` for one exact target |
 
 Agentplane source and component documentation live in
 [agentydragon/ducktape](https://github.com/agentydragon/ducktape/tree/devel/agentplane).

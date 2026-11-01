@@ -174,7 +174,7 @@ data:
         runner-vm:
           workspace_root: /state/workspaces
           workspace_provenance: DEPLOYMENT_CONFIG
-          workspace_root_enforced: true
+          workspace_root_enforced: false
           creates_missing_cwd: true
     wake_callers:
       - agentplane-staging/actions

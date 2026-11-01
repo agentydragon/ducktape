@@ -416,11 +416,7 @@ func (c *Config) decodeCaseSensitiveSettings(raw map[string]any) error {
 			return fmt.Errorf("invalid frontend_config settings: %w", err)
 		}
 	}
-	normalized := make(map[string][]string, len(c.Models.Harnesses))
-	for harness, models := range c.Models.Harnesses {
-		normalized[strings.ToUpper(harness)] = models
-	}
-	c.Models.Harnesses = normalized
+	c.Models.NormalizeHarnessNames()
 	return nil
 }
 
