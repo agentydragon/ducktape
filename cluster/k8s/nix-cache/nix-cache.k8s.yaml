@@ -777,6 +777,7 @@ spec:
             - mountPath: /data
               name: storage
       nodeSelector:
+        storage.allegedly.works/tier: hdd
         topology.kubernetes.io/zone: hil-ovh
       securityContext:
         fsGroup: 1000
