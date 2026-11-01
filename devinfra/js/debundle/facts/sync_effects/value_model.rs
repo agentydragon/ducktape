@@ -370,6 +370,8 @@ impl MemberKey {
     }
 }
 
+// Lowered syntax is immutable. Cloned facts share recursive children while
+// each evaluation keeps its own interpreter state.
 #[derive(Debug, Clone)]
 pub(super) enum ValueExpr {
     Binding(Id),
@@ -379,25 +381,25 @@ pub(super) enum ValueExpr {
     /// A primitive of the given types: a literal, a template, or a value
     /// known only to be primitive.
     NonCallable(PrimKinds),
-    Member(Box<Self>, Option<String>, MemberKey, CallSite),
-    Call(Box<Self>, Vec<Self>, CallSite),
-    New(Box<Self>, Vec<Self>, CallSite),
+    Member(Arc<Self>, Option<String>, MemberKey, CallSite),
+    Call(Arc<Self>, Vec<Self>, CallSite),
+    New(Arc<Self>, Vec<Self>, CallSite),
     /// Source spelling of `Object.getPrototypeOf([][Symbol.iterator]())`.
     /// Native identity remains conditional on Object, Array, and Symbol.
-    ArrayIteratorPrototype(Box<Self>),
+    ArrayIteratorPrototype(Arc<Self>),
     /// Source spelling of `Object.getPrototypeOf(new Set()[Symbol.iterator]())`.
     /// Its path is conditional on the Set constructor and iterator protocol.
-    SetIteratorPrototype(Box<Self>),
+    SetIteratorPrototype(Arc<Self>),
     /// An operator result is primitive on successful evaluation. This is a
     /// value-kind fact, not a purity claim: keep operands so calls and
     /// unavailable reads inside them still flow through the evaluator.
     Primitive(Vec<Self>),
     /// Both strict equality operators produce an unknown Boolean without coercion.
-    StrictEquality(Box<Self>, Box<Self>),
-    Void(Box<Self>),
+    StrictEquality(Arc<Self>, Arc<Self>),
+    Void(Arc<Self>),
     Conditional {
-        test: Box<Self>,
-        alternatives: Box<[Self; 2]>,
+        test: Arc<Self>,
+        alternatives: Arc<[Self; 2]>,
     },
     Alternatives(Vec<Self>),
     Unknown,
@@ -640,7 +642,7 @@ impl ValueExpr {
                     .collect(),
             ),
             Expr::Member(member) => Self::Member(
-                Box::new(Self::lower(&member.obj, covered)),
+                Arc::new(Self::lower(&member.obj, covered)),
                 static_prop(&member.prop),
                 MemberKey::of(&member.prop),
                 member.span.into(),
@@ -656,7 +658,7 @@ impl ValueExpr {
                         // timing precision must not admit namespace contracts.
                         Self::Unknown,
                         Self::Call(
-                            Box::new(Self::lower(&call.callee, covered)),
+                            Arc::new(Self::lower(&call.callee, covered)),
                             call.args
                                 .iter()
                                 .map(|arg| Self::lower(&arg.expr, covered))
@@ -669,7 +671,7 @@ impl ValueExpr {
                     let mut options = vec![
                         Self::Undefined,
                         Self::Member(
-                            Box::new(Self::lower(&member.obj, covered)),
+                            Arc::new(Self::lower(&member.obj, covered)),
                             static_prop(&member.prop),
                             MemberKey::of(&member.prop),
                             member.span.into(),
@@ -689,8 +691,8 @@ impl ValueExpr {
                 let Callee::Expr(callee) = &call.callee else {
                     unreachable!("recognized iterator-prototype expression is an ordinary call")
                 };
-                Self::ArrayIteratorPrototype(Box::new(Self::Call(
-                    Box::new(Self::lower(callee, covered)),
+                Self::ArrayIteratorPrototype(Arc::new(Self::Call(
+                    Arc::new(Self::lower(callee, covered)),
                     call.args
                         .iter()
                         .map(|argument| Self::lower(&argument.expr, covered))
@@ -702,8 +704,8 @@ impl ValueExpr {
                 let Callee::Expr(callee) = &call.callee else {
                     unreachable!("recognized iterator-prototype expression is an ordinary call")
                 };
-                Self::SetIteratorPrototype(Box::new(Self::Call(
-                    Box::new(Self::lower(callee, covered)),
+                Self::SetIteratorPrototype(Arc::new(Self::Call(
+                    Arc::new(Self::lower(callee, covered)),
                     call.args
                         .iter()
                         .map(|argument| Self::lower(&argument.expr, covered))
@@ -714,7 +716,7 @@ impl ValueExpr {
             Expr::Call(call) if call.args.iter().all(|arg| arg.spread.is_none()) => {
                 match &call.callee {
                     Callee::Expr(callee) => Self::Call(
-                        Box::new(Self::lower(callee, covered)),
+                        Arc::new(Self::lower(callee, covered)),
                         call.args
                             .iter()
                             .map(|arg| Self::lower(&arg.expr, covered))
@@ -733,7 +735,7 @@ impl ValueExpr {
                     .all(|arg| arg.spread.is_none()) =>
             {
                 Self::New(
-                    Box::new(Self::lower(&new_expr.callee, covered)),
+                    Arc::new(Self::lower(&new_expr.callee, covered)),
                     new_expr
                         .args
                         .as_deref()
@@ -745,16 +747,16 @@ impl ValueExpr {
                 )
             }
             Expr::Cond(cond) => Self::Conditional {
-                test: Box::new(Self::lower(&cond.test, covered)),
-                alternatives: Box::new([
+                test: Arc::new(Self::lower(&cond.test, covered)),
+                alternatives: Arc::new([
                     Self::lower(&cond.cons, covered),
                     Self::lower(&cond.alt, covered),
                 ]),
             },
             Expr::Bin(bin) if matches!(bin.op, BinaryOp::EqEqEq | BinaryOp::NotEqEq) => {
                 Self::StrictEquality(
-                    Box::new(Self::lower(&bin.left, covered)),
-                    Box::new(Self::lower(&bin.right, covered)),
+                    Arc::new(Self::lower(&bin.left, covered)),
+                    Arc::new(Self::lower(&bin.right, covered)),
                 )
             }
             Expr::Bin(bin)
@@ -773,7 +775,7 @@ impl ValueExpr {
                 Self::lower(&bin.right, covered),
             ]),
             Expr::Unary(unary) if unary.op == UnaryOp::Void => {
-                Self::Void(Box::new(Self::lower(&unary.arg, covered)))
+                Self::Void(Arc::new(Self::lower(&unary.arg, covered)))
             }
             Expr::Unary(unary) => Self::Primitive(vec![Self::lower(&unary.arg, covered)]),
             Expr::Update(update) => Self::Primitive(vec![Self::lower(&update.arg, covered)]),
