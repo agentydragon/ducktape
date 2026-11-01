@@ -440,7 +440,7 @@ models are used by test clients, not by the app runtime. Policy resolution and a
 Go informer and provider. Staging's network policy admits `api.github.com:443` for the Go provider's
 public-repository lookup.
 
-The end-to-end proof is `//agentplane/system_tests/suites:test_mcp`, which creates the set and binding
+The end-to-end proof is `//agentplane/system_tests/suites/mcp:test_services`, which creates the set and binding
 for the Sandbox it launches through the Kubernetes API (see [the system tests README](../system_tests/README.md))
 against the upstream `mcp-everything` image described in
 [the fixture guide](testing/README.md). The Go service's startup, MCP execution recovery and OAuth

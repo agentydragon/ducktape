@@ -2,7 +2,7 @@
 
 This is a historical measurement and design note. Its `test_dcr` target names and command record
 the layout at the time; the current k3s DCR scenario runs in
-`//agentplane/system_tests/suites:test_mcp`.
+`//agentplane/system_tests/suites/mcp:test_services`.
 
 ## Result and scope
 

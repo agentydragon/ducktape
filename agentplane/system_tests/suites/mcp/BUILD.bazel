@@ -1,0 +1,73 @@
+load("//agentplane/system_tests:defs.bzl", "k3s_suite")
+load("//devinfra/python:defs.bzl", "py_library")
+
+# gazelle:map_kind py_test k3s_suite //agentplane/system_tests:defs.bzl
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+# The measured 5/4 case split overlaps the suites while keeping OAuth harnesses together.
+k3s_suite(
+    name = "test_actions",
+    srcs = ["test_actions.py"],
+    stack = "mcp",
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests:harness_pair",
+        "//agentplane/system_tests:operator_login",
+        "//agentplane/system_tests:sandbox",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/system_tests/scenarios:mcp",
+        "//agentplane/system_tests/suites:conftest",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+k3s_suite(
+    name = "test_services",
+    srcs = ["test_services.py"],
+    stack = "mcp",
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests:executor",
+        "//agentplane/system_tests:harness_pair",
+        "//agentplane/system_tests:sandbox",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/system_tests/k3s:stack",
+        "//agentplane/system_tests/scenarios:central_sampler",
+        "//agentplane/system_tests/scenarios:dcr",
+        "//agentplane/system_tests/scenarios:mcp",
+        "//agentplane/system_tests/suites:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:operator_login",
+        "//agentplane/system_tests/k3s:stack",
+        "//agentplane/system_tests/scenarios:mcp",
+        "@pypi//httpx",
+        "@pypi//pytest",
+    ],
+)
