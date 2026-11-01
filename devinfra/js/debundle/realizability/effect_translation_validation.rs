@@ -199,17 +199,31 @@ struct PairConflict {
     havoc: bool,
 }
 
+/// One settled assignment and the runtime facts used to diagnose its effects.
+pub struct EffectTranslationValidationInputs<'a> {
+    pub graph: &'a DependencyGraph,
+    pub assignment: &'a ModuleAssignment,
+    pub emitted_modules: &'a BTreeSet<ModuleId>,
+    pub import_order: &'a EsmImportOrder,
+    pub facts: &'a [StatementFacts],
+    pub legacy: &'a TranslationValidationReport,
+    pub module_path: &'a dyn Fn(ModuleId) -> ModulePath,
+}
+
 /// Only reports; neither the legacy gate nor its oracle consumes this result.
 pub fn effect_translation_validate<E>(
-    graph: &DependencyGraph,
-    assignment: &ModuleAssignment,
-    emitted_modules: &BTreeSet<ModuleId>,
-    import_order: &EsmImportOrder,
-    facts: &[StatementFacts],
-    legacy: &TranslationValidationReport,
-    module_path: &dyn Fn(ModuleId) -> ModulePath,
+    inputs: EffectTranslationValidationInputs<'_>,
     mut visitor: Option<&mut impl FnMut(&EffectConflictRow<'_>) -> Result<(), E>>,
 ) -> Result<EffectTranslationValidationReport, E> {
+    let EffectTranslationValidationInputs {
+        graph,
+        assignment,
+        emitted_modules,
+        import_order,
+        facts,
+        legacy,
+        module_path,
+    } = inputs;
     let effects: BTreeMap<_, _> = facts
         .iter()
         .map(|fact| {

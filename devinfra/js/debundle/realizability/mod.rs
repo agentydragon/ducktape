@@ -55,7 +55,8 @@ mod translation_validation;
 
 pub use effect_translation_validation::{
     EffectConflictCell, EffectConflictDisposition, EffectConflictRow, EffectOpacity,
-    EffectTranslationValidationReport, effect_translation_validate,
+    EffectTranslationValidationInputs, EffectTranslationValidationReport,
+    effect_translation_validate,
 };
 use esm_simulator::EsmEvaluationSimulator;
 use incremental_quotient::{IncrementalQuotient, QuotientOverlay};

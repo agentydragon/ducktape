@@ -669,13 +669,15 @@ pub(super) fn finish_logical_chunk(
     let effect_conflicts_jsonl = effect_conflicts_jsonl
         && (effect_conflicts_chunks.is_empty() || effect_conflicts_chunks.contains(chunk_id));
     let gate_outcome = validate_and_emit_reports(
-        chunk_id,
-        report_emission,
-        gate_rejection_policy,
+        ChunkReportContext {
+            chunk_id,
+            report_emission,
+            policy: gate_rejection_policy,
+            effect_conflicts_jsonl,
+        },
         program_graph,
         &assignment_analysis,
         &analysis.facts,
-        effect_conflicts_jsonl,
         &export_reentry_reports[&chunk_id_interned],
     )?;
 
@@ -1503,16 +1505,27 @@ fn write_selector_diagnostics(
     Ok(())
 }
 
-fn validate_and_emit_reports<'a>(
-    chunk_id: &str,
-    report_emission: &ReportEmission,
+/// The selected chunk's output policy, independent of its analysis facts.
+struct ChunkReportContext<'a> {
+    chunk_id: &'a str,
+    report_emission: &'a ReportEmission,
     policy: GateRejectionPolicy,
+    effect_conflicts_jsonl: bool,
+}
+
+fn validate_and_emit_reports<'a>(
+    context: ChunkReportContext<'_>,
     program_graph: &ProgramGraphOutput<'_>,
     assignment_analysis: &'a AssignmentAnalysis,
     facts: &[analysis::facts::StatementFacts],
-    effect_conflicts_jsonl: bool,
     export_reentry_report: &ExportReentryReport,
 ) -> Result<GateOutcome<'a>> {
+    let ChunkReportContext {
+        chunk_id,
+        report_emission,
+        policy,
+        effect_conflicts_jsonl,
+    } = context;
     let validation = assignment_analysis.validate_for_emission();
     let assignment_report = match &validation {
         Ok(assignment) => assignment.report(),
