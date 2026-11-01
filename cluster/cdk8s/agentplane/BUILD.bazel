@@ -1090,6 +1090,7 @@ py_library(
         ":app",
         ":central_sampler",
         ":database",
+        ":egress",
         ":environment",
         ":notifications",
         ":runner_gateway",
