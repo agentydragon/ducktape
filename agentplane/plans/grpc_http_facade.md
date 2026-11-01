@@ -17,8 +17,9 @@ holds what is still open.
 - **Dispatcher commands.** They have generated routes, but the browser sends them through the app's
   typed Thread routes until the checks there (archive, Thread to Sandbox lookup, model-catalog
   validation before `SubmitInput`) have a home that is not a hand-written route: the app-contract
-  decision. Deferred, not asked: whether the app's own views (Threads, Sandboxes) become protos. No
-  track needs it, and an early answer would be hard to reverse.
+  migration. The operator selected protobuf-defined app APIs with generated HTTP facades on
+  2026-10-31; `APP_API_GRPC_FACADE` in the [task DAG](task_dag.md#app_api_grpc_facade--uniform-app-grpc-apis-with-generated-http-facades)
+  covers the app's own views, commands and streams, including the home for these checks.
 - **Error codes in the browser.** `sandbox_page.tsx` and `connections/management.tsx` (three times)
   branch on HTTP status; they move to the body's gRPC `code`, which `HttpError` then carries.
 - **Attribution.** Services see the app, not the operator; the Dispatcher's per-caller wake budget is
