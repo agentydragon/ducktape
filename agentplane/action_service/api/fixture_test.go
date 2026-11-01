@@ -26,7 +26,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"

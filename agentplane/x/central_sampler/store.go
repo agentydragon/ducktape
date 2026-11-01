@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/postgres/go"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/lease"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
+	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"

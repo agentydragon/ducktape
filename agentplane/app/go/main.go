@@ -9,7 +9,7 @@ import (
 	"syscall"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/migrations"
-	dbmigrate "github.com/agentydragon/ducktape/agentplane/postgres/go/migrate"
+	dbmigrate "github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )

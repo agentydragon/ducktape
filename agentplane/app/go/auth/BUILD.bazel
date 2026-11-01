@@ -42,7 +42,7 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/app/go/migrations",
-        "//agentplane/postgres/go/wakeups",
+        "//agentplane/postgres/wakeups",
         "//agentplane/testing/postgres",
         "@com_github_go_jose_go_jose_v4//:go-jose",
         "@com_github_go_jose_go_jose_v4//jwt",

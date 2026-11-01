@@ -10,7 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"

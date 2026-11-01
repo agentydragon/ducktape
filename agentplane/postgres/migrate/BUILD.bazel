@@ -5,7 +5,7 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 go_library(
     name = "migrate",
     srcs = ["migrate.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/postgres/go/migrate",
+    importpath = "github.com/agentydragon/ducktape/agentplane/postgres/migrate",
     deps = [
         "@com_github_lib_pq//:pq",
         "@com_github_sethvargo_go_retry//:go-retry",

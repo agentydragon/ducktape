@@ -15,7 +15,7 @@ import (
 	"time"
 
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"

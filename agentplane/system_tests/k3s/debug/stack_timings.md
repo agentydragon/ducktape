@@ -187,7 +187,7 @@ still renders the chart in process and rejects them.
 ## Migrators retrying their first connection, 2026-10-21
 
 The Goose and Alembic migrators retry their first PostgreSQL connection in process
-([`migrate`](../../../postgres/go/migrate/migrate.go), [`db_migrations`](../../../../util/db_migrations.py)).
+([`migrate`](../../../postgres/migrate/migrate.go), [`db_migrations`](../../../../util/db_migrations.py)).
 Three fresh lifecycle runs each, on `devel` and with the change, with temporary uncommitted markers
 in `stack.py`:
 

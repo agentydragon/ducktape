@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 )
 
 // awaitBound only fails a test whose wakeup never comes.

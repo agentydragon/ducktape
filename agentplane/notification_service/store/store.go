@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/google/uuid"
 )
 

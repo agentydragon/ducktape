@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/lease"
+	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 )
 
 // LeaseDuration is how long a claim holds an inbox, and so how long a worker's fenced writes can succeed after

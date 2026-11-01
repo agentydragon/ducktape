@@ -7,7 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

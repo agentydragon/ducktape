@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/migrate"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
+	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	centralsampler "github.com/agentydragon/ducktape/agentplane/x/central_sampler"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"

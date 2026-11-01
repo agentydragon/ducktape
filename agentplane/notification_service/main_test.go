@@ -24,7 +24,7 @@ import (
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
+	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"

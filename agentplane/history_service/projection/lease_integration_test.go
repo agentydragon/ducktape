@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/lease"
+	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	"github.com/google/uuid"
 )
 
-// The lease contract (expiry, takeover, stale fences) is //agentplane/postgres/go/lease's; these cover how the
+// The lease contract (expiry, takeover, stale fences) is //agentplane/postgres/lease's; these cover how the
 // projection maps it.
 
 const leaseDuration = time.Minute
