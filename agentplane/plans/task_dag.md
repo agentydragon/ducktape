@@ -635,6 +635,9 @@ durable admissions and existing no-replay recovery. Acceptance covers the design
 replacement, revocation and mixed-version cases without requiring the app or a backend-to-Actions
 lookup. Shared implementation may proceed independently of caller UID persistence; caller-delegating
 Action exposure needs both. Direct CLI/MCP caller-authenticated work does not wait for either.
+Stage these primitives for the named next consumers: routine Session Action adapters and the
+Dispatcher receiver. Their explicit trust configuration, handler integration and exposure remain
+in `SESSION_DELEGATION_TOOLS`; landing a shared library alone does not enable delegated RPCs.
 
 ### `ACTION_CALLER_UID` — retain the caller identity through approval and execution
 
