@@ -41,7 +41,7 @@ default external-command wait. HDD satellites set `ExtCmd/WaitTimeout=180000`.
 | `piraeus-ssd-local`         | `ssd` |      1 | Strict-local: the PV pins its node; remote access disabled                                         |
 | `piraeus-hdd-local`         | `hdd` |      1 | Strict-local                                                                                       |
 | `piraeus-ssd-2-autodiskful` | `ssd` |      2 | Synchronous copies on distinct OVH nodes, diskless attach in-zone, auto-diskful, quorum suspend-io |
-| `piraeus-hdd-2`             | `hdd` |      2 | Synchronous copies on distinct OVH nodes, diskless attach in-zone, quorum suspend-io             |
+| `piraeus-hdd-2`             | `hdd` |      2 | Synchronous copies on distinct OVH nodes, diskless attach in-zone, quorum suspend-io               |
 
 All are WaitForFirstConsumer, Retain and expandable; none is the cluster default.
 The strict-local classes keep the default DRBD layer and rely on the

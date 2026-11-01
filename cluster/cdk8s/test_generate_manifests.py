@@ -265,12 +265,14 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
     hdd_replicated_parameters = replicated_hdd_class["parameters"]
     assert hdd_replicated_parameters["linstor.csi.linbit.com/storagePool"] == "hdd"
     assert hdd_replicated_parameters["linstor.csi.linbit.com/placementCount"] == "2"
-    assert hdd_replicated_parameters["linstor.csi.linbit.com/replicasOnSame"] == replicated_parameters[
-        "linstor.csi.linbit.com/replicasOnSame"
-    ]
-    assert hdd_replicated_parameters["linstor.csi.linbit.com/allowRemoteVolumeAccess"] == replicated_parameters[
-        "linstor.csi.linbit.com/allowRemoteVolumeAccess"
-    ]
+    assert (
+        hdd_replicated_parameters["linstor.csi.linbit.com/replicasOnSame"]
+        == replicated_parameters["linstor.csi.linbit.com/replicasOnSame"]
+    )
+    assert (
+        hdd_replicated_parameters["linstor.csi.linbit.com/allowRemoteVolumeAccess"]
+        == replicated_parameters["linstor.csi.linbit.com/allowRemoteVolumeAccess"]
+    )
     assert hdd_replicated_parameters["DrbdOptions/auto-quorum"] == "suspend-io"
     assert "DrbdOptions/auto-diskful" not in hdd_replicated_parameters
 
