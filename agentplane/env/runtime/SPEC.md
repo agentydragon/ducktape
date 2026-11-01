@@ -41,6 +41,11 @@ current Host native stop and Execution fence before reopening, even when the inc
 unchanged. Replacement never starts a successor Execution API lifetime before the previous one is
 fenced.
 
+Execution calls admitted through Runtime's public Gateway-facing gRPC server pass its control
+interceptors, epoch and scope checks, and admission accounting before Runtime calls the embedded
+adapter directly. An OpenSession stream uses the public server stream with an epoch-cancelled
+context; cancellation and adapter shutdown settle its workers before native backend fencing.
+
 SIGTERM follows the same Host drain and Execution fence path. When shutdown does not have an
 incarnation seal request, Runtime sends `CLOSING` with an empty seal UID; this drains local work
 without claiming a durable History seal. Runtime waits for accepted bootstrap work to settle before
@@ -103,8 +108,9 @@ per-incarnation Execution API config in memory.
 For Pod and explicit subprocess modes, Runtime and Host use short private sockets directly under
 `StateDir` (`r.sock`, `h.sock`, `e.sock`) so test and deployment state paths remain within the
 Unix-domain socket path limit. Execution keeps its ownership lock under `StateDir/execution` and
-binds the configured `e.sock` path. VM mode uses `/state/runtime`, `/state/harness-host` and
-`/state/execution` socket locations.
+binds the configured `e.sock` path for Host health checks only; Runtime does not call Executor RPCs
+through this socket. VM mode uses `/state/runtime`, `/state/harness-host` and `/state/execution`
+socket locations.
 
 On startup Runtime locks the legacy owner inode before opening the old Session directory, fences
 previous Host and Execution owners, binds its private lifecycle UDS with mode `0600`, starts Host,

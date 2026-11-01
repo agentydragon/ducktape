@@ -5,25 +5,14 @@ import (
 	"errors"
 	"testing"
 
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/service"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 func TestSupervisedExecutionFenceProofSurvivesCleanupRetry(t *testing.T) {
-	conn, err := grpc.NewClient("passthrough:///127.0.0.1:2", grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := conn.Close(); err != nil {
-		t.Fatal(err)
-	}
-
 	managerOpen := true
 	fenceCalls := 0
 	handle := &executionServiceHandle{
-		conn: conn,
 		fence: func(context.Context) error {
 			fenceCalls++
 			if !managerOpen {
@@ -36,11 +25,8 @@ func TestSupervisedExecutionFenceProofSurvivesCleanupRetry(t *testing.T) {
 	if err := handle.StopAndFence(context.Background()); err != nil {
 		t.Fatalf("first fence: %v", err)
 	}
-	if err := handle.Close(); !errors.Is(err, grpc.ErrClientConnClosing) {
-		t.Fatalf("cleanup close error = %v, want grpc.ErrClientConnClosing", err)
-	}
 	if err := handle.StopAndFence(context.Background()); err != nil {
-		t.Fatalf("retry after cleanup error: %v", err)
+		t.Fatalf("retry after successful fence: %v", err)
 	}
 	if fenceCalls != 1 {
 		t.Fatalf("fence calls = %d, want cached proof after one successful attempt", fenceCalls)
@@ -58,7 +44,7 @@ func TestEmbeddedExecutionBackendLossRequiresFencedResult(t *testing.T) {
 		{name: "unrequested clean exit", code: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			handle := newExecutionServiceHandle(service.Config{}, func(context.Context, service.Config) error { return test.err })
+			handle := newExecutionServiceHandle(service.Config{}, func(context.Context, service.Config, func(executorpb.ExecutorServer)) error { return test.err })
 			exit := <-handle.ProcessExit()
 			if exit.code != test.code {
 				t.Fatalf("exit code = %d, want %d (error: %v)", exit.code, test.code, exit.err)
@@ -75,7 +61,7 @@ func TestEmbeddedExecutionBackendLossRequiresFencedResult(t *testing.T) {
 
 func TestEmbeddedExecutionStopJoinsServiceBeforeFenceProof(t *testing.T) {
 	allowFence := make(chan struct{})
-	handle := newExecutionServiceHandle(service.Config{}, func(ctx context.Context, _ service.Config) error {
+	handle := newExecutionServiceHandle(service.Config{}, func(ctx context.Context, _ service.Config, _ func(executorpb.ExecutorServer)) error {
 		<-ctx.Done()
 		<-allowFence
 		return nil

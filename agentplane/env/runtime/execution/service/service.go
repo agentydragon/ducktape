@@ -18,6 +18,7 @@ import (
 	"github.com/sethvargo/go-retry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
@@ -35,6 +36,20 @@ var ErrFencedBackendLoss = errors.New("execution backend loss was fenced")
 // Systemd callers supply an owner unit and lifetime directory; death of that
 // owner fences its bound transient native units.
 func Run(ctx context.Context, config Config) (result error) {
+	return runOwned(ctx, config, nil)
+}
+
+// RunEmbedded keeps the native backend and private health socket under the
+// Runtime process lifetime. The ready callback publishes the typed adapter to
+// Runtime after native readiness; the Executor RPC is not served on this socket.
+func RunEmbedded(ctx context.Context, config Config, ready func(executorpb.ExecutorServer)) error {
+	if ready == nil {
+		return errors.New("embedded Execution API requires a ready callback")
+	}
+	return runOwned(ctx, config, ready)
+}
+
+func runOwned(ctx context.Context, config Config, ready func(executorpb.ExecutorServer)) (result error) {
 	if err := config.Validate(); err != nil {
 		return err
 	}
@@ -67,10 +82,10 @@ func Run(ctx context.Context, config Config) (result error) {
 	if err != nil {
 		return err
 	}
-	return run(ctx, config, codexexecserver.NativeStart(codexexecserver.NativeConfig{
+	return runWithReady(ctx, config, codexexecserver.NativeStart(codexexecserver.NativeConfig{
 		Config: codexexecserver.Config{URL: config.ExecutorURL, ContainerSocket: config.ContainerSocket}, Binary: config.Binary,
 		StateDir: config.WorkingDirectory, Environment: config.Environment, Supervisor: supervisor,
-	}))
+	}), ready)
 }
 
 func lock(directory string) (*os.File, error) {
@@ -94,8 +109,8 @@ func lock(directory string) (*os.File, error) {
 	if err := syscall.Fstat(directoryFD, &info); err != nil {
 		return nil, err
 	}
-	// The socket admits trusted local environment components; access grants the full authority of that
-	// environment. Its mode is part of the transport authorization.
+	// In standalone mode the socket admits trusted local environment components
+	// with full execution authority. Its mode is part of that authorization.
 	if info.Mode&syscall.S_IFMT != syscall.S_IFDIR || info.Mode&0077 != 0 {
 		return nil, errors.New("execution state directory must be private (0700)")
 	}
@@ -112,6 +127,16 @@ func lock(directory string) (*os.File, error) {
 }
 
 func run(ctx context.Context, config Config, start codexexecserver.Start) (result error) {
+	return runWithReady(ctx, config, start, nil)
+}
+
+func runWithReady(ctx context.Context, config Config, start codexexecserver.Start, ready func(executorpb.ExecutorServer)) (result error) {
+	return runWithServer(ctx, config, start, ready, func(server *grpc.Server, listener net.Listener) error {
+		return server.Serve(listener)
+	})
+}
+
+func runWithServer(ctx context.Context, config Config, start codexexecserver.Start, ready func(executorpb.ExecutorServer), serve func(*grpc.Server, net.Listener) error) (result error) {
 	lifetime, cancel := context.WithCancel(ctx)
 	defer cancel()
 	instance, err := start(lifetime)
@@ -137,8 +162,8 @@ func run(ctx context.Context, config Config, start codexexecserver.Start) (resul
 		case <-lifetime.Done():
 		}
 	}()
-	ready, endReadiness := context.WithTimeout(lifetime, 20*time.Second)
-	err = retry.Do(ready, retry.NewConstant(100*time.Millisecond), func(ctx context.Context) error {
+	readiness, endReadiness := context.WithTimeout(lifetime, 20*time.Second)
+	err = retry.Do(readiness, retry.NewConstant(100*time.Millisecond), func(ctx context.Context) error {
 		probeCtx, endProbe := context.WithTimeout(ctx, 2*time.Second)
 		defer endProbe()
 		if err := codexexecserver.ProbeAt(config.ExecutorURL)(probeCtx); err != nil {
@@ -180,22 +205,55 @@ func run(ctx context.Context, config Config, start codexexecserver.Start) (resul
 		return err
 	}
 	server := grpc.NewServer()
-	executorpb.RegisterExecutorServer(server, adapter)
+	if ready == nil {
+		executorpb.RegisterExecutorServer(server, adapter)
+	}
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
-	healthServer.SetServingStatus(executorpb.Executor_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
+	if ready == nil {
+		healthServer.SetServingStatus(executorpb.Executor_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
+	}
 	healthpb.RegisterHealthServer(server, healthServer)
 	served := make(chan error, 1)
-	go func() { served <- server.Serve(listener) }()
-	select {
-	case err = <-served:
-	case <-lifetime.Done():
-		select {
-		case err = <-backendDone:
-			if err == nil {
-				err = errors.New("execution backend stopped")
+	go func() { served <- serve(server, listener) }()
+	if ready != nil {
+		err = waitEmbeddedHealth(lifetime, config.Socket(), served)
+		if err == nil {
+			ready(adapter)
+		} else if errors.Is(err, context.Canceled) {
+			// Backend loss cancels lifetime after publishing its exact loss
+			// evidence. Preserve that evidence even when the health probe was
+			// still waiting; otherwise a fenced loss becomes an unproven exit.
+			select {
+			case backendErr := <-backendDone:
+				if backendErr == nil {
+					err = errors.New("execution backend stopped")
+				} else {
+					err = backendErr
+				}
+			default:
+				// A Runtime-requested stop cancels the parent context. The
+				// native Stop below still has to prove the backend fence, but
+				// the interrupted health probe is not itself a service failure.
+				// An independent readiness deadline leaves ctx live and keeps
+				// its error.
+				if ctx.Err() != nil {
+					err = nil
+				}
 			}
-		default:
+		}
+	}
+	if err == nil {
+		select {
+		case err = <-served:
+		case <-lifetime.Done():
+			select {
+			case err = <-backendDone:
+				if err == nil {
+					err = errors.New("execution backend stopped")
+				}
+			default:
+			}
 		}
 	}
 	if errors.Is(err, codexexecserver.ErrExecutionBackendLost) {
@@ -215,8 +273,51 @@ func run(ctx context.Context, config Config, start codexexecserver.Start) (resul
 	return err
 }
 
-// Filesystem access to the private socket authenticates the environment owner.
-// Remote caller authorization and routing remain with Gateway. This service
+func waitEmbeddedHealth(ctx context.Context, socket string, served <-chan error) error {
+	conn, err := grpc.NewClient("unix://"+socket, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("connect to embedded Execution health socket: %w", err)
+	}
+	defer conn.Close()
+	client := healthpb.NewHealthClient(conn)
+	readiness, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	err = retry.Do(readiness, retry.NewConstant(20*time.Millisecond), func(ctx context.Context) error {
+		select {
+		case serveErr := <-served:
+			if serveErr == nil {
+				serveErr = errors.New("health server stopped")
+			}
+			return fmt.Errorf("embedded Execution health server exited before readiness: %w", serveErr)
+		default:
+		}
+		checkCtx, finish := context.WithTimeout(ctx, 100*time.Millisecond)
+		defer finish()
+		response, err := client.Check(checkCtx, &healthpb.HealthCheckRequest{})
+		if err != nil {
+			return retry.RetryableError(err)
+		}
+		if response.GetStatus() != healthpb.HealthCheckResponse_SERVING {
+			return retry.RetryableError(errors.New("embedded Execution health is not serving"))
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("embedded Execution health readiness: %w", err)
+	}
+	select {
+	case serveErr := <-served:
+		if serveErr == nil {
+			serveErr = errors.New("health server stopped")
+		}
+		return fmt.Errorf("embedded Execution health server exited at readiness: %w", serveErr)
+	default:
+	}
+	return nil
+}
+
+// Filesystem access to the standalone Executor socket authenticates the environment owner.
+// Embedded mode serves only health there. Remote caller authorization and routing remain with Gateway. This service
 // checks one immutable incarnation; it cannot adopt or replace a Runner epoch.
 func (c Config) admit(ctx context.Context, scope *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
 	if scope == nil || scope.Destination == nil || scope.Destination.Owner == nil || scope.SessionId == "" || len(scope.SessionId) > 128 {

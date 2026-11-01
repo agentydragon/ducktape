@@ -2,8 +2,6 @@ package runtime
 
 import (
 	"context"
-	"errors"
-	"io"
 	"strconv"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
@@ -149,8 +147,8 @@ func (r *Runtime) InterruptTurn(ctx context.Context, request *environmentruntime
 	return client.InterruptTurn(outgoing, request)
 }
 
-func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.ExecutionScope) (executorpb.ExecutorClient, context.Context, func(), error) {
-	var client executorpb.ExecutorClient
+func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.ExecutionScope) (executorpb.ExecutorServer, context.Context, func(), error) {
+	var client executorpb.ExecutorServer
 	var outgoing context.Context
 	var cancel context.CancelFunc
 	var callID uint64
@@ -167,10 +165,10 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 		if err := validateExecutionScope(scope, r.config.Launch.Sandbox, epoch.SandboxUID(), epoch.IncarnationUID()); err != nil {
 			return err
 		}
-		if r.executionConn == nil || r.executionUID != scope.ExpectedIncarnationUid {
+		if r.executionServer == nil || r.executionUID != scope.ExpectedIncarnationUid {
 			return status.Error(codes.Unavailable, "Execution API is not ready for this incarnation")
 		}
-		client = executorpb.NewExecutorClient(r.executionConn)
+		client = r.executionServer
 		outgoing, cancel = context.WithCancel(ctx)
 		r.execCallID++
 		callID = r.execCallID
@@ -229,9 +227,16 @@ func validateExecutionScope(scope *executorpb.ExecutionScope, sandbox configurat
 	return nil
 }
 
+type directExecutionStream struct {
+	executorpb.Executor_OpenSessionServer
+	ctx context.Context
+}
+
+func (s directExecutionStream) Context() context.Context { return s.ctx }
+
 func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, stream executorpb.Executor_OpenSessionServer) error {
 	r := p.runtime
-	var client executorpb.ExecutorClient
+	var client executorpb.ExecutorServer
 	var streamCtx context.Context
 	var cancel context.CancelFunc
 	var streamID uint64
@@ -245,7 +250,7 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 		if err := validateExecutionScope(request.GetScope(), r.config.Launch.Sandbox, epoch.SandboxUID(), epoch.IncarnationUID()); err != nil {
 			return err
 		}
-		if r.executionConn == nil || r.executionUID != request.GetScope().ExpectedIncarnationUid {
+		if r.executionServer == nil || r.executionUID != request.GetScope().ExpectedIncarnationUid {
 			if r.config.CodexExecServer == nil {
 				unconfigured = true
 				return nil
@@ -255,7 +260,7 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 		if r.host != nil && r.host.report != nil && r.host.report.NativeStopped && proto.Equal(r.host.report.Binding, r.intent.Binding) {
 			return status.Error(codes.FailedPrecondition, "environment native work has stopped")
 		}
-		client = executorpb.NewExecutorClient(r.executionConn)
+		client = r.executionServer
 		streamCtx, cancel = context.WithCancel(stream.Context())
 		stopEpoch := context.AfterFunc(epoch.Context(), cancel)
 		oldCancel := cancel
@@ -291,22 +296,7 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 		r.changedLocked()
 		r.mu.Unlock()
 	}()
-	remote, err := client.OpenSession(streamCtx, request)
-	if err != nil {
-		return err
-	}
-	for {
-		response, err := remote.Recv()
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if err := stream.Send(response); err != nil {
-			return err
-		}
-	}
+	return client.OpenSession(request, directExecutionStream{Executor_OpenSessionServer: stream, ctx: streamCtx})
 }
 
 func (p *executionProxy) StartProcess(ctx context.Context, request *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {

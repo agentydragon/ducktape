@@ -8,11 +8,14 @@ Codex exec-server; running a native agent harness or app-server is not required.
 
 One Execution API lifetime owns one immutable Sandbox UID and incarnation and one native backend
 lifetime. In the normal topology it runs inside Environment Runtime; a standalone binary remains
-available for isolated use. Access to its private Unix socket grants that environment's execution authority. Every
+available for isolated use. Embedded Runtime calls the adapter directly after its backend readiness probe;
+its private Unix socket serves only health checks for Harness Host. Runtime publishes the adapter
+only after a backend readiness probe and a successful health check on that socket. Standalone mode serves Executor RPCs
+on that socket, where filesystem access grants the environment's execution authority. Every
 call carries the destination, incarnation and attributing Session; a foreign destination or stale
 incarnation is rejected before native dispatch. The service cannot adopt another environment or
-advance a Runner watch epoch. Harness Host supplies the current Session and incarnation context over
-its private connection; Environment Runtime owns service health and lifecycle fencing. Gateway
+advance a Runner watch epoch. Callers supply Session and incarnation context with each request;
+Environment Runtime owns service health and lifecycle fencing. Gateway
 retains remote authorization and routing. When the expected incarnation is stale, Gateway or
 Environment Runtime may attach the typed `SandboxIncarnationChanged` status detail only after
 verifying the same destination Sandbox UID and observing a nonempty current incarnation. Invalid or
@@ -66,7 +69,8 @@ retries starts, writes, signals or other mutations. The adapter has no durable m
 
 ## Shutdown
 
-The Execution API closes admission and held connections, drains gRPC and stops its native
+The Execution API closes admission and held connections, joins direct adapter calls (or drains
+standalone gRPC calls), and stops its native
 backend before releasing ownership. Pod cleanup fences all remaining processes in the companion's
 private namespace, including descendants that escaped a process group; if that proof fails, Pod
 exit invokes the runtime's whole-namespace fence. VM cleanup proves its execution cgroup empty;

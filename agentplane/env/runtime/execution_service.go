@@ -10,8 +10,6 @@ import (
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/service"
-	"google.golang.org/grpc"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 const (
@@ -20,10 +18,10 @@ const (
 )
 
 // executionServiceHandle owns one in-process Go Execution API lifetime. The
-// private gRPC connection remains the Runtime forwarding boundary; backend
-// cleanup must finish before this handle can be replaced.
+// typed adapter is published only after backend readiness; backend cleanup
+// must finish before this handle can be replaced.
 type executionServiceHandle struct {
-	conn         *grpc.ClientConn
+	executor     executorpb.ExecutorServer
 	fence        func(context.Context) error
 	mu           sync.Mutex
 	fenceMu      sync.Mutex
@@ -33,17 +31,18 @@ type executionServiceHandle struct {
 	cancel       context.CancelFunc
 	done         chan struct{}
 	result       childExit
+	ready        chan executorpb.ExecutorServer
 }
 
-func newExecutionServiceHandle(config service.Config, run func(context.Context, service.Config) error) *executionServiceHandle {
+func newExecutionServiceHandle(config service.Config, run func(context.Context, service.Config, func(executorpb.ExecutorServer)) error) *executionServiceHandle {
 	lifetime, cancel := context.WithCancel(context.Background())
-	h := &executionServiceHandle{cancel: cancel, done: make(chan struct{}), exited: make(chan childExit, 1)}
+	h := &executionServiceHandle{cancel: cancel, done: make(chan struct{}), exited: make(chan childExit, 1), ready: make(chan executorpb.ExecutorServer, 1)}
 	go func() {
-		err := run(lifetime, config)
+		err := run(lifetime, config, func(executor executorpb.ExecutorServer) { h.ready <- executor })
 		h.mu.Lock()
 		switch {
 		case errors.Is(err, service.ErrFencedBackendLoss):
-			// service.Run returns this only after adapter shutdown and native
+			// service.RunEmbedded returns this only after adapter shutdown and native
 			// process-domain fencing have completed.
 		case err == nil && h.expectedStop:
 		case err == nil:
@@ -59,7 +58,7 @@ func newExecutionServiceHandle(config service.Config, run func(context.Context, 
 	return h
 }
 
-func (h *executionServiceHandle) ClientConn() *grpc.ClientConn { return h.conn }
+func (h *executionServiceHandle) Executor() executorpb.ExecutorServer { return h.executor }
 
 func (h *executionServiceHandle) StopAndFence(ctx context.Context) error {
 	h.fenceMu.Lock()
@@ -104,18 +103,6 @@ func (h *executionServiceHandle) stopRequested() bool {
 	return h.expectedStop
 }
 
-func (h *executionServiceHandle) Close() error {
-	h.mu.Lock()
-	if h.conn == nil {
-		h.mu.Unlock()
-		return nil
-	}
-	conn := h.conn
-	h.conn = nil
-	h.mu.Unlock()
-	return conn.Close()
-}
-
 func (r *Runtime) startExecutionService(ctx context.Context, config Config, incarnationUID string) (executionHandle, error) {
 	serviceConfig := service.Config{
 		Namespace: config.Launch.Sandbox.Namespace, SandboxName: config.Launch.Sandbox.Name,
@@ -146,43 +133,26 @@ func (r *Runtime) startExecutionService(ctx context.Context, config Config, inca
 	if err := serviceConfig.Validate(); err != nil {
 		return nil, fmt.Errorf("execution service configuration: %w", err)
 	}
-	handle := newExecutionServiceHandle(serviceConfig, service.Run)
+	handle := newExecutionServiceHandle(serviceConfig, service.RunEmbedded)
 	stopUnready := func(cause error) (executionHandle, error) {
 		fenceCtx, cancel := context.WithTimeout(context.Background(), executionFenceGrace)
 		defer cancel()
-		return nil, errors.Join(cause, handle.StopAndFence(fenceCtx), handle.Close())
+		return nil, errors.Join(cause, handle.StopAndFence(fenceCtx))
 	}
-	conn, err := dialUnix(config.ExecutionSocket)
-	if err != nil {
-		return stopUnready(err)
-	}
-	handle.conn = conn
 	readyCtx, cancel := context.WithTimeout(ctx, executionReadyWait)
 	defer cancel()
-	if err := waitExecutionReady(readyCtx, conn); err != nil {
-		return stopUnready(fmt.Errorf("wait for Execution service readiness: %w", err))
+	select {
+	case executor := <-handle.ready:
+		handle.executor = executor
+	case <-handle.done:
+		return stopUnready(errors.Join(errors.New("Execution API exited before readiness"), handle.result.err))
+	case <-readyCtx.Done():
+		return stopUnready(fmt.Errorf("wait for Execution API readiness: %w", readyCtx.Err()))
+	}
+	select {
+	case <-handle.done:
+		return stopUnready(errors.Join(errors.New("Execution API exited at readiness"), handle.result.err))
+	default:
 	}
 	return handle, nil
-}
-
-func waitExecutionReady(ctx context.Context, conn *grpc.ClientConn) error {
-	client := healthpb.NewHealthClient(conn)
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		checkCtx, cancel := context.WithTimeout(ctx, time.Second)
-		response, err := client.Check(checkCtx, &healthpb.HealthCheckRequest{Service: executorpb.Executor_ServiceDesc.ServiceName})
-		cancel()
-		if err == nil && response.Status == healthpb.HealthCheckResponse_SERVING {
-			return nil
-		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-		}
-	}
 }
