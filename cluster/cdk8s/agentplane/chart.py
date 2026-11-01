@@ -186,12 +186,15 @@ def environment_chart(
         "history-service",
         env,
         database_url=history_database_url,
-        # The app reads Threads; the Notification Service reads command receipts; the orchestration_v1
-        # group reads the Sessions it drives.
-        callers=app_caller | notifications_caller | actions.orchestration_callers(env),
+        # The app reads Threads; the Notification Service reads command receipts; orchestration_v1
+        # and session_delegation use the explicitly configured Action delegation actor.
+        callers=app_caller
+        | notifications_caller
+        | actions.orchestration_callers(env)
+        | actions.session_delegation_callers(env),
         delegation_actor=(
             ServiceAccountRef(namespace=env.namespace, name=actions.NAME)
-            if env.actions.orchestration_v1 is not None
+            if env.actions.orchestration_v1 is not None or env.actions.session_delegation is not None
             else None
         ),
         placement=node_scheduling.HIL_OVH,

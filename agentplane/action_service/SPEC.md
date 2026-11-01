@@ -275,6 +275,31 @@ other incarnation and reads only that incarnation's Sessions. A repeated launch 
 Sandbox; any other launch of a taken name is refused, and a launch may not bind a PolicySet a
 Sandbox owns.
 
+## Same-principal Session delegation Actions
+
+A `session_delegation` group acts on behalf of the Action caller only when the durable request
+retains its verified ServiceAccount UID. Each outbound call authenticates Actions as the service
+actor and carries the caller account, UID, Action request UUID and Execution UUID in the shared
+delegation envelope. Discovery, Dispatcher and History apply their normal resource checks to that
+effective caller; privileged actor membership does not widen the caller's authority. Missing caller
+UIDs fail closed, and ambiguous mutation replies end as `execution_unknown` without replay.
+
+The reviewed `environments` group lists and reads existing eligible targets. The `sessions` group
+opens Sessions, submits input with caller-minted command IDs, observes input delivery and History
+facts, cancels only a queued input whose durable receipt matches the supplied Session, interrupts
+the exact observed turn, and reads retained Session snapshots and turns when those projections are
+offered. Opening does not start a turn; `additional_instructions` is an additive standing brief and
+the caller submits the task separately. This surface creates no environments or caller grants and
+adds no wake authority; submitted input still follows the backend's existing wake-on-send policy
+when the authenticated caller already has that permission.
+
+MCP Edge names direct tools `<group>__<action>` (for example `sessions__submit_input`) while the
+Action catalog retains the reviewed group/action pair. Successful output is structured JSON from
+the owning protobuf or typed Session projection; source-specific partial and unavailable facts stay
+explicit. The `basic` PolicySet's exact-action rule is the auto-approval owner for these operations.
+Existing ServiceAccount and Sandbox PolicyBindings are not rewritten; an Action is auto-approved
+only where that existing permission set applies to the caller.
+
 ## Optional MCP backends
 
 Backend availability is independent of Action Service readiness and HTTP/OAuth availability.

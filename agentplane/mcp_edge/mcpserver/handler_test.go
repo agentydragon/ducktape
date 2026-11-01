@@ -400,6 +400,44 @@ func answeredRequest(t *testing.T) *pb.ActionRequest {
 	return succeeded
 }
 
+func TestSessionDelegationResultIsReturnedAsStructuredContent(t *testing.T) {
+	stored, err := structpb.NewValue(map[string]any{
+		"dispatch": map[string]any{
+			"command_id": "22222222-2222-4222-8222-222222222222",
+			"state":      "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := succeededResult(stored, pb.ExecutorKind_EXECUTOR_KIND_SESSION_DELEGATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.StructuredContent == nil || len(result.Content) != 1 {
+		t.Fatalf("result = %+v, want structuredContent plus one text representation", result)
+	}
+	structured, ok := result.StructuredContent.(json.RawMessage)
+	if !ok {
+		t.Fatalf("structured content type = %T", result.StructuredContent)
+	}
+	textContent, ok := result.Content[0].(*mcp.TextContent)
+	if !ok || textContent.Text != string(structured) {
+		t.Fatalf("text fallback = %T %+v, want the same JSON as structured content", result.Content[0], result.Content[0])
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(structured, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	dispatch, ok := decoded["dispatch"].(map[string]any)
+	if !ok {
+		t.Fatalf("structured dispatch = %v", decoded["dispatch"])
+	}
+	if dispatch["command_id"] != "22222222-2222-4222-8222-222222222222" || dispatch["state"] != "DELIVERY_STATE_QUEUED_IN_DISPATCHER" {
+		t.Fatalf("structured result = %v", decoded)
+	}
+}
+
 func TestRequestActionWaitsForTheResultItsToolAnswered(t *testing.T) {
 	succeeded := answeredRequest(t)
 	recorder := &recordingCore{}

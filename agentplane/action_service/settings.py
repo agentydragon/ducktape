@@ -13,6 +13,7 @@ from agentplane.action_service.mcp_settings import McpClientMetadataSettings, Mc
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.action_service.orchestration_v1.binding import OrchestrationExecutorBinding
 from agentplane.action_service.push_settings import WebPushSettings
+from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
 from agentplane.log_levels import LogLevels
 from agentplane.subjects import ServiceAccountRef
 from util.yaml_file_settings import YamlFileSettings
@@ -96,6 +97,13 @@ class Settings(YamlFileSettings):
     history_service: ServicePeer | None = Field(
         default=None, description="Where orchestration_v1 groups read Sessions; set exactly when one exists."
     )
+    session_delegation_dispatcher: ServicePeer | None = Field(
+        default=None,
+        description="Delegated Discovery and Session Dispatcher endpoint/audience for session_delegation groups.",
+    )
+    session_delegation_history: ServicePeer | None = Field(
+        default=None, description="Delegated History endpoint/audience for session_delegation groups."
+    )
 
     @model_validator(mode="after")
     def shared_mcp_client_metadata(self) -> Settings:
@@ -119,5 +127,18 @@ class Settings(YamlFileSettings):
         if (self.session_dispatcher is None, self.history_service is None) != (not orchestration, not orchestration):
             raise ValueError(
                 "configure session_dispatcher and history_service exactly when an orchestration_v1 group calls them"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def session_delegation_peers(self) -> Settings:
+        delegated = any(
+            isinstance(group.executor, SessionDelegationExecutorBinding) for group in self.action_groups.values()
+        )
+        peers = (self.session_delegation_dispatcher, self.session_delegation_history)
+        if (peers[0] is None, peers[1] is None) != (not delegated, not delegated):
+            raise ValueError(
+                "configure session_delegation_dispatcher and session_delegation_history exactly when a "
+                "session_delegation group is configured"
             )
         return self

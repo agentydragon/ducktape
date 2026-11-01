@@ -50,7 +50,8 @@ type ToolAnnotations struct {
 	OpenWorldHint   *bool
 }
 
-// Binding is where a group's Actions run: an MCPBinding, a PodBinding or an OrchestrationBinding.
+// Binding is where a group's Actions run: an MCPBinding, a PodBinding, an OrchestrationBinding or a
+// SessionDelegationBinding.
 type Binding interface{ isBinding() }
 
 // MCPBinding reaches a reviewed upstream MCP server.
@@ -87,9 +88,16 @@ type OrchestrationBinding struct {
 	Presets json.RawMessage
 }
 
-func (MCPBinding) isBinding()           {}
-func (PodBinding) isBinding()           {}
-func (OrchestrationBinding) isBinding() {}
+// SessionDelegationBinding runs same-principal Session operations in this service, forwarding the verified caller
+// identity to the owning Discovery, Session Dispatcher and History APIs on each RPC.
+type SessionDelegationBinding struct {
+	Description string
+}
+
+func (MCPBinding) isBinding()               {}
+func (PodBinding) isBinding()               {}
+func (OrchestrationBinding) isBinding()     {}
+func (SessionDelegationBinding) isBinding() {}
 
 // Group is the unit of discovery and ownership: one executor binding, many Actions.
 type Group struct {
@@ -239,9 +247,15 @@ type orchestrationExecutorSettings struct {
 	Unknown           map[string]yaml.Node `yaml:",inline"`
 }
 
-func (s *mcpExecutorSettings) unknownKeys() map[string]yaml.Node           { return s.Unknown }
-func (s *podExecutorSettings) unknownKeys() map[string]yaml.Node           { return s.Unknown }
-func (s *orchestrationExecutorSettings) unknownKeys() map[string]yaml.Node { return s.Unknown }
+type sessionDelegationExecutorSettings struct {
+	Description string               `yaml:"description"`
+	Unknown     map[string]yaml.Node `yaml:",inline"`
+}
+
+func (s *mcpExecutorSettings) unknownKeys() map[string]yaml.Node               { return s.Unknown }
+func (s *podExecutorSettings) unknownKeys() map[string]yaml.Node               { return s.Unknown }
+func (s *orchestrationExecutorSettings) unknownKeys() map[string]yaml.Node     { return s.Unknown }
+func (s *sessionDelegationExecutorSettings) unknownKeys() map[string]yaml.Node { return s.Unknown }
 
 // UnmarshalYAML decodes node as the executor kind its `kind` names, refusing a key that kind has no field for. Its
 // errors are yaml.TypeErrors, which the decoder reports with its own.
@@ -259,9 +273,11 @@ func (s *executorSettings) UnmarshalYAML(node *yaml.Node) error {
 		s.kind = &podExecutorSettings{}
 	case "orchestration_v1":
 		s.kind = &orchestrationExecutorSettings{}
+	case "session_delegation":
+		s.kind = &sessionDelegationExecutorSettings{}
 	default:
 		return &yaml.TypeError{Errors: []string{
-			fmt.Sprintf("line %d: executor kind must be mcp, pod or orchestration_v1", node.Line),
+			fmt.Sprintf("line %d: executor kind must be mcp, pod, orchestration_v1 or session_delegation", node.Line),
 		}}
 	}
 	if err := node.Decode(s.kind); err != nil {
@@ -434,6 +450,13 @@ func (s *orchestrationExecutorSettings) binding() (Binding, error) {
 	return OrchestrationBinding{
 		Description: s.Description, Namespace: s.Namespace, DefaultPolicySets: s.DefaultPolicySets, Presets: presets,
 	}, nil
+}
+
+func (s *sessionDelegationExecutorSettings) binding() (Binding, error) {
+	if err := checkLength("description", s.Description, 1, 2000); err != nil {
+		return nil, err
+	}
+	return SessionDelegationBinding{Description: s.Description}, nil
 }
 
 func newAction(s actionSettings) (ActionDefinition, error) {

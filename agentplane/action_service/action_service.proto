@@ -573,6 +573,8 @@ enum ExecutorKind {
   EXECUTOR_KIND_POD = 2;
   // This service, launching Session Sandboxes and driving their Sessions on each request's Decision.
   EXECUTOR_KIND_ORCHESTRATION_V1 = 3;
+  // This service, forwarding the authenticated caller's identity to same-principal Session APIs.
+  EXECUTOR_KIND_SESSION_DELEGATION = 4;
 }
 
 // Replica-local diagnostics of an MCP group's connection.

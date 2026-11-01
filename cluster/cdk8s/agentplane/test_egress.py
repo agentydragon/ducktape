@@ -79,6 +79,41 @@ def test_app_default_policy_sets_are_canonical(staging_manifests: list[dict[str,
     assert PUBLIC_INTERNET_POLICY not in app_defaults
 
 
+def test_basic_policy_auto_approves_only_same_principal_session_actions(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
+    basic = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
+    action_rules = [rule for rule in basic["spec"]["rules"] if rule["type"] == "action_auto_approve"]
+    assert [rule["policy"] for rule in action_rules] == [
+        {
+            "type": "exact_actions",
+            "actions": {
+                "environments": ["get", "list"],
+                "sessions": [
+                    "cancel_input",
+                    "get",
+                    "interrupt_turn",
+                    "observe_input",
+                    "open",
+                    "read_turns",
+                    "submit_input",
+                ],
+            },
+        }
+    ]
+
+    # `basic` is both a fleet default and explicitly held by the static MCP/workload principals;
+    # ordinary preset choices can replace other policies but still include it.
+    assert BASIC_POLICY in _app_default_policies(staging_manifests)
+    for account in ("claude-ai", "haku-agent"):
+        binding = _by_name(staging_manifests, "PolicyBinding", account)
+        assert BASIC_POLICY in binding["spec"]["policySets"]
+    app_config = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    assert app_config["sandbox_presets"]
+    for preset in app_config["sandbox_presets"].values():
+        assert BASIC_POLICY in preset["policy_sets"]
+
+
 def test_public_internet_is_available_but_never_implicitly_granted(staging_manifests: list[dict[str, Any]]) -> None:
     public = _by_name(staging_manifests, "PolicySet", PUBLIC_INTERNET_POLICY)
     assert public["spec"]["rules"] == [{"type": "egress", "hosts": ["*"]}]
@@ -103,7 +138,7 @@ def test_agent_egress_api_uses_its_canonical_service(staging_manifests: list[dic
         doc for doc in staging_manifests if doc["kind"] == "PolicySet" and doc["metadata"]["name"] == BASIC_POLICY
     )
     canonical_host = agent_api(staging.ENV.namespace).fqdn
-    rule = one(rule for rule in policy["spec"]["rules"] if canonical_host in rule["hosts"])
+    rule = one(rule for rule in policy["spec"]["rules"] if canonical_host in rule.get("hosts", []))
     assert rule["hosts"] == [canonical_host]
     assert rule["methods"] == ["GET"]
     assert rule["paths"] == ["/llms.txt", "/docs/agents/**", "/openapi.json", "/v1/rules"]
@@ -128,7 +163,7 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(staging_mani
     is why the rule names neither methods nor paths.
     """
     basic = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
-    api_server = one(rule for rule in basic["spec"]["rules"] if KUBERNETES_HOST in rule["hosts"])
+    api_server = one(rule for rule in basic["spec"]["rules"] if KUBERNETES_HOST in rule.get("hosts", []))
     assert api_server.get("credentialRef") == {"name": KUBERNETES_CREDENTIAL}, api_server
     # Narrowing by verb or path would be a second, weaker copy of RBAC; RBAC decides.
     assert "methods" not in api_server, api_server
@@ -147,7 +182,9 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(staging_mani
 def test_notifications_use_their_own_projected_audience(staging_manifests: list[dict[str, Any]]) -> None:
     policy = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
     notification_rule = one(
-        rule for rule in policy["spec"]["rules"] if notifications.service(staging.ENV.namespace).fqdn in rule["hosts"]
+        rule
+        for rule in policy["spec"]["rules"]
+        if notifications.service(staging.ENV.namespace).fqdn in rule.get("hosts", [])
     )
     assert notification_rule["credentialRef"] == {"name": notifications.WORKLOAD_CREDENTIAL}
     credential = _by_name(staging_manifests, "EgressCredential", notifications.WORKLOAD_CREDENTIAL)
@@ -503,7 +540,7 @@ def test_inference_is_granted_separately_from_platform_operations(staging_manife
         if BASIC_POLICY in policies or binding["metadata"]["name"] == "public-coder-openclaw":
             assert INFERENCE_EXPERIMENTS_POLICY in policies
     inference_hosts = {host for rule in granted["spec"]["rules"] for host in rule["hosts"]}
-    assert inference_hosts.isdisjoint(host for rule in basic["spec"]["rules"] for host in rule["hosts"])
+    assert inference_hosts.isdisjoint(host for rule in basic["spec"]["rules"] for host in rule.get("hosts", []))
     for name, denied_paths in (
         ("ollama", {"/api/pull", "/api/push", "/api/create", "/api/delete", "/api/copy", "/api/blobs/*"}),
         ("litellm-cheap-experiments", {"/key/generate", "/key/info", "/user/new", "/config/update"}),

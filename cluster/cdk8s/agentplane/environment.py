@@ -136,6 +136,13 @@ class OrchestrationProps:
 
 
 @dataclass(frozen=True)
+class SessionDelegationProps:
+    """The reviewed existing-environment Session Actions exposed as direct MCP tools."""
+
+    direct_tools_by_group: Mapping[Key, frozenset[Key]]
+
+
+@dataclass(frozen=True)
 class ActionsProps:
     """This environment's Actions settings and secret wiring."""
 
@@ -158,6 +165,8 @@ class ActionsProps:
     extra_egress: Sequence[CiliumNetworkPolicySpecEgress] = field(default_factory=tuple)
     # None offers no orchestration_v1 group.
     orchestration_v1: OrchestrationProps | None = None
+    # None offers no existing-environment Session delegation groups.
+    session_delegation: SessionDelegationProps | None = None
 
 
 @dataclass(frozen=True)

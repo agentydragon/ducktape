@@ -371,3 +371,42 @@ func TestTheOrchestrationPeersAreSetExactlyWhenAnOrchestrationGroupCallsThem(t *
 		})
 	}
 }
+
+func TestSessionDelegationPeersAreSetExactlyWhenADelegationGroupCallsThem(t *testing.T) {
+	const group = `action_groups:
+  environments:
+    title: Environments
+    description: same-principal environments
+    executor: {kind: session_delegation, description: forwards the caller}
+`
+	const dispatcher = `session_delegation_dispatcher:
+  target: test-dispatcher:8080
+  token_file: /test/delegated-dispatcher-token
+  request_timeout_s: 40
+`
+	const history = `session_delegation_history:
+  target: test-history:8080
+  token_file: /test/delegated-history-token
+  request_timeout_s: 40
+`
+	c, err := loadTestConfig(t, requiredFile+group+dispatcher+history)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SessionDelegationDispatcher == nil || c.SessionDelegationDispatcher.Target != "test-dispatcher:8080" ||
+		c.SessionDelegationHistory == nil || c.SessionDelegationHistory.Target != "test-history:8080" {
+		t.Fatalf("delegation peers: dispatcher=%+v history=%+v", c.SessionDelegationDispatcher, c.SessionDelegationHistory)
+	}
+	for name, file := range map[string]string{
+		"delegation group missing the shared dispatcher peer": group + history,
+		"delegation group missing History":                    group + dispatcher,
+		"delegation peers without a delegation group":         dispatcher + history,
+		"delegate peer without a token file":                  group + strings.Replace(dispatcher, "  token_file: /test/delegated-dispatcher-token\n", "", 1) + history,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadTestConfig(t, requiredFile+file); err == nil {
+				t.Fatal("accepted")
+			}
+		})
+	}
+}

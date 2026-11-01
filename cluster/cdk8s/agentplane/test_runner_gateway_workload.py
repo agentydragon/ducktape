@@ -1,5 +1,6 @@
 """The Gateway keeps one public Service and uses mTLS client connections to runner Pods."""
 
+from dataclasses import replace
 from pathlib import PurePosixPath
 from typing import Any, cast
 
@@ -22,6 +23,7 @@ from cluster.cdk8s.agentplane import (
     session_dispatcher,
     staging,
 )
+from cluster.cdk8s.agentplane.environment import SessionDelegationProps
 from util.settings_contract import env_name
 
 
@@ -187,6 +189,28 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
         "/agentplane.history_service.HistoryService/FindSessions",
         "/agentplane.history_service.HistoryService/WatchSessionSummaries",
     ]
+
+
+def test_session_delegation_is_a_dispatcher_caller_without_wake_authority(scratch_app: App) -> None:
+    env = replace(
+        staging.ENV,
+        actions=replace(
+            staging.ENV.actions,
+            orchestration_v1=None,
+            session_delegation=SessionDelegationProps(
+                direct_tools_by_group={actions.ENVIRONMENTS_GROUP: frozenset(), actions.SESSIONS_GROUP: frozenset()}
+            ),
+        ),
+    )
+    chart = runner_gateway_workload.serving_chart(scratch_app, env=env)
+    docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
+    settings = yaml.safe_load(_resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
+    assert set(settings["dispatcher_callers"]) == {
+        f"{env.namespace}/{app.NAME}",
+        f"{env.namespace}/{notifications.NAME}",
+        f"{env.namespace}/{actions.NAME}",
+    }
+    assert f"{env.namespace}/{actions.NAME}" not in settings["wake_callers"]
 
 
 def test_the_settings_file_the_gateway_reads_is_mounted_beside_its_token(scratch_app: App) -> None:

@@ -496,6 +496,7 @@ py_library(
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:settings",
         "//agentplane/action_service/orchestration_v1:binding",
+        "//agentplane/action_service/session_delegation:binding",
         "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
@@ -846,9 +847,13 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
     ],
 )
 

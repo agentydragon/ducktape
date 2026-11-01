@@ -8,6 +8,7 @@ import yaml
 from pydantic import TypeAdapter, ValidationError
 
 from agentplane.action_service.catalog import ActionGroup, Key, McpExecutorBinding
+from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
 from util.bazel.runfiles import get_required_path
 
 
@@ -47,6 +48,19 @@ def test_configured_groups_and_actions_parse() -> None:
 def test_group_and_action_keys_must_be_stable_identifiers(bad_yaml: str) -> None:
     with pytest.raises(ValidationError):
         TypeAdapter(dict[Key, ActionGroup]).validate_python(yaml.safe_load(bad_yaml))
+
+
+def test_session_delegation_executor_binding_is_accepted() -> None:
+    group = ActionGroup.model_validate(
+        {
+            "title": "Sessions",
+            "description": "Same-principal Session operations.",
+            "executor": {"kind": "session_delegation", "description": "Forwards the verified caller."},
+        }
+    )
+
+    assert isinstance(group.executor, SessionDelegationExecutorBinding)
+    assert group.executor.kind == "session_delegation"
 
 
 if __name__ == "__main__":

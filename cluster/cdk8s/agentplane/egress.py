@@ -68,7 +68,7 @@ from cluster.cdk8s.litellm.credentials import CHEAP_EXPERIMENTS_KEY
 from cluster.cdk8s.ollama import app as ollama
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
-from cluster.cdk8s.providers.agentplane.policy_set import Rule
+from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, Rule
 from cluster.cdk8s.providers.cert_manager.bundle import Bundle
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -448,6 +448,23 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
                 methods=[PolicySetSpecRulesMethods.POST],
                 paths=list(_ENVIRONMENT_DISCOVERY_GRPC_PATHS),
                 credential_ref=PolicySetSpecRulesCredentialRef(name=session_dispatcher.WORKLOAD_CREDENTIAL),
+            ),
+            # These caller-authorized Action adapters use the same Dispatcher/Discovery APIs at the
+            # effective caller's own authority. The receivers check the caller UID and resource
+            # ownership; this exact list grants no provisioning, broker or unrelated Actions.
+            AutoApproveIf.exact_actions(
+                actions={
+                    "environments": ["get", "list"],
+                    "sessions": [
+                        "cancel_input",
+                        "get",
+                        "interrupt_turn",
+                        "observe_input",
+                        "open",
+                        "read_turns",
+                        "submit_input",
+                    ],
+                }
             ),
             # Narrowed, unlike the services above: this host is also the proxy's own listener, and a
             # rule matches hosts, not ports.

@@ -38,6 +38,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox"
+	sessiondelegation "github.com/agentydragon/ducktape/agentplane/action_service/session_delegation"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
@@ -53,8 +54,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	workloadgrpc "github.com/agentydragon/ducktape/agentplane/workload_auth/grpc"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -252,6 +255,32 @@ func orchestrationExecutors(
 	return byGroup, nil
 }
 
+// sessionDelegationExecutors builds the exact existing-environment Session operations. Unlike orchestration_v1,
+// these groups do not read or write Kubernetes grants; every backend call carries the Action caller's verified UID.
+func sessionDelegationExecutors(
+	groups *catalog.Catalog,
+	discovery discoverypb.EnvironmentDiscoveryClient,
+	dispatcher dispatcherpb.SessionDispatcherClient,
+	history historypb.HistoryServiceClient,
+) (map[string]worker.Executor, error) {
+	byGroup := map[string]worker.Executor{}
+	for key, group := range groups.Groups() {
+		binding, isSessionDelegation := group.Executor.(catalog.SessionDelegationBinding)
+		if !isSessionDelegation {
+			continue
+		}
+		executor, err := sessiondelegation.NewExecutor(key, binding, discovery, dispatcher, history)
+		if err != nil {
+			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
+		}
+		if err := offer(key, group, executor.Actions()); err != nil {
+			return nil, err
+		}
+		byGroup[key] = executor
+	}
+	return byGroup, nil
+}
+
 // dial connects to p as this service's workload.
 func dial(p peer) (*grpc.ClientConn, error) {
 	return bearer.Dial(p.Target, p.TokenFile, time.Duration(p.RequestTimeoutSeconds*float64(time.Second)))
@@ -382,6 +411,36 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 			return err
 		}
 		maps.Copy(byGroup, orchestrators)
+	}
+	// The delegated Dispatcher peer is also the shared EnvironmentDiscovery listener. Its projected token and the
+	// History token are read for every call, and the executor adds the durable Action caller envelope to each one.
+	if c.SessionDelegationDispatcher != nil {
+		dispatcherConn, err := workloadgrpc.DialDelegated(
+			c.SessionDelegationDispatcher.Target, c.SessionDelegationDispatcher.TokenFile,
+			time.Duration(c.SessionDelegationDispatcher.RequestTimeoutSeconds*float64(time.Second)),
+		)
+		if err != nil {
+			return fmt.Errorf("dial delegated Environment Discovery and Session Dispatcher: %w", err)
+		}
+		defer dispatcherConn.Close()
+		historyConn, err := workloadgrpc.DialDelegated(
+			c.SessionDelegationHistory.Target, c.SessionDelegationHistory.TokenFile,
+			time.Duration(c.SessionDelegationHistory.RequestTimeoutSeconds*float64(time.Second)),
+		)
+		if err != nil {
+			return fmt.Errorf("dial delegated History Service: %w", err)
+		}
+		defer historyConn.Close()
+		delegated, err := sessionDelegationExecutors(
+			c.ActionGroups,
+			discoverypb.NewEnvironmentDiscoveryClient(dispatcherConn),
+			dispatcherpb.NewSessionDispatcherClient(dispatcherConn),
+			historypb.NewHistoryServiceClient(historyConn),
+		)
+		if err != nil {
+			return err
+		}
+		maps.Copy(byGroup, delegated)
 	}
 	requests := store.New(db)
 	supervisors, err := mcpExecutors(c.ActionGroups, linkages)

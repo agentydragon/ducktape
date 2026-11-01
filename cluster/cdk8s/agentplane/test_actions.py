@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
 
 import pytest_bazel
+import yaml
+from cdk8s import App, Chart, Testing as Cdk8sTesting
+from cdk8s_plus_34 import EnvValue
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import staging
+from cluster.cdk8s.agentplane import actions, history_service, session_dispatcher, staging
+from cluster.cdk8s.agentplane.environment import SessionDelegationProps
 
 # REST, docs, health and consent live behind the Action API's own authentication, never on
 # the public MCP origin.
@@ -91,6 +96,92 @@ def test_actions_migrate_before_serving_and_roll(staging_manifests: list[dict[st
     assert server["startupProbe"]["grpc"] == {"port": server["readinessProbe"]["grpc"]["port"], "service": "livez"}
     assert server["startupProbe"]["periodSeconds"] == 5
     assert server["startupProbe"]["failureThreshold"] == 60
+
+
+def test_session_delegation_offers_only_implemented_direct_tools(scratch_app: App) -> None:
+    props = SessionDelegationProps(
+        direct_tools_by_group={
+            actions.ENVIRONMENTS_GROUP: frozenset({"list", "get"}),
+            actions.SESSIONS_GROUP: frozenset(
+                {"open", "submit_input", "observe_input", "cancel_input", "interrupt_turn"}
+            ),
+        }
+    )
+    env = replace(staging.ENV, actions=replace(staging.ENV.actions, session_delegation=props))
+    chart = Chart(scratch_app, "delegation-actions", disable_resource_name_hashes=True)
+    action_component = actions.Actions(
+        chart,
+        "actions",
+        env,
+        database_url=EnvValue.from_value("postgres://unused"),
+        history=history_service.service(env.namespace),
+        history_audience=history_service.TOKEN_AUDIENCE,
+        dispatcher=session_dispatcher.service(env.namespace),
+        dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
+    )
+    action_component.add_platform_resources()
+    documents = Cdk8sTesting.synth(chart)
+    config = one(
+        doc for doc in documents if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == f"{actions.NAME}-settings"
+    )
+    settings = yaml.safe_load(config["data"]["settings.yaml"])
+    groups = settings["action_groups"]
+    assert groups["environments"]["executor"]["kind"] == "session_delegation"
+    assert set(groups["environments"]["direct_tools"]) == {"get", "list"}
+    assert groups["sessions"]["executor"]["kind"] == "session_delegation"
+    assert set(groups["sessions"]["direct_tools"]) == {
+        "cancel_input",
+        "interrupt_turn",
+        "observe_input",
+        "open",
+        "submit_input",
+    }
+    # `get` and `read_turns` remain unadvertised until their composition adapters ship.
+    assert "get" not in groups["sessions"]["direct_tools"]
+    assert "read_turns" not in groups["sessions"]["direct_tools"]
+    dispatcher = session_dispatcher.service(env.namespace)
+    history = history_service.service(env.namespace)
+    assert settings["session_delegation_dispatcher"] == {
+        "target": f"{dispatcher.fqdn}:{dispatcher.port.number}",
+        "token_file": "/var/run/secrets/actions/dispatcher",
+        "request_timeout_s": actions._DELEGATED_PEER_TIMEOUT_SECONDS,
+    }
+    assert settings["session_delegation_history"] == {
+        "target": f"{history.fqdn}:{history.pod_port}",
+        "token_file": "/var/run/secrets/actions/history",
+        "request_timeout_s": actions._DELEGATED_PEER_TIMEOUT_SECONDS,
+    }
+    deployment = one(
+        doc for doc in documents if doc["kind"] == "Deployment" and doc["metadata"]["name"] == actions.NAME
+    )
+    tokens = {
+        source["serviceAccountToken"]["path"]: source["serviceAccountToken"]
+        for volume in deployment["spec"]["template"]["spec"]["volumes"]
+        if volume["name"] == "peer-tokens"
+        for source in volume["projected"]["sources"]
+    }
+    assert tokens["dispatcher"]["audience"] == session_dispatcher.TOKEN_AUDIENCE
+    assert tokens["history"]["audience"] == history_service.TOKEN_AUDIENCE
+
+
+def test_session_delegation_network_caller_requires_the_group() -> None:
+    env_without_actions = replace(
+        staging.ENV, actions=replace(staging.ENV.actions, orchestration_v1=None, session_delegation=None)
+    )
+    assert actions.session_delegation_callers(env_without_actions) == {}
+
+    env_with_session_delegation = replace(
+        env_without_actions,
+        actions=replace(
+            env_without_actions.actions,
+            session_delegation=SessionDelegationProps(
+                direct_tools_by_group={actions.ENVIRONMENTS_GROUP: frozenset(), actions.SESSIONS_GROUP: frozenset()}
+            ),
+        ),
+    )
+    caller = one(actions.session_delegation_callers(env_with_session_delegation))
+    assert caller.namespace == env_with_session_delegation.namespace
+    assert caller.name == actions.NAME
 
 
 if __name__ == "__main__":

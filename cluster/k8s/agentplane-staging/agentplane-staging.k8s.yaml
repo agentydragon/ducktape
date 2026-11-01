@@ -2020,6 +2020,21 @@ spec:
         - /agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments
         - /agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment
       type: egress
+    - policy:
+        actions:
+          environments:
+            - get
+            - list
+          sessions:
+            - cancel_input
+            - get
+            - interrupt_turn
+            - observe_input
+            - open
+            - read_turns
+            - submit_input
+        type: exact_actions
+      type: action_auto_approve
     - clusterInternal: true
       credentialRef:
         name: agentplane-workload
