@@ -34,31 +34,35 @@ function signalFor(available: number, projected: number): Signal {
   return available <= 0 ? "exceeded" : projected < 0 ? "warning" : "normal";
 }
 
+type EstimateState = "current" | "loading" | "unavailable";
+
 function PurchaseCheck({
   allowance,
   purchase,
   onPurchaseChange,
-  estimateLoading,
+  estimateState,
+  estimatePeriodId,
 }: {
   allowance: AllowanceView;
   purchase: number | string;
   onPurchaseChange: (value: number | string) => void;
-  estimateLoading: boolean;
+  estimateState: EstimateState;
+  estimatePeriodId: EstimatePeriodId;
 }) {
   const cents = typeof purchase === "number" ? Math.round(purchase * 100) : NaN;
   const valid = typeof purchase === "number" && purchase >= 0 && Number.isSafeInteger(cents);
   const available = allowance.available_minor_units;
-  const projected = allowance.forecast.projected_cycle_end_minor_units;
+  const projected = estimateState === "current" ? allowance.forecast.projected_cycle_end_minor_units : null;
   const after = valid && available != null ? available - cents : null;
   const projectedAfter = valid && projected != null ? projected - cents : null;
   const signal =
     after != null
       ? after <= 0
         ? "exceeded"
-        : !estimateLoading &&
+        : estimateState === "current" &&
             (allowance.spending_signal === "warning" || (projectedAfter != null && projectedAfter < 0))
           ? "warning"
-          : !estimateLoading && projectedAfter != null
+          : estimateState === "current" && projectedAfter != null
             ? signalFor(after, projectedAfter)
             : null
       : null;
@@ -89,7 +93,7 @@ function PurchaseCheck({
         />
         <Paper
           bg={
-            estimateLoading
+            estimateState !== "current"
               ? "var(--mantine-color-gray-light)"
               : signal === "exceeded"
                 ? "var(--mantine-color-red-light)"
@@ -110,18 +114,20 @@ function PurchaseCheck({
                     {m(after)}
                   </Text>
                 </div>
-                {estimateLoading && after > 0 ? (
+                {estimateState === "loading" && after > 0 ? (
                   <Skeleton height={20} width={112} radius="xl" />
                 ) : (
                   signal && <SignalLabel signal={signal} />
                 )}
               </Group>
               <Text size="sm">
-                {estimateLoading ? (
+                {estimateState === "loading" ? (
                   <>
                     At the estimated pace, <Skeleton component="span" height={12} width={88} display="inline-block" />{" "}
                     before the next credit.
                   </>
+                ) : estimateState === "unavailable" ? (
+                  `No ${periodLabels[estimatePeriodId].toLowerCase()} estimate is available; the allowance balance above is unchanged.`
                 ) : projectedAfter == null ? (
                   "Pace estimate warming up; use the available balance rather than the forecast."
                 ) : (
@@ -154,12 +160,14 @@ function AllowancePanel({
   allowance,
   purchase,
   onPurchaseChange,
-  estimateLoading,
+  estimateState,
+  estimatePeriodId,
 }: {
   allowance: AllowanceView;
   purchase: number | string;
   onPurchaseChange: (value: number | string) => void;
-  estimateLoading: boolean;
+  estimateState: EstimateState;
+  estimatePeriodId: EstimatePeriodId;
 }) {
   if (allowance.status !== "active" || allowance.available_minor_units == null) {
     return (
@@ -170,12 +178,14 @@ function AllowancePanel({
   }
   const m = (value: number | null | undefined) => <Money value={value} currency={allowance.currency} />;
   const available = allowance.available_minor_units;
-  const projected = allowance.forecast.projected_cycle_end_minor_units;
-  const signal = ["normal", "warning", "exceeded"].includes(allowance.spending_signal)
-    ? (allowance.spending_signal as Signal)
-    : null;
+  const currentEstimate = estimateState === "current";
+  const projected = currentEstimate ? allowance.forecast.projected_cycle_end_minor_units : null;
+  const signal =
+    currentEstimate && ["normal", "warning", "exceeded"].includes(allowance.spending_signal)
+      ? (allowance.spending_signal as Signal)
+      : null;
   const cycleSpend = spendPeriod(allowance, "credit_cycle");
-  const selectedPace = pacePeriod(allowance, allowance.forecast.basis_period.id);
+  const selectedPace = currentEstimate ? pacePeriod(allowance, allowance.forecast.basis_period.id) : undefined;
   const unmatched = selectedPace?.unmatched_charges;
   const historyPeriods = [
     { id: "rolling_7d", label: "LAST 7 DAYS" },
@@ -191,7 +201,13 @@ function AllowancePanel({
           component="section"
           aria-labelledby="allowance-title"
           bg={
-            estimateLoading ? "gray.8" : signal === "exceeded" ? "red.9" : signal === "warning" ? "yellow.9" : "teal.9"
+            estimateState !== "current"
+              ? "gray.8"
+              : signal === "exceeded"
+                ? "red.9"
+                : signal === "warning"
+                  ? "yellow.9"
+                  : "teal.9"
           }
           c="white"
           radius="lg"
@@ -208,8 +224,12 @@ function AllowancePanel({
                   description="All allowance credits since activation, less posted and pending flexible purchases. Unused allowance carries forward. This is a spending allowance, not a sustainability target."
                 />
               </Group>
-              {estimateLoading ? (
+              {estimateState === "loading" ? (
                 <Skeleton height={20} width={112} radius="xl" />
+              ) : estimateState === "unavailable" ? (
+                <Badge color="gray" variant="light">
+                  Estimate unavailable
+                </Badge>
               ) : signal ? (
                 <SignalLabel signal={signal} />
               ) : (
@@ -243,16 +263,24 @@ function AllowancePanel({
               />
             </Group>
             <Text size="xs" c="dimmed">
-              Based on {periodLabels[allowance.forecast.basis_period.id].toLowerCase()}
+              {estimateState === "current"
+                ? `Based on ${periodLabels[estimatePeriodId].toLowerCase()}`
+                : estimateState === "loading"
+                  ? `Loading ${periodLabels[estimatePeriodId].toLowerCase()} estimate`
+                  : `${periodLabels[estimatePeriodId]} estimate unavailable`}
             </Text>
-            {estimateLoading ? (
+            {estimateState === "loading" ? (
               <Skeleton height={42} width={180} />
+            ) : estimateState === "unavailable" ? (
+              <Text size="sm" c="dimmed">
+                No estimate loaded for {periodLabels[estimatePeriodId].toLowerCase()}.
+              </Text>
             ) : (
               <Text fz={{ base: 32, sm: 38 }} fw={700} lh={1.1} style={{ overflowWrap: "anywhere" }}>
                 {projected == null ? "Not enough data" : m(projected)}
               </Text>
             )}
-            {projected == null && !estimateLoading && (
+            {projected == null && estimateState === "current" && (
               <Text size="sm" c="dimmed">
                 No reliable pace yet; the allowance balance above is still available.
               </Text>
@@ -269,8 +297,10 @@ function AllowancePanel({
                 />
               </Group>
               <Text size="sm" fw={700}>
-                {estimateLoading ? (
+                {estimateState === "loading" ? (
                   <Skeleton height={18} width={100} />
+                ) : estimateState === "unavailable" ? (
+                  "Unavailable"
                 ) : selectedPace?.observed_daily_minor_units == null ? (
                   "Warming up"
                 ) : (
@@ -281,9 +311,9 @@ function AllowancePanel({
             <Text size="sm" c="dimmed">
               Provisional leash ~{m(allowance.daily_reference_minor_units)} / day.
             </Text>
-            {(estimateLoading || (unmatched && unmatched.count > 0)) && (
+            {(estimateState === "loading" || (unmatched && unmatched.count > 0)) && (
               <Text size="xs" c="dimmed">
-                {estimateLoading ? (
+                {estimateState === "loading" ? (
                   <>
                     Unmatched in selected window:{" "}
                     <Skeleton component="span" height={10} width={90} display="inline-block" />
@@ -296,10 +326,10 @@ function AllowancePanel({
                 )}
               </Text>
             )}
-            {(estimateLoading || allowance.forecast.estimated_exhaustion_at) && (
+            {(estimateState === "loading" || (currentEstimate && allowance.forecast.estimated_exhaustion_at)) && (
               <Text size="sm">
                 Without future credits, this pace would use up the cushion around{" "}
-                {estimateLoading ? (
+                {estimateState === "loading" ? (
                   <Skeleton component="span" height={12} width={130} display="inline-block" />
                 ) : (
                   <strong>{time(allowance.forecast.estimated_exhaustion_at)}</strong>
@@ -315,7 +345,8 @@ function AllowancePanel({
           allowance={allowance}
           purchase={purchase}
           onPurchaseChange={onPurchaseChange}
-          estimateLoading={estimateLoading}
+          estimateState={estimateState}
+          estimatePeriodId={estimatePeriodId}
         />
         <Card component="section" aria-labelledby="cycle-title" withBorder radius="lg" padding="xl">
           <Stack gap="lg">
@@ -466,6 +497,78 @@ function SpendCard({ card }: { card: CardView }) {
   );
 }
 
+function SpendingSkeleton() {
+  return (
+    <Stack gap="xl" role="status" aria-label="Loading spending view" aria-busy="true">
+      <Text size="sm" c="dimmed">
+        Loading your spending data…
+      </Text>
+      <Card withBorder radius="lg" padding="xl" aria-hidden="true">
+        <Stack gap="md">
+          <Group justify="space-between" gap="md">
+            <Skeleton height={22} width="28%" />
+            <Skeleton height={24} width={130} radius="xl" />
+          </Group>
+          <Skeleton height={250} radius="md" />
+          <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="sm">
+            {[0, 1, 2].map((index) => (
+              <Skeleton key={index} height={22} />
+            ))}
+          </SimpleGrid>
+        </Stack>
+      </Card>
+      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg" aria-hidden="true">
+        {[0, 1].map((index) => (
+          <Paper key={index} withBorder radius="lg" p="xl">
+            <Stack gap="md">
+              <Group justify="space-between">
+                <Skeleton height={16} width="52%" />
+                <Skeleton height={20} width={112} radius="xl" />
+              </Group>
+              <Skeleton height={46} width="58%" />
+              <Skeleton height={14} width="76%" />
+              <Skeleton height={1} />
+              <Skeleton height={16} width="64%" />
+              <Skeleton height={34} width="48%" />
+            </Stack>
+          </Paper>
+        ))}
+      </SimpleGrid>
+      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg" aria-hidden="true">
+        {[0, 1].map((index) => (
+          <Card key={index} withBorder radius="lg" padding="xl">
+            <Stack gap="md">
+              <Skeleton height={22} width="40%" />
+              <Skeleton height={40} />
+              <Skeleton height={16} width="75%" />
+              <Skeleton height={68} radius="md" />
+            </Stack>
+          </Card>
+        ))}
+      </SimpleGrid>
+      <section>
+        <Group justify="space-between" align="baseline" mb="md">
+          <Title order={2} size="h3">
+            Card statements
+          </Title>
+          <Skeleton height={16} width={72} aria-hidden="true" />
+        </Group>
+        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md" aria-hidden="true">
+          {[0, 1].map((index) => (
+            <Card key={index} withBorder radius="md" padding="lg">
+              <Stack gap="sm">
+                <Skeleton height={20} width="54%" />
+                <Skeleton height={34} width="38%" />
+                <Skeleton height={16} width="80%" />
+              </Stack>
+            </Card>
+          ))}
+        </SimpleGrid>
+      </section>
+    </Stack>
+  );
+}
+
 export function SpendingPage({
   view,
   connectionState,
@@ -492,6 +595,12 @@ export function SpendingPage({
   onEstimatePeriodChange: (periodId: EstimatePeriodId) => void;
 }) {
   const cards = view?.cards || [];
+  const estimateState: EstimateState = !estimatePending
+    ? "current"
+    : error || connectionState === "Unable to connect"
+      ? "unavailable"
+      : "loading";
+  const matchingTransactions = transactions?.requested_period_id === estimatePeriodId ? transactions : null;
   return (
     <Stack gap="xl">
       <Group justify="space-between" gap="md">
@@ -504,19 +613,27 @@ export function SpendingPage({
       </Group>
       {view?.allowance?.status === "active" && (
         <SpendingHistoryChart
-          transactions={transactions?.requested_period_id === estimatePeriodId ? transactions : null}
+          transactions={matchingTransactions}
           allowance={view.allowance}
-          loading={transactionsLoading || transactions?.requested_period_id !== estimatePeriodId}
+          loading={transactionsLoading || matchingTransactions == null}
           error={transactionsError}
           periodId={estimatePeriodId}
           onPeriodChange={onEstimatePeriodChange}
         />
       )}
       {error && (
-        <Alert color="red" title="Couldn't refresh your view">
-          {error}. Showing the most recent data we have.
+        <Alert color="red" title={view ? "Couldn't refresh your view" : "Couldn't load your spending view"}>
+          {view
+            ? `${error}. Showing the last loaded view from ${time(view.generated_at)}.`
+            : `${error}. No spending view has loaded yet.`}
         </Alert>
       )}
+      {!error && connectionState === "Unable to connect" && view && (
+        <Alert color="yellow" title="Live updates disconnected">
+          The latest view was fetched at {time(view.generated_at)}, but live updates are unavailable.
+        </Alert>
+      )}
+      {!view && !error ? <SpendingSkeleton /> : null}
       {view?.allowance ? (
         <>
           {view.allowance.status === "active" && view.allowance.note && (
@@ -528,60 +645,67 @@ export function SpendingPage({
             allowance={view.allowance}
             purchase={purchase}
             onPurchaseChange={onPurchaseChange}
-            estimateLoading={estimatePending && !error}
+            estimateState={estimateState}
+            estimatePeriodId={estimatePeriodId}
           />
         </>
       ) : (
-        <Alert color="yellow" title="No flexible allowance yet">
-          {view
-            ? "No allowance is configured. Card totals below are not a flexible-spend budget."
-            : "Loading your spending picture…"}
-        </Alert>
+        view && (
+          <Alert color="yellow" title="No flexible allowance yet">
+            No allowance is configured. Card totals below are not a flexible-spend budget.
+          </Alert>
+        )
       )}
-      <section aria-labelledby="cards-title">
-        <Group justify="space-between" align="baseline">
-          <Title order={2} id="cards-title" size="h3">
-            Card statements
-          </Title>
-          <Text size="sm" c="dimmed">
-            {cards.length} {cards.length === 1 ? "card" : "cards"}
-          </Text>
-        </Group>
-        <Group gap="xs" mb="md">
-          <Text size="xs" c="dimmed">
-            Separate from the flexible allowance
-          </Text>
-          <HelpTooltip
-            topic="Card statements"
-            description="Card totals follow statement cycles and include purchases outside the flexible allowance. Card limits are separate from the flexible spending budget."
-          />
-        </Group>
-        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-          {cards.map((card, index) => (
-            <SpendCard card={card} key={`${card.account_name}-${index}`} />
-          ))}
-        </SimpleGrid>
-        {view && !cards.length && (
-          <Text size="sm" c="dimmed">
-            No cards configured.
-          </Text>
-        )}
-      </section>
-      <Divider />
-      <Group justify="space-between" gap="sm">
-        <Group gap="xs">
-          <Text size="xs" c="dimmed">
-            Advisory only
-          </Text>
-          <HelpTooltip
-            topic="Advisory only"
-            description="This dashboard does not block bank transactions. Review your accounts for decisions that matter; account sync and transaction posting may lag."
-          />
-        </Group>
-        <Text size="xs" c="dimmed">
-          View updated {time(view?.generated_at)}
-        </Text>
-      </Group>
+      {view && (
+        <section aria-labelledby="cards-title">
+          <Group justify="space-between" align="baseline">
+            <Title order={2} id="cards-title" size="h3">
+              Card statements
+            </Title>
+            <Text size="sm" c="dimmed">
+              {cards.length} {cards.length === 1 ? "card" : "cards"}
+            </Text>
+          </Group>
+          <Group gap="xs" mb="md">
+            <Text size="xs" c="dimmed">
+              Separate from the flexible allowance
+            </Text>
+            <HelpTooltip
+              topic="Card statements"
+              description="Card totals follow statement cycles and include purchases outside the flexible allowance. Card limits are separate from the flexible spending budget."
+            />
+          </Group>
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+            {cards.map((card, index) => (
+              <SpendCard card={card} key={`${card.account_name}-${index}`} />
+            ))}
+          </SimpleGrid>
+          {!cards.length && (
+            <Text size="sm" c="dimmed">
+              No cards configured.
+            </Text>
+          )}
+        </section>
+      )}
+      {view && (
+        <>
+          <Divider />
+          <Group justify="space-between" gap="sm">
+            <Group gap="xs">
+              <Text size="xs" c="dimmed">
+                Advisory only
+              </Text>
+              <HelpTooltip
+                topic="Advisory only"
+                description="This dashboard does not block bank transactions. Review your accounts for decisions that matter; account sync and transaction posting may lag."
+              />
+            </Group>
+            <Text size="xs" c="dimmed">
+              View updated {time(view.generated_at)}
+            </Text>
+          </Group>
+        </>
+      )}
     </Stack>
   );
 }

@@ -1,17 +1,85 @@
-import { Alert, Badge, Box, Card, Divider, Group, Paper, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+import {
+  Alert,
+  Badge,
+  Box,
+  Card,
+  Divider,
+  Group,
+  Paper,
+  SimpleGrid,
+  Skeleton,
+  Stack,
+  Text,
+  Title,
+} from "@mantine/core";
 
 import type { SpendConfigurationView } from "./schema";
 import { Metric, Money, periodLabels } from "./spend_display";
 import { ruleConditionText, ruleKindDisplay, rulesFootnote } from "./rule_display";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
+function ConfigurationSkeleton() {
+  return (
+    <Stack gap="lg" role="status" aria-label="Loading configuration" aria-busy="true">
+      <Text size="sm" c="dimmed">
+        Loading configuration…
+      </Text>
+      <SimpleGrid cols={{ base: 1, sm: 2, md: 5 }} spacing="md" aria-hidden="true">
+        {Array.from({ length: 5 }, (_, index) => (
+          <Stack key={index} gap="xs">
+            <Skeleton height={12} width="68%" />
+            <Skeleton height={28} width="82%" />
+          </Stack>
+        ))}
+      </SimpleGrid>
+      <Card withBorder radius="lg" p="lg" aria-hidden="true">
+        <Stack gap="md">
+          <Skeleton height={22} width="42%" />
+          <SimpleGrid cols={{ base: 1, sm: 2, md: 5 }} spacing="md">
+            {Array.from({ length: 5 }, (_, index) => (
+              <Stack key={index} gap="xs">
+                <Skeleton height={12} width="72%" />
+                <Skeleton height={24} width="60%" />
+              </Stack>
+            ))}
+          </SimpleGrid>
+          <Skeleton height={1} />
+          <Skeleton height={18} width="28%" />
+          <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="xs">
+            {Array.from({ length: 6 }, (_, index) => (
+              <Skeleton key={index} height={20} />
+            ))}
+          </SimpleGrid>
+          <Skeleton height={1} />
+          <Skeleton height={18} width="34%" />
+          {Array.from({ length: 3 }, (_, index) => (
+            <Skeleton key={index} height={58} radius="md" />
+          ))}
+        </Stack>
+      </Card>
+      <section aria-hidden="true">
+        <Skeleton height={24} width="24%" mb="sm" />
+        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+          {[0, 1].map((index) => (
+            <Card key={index} withBorder radius="md" p="lg">
+              <Stack gap="sm">
+                <Skeleton height={20} width="62%" />
+                <Skeleton height={16} width="78%" />
+                <Skeleton height={16} width="54%" />
+              </Stack>
+            </Card>
+          ))}
+        </SimpleGrid>
+      </section>
+    </Stack>
+  );
+}
+
 export function ConfigurationPage({
   configuration,
-  loading,
   error,
 }: {
   configuration: SpendConfigurationView | null;
-  loading: boolean;
   error: string | null;
 }) {
   const allowance = configuration?.allowance;
@@ -39,11 +107,7 @@ export function ConfigurationPage({
           {error}
         </Alert>
       )}
-      {loading && !configuration && (
-        <Text size="sm" c="dimmed">
-          Loading configuration…
-        </Text>
-      )}
+      {!configuration && !error && <ConfigurationSkeleton />}
       {configuration && (
         <>
           <Metric label="DAY CUTOVER TIME ZONE" value={configuration.time_zone} />

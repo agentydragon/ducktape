@@ -11,6 +11,7 @@ import {
   ScrollArea,
   SegmentedControl,
   SimpleGrid,
+  Skeleton,
   Stack,
   Table,
   Text,
@@ -530,6 +531,50 @@ function ExcludedFlowsPanel({
   );
 }
 
+function TransactionsSkeleton({ periodId }: { periodId: TransactionPeriodId }) {
+  return (
+    <Stack
+      gap="lg"
+      role="status"
+      aria-label={`Loading ${periodLabels[periodId].toLowerCase()} transactions`}
+      aria-busy="true"
+    >
+      <Text size="sm" c="dimmed">
+        Loading {periodLabels[periodId].toLowerCase()} transactions…
+      </Text>
+      <Paper withBorder radius="lg" p="lg" aria-hidden="true">
+        <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+          {[0, 1, 2].map((index) => (
+            <Stack key={index} gap="xs">
+              <Skeleton height={12} width="72%" />
+              <Skeleton height={30} width="48%" />
+              <Skeleton height={12} width="88%" />
+            </Stack>
+          ))}
+        </SimpleGrid>
+      </Paper>
+      <Group justify="space-between" align="baseline">
+        <Skeleton height={18} width="20%" aria-hidden="true" />
+        <Skeleton height={16} width="28%" aria-hidden="true" />
+      </Group>
+      <Paper withBorder radius="lg" p="lg" aria-hidden="true">
+        <Stack gap="md">
+          {Array.from({ length: 6 }, (_, index) => (
+            <Group key={index} gap="md" wrap="nowrap">
+              <Stack gap="xs" style={{ flex: 1 }}>
+                <Skeleton height={16} width={`${55 + (index % 3) * 12}%`} />
+                <Skeleton height={12} width="36%" />
+              </Stack>
+              <Skeleton height={18} width="18%" />
+              <Skeleton height={18} width="13%" />
+            </Group>
+          ))}
+        </Stack>
+      </Paper>
+    </Stack>
+  );
+}
+
 export function TransactionsPage({
   transactions,
   loading,
@@ -547,7 +592,8 @@ export function TransactionsPage({
   const [excludedFlowFilter, setExcludedFlowFilter] = useState<ExcludedFlowFilter | null>(null);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   useEffect(() => setExcludedFlowFilter(null), [periodId]);
-  const rows = transactions?.rows ?? [];
+  const matchingTransactions = transactions?.requested_period_id === periodId ? transactions : null;
+  const rows = matchingTransactions?.rows ?? [];
   const activeExcludedFlowFilter = excludedFlowFilter?.periodId === periodId ? excludedFlowFilter : null;
   const shown = rows
     .map((row, index) => ({ row, index }))
@@ -561,7 +607,7 @@ export function TransactionsPage({
           row.currency === activeExcludedFlowFilter.currency);
       return matchesRowFilter && matchesExcludedFlow;
     });
-  const allowance = transactions?.allowance;
+  const allowance = matchingTransactions?.allowance;
   const currency = allowance?.currency ?? "USD";
   const m = (value: number | null | undefined) => <Money value={value} currency={currency} />;
 
@@ -606,23 +652,26 @@ export function TransactionsPage({
         />
       </Group>
       {error && (
-        <Alert color="red" title="Couldn't load transactions">
-          {error}
+        <Alert color="red" title={`Couldn't load ${periodLabels[periodId].toLowerCase()} transactions`}>
+          {matchingTransactions
+            ? `${error}. Showing previously loaded data for ${periodLabels[periodId].toLowerCase()}.`
+            : `${error}. No data for ${periodLabels[periodId].toLowerCase()} has loaded yet.`}
         </Alert>
       )}
-      {loading && (
+      {loading && matchingTransactions && (
         <Text size="sm" c="dimmed">
-          Refreshing transactions…
+          Refreshing {periodLabels[periodId].toLowerCase()} transactions; current period data remains visible.
         </Text>
       )}
-      {transactions && (
+      {!matchingTransactions && !error && <TransactionsSkeleton periodId={periodId} />}
+      {matchingTransactions && (
         <>
           {allowance?.status !== "active" && (
             <Alert color="yellow" title="Allowance classification unavailable">
               {allowance?.note ?? "No flexible allowance is configured."} Card transactions may still appear below.
             </Alert>
           )}
-          {transactions.period.id !== periodId && (
+          {matchingTransactions.period.id !== periodId && (
             <Text size="sm" c="dimmed">
               Showing the last 30 days because the credit cycle is unavailable.
             </Text>
@@ -632,14 +681,14 @@ export function TransactionsPage({
               <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
                 <Metric
                   label="TRANSACTIONS IN PERIOD"
-                  value={transactions.summary.transaction_count}
-                  detail={`Since ${transactions.period.start}`}
+                  value={matchingTransactions.summary.transaction_count}
+                  detail={`Since ${matchingTransactions.period.start}`}
                 />
                 <Metric
                   label="NET ALLOWANCE SPEND"
                   value={
                     allowance?.status === "active"
-                      ? m(transactions.summary.net_allowance_spend_minor_units)
+                      ? m(matchingTransactions.summary.net_allowance_spend_minor_units)
                       : "Unavailable"
                   }
                   detail="Positive charges less accepted refunds"
@@ -648,8 +697,8 @@ export function TransactionsPage({
                   label="NEEDS CLASSIFICATION"
                   value={
                     allowance?.status === "active"
-                      ? `${transactions.summary.unmatched_charge_count} · ${money(
-                          transactions.summary.unmatched_charge_minor_units,
+                      ? `${matchingTransactions.summary.unmatched_charge_count} · ${money(
+                          matchingTransactions.summary.unmatched_charge_minor_units,
                           currency
                         )}`
                       : "Unavailable"
@@ -677,7 +726,7 @@ export function TransactionsPage({
             </Stack>
           </Paper>
           <ExcludedFlowsPanel
-            flows={transactions.summary.excluded_flows ?? []}
+            flows={matchingTransactions.summary.excluded_flows ?? []}
             periodId={periodId}
             selected={activeExcludedFlowFilter}
             onSelect={setExcludedFlowFilter}
@@ -687,7 +736,8 @@ export function TransactionsPage({
               Showing {shown.length} of {rows.length}
             </Text>
             <Text size="xs" c="dimmed">
-              View updated {time(transactions.generated_at)} · oldest allowance sync {time(allowance?.last_synced_at)}
+              View updated {time(matchingTransactions.generated_at)} · oldest allowance sync{" "}
+              {time(allowance?.last_synced_at)}
             </Text>
           </Group>
           {shown.length === 0 && (

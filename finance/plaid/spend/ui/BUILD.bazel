@@ -114,6 +114,7 @@ ts_library(
     tsconfig = ":tsconfig",
     deps = [
         ":schema",
+        ":spend_display",
         ":types",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",

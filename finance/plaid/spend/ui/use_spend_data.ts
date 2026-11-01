@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import type { SpendConfigurationView, SpendTransactionsView, SpendView } from "./schema";
 import type { EstimatePeriodId, SpendTab, TransactionPeriodId } from "./types";
 
+type ConnectionState = "Connecting" | "Live updates" | "Reconnecting" | "Unable to connect";
+
 export function useSpendData({
   activeTab,
   selectedEstimatePeriodId,
@@ -13,14 +15,14 @@ export function useSpendData({
   transactionPeriodId: TransactionPeriodId;
 }) {
   const [view, setView] = useState<SpendView | null>(null);
-  const [connectionState, setConnectionState] = useState("Connecting");
+  const [connectionState, setConnectionState] = useState<ConnectionState>("Connecting");
   const [error, setError] = useState<string | null>(null);
   const [configuration, setConfiguration] = useState<SpendConfigurationView | null>(null);
-  const [configurationLoading, setConfigurationLoading] = useState(false);
   const [configurationError, setConfigurationError] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<SpendTransactionsView | null>(null);
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
+  const [transactionsErrorPeriodId, setTransactionsErrorPeriodId] = useState<TransactionPeriodId | null>(null);
   const [viewRevision, setViewRevision] = useState(0);
   const estimatePeriodId =
     selectedEstimatePeriodId ??
@@ -30,6 +32,8 @@ export function useSpendData({
     let mounted = true;
     let authProbe: AbortController | undefined;
     let authProbeStarted = false;
+    setConnectionState("Connecting");
+    setError(null);
     const estimateQuery = selectedEstimatePeriodId ? `?estimate_period_id=${selectedEstimatePeriodId}` : "";
     const events = new EventSource(`/api/v1/events${estimateQuery}`);
     events.addEventListener("view", (event) => {
@@ -55,7 +59,7 @@ export function useSpendData({
       if (events.readyState !== EventSource.CLOSED || authProbeStarted) return;
 
       // EventSource hides HTTP status codes. Probe once after a terminal failure
-      // so an expired browser session can still return to the login flow.
+      // to detect expired sessions and recover a current view if HTTP still works.
       authProbeStarted = true;
       const controller = new AbortController();
       authProbe = controller;
@@ -64,15 +68,19 @@ export function useSpendData({
         credentials: "same-origin",
         signal: controller.signal,
       })
-        .then((response) => {
+        .then(async (response) => {
           if (!mounted || controller.signal.aborted) return;
           if (response.status === 401) {
             window.location.assign("/auth/login");
           } else if (!response.ok) {
             throw new Error(`Connection check returned ${response.status}`);
           } else {
+            const snapshot: SpendView = await response.json();
+            if (!mounted || controller.signal.aborted) return;
+            setView(snapshot);
+            setError(null);
+            setViewRevision((revision) => revision + 1);
             setConnectionState("Unable to connect");
-            setError("The live update stream closed unexpectedly");
           }
         })
         .catch((cause: unknown) => {
@@ -93,7 +101,6 @@ export function useSpendData({
     if (activeTab !== "configuration" || configuration != null) return;
     let mounted = true;
     const load = async () => {
-      setConfigurationLoading(true);
       setConfigurationError(null);
       try {
         const response = await fetch("/api/v1/configuration", {
@@ -109,8 +116,6 @@ export function useSpendData({
         if (mounted) setConfiguration(data);
       } catch (cause) {
         if (mounted) setConfigurationError(cause instanceof Error ? cause.message : "Configuration request failed");
-      } finally {
-        if (mounted) setConfigurationLoading(false);
       }
     };
     void load();
@@ -126,6 +131,7 @@ export function useSpendData({
     const load = async () => {
       setTransactionsLoading(true);
       setTransactionsError(null);
+      setTransactionsErrorPeriodId(null);
       try {
         const response = await fetch(`/api/v1/transactions?period=${requestedPeriod}`, {
           cache: "no-store",
@@ -142,6 +148,7 @@ export function useSpendData({
       } catch (cause) {
         if (!controller.signal.aborted) {
           setTransactionsError(cause instanceof Error ? cause.message : "Transactions request failed");
+          setTransactionsErrorPeriodId(requestedPeriod);
         }
       } finally {
         if (!controller.signal.aborted) setTransactionsLoading(false);
@@ -162,11 +169,11 @@ export function useSpendData({
     error,
     clearViewError: () => setError(null),
     configuration,
-    configurationLoading,
     configurationError,
     transactions,
     transactionsLoading,
     transactionsError,
+    transactionsErrorPeriodId,
     estimatePeriodId,
     estimatePending,
   };

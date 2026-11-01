@@ -13,6 +13,7 @@ import {
 } from "chart.js";
 import type { AllowanceView, SpendTransactionsView } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
+import { periodLabels, time } from "./spend_display";
 import type { EstimatePeriodId } from "./types";
 
 Chart.register(
@@ -77,20 +78,22 @@ export function SpendingHistoryChart({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [legendColumns, setLegendColumns] = useState(legendColumnsForViewport);
   const [legendOpen, setLegendOpen] = useState(() => legendColumnsForViewport() > 1);
+  const matchingTransactions = transactions?.requested_period_id === periodId ? transactions : null;
   useEffect(() => {
     const updateColumns = () => setLegendColumns(legendColumnsForViewport());
     window.addEventListener("resize", updateColumns);
     return () => window.removeEventListener("resize", updateColumns);
   }, []);
   const dates = useMemo(
-    () => (transactions ? datesInPeriod(transactions.period.start, transactions.period.end) : []),
-    [transactions]
+    () =>
+      matchingTransactions ? datesInPeriod(matchingTransactions.period.start, matchingTransactions.period.end) : [],
+    [matchingTransactions]
   );
   const chart = useMemo(() => {
-    if (!transactions) return null;
+    if (!matchingTransactions) return null;
     const amounts = new Map<string, Map<string, number>>();
     const categories = new Map<string, { label: string; color: string; total: number }>();
-    for (const row of transactions.rows) {
+    for (const row of matchingTransactions.rows) {
       const amount = row.pace_effects.find((effect) => effect.period_id === periodId)?.amount_minor_units ?? 0;
       if (amount <= 0 || !row.category) continue;
       const category = categories.get(row.category.id) ?? {
@@ -161,10 +164,10 @@ export function SpendingHistoryChart({
       totalMinorUnits,
       days: dates.length,
     };
-  }, [allowance.daily_reference_minor_units, dates, periodId, transactions]);
+  }, [allowance.daily_reference_minor_units, dates, periodId, matchingTransactions]);
 
   useEffect(() => {
-    if (!canvasRef.current || !transactions || !chart) return;
+    if (!canvasRef.current || !matchingTransactions || !chart) return;
     const instance = new Chart(canvasRef.current, {
       type: "bar",
       data: {
@@ -207,13 +210,13 @@ export function SpendingHistoryChart({
       },
     });
     return () => instance.destroy();
-  }, [allowance.currency, chart, transactions]);
+  }, [allowance.currency, chart, matchingTransactions]);
 
   const totalMinorUnits = chart?.totalMinorUnits ?? 0;
   const dailyAverageMinorUnits = chart?.dailyAverageMinorUnits ?? 0;
   const leashDailyMinorUnits = chart?.leashDailyMinorUnits ?? 0;
   const summary =
-    chart && transactions
+    chart && matchingTransactions
       ? `${formatMoney(totalMinorUnits, allowance.currency)} flexible spending over ${chart.days} days; average ${formatMoney(dailyAverageMinorUnits, allowance.currency)} per day; leash reference ${formatMoney(leashDailyMinorUnits, allowance.currency)} per day.`
       : "Spending history is loading.";
   const legendRows: LegendRow[] = chart
@@ -279,14 +282,17 @@ export function SpendingHistoryChart({
             />
           </Stack>
         </Group>
-        {error ? (
-          <Alert color="red" title="Couldn't load spending history">
-            {error}
+        {error && (
+          <Alert color="red" title={`Couldn't load ${periodLabels[periodId].toLowerCase()} spending history`}>
+            {matchingTransactions
+              ? `${error}. Showing ${periodLabels[periodId].toLowerCase()} data last loaded at ${time(matchingTransactions.generated_at)}.`
+              : `${error}. No data for ${periodLabels[periodId].toLowerCase()} has loaded yet.`}
           </Alert>
-        ) : loading && !transactions ? (
+        )}
+        {loading && !matchingTransactions && !error ? (
           <>
             <Text size="sm" c="dimmed" role="status" aria-live="polite">
-              Updating spending history…
+              Loading {periodLabels[periodId].toLowerCase()} spending history…
             </Text>
             <Skeleton height={250} radius="md" />
             <details
@@ -337,8 +343,13 @@ export function SpendingHistoryChart({
               </Table>
             </details>
           </>
-        ) : transactions && chart ? (
+        ) : matchingTransactions && chart ? (
           <>
+            {loading && (
+              <Text size="sm" c="dimmed" role="status" aria-live="polite">
+                Refreshing {periodLabels[periodId].toLowerCase()} history; current period data remains visible.
+              </Text>
+            )}
             <Text id="spending-history-summary" size="sm" c="dimmed">
               {summary}
             </Text>
@@ -426,6 +437,10 @@ export function SpendingHistoryChart({
               </Text>
             </details>
           </>
+        ) : error ? (
+          <Text size="sm" c="dimmed">
+            Spending history for {periodLabels[periodId].toLowerCase()} is unavailable until a request succeeds.
+          </Text>
         ) : (
           <Text size="sm" c="dimmed">
             No spending history is available for this period.
