@@ -4802,6 +4802,55 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    /// Bodies a bounded fallback summarizes instead of running may still run
+    /// with unknown arguments: taint what each exposes (passes, writes
+    /// through, stores, assigns or returns) and treat every body it can call
+    /// through a binding it reads the same way.
+    fn taint_unexecuted_bodies(&mut self, callbacks: &Values) {
+        let mut pending: Vec<u32> = callbacks
+            .iter()
+            .filter_map(|callback| match callback {
+                AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                | AbstractValue::Closure(key, _) => Some(*key),
+                _ => None,
+            })
+            .collect();
+        let mut seen = BTreeSet::new();
+        let mut exposed = Values::new();
+        while let Some(key) = pending.pop() {
+            if !seen.insert(key) {
+                continue;
+            }
+            let Some(callable) = self.inputs.index.callables.get(&key) else {
+                continue;
+            };
+            for expression in exposed_expressions(callable) {
+                self.exposed_values(expression, &mut exposed);
+            }
+            for receiver in callable
+                .member_writes
+                .iter()
+                .map(|(receiver, _)| receiver)
+                .chain(&callable.escaped_bindings)
+            {
+                self.exposed_values(&ValueExpr::Binding(receiver.clone()), &mut exposed);
+            }
+            for value in callable
+                .reads
+                .iter()
+                .filter_map(|binding| self.state.prefix_values.get(binding))
+                .flatten()
+            {
+                if let AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                | AbstractValue::Closure(key, _) = value
+                {
+                    pending.push(*key);
+                }
+            }
+        }
+        self.taint_objects(&exposed);
+    }
+
     fn taint_objects(&mut self, values: &Values) {
         let mut pending: Vec<_> = values.iter().cloned().collect();
         let mut visited = BTreeSet::new();
@@ -4827,48 +4876,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::OwnDescriptorMap(site) => {
                     self.invalidate_own_descriptor_map(*site);
                 }
-                AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                | AbstractValue::Closure(key, _) => {
-                    // Code the interpreter does not follow may run this body
-                    // with unknown arguments: what it passes, writes through,
-                    // stores or returns is exposed to that code, and so is
-                    // every body it can call. What it only reads is not.
-                    if self.state.tainted_functions.insert(*key)
-                        && let Some(callable) = self.inputs.index.callables.get(key)
-                    {
-                        // Receivers it writes through may get any data, and
-                        // the bodies it can call run under the same terms.
-                        let mut values = Values::new();
-                        for expression in exposed_expressions(callable) {
-                            self.exposed_values(expression, &mut values);
-                        }
-                        for receiver in callable
-                            .member_writes
-                            .iter()
-                            .map(|(receiver, _)| receiver)
-                            .chain(&callable.escaped_bindings)
-                        {
-                            self.exposed_values(&ValueExpr::Binding(receiver.clone()), &mut values);
-                        }
-                        for binding in &callable.reads {
-                            if let Some(read) = self.state.prefix_values.get(binding) {
-                                values.extend(
-                                    read.iter()
-                                        .filter(|value| {
-                                            matches!(
-                                                value,
-                                                AbstractValue::Value(Value::Alloc(
-                                                    Kind::Function,
-                                                    _
-                                                )) | AbstractValue::Closure(..)
-                                            )
-                                        })
-                                        .cloned(),
-                                );
-                            }
-                        }
-                        pending.extend(values);
-                    }
+                AbstractValue::Value(Value::Alloc(Kind::Function, key)) => {
+                    self.state.tainted_functions.insert(*key);
+                }
+                AbstractValue::Closure(key, _) => {
+                    self.state.tainted_functions.insert(*key);
                 }
                 _ => {}
             }
@@ -5977,7 +5989,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // return value as well. This includes a descriptor getter that
             // returns another callable; stopping at the getter loses the
             // returned callable's importer reads. Prefix coverage preserves
-            // the ordinary boundary at an unconditional await.
+            // the ordinary boundary at an unconditional await. Whatever the
+            // member returns reaches that code too.
+            self.taint_objects(&nested.returns);
             self.promote_returned_callbacks(&nested.returns);
             self.apply_rebind_effects(&nested.effects.rebinds);
             outcome.absorb_binding_effects(&mut nested.effects, self.state.assumption.as_ref());
@@ -6062,6 +6076,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if callbacks.contains(&AbstractValue::ForeignDeferredRecord) {
             self.promote_foreign_record(&mut outcome);
         }
+        // The summarized bodies run on these inputs without the interpreter
+        // following what they do to them.
+        self.taint_objects(&args.iter().flatten().cloned().collect());
+        self.taint_unexecuted_bodies(&callbacks);
         let mut roots = BTreeSet::new();
         for callback in &callbacks {
             let key = match callback {
