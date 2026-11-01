@@ -181,5 +181,16 @@ async def test_cancellation_during_teardown_waits_for_deletion_before_closing_cl
     assert lifecycle.index(("delete", "owned")) < lifecycle.index(("client-close", "owned"))
 
 
+async def test_pod_case_can_disable_native_capture_and_still_delete_its_guests(
+    cluster: Cluster, lifecycle: list[tuple[str, str]]
+) -> None:
+    async with scenario.open_resources(
+        cluster, "https://app.test", "test", trace.NoOpTracer(), native_diagnostics=False
+    ) as (_, create):
+        await create("pod")
+    assert ("diagnostics", "pod") not in lifecycle
+    assert lifecycle == [("delete", "pod"), ("client-close", "pod")]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

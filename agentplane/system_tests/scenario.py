@@ -16,21 +16,23 @@ type ScenarioResources = Callable[[], AbstractAsyncContextManager[tuple[Client, 
 
 @asynccontextmanager
 async def open_resources(
-    cluster: Cluster, base_url: str, token: str, phase_tracer: trace.Tracer
+    cluster: Cluster, base_url: str, token: str, phase_tracer: trace.Tracer, *, native_diagnostics: bool = True
 ) -> AsyncIterator[tuple[Client, Sandboxes]]:
     async with AsyncExitStack() as resources:
         client = await resources.enter_async_context(Client(base_url=base_url, token=token))
         sandbox = await resources.enter_async_context(sandbox_scope(cluster, client, phase_tracer))
 
-        async def diagnostics() -> None:
-            for uid in client.opened_sandbox_uids:
-                with phase_tracer.start_as_current_span(
-                    "system_test.diagnostics", attributes={"sandbox.uid": str(uid)}
-                ):
-                    await native_artifacts.capture(client, sandbox_uid=uid)
+        if native_diagnostics:
 
-        # ExitStack runs diagnostics before deleting guests, and closes their client last.
-        resources.push_async_callback(diagnostics)
+            async def diagnostics() -> None:
+                for uid in client.opened_sandbox_uids:
+                    with phase_tracer.start_as_current_span(
+                        "system_test.diagnostics", attributes={"sandbox.uid": str(uid)}
+                    ):
+                        await native_artifacts.capture(client, sandbox_uid=uid)
+
+            # ExitStack runs diagnostics before deleting guests, and closes their client last.
+            resources.push_async_callback(diagnostics)
         try:
             yield client, sandbox
         finally:
