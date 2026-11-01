@@ -85,6 +85,19 @@ async def _wait_for_owned(path: Path, generation: str) -> CodexExecServerContain
             await asyncio.sleep(0.1)
 
 
+async def _wait_for_replacement(path: Path, previous: str) -> CodexExecServerContainerStatus:
+    async with asyncio.timeout(30):
+        while True:
+            try:
+                status = await asyncio.to_thread(inspect_codex_exec_server_container, path)
+            except OSError:
+                await asyncio.sleep(0.1)
+                continue
+            if status.generation != previous and status.owned:
+                return status
+            await asyncio.sleep(0.1)
+
+
 def _host_pid_for_marker(companion: CodexExecServerContainer, marker: str) -> int | None:
     process_table = companion.container.get_wrapped_container().top()
     pid_column = process_table["Titles"].index("PID")
@@ -205,11 +218,8 @@ async def test_codex_exec_server_container_recovers_without_restarting_app_serve
 
     await asyncio.to_thread(_kill_exec_server, codex_exec_server_container)
     await asyncio.wait_for(wait_for_exit(detached_host_pid), timeout=30)
-    idle_after_exit = await _wait_for_generation(
-        codex_exec_server_container.socket, initial_executor.generation, owned=False
-    )
-    assert idle_after_exit.generation != initial_executor.generation
-    restarted_executor = await _wait_for_owned(codex_exec_server_container.socket, idle_after_exit.generation)
+    # Runtime can reclaim the fresh idle generation before this poll observes it.
+    restarted_executor = await _wait_for_replacement(codex_exec_server_container.socket, initial_executor.generation)
     await asyncio.to_thread(codex_exec_server_container.check_health)
 
     recovered_app_server = await _codex_process(driver)
