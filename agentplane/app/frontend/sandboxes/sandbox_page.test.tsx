@@ -807,9 +807,7 @@ it("does not retry an Open the runner has not reported", async () => {
   expect(onOpenThread).not.toHaveBeenCalled();
   expect(container.textContent).toContain("No runner Thread or Dispatcher opening is visible yet");
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
-  const paths = fetchMock.mock.calls.map(([input, init]) =>
-    new URL(requestFromFetchInput(input, init).url).pathname
-  );
+  const paths = fetchMock.mock.calls.map(([input, init]) => new URL(requestFromFetchInput(input, init).url).pathname);
   expect(paths).toContain(`/upstream/app/v1/threads/${first.session_id}`);
   expect(paths).toContain(`/upstream/history/v1/sessions/${first.session_id}/summary`);
 });
