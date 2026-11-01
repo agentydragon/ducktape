@@ -64,7 +64,7 @@ func TestExportOpenAPIUsesHumaSchemasForThreadRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	document := assertSaneOpenAPI(t, output.Bytes())
-	for _, path := range []string{"/threads", "/threads/{thread_id}", "/threads/{thread_id}/evidence"} {
+	for _, path := range []string{"/threads/{thread_id}", "/threads/{thread_id}/archive", "/threads/{thread_id}/unarchive"} {
 		if _, ok := document.Paths[path]; !ok {
 			t.Errorf("OpenAPI document omits Huma route %q", path)
 		}
@@ -94,31 +94,12 @@ func TestExportOpenAPIUsesHumaSchemasForThreadRoutes(t *testing.T) {
 	if !ok || lastCursor["type"] != "integer" || lastCursor["format"] != "int64" {
 		t.Fatal("ThreadView.last_cursor must be documented as an int64")
 	}
-	threadPage := document.Components.Schemas["ThreadPage"]
-	if threadPage == nil {
-		t.Fatal("OpenAPI document omits ThreadPage")
-	}
-	pageProperties, ok := threadPage["properties"].(map[string]any)
-	if !ok {
-		t.Fatalf("ThreadPage.properties = %T, want object", threadPage["properties"])
-	}
-	threads, ok := pageProperties["threads"].(map[string]any)
-	if !ok {
-		t.Fatalf("ThreadPage.threads = %T, want array schema", pageProperties["threads"])
-	}
-	items, ok := threads["items"].(map[string]any)
-	if !ok || items["$ref"] != "#/components/schemas/ThreadView" {
-		t.Fatalf("ThreadPage.threads.items = %v, want ThreadView reference", threads["items"])
-	}
 	for schemaName, fields := range map[string][]string{
 		"BindingView":           {"subjects", "conditions", "policy_sets", "missing_policy_sets"},
 		"SandboxPodView":        {"owner_references"},
 		"PolicySetView":         {"rules"},
 		"CredentialView":        {"targets"},
 		"SandboxFormOutputBody": {"policy_sets"},
-		"ObservationPage":       {"observations"},
-		"EvidencePage":          {"observations"},
-		"NativeFramePage":       {"frames"},
 	} {
 		schema := document.Components.Schemas[schemaName]
 		if schema == nil {
@@ -148,23 +129,6 @@ func TestExportOpenAPIUsesHumaSchemasForThreadRoutes(t *testing.T) {
 	defaultsProperties, ok := defaultsSchema["properties"].(map[string]any)
 	if !ok || defaultsProperties["wake_on_send"] == nil || defaultsProperties["idle_suspend_after_seconds"] == nil {
 		t.Fatalf("NewSandboxDefaults.properties = %v, want wake and idle defaults", defaultsSchema["properties"])
-	}
-	frames := document.Paths["/threads/{thread_id}/evidence/{observation_cursor}/frames"]["get"]
-	var frameOperation struct {
-		Parameters []struct {
-			In   string `json:"in"`
-			Name string `json:"name"`
-		} `json:"parameters"`
-	}
-	if err := json.Unmarshal(frames, &frameOperation); err != nil {
-		t.Fatalf("decode native frames operation: %v", err)
-	}
-	frameParameters := make([]string, 0, len(frameOperation.Parameters))
-	for _, parameter := range frameOperation.Parameters {
-		frameParameters = append(frameParameters, parameter.In+":"+parameter.Name)
-	}
-	if got, want := strings.Join(frameParameters, ","), "path:thread_id,path:observation_cursor,query:projection_epoch,query:entity_kind,query:entity_id,query:after_sequence,query:limit"; got != want {
-		t.Fatalf("native frames parameters = %q, want %q", got, want)
 	}
 }
 

@@ -32,8 +32,9 @@ from agentplane.app.testing.models import (
     SandboxesSnapshot,
     SandboxPresetView,
     SandboxView,
-    ThreadPage,
+    ThreadMetadata,
     ThreadView,
+    thread_view_from_proto_json,
 )
 from agentplane.egress.decisions import Decision
 from agentplane.proto import event_log_pb2
@@ -309,18 +310,30 @@ class Client:
 
     async def threads(self, *, sandbox_uid: UUID) -> AsyncGenerator[ThreadView]:
         """Every retained Thread of this Sandbox incarnation, including archived Threads."""
-        params = {"sandbox_uid": str(sandbox_uid), "include_archived": "true"}
+        params = {"include_archived": "true", "limit": "200"}
         while True:
-            page = ThreadPage.model_validate(await self._json("GET", "/threads", params=params))
-            for thread in page.threads:
-                yield thread
-            if page.next_page_token is None:
+            page = await self._json("GET", "/upstream/app/v1/threads", params=params)
+            for row in page.get("threads", []):
+                metadata = ThreadMetadata.model_validate(row)
+                try:
+                    summary = await self._json("GET", f"/upstream/history/v1/sessions/{metadata.thread_id}/summary")
+                except httpx.HTTPStatusError as error:
+                    if error.response.status_code == HTTPStatus.NOT_FOUND:
+                        continue
+                    raise
+                history_sandbox = summary.get("sandbox") or {}
+                if history_sandbox.get("uid") == str(sandbox_uid):
+                    yield thread_view_from_proto_json(row, summary)
+            page_token = page.get("nextPageToken")
+            if not page_token:
                 return
-            params["page_token"] = page.next_page_token
+            params["page_token"] = page_token
 
     async def thread(self, thread_id: UUID) -> ThreadView:
         """The persistent Thread of a created Session; its ID is the Session's public ID."""
-        return ThreadView.model_validate(await self._json("GET", f"/threads/{thread_id}"))
+        metadata = await self._json("GET", f"/upstream/app/v1/threads/{thread_id}")
+        summary = await self._json("GET", f"/upstream/history/v1/sessions/{thread_id}/summary")
+        return thread_view_from_proto_json(metadata, summary)
 
     async def submit_input(
         self, thread_id: UUID, command_id: str, text: str

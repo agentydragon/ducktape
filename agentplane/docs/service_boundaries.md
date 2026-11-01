@@ -55,8 +55,11 @@ when both processes expose HTTP listeners. A backend's HTTP/JSON facade is not a
 
 The integration app owns the browser's HTTP/JSON and streaming boundary. It calls each backend's
 generated gRPC client with the credential that backend expects, and returns the generated message's
-ProtoJSON form or a UI-specific composition. The app never forwards browser cookies or browser-supplied upstream credentials. Backend authentication and authorization still run on every RPC; the app neither
-replaces that authority nor turns a browser session into a backend dependency.
+ProtoJSON form or a UI-specific composition. Thread detail is composed in the browser from the app's
+generated ThreadMetadata API and the History Service's generated Session summary API. The app never
+forwards browser cookies or browser-supplied upstream credentials. Backend authentication and
+authorization still run on every RPC; the app neither replaces that authority nor turns a browser
+session into a backend dependency.
 
 A service does not acquire an HTTP facade merely because it serves gRPC. A facade needs an explicit
 direct HTTP-client contract independent of the browser app. Existing published service HTTP APIs
@@ -84,8 +87,8 @@ remain HTTP at their owning components. They are protocol endpoints, not alterna
   the Runner Gateway for placement, and uses each Sandbox's Runner Proxy for UID/owner-fenced live
   inventory and process/Session diagnostics. Manual resume is a Sandbox lifecycle request through
   Kubernetes; the Runner owns native-state recovery after startup. It owns harness startup and
-  reconciliation after command admission. The app reads Session history and Threads from the History
-  Service. See the [Runner Gateway](../runner_gateway/README.md) and
+  reconciliation after command admission. The app reads Session history from the History Service and
+  owns the app-specific Thread metadata. See the [Runner Gateway](../runner_gateway/README.md) and
   [Session Dispatcher](../runner_gateway/dispatcher/README.md) contracts.
 - **Sandbox Controller:** reconciles requested Sandbox state into ServiceAccounts, Pods or VMs,
   state volumes and controller-owned grants. It owns `Sandbox.status`, including quiescing facts,
@@ -105,9 +108,9 @@ remain HTTP at their owning components. They are protocol endpoints, not alterna
 - **Action Service:** Action authorization and Decisions, execution lifecycle, and canonical Action
   history.
 
-`app/go/threads/` owns only the app's Thread metadata, projections, and browser-facing composition. Its
-session adapter uses the History Service; it does not own Sandbox reconciliation or connect directly
-to runners. Thread identities do not travel in Runner control-stream metadata.
+`app/go/threads/` owns only the app's Thread metadata and its browser-facing API. The browser combines
+that metadata with History Service summaries; it does not own Sandbox reconciliation or connect
+directly to runners. Thread identities do not travel in Runner control-stream metadata.
 
 ## Invariants
 

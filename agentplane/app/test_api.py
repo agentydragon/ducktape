@@ -10,7 +10,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.app.sandbox_models import NewSandboxDefaults
-from agentplane.app.testing.models import SandboxView, ThreadPage, ThreadView
+from agentplane.app.testing.models import SandboxView, ThreadView
 from agentplane.app.testing.replication_process import AppProcess, spawn_go_app
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from util.net import listen_tcp
@@ -52,11 +52,10 @@ async def test_go_app_serves_sandbox_and_thread_views_using_the_shared_models(ht
     assert templates.status_code == 200, templates.text
     assert templates.json() == []
 
-    threads_response = await http.get("/threads")
+    threads_response = await http.get("/upstream/app/v1/threads")
     assert threads_response.status_code == 200, threads_response.text
-    page = ThreadPage.model_validate(threads_response.json())
-    assert page.threads == []
-    assert page.next_page_token is None
+    assert threads_response.json().get("threads", []) == []
+    assert not threads_response.json().get("nextPageToken")
 
 
 async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(http: httpx.AsyncClient) -> None:
@@ -82,7 +81,8 @@ async def test_go_openapi_tracks_selected_python_http_contract_fields(http: http
     schemas = document["components"]["schemas"]
 
     assert "/sandboxes" in paths
-    assert "/threads" in paths
+    assert "/threads" not in paths
+    assert "/threads/{thread_id}" in paths
     assert "/frontend-config" in paths
     assert "/models" not in paths
     assert "/presets" not in paths

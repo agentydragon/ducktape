@@ -1,4 +1,5 @@
 import { create, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
+import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
 
 import type {
   EvidencePage,
@@ -9,8 +10,13 @@ import type {
 } from "../schema";
 import { api, displayableError, fetchWithLogin, HttpError, ok } from "../client";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
+import { TurnStatusSchema } from "../../../proto/event_pb";
+import { HarnessSchema, HarnessStateSchema, LaunchOutcomeSchema, SetupStateSchema } from "../../../proto/runner_pb";
+import { ThreadMetadataSchema, type ThreadMetadata } from "../../thread_metadata/thread_metadata_pb";
 import {
   EntityKeySchema,
+  FeedStatusSchema,
+  GetSessionSummaryRequestSchema,
   ReadEntityEvidenceRequestSchema,
   ReadEntityEvidenceResponseSchema,
   ReadNativeFramesRequestSchema,
@@ -19,8 +25,8 @@ import {
   ReadSessionEventsResponseSchema,
   ReadSessionObservationsRequestSchema,
   ReadSessionObservationsResponseSchema,
-  GetSessionSummaryRequestSchema,
   SessionSummarySchema,
+  type SessionSummary,
   type ReadSessionObservationsResponse,
 } from "../../../history_service/history_service_pb";
 import {
@@ -431,10 +437,95 @@ export async function getThread(threadId: string): Promise<ThreadView> {
   return thread;
 }
 
-/** null until the History Service holds an event of the Thread's Session. */
+/** Join app-owned metadata with History's generated Session summary at the browser boundary. */
 export async function findThread(threadId: string): Promise<ThreadView | null> {
-  const answer = await api.GET("/threads/{thread_id}", { params: { path: { thread_id: threadId } } });
-  return answer.response.status === 404 ? null : ok(answer);
+  const encodedId = encodeURIComponent(threadId);
+  const [metadata, summary] = await Promise.all([
+    fetchProto(
+      `/upstream/app/v1/threads/${encodedId}`,
+      (json) => fromJson(ThreadMetadataSchema, json),
+      `Thread metadata for ${threadId}`
+    ),
+    fetchProto(
+      `/upstream/history/v1/sessions/${encodedId}/summary`,
+      (json) => fromJson(SessionSummarySchema, json),
+      `History summary for ${threadId}`
+    ),
+  ]);
+  if (!metadata || !summary || !summary.sandbox?.name) return null;
+  return composeThreadView(metadata, summary);
+}
+
+async function fetchProto<T>(path: string, parse: (json: JsonValue) => T, label: string): Promise<T | null> {
+  const response = await fetchWithLogin(new URL(path, window.location.href));
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      detail = displayableError(await response.json());
+    } catch {
+      // Keep the HTTP status when the gateway returned a non-JSON error body.
+    }
+    throw new Error(`${label} failed with ${response.status}: ${detail}`);
+  }
+  return parse((await response.json()) as JsonValue);
+}
+
+function timestampISO(value: Timestamp | undefined): string | null {
+  if (!value) return null;
+  const json = toJson(TimestampSchema, value);
+  if (typeof json !== "string") throw new Error("History Service returned an invalid timestamp");
+  return json;
+}
+
+function enumName(
+  value: number,
+  schema: { values: readonly { number: number; name: string }[] },
+  label: string
+): string {
+  const name = schema.values.find((member) => member.number === value)?.name;
+  if (!name) throw new Error(`History Service returned an unknown ${label}: ${value}`);
+  return name;
+}
+
+function composeThreadView(metadata: ThreadMetadata, summary: SessionSummary): ThreadView {
+  const attachment = summary.attached;
+  const spec = attachment?.spec;
+  const sandboxUID = summary.sandbox?.uid;
+  const createdAt = timestampISO(metadata.createdAt);
+  if (!createdAt) throw new Error("App returned Thread metadata without created_at");
+  const feedStatusNames: Record<string, string> = {
+    FEED_STATUS_ACTIVE: "active",
+    FEED_STATUS_ENDED: "ended",
+    FEED_STATUS_FAILED: "failed",
+  };
+  const feedStatusName = attachment ? enumName(summary.feedStatus, FeedStatusSchema, "FeedStatus") : null;
+  const feedStatus = feedStatusName === null ? null : feedStatusNames[feedStatusName];
+  if (attachment && !feedStatus) throw new Error(`History Service returned an unknown FeedStatus: ${feedStatusName}`);
+
+  return {
+    id: metadata.threadId,
+    sandbox: summary.sandbox?.name ?? "",
+    sandbox_uid: sandboxUID || null,
+    harness: spec ? enumName(spec.harness, HarnessSchema, "Harness") : null,
+    model: spec?.model ?? null,
+    cwd: spec?.cwd ?? null,
+    created_at: createdAt,
+    name: metadata.name ?? null,
+    archived: metadata.archived,
+    last_cursor: Number(summary.foldedThrough),
+    last_event_at: timestampISO(summary.lastEventAt),
+    last_model_activity_at: timestampISO(summary.lastModelActivityAt),
+    idle_since: timestampISO(summary.idleSince),
+    harness_state: enumName(attachment?.harnessState ?? 0, HarnessStateSchema, "HarnessState"),
+    setup_state: attachment ? enumName(attachment.setupState, SetupStateSchema, "SetupState") : null,
+    launch_outcome: attachment ? enumName(attachment.launchOutcome, LaunchOutcomeSchema, "LaunchOutcome") : null,
+    active_turn_id: attachment?.activeTurnId || null,
+    reasoning_effort: spec?.reasoningEffort ?? null,
+    feed_status: feedStatus ?? null,
+    last_turn_status:
+      summary.lastTurnStatus === undefined ? null : enumName(summary.lastTurnStatus, TurnStatusSchema, "TurnStatus"),
+  } as ThreadView;
 }
 
 /** Set the thread's name; null (or a blank, which the API normalises) leaves it unnamed. */

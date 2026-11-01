@@ -76,6 +76,8 @@ filegroup(
         "//agentplane/action_service:operator_action_service_pb",
         "//agentplane/action_service:web_push_service_pb",
         "//agentplane/app:config_service_pb",
+        "//agentplane/app/thread_metadata:thread_metadata_pb",
+        "//agentplane/history_service:history_service_pb",
         "//agentplane/mcp_edge:connection_service_pb",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",

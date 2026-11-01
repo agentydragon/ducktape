@@ -93,7 +93,10 @@ async def _create(http: httpx.AsyncClient, spec: runner_pb2.SessionSpec, session
         stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
     ):
         with attempt:
-            assert (await http.get(f"/threads/{thread_id}")).status_code == 200
+            metadata = await http.get(f"/upstream/app/v1/threads/{thread_id}")
+            summary = await http.get(f"/upstream/history/v1/sessions/{thread_id}/summary")
+            assert metadata.status_code == 200, metadata.text
+            assert summary.status_code == 200, summary.text
     return thread_id
 
 

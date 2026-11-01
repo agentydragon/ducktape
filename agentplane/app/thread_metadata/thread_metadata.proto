@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package agentplane.app;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+// ThreadMetadataService exposes only the integration app's persisted Thread metadata.
+// History-owned Session fields remain available through the History Service API.
+service ThreadMetadataService {
+  // Get metadata for an app-owned Thread.
+  rpc GetThreadMetadata(GetThreadMetadataRequest) returns (ThreadMetadata) {
+    option (google.api.http) = {
+      get: "/upstream/app/v1/threads/{thread_id}"
+    };
+  }
+
+  // List app-owned Thread metadata newest first.
+  rpc ListThreadMetadata(ListThreadMetadataRequest) returns (ListThreadMetadataResponse) {
+    option (google.api.http) = {
+      get: "/upstream/app/v1/threads"
+    };
+  }
+}
+
+message GetThreadMetadataRequest {
+  string thread_id = 1;
+}
+
+message ThreadMetadata {
+  string thread_id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  optional string name = 3;
+  bool archived = 4;
+}
+
+message ListThreadMetadataRequest {
+  // False by default; archived Threads are omitted.
+  bool include_archived = 1;
+  // Defaults to 50; maximum 200.
+  uint32 limit = 2;
+  // Opaque cursor returned by the prior page.
+  string page_token = 3;
+}
+
+message ListThreadMetadataResponse {
+  repeated ThreadMetadata threads = 1;
+  string next_page_token = 2;
+}

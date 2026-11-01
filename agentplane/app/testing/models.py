@@ -332,11 +332,53 @@ class ThreadView(BaseModel):
     last_turn_status: str | None = None
 
 
-class ThreadPage(BaseModel):
+class ThreadMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    threads: list[ThreadView]
-    next_page_token: str | None
+    thread_id: UUID = Field(validation_alias="threadId")
+    created_at: datetime = Field(validation_alias="createdAt")
+    name: str | None = None
+    archived: bool = False
+
+    @property
+    def id(self) -> UUID:
+        return self.thread_id
+
+
+def thread_view_from_proto_json(metadata: dict[str, object], summary: dict[str, object]) -> ThreadView:
+    """Compose the generated App Thread metadata and History summary for test clients."""
+    attached = summary.get("attached")
+    attachment = attached if isinstance(attached, dict) else {}
+    spec_value = attachment.get("spec")
+    spec = spec_value if isinstance(spec_value, dict) else {}
+    sandbox_value = summary.get("sandbox")
+    sandbox = sandbox_value if isinstance(sandbox_value, dict) else {}
+    feed_statuses = {"FEED_STATUS_ACTIVE": "active", "FEED_STATUS_ENDED": "ended", "FEED_STATUS_FAILED": "failed"}
+    feed_status = feed_statuses.get(str(summary.get("feedStatus"))) if attached is not None else None
+    return ThreadView.model_validate(
+        {
+            "id": metadata["threadId"],
+            "sandbox": sandbox.get("name", ""),
+            "sandbox_uid": sandbox.get("uid"),
+            "harness": spec.get("harness"),
+            "model": spec.get("model"),
+            "cwd": spec.get("cwd"),
+            "created_at": metadata["createdAt"],
+            "name": metadata.get("name"),
+            "archived": metadata.get("archived", False),
+            "last_cursor": int(str(summary.get("foldedThrough", "0"))),
+            "last_event_at": summary.get("lastEventAt"),
+            "last_model_activity_at": summary.get("lastModelActivityAt"),
+            "idle_since": summary.get("idleSince"),
+            "harness_state": attachment.get("harnessState", "HARNESS_STATE_UNSPECIFIED"),
+            "setup_state": attachment.get("setupState"),
+            "launch_outcome": attachment.get("launchOutcome"),
+            "active_turn_id": attachment.get("activeTurnId"),
+            "reasoning_effort": spec.get("reasoningEffort"),
+            "feed_status": feed_status,
+            "last_turn_status": summary.get("lastTurnStatus"),
+        }
+    )
 
 
 class KindFailure(BaseModel):
