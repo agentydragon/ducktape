@@ -175,7 +175,7 @@ Keep these sources distinct:
   contribution practices. A caller's additional briefing appends to the selected role text.
   Generic Agentplane guidance currently bundled with a preset belongs in the platform layer.
 - **Additional instructions:** the creator's child-specific standing brief. The first task is
-still submitted separately through `sessions__submit_input`.
+  still submitted separately through `sessions__submit_input`.
 
 The first tools need not accept preset names or introduce a backend preset registry. A client
 using an optional role preset combines its concrete role text and child briefing in
