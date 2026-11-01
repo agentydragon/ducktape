@@ -606,7 +606,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "/^ssd · /"
+              "options": "/^ssd /"
             },
             "properties": [
               {
@@ -621,7 +621,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "/^hdd · /"
+              "options": "/^hdd /"
             },
             "properties": [
               {
@@ -636,7 +636,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "/ · capacity$/"
+              "options": "/ capacity$/"
             },
             "properties": [
               {
@@ -698,7 +698,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "/^ssd · /"
+              "options": "/^ssd /"
             },
             "properties": [
               {
@@ -713,7 +713,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "/^hdd · /"
+              "options": "/^hdd /"
             },
             "properties": [
               {
@@ -728,7 +728,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "/ · capacity$/"
+              "options": "/ capacity$/"
             },
             "properties": [
               {
