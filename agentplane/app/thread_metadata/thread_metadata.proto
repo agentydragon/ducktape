@@ -12,21 +12,21 @@ service ThreadMetadataService {
   // Get metadata for an app-owned Thread.
   rpc GetThreadMetadata(GetThreadMetadataRequest) returns (ThreadMetadata) {
     option (google.api.http) = {
-      get: "/upstream/app/v1/threads/{thread_id}"
+      get: "/v1/threads/{thread_id}"
     };
   }
 
   // List app-owned Thread metadata newest first.
   rpc ListThreadMetadata(ListThreadMetadataRequest) returns (ListThreadMetadataResponse) {
     option (google.api.http) = {
-      get: "/upstream/app/v1/threads"
+      get: "/v1/threads"
     };
   }
 
   // A Thread metadata change invalidates the caller's list; the caller reads it again.
   rpc WatchThreadMetadata(WatchThreadMetadataRequest) returns (stream WatchThreadMetadataResponse) {
     option (google.api.http) = {
-      get: "/upstream/app/v1/threads:watch"
+      get: "/v1/threads:watch"
     };
   }
 }
