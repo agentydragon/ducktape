@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -190,6 +191,9 @@ func startNativeExecutionTestServer(t *testing.T, notify bool) (string, <-chan s
 func TestOpenSessionEndsWhenObserverEpochIsSuperseded(t *testing.T) {
 	url, opened, closed := startNativeExecutionTestServer(t, false)
 	r := newExecutionRuntime(t, url, nil)
+	if _, err := os.Stat(r.config.ExecutionSocket); !os.IsNotExist(err) {
+		t.Fatalf("direct Execution fixture unexpectedly served a private RPC socket: %v", err)
+	}
 	client := startDirectExecutionTestClient(t, r, "incarnation-1")
 	stream, err := client.open(client.callCtx, "sampler-session", "open-before-supersession")
 	if err != nil {
@@ -204,22 +208,100 @@ func TestOpenSessionEndsWhenObserverEpochIsSuperseded(t *testing.T) {
 	case <-time.After(lifecycleTestTimeout):
 		t.Fatal("local execution session did not initialize")
 	}
+	second, err := client.open(client.callCtx, "second-session", "second-open-before-supersession")
+	if err != nil {
+		t.Fatalf("second OpenSession RPC: %v", err)
+	}
+	secondResponse, err := second.Recv()
+	if err != nil || secondResponse.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
+		t.Fatalf("second OpenSession before supersession = %v, err=%v", secondResponse, err)
+	}
+	select {
+	case <-opened:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("second local execution session did not initialize")
+	}
 
 	if err := client.replaceWatch("incarnation-2", 2); err != nil {
 		t.Fatalf("replace observer epoch: %v", err)
 	}
-	select {
-	case closedID := <-closed:
-		if closedID != response.GetExecutionSessionId() {
-			t.Fatalf("observer supersession closed native session %q, want %q", closedID, response.GetExecutionSessionId())
+	wantClosed := map[string]bool{response.GetExecutionSessionId(): true, secondResponse.GetExecutionSessionId(): true}
+	for range 2 {
+		select {
+		case closedID := <-closed:
+			if !wantClosed[closedID] {
+				t.Fatalf("observer supersession closed unexpected native session %q", closedID)
+			}
+			delete(wantClosed, closedID)
+		case <-time.After(lifecycleTestTimeout):
+			t.Fatalf("observer epoch supersession left native WebSockets open: %v", wantClosed)
 		}
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("observer epoch supersession left its local WebSocket open")
 	}
 	if _, err := stream.Recv(); err == nil {
 		t.Fatal("OpenSession remained open after observer supersession")
 	}
+	if _, err := second.Recv(); err == nil {
+		t.Fatal("second OpenSession remained open after observer supersession")
+	}
 	waitRuntime(t, r, func() bool { facts, err := r.facts(); return err == nil && facts.IdleSince != nil }, "superseded execution slot release")
+}
+
+type blockingDirectExecutor struct {
+	executorpb.UnimplementedExecutorServer
+	started chan struct{}
+	release chan struct{}
+}
+
+func (e *blockingDirectExecutor) StartProcess(ctx context.Context, _ *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+	close(e.started)
+	select {
+	case <-e.release:
+		return &executorpb.StartProcessResponse{}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func TestDirectUnaryExecutionCallHoldsAdmissionUntilCompletion(t *testing.T) {
+	url, _, _ := startNativeExecutionTestServer(t, false)
+	r := newExecutionRuntime(t, url, nil)
+	client := startDirectExecutionTestClient(t, r, "incarnation-1")
+	executor := &blockingDirectExecutor{started: make(chan struct{}), release: make(chan struct{})}
+	r.mu.Lock()
+	r.executionServer = executor
+	r.mu.Unlock()
+	completed := make(chan error, 1)
+	go func() {
+		_, err := client.executor.StartProcess(client.callCtx, &executorpb.StartProcessRequest{Scope: client.scope("unary-session")})
+		completed <- err
+	}()
+	select {
+	case <-executor.started:
+	case err := <-completed:
+		t.Fatalf("public StartProcess returned before direct dispatch: %v", err)
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("public StartProcess did not reach the direct executor")
+	}
+	r.mu.Lock()
+	admissions, calls := r.activeAdmissions, r.activeExecutionCalls
+	r.mu.Unlock()
+	if admissions != 1 || calls != 1 {
+		t.Fatalf("active admission/call = %d/%d, want 1/1 while direct call is active", admissions, calls)
+	}
+	close(executor.release)
+	select {
+	case err := <-completed:
+		if err != nil {
+			t.Fatalf("direct StartProcess: %v", err)
+		}
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("direct StartProcess did not finish")
+	}
+	waitRuntime(t, r, func() bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.activeAdmissions == 0 && r.activeExecutionCalls == 0
+	}, "direct unary admission release")
 }
 
 func TestStaleExecutionIncarnationReportsVerifiedIdentity(t *testing.T) {

@@ -209,6 +209,58 @@ func TestRunReturnsFencedBackendLossOnlyAfterCleanupFence(t *testing.T) {
 	}
 }
 
+func TestEmbeddedServicePublishesDirectAdapterAndHealthOnlySocket(t *testing.T) {
+	endpoint := testExecutorEndpoint(t)
+	config := Config{
+		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
+		IncarnationUID: "test-incarnation", StateDir: t.TempDir(), SocketPath: filepath.Join(t.TempDir(), "e.sock"),
+		ExecutorURL: endpoint, Backend: "companion", ContainerSocket: filepath.Join(t.TempDir(), "companion.sock"),
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	ready := make(chan executorpb.ExecutorServer, 1)
+	finished := make(chan error, 1)
+	go func() {
+		finished <- runWithReady(ctx, config, func(context.Context) (*supervision.Instance, error) {
+			return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { return nil }}, nil
+		}, func(executor executorpb.ExecutorServer) { ready <- executor })
+	}()
+	select {
+	case executor := <-ready:
+		if executor == nil {
+			t.Fatal("embedded service published a nil adapter")
+		}
+	case err := <-finished:
+		t.Fatalf("embedded service exited before readiness: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("embedded service did not publish readiness")
+	}
+	conn, err := grpc.NewClient("unix://"+config.Socket(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	checkCtx, finishCheck := context.WithTimeout(ctx, 5*time.Second)
+	defer finishCheck()
+	health, err := healthpb.NewHealthClient(conn).Check(checkCtx, &healthpb.HealthCheckRequest{})
+	if err != nil || health.GetStatus() != healthpb.HealthCheckResponse_SERVING {
+		t.Fatalf("embedded health = %v, err=%v", health, err)
+	}
+	_, err = executorpb.NewExecutorClient(conn).StartProcess(checkCtx, &executorpb.StartProcessRequest{})
+	if status.Code(err) != codes.Unimplemented {
+		t.Fatalf("private Executor RPC = %v, want Unimplemented", err)
+	}
+	cancel()
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatalf("embedded service shutdown: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("embedded service did not join after shutdown")
+	}
+}
+
 func testExecutorEndpoint(t *testing.T) string {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

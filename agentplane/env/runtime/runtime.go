@@ -90,9 +90,8 @@ type runtimeDeps struct {
 }
 
 type executionHandle interface {
-	ClientConn() *grpc.ClientConn
+	Executor() executorpb.ExecutorServer
 	StopAndFence(context.Context) error
-	Close() error
 }
 
 type hostLink struct {
@@ -134,7 +133,7 @@ type Runtime struct {
 	intent               *runtimepb.LifecycleIntent
 	lastRunning          *runtimepb.Binding
 	executorProxy        executorpb.ExecutorServer
-	executionConn        *grpc.ClientConn
+	executionServer      executorpb.ExecutorServer
 	executionOwner       executionHandle
 	executionUID         string
 	executionRecovering  bool
@@ -753,18 +752,18 @@ func (r *Runtime) startExecutionForUIDLocked(ctx context.Context, uid string) er
 	if err != nil {
 		return err
 	}
-	if handle == nil || handle.ClientConn() == nil {
+	if handle == nil || handle.Executor() == nil {
 		if handle != nil {
-			_ = handle.Close()
+			return errors.Join(errors.New("Execution API did not provide a ready adapter"), handle.StopAndFence(context.Background()))
 		}
-		return errors.New("Execution service did not provide a connected client")
+		return errors.New("Execution API did not provide a ready adapter")
 	}
 	r.mu.Lock()
 	if r.closing {
 		r.mu.Unlock()
-		return errors.Join(status.Error(codes.Unavailable, "environment Runtime is closing"), handle.StopAndFence(context.Background()), handle.Close())
+		return errors.Join(status.Error(codes.Unavailable, "environment Runtime is closing"), handle.StopAndFence(context.Background()))
 	}
-	r.executionOwner, r.executionConn, r.executionUID = handle, handle.ClientConn(), uid
+	r.executionOwner, r.executionServer, r.executionUID = handle, handle.Executor(), uid
 	r.executionRecovering = false
 	r.idleSince = nil
 	r.changedLocked()
@@ -828,12 +827,9 @@ func (r *Runtime) stopExecutionLocked(ctx context.Context) error {
 	if err := handle.StopAndFence(ctx); err != nil {
 		return err
 	}
-	if err := handle.Close(); err != nil {
-		return err
-	}
 	r.mu.Lock()
 	if r.executionOwner == handle {
-		r.executionOwner, r.executionConn, r.executionUID = nil, nil, ""
+		r.executionOwner, r.executionServer, r.executionUID = nil, nil, ""
 		r.executionRecovering = false
 		r.changedLocked()
 	}
@@ -906,13 +902,9 @@ func (r *Runtime) recoverFencedExecution(handle executionHandle, uid string) {
 		r.fail(fmt.Errorf("prove Execution service fence after backend health loss: %w", err))
 		return
 	}
-	if err := handle.Close(); err != nil {
-		r.fail(fmt.Errorf("close fenced Execution connection: %w", err))
-		return
-	}
 	r.mu.Lock()
 	if r.executionOwner == handle {
-		r.executionOwner, r.executionConn, r.executionUID = nil, nil, ""
+		r.executionOwner, r.executionServer, r.executionUID = nil, nil, ""
 	}
 	closing := r.closing
 	stillRunning := r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_RUNNING && r.intent.IncarnationUid == uid

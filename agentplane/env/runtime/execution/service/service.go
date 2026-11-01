@@ -35,6 +35,20 @@ var ErrFencedBackendLoss = errors.New("execution backend loss was fenced")
 // Systemd callers supply an owner unit and lifetime directory; death of that
 // owner fences its bound transient native units.
 func Run(ctx context.Context, config Config) (result error) {
+	return runOwned(ctx, config, nil)
+}
+
+// RunEmbedded keeps the native backend and private health socket under the
+// Runtime process lifetime. The ready callback publishes the typed adapter to
+// Runtime after native readiness; the Executor RPC is not served on this socket.
+func RunEmbedded(ctx context.Context, config Config, ready func(executorpb.ExecutorServer)) error {
+	if ready == nil {
+		return errors.New("embedded Execution API requires a ready callback")
+	}
+	return runOwned(ctx, config, ready)
+}
+
+func runOwned(ctx context.Context, config Config, ready func(executorpb.ExecutorServer)) (result error) {
 	if err := config.Validate(); err != nil {
 		return err
 	}
@@ -67,10 +81,10 @@ func Run(ctx context.Context, config Config) (result error) {
 	if err != nil {
 		return err
 	}
-	return run(ctx, config, codexexecserver.NativeStart(codexexecserver.NativeConfig{
+	return runWithReady(ctx, config, codexexecserver.NativeStart(codexexecserver.NativeConfig{
 		Config: codexexecserver.Config{URL: config.ExecutorURL, ContainerSocket: config.ContainerSocket}, Binary: config.Binary,
 		StateDir: config.WorkingDirectory, Environment: config.Environment, Supervisor: supervisor,
-	}))
+	}), ready)
 }
 
 func lock(directory string) (*os.File, error) {
@@ -94,8 +108,8 @@ func lock(directory string) (*os.File, error) {
 	if err := syscall.Fstat(directoryFD, &info); err != nil {
 		return nil, err
 	}
-	// The socket admits trusted local environment components; access grants the full authority of that
-	// environment. Its mode is part of the transport authorization.
+	// In standalone mode the socket admits trusted local environment components
+	// with full execution authority. Its mode is part of that authorization.
 	if info.Mode&syscall.S_IFMT != syscall.S_IFDIR || info.Mode&0077 != 0 {
 		return nil, errors.New("execution state directory must be private (0700)")
 	}
@@ -112,6 +126,10 @@ func lock(directory string) (*os.File, error) {
 }
 
 func run(ctx context.Context, config Config, start codexexecserver.Start) (result error) {
+	return runWithReady(ctx, config, start, nil)
+}
+
+func runWithReady(ctx context.Context, config Config, start codexexecserver.Start, ready func(executorpb.ExecutorServer)) (result error) {
 	lifetime, cancel := context.WithCancel(ctx)
 	defer cancel()
 	instance, err := start(lifetime)
@@ -137,8 +155,8 @@ func run(ctx context.Context, config Config, start codexexecserver.Start) (resul
 		case <-lifetime.Done():
 		}
 	}()
-	ready, endReadiness := context.WithTimeout(lifetime, 20*time.Second)
-	err = retry.Do(ready, retry.NewConstant(100*time.Millisecond), func(ctx context.Context) error {
+	readiness, endReadiness := context.WithTimeout(lifetime, 20*time.Second)
+	err = retry.Do(readiness, retry.NewConstant(100*time.Millisecond), func(ctx context.Context) error {
 		probeCtx, endProbe := context.WithTimeout(ctx, 2*time.Second)
 		defer endProbe()
 		if err := codexexecserver.ProbeAt(config.ExecutorURL)(probeCtx); err != nil {
@@ -180,13 +198,20 @@ func run(ctx context.Context, config Config, start codexexecserver.Start) (resul
 		return err
 	}
 	server := grpc.NewServer()
-	executorpb.RegisterExecutorServer(server, adapter)
+	if ready == nil {
+		executorpb.RegisterExecutorServer(server, adapter)
+	}
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
-	healthServer.SetServingStatus(executorpb.Executor_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
+	if ready == nil {
+		healthServer.SetServingStatus(executorpb.Executor_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
+	}
 	healthpb.RegisterHealthServer(server, healthServer)
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(listener) }()
+	if ready != nil {
+		ready(adapter)
+	}
 	select {
 	case err = <-served:
 	case <-lifetime.Done():
@@ -215,8 +240,8 @@ func run(ctx context.Context, config Config, start codexexecserver.Start) (resul
 	return err
 }
 
-// Filesystem access to the private socket authenticates the environment owner.
-// Remote caller authorization and routing remain with Gateway. This service
+// Filesystem access to the standalone Executor socket authenticates the environment owner.
+// Embedded mode serves only health there. Remote caller authorization and routing remain with Gateway. This service
 // checks one immutable incarnation; it cannot adopt or replace a Runner epoch.
 func (c Config) admit(ctx context.Context, scope *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
 	if scope == nil || scope.Destination == nil || scope.Destination.Owner == nil || scope.SessionId == "" || len(scope.SessionId) > 128 {

@@ -8,7 +8,9 @@ Codex exec-server; running a native agent harness or app-server is not required.
 
 One Execution API lifetime owns one immutable Sandbox UID and incarnation and one native backend
 lifetime. In the normal topology it runs inside Environment Runtime; a standalone binary remains
-available for isolated use. Access to its private Unix socket grants that environment's execution authority. Every
+available for isolated use. Embedded Runtime calls the adapter directly after its backend readiness probe;
+its private Unix socket serves only health checks for Harness Host. Standalone mode serves Executor RPCs
+on that socket, where filesystem access grants the environment's execution authority. Every
 call carries the destination, incarnation and attributing Session; a foreign destination or stale
 incarnation is rejected before native dispatch. The service cannot adopt another environment or
 advance a Runner watch epoch. Harness Host supplies the current Session and incarnation context over
@@ -66,7 +68,8 @@ retries starts, writes, signals or other mutations. The adapter has no durable m
 
 ## Shutdown
 
-The Execution API closes admission and held connections, drains gRPC and stops its native
+The Execution API closes admission and held connections, joins direct adapter calls (or drains
+standalone gRPC calls), and stops its native
 backend before releasing ownership. Pod cleanup fences all remaining processes in the companion's
 private namespace, including descendants that escaped a process group; if that proof fails, Pod
 exit invokes the runtime's whole-namespace fence. VM cleanup proves its execution cgroup empty;
