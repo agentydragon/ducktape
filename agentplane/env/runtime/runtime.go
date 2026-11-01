@@ -77,8 +77,8 @@ type hostLifetime interface {
 }
 
 type childExit struct {
-	code          int
-	err           error
+	code int
+	err  error
 }
 
 type runtimeDeps struct {

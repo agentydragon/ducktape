@@ -184,10 +184,4 @@ def command(config: RunnerTestConfig, *, control: EnvironmentRuntimeControl, ing
     )
     path = config.state_dir.parent / f"{config.state_dir.name}-environment-runtime.json"
     path.write_text(file.model_dump_json(exclude_none=True))
-    return [
-        str(get_required_path(RUNTIME_BINARY)),
-        "--config",
-        str(path),
-        "--launch-file",
-        str(launch_file),
-    ]
+    return [str(get_required_path(RUNTIME_BINARY)), "--config", str(path), "--launch-file", str(launch_file)]

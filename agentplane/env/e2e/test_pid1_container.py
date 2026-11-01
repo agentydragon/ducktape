@@ -188,9 +188,7 @@ async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, 
         .with_volume_mapping(str(runner), "/environment-runtime", mode="ro")
         .with_volume_mapping(str(fixture), "/pid1-proof", mode="ro")
         .with_env("OTEL_SDK_DISABLED", "true")
-        .with_command(
-            "/environment-runtime --config /proof/environment-runtime.json --launch-file /proof/launch.json"
-        )
+        .with_command("/environment-runtime --config /proof/environment-runtime.json --launch-file /proof/launch.json")
     )
     with container:
         wrapped = container.get_wrapped_container()
@@ -255,9 +253,7 @@ async def test_production_pid1_embedded_host_reaps_setup(
         .with_env("OTEL_SDK_DISABLED", "true")
         .with_env("PID1_PROOF_BACKEND", "pid1")
         .with_env("OPENAI_API_KEY", "test-key")
-        .with_command(
-            "/environment-runtime --config /proof/environment-runtime.json --launch-file /proof/launch.json"
-        )
+        .with_command("/environment-runtime --config /proof/environment-runtime.json --launch-file /proof/launch.json")
     )
     with container:
         wrapped = container.get_wrapped_container()
