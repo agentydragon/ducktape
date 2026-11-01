@@ -63,7 +63,8 @@ coverage facts. Both backends authorize this caller independently.`,
 			defer historyConnection.Close()
 			ctx, cancel := a.deadline()
 			defer cancel()
-			result, err := sessionclient.ObserveInput(ctx,
+			result, err := sessionclient.ObserveInput(
+				ctx,
 				dispatcherpb.NewSessionDispatcherClient(dispatcherConnection),
 				historypb.NewHistoryServiceClient(historyConnection),
 				sessionclient.ObserveInputRequest{

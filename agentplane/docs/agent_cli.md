@@ -27,36 +27,36 @@ configuration is absent exits `2` naming the missing
 variables and leaves the others usable. Output, configuration, errors and exit codes are shared by every
 group, so another service joins as one more group under them.
 
-| Command                                                                                                                                            | Request                                           |
-| -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `actions groups`                                                                                                                                   | `ActionService.ListActionGroups`                  |
-| `actions list [GROUP]`                                                                                                                             | the same, one Action per line                     |
-| `actions show GROUP/ACTION`                                                                                                                        | `ActionService.GetAction`                         |
-| `actions policy`                                                                                                                                   | `ActionService.GetActionPolicy`                   |
-| `actions submit GROUP/ACTION --title TEXT [--description TEXT] [--arguments JSON\|@FILE\|-] [--key KEY] [--wait [--until decision\|terminal]]`     | `SubmitActionRequest`, then optional watch        |
-| `actions get {ID \| --key KEY}`                                                                                                                    | `GetActionRequest` or `ListActionRequests` by key |
-| `actions result {ID \| --key KEY}`                                                                                                                 | watch to terminal, then the stored result         |
-| `actions wait {ID \| --key KEY} [--until decision\|terminal]`                                                                                      | `GetActionRequest` and `WatchActionRequest`       |
-| `actions requests [--state STATE]...`                                                                                                              | `ListActionRequests`, paged                       |
-| `actions events ID [--after SEQUENCE]`                                                                                                             | `ListActionRequestEvents`, paged                  |
-| `actions cancel ID`                                                                                                                                | `CancelActionRequest`                             |
-| `sessions open SESSION_ID --sandbox NAME --sandbox-uid UID --spec JSON\|@FILE\|- [--setup-script TEXT\|@FILE\|-] [--additional-instructions TEXT]` | `SessionDispatcher.OpenSession`                   |
-| `sessions submit-input SESSION_ID --sandbox NAME --sandbox-uid UID --command-id ID --text TEXT`                                                    | `SessionDispatcher.SubmitInput`                   |
-| `sessions get-opening SESSION_ID`                                                                                                                  | `SessionDispatcher.GetSessionOpening`             |
-| `sessions get-dispatch COMMAND_ID`                                                                                                                 | `SessionDispatcher.GetDispatch`                   |
-| `sessions cancel-input COMMAND_ID`                                                                                                                 | `SessionDispatcher.CancelDispatch`                |
-| `sessions interrupt-turn SESSION_ID --sandbox NAME --sandbox-uid UID --command-id ID --turn-id ID`                                                 | `SessionDispatcher.InterruptTurn`                 |
-| `sessions observe-input SESSION_ID --command-id ID [--wait-seconds N] [--resume-token TOKEN]`                                                     | Dispatcher receipt and correlated `HistoryService.FollowSession` events |
-| `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY] [--destination JSON]`     | `POST /v1/subscriptions`                          |
-| `notifications inbox read ID [--after CURSOR] [--limit N]`                                                                                         | `GET /v1/inboxes/{id}/entries`, one page          |
-| `notifications inbox ack ID --through CURSOR`                                                                                                      | `PUT /v1/inboxes/{id}/acknowledgement`            |
-| `notifications subscriptions`                                                                                                                      | `GET /v1/subscriptions`, paged                    |
-| `notifications subscription ID`                                                                                                                    | `GET /v1/subscriptions/{id}`                      |
-| `notifications renew ID [--lifetime-days N]`                                                                                                       | `GET`, then `PATCH` with the read `version`       |
-| `notifications cancel ID`                                                                                                                          | `DELETE /v1/subscriptions/{id}`                   |
-| `notifications send NAMESPACE/SANDBOX SESSION_ID {--body TEXT \| --body-file FILE\|-} [--uid UID] [--from-session ID] [--key KEY]`                 | `POST /v1/messages`                               |
-| `notifications message ID`                                                                                                                         | `GET /v1/messages/{id}`                           |
-| `egress rules`                                                                                                                                     | `GET /v1/rules`                                   |
+| Command                                                                                                                                            | Request                                                                 |
+| -------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `actions groups`                                                                                                                                   | `ActionService.ListActionGroups`                                        |
+| `actions list [GROUP]`                                                                                                                             | the same, one Action per line                                           |
+| `actions show GROUP/ACTION`                                                                                                                        | `ActionService.GetAction`                                               |
+| `actions policy`                                                                                                                                   | `ActionService.GetActionPolicy`                                         |
+| `actions submit GROUP/ACTION --title TEXT [--description TEXT] [--arguments JSON\|@FILE\|-] [--key KEY] [--wait [--until decision\|terminal]]`     | `SubmitActionRequest`, then optional watch                              |
+| `actions get {ID \| --key KEY}`                                                                                                                    | `GetActionRequest` or `ListActionRequests` by key                       |
+| `actions result {ID \| --key KEY}`                                                                                                                 | watch to terminal, then the stored result                               |
+| `actions wait {ID \| --key KEY} [--until decision\|terminal]`                                                                                      | `GetActionRequest` and `WatchActionRequest`                             |
+| `actions requests [--state STATE]...`                                                                                                              | `ListActionRequests`, paged                                             |
+| `actions events ID [--after SEQUENCE]`                                                                                                             | `ListActionRequestEvents`, paged                                        |
+| `actions cancel ID`                                                                                                                                | `CancelActionRequest`                                                   |
+| `sessions open SESSION_ID --sandbox NAME --sandbox-uid UID --spec JSON\|@FILE\|- [--setup-script TEXT\|@FILE\|-] [--additional-instructions TEXT]` | `SessionDispatcher.OpenSession`                                         |
+| `sessions submit-input SESSION_ID --sandbox NAME --sandbox-uid UID --command-id ID --text TEXT`                                                    | `SessionDispatcher.SubmitInput`                                         |
+| `sessions get-opening SESSION_ID`                                                                                                                  | `SessionDispatcher.GetSessionOpening`                                   |
+| `sessions get-dispatch COMMAND_ID`                                                                                                                 | `SessionDispatcher.GetDispatch`                                         |
+| `sessions cancel-input COMMAND_ID`                                                                                                                 | `SessionDispatcher.CancelDispatch`                                      |
+| `sessions interrupt-turn SESSION_ID --sandbox NAME --sandbox-uid UID --command-id ID --turn-id ID`                                                 | `SessionDispatcher.InterruptTurn`                                       |
+| `sessions observe-input SESSION_ID --command-id ID [--wait-seconds N] [--resume-token TOKEN]`                                                      | Dispatcher receipt and correlated `HistoryService.FollowSession` events |
+| `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY] [--destination JSON]`     | `POST /v1/subscriptions`                                                |
+| `notifications inbox read ID [--after CURSOR] [--limit N]`                                                                                         | `GET /v1/inboxes/{id}/entries`, one page                                |
+| `notifications inbox ack ID --through CURSOR`                                                                                                      | `PUT /v1/inboxes/{id}/acknowledgement`                                  |
+| `notifications subscriptions`                                                                                                                      | `GET /v1/subscriptions`, paged                                          |
+| `notifications subscription ID`                                                                                                                    | `GET /v1/subscriptions/{id}`                                            |
+| `notifications renew ID [--lifetime-days N]`                                                                                                       | `GET`, then `PATCH` with the read `version`                             |
+| `notifications cancel ID`                                                                                                                          | `DELETE /v1/subscriptions/{id}`                                         |
+| `notifications send NAMESPACE/SANDBOX SESSION_ID {--body TEXT \| --body-file FILE\|-} [--uid UID] [--from-session ID] [--key KEY]`                 | `POST /v1/messages`                                                     |
+| `notifications message ID`                                                                                                                         | `GET /v1/messages/{id}`                                                 |
+| `egress rules`                                                                                                                                     | `GET /v1/rules`                                                         |
 
 Every command takes `--json` and `--timeout`; paged lists take `--limit` and `--after`, as does the one-page inbox read.
 
@@ -150,12 +150,12 @@ The CLI reads the environment of the harness and of every command it runs. There
 no discovery calls, so no command depends on a service it does not talk to. Actions and Sessions use
 generated gRPC over HTTP/2; Notifications and Egress rules use HTTP.
 
-| Variable                                                                                                                                 | Value                                                                                                            |
-| ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `AGENTPLANE_ACTIONS_URL`, `AGENTPLANE_SESSIONS_URL`, `AGENTPLANE_HISTORY_URL`                                                             | the gRPC service origin (`http` or `https`; defaults to port 80 or 443), no credentials, path, query or fragment |
-| `AGENTPLANE_NOTIFICATIONS_URL`, `AGENTPLANE_EGRESS_URL`                                                                                  | the HTTP service's base URL: `http` or `https`, no credentials, query or fragment                                |
-| `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_SESSIONS_CREDENTIAL`, `AGENTPLANE_HISTORY_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_CREDENTIAL`, `AGENTPLANE_EGRESS_CREDENTIAL` | the inert placeholder the egress proxy substitutes for that service |
-| `AGENTPLANE_DESTINATION`                                                                                                                 | `{"destination_ref": {...}, "session_id": "..."}`: this Session for `subscribe`, `send`                          |
+| Variable                                                                                                                                                                  | Value                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `AGENTPLANE_ACTIONS_URL`, `AGENTPLANE_SESSIONS_URL`, `AGENTPLANE_HISTORY_URL`                                                                                             | the gRPC service origin (`http` or `https`; defaults to port 80 or 443), no credentials, path, query or fragment |
+| `AGENTPLANE_NOTIFICATIONS_URL`, `AGENTPLANE_EGRESS_URL`                                                                                                                   | the HTTP service's base URL: `http` or `https`, no credentials, query or fragment                                |
+| `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_SESSIONS_CREDENTIAL`, `AGENTPLANE_HISTORY_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_CREDENTIAL`, `AGENTPLANE_EGRESS_CREDENTIAL` | the inert placeholder the egress proxy substitutes for that service                                              |
+| `AGENTPLANE_DESTINATION`                                                                                                                                                  | `{"destination_ref": {...}, "session_id": "..."}`: this Session for `subscribe`, `send`                          |
 
 At this branch's base the default runner deployments do not set `AGENTPLANE_SESSIONS_URL` or
 `AGENTPLANE_SESSIONS_CREDENTIAL`, or configure the egress route for Session Dispatcher calls. This CLI

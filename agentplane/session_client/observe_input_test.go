@@ -88,7 +88,8 @@ func TestObserveInputCorrelatesCommandWithCompletedTurn(t *testing.T) {
 	)
 	dispatch := admittedDispatch(18)
 	frames := []*historypb.FollowSessionResponse{
-		entriesFrame(21,
+		entriesFrame(
+			21,
 			entry(20, &eventpb.Event{Observation: &eventpb.Event_HarnessUserMessageConfirmed{HarnessUserMessageConfirmed: &eventpb.HarnessUserMessageConfirmed{
 				OriginCommandIds: []string{otherCommandID, testCommandID}, TurnId: turnID,
 			}}}),
