@@ -7,6 +7,8 @@ import tarfile
 from pathlib import Path
 from typing import Any
 
+_JOURNAL_ARCHIVE_ATTEMPTS = 3
+
 
 def _backup(source: Path, destination: Path) -> dict[str, Any]:
     if not source.is_file():
@@ -56,20 +58,44 @@ def capture(plan_path: Path) -> int:
 
     archive = Path(plan["archive"])
     partial_archive = Path(plan["partial_archive"])
-    try:
-        archive.parent.mkdir(parents=True, exist_ok=True)
-        with tarfile.open(partial_archive, "w") as output:
-            for mount in plan["mounts"]:
-                source = Path(mount["source"])
-                if not source.exists():
-                    raise FileNotFoundError(source)
-                output.add(source, arcname=mount["destination"].lstrip("/"), recursive=True)
-        partial_archive.replace(archive)
-        manifest["archive"] = "complete"
-        manifest["archive_path"] = str(archive)
-    except Exception as error:
-        manifest["archive"] = "partial_or_failed"
-        manifest["archive_error"] = f"{type(error).__name__}: {error}"
+    rollback_journals = {Path(f"{Path(item['source']).resolve(strict=False)}-journal") for item in plan["backups"]}
+    manifest["archive_attempts"] = []
+    for attempt in range(1, _JOURNAL_ARCHIVE_ATTEMPTS + 1):
+        # Keep each failed traversal for forensics. The last attempt uses the
+        # familiar .partial path if no clean traversal is possible.
+        candidate = (
+            partial_archive if attempt == _JOURNAL_ARCHIVE_ATTEMPTS else Path(f"{partial_archive}.attempt-{attempt}")
+        )
+        try:
+            archive.parent.mkdir(parents=True, exist_ok=True)
+            with tarfile.open(candidate, "w") as output:
+                for mount in plan["mounts"]:
+                    source = Path(mount["source"])
+                    if not source.exists():
+                        raise FileNotFoundError(source)
+                    output.add(source, arcname=mount["destination"].lstrip("/"), recursive=True)
+            candidate.replace(archive)
+        except Exception as error:
+            description = f"{type(error).__name__}: {error}"
+            failed_attempt = {"attempt": attempt, "error": description}
+            if candidate.exists():
+                failed_attempt["partial_archive_path"] = str(candidate)
+            manifest["archive_attempts"].append(failed_attempt)
+            retryable = (
+                isinstance(error, FileNotFoundError)
+                and error.filename is not None
+                and Path(error.filename).resolve(strict=False) in rollback_journals
+            )
+            if not retryable or attempt == _JOURNAL_ARCHIVE_ATTEMPTS:
+                manifest["archive"] = "partial_or_failed"
+                manifest["archive_error"] = description
+                break
+            persist()
+        else:
+            manifest["archive_attempts"].append({"attempt": attempt, "archive_path": str(archive)})
+            manifest["archive"] = "complete"
+            manifest["archive_path"] = str(archive)
+            break
 
     persist()
     return 0 if manifest["archive"] == "complete" else 1

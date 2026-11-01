@@ -390,6 +390,17 @@ py_library(
     srcs = ["runner_data_archive.py"],
 )
 
+py_test(
+    name = "test_runner_data_archive",
+    srcs = ["test_runner_data_archive.py"],
+    deps = [
+        ":conftest",
+        ":runner_data_archive",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_binary(
     name = "runner_data_archive_bin",
     main_module = "agentplane.system_tests.runner_data_archive",
