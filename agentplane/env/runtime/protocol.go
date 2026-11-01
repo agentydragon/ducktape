@@ -21,7 +21,7 @@ type hostLifecyclePeer interface {
 	ChangesSince() <-chan struct{}
 }
 
-// ConnectHost observes Host reports while the shared COSI engine applies intents.
+// ConnectHost binds Host to the shared COSI lifecycle engine.
 // Neither component mutex is held across a call into the other component.
 func (r *Runtime) ConnectHost(ctx context.Context, client *harnesshost.Runner) error {
 	return r.connectHost(ctx, client, client)
@@ -63,45 +63,15 @@ func (r *Runtime) connectHost(ctx context.Context, client *harnesshost.Runner, p
 	r.mu.Unlock()
 	defer func() { r.disconnectHost(host, resultErr) }()
 
-	var lastReport *runtimepb.HostReport
-	var lastApplied hostIntentStatus
-	for {
-		r.mu.Lock()
-		runtimeChanged := r.changes
-		failure := r.failureLocked()
-		applied, _, readErr := cosi.Read(context.Background(), r.lifecycleState, hostIntentStatusResource(hostIntentStatus{}))
-		r.mu.Unlock()
-		if failure != nil {
-			return failure
-		}
-		if readErr != nil {
-			return readErr
-		}
-		if applied != lastApplied {
-			lastReport = nil
-			lastApplied = applied
-		}
-		hostChanged := peer.ChangesSince()
-		report, err := peer.Report()
-		if err != nil {
-			return fmt.Errorf("observe Host lifecycle report: %w", err)
-		}
-		if report != nil && !proto.Equal(report, lastReport) {
-			if err := r.acceptReport(host, report); err != nil {
-				return err
-			}
-			lastReport = proto.Clone(report).(*runtimepb.HostReport)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-runtimeChanged:
-		case <-hostChanged:
-		}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-r.lifecycleDone:
+		return errors.New("Runtime lifecycle engine stopped")
 	}
 }
 
-func (r *Runtime) acceptReport(host *hostLink, report *runtimepb.HostReport) error {
+func (r *Runtime) acceptReport(host *hostLink, report *runtimepb.HostReport, sampledIntent hostIntent) error {
 	if report == nil || report.Binding == nil || report.Facts == nil {
 		return status.Error(codes.InvalidArgument, "HostReport requires a binding and EnvironmentRuntimeFacts")
 	}
@@ -116,11 +86,35 @@ func (r *Runtime) acceptReport(host *hostLink, report *runtimepb.HostReport) err
 		r.mu.Unlock()
 		return nil
 	}
+	applied, _, err := cosi.Read(context.Background(), r.lifecycleState, hostIntentStatusResource(hostIntentStatus{}))
+	if err != nil {
+		r.mu.Unlock()
+		return err
+	}
+	if !applied.Applied || applied.Intent != sampledIntent || applied.Intent != intentValue(r.intent) {
+		// A same-generation fence update briefly closes Host admission. A
+		// report sampled before application cannot acknowledge that update.
+		r.mu.Unlock()
+		return nil
+	}
 	if report.Error != "" {
 		r.mu.Unlock()
 		return status.Errorf(codes.FailedPrecondition, "Harness Host rejected lifecycle generation %d: %s", report.Binding.Generation, report.Error)
 	}
-	host.report = proto.Clone(report).(*runtimepb.HostReport)
+	previous, _, err := cosi.Read(context.Background(), r.lifecycleState, hostReportResource(hostReport{}))
+	if err != nil {
+		r.mu.Unlock()
+		return err
+	}
+	if previous.Intent == applied.Intent && proto.Equal(previous.Report, report) {
+		r.mu.Unlock()
+		return nil
+	}
+	value := hostReport{Intent: intentValue(r.intent), Report: proto.Clone(report).(*runtimepb.HostReport)}
+	if err := cosi.Publish(context.Background(), r.lifecycleState, hostReportResource(value), value, "environment-host-report"); err != nil {
+		r.mu.Unlock()
+		return err
+	}
 	var fenceBinding *runtimepb.Binding
 	if report.Ready && report.NativeStopped && r.intent != nil && !r.intent.ExecutionFenced &&
 		(r.intent.Mode == runtimepb.LifecycleIntent_QUIESCING || r.intent.Mode == runtimepb.LifecycleIntent_CLOSING) {
@@ -136,9 +130,10 @@ func (r *Runtime) acceptReport(host *hostLink, report *runtimepb.HostReport) err
 
 func (r *Runtime) maybeFenceExecution(binding *runtimepb.Binding) {
 	r.mu.Lock()
+	report := r.hostReportLocked()
 	if r.host == nil || !r.host.connected || r.intent == nil || !proto.Equal(r.intent.Binding, binding) ||
-		r.intent.ExecutionFenced || r.host.report == nil || !r.host.report.Ready || !r.host.report.NativeStopped ||
-		!proto.Equal(r.host.report.Binding, binding) || (r.intent.Mode != runtimepb.LifecycleIntent_QUIESCING && r.intent.Mode != runtimepb.LifecycleIntent_CLOSING) {
+		r.intent.ExecutionFenced || report == nil || !report.Ready || !report.NativeStopped ||
+		!proto.Equal(report.Binding, binding) || (r.intent.Mode != runtimepb.LifecycleIntent_QUIESCING && r.intent.Mode != runtimepb.LifecycleIntent_CLOSING) {
 		r.mu.Unlock()
 		return
 	}
@@ -281,7 +276,6 @@ func (r *Runtime) setIntentLocked(mode runtimepb.LifecycleIntent_Mode, incarnati
 		SandboxUid: r.config.Launch.Sandbox.UID, IncarnationUid: incarnationUID,
 		Mode: mode, SealUid: sealUID, ExecutionFenced: executionFenced,
 	}
-	r.host.report = nil
 	r.intentChangedLocked()
 	return proto.Clone(r.intent).(*runtimepb.LifecycleIntent)
 }
@@ -299,7 +293,6 @@ func (r *Runtime) setExecutionFenced(binding *runtimepb.Binding) error {
 		return status.Error(codes.Unavailable, "Harness Host connection was lost before publishing Execution fence")
 	}
 	r.intent.ExecutionFenced = true
-	r.host.report = nil
 	r.intentChangedLocked()
 	return nil
 }
@@ -348,10 +341,11 @@ func (r *Runtime) waitForHostReady(ctx context.Context, binding *runtimepb.Bindi
 			r.mu.Unlock()
 			return nil, status.Error(codes.Unavailable, "Harness Host lifecycle connection is unavailable")
 		}
-		if r.host.report != nil && r.host.report.Ready && proto.Equal(r.host.report.Binding, binding) {
-			report := proto.Clone(r.host.report).(*runtimepb.HostReport)
+		report := r.hostReportLocked()
+		if report != nil && report.Ready && proto.Equal(report.Binding, binding) {
+			snapshot := proto.Clone(report).(*runtimepb.HostReport)
 			r.mu.Unlock()
-			return report, nil
+			return snapshot, nil
 		}
 		changed := r.changes
 		r.mu.Unlock()
@@ -383,9 +377,10 @@ func (r *Runtime) waitForHostQuiesced(ctx context.Context, binding *runtimepb.Bi
 func (r *Runtime) hostQuiescenceWaitSnapshot(binding *runtimepb.Binding) (bool, <-chan struct{}, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.host != nil && r.host.connected && r.host.report != nil && r.host.report.Ready &&
-		proto.Equal(r.host.report.Binding, binding) &&
-		r.host.report.Facts.GetQuiesceStage() == environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED {
+	report := r.hostReportLocked()
+	if r.host != nil && r.host.connected && report != nil && report.Ready &&
+		proto.Equal(report.Binding, binding) &&
+		report.Facts.GetQuiesceStage() == environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED {
 		return true, nil, nil
 	}
 	if failure := r.failureLocked(); failure != nil {

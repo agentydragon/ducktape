@@ -29,7 +29,10 @@ Runtime passes a copied binding with each direct Session call; Host checks it at
 its admission barrier. Runtime publishes immutable typed Host intent in the shared COSI store. A dedicated controller
 applies each intent once and records its exact binding and Execution fence acknowledgement before
 Runtime can finish that barrier. Failed or uncertain application is terminal; controller restart does
-not replay it. Report observation continues independently while application waits for Session setup.
+not replay it. A separate COSI controller publishes immutable Host report snapshots while application waits for
+Session setup. Admission and drain waiters read that shared report for the exact applied intent,
+including its same-generation Execution fence value; an older ready sample cannot reopen admission
+during fence application. Engine shutdown joins both controllers before owner release.
 
 For quiesce and replacement, Runtime first asks Host to stop admissions and drain native work.
 `native_stopped` is reported only after admitted setup, Session calls, shared app-server work and

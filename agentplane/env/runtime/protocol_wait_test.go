@@ -7,6 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/cosi"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
@@ -34,10 +39,13 @@ func TestUncertainExecutionFenceIsNotRetriedForBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.mu.Lock()
-	r.host = &hostLink{connected: true, report: &runtimepb.HostReport{
-		Binding: binding, Ready: true, NativeStopped: true,
-	}}
+	r.host = &hostLink{connected: true}
 	r.intent = &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_QUIESCING}
+	report := &runtimepb.HostReport{Binding: binding, Ready: true, NativeStopped: true}
+	value := hostReport{Intent: intentValue(r.intent), Report: report}
+	if err := cosi.Publish(t.Context(), r.lifecycleState, hostReportResource(value), value, "environment-host-report"); err != nil {
+		t.Fatal(err)
+	}
 	r.mu.Unlock()
 	r.maybeFenceExecution(binding)
 	select {
@@ -71,7 +79,7 @@ func TestUnmanagedExecutionOwnerCannotClaimFence(t *testing.T) {
 func TestWaitForHostQuiescedWakesForFinalReportPublishedAfterSnapshot(t *testing.T) {
 	binding := &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1}
 	host := &hostLink{connected: true}
-	host.report = &runtimepb.HostReport{
+	report := &runtimepb.HostReport{
 		Binding: binding,
 		Ready:   true,
 		Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{
@@ -82,6 +90,12 @@ func TestWaitForHostQuiescedWakesForFinalReportPublishedAfterSnapshot(t *testing
 		changes: make(chan struct{}),
 		host:    host,
 		intent:  &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_INACTIVE},
+	}
+
+	r.lifecycleState = state.WrapCore(namespaced.NewState(inmem.Build))
+	publishAppliedHostIntent(t, r)
+	if err := r.acceptReport(host, report, intentValue(r.intent)); err != nil {
+		t.Fatal(err)
 	}
 
 	quiesced, changed, err := r.hostQuiescenceWaitSnapshot(binding)
@@ -99,7 +113,7 @@ func TestWaitForHostQuiescedWakesForFinalReportPublishedAfterSnapshot(t *testing
 			QuiesceStage: environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED,
 		},
 	}
-	if err := r.acceptReport(host, finalReport); err != nil {
+	if err := r.acceptReport(host, finalReport, intentValue(r.intent)); err != nil {
 		t.Fatalf("accept final report: %v", err)
 	}
 	select {

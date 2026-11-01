@@ -234,8 +234,9 @@ func (c *runtimeTransitionSequence) planAdoption(ctx context.Context, uid string
 	}
 	if known && oldUID == uid && !sealed {
 		r.mu.Lock()
+		report := r.hostReportLocked()
 		alreadyRunning := r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_RUNNING && r.intent.IncarnationUid == uid &&
-			r.host != nil && r.host.report != nil && r.host.report.Ready && proto.Equal(r.host.report.Binding, r.intent.Binding)
+			r.host != nil && report != nil && report.Ready && proto.Equal(report.Binding, r.intent.Binding)
 		var binding *runtimepb.Binding
 		mode := runtimepb.LifecycleIntent_INACTIVE
 		if r.intent != nil {
@@ -374,13 +375,14 @@ func (c *runtimeTransitionSequence) planQuiesce(ctx context.Context, request lif
 		if r.closing {
 			return errors.New("environment Runtime is closing")
 		}
+		report := r.hostReportLocked()
 		if !r.state.Lameduck() && request.HasIdleSince &&
 			(facts.IdleSince == nil || facts.IdleSince.AsTime().UnixMicro() != request.IdleSinceMicros ||
 				r.activeAdmissions != 0 || r.activeExecutionCalls != 0 || r.executionRecovering ||
-				r.host == nil || r.host.report == nil || !r.host.report.Ready || r.intent == nil ||
-				!proto.Equal(r.host.report.Binding, r.intent.Binding) || r.host.report.Facts == nil ||
-				r.host.report.Facts.IdleSince == nil ||
-				r.host.report.Facts.IdleSince.AsTime().UnixMicro() != request.IdleSinceMicros) {
+				r.host == nil || report == nil || !report.Ready || r.intent == nil ||
+				!proto.Equal(report.Binding, r.intent.Binding) || report.Facts == nil ||
+				report.Facts.IdleSince == nil ||
+				report.Facts.IdleSince.AsTime().UnixMicro() != request.IdleSinceMicros) {
 			return status.Error(codes.Aborted, "the Sandbox is busy or its idle_since differs")
 		}
 		if r.host == nil || !r.host.connected {
@@ -399,7 +401,7 @@ func (c *runtimeTransitionSequence) planQuiesce(ctx context.Context, request lif
 		if current {
 			host = r.host
 			binding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
-			currentReport = host.report != nil && host.report.Ready && proto.Equal(host.report.Binding, binding)
+			currentReport = report != nil && report.Ready && proto.Equal(report.Binding, binding)
 		}
 		retry = !current
 		return nil

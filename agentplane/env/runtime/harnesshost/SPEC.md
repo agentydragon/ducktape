@@ -8,7 +8,7 @@ its seal marker, runs Sandbox bootstrap or launches the Execution Service.
 ## Runtime boundary
 
 Environment Runtime runs Host in the same process and provides shared configuration, a direct
-lifecycle coordinator and direct typed Session calls. Deployment mounts and filesystem access
+COSI lifecycle state and direct typed Session calls. Deployment mounts and filesystem access
 remain authoritative.
 Each native Session, shared Codex app-server and isolated workspace helper receives its 5-second
 stop grace at launch; later `Stop(ctx)` calls use that immutable process policy.
@@ -18,8 +18,8 @@ native services keep their distinct `harness-host` scope in the workload slice, 
 and invocation marker are those of Environment Runtime. Runtime joins Host cleanup and fences the
 Pod PID namespace before releasing the environment owner.
 
-The Host lifetime begins with its boot ID. Runtime applies a
-LifecycleIntent bound to Runtime boot ID, Host boot ID and nonzero generation. Host reports readiness,
+The Host lifetime begins with its boot ID. Runtime publishes a typed intent bound to Runtime boot ID,
+Host boot ID and nonzero generation. The shared COSI engine applies it and publishes readiness,
 native cleanup and EnvironmentRuntimeFacts with that exact binding. Mode/identity changes require a new generation;
 Execution fence acknowledgement may advance monotonically within the same generation.
 

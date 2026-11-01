@@ -158,9 +158,10 @@ func (r *Runtime) waitForInitialHost(ctx context.Context) error {
 			r.mu.Unlock()
 			return errors.New("Runtime failed while starting Harness Host")
 		}
+		report := r.hostReportLocked()
 		if r.host != nil && r.host.connected && r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_INACTIVE &&
-			r.host.report != nil && r.host.report.Ready && r.host.report.NativeStopped &&
-			protoEqualBindings(r.host.report.Binding, r.intent.Binding) {
+			report != nil && report.Ready && report.NativeStopped &&
+			protoEqualBindings(report.Binding, r.intent.Binding) {
 			r.mu.Unlock()
 			return nil
 		}

@@ -98,7 +98,7 @@ func newLifecycleRunner(t *testing.T, config runtimeTestConfig) *Runtime {
 	waitRuntime(t, r, func() bool {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		return r.host != nil && r.host.report != nil && r.host.report.Ready && r.host.report.NativeStopped
+		return r.host != nil && r.hostReportLocked() != nil && r.hostReportLocked().Ready && r.hostReportLocked().NativeStopped
 	}, "Host initial binding")
 	if err := r.adoptIncarnation(context.Background(), "test-incarnation"); err != nil {
 		t.Fatal(err)

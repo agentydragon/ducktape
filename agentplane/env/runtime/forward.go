@@ -35,7 +35,8 @@ func (r *Runtime) authorizeHostCall(ctx context.Context, mutation bool) (*harnes
 		if r.intent == nil || (r.intent.Mode != runtimepb.LifecycleIntent_RUNNING && r.intent.Mode != runtimepb.LifecycleIntent_QUIESCING) {
 			return status.Error(codes.FailedPrecondition, "environment generation is not serving Host RPCs")
 		}
-		if r.host == nil || !r.host.connected || r.host.report == nil || !r.host.report.Ready || !proto.Equal(r.host.report.Binding, r.intent.Binding) {
+		report := r.hostReportLocked()
+		if r.host == nil || !r.host.connected || report == nil || !report.Ready || !proto.Equal(report.Binding, r.intent.Binding) {
 			return status.Error(codes.Unavailable, "Harness Host has not applied the active environment generation")
 		}
 		if epoch.IncarnationUID() != r.intent.IncarnationUid {
@@ -137,7 +138,8 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 		if r.closing || r.executionRecovering || r.intent == nil || (r.intent.Mode != runtimepb.LifecycleIntent_RUNNING && r.intent.Mode != runtimepb.LifecycleIntent_QUIESCING) {
 			return status.Error(codes.Unavailable, "execution admission is closed")
 		}
-		if r.host != nil && r.host.report != nil && r.host.report.NativeStopped && proto.Equal(r.host.report.Binding, r.intent.Binding) {
+		report := r.hostReportLocked()
+		if r.host != nil && report != nil && report.NativeStopped && proto.Equal(report.Binding, r.intent.Binding) {
 			return status.Error(codes.FailedPrecondition, "environment native work has stopped")
 		}
 		if err := validateExecutionScope(scope, r.config.Launch.Sandbox, epoch.SandboxUID(), epoch.IncarnationUID()); err != nil {
@@ -234,7 +236,8 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 			}
 			return status.Error(codes.Unavailable, "Execution API is not ready for this incarnation")
 		}
-		if r.host != nil && r.host.report != nil && r.host.report.NativeStopped && proto.Equal(r.host.report.Binding, r.intent.Binding) {
+		report := r.hostReportLocked()
+		if r.host != nil && report != nil && report.NativeStopped && proto.Equal(report.Binding, r.intent.Binding) {
 			return status.Error(codes.FailedPrecondition, "environment native work has stopped")
 		}
 		client = r.executionServer
