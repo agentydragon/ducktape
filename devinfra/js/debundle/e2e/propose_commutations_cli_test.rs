@@ -456,7 +456,7 @@ fn duplicated_anonymous_endpoint_is_reported_without_a_selector() {
 /// `resolved_member` under its authored module spelling.
 #[test]
 fn tree_spec_members_are_proposed_as_resolved_members() {
-    let run = run_tree_fixture(
+    let run = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[("app", OPAQUE_SOURCE)],
             module_roots: &[("tree", "app")],

@@ -13,8 +13,8 @@ use emit_harness::emit_browser_harness;
 use graph_provenance::{CurrentRoots, GraphProvenance, InputCapture, ProvenanceRoots};
 use lowering::{
     AnalysisMode, AnalysisSpec, AnalyzeProgramInputs, FullReportKind, GateRejectionPolicy,
-    MaterializeLogicalModulesOptions, MaterializeSpecInputs, Materialized, ReportEmission,
-    materialize_logical_modules, naturalize_cross_chunk_imports,
+    GraphReportSelection, MaterializeLogicalModulesOptions, MaterializeSpecInputs, Materialized,
+    ReportEmission, materialize_logical_modules, naturalize_cross_chunk_imports,
 };
 use prepare_chunks::{SourcePreparation, prepare_js_chunks};
 use prune_dead_imports::prune_dead_import_specifiers;
@@ -29,7 +29,7 @@ use vendor::{
     VendorPlanOptions, VendorResolutionPlan, VendorSwapsReport, apply_emission_rewrites_in_place,
     build_partial_swap_resolutions, build_vendor_resolution_plan,
 };
-use write_tree::{WriteTreeInput, write_js_tree};
+use write_tree::{RejectedArtifacts, WriteTreeInput, write_gate_rejected_marker, write_js_tree};
 
 /// Exit status of `debundle run --emit-on-rejection` when the realizability
 /// gate's rejection is the run's only failure and the marked reading-only tree
@@ -73,9 +73,31 @@ pub enum RunOutput {
     EmitOnRejection,
 }
 
+/// Output artifacts after the same canonical planning and final validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RunArtifacts {
+    Program,
+    ReportsOnly { out_root: PathBuf },
+}
+
+impl RunArtifacts {
+    fn writes_program(&self) -> bool {
+        matches!(self, Self::Program)
+    }
+
+    fn reports_root(&self) -> Option<PathBuf> {
+        match self {
+            Self::Program => None,
+            Self::ReportsOnly { out_root } => Some(out_root.join("reports/tree")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransformRunOptions {
     pub output: RunOutput,
+    pub artifacts: RunArtifacts,
+    pub graph_reports: GraphReportSelection,
     pub keep_going: bool,
     /// Force per-chunk reports (dependency graph, selector diagnostics, …) to this
     /// directory, overriding the spec's `materialize_logical_modules.report_out_dir`.
@@ -132,11 +154,8 @@ pub struct TransformArgs {
     #[arg(long)]
     pub packages_root: Option<PathBuf>,
     /// Run pipeline parse/facts/gate checks without writing emitted JS
-    /// or accept-path reports. A gate rejection still writes
-    /// `dependency_graph.json.gz` plus the rejection evidence (`cycles.json` /
-    /// `atomic_group_conflicts.json`) under `reports/tree/<chunk>/`, so
-    /// `gate list` / `gate describe` work on the rejection just
-    /// reported.
+    /// or accept-path reports. A gate rejection still writes its evidence
+    /// under reports/tree/<chunk>/. Add --graphs for graph-backed gate queries.
     #[arg(long)]
     pub dry_run: bool,
     /// When the realizability gate rejects the spec, still write the
@@ -253,7 +272,29 @@ pub fn run_transform_with_analysis(
     options: TransformRunOptions,
     analysis: Option<&Path>,
 ) -> Result<()> {
-    let (spec, prepared) = prepare_transform(cli, &options, None)?;
+    if let RunArtifacts::ReportsOnly { out_root } = &options.artifacts {
+        anyhow::ensure!(analysis.is_some(), "--reports-only requires --analysis");
+        anyhow::ensure!(
+            options.output != RunOutput::DryRun,
+            "--reports-only conflicts with --dry-run"
+        );
+        anyhow::ensure!(
+            options.report_dir_override.is_none(),
+            "--reports-only conflicts with a report directory override"
+        );
+        anyhow::ensure!(
+            !out_root.as_os_str().is_empty(),
+            "--reports-only requires a nonempty output root"
+        );
+        if let TransformSpecSource::Tree(tree) = &cli.spec_source {
+            anyhow::ensure!(
+                graph_provenance::absolute(out_root)?
+                    == graph_provenance::absolute(&tree.out_root)?,
+                "--reports-only and --out-root must name the same output root"
+            );
+        }
+    }
+    let (spec, prepared) = prepare_transform(cli, &options, None, analysis)?;
     let mode = match analysis {
         Some(path) => AnalysisMode::Load {
             base: AnalysisSpec::from_transform(&spec, &prepared.source_root)?,
@@ -270,7 +311,7 @@ pub fn run_transform_with_analysis(
 /// `out` as its canonical bytes. Runs the selector solve and nothing after it.
 pub fn project_analysis_cli(cli: &TransformCli, out: &Path) -> Result<()> {
     let options = audit_options();
-    let (spec, prepared) = prepare_transform(cli, &options, None)?;
+    let (spec, prepared) = prepare_transform(cli, &options, None, None)?;
     let base = AnalysisSpec::from_transform(&spec, &prepared.source_root)?;
     let projection =
         run_prepared_transform(&spec, prepared, options, true, AnalysisMode::Project(base))?
@@ -408,7 +449,7 @@ pub enum ContractProbeOutcome {
 
 impl ContractAudit {
     pub fn prepare(cli: &TransformCli, expected_spec: &TransformSpec) -> Result<Self> {
-        let (spec, prepared) = prepare_transform(cli, &audit_options(), Some(expected_spec))?;
+        let (spec, prepared) = prepare_transform(cli, &audit_options(), Some(expected_spec), None)?;
         run_prepared_transform(
             &spec,
             prepared.clone(),
@@ -492,6 +533,8 @@ fn validate_report_chunk_selection(
 fn audit_options() -> TransformRunOptions {
     TransformRunOptions {
         output: RunOutput::DryRun,
+        artifacts: RunArtifacts::Program,
+        graph_reports: GraphReportSelection::None,
         keep_going: false,
         report_dir_override: None,
         list_template_identifiers: false,
@@ -506,9 +549,10 @@ fn prepare_transform(
     cli: &TransformCli,
     options: &TransformRunOptions,
     expected_spec: Option<&TransformSpec>,
+    loaded_analysis: Option<&Path>,
 ) -> Result<(TransformSpec, PreparedTransform)> {
     let (roots, modules_directory) = provenance_roots(cli)?;
-    let generation_command = canonical_generation_command(cli, options, &roots)?;
+    let generation_command = canonical_generation_command(cli, options, &roots, loaded_analysis)?;
     let capture = InputCapture::start(roots, modules_directory, generation_command)?;
     if let TransformSpecSource::Tree(tree) = &cli.spec_source {
         // Capture the whole authored tree, including YAMLs outside the chunk
@@ -541,7 +585,9 @@ fn prepare_transform(
     let source_root = graph_provenance::absolute(&source_root)?;
     capture.set_source_root(&source_root)?;
     validate_transform_spec(&spec)?;
-    if options.output != RunOutput::DryRun {
+    if let RunArtifacts::ReportsOnly { out_root } = &options.artifacts {
+        preflight_roots(vec![out_root.clone()])?;
+    } else if options.output != RunOutput::DryRun {
         preflight_output_roots(&spec)?;
     }
     let artifact = load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)?;
@@ -622,29 +668,31 @@ fn run_prepared_transform(
         &options.full_report_chunks,
         &materialise_chunk_ids,
     )?;
-    if !options.full_reports.is_empty()
+    let write_program = !dry_run && options.artifacts.writes_program();
+    if (options.effect_conflicts_jsonl
+        || !options.full_reports.is_empty()
+        || options.graph_reports.enabled())
         && (suppress_reports
             || options
-                .report_dir_override
+                .artifacts
+                .reports_root()
                 .as_ref()
+                .or(options.report_dir_override.as_ref())
                 .or(spec.materialize_logical_modules.report_out_dir.as_ref())
                 .is_none())
     {
-        bail!("--full-report requires a configured report output directory");
-    }
-    if options.effect_conflicts_jsonl
-        && (suppress_reports
-            || options
-                .report_dir_override
-                .as_ref()
-                .or(spec.materialize_logical_modules.report_out_dir.as_ref())
-                .is_none())
-    {
-        bail!("--effect-conflicts-jsonl requires a configured report output directory");
+        let requested = if options.effect_conflicts_jsonl {
+            "--effect-conflicts-jsonl"
+        } else if !options.full_reports.is_empty() {
+            "--full-report"
+        } else {
+            "--graphs"
+        };
+        bail!("{requested} requires a configured report output directory");
     }
     let swap_cfg = &spec.swap_vendor_chunks;
     let mut vendor_report = VendorSwapsReport::default();
-    let write_vendor_outputs = swap_cfg.write && !dry_run;
+    let write_vendor_outputs = swap_cfg.write && write_program;
 
     // Full swaps are an emission-set exclusion: the swapped chunks stay in
     // the bundle — nothing removes them, and the dependency graph never
@@ -673,7 +721,11 @@ fn run_prepared_transform(
     let mut gate_rejections = Vec::new();
     let mut emission_files = if !materialise_chunk_ids.is_empty() {
         let report_out_dir = spec.materialize_logical_modules.report_out_dir.clone();
-        let report_out_dir = options.report_dir_override.clone().or(report_out_dir);
+        let report_out_dir = options
+            .artifacts
+            .reports_root()
+            .or(options.report_dir_override.clone())
+            .or(report_out_dir);
         let materialize_result = materialize_logical_modules(
             source_program.into_artifact(),
             MaterializeSpecInputs {
@@ -699,10 +751,9 @@ fn run_prepared_transform(
                 full_report_chunks: options.full_report_chunks.clone(),
                 // Dry-run keeps the no-output contract on the
                 // accept path but still materializes rejection
-                // evidence (dependency graph + cycles/conflicts) at the
-                // same reports/tree/<chunk>/ location a real run
-                // uses, so `debundle gate list/describe` works on
-                // the rejection that was just reported.
+                // evidence at the same reports/tree/<chunk>/ location.
+                // Graph-backed follow-ups additionally require --graphs.
+                graph_reports: options.graph_reports,
                 report_emission: match report_out_dir.filter(|_| !suppress_reports) {
                     Some(dir) if dry_run => ReportEmission::OnRejection(dir),
                     Some(dir) => ReportEmission::Full(dir),
@@ -806,7 +857,9 @@ fn run_prepared_transform(
             .as_ref()
             .map(|cfg| &cfg.out_dir)
             .or(spec.emit_browser_harness.as_ref().map(|cfg| &cfg.out_dir));
-        if let Some(out_dir) = tree_dir {
+        if let RunArtifacts::ReportsOnly { out_root } = &options.artifacts {
+            write_gate_rejected_marker(out_root, &rejected_plan, RejectedArtifacts::ReportsOnly)?;
+        } else if let Some(out_dir) = tree_dir {
             write_js_tree(&WriteTreeInput {
                 plan: EmittablePlan::Rejected(&rejected_plan),
                 out_dir,
@@ -847,7 +900,7 @@ fn run_prepared_transform(
     let emitted_chunk_records =
         emitted_chunk_records(chunk_records, emission_files, excluded_chunk_ids);
 
-    if !dry_run && let Some(cfg) = &spec.write_js_tree {
+    if write_program && let Some(cfg) = &spec.write_js_tree {
         write_js_tree(&WriteTreeInput {
             plan: EmittablePlan::Accepted(&validated_plan),
             out_dir: &cfg.out_dir,
@@ -859,7 +912,7 @@ fn run_prepared_transform(
         })?;
     }
 
-    if !dry_run && validated_plan.browser_harness().is_some() {
+    if write_program && validated_plan.browser_harness().is_some() {
         emit_browser_harness(
             &validated_plan,
             &emitted_chunk_records,
@@ -963,6 +1016,7 @@ fn canonical_generation_command(
     cli: &TransformCli,
     options: &TransformRunOptions,
     roots: &ProvenanceRoots,
+    loaded_analysis: Option<&Path>,
 ) -> Result<Vec<String>> {
     fn path_arg(path: &Path) -> Result<String> {
         Ok(graph_provenance::absolute(path)?
@@ -1003,6 +1057,16 @@ fn canonical_generation_command(
         RunOutput::DryRun => argv.push("--dry-run".to_string()),
         RunOutput::EmitOnRejection => argv.push("--emit-on-rejection".to_string()),
         RunOutput::Accepted => {}
+    }
+    if options.graph_reports.enabled() {
+        argv.push("--graphs".to_string());
+    }
+    if let RunArtifacts::ReportsOnly { out_root } = &options.artifacts {
+        argv.extend(["--reports-only".to_string(), path_arg(out_root)?]);
+        argv.extend([
+            "--analysis".to_string(),
+            path_arg(loaded_analysis.context("reports-only requires loaded analysis")?)?,
+        ]);
     }
     if !options.keep_going {
         argv.push("--fail-fast".to_string());
@@ -1141,6 +1205,10 @@ fn preflight_output_roots(spec: &TransformSpec) -> Result<()> {
         }
     }
 
+    preflight_roots(roots)
+}
+
+fn preflight_roots(mut roots: Vec<PathBuf>) -> Result<()> {
     roots.sort();
     roots.dedup();
     for root in roots {
@@ -1183,6 +1251,8 @@ mod tests {
 
     const KEEP_GOING_RUN: TransformRunOptions = TransformRunOptions {
         output: RunOutput::Accepted,
+        artifacts: RunArtifacts::Program,
+        graph_reports: GraphReportSelection::None,
         keep_going: true,
         report_dir_override: None,
         list_template_identifiers: false,
@@ -1540,6 +1610,8 @@ mod tests {
                 },
                 TransformRunOptions {
                     output: RunOutput::DryRun,
+                    artifacts: RunArtifacts::Program,
+                    graph_reports: GraphReportSelection::None,
                     keep_going: false,
                     report_dir_override: None,
                     list_template_identifiers: false,

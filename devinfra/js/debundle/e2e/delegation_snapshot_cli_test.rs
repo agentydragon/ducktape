@@ -3,7 +3,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Command, Output};
 
-use debundle_e2e_support::{TreeFixture, debundler_path, run_tree_fixture};
+use debundle_e2e_support::{TreeFixture, debundler_path, run_tree_graph_fixture};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -62,7 +62,7 @@ fn app_files(root: &Path) -> std::collections::BTreeMap<std::path::PathBuf, Vec<
 #[test]
 fn delegated_workers_replay_after_original_inputs_are_removed_and_edit_independently() {
     let packages = TempDir::new().unwrap();
-    let fixture = run_tree_fixture(
+    let fixture = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[("main", "const value = 7; console.log(value);\n")],
             module_roots: &[("main", "main")],
@@ -145,7 +145,7 @@ fn delegated_workers_replay_after_original_inputs_are_removed_and_edit_independe
 
 #[test]
 fn unmapped_output_replay_stays_inside_relocated_spec_root() {
-    let fixture = run_tree_fixture(
+    let fixture = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[("main", "const value = 1; console.log(value);\n")],
             module_roots: &[("main", "main")],
@@ -162,7 +162,7 @@ fn unmapped_output_replay_stays_inside_relocated_spec_root() {
     let original_output_parent = TempDir::new().unwrap();
     let original_out = original_output_parent.path().join("outside output");
     let original = Command::new(debundler_path())
-        .args(["run", "--tree-config"])
+        .args(["run", "--graphs", "--tree-config"])
         .arg(fixture.root().join("spec_config.yaml"))
         .arg("--tree-modules")
         .arg(fixture.root().join("modules"))
@@ -281,7 +281,7 @@ fn unmapped_output_replay_stays_inside_relocated_spec_root() {
 
 #[test]
 fn snapshot_replays_bundled_swap_with_existence_only_package_input() {
-    let fixture = run_tree_fixture(
+    let fixture = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[(
                 "main",
@@ -346,7 +346,7 @@ fn snapshot_replays_bundled_swap_with_existence_only_package_input() {
 
     fs::remove_dir_all(&fixture.out_root).unwrap();
     let original = Command::new(debundler_path())
-        .args(["run", "--tree-config"])
+        .args(["run", "--graphs", "--tree-config"])
         .arg(fixture.root().join("spec_config.yaml"))
         .arg("--tree-modules")
         .arg(fixture.root().join("modules"))
@@ -424,7 +424,7 @@ fn snapshot_replays_bundled_swap_with_existence_only_package_input() {
 
 #[test]
 fn stale_inputs_and_existing_destinations_do_not_publish_or_overwrite_snapshots() {
-    let fixture = run_tree_fixture(
+    let fixture = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[("main", "const value = 1;\n")],
             module_roots: &[("main", "main")],
@@ -471,7 +471,7 @@ fn stale_inputs_and_existing_destinations_do_not_publish_or_overwrite_snapshots(
 
 #[test]
 fn snapshot_engine_and_yaml_membership_are_verified() {
-    let fixture = run_tree_fixture(
+    let fixture = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[("main", "const value = 1;\n")],
             module_roots: &[("main", "main")],
@@ -508,7 +508,7 @@ fn snapshot_engine_and_yaml_membership_are_verified() {
 
 #[test]
 fn browser_snapshot_replay_keeps_html_assets_and_summary_after_original_removal() {
-    let fixture = run_tree_fixture(
+    let fixture = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[("main", "console.log(7);\n")],
             module_roots: &[("main", "main")],
@@ -535,7 +535,7 @@ fn browser_snapshot_replay_keeps_html_assets_and_summary_after_original_removal(
     .unwrap();
     fs::remove_dir_all(&fixture.out_root).unwrap();
     let original = Command::new(debundler_path())
-        .args(["run", "--tree-config"])
+        .args(["run", "--graphs", "--tree-config"])
         .arg(config)
         .arg("--tree-modules")
         .arg(fixture.root().join("modules"))

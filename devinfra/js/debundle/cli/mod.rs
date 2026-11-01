@@ -27,7 +27,7 @@ use graph_provenance::{GraphMismatch, GraphMismatchReason};
 use lowering::FullReportKind;
 use peel::{AtomicGroupsArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs, print_report};
 use pipeline::{
-    AnalyzeArgs, GATE_REJECTED_EXIT_CODE, GateRejected, RunOutput, TransformArgs,
+    AnalyzeArgs, GATE_REJECTED_EXIT_CODE, GateRejected, RunArtifacts, RunOutput, TransformArgs,
     TransformRunOptions, analyze_cli, run_transform_with_analysis,
 };
 use std::process::ExitCode;
@@ -46,7 +46,7 @@ pub(crate) fn load_dependency_graph_report(
     path: &std::path::Path,
 ) -> Result<analysis::DependencyGraphReport> {
     report_io::read_json(path)
-        .with_context(|| format!("parsing dependency graph {}", path.display()))
+        .with_context(|| format!("reading full dependency graph {}; export it with debundle run --graphs or the dependency_graphs Bazel output group", path.display()))
 }
 
 /// Which current authoring scope a graph-backed command actually interprets.
@@ -356,6 +356,18 @@ pub(crate) struct RunArgs {
     /// or for another analysis projection, naming what differs.
     #[arg(long)]
     pub(crate) analysis: Option<std::path::PathBuf>,
+    /// Serialize complete dependency/program graphs for graph-backed queries.
+    #[arg(long)]
+    pub(crate) graphs: bool,
+    /// Write reports under this output root, with no JS/assets. Uses the same
+    /// canonical validators and requires a precomputed analysis artifact.
+    #[arg(
+        long,
+        requires = "analysis",
+        conflicts_with = "dry_run",
+        value_name = "OUT_ROOT"
+    )]
+    pub(crate) reports_only: Option<std::path::PathBuf>,
     /// Stream all effect-conflict pairs and cells as per-chunk JSONL beside
     /// reports. An accepted dry-run suppresses reports and refuses this request.
     #[arg(long)]
@@ -514,13 +526,27 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
     };
     let result = match args.command {
         DebundleCommand::Run(RunArgs {
-            transform: args,
+            transform: mut args,
             analysis,
+            graphs,
+            reports_only,
             effect_conflicts_jsonl,
             effect_conflicts_chunks,
             full_reports,
             full_report_chunks,
         }) => {
+            if let Some(root) = &reports_only {
+                if let Some(out_root) = &args.out_root {
+                    anyhow::ensure!(
+                        graph_provenance::absolute(root)? == graph_provenance::absolute(out_root)?,
+                        "--reports-only and --out-root must name the same output root"
+                    );
+                }
+                args.out_root = Some(root.clone());
+            }
+            let artifacts = reports_only.map_or(RunArtifacts::Program, |out_root| {
+                RunArtifacts::ReportsOnly { out_root }
+            });
             let output = args.run_output()?;
             let keep_going = !args.fail_fast;
             let cli = args.resolve()?;
@@ -528,6 +554,12 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
                 &cli,
                 TransformRunOptions {
                     output,
+                    artifacts,
+                    graph_reports: if graphs {
+                        lowering::GraphReportSelection::Full
+                    } else {
+                        lowering::GraphReportSelection::None
+                    },
                     keep_going,
                     report_dir_override: None,
                     list_template_identifiers: false,

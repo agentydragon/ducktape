@@ -36,10 +36,7 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
     // The marker precedes the files it describes, so an interrupted write
     // never leaves an unmarked partial tree behind.
     if let EmittablePlan::Rejected(rejected) = input.plan {
-        fs::write(
-            layout.gate_rejected_marker(),
-            render_gate_rejected_marker(rejected),
-        )?;
+        write_gate_rejected_marker(input.out_dir, rejected, RejectedArtifacts::ReadableTree)?;
     }
 
     let materialized = materialize_artifact_scripts(
@@ -83,13 +80,37 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
 
 /// The `GATE_REJECTED` marker: why the tree beside it is not runnable, and
 /// where the gate's evidence is.
-fn render_gate_rejected_marker(rejected: &RejectedPlan) -> String {
+#[derive(Clone, Copy)]
+pub enum RejectedArtifacts {
+    ReadableTree,
+    ReportsOnly,
+}
+
+pub fn write_gate_rejected_marker(
+    out_dir: &Path,
+    rejected: &RejectedPlan,
+    artifacts: RejectedArtifacts,
+) -> Result<()> {
+    fs::create_dir_all(out_dir)?;
+    fs::write(
+        out_dir.join(GATE_REJECTED_MARKER),
+        render_gate_rejected_marker(rejected, artifacts),
+    )?;
+    Ok(())
+}
+
+fn render_gate_rejected_marker(rejected: &RejectedPlan, artifacts: RejectedArtifacts) -> String {
     let mut text = format!(
         "{GATE_REJECTED_MARKER}: this tree is NOT runnable.\n\
          The realizability gate rejected the spec; `debundle run --emit-on-rejection` wrote the \
          logical modules for reading only. No browser harness or vendor replacement assets were \
          written. Fix the spec and rerun without the flag for runnable output.\n\n"
     );
+    if matches!(artifacts, RejectedArtifacts::ReportsOnly) {
+        text = format!(
+            "{GATE_REJECTED_MARKER}: this output is NOT runnable.\nThe realizability gate rejected the spec. This reports-only export contains no emitted JS, browser harness or vendor assets.\n\n"
+        );
+    }
     for rejection in rejected.rejections() {
         text.push_str(&rejection.summary_line());
         text.push('\n');

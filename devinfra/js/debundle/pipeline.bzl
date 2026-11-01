@@ -10,6 +10,8 @@ Three actions: `DebundleProjectAnalysis` writes what analysis reads from the
 spec, `DebundleAnalyze` computes the analysis from that projection and the
 sources alone, and `DebundlePipeline` runs against the stored analysis. The
 `analysis` output group holds the projection and the analysis artifact.
+When split_dependency_graphs is enabled, a separate DebundleExportGraphs action
+loads that exact artifact on demand; default outputs never serialize full graphs.
 """
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
@@ -58,47 +60,47 @@ def _debundle_pipeline_impl(ctx):
         progress = "Analyzing debundle input for %{label}",
     )
 
-    run = plan.debundler + " " + " ".join(
-        ["run"] + plan.run_flags + plan.spec_args + plan.package_args +
-        ["--analysis", shell.quote(analysis.short_path)],
-    )
-    if ctx.attr.emit_on_rejection:
-        # Only the gate-rejected status passes; every other failure fails the action.
-        run = "{command} || {{ status=$?; [ \"$status\" -eq {gate} ] || exit \"$status\"; }}".format(
-            command = run,
-            gate = _GATE_REJECTED_EXIT_CODE,
-        )
-    outputs = [out_dir]
-    output_groups = {
-        # The projection and analysis artifact, for a local
-        # `debundle run --analysis` loop.
-        "analysis": depset([projection, analysis]),
-    }
-    if ctx.attr.split_dependency_graphs:
-        graphs_dir = ctx.actions.declare_directory(ctx.label.name + ".dependency_graphs")
-        outputs.append(graphs_dir)
-        output_groups["dependency_graphs"] = depset([graphs_dir])
-
-        # Same relative path under `graphs_dir` as it had under `out_dir`.
-        run = (
-            "{{ {run}; }} && mkdir -p {graphs} && " +
-            "find {out}/reports \\( -name dependency_graph.json.gz -o -name program_graph.json.gz -o -name dependency_graph.json -o -name program_graph.json \\) -print0 | " +
-            "while IFS= read -r -d '' f; do " +
-            "d={graphs}/\"${{f#{out}/}}\"; mkdir -p \"$(dirname \"$d\")\" && mv \"$f\" \"$d\" || exit 1; done"
-        ).format(
-            run = run,
-            out = shell.quote(out_dir.short_path),
-            graphs = shell.quote(graphs_dir.short_path),
-        )
+    output_groups = {"analysis": depset([projection, analysis])}
     _run_debundler(
         ctx,
         inputs = depset([analysis], transitive = [plan.inputs]),
-        outputs = outputs,
-        command = run,
+        outputs = [out_dir],
+        command = _pipeline_command(ctx, plan, analysis, []),
         mnemonic = "DebundlePipeline",
         progress = "Running debundle pipeline for %{label}",
     )
+    if ctx.attr.split_dependency_graphs:
+        # Register an independent, on-demand export. DefaultInfo never reaches
+        # this action; it consumes the exact SAME Analyze artifact as Pipeline.
+        graphs_dir = ctx.actions.declare_directory(ctx.label.name + ".dependency_graphs")
+        graph_plan = _debundle_pipeline_plan(ctx, graphs_dir.short_path, include_full_streams = False)
+        _run_debundler(
+            ctx,
+            inputs = depset([analysis], transitive = [graph_plan.inputs]),
+            outputs = [graphs_dir],
+            command = _pipeline_command(ctx, graph_plan, analysis, [
+                "--graphs",
+                "--reports-only",
+                shell.quote(graphs_dir.short_path),
+            ]),
+            mnemonic = "DebundleExportGraphs",
+            progress = "Exporting full debundle graphs for %{label}",
+        )
+        output_groups["dependency_graphs"] = depset([graphs_dir])
     return [DefaultInfo(files = depset([out_dir])), OutputGroupInfo(**output_groups)]
+
+def _pipeline_command(ctx, plan, analysis, extra_flags):
+    command = plan.debundler + " " + " ".join(
+        ["run"] + plan.run_flags + plan.spec_args + plan.package_args +
+        ["--analysis", shell.quote(analysis.short_path)] + extra_flags,
+    )
+    if ctx.attr.emit_on_rejection:
+        # Only the typed, complete gate rejection passes; other errors fail.
+        return "{command} || {{ status=$?; [ \"$status\" -eq {gate} ] || exit \"$status\"; }}".format(
+            command = command,
+            gate = _GATE_REJECTED_EXIT_CODE,
+        )
+    return command
 
 def _run_debundler(ctx, inputs, outputs, command, mnemonic, progress):
     ctx.actions.run_shell(
@@ -120,7 +122,7 @@ def _run_debundler(ctx, inputs, outputs, command, mnemonic, progress):
         mnemonic = mnemonic,
     )
 
-def _debundle_pipeline_plan(ctx, out_root):
+def _debundle_pipeline_plan(ctx, out_root, include_full_streams = True):
     bin_dir = ctx.bin_dir.path
 
     has_flat = bool(ctx.file.spec)
@@ -142,15 +144,15 @@ def _debundle_pipeline_plan(ctx, out_root):
         run_flags.append("--emit-on-rejection")
     if ctx.attr.full_report_chunks and not ctx.attr.full_reports:
         fail("full_report_chunks requires full_reports")
-    for report in ctx.attr.full_reports:
+    for report in ctx.attr.full_reports if include_full_streams else []:
         if report not in ["translation-validation", "export-reentry"]:
             fail("unknown full_reports entry {}: expected translation-validation or export-reentry".format(report))
         run_flags += ["--full-report", shell.quote(report)]
-    for chunk in ctx.attr.full_report_chunks:
+    for chunk in ctx.attr.full_report_chunks if include_full_streams else []:
         run_flags += ["--full-report-chunk", shell.quote(chunk)]
-    if ctx.attr.effect_conflicts_jsonl:
+    if include_full_streams and ctx.attr.effect_conflicts_jsonl:
         run_flags.append("--effect-conflicts-jsonl")
-    for chunk in ctx.attr.effect_conflicts_chunks:
+    for chunk in ctx.attr.effect_conflicts_chunks if include_full_streams else []:
         run_flags.extend(["--effect-conflicts-chunk", shell.quote(chunk)])
     if has_flat:
         spec_args = ["--spec", _shell_source_path(ctx.file.spec.path)]
@@ -314,12 +316,9 @@ _DEBUNDLE_PIPELINE_ATTRS = {
     "split_dependency_graphs": attr.bool(
         default = False,
         doc = (
-            "Move every `reports/**/dependency_graph.json.gz` and the " +
-            "`program_graph.json.gz` they reference out of the default " +
-            "output into the `dependency_graphs` output group " +
-            "(`<name>.dependency_graphs/`, same relative paths). The graphs " +
-            "dominate a large corpus's output; a reading target rarely needs " +
-            "them."
+            "Expose full graphs as an on-demand dependency_graphs output group " +
+            "(`<name>.dependency_graphs/`, same report paths), using the same " +
+            "Analyze artifact. Default outputs never generate full graphs."
         ),
     ),
     "full_reports": attr.string_list(

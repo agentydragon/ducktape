@@ -96,7 +96,7 @@ impl Staged {
     }
 
     fn run(&self, extra: &[&str]) -> CommandResult {
-        let mut args = vec!["run", "--spec", path(&self.spec)];
+        let mut args = vec!["run", "--graphs", "--spec", path(&self.spec)];
         args.extend_from_slice(extra);
         command(&args)
     }
@@ -405,4 +405,224 @@ fn full_reentry_export_matches_staged_and_filters_only_sinks() {
         "--full-report-chunk",
         "export_reentry.full.json",
     );
+}
+
+#[test]
+fn default_reports_are_graph_free_and_full_export_reuses_the_analysis() {
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        "const first = 1;\nconst second = first + 1;\nconsole.log(second);\nexport { first, second };\n",
+        vec![
+            logical_module("first", &[Member::new("first")]),
+            logical_module("second", &[Member::new("second")]),
+        ],
+    ));
+    let suppressed_graphs = staged.run(&["--dry-run"]);
+    assert_eq!(
+        suppressed_graphs.status.code(),
+        Some(1),
+        "{}",
+        suppressed_graphs.stderr
+    );
+    assert!(
+        suppressed_graphs.stderr.contains("--graphs requested"),
+        "{}",
+        suppressed_graphs.stderr
+    );
+    assert_ok(
+        &command(&["run", "--spec", path(&staged.spec)]),
+        "small default run",
+    );
+    assert_node_output(
+        &staged.root().join("out/app/static/app/entry.js"),
+        "2\n",
+        "",
+    );
+    let small = staged.set_aside("small-default");
+    let small_files = tree(&small.join("out"));
+    assert!(!small_files.keys().any(|p| {
+        p.file_name()
+            .is_some_and(|n| n == "dependency_graph.json.gz" || n == "program_graph.json.gz")
+    }));
+    assert_ok(
+        &staged.run(&["--analysis", path(&staged.artifact)]),
+        "full graphs from shared analysis",
+    );
+    let full = tree(&staged.root().join("out"));
+    let without_graphs = |files: BTreeMap<PathBuf, Vec<u8>>| {
+        files
+            .into_iter()
+            .filter_map(|(p, mut bytes)| {
+                if p.file_name().is_some_and(|n| {
+                    n == "dependency_graph.json.gz" || n == "program_graph.json.gz"
+                }) {
+                    return None;
+                }
+                if p.file_name().is_some_and(|n| n == "graph_summary.json") {
+                    let mut summary: Value = serde_json::from_slice(&bytes).unwrap();
+                    summary.as_object_mut().unwrap().remove("full_graphs");
+                    bytes = serde_json::to_vec(&summary).unwrap();
+                }
+                Some((p, bytes))
+            })
+            .collect::<BTreeMap<_, _>>()
+    };
+    assert_eq!(without_graphs(small_files), without_graphs(full));
+    let small_export = staged.root().join("small-report-export");
+    assert_ok(
+        &command(&[
+            "run",
+            "--spec",
+            path(&staged.spec),
+            "--analysis",
+            path(&staged.artifact),
+            "--reports-only",
+            path(&small_export),
+        ]),
+        "report-only selection without full graphs",
+    );
+    assert!(!small_export.join("app").exists());
+    assert!(
+        !small_export
+            .join("reports/tree/program_graph.json.gz")
+            .exists()
+    );
+    assert!(
+        !small_export
+            .join("reports/tree/static/app/dependency_graph.json.gz")
+            .exists()
+    );
+    let export = staged.root().join("graph-export");
+    assert_ok(
+        &staged.run(&[
+            "--analysis",
+            path(&staged.artifact),
+            "--reports-only",
+            path(&export),
+        ]),
+        "reports-only full export",
+    );
+    assert!(!export.join("app").exists());
+    assert!(!export.join("GATE_REJECTED").exists());
+    let exported = tree(&export.join("reports/tree"));
+    let program_reports = tree(&staged.root().join("out/reports/tree"));
+    // Program emission adds per-file metrics. Every report-only artifact is
+    // identical to its canonical full-run counterpart after provenance removal.
+    for (path, bytes) in exported {
+        assert_eq!(
+            Some(&bytes),
+            program_reports.get(&path),
+            "{}",
+            path.display()
+        );
+    }
+    let summary: Value = serde_json::from_slice(
+        &fs::read(export.join("reports/tree/static/app/graph_summary.json")).unwrap(),
+    )
+    .unwrap();
+    let graph: Value = read_json(&export.join("reports/tree/static/app/dependency_graph.json.gz"));
+    assert_eq!(
+        summary["source_units"],
+        graph["nodes"].as_array().unwrap().len()
+    );
+    assert_eq!(summary["edges"], graph["edges"].as_array().unwrap().len());
+}
+
+#[test]
+fn reports_only_keeps_typed_rejection_without_emitting_a_program() {
+    let (staged, _fixture) = staged(rejected_split());
+    let small = command(&["run", "--spec", path(&staged.spec), "--emit-on-rejection"]);
+    assert_eq!(small.status.code(), Some(3), "{}", small.stderr);
+    let small_marker = fs::read_to_string(staged.root().join("out/GATE_REJECTED")).unwrap();
+    assert!(
+        !small_marker.contains("dependency graph:"),
+        "{small_marker}"
+    );
+    assert!(
+        !staged
+            .root()
+            .join("out/reports/tree/static/app/dependency_graph.json.gz")
+            .exists()
+    );
+    let export = staged.root().join("rejected-export");
+    let result = staged.run(&[
+        "--analysis",
+        path(&staged.artifact),
+        "--reports-only",
+        path(&export),
+        "--emit-on-rejection",
+    ]);
+    assert_eq!(result.status.code(), Some(3), "{}", result.stderr);
+    assert!(!export.join("app").exists());
+    let marker = fs::read_to_string(export.join("GATE_REJECTED")).unwrap();
+    assert!(
+        marker.contains("reports-only") && marker.contains("NOT runnable"),
+        "{marker}"
+    );
+    assert!(
+        export
+            .join("reports/tree/static/app/dependency_graph.json.gz")
+            .exists()
+    );
+}
+
+#[test]
+fn reports_only_requires_analysis_and_keeps_final_program_validation() {
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        "const present = 1;\nconsole.log(present);\n",
+        vec![logical_module("missing", &[Member::new("missing")])],
+    ));
+    let export = staged.root().join("invalid-export");
+    let contradictory = command(&[
+        "run",
+        "--spec",
+        path(&staged.spec),
+        "--analysis",
+        path(&staged.artifact),
+        "--reports-only",
+        path(&export),
+        "--out-root",
+        path(&staged.root().join("different-root")),
+    ]);
+    assert_eq!(
+        contradictory.status.code(),
+        Some(1),
+        "{}",
+        contradictory.stderr
+    );
+    assert!(
+        contradictory
+            .stderr
+            .contains("must name the same output root"),
+        "{}",
+        contradictory.stderr
+    );
+    let dry = command(&[
+        "run",
+        "--spec",
+        path(&staged.spec),
+        "--analysis",
+        path(&staged.artifact),
+        "--reports-only",
+        path(&export),
+        "--dry-run",
+    ]);
+    assert_eq!(dry.status.code(), Some(2), "{}", dry.stderr);
+    let no_analysis = command(&[
+        "run",
+        "--spec",
+        path(&staged.spec),
+        "--reports-only",
+        path(&export),
+    ]);
+    assert_eq!(no_analysis.status.code(), Some(2), "{}", no_analysis.stderr);
+    let result = staged.run(&[
+        "--analysis",
+        path(&staged.artifact),
+        "--reports-only",
+        path(&export),
+    ]);
+    assert_eq!(result.status.code(), Some(1), "{}", result.stderr);
+    assert!(result.stderr.contains("missing"), "{}", result.stderr);
+    assert!(!export.join("app").exists());
+    assert!(!export.join("GATE_REJECTED").exists());
 }

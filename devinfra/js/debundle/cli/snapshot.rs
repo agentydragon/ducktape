@@ -643,6 +643,7 @@ fn outcome(directory: &Path, manifest: &SnapshotManifest) -> Result<SnapshotOutc
     if let Some(root) = &manifest.run.packages_root {
         argv.extend(["--packages-root".to_owned(), path(root)]);
     }
+    argv.push("--graphs".to_string());
     if manifest.run.fail_fast {
         argv.push("--fail-fast".to_owned());
     }

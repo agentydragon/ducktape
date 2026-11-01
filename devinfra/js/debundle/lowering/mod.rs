@@ -266,25 +266,38 @@ impl std::str::FromStr for FullReportKind {
     }
 }
 
+/// Full graph serialization is independent of report timing and evidence detail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraphReportSelection {
+    None,
+    Full,
+}
+
+impl GraphReportSelection {
+    pub fn enabled(self) -> bool {
+        self == Self::Full
+    }
+}
+
 /// Where (and when) per-chunk validation reports are written.
 #[derive(Debug, Clone)]
 pub enum ReportEmission {
     /// No reports.
     None,
-    /// Write every per-chunk report (dependency graph, modules report,
+    /// Write per-chunk reports (modules, independently selected graphs,
     /// rejection evidence) under this root. The directory is prepared
     /// (must be empty) up front.
     Full(PathBuf),
     /// Write reports only when the realizability gate rejects. Used by
     /// `debundle run --dry-run`: the accept path writes nothing (the
     /// no-output contract), but a rejection still materializes
-    /// `dependency_graph.json.gz` + `cycles.json` / `atomic_group_conflicts.json`
-    /// so the documented `debundle gate list/describe` follow-up works.
+    /// rejection evidence. Graph-backed follow-ups require explicit full
+    /// graph selection.
     OnRejection(PathBuf),
 }
 
 impl ReportEmission {
-    /// Root for accept-path reports (dependency graph, modules report).
+    /// Root for accept-path reports; graph detail is selected independently.
     pub fn full_dir(&self) -> Option<&Path> {
         match self {
             Self::Full(dir) => Some(dir),
@@ -323,6 +336,7 @@ pub struct MaterializeLogicalModulesOptions {
     /// See `pipeline::TransformRunOptions::list_template_identifiers`.
     pub list_template_identifiers: bool,
     pub report_emission: ReportEmission,
+    pub graph_reports: GraphReportSelection,
     pub effect_conflicts_jsonl: bool,
     pub effect_conflicts_chunks: BTreeSet<String>,
     pub full_reports: BTreeSet<FullReportKind>,
@@ -513,6 +527,7 @@ pub fn materialize_logical_modules(
                                 keep_going: options.keep_going,
                                 list_template_identifiers: options.list_template_identifiers,
                                 report_emission: &options.report_emission,
+                                graph_reports: options.graph_reports,
                                 effect_conflicts_jsonl: options.effect_conflicts_jsonl,
                                 effect_conflicts_chunks: &options.effect_conflicts_chunks,
                                 full_reports: &options.full_reports,

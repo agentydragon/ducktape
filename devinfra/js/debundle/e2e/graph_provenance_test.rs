@@ -6,7 +6,7 @@ use std::process::Command;
 
 use debundle_e2e_support::{
     FixtureOpts, GraphFixture, TreeFixture, debundler_path, program_graph_path, run_fixture,
-    run_tree_fixture,
+    run_tree_graph_fixture,
 };
 use tempfile::TempDir;
 
@@ -64,6 +64,7 @@ impl AliasGraphFixture {
         let out_root = root.path().join("out");
         let output = Command::new(debundler_path())
             .arg("run")
+            .arg("--graphs")
             .arg("--tree-config")
             .arg(&config)
             .arg("--tree-modules")
@@ -440,7 +441,7 @@ fn config_assumption_and_engine_change_reject() {
 
 #[test]
 fn provider_chunk_analysis_option_invalidates_consumer_graph() {
-    let run = run_tree_fixture(
+    let run = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[
                 ("main", "const mainValue = 1; console.log(mainValue);"),
@@ -505,7 +506,7 @@ fn preview_and_no_op_keep_graph_compatible() {
 
 #[test]
 fn wrong_chunk_scope_with_same_binding_is_rejected() {
-    let run = run_tree_fixture(
+    let run = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[
                 ("main", "const shared = 1; console.log(shared);"),
@@ -713,6 +714,7 @@ fn env_only_run_records_replayable_absolute_argv_across_cwd() {
         .current_dir(fixture.root())
         .args([
             "run",
+            "--graphs",
             "--tree-config",
             "spec_config.yaml",
             "--tree-modules",

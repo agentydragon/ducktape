@@ -23,7 +23,9 @@ behavior.
 | Plan, delegate, or integrate work    | [Shared work procedures](skills/shared/workflow.md)                                                                                          | Scoped plans, isolated copied inputs, completed execution evidence, and validated integration                                                                                       |
 
 Use the project's adapter for concrete paths and gate, regeneration, and runtime
-checks. Graph-backed commands require a matching saved graph through `--graph` or
+checks. Normal runs omit full graph serialization. Add `run --graphs` or request
+Bazel's `dependency_graphs` output group when refreshing graph inputs.
+Graph-backed commands require a matching saved graph through `--graph` or
 `DEBUNDLE_GRAPH`; [input compatibility and regeneration](docs/cli.md#common-arguments-and-env-vars)
 and [invocation records](docs/cli.md#resolved-invocation-records) describe those
 boundaries. Read the linked recipe for the chosen operation; per-flag details are

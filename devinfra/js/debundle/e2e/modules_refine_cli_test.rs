@@ -1,7 +1,7 @@
 //! Reviewed source_unit-to-module batches preserve existing selector metadata.
 
 use debundle_e2e_support::{
-    GraphFixture, TreeFixture, debundler_path, read_json, run_tree_fixture,
+    GraphFixture, TreeFixture, debundler_path, read_json, run_tree_graph_fixture,
 };
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -252,7 +252,7 @@ fn moves_one_claim_from_gapped_source_match_group() {
 
 #[test]
 fn refines_only_the_selected_chunk_under_tree_config() {
-    let run = run_tree_fixture(
+    let run = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[
                 (

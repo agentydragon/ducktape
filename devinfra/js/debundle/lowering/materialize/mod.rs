@@ -30,7 +30,7 @@ use crate::rebind_fold::compute_rebind_folds;
 use crate::rename_ledger::{RenameLedger, SealValidation};
 use crate::{
     ChunkModulesCounts, ChunkModulesReport, ExportReentryReport, FinalModuleContent,
-    GateRejectionPolicy, ReportEmission, RequestedLogicalModule,
+    GateRejectionPolicy, GraphReportSelection, ReportEmission, RequestedLogicalModule,
 };
 use analysis::analysis_inputs::CallableSummary;
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
@@ -98,6 +98,7 @@ pub(super) struct ChunkContext<'a> {
     pub(super) keep_going: bool,
     pub(super) list_template_identifiers: bool,
     pub(super) report_emission: &'a ReportEmission,
+    pub(super) graph_reports: GraphReportSelection,
     pub(super) effect_conflicts_jsonl: bool,
     pub(super) effect_conflicts_chunks: &'a BTreeSet<String>,
     pub(super) full_reports: &'a BTreeSet<super::FullReportKind>,
@@ -524,6 +525,7 @@ pub(super) fn finish_logical_chunk(
         chunk_id,
         target_dir,
         report_emission,
+        graph_reports,
         effect_conflicts_jsonl,
         effect_conflicts_chunks,
         full_reports,
@@ -676,6 +678,7 @@ pub(super) fn finish_logical_chunk(
         ChunkReportContext {
             chunk_id,
             report_emission,
+            graph_reports,
             policy: gate_rejection_policy,
             effect_conflicts_jsonl,
             full_export_reentry: full_reports.contains(&super::FullReportKind::ExportReentry)
@@ -1494,7 +1497,7 @@ enum GateOutcome<'a> {
 ///
 /// Under [`ReportEmission::OnRejection`] (the `debundle run
 /// --dry-run` mode) the accept path writes nothing, but a rejection
-/// still writes `dependency_graph.json.gz` plus the rejection evidence so
+/// still writes rejection evidence (and explicitly selected full graphs) so
 /// the documented `debundle gate list/describe` follow-up works.
 /// The chunk's `selector_diagnostics.json`, where `spec validate` collects
 /// per-chunk reports; nothing to write while no outcome was recorded.
@@ -1518,10 +1521,41 @@ fn write_selector_diagnostics(
 struct ChunkReportContext<'a> {
     chunk_id: &'a str,
     report_emission: &'a ReportEmission,
+    graph_reports: GraphReportSelection,
     policy: GateRejectionPolicy,
     effect_conflicts_jsonl: bool,
     full_translation_validation: bool,
     full_export_reentry: bool,
+}
+
+/// Exact counts over the canonical in-memory graph, with no node/edge table.
+#[derive(serde::Serialize)]
+struct GraphSummary<'a> {
+    chunk_id: &'a str,
+    source_units: usize,
+    edges: usize,
+    edge_kinds: std::collections::BTreeMap<analysis::DepKind, usize>,
+    atomic_groups: usize,
+    atomic_group_conflicts: usize,
+    cycles: usize,
+    gate_accepts: bool,
+    translation_validation_accepts: bool,
+    full_graphs: bool,
+}
+
+fn graph_export_guidance(
+    dir: &std::path::Path,
+    chunk_id: &str,
+    selection: GraphReportSelection,
+) -> String {
+    if selection.enabled() {
+        format!(
+            " Dependency graph at {}.",
+            chunk_report_path(dir, chunk_id, DEPENDENCY_GRAPH_REPORT).display()
+        )
+    } else {
+        " Full graph queries require rerunning with --graphs or building the dependency_graphs Bazel output group.".to_string()
+    }
 }
 
 fn validate_and_emit_reports<'a>(
@@ -1534,6 +1568,7 @@ fn validate_and_emit_reports<'a>(
     let ChunkReportContext {
         chunk_id,
         report_emission,
+        graph_reports,
         policy,
         effect_conflicts_jsonl,
         full_translation_validation,
@@ -1546,9 +1581,8 @@ fn validate_and_emit_reports<'a>(
     };
     let rejected = !assignment_report.atomic_group_conflicts.is_empty()
         || !assignment_report.cycles.is_empty();
-    // Full mode writes the dependency graph unconditionally; OnRejection
-    // writes it only alongside rejection evidence (`gate describe`
-    // recomputes per-edge blame from it).
+    // Report timing and full graph serialization are separate output choices.
+    // All validation above and below runs regardless of either selection.
     let report_out_dir = if rejected {
         report_emission.rejection_dir()
     } else {
@@ -1557,6 +1591,10 @@ fn validate_and_emit_reports<'a>(
     ensure!(
         !effect_conflicts_jsonl || report_out_dir.is_some(),
         "--effect-conflicts-jsonl requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
+    );
+    ensure!(
+        !graph_reports.enabled() || report_out_dir.is_some(),
+        "--graphs requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
     );
     ensure!(
         !(full_translation_validation || full_export_reentry) || report_out_dir.is_some(),
@@ -1587,6 +1625,28 @@ fn validate_and_emit_reports<'a>(
         writer.finish()?;
     }
     if let Some(report_out_dir) = report_out_dir {
+        let graph = assignment_analysis.inputs().dependency_graph();
+        let mut edge_kinds = std::collections::BTreeMap::new();
+        for edge in graph.iter_edges() {
+            *edge_kinds.entry(edge.reason.kind()).or_insert(0usize) += 1;
+        }
+        write_chunk_report_json(
+            report_out_dir,
+            chunk_id,
+            output_layout::GRAPH_SUMMARY_REPORT,
+            &GraphSummary {
+                chunk_id,
+                source_units: graph.num_nodes(),
+                edges: graph.num_edges(),
+                edge_kinds,
+                atomic_groups: assignment_analysis.atomic_groups().len(),
+                atomic_group_conflicts: assignment_report.atomic_group_conflicts.len(),
+                cycles: assignment_report.cycles.len(),
+                gate_accepts: !rejected,
+                translation_validation_accepts: translation_validation.report.accepts,
+                full_graphs: graph_reports.enabled(),
+            },
+        )?;
         let mut jsonl = if effect_conflicts_jsonl {
             Some(JsonlReport::create(chunk_report_path(
                 report_out_dir,
@@ -1618,15 +1678,17 @@ fn validate_and_emit_reports<'a>(
             EFFECT_TRANSLATION_VALIDATION_REPORT,
             &effects,
         )?;
-        write_chunk_report_json(
-            report_out_dir,
-            chunk_id,
-            DEPENDENCY_GRAPH_REPORT,
-            &assignment_analysis.dependency_graph_report(
-                program_graph.reference_for(report_out_dir, chunk_id)?,
-                program_graph.author_inputs(),
-            ),
-        )?;
+        if graph_reports.enabled() {
+            write_chunk_report_json(
+                report_out_dir,
+                chunk_id,
+                DEPENDENCY_GRAPH_REPORT,
+                &assignment_analysis.dependency_graph_report(
+                    program_graph.reference_for(report_out_dir, chunk_id)?,
+                    program_graph.author_inputs(),
+                ),
+            )?;
+        }
         if full_export_reentry {
             write_chunk_report_json(
                 report_out_dir,
@@ -1676,9 +1738,9 @@ fn validate_and_emit_reports<'a>(
         let causes = render_atomic_group_cause_guidance(&assignment_report.atomic_group_conflicts);
         let evidence = report_out_dir.map_or_else(String::new, |dir| {
             format!(
-                " Full evidence written to {}; dependency graph written to {}.",
+                " Full evidence written to {}.{}",
                 chunk_report_path(dir, chunk_id, ATOMIC_GROUP_CONFLICTS_REPORT).display(),
-                chunk_report_path(dir, chunk_id, DEPENDENCY_GRAPH_REPORT).display(),
+                graph_export_guidance(dir, chunk_id, graph_reports),
             )
         });
         Some((
@@ -1705,9 +1767,9 @@ fn validate_and_emit_reports<'a>(
         let summary = render_cycle_summary(&assignment_report.cycles);
         let evidence = report_out_dir.map_or_else(String::new, |dir| {
             format!(
-                " Full per-cycle evidence at {}; dependency graph at {}.",
+                " Full per-cycle evidence at {}.{}",
                 chunk_report_path(dir, chunk_id, CYCLES_REPORT).display(),
-                chunk_report_path(dir, chunk_id, DEPENDENCY_GRAPH_REPORT).display(),
+                graph_export_guidance(dir, chunk_id, graph_reports),
             )
         });
         Some((
@@ -1733,6 +1795,7 @@ fn validate_and_emit_reports<'a>(
                     evidence_report: report_out_dir
                         .map(|dir| chunk_report_path(dir, chunk_id, evidence_report)),
                     dependency_graph_report: report_out_dir
+                        .filter(|_| graph_reports.enabled())
                         .map(|dir| chunk_report_path(dir, chunk_id, DEPENDENCY_GRAPH_REPORT)),
                     diagnostic,
                 },

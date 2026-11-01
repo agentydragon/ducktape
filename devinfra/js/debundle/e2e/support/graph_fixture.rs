@@ -44,7 +44,7 @@ impl GraphFixture {
             .iter()
             .map(|(path, yaml)| (path.as_str(), *yaml))
             .collect();
-        let run = run_tree_fixture(
+        let run = run_tree_graph_fixture(
             &TreeFixture {
                 chunks,
                 module_roots: &[("main", "main")],
@@ -268,6 +268,7 @@ impl GraphFixture {
         let root = self.run._root.path();
         Command::new(debundler_path())
             .arg("run")
+            .arg("--graphs")
             .arg("--tree-config")
             .arg(root.join("spec_config.yaml"))
             .arg("--tree-modules")
