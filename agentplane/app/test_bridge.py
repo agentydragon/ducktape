@@ -23,7 +23,6 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 from sqlalchemy import select
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app.testing.dispatcher_client import SessionDispatcherClient
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.runner_gateway import admitted, delivered_opening
@@ -35,6 +34,7 @@ from agentplane.runner.testing.failure_journal import FailureEvidence
 from agentplane.runner.testing.process import RunningRunner, kill_harness
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text

@@ -18,7 +18,7 @@ from typing import Any, Self
 from uuid import UUID
 
 import httpx
-from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
+from google.protobuf.json_format import ParseDict, ParseError
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from agentplane.app.model_catalog import ModelCatalog
@@ -78,7 +78,6 @@ class Client:
 
     def __init__(self, *, base_url: str, token: str) -> None:
         self.opened_sandbox_uids: set[UUID] = set()
-        self._session_targets: dict[UUID, tuple[str, str]] = {}
         self._http = httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
             headers={"Authorization": f"Bearer {token}"},
@@ -248,7 +247,6 @@ class Client:
         )
         opening = ParseDict(answered, session_dispatcher_pb2.SessionOpening())
         self.opened_sandbox_uids.add(UUID(opening.sandbox_uid))
-        self._session_targets[session_id] = (opening.sandbox, opening.sandbox_uid)
         return opening
 
     async def session_opening(self, name: str, session_id: UUID) -> session_dispatcher_pb2.SessionOpening:
@@ -336,23 +334,6 @@ class Client:
         metadata = await self._json("GET", f"/upstream/app/v1/threads/{thread_id}")
         summary = await self._json("GET", f"/upstream/history/v1/sessions/{thread_id}/summary")
         return thread_view_from_proto_json(metadata, summary)
-
-    async def submit_input(self, thread_id: UUID, command_id: str, text: str) -> session_dispatcher_pb2.Dispatch:
-        """Submit through Dispatcher, retaining the Session's original destination for retries."""
-        if thread_id not in self._session_targets:
-            summary = await self._json("GET", f"/upstream/history/v1/sessions/{thread_id}/summary")
-            target = summary["sandbox"]
-            if not target.get("name") or not target.get("uid"):
-                raise ValueError("History Session has no immutable Sandbox destination")
-            self._session_targets[thread_id] = (target["name"], target["uid"])
-        sandbox, sandbox_uid = self._session_targets[thread_id]
-        request = session_dispatcher_pb2.SubmitInputRequest(
-            command_id=command_id, sandbox=sandbox, sandbox_uid=sandbox_uid, text=text
-        )
-        answered = await self._json(
-            "POST", f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput", json=MessageToDict(request)
-        )
-        return ParseDict(answered, session_dispatcher_pb2.SubmitInputResponse()).dispatch
 
     async def events(
         self, thread_id: UUID, *, after: int, read_seconds: float, awaiting_command_id: str | None = None

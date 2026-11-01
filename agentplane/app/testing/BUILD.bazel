@@ -209,7 +209,6 @@ py_test(
         "//:conftest",
         "//agentplane/app:conftest",
         "//agentplane/proto:event_log_pb2",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",
@@ -237,7 +236,6 @@ py_library(
         "//agentplane/runner_gateway:__pkg__",
     ],
     deps = [
-        ":dispatcher_client",
         "//agentplane:subjects",
         "//agentplane/grpc:calls",
         "//agentplane/history_service/testing:go_service",
@@ -248,6 +246,7 @@ py_library(
         "//agentplane/runner/testing:process",
         "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/runner_gateway/testing:gateway_process",
         "//agentplane/runner_transport:configuration",
         "//agentplane/sandboxes/testing:kubernetes",
@@ -270,17 +269,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "dispatcher_client",
-    srcs = ["dispatcher_client.py"],
-    deps = [
-        "//agentplane/grpc:calls",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
     ],
 )
 

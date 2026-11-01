@@ -112,8 +112,9 @@ func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependenc
 	server.RegisterRawRoute("GET /threads/notices/stream", http.HandlerFunc(routes.threadNotices), true)
 	server.RegisterRawRoute("GET /sandboxes/{name}/notifications/stream", http.HandlerFunc(routes.sandboxNotifications), true)
 	server.RegisterRawRoute("GET /sandboxes/{name}/console/stream", http.HandlerFunc(routes.console), true)
-	server.RegisterRawRoute("GET /upstream/dispatcher/{path...}", http.HandlerFunc(routes.dispatcher), true)
-	server.RegisterRawRoute("POST /upstream/dispatcher/{path...}", http.HandlerFunc(routes.dispatcherCommand), false)
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		server.RegisterRawRoute(method+" /upstream/dispatcher/{path...}", http.HandlerFunc(routes.dispatcher), true)
+	}
 	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete} {
 		server.RegisterRawRoute(method+" /upstream/actions/{path...}", http.HandlerFunc(routes.actionFacade), true)
 		server.RegisterRawRoute(method+" /upstream/connections/{path...}", http.HandlerFunc(routes.connectionFacade), true)
@@ -687,37 +688,6 @@ func (r *streamingRoutes) dispatcher(w http.ResponseWriter, request *http.Reques
 		return
 	}
 	r.forwardDispatcher(w, request, ctx)
-}
-
-// Command POSTs keep the caller boundary of the former Thread routes: a signed
-// operator session or an audience-checked workload token. Only the four
-// generated command methods are exposed through this write route.
-func (r *streamingRoutes) dispatcherCommand(w http.ResponseWriter, request *http.Request) {
-	path := request.PathValue("path")
-	if !dispatcherCommandPath(path) {
-		http.NotFound(w, request)
-		return
-	}
-	if r.deps.DispatcherHTTP == nil {
-		writeDetailError(w, http.StatusServiceUnavailable, "Dispatcher is not configured")
-		return
-	}
-	ctx, cancel := r.requestLifetime(request)
-	defer cancel()
-	r.forwardDispatcher(w, request, ctx)
-}
-
-func dispatcherCommandPath(path string) bool {
-	rest, ok := strings.CutPrefix(path, "v1/sessions/")
-	if !ok || rest == "" || strings.Contains(rest, "/") {
-		return false
-	}
-	for _, operation := range []string{":submitInput", ":changeModel", ":changeReasoningEffort", ":interruptTurn"} {
-		if sessionID, found := strings.CutSuffix(rest, operation); found && sessionID != "" {
-			return true
-		}
-	}
-	return false
 }
 
 func (r *streamingRoutes) forwardDispatcher(w http.ResponseWriter, request *http.Request, ctx context.Context) {

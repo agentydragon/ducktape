@@ -103,10 +103,10 @@ themselves; Action Service and SessionDispatcher integration remains a separate 
 ## Clients
 
 - Most APIs use one `<Service>Client` beside the servicer's owner to expose domain methods
-  over its stub. The app's typed HTTP command routes call the matching generated Session
-  Dispatcher RPC directly; a small transport object holds the generated stub and uses the shared
-  unary helper for rotating bearer, deadline, and status translation. Mutations are not
-  automatically retried. A client that would call two services is two clients.
+  over its stub. The browser uses the app's operator-session BFF to call the generated Dispatcher
+  HTTP facade. Agentplane service callers use the generated native gRPC stub directly; their
+  transport reads a rotating bearer and sets a deadline. Mutations are not automatically retried.
+  A client that would call two services is two clients.
 - **Clients take channels; the composition root opens them.** A client's constructor takes a
   `grpc.aio.Channel`, never a target string, and builds its stub from it. Whoever constructs the
   client (a `main`, a test fixture) opens the channel with `async with` and closes it; the client

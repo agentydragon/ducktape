@@ -10,6 +10,7 @@ import pytest_bazel
 
 from agentplane.system_tests.case_batch import CASE_RESULT, Case, CaseBatch
 from agentplane.system_tests.cluster import Cluster
+from agentplane.system_tests.dispatcher_transport import native_client
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.suites import pod_runners
 from agentplane.system_tests.suites.pod_cases import SCENARIOS, Resources, Scenario
@@ -21,14 +22,23 @@ CASE_LIMIT = 2
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def pod_cases(
-    request: pytest.FixtureRequest, cluster: Cluster, base_url: str, token: str, scripted_listener: Listener
+    request: pytest.FixtureRequest, cluster: Cluster, base_url: str, token: str, scripted_listener: Listener,
+    tmp_path_factory: pytest.TempPathFactory
 ) -> AsyncIterator[CaseBatch]:
     upstream = ScriptedUpstream()
     async with (
+        native_client(cluster, tmp_path_factory.mktemp("pod-dispatcher") / "token") as dispatcher,
         upstream.serving(listener=scripted_listener.socket),
         pod_runners.pool(cluster, base_url, token, limit=CASE_LIMIT) as borrow,
     ):
-        resources = Resources(cluster=cluster, base_url=base_url, token=token, scripted=upstream, borrow=borrow)
+        resources = Resources(
+            cluster=cluster,
+            base_url=base_url,
+            token=token,
+            scripted=upstream,
+            dispatcher=dispatcher,
+            borrow=borrow,
+        )
         selected_cases: dict[str, Case] = {}
         for item in request.session.items:
             if isinstance(item, pytest.Function) and item.parent is request.node:

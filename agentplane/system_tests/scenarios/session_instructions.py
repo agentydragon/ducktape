@@ -21,6 +21,7 @@ import asyncio
 from agentplane.app.testing.client import Client
 from agentplane.app.testing.models import SandboxView
 from agentplane.proto import runner_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
@@ -43,7 +44,7 @@ PROMPT = "In one short sentence, say what a checksum is. Do not use any tool."
 
 
 async def the_model_obeys_the_standing_instruction_its_session_was_opened_with(
-    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
+    client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
 ) -> None:
     """The instruction reaches the model, and the marker is the model's own doing rather than its
     habit: two sessions on one sandbox, the same prompt, differing only in whether the session was
@@ -57,7 +58,13 @@ async def the_model_obeys_the_standing_instruction_its_session_was_opened_with(
         "system_test.session_instructions.instructed_turn", record_exception=False, set_status_on_exception=False
     ):
         instructed = await Agent.open(
-            client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model, instructions=INSTRUCTIONS
+            client,
+            dispatcher,
+            sandbox=view.name,
+            sandbox_uid=view.uid,
+            harness=harness,
+            model=model,
+            instructions=INSTRUCTIONS,
         )
         obeyed = await instructed.run(PROMPT)
     assert MARKER in obeyed.answer, (
@@ -68,7 +75,9 @@ async def the_model_obeys_the_standing_instruction_its_session_was_opened_with(
     with tracer.start_as_current_span(
         "system_test.session_instructions.plain_turn", record_exception=False, set_status_on_exception=False
     ):
-        plain = await Agent.open(client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model)
+        plain = await Agent.open(
+            client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model
+        )
         uninstructed = await plain.run(PROMPT)
     assert MARKER not in uninstructed.transcript, (
         f"a session opened with no instructions produced {MARKER} anyway, so the instructed half "
@@ -77,7 +86,12 @@ async def the_model_obeys_the_standing_instruction_its_session_was_opened_with(
 
 
 async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session(
-    client: Client, view: SandboxView, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    view: SandboxView,
+    harness: runner_pb2.Harness,
+    offered_model: str,
+    scripted: ScriptedUpstream,
 ) -> None:
     """Two sessions on one sandbox, as in the real-model scenario: what each sends the model shows
     whether the app, the Dispatcher and the runner carried the instruction, and to that session only."""
@@ -85,7 +99,13 @@ async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session
     model = scripted.model(view.pod.name, harness)
 
     instructed = await Agent.open(
-        client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=offered_model, instructions=INSTRUCTIONS
+        client,
+        dispatcher,
+        sandbox=view.name,
+        sandbox_uid=view.uid,
+        harness=harness,
+        model=offered_model,
+        instructions=INSTRUCTIONS,
     )
     with tracer.start_as_current_span(
         "system_test.session_instructions.instructed_exchange", record_exception=False, set_status_on_exception=False
@@ -98,7 +118,9 @@ async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session
     # The scripted reply is the thread's answer: the model's side of the turn came back through ingress.
     assert MARKER in obeyed.result().answer
 
-    plain = await Agent.open(client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=offered_model)
+    plain = await Agent.open(
+        client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=offered_model
+    )
     with tracer.start_as_current_span(
         "system_test.session_instructions.plain_exchange", record_exception=False, set_status_on_exception=False
     ):

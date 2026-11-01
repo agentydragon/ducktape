@@ -18,7 +18,6 @@ from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, Trace
 from agentplane.app.testing import client as client_module
 from agentplane.app.testing.client import Client, SessionStreamError
 from agentplane.proto import event_log_pb2
-from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 
 # A server answers one connection per call: `(after, writer)`. Raw sockets, because what is under
 # test is how the client reads a connection that dies, which an ASGI transport cannot produce.
@@ -94,20 +93,6 @@ async def _unavailable(after: int, writer: asyncio.StreamWriter) -> None:
     await _respond(writer, "503 Service Unavailable")
 
 
-async def test_command_accepts_the_dispatchers_durable_receipt() -> None:
-    command_id = "resume-by-input"
-    receipt = session_dispatcher_pb2.Dispatch(
-        command_id=command_id, session_id=str(uuid4()), state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
-    )
-
-    async def accepted(_after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(writer, "200 OK", json.dumps({"dispatch": MessageToDict(receipt)}).encode(), "application/json")
-
-    async with _app(_session_summary, accepted) as (client, _):
-        result = await client.submit_input(uuid4(), command_id, "Continue")
-    assert result == receipt
-
-
 async def test_client_propagates_active_trace_context() -> None:
     observed: list[str] = []
 
@@ -177,41 +162,6 @@ async def test_app_config_client_adapts_proto_json_to_test_views() -> None:
     assert catalog.harnesses == {"HARNESS_CODEX": ["model-a"]}
     assert views[0].session_defaults.harness == "HARNESS_CODEX"
     assert views[0].session_defaults.reasoning_effort is None
-
-
-async def _session_summary(_after: int, writer: asyncio.StreamWriter) -> None:
-    await _respond(
-        writer,
-        "200 OK",
-        json.dumps({"sandbox": {"name": "original", "uid": "original-uid"}}).encode(),
-        "application/json",
-    )
-
-
-async def test_command_retry_reuses_the_original_destination_without_another_lookup() -> None:
-    thread_id = uuid4()
-    receipt = session_dispatcher_pb2.Dispatch(command_id="retry", session_id=str(thread_id))
-
-    async def accepted(_after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(writer, "200 OK", json.dumps({"dispatch": MessageToDict(receipt)}).encode(), "application/json")
-
-    requests: list[str] = []
-    async with _app(_session_summary, accepted, accepted, requests=requests) as (client, _):
-        assert await client.submit_input(thread_id, "retry", "Continue") == receipt
-        assert await client.submit_input(thread_id, "retry", "Continue") == receipt
-    assert requests[0].startswith(f"GET /upstream/history/v1/sessions/{thread_id}/summary ")
-    assert len(requests) == 3
-    assert all(
-        request.startswith(f"POST /upstream/dispatcher/v1/sessions/{thread_id}:submitInput ")
-        for request in requests[1:]
-    )
-    for request in requests[1:]:
-        assert json.loads(request.split("\r\n\r\n", 1)[1]) == {
-            "commandId": "retry",
-            "sandbox": "original",
-            "sandboxUid": "original-uid",
-            "text": "Continue",
-        }
 
 
 async def test_resumes_after_the_last_entry_when_the_stream_closes_without_an_end_frame() -> None:

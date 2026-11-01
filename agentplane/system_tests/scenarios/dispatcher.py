@@ -7,7 +7,6 @@ import sys
 import tarfile
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -24,13 +23,12 @@ from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2 as pb, s
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
 from agentplane.system_tests.cluster import Cluster
+from agentplane.system_tests.dispatcher_transport import Caller, bound_caller as _bound_caller, forward as _forward
 from agentplane.system_tests.sandbox import POD_TEMPLATE
 from agentplane.system_tests.tracing import tracer
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-SERVICE = "session-dispatcher"
 WORKLOAD = "runner-gateway"
 BOUND_SECONDS = 300
 CLEANUP_DIAGNOSTICS_SECONDS = 30
@@ -39,42 +37,12 @@ RUNNER_DATA_MOUNTS = ("/state", "/state/workspaces", "/home/runner", "/tmp")
 type Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub
 
 
-@dataclass(frozen=True)
-class Caller:
-    token: str = field(repr=False)
-
-    @property
-    def metadata(self) -> tuple[tuple[str, str], ...]:
-        return (("authorization", f"Bearer {self.token}"),)
-
-
 class DispatchFailedError(RuntimeError):
     pass
 
 
 async def _delete_pod(cluster: Cluster, name: str, uid: str) -> None:
     await _delete(cluster, "pod", name, uid)
-
-
-async def _bound_caller(cluster: Cluster, service_account: str) -> tuple[Caller, str, str]:
-    with tracer.start_as_current_span("system_test.dispatcher.caller"):
-        pods = json.loads(
-            await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={service_account}", "-o", "json")
-        )
-        pod = next(item for item in pods["items"] if not item["metadata"].get("deletionTimestamp"))
-        name = pod["metadata"]["name"]
-        uid = pod["metadata"]["uid"]
-        token = await cluster.kubectl(
-            "create",
-            "token",
-            service_account,
-            f"--audience={SERVICE}",
-            "--duration=600s",
-            "--bound-object-kind=Pod",
-            f"--bound-object-name={name}",
-            f"--bound-object-uid={uid}",
-        )
-        return Caller(token), name, uid
 
 
 async def _delete(cluster: Cluster, kind: str, name: str, uid: str) -> None:
@@ -318,33 +286,6 @@ async def _cleanup_sandbox(
                 error, lambda: _capture_cleanup_diagnostics(crictl_command, cluster, name, session_ids, command_ids)
             )
             raise
-
-
-@asynccontextmanager
-async def _forward(cluster: Cluster, resource: str = f"service/{SERVICE}") -> AsyncIterator[str]:
-    port = pick_free_port()
-    process = await asyncio.create_subprocess_exec(
-        *cluster.command(),
-        "port-forward",
-        resource,
-        f"{port}:8080",
-        "--address=127.0.0.1",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
-    assert process.stdout is not None
-    try:
-        async with asyncio.timeout(30):
-            while line := await process.stdout.readline():
-                if line.startswith(b"Forwarding from 127.0.0.1:"):
-                    break
-            else:
-                raise RuntimeError("Dispatcher port-forward ended before listening")
-        yield f"127.0.0.1:{port}"
-    finally:
-        if process.returncode is None:
-            process.terminate()
-        await process.wait()
 
 
 async def _dispatch_until(

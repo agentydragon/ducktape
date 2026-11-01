@@ -211,7 +211,6 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//agentplane/app/testing:dispatcher_client",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:runner_gateway",
@@ -224,6 +223,7 @@ py_test(
         "//agentplane/runner/testing:process",
         "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/runner_gateway/testing:gateway_process",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:scripted_model",
@@ -578,7 +578,6 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//agentplane/app/testing:dispatcher_client",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:runner_gateway",
         "//agentplane/grpc:calls",
@@ -590,6 +589,7 @@ py_test(
         "//agentplane/runner/testing:process",
         "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/runner_gateway/testing:gateway_process",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:scripted_model",

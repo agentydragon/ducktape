@@ -51,6 +51,7 @@ from agentplane.history_service.fold.views import EntityKind, PayloadField, Thre
 from agentplane.native.claude import wire as claude_wire  # Both harnesses name their frame module `wire`.
 from agentplane.native.codex import wire as codex_wire
 from agentplane.proto import event_pb2, runner_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.sandbox import Sandboxes
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -219,10 +220,16 @@ async def _open_thread(http: httpx.AsyncClient, thread_id: UUID) -> ThreadOpen:
 
 
 async def test_a_one_word_turn_answers_and_its_thread_opens_in_time(
-    client: Client, base_url: str, token: str, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    base_url: str,
+    token: str,
+    sandbox: Sandboxes,
+    harness: runner_pb2.Harness,
+    model: str,
 ) -> None:
     view = await sandbox(f"systest-latency-{harness}")
-    agent = await Agent.open(client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model)
+    agent = await Agent.open(client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model)
     turn = await agent.run(PING)
     turn_seconds = time.monotonic() - turn.accepted
     assert "PING" in turn.answer, turn.transcript

@@ -11,6 +11,7 @@ from agentplane.app.testing.client import Client
 from agentplane.env.harnesshost.harness import Harness
 from agentplane.proto import runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests import launch_preset
 from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, Agent
@@ -23,7 +24,7 @@ INSTRUCTIONS = "Test instructions that override the preset's for this session."
 
 
 async def a_preset_launches_an_initialized_editable_codex_thread(
-    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
+    client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
     with tracer.start_as_current_span(
         "system_test.launch_preset.resolve", record_exception=False, set_status_on_exception=False
@@ -68,7 +69,14 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
 
     assert view.pod is not None
     model = scripted.model(view.pod.name, runner_pb2.HARNESS_CODEX)
-    agent = Agent(client, thread_id=first.id, cursor=first.last_cursor)
+    agent = Agent(
+        client,
+        dispatcher,
+        thread_id=first.id,
+        cursor=first.last_cursor,
+        sandbox=opening.sandbox,
+        sandbox_uid=opening.sandbox_uid,
+    )
     with tracer.start_as_current_span(
         "system_test.launch_preset.initialized_turn", record_exception=False, set_status_on_exception=False
     ):

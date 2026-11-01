@@ -120,8 +120,9 @@ remains the authority for command outcomes. The browser retains the command loca
 projects its admission or command row; the app adds no command queue. Deploy the Session Dispatcher
 and authorize the app ServiceAccount before rolling out an app image that requires this setting.
 
-The `/upstream/dispatcher/…` BFF routes expose Dispatcher reads to an operator session and the four
-command POSTs to an authenticated operator or accepted workload token. They call generated gRPC methods
+The `/upstream/dispatcher/…` BFF routes expose generated Dispatcher HTTP reads and writes to a browser
+operator session. Agents and Agentplane services call the Dispatcher over native gRPC, not through the app.
+The BFF routes call generated gRPC methods
 with the app's rotating projected Dispatcher token. Unary routes return ProtoJSON; the watch keeps a
 bounded initial read before starting its streaming response and then relays frames until the operator
 session ends, the app drains or the browser goes. Reads carry no Thread check, so an operator can read

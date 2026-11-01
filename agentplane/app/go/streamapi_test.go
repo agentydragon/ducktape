@@ -402,22 +402,12 @@ func TestHistoryFacadeRequiresAnAuthenticatedCaller(t *testing.T) {
 	}
 }
 
-func TestDispatcherCommandFacadePreservesCallerAuthAndOnlyFourWrites(t *testing.T) {
+func TestDispatcherFacadeRejectsWorkloadCommandPOSTs(t *testing.T) {
 	authentication := newStreamTestAuth(t)
 	server := NewHTTPServer(authentication)
-	var forwarded []string
-	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, request *http.Request, _ context.Context, path, bearer string) error {
-		if request.Method != http.MethodPost || bearer != "" {
-			t.Errorf("forwarded method/bearer = %q/%q", request.Method, bearer)
-		}
-		body, err := io.ReadAll(request.Body)
-		if err != nil {
-			return err
-		}
-		if string(body) != `{"commandId":"stable","sandbox":"demo","sandboxUid":"uid-1"}` {
-			t.Errorf("forwarded body = %q", body)
-		}
-		forwarded = append(forwarded, path)
+	forwarded := 0
+	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, _ *http.Request, _ context.Context, _, _ string) error {
+		forwarded++
 		w.WriteHeader(http.StatusAccepted)
 		return nil
 	}}
@@ -435,24 +425,12 @@ func TestDispatcherCommandFacadePreservesCallerAuthAndOnlyFourWrites(t *testing.
 		request.Header.Set("Authorization", "Bearer accepted")
 		response := httptest.NewRecorder()
 		server.Handler(authentication).ServeHTTP(response, request)
-		if response.Code != http.StatusAccepted {
-			t.Fatalf("workload-token %s status = %d %s, want 202", method, response.Code, response.Body.String())
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("workload-token %s status = %d %s, want 403", method, response.Code, response.Body.String())
 		}
 	}
-	if len(forwarded) != 4 {
-		t.Fatalf("forwarded command paths = %v, want four", forwarded)
-	}
-	for _, path := range []string{prefix + ":delete", "/upstream/dispatcher/v1/dispatches:watch", prefix + "/extra:submitInput"} {
-		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
-		request.Header.Set("Authorization", "Bearer accepted")
-		response := httptest.NewRecorder()
-		server.Handler(authentication).ServeHTTP(response, request)
-		if response.Code != http.StatusNotFound {
-			t.Fatalf("unsupported command path %q status = %d, want 404", path, response.Code)
-		}
-	}
-	if len(forwarded) != 4 {
-		t.Fatalf("unsupported route was forwarded: %v", forwarded)
+	if forwarded != 0 {
+		t.Fatalf("workload request reached Dispatcher %d times", forwarded)
 	}
 }
 

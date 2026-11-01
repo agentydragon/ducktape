@@ -20,6 +20,7 @@ py_library(
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/testing:scripted_model",
         "@pypi//httpx",
         "@pypi//protobuf",
@@ -35,6 +36,7 @@ py_library(
     deps = [
         ":case_batch",
         ":cluster",
+        ":dispatcher_transport",
         ":native_artifacts",
         ":offered_models",
         ":ollama_warmup",
@@ -43,13 +45,26 @@ py_library(
         ":scripted_upstream",
         ":tracing",
         "//agentplane/app/testing:client",
+        "//agentplane/grpc:calls",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//util:net",
         "//util/testing:otel_tracing",
         "//util/testing:undeclared_outputs",
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",
         "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "dispatcher_transport",
+    testonly = True,
+    srcs = ["dispatcher_transport.py"],
+    deps = [
+        ":cluster",
+        ":tracing",
+        "//util:net",
     ],
 )
 
@@ -78,6 +93,7 @@ py_test(
         "//agentplane/env/harnesshost:harness",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest_bazel",
@@ -116,6 +132,7 @@ py_test(
         "//agentplane/native/codex:wire",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//util/testing:undeclared_outputs",
         "@pypi//httpx",
         "@pypi//more_itertools",
@@ -442,6 +459,7 @@ py_library(
         ":vm_configuration",
         "//agentplane/app/testing:client",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "@pypi//protobuf",
     ],
 )

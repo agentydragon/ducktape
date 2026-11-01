@@ -9,6 +9,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.app.testing.client import Client
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.harness_pair import run_harness_pair
@@ -29,6 +30,7 @@ async def test_deployed_discovery_and_registration(pytestconfig: pytest.Config, 
 async def test_policy_binding_auto_approves_the_bound_sandbox(
     operator_bff: httpx.AsyncClient,
     client: Client,
+    dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
     scripted: ScriptedUpstream,
     policy_objects: mcp.PolicyObjects,
@@ -36,7 +38,7 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
     await run_harness_pair(
         client,
         lambda harness, offered_model: mcp.policy_binding_auto_approves_the_bound_sandbox(
-            operator_bff, client, sandbox, harness, offered_model, scripted, policy_objects
+            operator_bff, client, dispatcher, sandbox, harness, offered_model, scripted, policy_objects
         ),
     )
 

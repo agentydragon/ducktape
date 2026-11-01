@@ -20,13 +20,16 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid4
 
+import grpc
 import httpx
+import pytest
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.app.testing.models import SandboxView
 from agentplane.proto import command_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, Agent
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.tracing import tracer
@@ -100,10 +103,12 @@ async def tab(http: httpx.AsyncClient, thread_id: UUID, *, last_event_id: int | 
                 yield Tab(response.aiter_lines())
 
 
-async def _open(client: Client, view: SandboxView, harness: runner_pb2.Harness, model: str) -> UUID:
+async def _open(
+    client: Client, dispatcher: SessionDispatcherClient, view: SandboxView, harness: runner_pb2.Harness, model: str
+) -> UUID:
     """A Thread whose runner feed is attached, so a tab's first frame is `attached`."""
     thread_id = (
-        await Agent.open(client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model)
+        await Agent.open(client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model)
     ).thread_id
     with tracer.start_as_current_span(
         "system_test.thread_stream.feed_ready", record_exception=False, set_status_on_exception=False
@@ -118,12 +123,16 @@ def _input(label: str, text: str) -> command_pb2.Command:
     return command_pb2.Command(command_id=f"{label}-{uuid4()}", submit_input=command_pb2.SubmitInput(text=text))
 
 
-async def _submit(client: Client, thread_id: UUID, command: command_pb2.Command) -> None:
+async def _submit(
+    dispatcher: SessionDispatcherClient, thread_id: UUID, view: SandboxView, command: command_pb2.Command
+) -> None:
     """Submit `command`; the Dispatcher receipt names that same command."""
     with tracer.start_as_current_span(
         "system_test.thread_stream.submit", record_exception=False, set_status_on_exception=False
     ):
-        answer = await client.submit_input(thread_id, command.command_id, command.submit_input.text)
+        answer = await dispatcher.submit_input(
+            str(thread_id), command.command_id, view.name, str(view.uid), command.submit_input.text
+        )
     assert (answer.command_id, answer.operation) == (command.command_id, session_dispatcher_pb2.OPERATION_SUBMIT_INPUT)
 
 
@@ -180,17 +189,11 @@ def _admitted(frames: list[Frame]) -> list[str]:
 async def an_unknown_thread_is_not_found(http: httpx.AsyncClient) -> None:
     unknown = "/threads/00000000-0000-0000-0000-000000000000"
     assert (await http.get(f"{unknown}/events/stream")).status_code == 404
-    command_path = "/upstream/dispatcher/v1/sessions/00000000-0000-0000-0000-000000000000:submitInput"
-    assert (
-        await http.post(
-            command_path, json={"commandId": "test-x", "text": "hello", "sandbox": "missing", "sandboxUid": "missing"}
-        )
-    ).status_code == 404
-    assert (await http.post(command_path, json={"commandId": "test-x"})).status_code == 400
 
 
 async def every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event(
     client: Client,
+    dispatcher: SessionDispatcherClient,
     http: httpx.AsyncClient,
     view: SandboxView,
     harness: runner_pb2.Harness,
@@ -199,25 +202,20 @@ async def every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event
 ) -> None:
     assert view.pod is not None
     model = scripted.model(view.pod.name, harness)
-    thread_id = await _open(client, view, harness, offered_model)
+    thread_id = await _open(client, dispatcher, view, harness, offered_model)
 
     async with tab(http, thread_id) as first:
         assert (await first.next()).event == "attached"
         command = _input("test-tabs-first", "Reply with exactly: TABS_FIRST")
-        await _submit(client, thread_id, command)
+        await _submit(dispatcher, thread_id, view, command)
         # The Dispatcher id names that command alone.
-        reused = await http.post(
-            f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
-            json={
-                "commandId": command.command_id,
-                "text": "Something else",
-                "sandbox": view.name,
-                "sandboxUid": str(view.uid),
-            },
-        )
-        assert reused.status_code == 409, reused.text
+        with pytest.raises(grpc.aio.AioRpcError) as reused:
+            await dispatcher.submit_input(
+                str(thread_id), command.command_id, view.name, str(view.uid), "Something else"
+            )
+        assert reused.value.code() == grpc.StatusCode.ALREADY_EXISTS
         # An exact retry, as after a lost response, answers the same command.
-        await _submit(client, thread_id, command)
+        await _submit(dispatcher, thread_id, view, command)
         request = await model.request()
         assert request.user_texts[-1] == command.submit_input.text
         await model.reply(request, Text("TABS_FIRST"))
@@ -234,7 +232,7 @@ async def every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event
             assert (await second.next()).event == "attached"
             _same_log(seen, await second.until("turnCompleted"))
             command = _input("test-tabs-second", "Reply with exactly: TABS_SECOND")
-            await _submit(client, thread_id, command)
+            await _submit(dispatcher, thread_id, view, command)
             request = await model.request()
             assert request.user_texts[-1] == command.submit_input.text
             await model.reply(request, Text("TABS_SECOND"))
@@ -260,6 +258,7 @@ async def every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event
 
 async def turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn(
     client: Client,
+    dispatcher: SessionDispatcherClient,
     http: httpx.AsyncClient,
     view: SandboxView,
     harness: runner_pb2.Harness,
@@ -269,10 +268,10 @@ async def turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_inp
     """No tab is open while either turn runs: the runner's feed, not a watcher, is what archives them."""
     assert view.pod is not None
     model = scripted.model(view.pod.name, harness)
-    thread_id = await _open(client, view, harness, offered_model)
+    thread_id = await _open(client, dispatcher, view, harness, offered_model)
 
     failing = _input("test-failing-input", "Reply with exactly: MODEL_HTTP_ERROR")
-    await _submit(client, thread_id, failing)
+    await _submit(dispatcher, thread_id, view, failing)
     # The runner allows each harness two retries, so the third error fails the turn.
     for _ in range(3):
         request = await model.request()
@@ -292,7 +291,7 @@ async def turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_inp
         _same_log(failed, await reloaded.until("turnCompleted"))
 
     follow_up = _input("test-follow-up-input", "Reply with exactly: AFTER_HTTP_ERROR_OK")
-    await _submit(client, thread_id, follow_up)
+    await _submit(dispatcher, thread_id, view, follow_up)
     request = await model.request()
     assert request.user_texts[-1] == follow_up.submit_input.text
     await model.reply(request, Text("AFTER_HTTP_ERROR_OK"))

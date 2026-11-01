@@ -27,8 +27,9 @@ from tenacity import AsyncRetrying, retry_if_exception, retry_if_result, stop_af
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.app.testing.models import ThreadView
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
+from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.tracing import tracer
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
@@ -110,10 +111,23 @@ class Turn:
 class Agent:
     """One Thread. `run` returns only a successfully completed turn."""
 
-    def __init__(self, client: Client, *, thread_id: UUID, cursor: int) -> None:
+    def __init__(
+        self,
+        client: Client,
+        dispatcher: SessionDispatcherClient,
+        *,
+        thread_id: UUID,
+        cursor: int,
+        sandbox: str | None = None,
+        sandbox_uid: str | None = None,
+    ) -> None:
+        if (sandbox is None) != (sandbox_uid is None):
+            raise ValueError("Sandbox name and UID must be supplied together")
         self._client = client
+        self._dispatcher = dispatcher
         self._thread_id = thread_id
         self._cursor = cursor
+        self._target = (sandbox, sandbox_uid) if sandbox and sandbox_uid else None
 
     @property
     def thread_id(self) -> UUID:
@@ -123,6 +137,7 @@ class Agent:
     async def open(
         cls,
         client: Client,
+        dispatcher: SessionDispatcherClient,
         *,
         sandbox: str,
         sandbox_uid: UUID,
@@ -154,7 +169,9 @@ class Agent:
                         sandbox, session_id, sandbox_uid=sandbox_uid, overrides=MessageToDict(spec)
                     )
                     thread = await client.wait_for_thread_projection(session_id, timeout_s=RUNNER_ANSWERS_SECONDS)
-                    return cls(client, thread_id=thread.id, cursor=0)
+                    return cls(
+                        client, dispatcher, thread_id=thread.id, cursor=0, sandbox=sandbox, sandbox_uid=str(sandbox_uid)
+                    )
             raise AssertionError("unreachable: reraise=True either returns an agent or raises")
 
     async def run(self, prompt: str) -> Turn:
@@ -162,8 +179,15 @@ class Agent:
         the cursor before submitting cannot miss an event."""
         after = self._cursor
         command_id = f"input-{uuid4().hex[:8]}"
-        await self._client.submit_input(self._thread_id, command_id, prompt)
+        await self.submit_input(command_id, prompt)
         return await self._collect(after=after, awaiting_command_id=command_id)
+
+    async def submit_input(self, command_id: str, text: str) -> session_dispatcher_pb2.Dispatch:
+        """Send one command directly to Dispatcher with this Session's pinned target."""
+        if self._target is None:
+            self._target = await self._dispatcher.session_target(str(self._thread_id))
+        sandbox, sandbox_uid = self._target
+        return await self._dispatcher.submit_input(str(self._thread_id), command_id, sandbox, sandbox_uid, text)
 
     async def run_shell(self, model: ScriptedModel[Any], command: str) -> Turn:
         """A turn in which the scripted `model` runs `command` in the Sandbox's shell, then answers."""
@@ -249,14 +273,9 @@ async def scripted_turn_with_admission_and_history(
 ) -> tuple[Turn, list[event_log_pb2.EventEntry], ModelRequest[Any]]:
     async with asyncio.TaskGroup() as turns:
         collecting = turns.create_task(agent.next_turn(awaiting_command_id=command_id))
-        command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text=prompt))
-        admission = await client.submit_input(agent.thread_id, command_id, prompt)
-        if isinstance(admission, session_dispatcher_pb2.Dispatch):
-            assert admission.command_id == command_id
-            assert admission.operation == session_dispatcher_pb2.OPERATION_SUBMIT_INPUT
-        else:
-            assert isinstance(admission, event_log_pb2.EventEntry)
-            assert admission.event.command_admitted.command == command
+        admission = await agent.submit_input(command_id, prompt)
+        assert admission.command_id == command_id
+        assert admission.operation == session_dispatcher_pb2.OPERATION_SUBMIT_INPUT
 
         request = await model.request()
         assert prompt in request.user_texts

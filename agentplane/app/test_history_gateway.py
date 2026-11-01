@@ -8,7 +8,6 @@ import pytest_bazel
 from google.protobuf.json_format import MessageToDict, ParseDict
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app.testing.dispatcher_client import SessionDispatcherClient
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.runner_gateway import admitted, delivered_opening
 from agentplane.grpc.calls import ServiceError
@@ -19,6 +18,7 @@ from agentplane.runner.testing import launches
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.testing.scripted_model import ScriptedModel, Text
