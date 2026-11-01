@@ -10,11 +10,12 @@ from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, EnvValue, Memor
 from constructs import Construct
 
 from agentplane.central_sampler.settings import Settings
+from agentplane.session_instructions.platform_instructions import SessionRuntime
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import central_sampler, database, history_service, llm_ingress, runner_gateway
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.platform_instructions import SessionRuntime, platform_instructions
+from cluster.cdk8s.agentplane.platform_instructions import platform_instructions
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.config_format import json_config
 from cluster.cdk8s.probes import grpc_probe

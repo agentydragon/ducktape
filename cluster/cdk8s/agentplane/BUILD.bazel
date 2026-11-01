@@ -160,6 +160,7 @@ py_library(
         ":service_workload",
         "//agentplane:subjects",
         "//agentplane/central_sampler:settings",
+        "//agentplane/session_instructions:platform_instructions",
         "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
