@@ -1,8 +1,9 @@
 # VM suite concurrency and image storage
 
-The VM suite has six independent guests: Claude and Codex credential cases, the
-central sampler, Claude and Codex turns, and Codex tool OOM containment. The
-baseline runs them in two sequential groups of three on a 4-unit executor.
+At the measured revision, the VM suite had six independent guests: Claude and
+Codex credential cases, the central sampler, Claude and Codex turns, and Codex
+tool OOM containment. Its baseline ran them in two sequential groups of three
+on a 4-unit executor.
 
 The selected change runs all six in one TaskGroup on an 8-unit executor.
 Each scenario retains its Sandbox and cleanup ownership, and the selected

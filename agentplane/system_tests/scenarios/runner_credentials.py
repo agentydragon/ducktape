@@ -2,95 +2,24 @@
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
-from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
-from tenacity import AsyncRetrying, retry_if_exception_type, retry_if_result, stop_after_delay, wait_fixed
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
-from agentplane.app.testing.models import SandboxView, ThreadView
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
-from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.app.testing.models import SandboxView
+from agentplane.proto import runner_pb2
 from agentplane.sandbox_resource import OperatingMode
-from agentplane.system_tests.agent import TURN_SECONDS, WORKING_DIRECTORY, Agent, Turn
+from agentplane.system_tests.agent import WORKING_DIRECTORY, Agent, scripted_turn_with_admission_and_history
 from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.sandbox import (
-    POD_TEMPLATE,
-    VM_TEMPLATE,
-    VM_WORKING_DIRECTORY,
-    Sandboxes,
-    wait_until_running,
-)
+from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.tracing import tracer
-from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
 _RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/runner-credential"
 _SANDBOX_LABEL = "agentplane.allegedly.works/sandbox"
-
-
-async def _turn(
-    client: Client,
-    agent: Agent,
-    *,
-    command_id: str,
-    prompt: str,
-    model: ScriptedModel[Any],
-    history_turns: int = 1,
-    shell_command: str | None = None,
-    response: str = "Done.",
-) -> tuple[Turn, list[event_log_pb2.EventEntry], ModelRequest[Any]]:
-    async with asyncio.TaskGroup() as turns:
-        collecting = turns.create_task(agent.next_turn(awaiting_command_id=command_id))
-        command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text=prompt))
-        admission = await client.submit_input(agent.thread_id, command_id, prompt)
-        if isinstance(admission, session_dispatcher_pb2.Dispatch):
-            assert admission.command_id == command_id
-            assert admission.operation == session_dispatcher_pb2.OPERATION_SUBMIT_INPUT
-        else:
-            assert isinstance(admission, event_log_pb2.EventEntry)
-            assert admission.event.command_admitted.command == command
-
-        request = await model.request()
-        assert prompt in request.user_texts
-        if shell_command is None:
-            await model.reply(request, Text(response))
-        else:
-            await model.reply(request, ShellCall(call_id=f"call-{uuid4().hex[:8]}", command=shell_command))
-            await model.reply(await model.request(), Text(response))
-    turn = collecting.result()
-    assert turn.status == event_pb2.TURN_STATUS_COMPLETED
-    entries = await _history(client, agent.thread_id, completed_turns=history_turns)
-    assert any(
-        entry.event.HasField("command_admitted") and entry.event.command_admitted.command.command_id == command_id
-        for entry in entries
-    ), f"History did not retain command admission {command_id}"
-    # FollowSession exposes committed archive entries before History's asynchronous fold applies
-    # them. The Thread summary is authoritative only once it covers this completed turn.
-    view: ThreadView = await AsyncRetrying(
-        stop=stop_after_delay(REQUEST_SECONDS),
-        wait=wait_fixed(0.05),
-        retry=retry_if_result(lambda row: row.last_cursor < entries[-1].cursor),
-    )(client.thread, agent.thread_id)
-    assert view.last_turn_status == "TURN_STATUS_COMPLETED"
-    return turn, entries, request
-
-
-async def _history(client: Client, thread_id: UUID, *, completed_turns: int) -> list[event_log_pb2.EventEntry]:
-    entries: list[event_log_pb2.EventEntry] = []
-    observed_turns = 0
-    async with asyncio.timeout(TURN_SECONDS):
-        async for entry in client.events(thread_id, after=0, read_seconds=TURN_SECONDS):
-            entries.append(entry)
-            if entry.event.HasField("turn_completed"):
-                observed_turns += 1
-                if observed_turns == completed_turns:
-                    break
-    assert observed_turns == completed_turns, f"History ended after {observed_turns} completed turns"
-    return entries
 
 
 async def _identity(cluster: Cluster, pod_name: str) -> tuple[str, str]:
@@ -214,7 +143,7 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
     agent = await _open_agent(client, view, harness, offered_model)
     model = scripted.model(view.pod.name, harness)
     marker = f"POD_CONTEXT_{uuid4().hex}"
-    turn, history_before, _ = await _turn(
+    turn, history_before, _ = await scripted_turn_with_admission_and_history(
         client,
         agent,
         model=model,
@@ -239,7 +168,7 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
     )
 
     resumed_model = scripted.model(resumed.pod.name, harness)
-    turn, history_after, recall = await _turn(
+    turn, history_after, recall = await scripted_turn_with_admission_and_history(
         client,
         agent,
         model=resumed_model,
@@ -256,35 +185,18 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
     assert len(history_after) > len(history_before)
 
 
-async def vm_mtls_certificate_authenticates_a_session(
-    cluster: Cluster,
-    client: Client,
-    sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
-    offered_model: str,
-    scripted: ScriptedUpstream,
-) -> None:
-    view = await sandbox(f"systest-runner-vm-{uuid4().hex[:8]}", template=VM_TEMPLATE)
+async def check_vm_runner_certificate(cluster: Cluster, view: SandboxView) -> tuple[str, str]:
     assert view.pod is not None
-    pod_uid, credential_id = await _identity(cluster, view.pod.name)
+    identity = await _identity(cluster, view.pod.name)
+    _, credential_id = identity
     await _ready_certificate(
         cluster, f"runner-{credential_id}", view.name, str(view.uid), credential_id, view.namespace
     )
+    return identity
 
-    agent = await _open_agent(client, view, harness, offered_model, cwd=VM_WORKING_DIRECTORY)
-    model = scripted.model(view.pod.name, harness)
-    turn, _, _ = await _turn(
-        client,
-        agent,
-        model=model,
-        command_id=f"vm-{uuid4().hex}",
-        prompt="Run a shell check in the VM runner.",
-        shell_command="printf 'VM_MTLS_OK\\n'",
-        response="VM_MTLS_OK",
-    )
-    assert "VM_MTLS_OK" in "\n".join(turn.tool_outputs)
-    current_pod_uid, current_credential_id = await _identity(cluster, view.pod.name)
-    assert (current_pod_uid, current_credential_id) == (pod_uid, credential_id)
+
+async def assert_vm_runner_identity_unchanged(cluster: Cluster, pod_name: str, identity: tuple[str, str]) -> None:
+    assert await _identity(cluster, pod_name) == identity
 
 
 # gazelle:include_dep @pypi//protobuf

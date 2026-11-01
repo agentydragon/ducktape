@@ -178,9 +178,10 @@ success receipt from that guest's own console. No separate root image or extra V
 
 Workspace ownership, native identity/security settings, systemd and kernel resource properties, and
 detached-child cleanup run through ordinary Session setup and retained History in both harness
-scenarios. Two credential guests, two turn guests and the Codex sandbox/OOM guest boot together. The
-suite requests an 8-unit worker so the guests and k3s services fit without waiting for another group
-to exit.
+scenarios. Their turns also verify the runner certificate and identity, authenticated session,
+command admission and retained History. The two turn guests and one Codex sandbox/OOM guest boot together.
+The suite requests an 8-unit worker so the guests and k3s services fit without waiting for another
+group to exit.
 
 The guest loads the ACPI button/evdev drivers and runs BusyBox `acpid`. On a power-button event,
 the listener requests `systemctl poweroff`. Systemd signals Environment Runtime first; Runtime

@@ -15,7 +15,7 @@ from agentplane.system_tests.k3s.vm_trace_contract import assert_vm_process_trac
 from agentplane.system_tests.offered_models import models_offered_for
 from agentplane.system_tests.sandbox import VM_TEMPLATE
 from agentplane.system_tests.scenario import ScenarioResources
-from agentplane.system_tests.scenarios import runner_credentials, vm_sandbox
+from agentplane.system_tests.scenarios import vm_sandbox
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.tracing import traced_scenario
 from agentplane.system_tests.vm_configuration import SUPERVISION_TEMPLATE
@@ -58,15 +58,11 @@ async def test_vm_scenarios(
     harnesses = [runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX]
     models = await models_offered_for(client, harnesses)
 
-    async def credentials(harness: runner_pb2.Harness) -> None:
-        async with scenario_resources() as (owned_client, sandbox):
-            await runner_credentials.vm_mtls_certificate_authenticates_a_session(
-                cluster, owned_client, sandbox, harness, models[harness], scripted
-            )
-
     async def turn(harness: runner_pb2.Harness, template: str) -> None:
         async with scenario_resources() as (owned_client, sandbox):
-            await vm_sandbox.vm_sandbox_turn(owned_client, sandbox, harness, models[harness], scripted, template)
+            await vm_sandbox.vm_sandbox_turn(
+                cluster, owned_client, sandbox, harness, models[harness], scripted, template
+            )
 
     async def oom() -> None:
         async with scenario_resources() as (owned_client, sandbox):
@@ -83,10 +79,6 @@ async def test_vm_scenarios(
     # finished scenario never leaves its worker capacity idle behind another test's teardown.
     # Each task owns its guests and cleanup.
     async with asyncio.TaskGroup() as scenarios:
-        for harness in harnesses:
-            scenarios.create_task(
-                traced_scenario(f"runner-vm-mtls-{runner_pb2.Harness.Name(harness).lower()}", credentials(harness))
-            )
         # Only Claude selects the private supervisor checks; both use the ordinary guest image.
         scenarios.create_task(
             traced_scenario("vm-turn-harness_claude", turn(runner_pb2.HARNESS_CLAUDE, SUPERVISION_TEMPLATE))

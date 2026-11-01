@@ -23,12 +23,14 @@ from uuid import UUID, uuid4
 import httpx
 from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel
-from tenacity import AsyncRetrying, retry_if_exception, stop_after_delay, wait_fixed
+from tenacity import AsyncRetrying, retry_if_exception, retry_if_result, stop_after_delay, wait_fixed
 
-from agentplane.app.testing.client import Client
-from agentplane.proto import event_pb2, runner_pb2
+from agentplane.app.testing.client import REQUEST_SECONDS, Client
+from agentplane.app.testing.models import ThreadView
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.system_tests.tracing import tracer
-from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
+from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
 # A turn on the cheap model with a few tool calls. A harness that stops making progress should fail
 # its scenario rather than hold the suite until Bazel's clock runs out.
@@ -231,3 +233,71 @@ def _completed(item: event_pb2.ItemCompleted, turn: Turn) -> None:
             turn.tool_outputs.append(item.tool.output)
         case "text":
             turn.text.append(item.text)
+
+
+async def scripted_turn_with_admission_and_history(
+    client: Client,
+    agent: Agent,
+    *,
+    command_id: str,
+    prompt: str,
+    model: ScriptedModel[Any],
+    history_turns: int = 1,
+    shell_command: str | None = None,
+    shell_call_id: str | None = None,
+    response: str = "Done.",
+) -> tuple[Turn, list[event_log_pb2.EventEntry], ModelRequest[Any]]:
+    async with asyncio.TaskGroup() as turns:
+        collecting = turns.create_task(agent.next_turn(awaiting_command_id=command_id))
+        command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text=prompt))
+        admission = await client.submit_input(agent.thread_id, command_id, prompt)
+        if isinstance(admission, session_dispatcher_pb2.Dispatch):
+            assert admission.command_id == command_id
+            assert admission.operation == session_dispatcher_pb2.OPERATION_SUBMIT_INPUT
+        else:
+            assert isinstance(admission, event_log_pb2.EventEntry)
+            assert admission.event.command_admitted.command == command
+
+        request = await model.request()
+        assert prompt in request.user_texts
+        if shell_command is None:
+            await model.reply(request, Text(response))
+        else:
+            call_id = shell_call_id or f"call-{uuid4().hex[:8]}"
+            await model.reply(request, ShellCall(call_id=call_id, command=shell_command))
+            tool_result = await model.request()
+            try:
+                assert any(output.call_id == call_id for output in tool_result.tool_outputs), tool_result.tool_outputs
+            finally:
+                # Complete the scripted turn even when the tool result is unexpected.
+                await model.reply(tool_result, Text(response))
+    turn = collecting.result()
+    assert turn.status == event_pb2.TURN_STATUS_COMPLETED
+    entries = await _history(client, agent.thread_id, completed_turns=history_turns)
+    assert any(
+        entry.event.HasField("command_admitted") and entry.event.command_admitted.command.command_id == command_id
+        for entry in entries
+    ), f"History did not retain command admission {command_id}"
+    # FollowSession exposes committed archive entries before History's asynchronous fold applies
+    # them. The Thread summary is authoritative only once it covers this completed turn.
+    view: ThreadView = await AsyncRetrying(
+        stop=stop_after_delay(REQUEST_SECONDS),
+        wait=wait_fixed(0.05),
+        retry=retry_if_result(lambda row: row.last_cursor < entries[-1].cursor),
+    )(client.thread, agent.thread_id)
+    assert view.last_turn_status == "TURN_STATUS_COMPLETED"
+    return turn, entries, request
+
+
+async def _history(client: Client, thread_id: UUID, *, completed_turns: int) -> list[event_log_pb2.EventEntry]:
+    entries: list[event_log_pb2.EventEntry] = []
+    observed_turns = 0
+    async with asyncio.timeout(TURN_SECONDS):
+        async for entry in client.events(thread_id, after=0, read_seconds=TURN_SECONDS):
+            entries.append(entry)
+            if entry.event.HasField("turn_completed"):
+                observed_turns += 1
+                if observed_turns == completed_turns:
+                    break
+    assert observed_turns == completed_turns, f"History ended after {observed_turns} completed turns"
+    return entries
