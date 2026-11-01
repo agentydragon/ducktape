@@ -278,6 +278,25 @@ func TestObserveInputDoesNotInferHistoryCommandOutcomeFromDispatcherState(t *tes
 	}
 }
 
+func TestObserveInputStillReadsHistoryWhenTerminalDispatchHasAdmission(t *testing.T) {
+	dispatch := admittedDispatch(18)
+	dispatch.State = dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED
+	dispatch.Reason = new("Dispatcher delivery attempt failed after admission")
+	history := &historyStub{stream: &historyStreamStub{frames: []*historypb.FollowSessionResponse{
+		entriesFrame(20, entry(20, &eventpb.Event{Observation: &eventpb.Event_CommandFailed{
+			CommandFailed: &eventpb.CommandFailed{CommandId: testCommandID, Reason: "runner rejected input"},
+		}})),
+	}}}
+	got, err := ObserveInput(context.Background(), &dispatcherStub{dispatch: dispatch}, history,
+		ObserveInputRequest{SessionID: testSessionID, CommandID: testCommandID})
+	if err != nil {
+		t.Fatalf("ObserveInput() error = %v", err)
+	}
+	if history.calls != 1 || got.Observation.Kind != ObservationCommandFailed || got.Observation.Reason == nil || *got.Observation.Reason != "runner rejected input" {
+		t.Fatalf("History calls = %d, observation = %#v", history.calls, got.Observation)
+	}
+}
+
 func admittedDispatch(cursor uint64) *dispatcherpb.Dispatch {
 	return &dispatcherpb.Dispatch{
 		CommandId: testCommandID, SessionId: testSessionID,

@@ -149,12 +149,11 @@ func ObserveInput(
 	if dispatch.GetOperation() != dispatcherpb.Operation_OPERATION_SUBMIT_INPUT {
 		return result, status.Error(codes.InvalidArgument, "command_id does not identify submitted input")
 	}
-	if dispatchTerminal(dispatch) {
-		return result, nil
-	}
-
 	startCursor, hasAdmission := admissionStart(dispatch)
 	if !hasAdmission {
+		if dispatchTerminal(dispatch) {
+			return result, nil
+		}
 		if request.WaitSeconds == 0 {
 			return result, nil
 		}
@@ -170,11 +169,14 @@ func ObserveInput(
 			result.Dispatch.Error = sourceFailure(err)
 			return result, nil
 		}
-		if dispatch == nil || dispatchTerminal(dispatch) {
+		if dispatch == nil {
 			return result, nil
 		}
 		startCursor, hasAdmission = admissionStart(dispatch)
 		if !hasAdmission {
+			if dispatchTerminal(dispatch) {
+				return result, nil
+			}
 			if dispatch.GetState() == dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED ||
 				dispatch.GetState() == dispatcherpb.DeliveryState_DELIVERY_STATE_HARNESS_CONFIRMED {
 				result.Dispatch.Kind = "partial"
