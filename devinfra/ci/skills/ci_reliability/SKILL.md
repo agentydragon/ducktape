@@ -11,7 +11,8 @@ a flaky test. Distinguish observed intermittent outcomes, sustained regressions,
 infrastructure failures, and source patterns that are only hypotheses.
 
 Test implementations and architecture are in scope: synchronization, fixtures,
-setup/teardown, shared resources, target structure, parallelism and dependencies.
+setup/teardown, shared resources, target structure, parallelism, execution placement
+and environment lifecycle.
 Follow important failures to whatever depth produces a useful repair; failure
 rankings, log signatures and successful retries are starting points, not diagnoses.
 
@@ -240,6 +241,24 @@ isolation, setup/cleanup ordering, target boundaries and safe concurrency. Prese
 the tested contract, failure sensitivity and real integration boundaries. Longer
 sleeps/timeouts, more retries, weaker assertions, serialization, mocks and disabling
 coverage are not equivalent repairs without evidence and explicit tradeoffs.
+
+Consider architectural repairs when failures recur around a shared fixture,
+resource bottleneck or environment lifecycle. Compare isolating work on separate
+executors, changing fixture ownership and using disposable or reusable environments
+alongside local synchronization fixes. Scope rejected experiments to their actual
+topology and resource conditions; one failed concurrency setting does not rule out
+other ways to distribute or isolate the work.
+
+For proposals involving sharding, warm pools or permanent test infrastructure,
+check the conditions that can change both reliability and latency: concurrent PRs,
+state reset and contamination, tested source/image identity, environment leases,
+cancellation, cleanup and recovery after a failed run or unavailable environment.
+Verify result-cache and retry semantics against the external state used by the
+test. Distinguish fresh cold/warm physical attempts from cached verdicts and reuse
+of an environment. Retain cold-start/provisioning coverage where required, and
+make any change to coverage or its scheduling explicit. Measure admission/reset
+cost and failure recovery as part of the proposed feedback time; a fast warm pass
+alone does not establish the benefit under load.
 
 When feasible, use a bounded isolated reproduction and candidate repair, retaining
 the failing conditions. Exercise the relevant scheduling/order/resource variation

@@ -1,6 +1,6 @@
 ---
 name: ci_latency
-description: Diagnose CI feedback time and compute from workflow queues through slow-test internals, fixtures and waits; test coverage-preserving improvements to implementation, setup, teardown and parallelism with reproducible evidence.
+description: Diagnose CI feedback time and compute; compare and test improvements across test internals, target decomposition, execution placement and persistent infrastructure, with reproducible evidence and explicit coverage tradeoffs.
 ---
 
 # CI latency analysis
@@ -21,9 +21,10 @@ release/pin currency and failed CI more broadly. No Mimir metric, Shapley
 calculation, or dashboard is required for a useful report; propose
 instrumentation only when it closes a decision-relevant evidence gap.
 
-Test implementations and test architecture are part of the optimization scope.
-Follow measured bottlenecks to whatever depth yields useful, coverage-preserving
-changes; workflow configuration and target-duration rankings are not the boundary.
+Test implementations, execution architecture and infrastructure are part of the
+optimization scope. Treat target boundaries, environment lifetimes, executor
+placement and hardware as design choices unless an actual requirement fixes them.
+Follow measured bottlenecks to useful changes while preserving the tested contract.
 
 ## Start from the previous investigation
 
@@ -51,6 +52,63 @@ changed before repeating an experiment or reviving a rejected recommendation.
 New incidents may change priorities; explicitly defer lower-priority prior work
 with a reason. If historical access is incomplete, state what was read and what is
 missing rather than claiming a complete baseline review.
+
+## Compare execution architectures before narrowing the search
+
+For an optimization investigation, state the workload classes, requested latency
+objective and actual constraints. A goal such as halving PR feedback time calls
+for alternatives capable of that scale. Separate hard requirements from current
+implementation choices and resources that could be provisioned. A routine status
+refresh can reuse a still-valid comparison; revisit changed assumptions.
+
+Before committing the investigation to detailed profiling of the current design,
+compare relevant alternatives across these levers:
+
+- **Work decomposition:** split large targets into independently scheduled tests
+  or shards on separate executors; reconsider scenario grouping, fixture scope
+  and dependencies. Distinguish concurrency inside one action from distribution
+  across workers. Account for duplicated setup, stragglers, per-worker CPU/memory,
+  selection/cache granularity and the capacity needed to run the proposed pieces.
+- **Environment lifecycle:** compare per-action cold setup with preloaded images,
+  snapshots, warm pools and permanent Kubernetes clusters hosting isolated PR
+  environments. Identify exactly what can be amortized and what must be rebuilt,
+  deployed or reset for each tested revision. Retain cold-start and provisioning
+  coverage where those behaviors are part of the contract.
+- **Execution placement and hardware:** compare existing RBE with suitable owned
+  or dedicated infrastructure, including hardware virtualization where relevant.
+  Verify available infrastructure and distinguish unavailable today from
+  infeasible. Include admission/queueing, data transfer and capacity at realistic
+  concurrent PR load, plus fixed infrastructure cost and maintenance ownership.
+- **Validation structure:** reconsider broad dependencies, invalidation boundaries
+  and repeated proofs of the same behavior. Explain which assertions and real
+  integration paths each proposed arrangement exercises. Changes to when coverage
+  runs are explicit test-policy tradeoffs, not equivalent speedups by assumption.
+
+For promising alternatives and combinations, sketch the changed dependency graph
+and estimate end-to-end feedback for representative PR classes. Include removed or
+amortized phases, remaining serial work, duplicated setup, resource/queue costs and
+the next bottleneck. Label measured inputs, assumptions and estimated ranges;
+do not add overlapping savings. Compare absolute latency benefit alongside
+engineering effort, recurring compute/idle cost and reliability. A larger change
+with a credible path to the objective must remain visible beside cheap local fixes.
+
+Choose experiments by which uncertainty can change that decision most. A bounded
+split across independent executors or a warm-environment prototype may answer the
+architecture question before every wait inside the old setup is explained. Test
+the weakest assumption and preserve source/image identity and isolation. Inspection,
+modeling and bounded spikes do not imply authorization to deploy permanent
+infrastructure or change production validation policy.
+
+Keep negative results scoped to the tested arrangement and conditions. A failed
+global `--jobs` increase does not reject distributing one large action across
+workers; duplicated cold setup in one split does not reject a split with reusable
+environments. Record the constraint that defeated an option and revisit it when
+the proposed design changes that constraint.
+
+When the objective remains unmet, report which architectural options were
+evaluated, rejected with evidence, or remain untested, and the next experiment
+with the highest decision value. Small local gains or the current graph's
+headroom alone do not establish that a larger speedup is unavailable.
 
 ## Investigate, don't just run a recipe
 
@@ -395,18 +453,17 @@ sum parallel step durations and call the result latency; label runner-minutes,
 worker-seconds and wall-clock separately. When GitHub/BuildBuddy data cannot resolve
 an interval, leave it unknown and identify the minimal additional trace needed.
 
-## Recommend changes using 80/20 reasoning
+## Prioritize by impact, cost and confidence
 
 Rank _concrete_ interventions by likely impact on required-check feedback for common
-PRs, engineering effort, operational/security risk and confidence. Prefer low-risk
-quick wins with directly observed recurring waste; distinguish fixes to the long
-tail from fixes to a typical PR. Estimate possible savings as a range, not a
-fabricated point value; test against matched PR classes and preserve required test
-coverage. Examples to evaluate rather than assume: tighter validation selection,
-shorter runner/VM startup or reuse, avoiding repeated Bazel analysis, test/action
-critical-path improvements, and concurrency changes. Say what evidence would
-falsify each recommendation and how to compare before/after. Put instrument-first
-items behind actionable fixes unless missing evidence actually blocks the choice.
+PRs, engineering effort, recurring infrastructure cost, operational/security risk
+and confidence. Pursue cheap demonstrated gains while evaluating architectural
+options against the requested objective; ease of implementation must not define
+the search space. Distinguish fixes to the long tail from fixes to a typical PR.
+Estimate savings as ranges, test against matched PR classes and preserve required
+coverage. Show both individual changes and combinations needed to reach the
+objective, including how the bottleneck moves. State what would falsify each
+proposal and choose instrumentation only when it can change a decision.
 
 ### Bound conditional gate headroom
 
@@ -426,6 +483,8 @@ Treat this as a conditional upper-bound sensitivity, not a treatment effect or
 measured improvement. It holds other gate clocks and dependency structure fixed;
 adjusted completion order may change. It uses only the supplied gate completion
 clocks and does not establish actual auto-merge readiness.
+This bounds the modeled change to the supplied graph; it is not a ceiling on
+changes that shorten several paths, decompose targets or change environment setup.
 `total_saved_wall_seconds` sums per-head savings across the sample; it is not one
 elapsed cohort wall clock. Do not add worker seconds or CPU seconds to gate offsets.
 Verify that offsets belong to the same exact PR head and a common labeled start
