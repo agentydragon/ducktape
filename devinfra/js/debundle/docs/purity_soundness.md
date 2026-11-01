@@ -731,22 +731,30 @@ consumed. General object spread and accessor execution stay conservative.
 
 ## Settled heap taint
 
-Several proofs read the synchronous interpreter's `tainted_objects` at a
-statement's program point as "nothing outside the analyzed writes reached this
-object": the mapped `Object.fromEntries` storage proof below, the array
-iteration's fresh primitive-write receivers, and the at-init fallback's
-plain-array element state. That reading is an engine invariant. Every object
-that, before statement _n_, is written through an unproven receiver, escapes
-to an unknown or incomplete call, is stored into a container that escapes
-(an Array, a Set, a Map, an object property), is captured by a closure that
-code the interpreter does not follow may run, is returned to such code, or
-reaches `Object.defineProperty`, `Object.setPrototypeOf`, `Reflect` or a
-`Proxy`, is in `tainted_objects` at `Prefix(n)`. Tainting follows stored
-references, so a tainted container taints what it holds. An execution the
-interpreter cannot complete taints every value of every binding the statement
-or its summarized callees read, since the unsupported operation may have
-reached any of them. `facts/at_init_fallback_tests.rs` pins each route
-against the plain-array element state.
+The synchronous interpreter records observed escape to unknown code in
+`tainted_objects`. Before statement _n_, an object written through an
+unproven receiver, passed to unknown code, returned to it, or reached by
+`Object.defineProperty`, `Object.setPrototypeOf`, `Reflect` or a `Proxy` is
+tainted at `Prefix(n)`. Taint follows stored references: a tainted container
+taints what it holds. A proven Map construction taints its entries because
+the abstract Map does not retain their identities. A callback the interpreter
+runs on behalf of unknown code taints what it passes onward and returns.
+
+Code the interpreter does not run, the rest of an incomplete statement or a
+body a bounded fallback summarizes, may mutate anything the statement or that
+body reaches. Those objects, and what they and the bodies they hold reach,
+join `unsettled_objects`. This records possible mutation or escape in skipped
+code without claiming an observed escape. Only plain-array element settlement
+consults this set; it refuses unsettled arrays and elements like tainted ones.
+`facts/at_init_fallback_tests.rs` pins each route against the plain-array
+element state.
+
+Known gap: property reads and the other proofs that consult only
+`tainted_objects` can still trust a stale prefix value after skipped code
+mutates an unsettled object or installs an accessor on it. The incomplete
+statement's global reach preserves its own ordering constraints; it does not
+establish the later property's value or descriptor. Closing this gap requires
+modelling those reads and possible accessor effects separately.
 
 ## Plain-array at-init fallback
 

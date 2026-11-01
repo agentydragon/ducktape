@@ -42,6 +42,24 @@ fn complete_execution_has_no_precision_loss() {
 }
 
 #[test]
+fn incomplete_local_call_does_not_disable_later_own_data_reads() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const record = { name: "ready" };
+function ignore(value) {}
+ignore(...[record]);
+const selected = [record.name];
+console.log(selected[0]);
+"#,
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "ready\n");
+    assert_eq!(
+        execution(&fixture, "selected"),
+        serde_json::json!({"complete": true, "precision_losses": []})
+    );
+}
+
+#[test]
 fn initialized_enum_own_data_read_is_complete_and_keeps_eager_dependency() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"var Status = ((values) => ((values.READY = "ready"), values))(Status || {});
