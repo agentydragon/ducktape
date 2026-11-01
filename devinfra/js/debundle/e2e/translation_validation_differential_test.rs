@@ -7,10 +7,9 @@ use debundle_e2e_support::*;
 use serde_json::Value;
 
 fn edges(report: &Value, key: &str) -> usize {
-    report[key]
-        .as_array()
-        .unwrap_or_else(|| panic!("{key} must be an array: {report:#}"))
-        .len()
+    report[key]["total"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("{key} must have an exact total: {report:#}")) as usize
 }
 
 #[test]
@@ -38,7 +37,9 @@ fn constraining_module_cycle_is_a_swapped_conflict() {
     .translation_validation();
     assert_eq!(report["gate_accepts"], false, "{report:#}");
     assert_eq!(report["accepts"], false, "{report:#}");
-    let conflicts = report["conflicts"].as_array().expect("conflicts");
+    let conflicts = report["conflicts"]["examples"]
+        .as_array()
+        .expect("conflicts");
     assert!(
         conflicts
             .iter()
@@ -112,4 +113,230 @@ fn pruned_import_keeps_its_load_order() {
         )]),
     );
     assert_entry_output(&fixture, "vendor\nz\n2\n");
+}
+
+#[test]
+fn bounded_conflict_examples_preserve_all_checks_and_complete_export() {
+    let mut source = String::from("const origin = 1;\n");
+    let names = [
+        "item0", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "item8", "item9",
+        "item10", "item11", "item12", "item13", "item14", "item15", "item16", "item17", "item18",
+        "item19", "item20", "item21", "item22", "item23", "item24", "item25", "item26", "item27",
+        "item28", "item29", "item30", "item31",
+    ];
+    let mut modules = vec![logical_module(
+        "outer",
+        &[Member::new("origin"), Member::new("tail")],
+    )];
+    for (index, name) in names.iter().enumerate() {
+        source.push_str(&format!("const {name} = origin + {index};\n"));
+        modules.push(logical_module(name, &[Member::new(name)]));
+    }
+    source.push_str(&format!(
+        "const tail = {};\nconsole.log(tail);\n",
+        names.join(" + ")
+    ));
+    let default = run_rejection_fixture(FixtureOpts::new(&source, modules.clone()));
+    let summary = default.translation_validation();
+    assert_eq!(summary["accepts"], false);
+    assert_eq!(summary["gate_accepts"], false);
+    assert!(
+        summary["conflicts"]
+            .as_array()
+            .is_none_or(|rows| rows.len() <= 20),
+        "default report retained more than20 full conflict rows"
+    );
+    assert!(edges(&summary, "conflicts") > 20, "{summary:#}");
+    assert_eq!(
+        summary["conflicts"]["examples"].as_array().unwrap().len(),
+        20
+    );
+    assert_eq!(summary["conflicts"]["truncated"], true);
+    assert!(
+        !default
+            .report_path("translation_validation.full.jsonl")
+            .exists()
+    );
+    let full = run_rejection_fixture_with_args(
+        FixtureOpts::new(&source, modules),
+        &["--full-report", "translation-validation"],
+        1,
+    );
+    assert_eq!(summary, full.translation_validation());
+    let rows = read_jsonl(&full.report_path("translation_validation.full.jsonl"));
+    let mut pairs = std::collections::BTreeSet::new();
+    let mut kinds = std::collections::BTreeMap::<String, usize>::new();
+    for (category, field) in [
+        ("conflict", "conflicts"),
+        ("forward_edge_kept", "forward_edges_kept"),
+        ("forward_edge_swapped", "forward_edges_swapped"),
+        ("placement_split", "placement_splits"),
+    ] {
+        let selected: Vec<_> = rows
+            .iter()
+            .filter(|row| row["category"] == category)
+            .collect();
+        assert_eq!(selected.len(), edges(&summary, field));
+        assert_eq!(
+            summary["counts"][field].as_u64().unwrap() as usize,
+            selected.len()
+        );
+        for (example, row) in summary[field]["examples"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip(&selected)
+        {
+            if category == "conflict" {
+                let mut row = (*row).clone();
+                row.as_object_mut().unwrap().remove("category");
+                assert_eq!(*example, row);
+            } else {
+                assert_eq!(*example, row["dependency_edge"]);
+            }
+        }
+        if category == "conflict" {
+            for row in selected {
+                pairs.insert((
+                    row["runs_first"]["unit"].as_u64().unwrap(),
+                    row["runs_later"]["unit"].as_u64().unwrap(),
+                ));
+                *kinds
+                    .entry(row["kind"].as_str().unwrap().to_string())
+                    .or_default() += 1;
+            }
+        }
+    }
+    assert_eq!(
+        summary["counts"]["conflicts_by_kind"],
+        serde_json::to_value(kinds).unwrap()
+    );
+    // This comparison must include conflicts after the first20 examples.
+    let effects = full.effect_translation_validation();
+    assert_eq!(
+        pairs.len() as u64,
+        effects["counts"]["both_pairs"].as_u64().unwrap()
+            + effects["counts"]["legacy_edge_only_pairs"]
+                .as_u64()
+                .unwrap()
+    );
+}
+
+#[test]
+fn accepted_full_report_is_explicit_and_does_not_change_runtime() {
+    let fixture = run_fixture_with_args(
+        FixtureOpts::new("export const value = 7;\nconsole.log(value);\n", vec![]),
+        &[
+            "--full-report",
+            "translation-validation",
+            "--full-report-chunk",
+            "static/app",
+        ],
+    );
+    assert_entry_output(&fixture, "7\n");
+    assert_eq!(fixture.translation_validation()["accepts"], true);
+    assert!(
+        read_jsonl(
+            &fixture
+                .report_root
+                .join("static/app/translation_validation.full.jsonl")
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn full_report_selection_errors_remain_failures() {
+    let fixture =
+        write_validate_fixture_spec(FixtureOpts::new("export const value = 7;\n", vec![]));
+    for (flags, diagnostic) in [
+        (vec!["--full-report-chunk", "static/app"], "--full-report"),
+        (vec!["--full-report", "unknown"], "unknown full report"),
+        (
+            vec![
+                "--full-report",
+                "translation-validation",
+                "--full-report-chunk",
+                "static/typo",
+            ],
+            "unknown --full-report-chunk",
+        ),
+        (
+            vec![
+                "--full-report",
+                "translation-validation",
+                "--full-report-chunk",
+                "../app",
+            ],
+            "Invalid relative path",
+        ),
+        (
+            vec!["--full-report", "translation-validation", "--dry-run"],
+            "report policy suppresses output",
+        ),
+    ] {
+        let mut args = vec!["run", "--spec", fixture.spec_path.to_str().unwrap()];
+        args.extend(flags);
+        let result = run_debundle(&args);
+        assert!(!result.status.success(), "{result:?}");
+        assert!(
+            String::from_utf8_lossy(&result.stderr).contains(diagnostic),
+            "{result:?}"
+        );
+    }
+}
+
+#[test]
+fn invalid_spec_still_fails_with_reading_only_and_full_report_flags() {
+    let fixture = write_validate_fixture_spec(FixtureOpts::new(
+        "export const value = 7;\n",
+        vec![logical_module("missing", &[Member::new("absent")])],
+    ));
+    let result = run_debundle(&[
+        "run",
+        "--spec",
+        fixture.spec_path.to_str().unwrap(),
+        "--emit-on-rejection",
+        "--full-report",
+        "translation-validation",
+    ]);
+    assert_eq!(result.status.code(), Some(1), "{result:?}");
+    assert!(
+        !fixture
+            .spec_path
+            .parent()
+            .unwrap()
+            .join("out/GATE_REJECTED")
+            .exists()
+    );
+}
+
+#[test]
+fn invocation_record_retains_full_report_sink_selection_without_claiming_execution() {
+    let fixture =
+        write_validate_fixture_spec(FixtureOpts::new("export const value = 7;\n", vec![]));
+    let result = run_debundle(&[
+        "--print-invocation",
+        "run",
+        "--spec",
+        fixture.spec_path.to_str().unwrap(),
+        "--full-report",
+        "translation-validation",
+        "--full-report-chunk",
+        "static/app",
+    ]);
+    assert!(result.status.success(), "{result:?}");
+    let record: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(record["will_execute"], false);
+    let argv = record["argv"].as_array().unwrap();
+    for pair in [
+        ["--full-report", "translation-validation"],
+        ["--full-report-chunk", "static/app"],
+    ] {
+        assert!(
+            argv.windows(2)
+                .any(|items| items[0] == pair[0] && items[1] == pair[1]),
+            "{record:#}"
+        );
+    }
 }

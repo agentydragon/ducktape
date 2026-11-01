@@ -236,6 +236,32 @@ pub struct ExportReentryTarget {
     pub file: String,
 }
 
+/// Complete diagnostic sinks; never an analysis or full-graph selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum FullReportKind {
+    TranslationValidation,
+}
+
+impl FullReportKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::TranslationValidation => "translation-validation",
+        }
+    }
+}
+
+impl std::str::FromStr for FullReportKind {
+    type Err = String;
+    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
+        match value {
+            "translation-validation" => Ok(Self::TranslationValidation),
+            _ => Err(format!(
+                "unknown full report {value:?}; expected translation-validation"
+            )),
+        }
+    }
+}
+
 /// Where (and when) per-chunk validation reports are written.
 #[derive(Debug, Clone)]
 pub enum ReportEmission {
@@ -295,6 +321,8 @@ pub struct MaterializeLogicalModulesOptions {
     pub report_emission: ReportEmission,
     pub effect_conflicts_jsonl: bool,
     pub effect_conflicts_chunks: BTreeSet<String>,
+    pub full_reports: BTreeSet<FullReportKind>,
+    pub full_report_chunks: BTreeSet<String>,
     pub gate_rejection: GateRejectionPolicy,
     pub analysis: AnalysisMode,
 }
@@ -483,6 +511,8 @@ pub fn materialize_logical_modules(
                                 report_emission: &options.report_emission,
                                 effect_conflicts_jsonl: options.effect_conflicts_jsonl,
                                 effect_conflicts_chunks: &options.effect_conflicts_chunks,
+                                full_reports: &options.full_reports,
+                                full_report_chunks: &options.full_report_chunks,
                                 gate_rejection: options.gate_rejection,
                                 export_reentry_reports: &export_reentry_reports,
                                 vendor_import_oracle: vendor_import_oracle.as_ref(),

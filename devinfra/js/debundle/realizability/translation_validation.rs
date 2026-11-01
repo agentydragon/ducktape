@@ -41,40 +41,101 @@ pub struct SwappedConflict {
     pub cell: DependencyEdgeId,
 }
 
-/// Translation-validation verdict on one assignment's emitted order.
+const EXAMPLE_LIMIT: usize = 20;
+
+/// Exact category totals, independent of diagnostic retention.
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize)]
+pub struct TranslationValidationCounts {
+    pub conflicts: usize,
+    pub forward_edges_kept: usize,
+    pub forward_edges_swapped: usize,
+    pub placement_splits: usize,
+    pub conflicts_by_kind: BTreeMap<DepKind, usize>,
+}
+
+/// One result from the existing edge classification or emitted-order sweep.
+#[derive(Debug, Clone, Copy)]
+pub enum TranslationValidationEvidence {
+    Conflict(SwappedConflict),
+    ForwardEdgeKept(DependencyEdgeId),
+    ForwardEdgeSwapped(DependencyEdgeId),
+    PlacementSplit(DependencyEdgeId),
+}
+
+/// Complete semantic result plus bounded raw diagnostic examples.
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct TranslationValidation {
-    /// Statement pairs whose emitted order differs from source order.
     pub swapped_pairs: u64,
-    pub conflicts: Vec<SwappedConflict>,
-    /// Forward ordering edges the emit leaves in source order.
-    pub forward_edges_kept: Vec<DependencyEdgeId>,
-    /// Forward ordering edges whose endpoints the emit swaps. Not part of the
-    /// verdict, as the gate accepts them, though a read of a binding before
-    /// its declaration conflicts with that declaration once swapped.
-    pub forward_edges_swapped: Vec<DependencyEdgeId>,
-    /// Placement-equality edges (rebinds, shared `var` declarations,
-    /// co-location, local effects) whose endpoints the assignment splits.
-    pub placement_splits: Vec<DependencyEdgeId>,
+    pub counts: TranslationValidationCounts,
+    /// Complete pair set for the effect validator's legacy comparison. Keys
+    /// retain the existing wire-report ordinal convention.
+    pub conflict_pairs: BTreeSet<(SourceUnitId, SourceUnitId)>,
+    conflicts: Vec<SwappedConflict>,
+    forward_edges_kept: Vec<DependencyEdgeId>,
+    forward_edges_swapped: Vec<DependencyEdgeId>,
+    placement_splits: Vec<DependencyEdgeId>,
 }
 
 impl TranslationValidation {
     pub fn accepts(&self) -> bool {
-        self.conflicts.is_empty()
-            && self.forward_edges_kept.is_empty()
-            && self.placement_splits.is_empty()
+        self.counts.conflicts == 0
+            && self.counts.forward_edges_kept == 0
+            && self.counts.placement_splits == 0
+    }
+
+    fn record(&mut self, evidence: TranslationValidationEvidence, graph: &DependencyGraph) {
+        fn retain<T>(examples: &mut Vec<T>, value: T) {
+            if examples.len() < EXAMPLE_LIMIT {
+                examples.push(value);
+            }
+        }
+        match evidence {
+            TranslationValidationEvidence::Conflict(conflict) => {
+                self.counts.conflicts += 1;
+                *self
+                    .counts
+                    .conflicts_by_kind
+                    .entry(graph.edge(conflict.cell).reason.kind)
+                    .or_default() += 1;
+                let key = |unit| {
+                    SourceUnitId(
+                        graph
+                            .node(unit)
+                            .expect("conflicts name graph nodes")
+                            .statement_ordinal
+                            .0,
+                    )
+                };
+                self.conflict_pairs
+                    .insert((key(conflict.runs_first), key(conflict.runs_later)));
+                retain(&mut self.conflicts, conflict);
+            }
+            TranslationValidationEvidence::ForwardEdgeKept(edge) => {
+                self.counts.forward_edges_kept += 1;
+                retain(&mut self.forward_edges_kept, edge);
+            }
+            TranslationValidationEvidence::ForwardEdgeSwapped(edge) => {
+                self.counts.forward_edges_swapped += 1;
+                retain(&mut self.forward_edges_swapped, edge);
+            }
+            TranslationValidationEvidence::PlacementSplit(edge) => {
+                self.counts.placement_splits += 1;
+                retain(&mut self.placement_splits, edge);
+            }
+        }
     }
 }
 
 /// Judge `assignment`'s emitted order. `emitted_modules` is every module the
 /// entry imports plus the entry; `import_order` is the one the emitter
 /// renders import lists in.
-pub fn translation_validate(
+pub fn translation_validate<E>(
     dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
     emitted_modules: &BTreeSet<ModuleId>,
     import_order: &EsmImportOrder,
-) -> TranslationValidation {
+    mut visitor: Option<&mut impl FnMut(TranslationValidationEvidence) -> Result<(), E>>,
+) -> Result<TranslationValidation, E> {
     let emitted =
         emitted_statement_order(dependency_graph, assignment, emitted_modules, import_order);
     let positions: BTreeMap<_, _> = emitted
@@ -89,7 +150,17 @@ pub fn translation_validate(
             .statement_ordinal
     };
 
-    let mut verdict = TranslationValidation::default();
+    let mut verdict = TranslationValidation {
+        swapped_pairs: count_inversions(emitted.iter().map(|(_, ordinal, _)| *ordinal)),
+        ..TranslationValidation::default()
+    };
+    let mut emit = |evidence| {
+        verdict.record(evidence, dependency_graph);
+        if let Some(visitor) = visitor.as_mut() {
+            visitor(evidence)?;
+        }
+        Ok(())
+    };
     let mut accesses: BTreeMap<SourceUnitId, Vec<(DependencyEdgeId, Access)>> = BTreeMap::new();
     for edge in dependency_graph.iter_edges() {
         if dependency_graph.node(edge.from).is_none() || dependency_graph.node(edge.to).is_none() {
@@ -106,14 +177,14 @@ pub fn translation_validate(
             | DepKind::DeferredRebind
             | DepKind::CoDeclaration
             | DepKind::CoLocation
-            | DepKind::LocalEffect => verdict.placement_splits.push(edge.id),
+            | DepKind::LocalEffect => emit(TranslationValidationEvidence::PlacementSplit(edge.id))?,
             DepKind::LazyUse | DepKind::HoistedUse => {}
             DepKind::EagerUse | DepKind::Sequenced if !edge.reason.constrains_init_order() => {}
             DepKind::EagerUse | DepKind::Sequenced if ordinal(edge.to) > ordinal(edge.from) => {
                 if module_position(edge.to) > module_position(edge.from) {
-                    verdict.forward_edges_kept.push(edge.id);
+                    emit(TranslationValidationEvidence::ForwardEdgeKept(edge.id))?;
                 } else {
-                    verdict.forward_edges_swapped.push(edge.id);
+                    emit(TranslationValidationEvidence::ForwardEdgeSwapped(edge.id))?;
                 }
             }
             DepKind::EagerUse | DepKind::Sequenced => {
@@ -132,15 +203,17 @@ pub fn translation_validate(
         }
     }
 
-    verdict.swapped_pairs = count_inversions(emitted.iter().map(|(_, ordinal, _)| *ordinal));
-    verdict.conflicts = sweep(emitted.iter().map(|&(_, ordinal, unit)| {
-        (
-            ordinal,
-            unit,
-            accesses.get(&unit).map_or(&[][..], Vec::as_slice),
-        )
-    }));
-    verdict
+    sweep(
+        emitted.iter().map(|&(_, ordinal, unit)| {
+            (
+                ordinal,
+                unit,
+                accesses.get(&unit).map_or(&[][..], Vec::as_slice),
+            )
+        }),
+        |conflict| emit(TranslationValidationEvidence::Conflict(conflict)),
+    )?;
+    Ok(verdict)
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -162,7 +235,7 @@ struct CellFrontier {
 /// Sweep statements in emitted order. A write conflicts with an already-run
 /// reader or writer later in the source, a read with an already-run writer
 /// later in the source; the partner reported is the latest such statement.
-fn sweep<'a>(
+fn sweep<'a, E>(
     emitted: impl Iterator<
         Item = (
             SourceUnitOrdinal,
@@ -170,9 +243,9 @@ fn sweep<'a>(
             &'a [(DependencyEdgeId, Access)],
         ),
     >,
-) -> Vec<SwappedConflict> {
+    mut visitor: impl FnMut(SwappedConflict) -> Result<(), E>,
+) -> Result<(), E> {
     let mut frontier: FxHashMap<DependencyEdgeId, CellFrontier> = FxHashMap::default();
-    let mut conflicts = Vec::new();
     for (ordinal, unit, accesses) in emitted {
         for &(cell, access) in accesses {
             let state = frontier.entry(cell).or_default();
@@ -183,11 +256,11 @@ fn sweep<'a>(
             if let Some((partner_ordinal, partner)) = partner
                 && partner_ordinal > ordinal
             {
-                conflicts.push(SwappedConflict {
+                visitor(SwappedConflict {
                     runs_first: partner,
                     runs_later: unit,
                     cell,
-                });
+                })?;
             }
             let slot = match access {
                 Access::Read => &mut state.reader,
@@ -196,7 +269,7 @@ fn sweep<'a>(
             *slot = (*slot).max(Some((ordinal, unit)));
         }
     }
-    conflicts
+    Ok(())
 }
 
 /// Exact emitter order shared by both report-only translation validators.
@@ -255,19 +328,64 @@ fn count_inversions(ordinals: impl Iterator<Item = SourceUnitOrdinal>) -> u64 {
     inversions
 }
 
-/// Wire shape of [`TranslationValidation`] beside the gate's verdict,
-/// written as `translation_validation.json`.
+/// A diagnostic list with exact cardinality and a bounded deterministic prefix.
+#[derive(Debug, Clone, Serialize)]
+pub struct TranslationExamples<T> {
+    pub total: usize,
+    pub examples: Vec<T>,
+    pub truncated: bool,
+}
+
+impl<T> TranslationExamples<T> {
+    fn new(total: usize, examples: Vec<T>) -> Self {
+        Self {
+            total,
+            truncated: total > examples.len(),
+            examples,
+        }
+    }
+}
+
+/// Bounded diagnostic output. Never used to decide acceptance or pair coverage.
 #[derive(Debug, Clone, Serialize)]
 pub struct TranslationValidationReport {
-    /// Today's gate verdict: no cycle, atomic-group conflict or cross-module
-    /// rebind.
     pub gate_accepts: bool,
     pub accepts: bool,
     pub swapped_pairs: u64,
-    pub conflicts: Vec<SwappedConflictReport>,
-    pub forward_edges_kept: Vec<String>,
-    pub forward_edges_swapped: Vec<String>,
-    pub placement_splits: Vec<String>,
+    pub counts: TranslationValidationCounts,
+    pub conflicts: TranslationExamples<SwappedConflictReport>,
+    pub forward_edges_kept: TranslationExamples<String>,
+    pub forward_edges_swapped: TranslationExamples<String>,
+    pub placement_splits: TranslationExamples<String>,
+    pub example_limit: usize,
+    pub full_detail_export_available: bool,
+    pub full_detail_export_command: &'static str,
+}
+
+/// Full-check result consumed by the effect validator, with its diagnostic view.
+#[derive(Debug)]
+pub struct TranslationValidationResult {
+    pub report: TranslationValidationReport,
+    pub(crate) conflict_pairs: BTreeSet<(SourceUnitId, SourceUnitId)>,
+}
+
+/// One complete evidence row, projected only for an active streaming sink.
+#[derive(Debug, Serialize)]
+#[serde(tag = "category", rename_all = "snake_case")]
+pub enum TranslationValidationEvidenceReport {
+    Conflict {
+        #[serde(flatten)]
+        conflict: SwappedConflictReport,
+    },
+    ForwardEdgeKept {
+        dependency_edge: String,
+    },
+    ForwardEdgeSwapped {
+        dependency_edge: String,
+    },
+    PlacementSplit {
+        dependency_edge: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -284,6 +402,53 @@ pub struct StatementReport {
     pub module: ModulePath,
 }
 
+impl SwappedConflictReport {
+    fn new(
+        conflict: SwappedConflict,
+        graph: &DependencyGraph,
+        assignment: &ModuleAssignment,
+        module_path: &dyn Fn(ModuleId) -> ModulePath,
+    ) -> Self {
+        let statement = |unit| StatementReport {
+            unit: graph
+                .node(unit)
+                .expect("conflicts name graph nodes")
+                .statement_ordinal,
+            module: module_path(assignment.of(unit)),
+        };
+        Self {
+            runs_first: statement(conflict.runs_first),
+            runs_later: statement(conflict.runs_later),
+            dependency_edge: conflict.cell.report_key(),
+            kind: graph.edge(conflict.cell).reason.kind,
+        }
+    }
+}
+
+impl TranslationValidationEvidenceReport {
+    pub(crate) fn new(
+        evidence: TranslationValidationEvidence,
+        graph: &DependencyGraph,
+        assignment: &ModuleAssignment,
+        module_path: &dyn Fn(ModuleId) -> ModulePath,
+    ) -> Self {
+        match evidence {
+            TranslationValidationEvidence::Conflict(conflict) => Self::Conflict {
+                conflict: SwappedConflictReport::new(conflict, graph, assignment, module_path),
+            },
+            TranslationValidationEvidence::ForwardEdgeKept(edge) => Self::ForwardEdgeKept {
+                dependency_edge: edge.report_key(),
+            },
+            TranslationValidationEvidence::ForwardEdgeSwapped(edge) => Self::ForwardEdgeSwapped {
+                dependency_edge: edge.report_key(),
+            },
+            TranslationValidationEvidence::PlacementSplit(edge) => Self::PlacementSplit {
+                dependency_edge: edge.report_key(),
+            },
+        }
+    }
+}
+
 impl TranslationValidationReport {
     pub fn new(
         verdict: &TranslationValidation,
@@ -292,32 +457,41 @@ impl TranslationValidationReport {
         assignment: &ModuleAssignment,
         module_path: &dyn Fn(ModuleId) -> ModulePath,
     ) -> Self {
-        let statement = |unit: SourceUnitId| StatementReport {
-            unit: dependency_graph
-                .node(unit)
-                .expect("conflicts name graph nodes")
-                .statement_ordinal,
-            module: module_path(assignment.of(unit)),
+        let keys = |total, edges: &[DependencyEdgeId]| {
+            TranslationExamples::new(total, edges.iter().map(|edge| edge.report_key()).collect())
         };
-        let keys =
-            |edges: &[DependencyEdgeId]| edges.iter().map(|edge| edge.report_key()).collect();
         Self {
             gate_accepts,
             accepts: verdict.accepts(),
             swapped_pairs: verdict.swapped_pairs,
-            conflicts: verdict
-                .conflicts
-                .iter()
-                .map(|conflict| SwappedConflictReport {
-                    runs_first: statement(conflict.runs_first),
-                    runs_later: statement(conflict.runs_later),
-                    dependency_edge: conflict.cell.report_key(),
-                    kind: dependency_graph.edge(conflict.cell).reason.kind,
-                })
-                .collect(),
-            forward_edges_kept: keys(&verdict.forward_edges_kept),
-            forward_edges_swapped: keys(&verdict.forward_edges_swapped),
-            placement_splits: keys(&verdict.placement_splits),
+            counts: verdict.counts.clone(),
+            conflicts: TranslationExamples::new(
+                verdict.counts.conflicts,
+                verdict
+                    .conflicts
+                    .iter()
+                    .map(|conflict| {
+                        SwappedConflictReport::new(
+                            *conflict,
+                            dependency_graph,
+                            assignment,
+                            module_path,
+                        )
+                    })
+                    .collect(),
+            ),
+            forward_edges_kept: keys(
+                verdict.counts.forward_edges_kept,
+                &verdict.forward_edges_kept,
+            ),
+            forward_edges_swapped: keys(
+                verdict.counts.forward_edges_swapped,
+                &verdict.forward_edges_swapped,
+            ),
+            placement_splits: keys(verdict.counts.placement_splits, &verdict.placement_splits),
+            example_limit: EXAMPLE_LIMIT,
+            full_detail_export_available: true,
+            full_detail_export_command: "debundle run --full-report translation-validation",
         }
     }
 }

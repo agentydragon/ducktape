@@ -184,18 +184,35 @@ only after the stream flushes. Gate-rejected chunks can have complete exports
 even though the command exits nonzero.
 These reports are not substitute semantic inputs for staged facts.
 
-`translation_validation.json` is written beside `dependency_graph.json.gz`: the
-translation-validation verdict on the emitted order, report only (the gate
-decides). `gate_accepts` is
-the realizability gate's verdict and `accepts` translation validation's;
-`swapped_pairs` counts statement pairs the emit runs out of source order.
-`conflicts[]` names each swapped pair carrying a violated ordering edge
-(`runs_first`/`runs_later` as `unit` ordinal and `module`, the
-`dependency_edge` key and its `kind`). `forward_edges_kept` and
-`forward_edges_swapped` list ordering edges whose dependency follows the
-dependent in the source, by whether the emit keeps or swaps the pair;
-`placement_splits` lists split rebind, shared-declaration, co-location and
-local-effect edges.
+`translation_validation.json`, beside `dependency_graph.json.gz`, is the bounded
+report-only edge-TV verdict;
+the gate remains authoritative. `gate_accepts`, `accepts` and `swapped_pairs`
+are exact. `counts` contains exact `conflicts`, `forward_edges_kept`,
+`forward_edges_swapped`, `placement_splits` totals and `conflicts_by_kind`.
+Each of those four evidence fields has `{ "total": N, "examples": [...],
+"truncated": true|false }`; at most twenty examples are retained in the same
+deterministic order as the complete checker. Conflict examples contain
+`runs_first`/`runs_later` (unit ordinal and module), `dependency_edge` and
+`kind`; other examples are dependency-edge keys. Read `total` or `counts`,
+not the sample length, when comparing results.
+
+`example_limit` is twenty. `full_detail_export_available` is a capability and
+`full_detail_export_command` names `debundle run --full-report translation-validation`.
+An explicit request writes `translation_validation.full.jsonl`; nothing writes
+that stream by default. Each row's `category` is `conflict`, `forward_edge_kept`,
+`forward_edge_swapped` or `placement_split`. Conflict rows flatten the complete
+conflict example fields; other rows contain `dependency_edge`. Category row
+counts equal the summary's exact totals, including when examples are truncated.
+The stream follows the existing edge-classification loop then the existing
+emitted-order conflict sweep, without a second evaluator. Full legacy pair
+comparison and all verdicts consume complete results, never sampled fields.
+
+Repeatable `--full-report-chunk` filters sinks only and rejects unknown chunk
+IDs. Requests require report output; an accepted dry run refuses suppressed
+output. Write/flush errors fail the run and can leave a partial stream. The
+sibling final summary is written only after stream completion/flush; no field
+asserts that an unrequested stream exists. Full diagnostic streams and complete
+graph output are independent, including when requested through Bazel attrs.
 
 ### Why the convention works for these files
 

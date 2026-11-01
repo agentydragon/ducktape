@@ -140,6 +140,14 @@ def _debundle_pipeline_plan(ctx, out_root):
         run_flags.append("--fail-fast")
     if ctx.attr.emit_on_rejection:
         run_flags.append("--emit-on-rejection")
+    if ctx.attr.full_report_chunks and not ctx.attr.full_reports:
+        fail("full_report_chunks requires full_reports")
+    for report in ctx.attr.full_reports:
+        if report != "translation-validation":
+            fail("unknown full_reports entry {}: expected translation-validation".format(report))
+        run_flags += ["--full-report", shell.quote(report)]
+    for chunk in ctx.attr.full_report_chunks:
+        run_flags += ["--full-report-chunk", shell.quote(chunk)]
     if ctx.attr.effect_conflicts_jsonl:
         run_flags.append("--effect-conflicts-jsonl")
     for chunk in ctx.attr.effect_conflicts_chunks:
@@ -313,6 +321,12 @@ _DEBUNDLE_PIPELINE_ATTRS = {
             "dominate a large corpus's output; a reading target rarely needs " +
             "them."
         ),
+    ),
+    "full_reports": attr.string_list(
+        doc = "Complete diagnostic sinks to export (translation-validation). Independent of full graphs; only Pipeline inputs change.",
+    ),
+    "full_report_chunks": attr.string_list(
+        doc = "Select only these full-report sinks; checks and bounded summaries still cover every configured chunk. Requires full_reports.",
     ),
     "fail_fast": attr.bool(
         default = False,

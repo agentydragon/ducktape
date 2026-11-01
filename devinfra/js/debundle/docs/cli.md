@@ -464,6 +464,21 @@ rejection was the only failure and the tree is complete; any other failure
 exits 1. The contract is
 <../SPEC.md> § Reading-only output on gate rejection; the tree is not runnable.
 
+`translation_validation.json` keeps exact gate/TV verdicts and category totals,
+with at most twenty deterministic examples per category. Each evidence field
+has `total`, `examples` and `truncated`; use totals for comparisons.
+`debundle run --full-report translation-validation` writes complete checker rows
+in `translation_validation.full.jsonl`. Repeat `--full-report-chunk <chunk-id>`
+to select only those sinks; configured analysis, summaries, checks and verdicts
+stay unchanged. The summary advertises this command even when no full stream
+was requested. Full diagnostic evidence and full graphs are separate requests.
+An accepted dry run refuses an explicit full-report request because it suppresses
+reports. Rejected dry runs retain their normal evidence policy. Invalid specs,
+unknown chunk filters and write/flush failures remain errors; complete streams
+flush before the final summary is published. Bazel `full_reports =
+["translation-validation"]` and optional `full_report_chunks` forward these
+flags only to Pipeline, leaving Analyze cache inputs unchanged.
+
 `debundle run --effect-conflicts-jsonl` opts into a complete per-chunk
 `effect_conflicts.jsonl` beside the bounded effect-TV summary. It uses the
 same typed facts and emitted order, streaming every conflicting pair and

@@ -20,7 +20,7 @@ use source_identity::SourceUnitOrdinal;
 use spec::ModulePath;
 
 use super::translation_validation::{
-    StatementReport, TranslationValidationReport, emitted_statement_order,
+    StatementReport, TranslationValidationResult, emitted_statement_order,
 };
 use crate::esm_import_order::EsmImportOrder;
 
@@ -206,7 +206,7 @@ pub struct EffectTranslationValidationInputs<'a> {
     pub emitted_modules: &'a BTreeSet<ModuleId>,
     pub import_order: &'a EsmImportOrder,
     pub facts: &'a [StatementFacts],
-    pub legacy: &'a TranslationValidationReport,
+    pub legacy: &'a TranslationValidationResult,
     pub module_path: &'a dyn Fn(ModuleId) -> ModulePath,
 }
 
@@ -264,9 +264,9 @@ pub fn effect_translation_validate<E>(
     let mut report = EffectTranslationValidationReport {
         report_only: true,
         full_semantic_precision: false,
-        legacy_gate_accepts: legacy.gate_accepts,
-        legacy_tv_accepts: legacy.accepts,
-        swapped_pairs: legacy.swapped_pairs,
+        legacy_gate_accepts: legacy.report.gate_accepts,
+        legacy_tv_accepts: legacy.report.accepts,
+        swapped_pairs: legacy.report.swapped_pairs,
         counts: EffectConflictCounts::default(),
         coverage,
         examples: Vec::new(),
@@ -281,16 +281,7 @@ pub fn effect_translation_validate<E>(
             "Legacy edge comparison excludes its separate forward-edge and placement diagnostics; this report never changes acceptance.",
         ],
     };
-    let mut legacy_pairs: BTreeSet<_> = legacy
-        .conflicts
-        .iter()
-        .map(|conflict| {
-            (
-                SourceUnitId(conflict.runs_first.unit.0),
-                SourceUnitId(conflict.runs_later.unit.0),
-            )
-        })
-        .collect();
+    let mut legacy_pairs = legacy.conflict_pairs.clone();
     let mut premises: BTreeMap<_, Vec<_>> = BTreeMap::new();
     for premise in graph.commuting_premises() {
         premises

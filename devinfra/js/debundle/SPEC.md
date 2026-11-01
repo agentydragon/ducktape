@@ -230,6 +230,31 @@ effective env-provided values, the original cwd, logical root paths, and the
 config's chunk-to-module-tree mapping. A graph created before this metadata
 existed remains a historical report only.
 
+`translation_validation.json` is a bounded diagnostic view of the unchanged
+edge-based translation validator. `gate_accepts`, `accepts` and `swapped_pairs`
+are exact. `counts` contains exact totals for conflicts, forward-kept,
+forward-swapped and placement-split edges, plus conflict totals by dependency
+kind. Each corresponding list is `{total, examples, truncated}` with at most
+twenty deterministic examples. Acceptance and the gate oracle use complete
+category totals; effect-set comparison receives the complete legacy conflict
+pair set, including pairs beyond the samples. Forward-swapped edges retain
+their existing report-only role. Bounds never narrow checks or source scope.
+
+`run --full-report translation-validation` additionally streams every result
+from that same checker to `translation_validation.full.jsonl`. Rows have a
+`category` of `conflict`, `forward_edge_kept`, `forward_edge_swapped` or
+`placement_split`; conflict rows retain both statements, dependency-edge key
+and kind, while other rows retain their dependency-edge key. The default does
+not write this stream. Repeatable `--full-report-chunk` selects only full-report
+sinks and validates configured materialized chunk IDs. Full diagnostic evidence
+and full graph requests are independent. `full_detail_export_available` and
+`full_detail_export_command` advertise the capability, not a completed file.
+An active stream must finish and explicitly flush before its sibling summary
+is written; any write/flush failure fails the run. Existing invalid-spec,
+accepted-dry-run, typed gate rejection and final-program checks remain intact.
+Bazel `full_reports` and `full_report_chunks` attrs forward the same selection
+only to the final Pipeline action; analysis artifacts/projections are unchanged.
+
 Full per-chunk report emission also writes
 `effect_translation_validation.json`: report-only effect conflicts for the
 emitter's exact statement order, derived from staged facts. It leaves the
