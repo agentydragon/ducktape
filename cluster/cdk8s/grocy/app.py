@@ -46,8 +46,7 @@ _NAME = "grocy"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _IMAGE = "lscr.io/linuxserver/grocy:v4.6.0-ls318"
 _CONFIG_CLAIM = "grocy-config-piraeus"
-_BACKUP = "grocy-config-ovh-backup"
-_PIRAEUS_BACKUP = "grocy-config-piraeus-backup"
+_BACKUP = "grocy-config-piraeus-backup"
 _HTTP = Port(name="http", number=80)
 # grocy/mcp.py and grocy/user_perms.py render one of theirs per household too.
 HOUSEHOLDS = ("sf", "vallejo")
@@ -213,9 +212,7 @@ def _destination_mover_security_context() -> ReplicationDestinationSpecRsyncTlsM
 
 
 def _destination_mover_affinity() -> ReplicationDestinationSpecRsyncTlsMoverAffinity:
-    """Keeps the destination mover on an OVH node. The backup PVs predate the SeaweedFS
-    StorageClasses' allowedTopologies, so they carry no node affinity of their own and the
-    scheduler would otherwise place the mover on a home node without the SeaweedFS CSI driver."""
+    """The replicated Piraeus SSD class permits attachment only within OVH."""
     return ReplicationDestinationSpecRsyncTlsMoverAffinity(
         node_affinity=ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinity(
             required_during_scheduling_ignored_during_execution=ReplicationDestinationSpecRsyncTlsMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
@@ -304,13 +301,12 @@ def household_chart(app: App, *, household: str) -> Chart:
             ),
         ),
     )
-    _backup(chart, namespace, name=_BACKUP, storage_class="seaweedfs-ovh")
-    # Keep the existing backup until the Piraeus copy has completed and been checked.
-    _backup(chart, namespace, name=_PIRAEUS_BACKUP, storage_class="piraeus-ssd-2-autodiskful")
+    _backup(chart, namespace)
     return chart
 
 
-def _backup(chart: Chart, namespace: str, *, name: str, storage_class: str) -> None:
+def _backup(chart: Chart, namespace: str) -> None:
+    name = _BACKUP
     # A direct copy of a live SQLite database can capture inconsistent writes.
     k8s.KubePersistentVolumeClaim(
         chart,
@@ -318,7 +314,7 @@ def _backup(chart: Chart, namespace: str, *, name: str, storage_class: str) -> N
         metadata=k8s.ObjectMeta(name=name, namespace=namespace),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
-            storage_class_name=storage_class,
+            storage_class_name="piraeus-ssd-2-autodiskful",
             resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("2Gi")}),
         ),
     )
