@@ -177,12 +177,12 @@ func (c *runtimeTransitionSequence) successorBarriers(outcome adoptionOutcome) [
 	}
 }
 
-func (c *runtimeTransitionSequence) planAdoption(ctx context.Context, uid string) ([]runtimeTransitionStep, error) {
+func (c *runtimeTransitionSequence) planAdoption(ctx context.Context, uid string) (adoptionPlan, []runtimeTransitionStep, error) {
 	r := c.r
 	r.mu.Lock()
 	if r.closing || r.host == nil || !r.host.connected {
 		r.mu.Unlock()
-		return nil, status.Error(codes.Unavailable, "environment Runtime or Harness Host is closing")
+		return adoptionPlan{}, nil, status.Error(codes.Unavailable, "environment Runtime or Harness Host is closing")
 	}
 	oldUID, known := r.state.IncarnationUID()
 	initialInactive := r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_INACTIVE
@@ -193,17 +193,17 @@ func (c *runtimeTransitionSequence) planAdoption(ctx context.Context, uid string
 	r.mu.Unlock()
 	if initialInactive {
 		if err := r.waitForHostNativeStopped(ctx, initialBinding); err != nil {
-			return nil, status.Errorf(codes.Unavailable, "initial Harness Host generation did not establish its native-stop barrier: %v", err)
+			return adoptionPlan{}, nil, status.Errorf(codes.Unavailable, "initial Harness Host generation did not establish its native-stop barrier: %v", err)
 		}
 	}
 	sealedUID, sealed, err := r.state.SealedUID()
 	if err != nil {
-		return nil, status.Errorf(codes.Unavailable, "read environment seal: %v", err)
+		return adoptionPlan{}, nil, status.Errorf(codes.Unavailable, "read environment seal: %v", err)
 	}
 	if sealed {
 		oldUID, known = sealedUID, true
 	}
-	c.adoption = adoptionPlan{oldUID: oldUID, targetUID: uid, sealed: sealed}
+	plan := adoptionPlan{oldUID: oldUID, targetUID: uid, sealed: sealed}
 	steps := make([]runtimeTransitionStep, 0, 12)
 	add := func(stage lifecycle.RuntimeTransitionStage, barrier adoptionBarrier) {
 		steps = append(steps, runtimeTransitionStep{stage: stage, adoption: barrier})
@@ -215,23 +215,23 @@ func (c *runtimeTransitionSequence) planAdoption(ctx context.Context, uid string
 			r.host != nil && report != nil && report.Ready && proto.Equal(report.Binding, r.intent.Binding)
 		mode := runtimepb.LifecycleIntent_INACTIVE
 		if r.intent != nil {
-			c.adoption.priorBinding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
-			c.adoption.currentBinding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
+			plan.priorBinding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
+			plan.currentBinding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
 			mode = r.intent.Mode
 		}
 		r.mu.Unlock()
 		if alreadyRunning {
 			add(lifecycle.RuntimeTransitionBootstrapRequesting, adoptionBarrier{kind: adoptionBootstrap, binding: adoptionCurrentBinding})
-			return steps, nil
+			return plan, steps, nil
 		}
 		if mode == runtimepb.LifecycleIntent_RUNNING {
 			add(lifecycle.RuntimeTransitionExecutionStarting, adoptionBarrier{kind: adoptionExecutionStart, uid: uid})
 			add(lifecycle.RuntimeTransitionHostReady, adoptionBarrier{kind: adoptionHostReady, binding: adoptionCurrentBinding, failureMessage: "Harness Host did not apply the active generation"})
 			add(lifecycle.RuntimeTransitionBootstrapRequesting, adoptionBarrier{kind: adoptionBootstrap, binding: adoptionCurrentBinding})
-			return steps, nil
+			return plan, steps, nil
 		}
 		if mode != runtimepb.LifecycleIntent_QUIESCING && mode != runtimepb.LifecycleIntent_CLOSING && mode != runtimepb.LifecycleIntent_INACTIVE {
-			return nil, status.Errorf(codes.Unavailable, "cannot resume environment from lifecycle mode %s", mode)
+			return adoptionPlan{}, nil, status.Errorf(codes.Unavailable, "cannot resume environment from lifecycle mode %s", mode)
 		}
 		add(lifecycle.RuntimeTransitionNativeStopping, adoptionBarrier{kind: adoptionNativeStop, binding: adoptionPriorBinding, failureMessage: "prior Harness Host generation did not drain"})
 		if mode != runtimepb.LifecycleIntent_INACTIVE {
@@ -241,7 +241,7 @@ func (c *runtimeTransitionSequence) planAdoption(ctx context.Context, uid string
 		add(lifecycle.RuntimeTransitionIntentPublishing, adoptionBarrier{kind: adoptionPublishIntent, binding: adoptionCurrentBinding, uid: uid, desiredMode: lifecycle.Running, intentMode: runtimepb.LifecycleIntent_RUNNING})
 		add(lifecycle.RuntimeTransitionHostReady, adoptionBarrier{kind: adoptionHostReady, binding: adoptionCurrentBinding, failureMessage: "Harness Host did not apply the active generation"})
 		add(lifecycle.RuntimeTransitionBootstrapRequesting, adoptionBarrier{kind: adoptionBootstrap, binding: adoptionCurrentBinding})
-		return steps, nil
+		return plan, steps, nil
 	}
 	if known {
 		mode, seal := runtimepb.LifecycleIntent_CLOSING, ""
@@ -251,10 +251,10 @@ func (c *runtimeTransitionSequence) planAdoption(ctx context.Context, uid string
 		r.mu.Lock()
 		prior := r.intent
 		if prior != nil && prior.Mode == mode && prior.IncarnationUid == oldUID && prior.SealUid == seal {
-			c.adoption.priorBinding = proto.Clone(prior.Binding).(*runtimepb.Binding)
+			plan.priorBinding = proto.Clone(prior.Binding).(*runtimepb.Binding)
 		}
 		r.mu.Unlock()
-		if c.adoption.priorBinding == nil {
+		if plan.priorBinding == nil {
 			add(lifecycle.RuntimeTransitionExecutionStarting, adoptionBarrier{kind: adoptionExecutionStart, uid: oldUID})
 			add(lifecycle.RuntimeTransitionIntentPublishing, adoptionBarrier{kind: adoptionPublishIntent, binding: adoptionPriorBinding, uid: oldUID, sealUID: seal, desiredMode: lifecycle.Quiescing, intentMode: mode})
 		}
@@ -265,5 +265,5 @@ func (c *runtimeTransitionSequence) planAdoption(ctx context.Context, uid string
 		}
 	}
 	add(lifecycle.RuntimeTransitionIncarnationAdopting, adoptionBarrier{kind: adoptionIncarnation})
-	return steps, nil
+	return plan, steps, nil
 }

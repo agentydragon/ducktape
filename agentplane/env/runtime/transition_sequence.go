@@ -7,11 +7,9 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 // A transition is an ordered sequence of effect barriers. The Runtime lifecycle
@@ -22,6 +20,7 @@ type runtimeTransitionSequence struct {
 	sequence  uint64
 	request   lifecycle.RuntimeTransitionRequest
 	adoption  adoptionPlan
+	quiesce   quiescePlan
 	steps     []runtimeTransitionStep
 	index     int
 	worker    *runtimeTransitionWorker
@@ -34,7 +33,7 @@ type runtimeTransitionSequence struct {
 type runtimeTransitionStep struct {
 	stage    lifecycle.RuntimeTransitionStage
 	adoption adoptionBarrier
-	run      func(context.Context) error // Planning and quiesce use this until their barriers are typed.
+	quiesce  quiesceBarrierKind
 }
 
 type runtimeTransitionWorker struct {
@@ -45,8 +44,11 @@ type runtimeTransitionWorker struct {
 }
 
 type runtimeTransitionOutcome struct {
-	binding  *runtimepb.Binding
-	adoption adoptionOutcome
+	steps        []runtimeTransitionStep
+	binding      *runtimepb.Binding
+	adoption     adoptionOutcome
+	adoptionPlan *adoptionPlan
+	quiesce      *quiescePlan
 }
 
 func (c *runtimeTransitionSequence) reconcile(ctx context.Context, engine controller.Runtime) error {
@@ -59,7 +61,7 @@ func (c *runtimeTransitionSequence) reconcile(ctx context.Context, engine contro
 			return fmt.Errorf("Runtime transition %d superseded before settlement", c.sequence)
 		}
 		c.sequence, c.request, c.terminal = request.Sequence, request, false
-		c.steps, c.index, c.adoption = nil, -1, adoptionPlan{}
+		c.steps, c.index, c.adoption, c.quiesce = nil, -1, adoptionPlan{}, quiescePlan{}
 		c.r.mu.Lock()
 		transitionCtx := c.r.activeTransitionCtx
 		activeSequence := c.r.activeTransitionSequence
@@ -68,24 +70,7 @@ func (c *runtimeTransitionSequence) reconcile(ctx context.Context, engine contro
 			return fmt.Errorf("Runtime transition %d has no admitted caller", request.Sequence)
 		}
 		c.ctx, c.cancel = context.WithCancel(transitionCtx)
-		return c.start(ctx, engine, runtimeTransitionStep{stage: lifecycle.RuntimeTransitionPlanning, run: func(ctx context.Context) error {
-			switch request.Kind {
-			case lifecycle.RuntimeAdopt:
-				steps, err := c.planAdoption(ctx, request.UID)
-				if err == nil {
-					c.steps = steps
-				}
-				return err
-			case lifecycle.RuntimeQuiesce:
-				steps, err := c.planQuiesce(ctx, request)
-				if err == nil {
-					c.steps = steps
-				}
-				return err
-			default:
-				return fmt.Errorf("unknown Runtime transition kind %d", request.Kind)
-			}
-		}})
+		return c.start(ctx, engine, runtimeTransitionStep{stage: lifecycle.RuntimeTransitionPlanning})
 	}
 	if c.worker == nil || c.terminal {
 		return nil
@@ -108,7 +93,7 @@ func (c *runtimeTransitionSequence) reconcile(ctx context.Context, engine contro
 		}
 		return c.publish(ctx, engine, lifecycle.RuntimeTransitionFailed, completed.err.Error(), code)
 	}
-	if err := c.recordAdoptionOutcome(completed.step, completed.outcome); err != nil {
+	if err := c.recordOutcome(completed.step, completed.outcome); err != nil {
 		c.terminal = true
 		c.cancel()
 		return c.publish(ctx, engine, lifecycle.RuntimeTransitionFailed, err.Error(), codes.Internal)
@@ -141,10 +126,14 @@ func (c *runtimeTransitionSequence) runStep(step runtimeTransitionStep) (runtime
 	}
 	var outcome runtimeTransitionOutcome
 	var err error
-	if step.adoption.kind != 0 {
+	if step.stage == lifecycle.RuntimeTransitionPlanning {
+		outcome, err = c.planTransition(c.ctx)
+	} else if step.adoption.kind != 0 {
 		outcome, err = c.runAdoptionBarrier(c.ctx, step.adoption)
+	} else if step.quiesce != 0 {
+		outcome, err = c.runQuiesceBarrier(c.ctx, step.quiesce)
 	} else {
-		err = step.run(c.ctx)
+		err = fmt.Errorf("Runtime transition stage %d has no barrier", step.stage)
 	}
 	if err != nil && step.stage == lifecycle.RuntimeTransitionExecutionFencing {
 		if errors.Is(err, context.Canceled) && !c.r.isClosing() && step.adoption.kind == adoptionExecutionFence {
@@ -181,6 +170,32 @@ func (c *runtimeTransitionSequence) runStep(step runtimeTransitionStep) (runtime
 	return outcome, err
 }
 
+func (c *runtimeTransitionSequence) planTransition(ctx context.Context) (runtimeTransitionOutcome, error) {
+	switch c.request.Kind {
+	case lifecycle.RuntimeAdopt:
+		plan, steps, err := c.planAdoption(ctx, c.request.UID)
+		return runtimeTransitionOutcome{steps: steps, adoptionPlan: &plan}, err
+	case lifecycle.RuntimeQuiesce:
+		plan, steps, err := c.planQuiesce(c.request)
+		return runtimeTransitionOutcome{steps: steps, quiesce: &plan}, err
+	default:
+		return runtimeTransitionOutcome{}, fmt.Errorf("unknown Runtime transition kind %d", c.request.Kind)
+	}
+}
+
+func (c *runtimeTransitionSequence) recordOutcome(step runtimeTransitionStep, outcome runtimeTransitionOutcome) error {
+	if step.stage == lifecycle.RuntimeTransitionPlanning {
+		c.steps = outcome.steps
+		if outcome.adoptionPlan != nil {
+			c.adoption = *outcome.adoptionPlan
+		}
+	}
+	if outcome.quiesce != nil {
+		c.quiesce = *outcome.quiesce
+	}
+	return c.recordAdoptionOutcome(step, outcome)
+}
+
 func (c *runtimeTransitionSequence) publish(ctx context.Context, engine controller.Runtime, stage lifecycle.RuntimeTransitionStage, failure string, errorCode codes.Code) error {
 	if err := lifecycle.WriteRuntimeTransitionStatus(ctx, engine, lifecycle.RuntimeTransitionStatus{
 		Sequence: c.sequence, Stage: stage, Error: failure, ErrorCode: uint32(errorCode),
@@ -189,90 +204,4 @@ func (c *runtimeTransitionSequence) publish(ctx context.Context, engine controll
 	}
 	c.r.changed()
 	return nil
-}
-
-func (c *runtimeTransitionSequence) planQuiesce(ctx context.Context, request lifecycle.RuntimeTransitionRequest) ([]runtimeTransitionStep, error) {
-	r := c.r
-	facts, err := r.facts()
-	if err != nil {
-		return nil, err
-	}
-	var uid string
-	var current bool
-	var host *hostLink
-	var binding *runtimepb.Binding
-	var currentReport bool
-	var retry bool
-	steps := []runtimeTransitionStep{{stage: lifecycle.RuntimeTransitionQuiesceSealing, run: func(ctx context.Context) error {
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		if r.closing {
-			return errors.New("environment Runtime is closing")
-		}
-		report := r.hostReportLocked()
-		if !r.state.Lameduck() && request.HasIdleSince &&
-			(facts.IdleSince == nil || facts.IdleSince.AsTime().UnixMicro() != request.IdleSinceMicros ||
-				r.activeAdmissions != 0 || r.activeExecutionCalls != 0 || r.executionRecovering ||
-				r.host == nil || report == nil || !report.Ready || r.intent == nil ||
-				!proto.Equal(report.Binding, r.intent.Binding) || report.Facts == nil ||
-				report.Facts.IdleSince == nil ||
-				report.Facts.IdleSince.AsTime().UnixMicro() != request.IdleSinceMicros) {
-			return status.Error(codes.Aborted, "the Sandbox is busy or its idle_since differs")
-		}
-		if r.host == nil || !r.host.connected {
-			return status.Error(codes.Unavailable, "Harness Host lifecycle connection is unavailable")
-		}
-		if err := r.state.EnterLameduck(); err != nil {
-			return status.Errorf(codes.Unavailable, "persist environment seal: %v", err)
-		}
-		var err error
-		uid, err = r.state.RequireIncarnationUID()
-		if err != nil {
-			return status.Errorf(codes.FailedPrecondition, "%v", err)
-		}
-		current = r.desired.Mode == lifecycle.Quiescing && r.desired.SealUID == uid && r.intent != nil &&
-			r.intent.Mode == runtimepb.LifecycleIntent_QUIESCING && r.intent.SealUid == uid
-		if current {
-			host = r.host
-			binding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
-			currentReport = report != nil && report.Ready && proto.Equal(report.Binding, binding)
-		}
-		retry = !current
-		return nil
-	}}, {stage: lifecycle.RuntimeTransitionHostStatusChecking, run: func(ctx context.Context) error {
-		if !currentReport {
-			return nil
-		}
-		bound, err := host.client.BoundContext(ctx, binding)
-		if err != nil {
-			return status.Errorf(codes.Unavailable, "authorize Harness Host quiesce status: %v", err)
-		}
-		hostStatus, err := host.client.GetStatus(bound, &sessionpb.GetStatusRequest{})
-		if err != nil {
-			return status.Errorf(codes.Unavailable, "read Harness Host quiesce status: %v", err)
-		}
-		retry = hostStatus.GetLifecycle().GetError() != ""
-		return nil
-	}}, {stage: lifecycle.RuntimeTransitionIntentPublishing, run: func(ctx context.Context) error {
-		if !retry {
-			return nil
-		}
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		if r.closing {
-			return errors.New("environment Runtime is closing")
-		}
-		if current && (r.host != host || r.intent == nil || !proto.Equal(r.intent.Binding, binding) ||
-			r.desired.Mode != lifecycle.Quiescing || r.desired.SealUID != uid) {
-			return nil
-		}
-		desired := lifecycle.EnvironmentDesired{Mode: lifecycle.Quiescing, SealUID: uid, Generation: r.desired.Generation + 1}
-		if err := lifecycle.PublishEnvironmentDesired(context.Background(), r.lifecycleState, desired); err != nil {
-			return status.Errorf(codes.Unavailable, "publish environment quiesce: %v", err)
-		}
-		r.desired = desired
-		r.setIntentLocked(runtimepb.LifecycleIntent_QUIESCING, uid, uid, false)
-		return nil
-	}}}
-	return steps, nil
 }
