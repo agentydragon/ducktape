@@ -21,6 +21,7 @@ type runtimeTransitionSequence struct {
 	r         *Runtime
 	sequence  uint64
 	request   lifecycle.RuntimeTransitionRequest
+	adoption  adoptionPlan
 	steps     []runtimeTransitionStep
 	index     int
 	worker    *runtimeTransitionWorker
@@ -31,15 +32,21 @@ type runtimeTransitionSequence struct {
 }
 
 type runtimeTransitionStep struct {
-	stage          lifecycle.RuntimeTransitionStage
-	startExecution bool
-	settleOnCancel func(context.Context) error
-	run            func(context.Context) error
+	stage    lifecycle.RuntimeTransitionStage
+	adoption adoptionBarrier
+	run      func(context.Context) error // Planning and quiesce use this until their barriers are typed.
 }
 
 type runtimeTransitionWorker struct {
-	done chan struct{}
-	err  error
+	done    chan struct{}
+	step    runtimeTransitionStep
+	outcome runtimeTransitionOutcome
+	err     error
+}
+
+type runtimeTransitionOutcome struct {
+	binding  *runtimepb.Binding
+	adoption adoptionOutcome
 }
 
 func (c *runtimeTransitionSequence) reconcile(ctx context.Context, engine controller.Runtime) error {
@@ -52,7 +59,7 @@ func (c *runtimeTransitionSequence) reconcile(ctx context.Context, engine contro
 			return fmt.Errorf("Runtime transition %d superseded before settlement", c.sequence)
 		}
 		c.sequence, c.request, c.terminal = request.Sequence, request, false
-		c.steps, c.index = nil, -1
+		c.steps, c.index, c.adoption = nil, -1, adoptionPlan{}
 		c.r.mu.Lock()
 		transitionCtx := c.r.activeTransitionCtx
 		activeSequence := c.r.activeTransitionSequence
@@ -101,6 +108,11 @@ func (c *runtimeTransitionSequence) reconcile(ctx context.Context, engine contro
 		}
 		return c.publish(ctx, engine, lifecycle.RuntimeTransitionFailed, completed.err.Error(), code)
 	}
+	if err := c.recordAdoptionOutcome(completed.step, completed.outcome); err != nil {
+		c.terminal = true
+		c.cancel()
+		return c.publish(ctx, engine, lifecycle.RuntimeTransitionFailed, err.Error(), codes.Internal)
+	}
 	c.index++
 	if c.index >= len(c.steps) {
 		c.terminal = true
@@ -114,26 +126,32 @@ func (c *runtimeTransitionSequence) start(ctx context.Context, engine controller
 	if err := c.publish(ctx, engine, step.stage, "", codes.OK); err != nil {
 		return err
 	}
-	worker := &runtimeTransitionWorker{done: make(chan struct{})}
+	worker := &runtimeTransitionWorker{done: make(chan struct{}), step: step}
 	c.worker = worker
 	go func() {
-		worker.err = c.runStep(step)
+		worker.outcome, worker.err = c.runStep(step)
 		close(worker.done)
 	}()
 	return nil
 }
 
-func (c *runtimeTransitionSequence) runStep(step runtimeTransitionStep) error {
+func (c *runtimeTransitionSequence) runStep(step runtimeTransitionStep) (runtimeTransitionOutcome, error) {
 	if err := c.ctx.Err(); err != nil {
-		return err
+		return runtimeTransitionOutcome{}, err
 	}
-	err := step.run(c.ctx)
+	var outcome runtimeTransitionOutcome
+	var err error
+	if step.adoption.kind != 0 {
+		outcome, err = c.runAdoptionBarrier(c.ctx, step.adoption)
+	} else {
+		err = step.run(c.ctx)
+	}
 	if err != nil && step.stage == lifecycle.RuntimeTransitionExecutionFencing {
-		if errors.Is(err, context.Canceled) && !c.r.isClosing() && step.settleOnCancel != nil {
+		if errors.Is(err, context.Canceled) && !c.r.isClosing() && step.adoption.kind == adoptionExecutionFence {
 			fenceCtx, cancel := context.WithTimeout(c.engineCtx, executionFenceGrace)
 			defer cancel()
-			if settleErr := step.settleOnCancel(fenceCtx); settleErr == nil {
-				return err
+			if settleErr := c.r.waitForExecutionFenced(fenceCtx, c.binding(step.adoption.binding)); settleErr == nil {
+				return outcome, err
 			} else {
 				err = errors.Join(err, fmt.Errorf("settle exact Execution fence after epoch loss: %w", settleErr))
 			}
@@ -143,10 +161,10 @@ func (c *runtimeTransitionSequence) runStep(step runtimeTransitionStep) error {
 			c.r.transitionUnsafe = err
 			c.r.mu.Unlock()
 		}
-		return err
+		return outcome, err
 	}
-	if err == nil || !step.startExecution {
-		return err
+	if err == nil || step.adoption.kind != adoptionExecutionStart {
+		return outcome, err
 	}
 	// startExecutionForUID can return on epoch cancellation while its COSI
 	// startup is still in flight. The public stop barrier settles that start
@@ -158,9 +176,9 @@ func (c *runtimeTransitionSequence) runStep(step runtimeTransitionStep) error {
 		c.r.mu.Lock()
 		c.r.transitionUnsafe = unsafe
 		c.r.mu.Unlock()
-		return unsafe
+		return outcome, unsafe
 	}
-	return err
+	return outcome, err
 }
 
 func (c *runtimeTransitionSequence) publish(ctx context.Context, engine controller.Runtime, stage lifecycle.RuntimeTransitionStage, failure string, errorCode codes.Code) error {
@@ -171,190 +189,6 @@ func (c *runtimeTransitionSequence) publish(ctx context.Context, engine controll
 	}
 	c.r.changed()
 	return nil
-}
-
-func (c *runtimeTransitionSequence) planAdoption(ctx context.Context, uid string) ([]runtimeTransitionStep, error) {
-	r := c.r
-	r.mu.Lock()
-	if r.closing || r.host == nil || !r.host.connected {
-		r.mu.Unlock()
-		return nil, status.Error(codes.Unavailable, "environment Runtime or Harness Host is closing")
-	}
-	oldUID, known := r.state.IncarnationUID()
-	initialInactive := r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_INACTIVE
-	var initialBinding *runtimepb.Binding
-	if initialInactive {
-		initialBinding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
-	}
-	r.mu.Unlock()
-	if initialInactive {
-		if err := r.waitForHostNativeStopped(ctx, initialBinding); err != nil {
-			return nil, status.Errorf(codes.Unavailable, "initial Harness Host generation did not establish its native-stop barrier: %v", err)
-		}
-	}
-	sealedUID, sealed, err := r.state.SealedUID()
-	if err != nil {
-		return nil, status.Errorf(codes.Unavailable, "read environment seal: %v", err)
-	}
-	if sealed {
-		oldUID, known = sealedUID, true
-	}
-	var steps []runtimeTransitionStep
-	add := func(stage lifecycle.RuntimeTransitionStage, start bool, run func(context.Context) error) {
-		steps = append(steps, runtimeTransitionStep{stage: stage, startExecution: start, run: run})
-	}
-	addFence := func(binding **runtimepb.Binding, trigger bool) {
-		add(lifecycle.RuntimeTransitionExecutionFencing, false, func(ctx context.Context) error {
-			if trigger {
-				r.maybeFenceExecution(*binding)
-			}
-			return r.waitForExecutionFenced(ctx, *binding)
-		})
-		steps[len(steps)-1].settleOnCancel = func(ctx context.Context) error {
-			return r.waitForExecutionFenced(ctx, *binding)
-		}
-	}
-	start := func(target string) {
-		add(lifecycle.RuntimeTransitionExecutionStarting, true, func(ctx context.Context) error { return r.startExecutionForUID(ctx, target) })
-	}
-	ready := func(binding **runtimepb.Binding, message string) {
-		add(lifecycle.RuntimeTransitionHostReady, false, func(ctx context.Context) error {
-			_, err := r.waitForHostReady(ctx, *binding)
-			if err != nil {
-				return status.Errorf(codes.Unavailable, "%s: %v", message, err)
-			}
-			return nil
-		})
-	}
-	bootstrap := func(binding **runtimepb.Binding) {
-		add(lifecycle.RuntimeTransitionBootstrapRequesting, false, func(ctx context.Context) error {
-			r.setLastRunning(*binding)
-			return r.requestBootstrap(ctx)
-		})
-	}
-	if known && oldUID == uid && !sealed {
-		r.mu.Lock()
-		report := r.hostReportLocked()
-		alreadyRunning := r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_RUNNING && r.intent.IncarnationUid == uid &&
-			r.host != nil && report != nil && report.Ready && proto.Equal(report.Binding, r.intent.Binding)
-		var binding *runtimepb.Binding
-		mode := runtimepb.LifecycleIntent_INACTIVE
-		if r.intent != nil {
-			binding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
-			mode = r.intent.Mode
-		}
-		r.mu.Unlock()
-		if alreadyRunning {
-			bootstrap(&binding)
-			return steps, nil
-		}
-		if mode == runtimepb.LifecycleIntent_RUNNING {
-			start(uid)
-			ready(&binding, "Harness Host did not apply the active generation")
-			bootstrap(&binding)
-			return steps, nil
-		}
-		if mode == runtimepb.LifecycleIntent_QUIESCING || mode == runtimepb.LifecycleIntent_CLOSING || mode == runtimepb.LifecycleIntent_INACTIVE {
-			add(lifecycle.RuntimeTransitionNativeStopping, false, func(ctx context.Context) error {
-				if err := r.waitForHostNativeStopped(ctx, binding); err != nil {
-					return status.Errorf(codes.Unavailable, "prior Harness Host generation did not drain: %v", err)
-				}
-				return nil
-			})
-			if mode != runtimepb.LifecycleIntent_INACTIVE {
-				addFence(&binding, true)
-			}
-		} else {
-			return nil, status.Errorf(codes.Unavailable, "cannot resume environment from lifecycle mode %s", mode)
-		}
-		start(uid)
-		add(lifecycle.RuntimeTransitionIntentPublishing, false, func(ctx context.Context) error {
-			var err error
-			binding, err = r.publishIntent(ctx, lifecycle.Running, runtimepb.LifecycleIntent_RUNNING, uid, "")
-			return err
-		})
-		ready(&binding, "Harness Host did not apply the active generation")
-		bootstrap(&binding)
-		return steps, nil
-	}
-	if known {
-		var binding *runtimepb.Binding
-		mode, seal := runtimepb.LifecycleIntent_CLOSING, ""
-		if sealed {
-			mode, seal = runtimepb.LifecycleIntent_QUIESCING, oldUID
-		}
-		r.mu.Lock()
-		prior := r.intent
-		if prior != nil && prior.Mode == mode && prior.IncarnationUid == oldUID && prior.SealUid == seal {
-			binding = proto.Clone(prior.Binding).(*runtimepb.Binding)
-		}
-		r.mu.Unlock()
-		if binding == nil {
-			start(oldUID)
-			add(lifecycle.RuntimeTransitionIntentPublishing, false, func(ctx context.Context) error {
-				var err error
-				binding, err = r.publishIntent(ctx, lifecycle.Quiescing, mode, oldUID, seal)
-				return err
-			})
-		}
-		add(lifecycle.RuntimeTransitionNativeStopping, false, func(ctx context.Context) error {
-			return r.waitForHostNativeStopped(ctx, binding)
-		})
-		addFence(&binding, true)
-		if sealed {
-			add(lifecycle.RuntimeTransitionHostAcknowledging, false, func(ctx context.Context) error {
-				return r.waitForHostQuiesced(ctx, binding)
-			})
-		}
-	}
-	add(lifecycle.RuntimeTransitionIncarnationAdopting, false, func(ctx context.Context) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err := r.state.AdoptIncarnation(uid); err != nil {
-			return status.Errorf(codes.Unavailable, "adopt Sandbox incarnation: %v", err)
-		}
-		if sealed && oldUID == uid {
-			return nil
-		}
-		start(uid)
-		var binding *runtimepb.Binding
-		if r.state.Lameduck() {
-			add(lifecycle.RuntimeTransitionIntentPublishing, false, func(ctx context.Context) error {
-				var err error
-				binding, err = r.publishIntent(ctx, lifecycle.Quiescing, runtimepb.LifecycleIntent_QUIESCING, uid, uid)
-				return err
-			})
-			add(lifecycle.RuntimeTransitionHostReady, false, func(ctx context.Context) error {
-				report, err := r.waitForHostReady(ctx, binding)
-				if err != nil {
-					return status.Errorf(codes.Unavailable, "sealed Harness Host generation did not apply: %v", err)
-				}
-				if report.NativeStopped {
-					r.maybeFenceExecution(binding)
-				}
-				return nil
-			})
-			add(lifecycle.RuntimeTransitionNativeStopping, false, func(ctx context.Context) error {
-				return r.waitForHostNativeStopped(ctx, binding)
-			})
-			addFence(&binding, false)
-			add(lifecycle.RuntimeTransitionHostAcknowledging, false, func(ctx context.Context) error {
-				return r.waitForHostQuiesced(ctx, binding)
-			})
-		} else {
-			add(lifecycle.RuntimeTransitionIntentPublishing, false, func(ctx context.Context) error {
-				var err error
-				binding, err = r.publishIntent(ctx, lifecycle.Running, runtimepb.LifecycleIntent_RUNNING, uid, "")
-				return err
-			})
-			ready(&binding, "Harness Host did not apply the active generation")
-			bootstrap(&binding)
-		}
-		c.steps = steps
-		return nil
-	})
-	return steps, nil
 }
 
 func (c *runtimeTransitionSequence) planQuiesce(ctx context.Context, request lifecycle.RuntimeTransitionRequest) ([]runtimeTransitionStep, error) {
