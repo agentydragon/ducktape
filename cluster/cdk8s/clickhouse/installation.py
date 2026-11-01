@@ -386,8 +386,9 @@ def clickhouse_chart(app: App) -> Chart:
                                                 )
                                             ),
                                         ),
+                                        # Keep the interrupted replica 0-2's retained PVC and Keeper identity intact.
                                         ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas(
-                                            name="2",
+                                            name="0-3",
                                             templates=(
                                                 ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates(
                                                     pod_template=_CLICKHOUSE_PIRAEUS_102453_POD_TEMPLATE,

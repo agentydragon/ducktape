@@ -413,7 +413,7 @@ spec:
                   templates:
                     podTemplate: clickhouse-piraeus-103656
                     dataVolumeClaimTemplate: data-piraeus-hdd
-                - name: "2"
+                - name: 0-3
                   templates:
                     podTemplate: clickhouse-piraeus-102453
                     dataVolumeClaimTemplate: data-piraeus-hdd
