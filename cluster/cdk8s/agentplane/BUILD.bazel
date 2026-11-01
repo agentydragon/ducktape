@@ -91,6 +91,7 @@ py_library(
     visibility = [
         "//agentplane/system_tests/k3s:__pkg__",
         "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/haku:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
     deps = [
@@ -483,6 +484,7 @@ py_library(
     visibility = [
         "//agentplane/system_tests/k3s:__pkg__",
         "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/haku:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
     deps = [
@@ -564,6 +566,7 @@ py_library(
     srcs = ["egress_policies.py"],
     visibility = [
         "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/haku:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
     deps = [
@@ -589,6 +592,7 @@ py_library(
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:external_creds",
+        "//cluster/cdk8s/haku:ui_egress",
         "//cluster/cdk8s/monitoring:mimir",
         "//cluster/cdk8s/providers/agentplane:policy_binding",
         "//cluster/cdk8s/providers/agentplane:policy_set",
@@ -815,6 +819,7 @@ py_library(
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/haku:ui_egress",
         "//cluster/cdk8s/litellm:secrets",
         "//cluster/cdk8s/providers/agentplane:policy_set",
         "//cluster/cdk8s/providers/cilium:network_policy",

@@ -51,7 +51,9 @@ py_library(
     srcs = ["resources.py"],
     visibility = [
         "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/agentplane:__pkg__",
+        "//cluster/cdk8s/haku:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
     deps = [
