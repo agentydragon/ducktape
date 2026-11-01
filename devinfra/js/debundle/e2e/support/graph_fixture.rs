@@ -283,7 +283,9 @@ impl GraphFixture {
     }
 
     pub fn dependency_graph(&self) -> DependencyGraphReport {
-        read_json(&self.graph)
+        let report = read_json(&self.graph);
+        assert_no_purity_disagreements(&report);
+        report
     }
 
     pub fn program_graph(&self) -> ProgramGraphReport {

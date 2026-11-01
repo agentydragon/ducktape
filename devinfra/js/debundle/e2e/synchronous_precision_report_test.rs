@@ -1269,3 +1269,104 @@ fn skipped_reach_keeps_distinct_captures_and_later_prefix_references() {
         }
     }
 }
+
+#[test]
+fn completed_purity_retains_residual_evaluation_obligations() {
+    for (source, output, complete) in [
+        (
+            "function change() { globalThis.flag = 1; return 1; }\nconst value = change();\nconsole.log(value, globalThis.flag);\n",
+            "1 1\n",
+            Some(true),
+        ),
+        (
+            "const record = {};\nfunction fill(input) { input.flag = 1; return 1; }\nconst value = fill(record);\nconsole.log(value, record.flag);\n",
+            "1 1\n",
+            Some(true),
+        ),
+        (
+            "const value = ({ valueOf() { return 1; } }) + 1;\nconsole.log(value);\n",
+            "2\n",
+            None,
+        ),
+        (
+            "function fail() { throw 'sentinel'; }\nconst value = (() => { try { fail(); return 'wrong'; } catch (error) { return error; } })();\nconsole.log(value);\n",
+            "sentinel\n",
+            None,
+        ),
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output(&fixture, output);
+        let graph = fixture.dependency_graph();
+        let value = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|binding| binding.binding == "value")
+            })
+            .unwrap();
+        assert!(!value.purity.is_pure(), "{source}: {:?}", value.purity);
+        let execution = value.synchronous_execution.as_ref().unwrap();
+        if let Some(complete) = complete {
+            assert_eq!(execution.complete, complete);
+        }
+        assert!(execution.purity_disagreement.is_none());
+    }
+    for constructor in ["TextEncoder", "TextDecoder"] {
+        let source = format!(
+            "const value = new {constructor}();\nconsole.log(value instanceof {constructor});\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "true\n");
+        let graph = fixture.dependency_graph();
+        let value = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|binding| binding.binding == "value")
+            })
+            .unwrap();
+        assert!(value.purity.is_pure(), "{constructor}: {:?}", value.purity);
+        let execution = value.synchronous_execution.as_ref().unwrap();
+        assert!(
+            !execution.complete,
+            "purity-only native row retains separate timing coverage"
+        );
+        assert!(execution.purity_disagreement.is_none());
+    }
+}
+
+#[test]
+fn completed_owner_publication_retains_final_value_and_export_capabilities() {
+    for declaration in [
+        "const initialized = install();",
+        "export default install();",
+    ] {
+        let source = format!(
+            "const record = {{ value: () => 0 }};\nfunction install() {{ record.value = () => state; return 1; }}\n{declaration}\nconst observed = record.value();\nvar state = 'late';\nconsole.log(observed);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "undefined\n");
+        let graph = fixture.dependency_graph();
+        let observed = source_unit_for_binding(&graph, "observed");
+        let state = source_unit_for_binding(&graph, "state");
+        assert!(graph.edges.iter().any(|edge| {
+            edge.source == observed && edge.target == state && edge.constrains_init_order
+        }));
+        assert_eq!(
+            graph
+                .nodes
+                .iter()
+                .filter(|node| {
+                    node.synchronous_execution
+                        .as_ref()
+                        .is_some_and(|execution| execution.purity_disagreement.is_some())
+                })
+                .count(),
+            0
+        );
+    }
+}

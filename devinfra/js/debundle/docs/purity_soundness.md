@@ -1453,11 +1453,14 @@ creation, including the absence of inherited interceptors or nonwritable data.
 The ordinary executor still evaluates the selected initializer, wrapper and
 constructors. A typed certificate is minted only when the full return-only
 source proof succeeds and that exact execution completes without unknown calls,
-precision loss or uninitialized reads. The settled purity projection uses it
-to discharge only that call's impure-callee effect at that call span; the
-verdict execution itself consumed, and the at-init fallback it gates, keep the
-call. Argument and callee effects, eager reads and every other purity reason
-remain. The certificate's dependencies, including any captured
+precision loss or uninitialized reads. Current-owner preparatory proofs keep
+the unchanged classifier verdict. At owner completion, the final projection
+uses the certificate to discharge only that call's impure-callee effect at
+that call span. Earlier-owner proofs, the completed effect frontier, graph
+purity and at-init fallback use this final verdict. Initializer-only purity
+trust still retains its callback fallback roots. Argument and callee effects,
+eager reads and every other classifier purity obligation remain; timing
+completeness alone discharges nothing. The certificate's dependencies, including any captured
 native-integrity evidence, join the resulting purity dependencies; no
 function-body or class-wide purity summary changes. A source
 or runtime fallback does not issue the certificate and retains conservative

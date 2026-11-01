@@ -2863,7 +2863,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn private_frozen_namespace(&self, fact: &StatementFacts) -> Option<FrozenNamespaceProof> {
         if !matches!(fact.kind, StatementKind::VarDecl)
-            || !self.queries.statement_is_pure(fact.ordinal)
+            || !self.queries.prepared_statement_is_pure(fact.ordinal)
             || fact.declared.len() != 1
             || !self.inputs.index.const_call_owners.contains(&fact.ordinal)
             || self.inputs.exported_owners.contains(&fact.ordinal)
@@ -3051,7 +3051,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // synchronous owner closure and undo the target filter below.
         if metadata_target.is_none()
             && (self.inputs.exported_owners.contains(&fact.ordinal)
-                || !((self.queries.statement_is_pure(fact.ordinal)
+                || !((self.queries.prepared_statement_is_pure(fact.ordinal)
                     && (fact.declares_direct_function
                         || matches!(fact.kind, StatementKind::ClassDecl)
                         || closed_callback_factory_result
@@ -3127,7 +3127,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// omitted until a later read, call, write, or export exposes that value.
     fn closed_local_record_factory_result(&self, fact: &StatementFacts) -> bool {
         if !matches!(fact.kind, StatementKind::VarDecl)
-            || !self.queries.statement_is_pure(fact.ordinal)
+            || !self.queries.prepared_statement_is_pure(fact.ordinal)
             || fact.declared.len() != 1
             || self.state.reachability.incomplete
             || !self.inputs.index.dynamic_scope_owners.is_empty()
@@ -3780,7 +3780,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn inert_class_heritage_binding<'a>(&'a self, fact: &StatementFacts) -> Option<&'a Id> {
         if !matches!(fact.kind, StatementKind::ClassDecl)
-            || !self.queries.statement_is_pure(fact.ordinal)
+            || !self.queries.prepared_statement_is_pure(fact.ordinal)
             || self.inputs.exported_owners.contains(&fact.ordinal)
             || self.state.reachability.incomplete
         {
@@ -3814,7 +3814,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || !fact.reads.eager.contains(base)
             || self.inputs.index.class_bindings.get(base_key) != Some(base)
             || base_owner.0 >= fact.ordinal.0
-            || !self.queries.statement_is_pure(base_owner)
+            || !self.queries.completed_statement_is_pure(base_owner)
             || self.state.tainted_classes.contains(base_key)
             || self.state.escaped_class_capabilities.contains(base_key)
             || values.len() != 1
@@ -9218,7 +9218,7 @@ pub(crate) fn annotate_synchronous_calls(
     hints: &AnalysisInputs,
     export_reentry_policy: &ExportReentryPolicy,
     facts: &mut [StatementFacts],
-) -> Vec<crate::facts::SettledPurity> {
+) -> Vec<crate::facts::CompletedPurity> {
     let index = proofs.index.index;
     for candidate in index.retained_callback_calls.values() {
         if candidate.caller.is_some() {
@@ -9941,7 +9941,7 @@ impl Executor<'_, '_> {
         if let Some((factory, span)) = closed_result
             && !fact_roots.contains(&fact.ordinal)
             && !self.inputs.exported_owners.contains(&fact.ordinal)
-            && self.queries.statement_is_pure(fact.ordinal)
+            && self.queries.prepared_statement_is_pure(fact.ordinal)
             && !fact.declares_direct_function
             && frozen_namespace.is_none()
             && self.state.private_constructor_result_owners.is_empty()
@@ -10104,15 +10104,8 @@ impl Executor<'_, '_> {
             outcome.absorb_binding_effects(&mut restored.effects, Some(&reason));
             self.apply_rebind_effects(&outcome.effects.rebinds);
         }
-        let mut prior_effect_owners = outcome.executed_owners.clone();
-        prior_effect_owners
-            .retain(|owner| !self.state.private_constructor_result_owners.contains(owner));
-        if !self.queries.statement_is_pure(fact.ordinal)
-            && self.state.private_constructor_result_owners.is_empty()
-        {
-            prior_effect_owners.insert(fact.ordinal);
-        }
-        self.state.prior_effect_owners.extend(prior_effect_owners);
+        // These are available roots for the remainder of this owner's value
+        // evaluation, independently of the completed prior-effect frontier.
         let state = &mut *self.state;
         if !state.reachability.unknown_call_seen
             && let Some(roots) = &mut state.prior_reachability_roots
@@ -10237,12 +10230,24 @@ impl Executor<'_, '_> {
         self.state.fallback_outcome = Outcome::default();
         self.state.fallback_callback_sizes = None;
         self.state.fallback_local_owners.clear();
-        self.state.statement_executed_owners.clear();
         for key in std::mem::take(&mut self.state.statement_invoked_callables) {
             if let Some(cells) = inputs.callable_heap_contents.get(&key) {
                 outcome.effects.heap_contents.extend(cells);
             }
         }
+        outcome.effects.purity_disagreement = self
+            .queries
+            .complete_owner_purity(owner, outcome.effects.local_record_factory_purity.as_ref());
+        let mut prior_effect_owners = outcome.executed_owners.clone();
+        prior_effect_owners
+            .retain(|owner| !self.state.private_constructor_result_owners.contains(owner));
+        if !self.queries.completed_statement_is_pure(fact.ordinal)
+            && self.state.private_constructor_result_owners.is_empty()
+        {
+            prior_effect_owners.insert(fact.ordinal);
+        }
+        self.state.prior_effect_owners.extend(prior_effect_owners);
+        self.state.statement_executed_owners.clear();
         self.state.returned_callback_owners.clear();
         self.state.private_constructor_result_owners.clear();
         *self.state.record_factory_prototype_premises.borrow_mut() = Default::default();

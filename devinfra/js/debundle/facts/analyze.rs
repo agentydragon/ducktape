@@ -614,9 +614,9 @@ where
         shared_vars: &shared_vars,
         native_own_data_reads: &native_own_data_reads,
     };
-    // Statement purity is computed at each statement's program point inside
-    // synchronous execution, which consumes it there. The vendor-prune path
-    // runs the same transfer without execution.
+    // Current-owner proof preparation consumes the unchanged classifier.
+    // Completed purity is published after evaluation and exact certificate
+    // discharge. Vendor pruning finalizes the same classifier without execution.
     let purities = match synchronous_calls {
         SynchronousCallAnalysis::Include => {
             super::sync_effects::execution_index::interpreter::annotate_synchronous_calls(
@@ -636,7 +636,7 @@ where
         }
         SynchronousCallAnalysis::Omit => facts
             .iter()
-            .map(|fact| SettledPurity::unrefined(purity_context.statement_effects(fact)))
+            .map(|fact| CompletedPurity::unrefined(purity_context.statement_effects(fact)))
             .collect(),
     };
     let global_object_names = unshadowed_global_object_aliases(&body);
@@ -649,6 +649,23 @@ where
             hints,
             &graph,
             &global_object_names,
+        );
+    }
+    let disagreements: Vec<_> = facts
+        .iter()
+        .filter(|fact| {
+            fact.synchronous_calls
+                .as_ref()
+                .is_some_and(|calls| calls.purity_disagreement.is_some())
+        })
+        .map(|fact| (fact.ordinal, fact.source_location.as_ref()))
+        .collect();
+    if !disagreements.is_empty() {
+        eprintln!(
+            "purity-completion-disagreement count={} source={} sites={:?}",
+            disagreements.len(),
+            source_path.unwrap_or("<unknown>"),
+            disagreements
         );
     }
     for fact in &mut facts {
@@ -933,7 +950,7 @@ fn assemble_statement_facts(
 /// Record a statement's purity and prune the at-init fallback it gates.
 ///
 /// Ordinary eager reads (including `pureWrap(B)`) always remain in
-/// `reads.eager`. For classifier/callee-pure statements, clearing the
+/// `reads.eager`. For completed-pure statements, clearing the
 /// unresolved-call fallback also asserts that opaque calls cannot
 /// synchronously invoke callback bodies at module init. An
 /// initializer-only trust annotation certifies the initializer's
@@ -942,7 +959,7 @@ fn assemble_statement_facts(
 /// still constrain module order.
 fn settle_statement_purity(
     fact: &mut StatementFacts,
-    purity: SettledPurity,
+    purity: CompletedPurity,
     item: &ModuleItem,
     shadowed: &BTreeSet<&'static str>,
     hints: &AnalysisInputs,
@@ -956,7 +973,7 @@ fn settle_statement_purity(
     {
         resolve_global_alias_escape(item, global_object_names, &aliases, fact);
     }
-    if purity.executed.is_pure() && !has_trusted_initializer_purity(item, hints) {
+    if purity.is_pure() && !has_trusted_initializer_purity(item, hints) {
         fact.at_init_unresolved_sources.clear();
         fact.at_init_unresolved_inline_fn = false;
     } else {
@@ -973,5 +990,5 @@ fn settle_statement_purity(
         fact.at_init_unresolved_inline_fn = fact.at_init_unresolved_inline_fn
             && has_untrusted_at_init_unresolved_inline_fn_call(item, hints);
     }
-    fact.purity = purity.refined.unwrap_or(purity.executed);
+    fact.purity = purity.verdict;
 }

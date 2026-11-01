@@ -10,11 +10,10 @@ use super::runtime_callbacks::{self, CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_models::{self, ModelOperation, ModelResult};
 use crate::analysis_inputs::ProofDependencies;
-use crate::facts::SettledPurity;
 use crate::facts::evaluation_effects::EvaluationEffects;
 use crate::facts::statement_facts::SynchronousCalls;
+use crate::facts::{CompletedPurity, LocalRecordFactoryPurityCertificate, PreparedPurity};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
-use crate::purity::Effects;
 use crate::reports::schema::{NativeProgramPointKind, NativeProgramPointStep};
 use source_identity::SourceUnitOrdinal;
 use std::cell::{Cell, RefCell};
@@ -22,9 +21,10 @@ use std::cell::{Cell, RefCell};
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum RuntimeKey {
     Prefix(SourceUnitOrdinal),
-    /// The statement's purity, computed at its program point before it
-    /// executes and consumed by that execution and later ones.
-    Purity(SourceUnitOrdinal),
+    /// Current-owner preparatory classifier obligations at this prefix.
+    PreparedPurity(SourceUnitOrdinal),
+    /// Final verdict published only after every owner finalization step.
+    CompletedPurity(SourceUnitOrdinal),
     Effects(SourceUnitOrdinal),
     Request(ProgramPoint),
     Result(ProgramPoint),
@@ -42,7 +42,8 @@ enum RuntimeRule {
 
 enum RuntimeFact {
     Prefix(Box<ExecutionState>),
-    Purity(Box<Effects>),
+    PreparedPurity(Box<PreparedPurity>),
+    CompletedPurity(Box<CompletedPurity>),
     Effects(Box<SynchronousCalls>),
     Request(Box<RuntimeRequest>),
     Result(Box<RuntimeResult>),
@@ -153,22 +154,65 @@ impl RuntimeQueries<'_, '_> {
         ));
     }
 
-    /// Whether the settled statement at `owner` (the active one included) is
-    /// pure. Purity is published before its statement executes.
-    pub(super) fn statement_is_pure(&self, owner: SourceUnitOrdinal) -> bool {
+    /// Current-owner proof preparation always consumes the unchanged classifier.
+    pub(super) fn prepared_statement_is_pure(&self, owner: SourceUnitOrdinal) -> bool {
+        assert_eq!(
+            owner, self.point.owner,
+            "prepared purity is current-owner only"
+        );
         match self
             .context
             .borrow_mut()
-            .read_final(RuntimeKey::Purity(owner))
+            .read_final(RuntimeKey::PreparedPurity(owner))
         {
-            Some(RuntimeFact::Purity(effects)) => {
+            Some(RuntimeFact::PreparedPurity(purity)) => {
                 self.dependencies
                     .borrow_mut()
-                    .extend(&effects.proof_dependencies());
-                effects.is_pure()
+                    .extend(&purity.proof_dependencies());
+                purity.is_pure()
             }
-            _ => unreachable!("purity is published at each statement's program point"),
+            _ => unreachable!("prepared purity precedes current-owner execution"),
         }
+    }
+
+    /// Earlier owners, and the finalized current owner's frontier, consume
+    /// only the verdict published after all evaluation/certificate work.
+    pub(super) fn completed_statement_is_pure(&self, owner: SourceUnitOrdinal) -> bool {
+        assert!(owner <= self.point.owner);
+        match self
+            .context
+            .borrow_mut()
+            .read_final(RuntimeKey::CompletedPurity(owner))
+        {
+            Some(RuntimeFact::CompletedPurity(purity)) => {
+                self.dependencies
+                    .borrow_mut()
+                    .extend(purity.proof_dependencies());
+                purity.is_pure()
+            }
+            _ => unreachable!("completed purity requires a finalized owner"),
+        }
+    }
+
+    pub(super) fn complete_owner_purity(
+        &self,
+        owner: SourceUnitOrdinal,
+        certificate: Option<&LocalRecordFactoryPurityCertificate>,
+    ) -> Option<crate::reports::schema::PurityCompletionDisagreement> {
+        assert_eq!(owner, self.point.owner);
+        let mut context = self.context.borrow_mut();
+        let Some(RuntimeFact::PreparedPurity(prepared)) =
+            context.take_final(RuntimeKey::PreparedPurity(owner))
+        else {
+            unreachable!("owner finalization consumes its prepared obligations once");
+        };
+        let (completed, disagreement) = prepared.complete(certificate);
+        context.assume(completed.proof_dependencies());
+        context.propose(
+            RuntimeKey::CompletedPurity(owner),
+            RuntimeFact::CompletedPurity(Box::new(completed)),
+        );
+        disagreement
     }
 
     pub(super) fn assume(&self, dependencies: &ProofDependencies) {
@@ -253,7 +297,8 @@ impl IterativeRules for RuntimeRules<'_, '_> {
             RuntimeKey::Request(point) => vec![RuntimeRule::Transfer(point.clone())],
             RuntimeKey::OwnPropertyRequest(point) => vec![RuntimeRule::OwnProperty(point.clone())],
             RuntimeKey::Prefix(_)
-            | RuntimeKey::Purity(_)
+            | RuntimeKey::PreparedPurity(_)
+            | RuntimeKey::CompletedPurity(_)
             | RuntimeKey::Effects(_)
             | RuntimeKey::Result(_)
             | RuntimeKey::OwnPropertyResult(_)
@@ -285,9 +330,13 @@ impl IterativeRules for RuntimeRules<'_, '_> {
                 RuntimeFact::Prefix(_),
                 RuntimeFact::Prefix(_)
             ) | (
-                RuntimeKey::Purity(_),
-                RuntimeFact::Purity(_),
-                RuntimeFact::Purity(_)
+                RuntimeKey::PreparedPurity(_),
+                RuntimeFact::PreparedPurity(_),
+                RuntimeFact::PreparedPurity(_)
+            ) | (
+                RuntimeKey::CompletedPurity(_),
+                RuntimeFact::CompletedPurity(_),
+                RuntimeFact::CompletedPurity(_)
             ) | (
                 RuntimeKey::Effects(_),
                 RuntimeFact::Effects(_),
@@ -347,14 +396,13 @@ impl RuntimeRules<'_, '_> {
         let Some(RuntimeFact::Prefix(state)) = context.take_final(RuntimeKey::Prefix(owner)) else {
             return;
         };
-        // Purity at `owner` reads only what has settled here. TODO: revisit one
-        // least fixpoint over growing prefix states (docs/design.md § Purity
-        // and synchronous execution share one context) if per-prefix heap
-        // state would make enough statements pure on the canonical inputs to
-        // matter for acceptance.
+        // Preparatory classifier obligations remain exactly the current
+        // source/prefix transfer. Finalization publishes a separate verdict.
         context.propose(
-            RuntimeKey::Purity(owner),
-            RuntimeFact::Purity(Box::new(self.inputs.statement_effects(owner, &state))),
+            RuntimeKey::PreparedPurity(owner),
+            RuntimeFact::PreparedPurity(Box::new(PreparedPurity::new(
+                self.inputs.statement_effects(owner, &state),
+            ))),
         );
         let queries = RuntimeQueries {
             inputs: self.inputs,
@@ -462,7 +510,7 @@ pub(super) fn infer_synchronous_execution(
     inputs: &ExecutionInputs<'_>,
     initial: ExecutionState,
     owner_count: usize,
-) -> Vec<(SynchronousCalls, SettledPurity)> {
+) -> Vec<(SynchronousCalls, CompletedPurity)> {
     let mut inference = IterativeInference::new(RuntimeRules {
         inputs,
         owner_count,
@@ -477,34 +525,12 @@ pub(super) fn infer_synchronous_execution(
             let owner = SourceUnitOrdinal(ordinal);
             match (
                 facts.remove(&RuntimeKey::Effects(owner)),
-                facts.remove(&RuntimeKey::Purity(owner)),
+                facts.remove(&RuntimeKey::CompletedPurity(owner)),
             ) {
-                (Some(RuntimeFact::Effects(calls)), Some(RuntimeFact::Purity(effects))) => {
-                    // The checked local record factory certificate is minted
-                    // only after ordinary execution of this exact initializer
-                    // completes; it refines the settled verdict, never the
-                    // one execution consumed.
-                    let purity = match calls
-                        .local_record_factory_purity
-                        .as_ref()
-                        .filter(|certificate| !certificate.checked_owners.is_empty())
-                    {
-                        Some(certificate) => SettledPurity {
-                            executed: effects.as_ref().clone().project(),
-                            refined: Some(
-                                effects
-                                    .discharge_call(
-                                        certificate.call_span,
-                                        &certificate.dependencies,
-                                    )
-                                    .project(),
-                            ),
-                        },
-                        None => SettledPurity::unrefined(*effects),
-                    };
-                    (*calls, purity)
+                (Some(RuntimeFact::Effects(calls)), Some(RuntimeFact::CompletedPurity(purity))) => {
+                    (*calls, *purity)
                 }
-                _ => unreachable!("every source owner has a settled execution result"),
+                _ => unreachable!("every source owner has a completed execution and purity result"),
             }
         })
         .collect()

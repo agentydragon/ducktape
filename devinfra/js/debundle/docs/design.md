@@ -3384,13 +3384,22 @@ per-prefix facts live in one `IterativeInference` context
 
 - Function effects are source-only and complete before execution starts;
   nothing at a source prefix refines them.
-- A statement's purity is a fact at its own program point, produced once
-  `Prefix(n)` has settled, from source facts, the completed function effects
-  and whole-chunk heap facts. The interpreter consumes it while executing
-  statement _n_ and produces `Prefix(n+1)`.
-- Interpreter results at _n_ refine only later consumers: the final purity
-  projection (a checked local record factory call drops its matching call
-  reason), heap-content order and the graph.
+- `PreparedPurity(n)` retains the current classifier exactly, including enum
+  initialization recognition, prefix-resolved coercions and whole-chunk heap
+  facts. Five current-owner preparatory proofs consume this fact.
+- `CompletedPurity(n)` is published after final assignment/export evaluation,
+  exact certificate/dependency minting and callee heap aggregation. Existing
+  certificates discharge only their matching call effect; every residual
+  classifier obligation remains. Earlier-base heritage, the prior-effect
+  frontier, graph purity and at-init fallback consume this completed verdict.
+  The initializer-only trust exception still retains callback fallback roots.
+- The completed effect-owner frontier advances before `Prefix(n+1)` becomes
+  available. Timing completeness, empty binding/heap cells and unchanged
+  analysis state never establish purity. The timing Outcome does not yet
+  cover the full evaluation-effect ledger.
+- A classifier-pure/completed-impure disagreement is a sparse typed diagnostic
+  on the source-unit execution report, with per-chunk source/site count in
+  diagnostics. The common CLI e2e helper treats any disagreement as a bug.
 
 Whether a member read's object can be written later is a whole-chunk fact
 (`facts/abstract_domain/heap.rs`), not prefix state: a pure statement leaves
@@ -3408,7 +3417,7 @@ retained instead of the bounded live frontier `take_final` gives today. And
 the cost on the canonical inputs could not be bounded before building it,
 against a budget of 10% per step. The settled-prefix invariant ("the state
 after statement _n_ is never rewritten") stays. The condition for revisiting
-this is recorded at the purity read of `Prefix(n)`.
+this remains separate from the prepared/completed publication boundary.
 
 ## Vendor chunk swapping
 
