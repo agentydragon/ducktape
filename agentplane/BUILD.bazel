@@ -63,7 +63,6 @@ py_library(
     name = "policy_sets",
     srcs = ["policy_sets.py"],
     deps = [
-        ":subjects",
         "@pypi//pydantic",
     ],
 )
