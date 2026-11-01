@@ -62,7 +62,7 @@ func (a *app) execute(args []string) int {
 	case err == nil:
 		return 0
 	case errors.Is(err, errInterrupted):
-		fmt.Fprintln(a.stderr, "interrupted; nothing was cancelled")
+		fmt.Fprintln(a.stderr, "interrupted; request outcome may be unknown")
 		return 128 + int(received.Load())
 	case errors.As(err, &done):
 		return int(done)
@@ -124,9 +124,9 @@ func (s *seconds) String() string { return s.d.String() }
 
 func (s *seconds) Type() string { return "seconds" }
 
-const rootHelp = `agentplane calls the Action Service's generated gRPC API and the HTTP APIs a Sandbox already reaches
-through the egress proxy: the Notification Service (notifications) and the Egress rules API (egress). It adds no
-authority and keeps no state. Each group reads AGENTPLANE_<GROUP>_URL and AGENTPLANE_<GROUP>_CREDENTIAL
+const rootHelp = `agentplane calls the Action Service and Session Dispatcher gRPC APIs and the HTTP APIs a Sandbox already
+reaches through the egress proxy: the Notification Service (notifications) and the Egress rules API (egress). It
+adds no authority and keeps no state. Each group reads AGENTPLANE_<GROUP>_URL and AGENTPLANE_<GROUP>_CREDENTIAL
 (the placeholder bearer) and fails alone with exit 2 when they are missing.
 
 With --json stdout is the service's own JSON, unmodified: one value, or one per line for a list. Text
@@ -139,7 +139,7 @@ its result says (a script's exit code, an MCP isError).
   0       success
   1       refused or invalid, or an unclassified error: report, do not retry unchanged
   2       usage or configuration error, found before any request
-  3       transient (unreachable, deadline, rate limit, draining): retry a read; see submit for a write
+  3       transient (unreachable, deadline, rate limit, draining): retry a read; reconcile a write by its ID
   4       conflict: repeated idempotency key, stale subscription version, cancelled key
   5       not found, or not owned by this account
   10      --timeout elapsed before the condition held; the current receipt is on stdout
@@ -149,12 +149,12 @@ its result says (a script's exit code, an MCP isError).
           "actions get --key KEY" later, never resubmit
   16      cancel: too_late, dispatch was already claimed
   17      cancel: already_finished
-  128+N   ended by signal N; nothing was cancelled`
+  128+N   ended by signal N; request outcome may be unknown`
 
 func (a *app) root() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "agentplane",
-		Short:         "Call the Action, Notification and Egress rules APIs from a Sandbox",
+		Short:         "Call Agentplane APIs from a Sandbox",
 		Long:          rootHelp,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -166,7 +166,7 @@ func (a *app) root() *cobra.Command {
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.PersistentFlags().BoolVar(&a.asJSON, "json", false, "print the service's JSON unmodified; lists as JSON Lines")
 	root.PersistentFlags().Var(&a.timeout, "timeout", "deadline of the whole call in seconds; 0 sets none and waiting commands read once")
-	root.AddCommand(a.actionsCommand(), a.notificationsCommand(), a.egressCommand())
+	root.AddCommand(a.actionsCommand(), a.sessionsCommand(), a.notificationsCommand(), a.egressCommand())
 	return root
 }
 
