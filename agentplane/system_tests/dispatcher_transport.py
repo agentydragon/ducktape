@@ -15,6 +15,7 @@ from agentplane.system_tests.tracing import tracer
 from util.net import pick_free_port
 
 SERVICE = "session-dispatcher"
+TOKEN_AUDIENCE = "session-dispatcher"
 
 
 @dataclass(frozen=True)
@@ -39,7 +40,7 @@ async def bound_caller(cluster: Cluster, service_account: str) -> tuple[Caller, 
             "create",
             "token",
             service_account,
-            f"--audience={SERVICE}",
+            f"--audience={TOKEN_AUDIENCE}",
             "--duration=1800s",
             "--bound-object-kind=Pod",
             f"--bound-object-name={name}",
