@@ -521,7 +521,11 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         session_spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CENTRAL_SAMPLER, cwd=cwd, model=MODEL)
         opening = await deployed.dispatcher.OpenSession(
             session_dispatcher_pb2.OpenSessionRequest(
-                session_id=session_id, sandbox=deployed.sandbox, spec=session_spec, setup_script=":\n"
+                session_id=session_id,
+                sandbox=deployed.sandbox,
+                sandbox_uid=deployed.sandbox_uid,
+                spec=session_spec,
+                setup_script=":\n",
             ),
             metadata=deployed.metadata,
             timeout=15,
