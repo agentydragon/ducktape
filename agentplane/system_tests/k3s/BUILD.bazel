@@ -112,7 +112,7 @@ oci_layout_rloc(
     for name, image in K3S_SERVICE_IMAGES.items()
 ]
 
-# Dex and the MCP servers `test_mcp` calls, imported only by targets that run them
+# Dex and the MCP servers the MCP suites call, imported only by targets that run them
 # (`k3s_suite(stack = "mcp")`): kept separate from the common service image list.
 [
     oci_layout_rloc(

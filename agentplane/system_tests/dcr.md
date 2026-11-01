@@ -9,7 +9,7 @@ the authorization URL, PKCE/state, and absence of a token. Loopback and hosted-s
 redirect URIs both run. The existing auth-server fixture supplies upstream OIDC discovery;
 the registration path never signs in there.
 
-The DCR scenario in `//agentplane/system_tests/suites:test_mcp` exercises the deployed edge image and
+The DCR scenario in `//agentplane/system_tests/suites/mcp:test_services` exercises the deployed edge image and
 generated configuration through the k3s Service/port-forward (the URL from `deployment.mcp_fixtures`; [`k3s`](k3s/README.md)). Plain HTTP
 follows the real 401 challenge and metadata chain, checks same-origin endpoints, and registers a
 public loopback client. It does not depend on the SDK helper, so ordinary helper-only changes

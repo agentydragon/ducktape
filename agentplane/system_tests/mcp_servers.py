@@ -1,4 +1,4 @@
-"""The Action groups and OAuth-linked MCP server `test_mcp` exercises. The k3s fixture configures
+"""The Action groups and OAuth-linked MCP server the MCP suites exercise. The k3s fixture configures
 them in place of the deployment's own, so the scenario never depends on a name an operator uses."""
 
 # `mcp-everything`, which needs no credential.

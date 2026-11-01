@@ -1,6 +1,6 @@
 # Orchestration wait deadline measurement, 2026-10-27
 
-The merged correction is [#12189](https://github.com/agentydragon/ducktape/pull/12189), commit `f0036950097ee1bac22cece2589d8f77d80017f4`. This note measures the reported `wait_for_turn(wait_seconds=1)` failure in the full MCP acceptance test. The target is `//agentplane/system_tests:test_mcp`; this is the historical label for the invocation below. The current suite target is `//agentplane/system_tests/suites:test_mcp`. Its Codex launcher case checks that the early wait succeeds with `completed: false` and a resume token before submitting a turn. A later wait must observe the completed turn.
+The merged correction is [#12189](https://github.com/agentydragon/ducktape/pull/12189), commit `f0036950097ee1bac22cece2589d8f77d80017f4`. This note measures the reported `wait_for_turn(wait_seconds=1)` failure in the full MCP acceptance test. The target is `//agentplane/system_tests:test_mcp`; this is the historical label for the invocation below. The current launcher suite target is `//agentplane/system_tests/suites/mcp:test_actions`. Its Codex launcher case checks that the early wait succeeds with `completed: false` and a resume token before submitting a turn. A later wait must observe the completed turn.
 
 ## Earlier evidence and exposure
 

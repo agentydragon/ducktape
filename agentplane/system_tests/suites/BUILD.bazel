@@ -56,33 +56,6 @@ k3s_suite(
     ],
 )
 
-k3s_suite(
-    name = "test_mcp",
-    srcs = ["test_mcp.py"],
-    stack = "mcp",
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//agentplane/app/testing:client",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/system_tests:cluster",
-        "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests:executor",
-        "//agentplane/system_tests:harness_pair",
-        "//agentplane/system_tests:operator_login",
-        "//agentplane/system_tests:sandbox",
-        "//agentplane/system_tests:scripted_upstream",
-        "//agentplane/system_tests/k3s:stack",
-        "//agentplane/system_tests/scenarios:central_sampler",
-        "//agentplane/system_tests/scenarios:dcr",
-        "//agentplane/system_tests/scenarios:mcp",
-        "@pypi//httpx",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 # Every VM scenario boots independently on the same stack and runs concurrently.
 k3s_suite(
     name = "test_vm",

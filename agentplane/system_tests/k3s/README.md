@@ -30,7 +30,7 @@ A suite using the MCP fixture stack takes the `rendered/local-model-mcp-fixtures
 rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture
 (`mcp_fixtures/*_layout`), with test-only Dex clients, operator, MCP server and Action groups. The
 standalone MCP edge serves its OAuth and MCP endpoints in this fixture; Actions keeps its separate
-OAuth client for the upstream fixture used by `test_mcp`. Dex
+OAuth client for the upstream fixture used by `mcp:test_actions`. Dex
 reads a config Secret holding the bcrypt hash of a fixed test-only operator password.
 Database passwords and OIDC client/session secrets are fixed test-only literals; Dex uses a fixed
 bcrypt salt so its hash is repeatable. The rendered JSON is a Bazel build output, not checked into git.

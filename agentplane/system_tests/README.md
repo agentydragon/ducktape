@@ -6,20 +6,21 @@ cross-component behavior and durable system evidence. They are not unit tests wi
 they are the checks that the deployed system does what <../egress/SPEC.md> says it does and that a
 session's standing instructions reach the model that serves it.
 
-The four CI suites each start one [disposable k3s stack](k3s/README.md) in an RBE action.
+The five CI suites each start one [disposable k3s stack](k3s/README.md) in an RBE action.
 The session-scoped `deployment` fixture exposes its cluster handle, app URL, token, and MCP access
 ([`system_test_target.py`](k3s/system_test_target.py)). Compatible scenarios share a stack:
 
-| Target                                             | Scenarios                                                                                                    |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `//agentplane/system_tests/suites:test_pod`        | egress, messaging, presets, session instructions, suspend/resume, thread stream, Pod credentials and storage |
-| `//agentplane/system_tests/suites:test_dispatcher` | Dispatcher queue, wake and replica behavior                                                                  |
-| `//agentplane/system_tests/suites:test_mcp`        | MCP integration, dynamic client registration and Pod central sampler                                         |
-| `//agentplane/system_tests/suites:test_vm`         | VM Sandbox behavior, runner credentials, systemd supervision and VM central sampler                          |
+| Target                                               | Scenarios                                                                                                    |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `//agentplane/system_tests/suites:test_pod`          | egress, messaging, presets, session instructions, suspend/resume, thread stream, Pod credentials and storage |
+| `//agentplane/system_tests/suites:test_dispatcher`   | Dispatcher queue, wake and replica behavior                                                                  |
+| `//agentplane/system_tests/suites/mcp:test_actions`  | MCP Action execution, BFF decisions, launcher ownership and OAuth linkage                                    |
+| `//agentplane/system_tests/suites/mcp:test_services` | Dynamic client registration, policy binding and Pod central sampler                                          |
+| `//agentplane/system_tests/suites:test_vm`           | VM Sandbox behavior, runner credentials, systemd supervision and VM central sampler                          |
 
 The shared stack cuts setup and image-import work, while each target now has a coarser cache key: a
 changed scenario reruns its suite. Scenario modules live in [`scenarios/`](scenarios/) as ordinary
-libraries. Entry points in `suites/test_*.py` contain ordinary pytest tests, marks, and
+libraries. Entry points under `suites/` contain ordinary pytest tests, marks, and
 parametrization. Each test passes its fixture values explicitly to a plain scenario function.
 Gazelle derives Python dependencies; `k3s_suite` supplies stack artifacts and execution settings.
 
@@ -37,8 +38,11 @@ Per-test fixtures create and clean up their own Sandboxes and resources. A host-
 allocates a fresh loop-backed volume for each VM workspace claim UID, retaining it until stack teardown.
 Suites do not declare volume counts; deleting and recreating a claim never reuses its workspace data.
 
-Pod and MCP suites remain separate so their larger scenario sets can run on different workers.
-The sampler shares MCP's stack rather than paying for another k3s startup.
+The MCP cases use two independent stacks: five pytest items in `mcp:test_actions` and four in
+`mcp:test_services`. This is the partition measured in the
+[sharding spikes](https://github.com/agentydragon/ducktape/blob/acf041b50a6a14403554854de34c41f95ee419c7/agentplane/system_tests/debug/sharding_spikes_2026_11_01.md).
+Their shared login and policy fixtures live under `suites/mcp/`. The Pod central sampler shares
+the discovery and policy suite's MCP stack. Pod and VM suites retain their own stacks.
 Within each suite, independent Claude/Codex cases run together through
 [`run_harness_pair`](harness_pair.py), sharing the test's clients and scripted model server.
 Each harness still creates its own Sandboxes and runs every scenario assertion. Seven Pod pairs
@@ -83,7 +87,8 @@ Every request the scripted model receives is kept in the target's `test.outputs/
 bbr test \
   //agentplane/system_tests/suites:test_pod \
   //agentplane/system_tests/suites:test_dispatcher \
-  //agentplane/system_tests/suites:test_mcp \
+  //agentplane/system_tests/suites/mcp:test_actions \
+  //agentplane/system_tests/suites/mcp:test_services \
   //agentplane/system_tests/suites:test_vm
 ```
 
@@ -272,7 +277,7 @@ distinct wake generations per authenticated caller per rolling minute.
 
 ## Central sampler
 
-`test_mcp` and `test_vm` each run the central sampler scenario on their existing stack,
+`mcp:test_services` and `test_vm` each run the central sampler scenario on their existing stack,
 using a fresh Pod and VM Sandbox respectively. Each submits a central Session and user input
 through the deployed Dispatcher, runs setup and a model-requested shell command through the
 Sandbox's holding Gateway and pinned exec-server, then verifies the reasoning, final answer, setup
@@ -294,15 +299,15 @@ state, init/service logs, and shared-host logs are retained in test outputs. The
 execution/History summary is written to `test.outputs/central-sampler-k3s.json`.
 
 ```bash
-bbr test //agentplane/system_tests/suites:test_mcp --test_arg=-k --test_arg=central_setup
+bbr test //agentplane/system_tests/suites/mcp:test_services --test_arg=-k --test_arg=central_setup
 bbr test //agentplane/system_tests/suites:test_vm --test_arg=-k --test_arg=central_setup
 ```
 
 ## MCP integration
 
-`test_mcp` runs the MCP integration and dynamic client registration scenarios on a stack with Dex,
+`mcp:test_actions` and `mcp:test_services` each run a stack with Dex,
 the standalone MCP edge, `mcp-everything` and the Dex-backed OAuth MCP fixture
-(`test_mcp` uses the MCP fixture stack), configured under test-only names
+(both use the MCP fixture stack), configured under test-only names
 ([`mcp_servers.py`](mcp_servers.py)). The DCR scenario checks deployed discovery and public-client
 registration using plain HTTP; `//agentplane/mcp_edge/authserver:sdk_dcr_test` owns the real Python
 SDK contract against production handlers and PostgreSQL ([`dcr.md`](dcr.md)). The MCP scenario
