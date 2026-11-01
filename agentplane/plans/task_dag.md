@@ -153,15 +153,17 @@ Independent foundations and clients can start against the approved contract; the
 needs both scheduled wake and Session creation/cooperation. Dedicated sampler disruption acceptance
 is not a prerequisite.
 
-**Proposed next batch; no new worker assignment implied:**
+**Dispatched by the operator, 2026-11-01 UTC.** Implementation workers use GPT-6 Luna `xhigh`;
+`/root` owns integration review and the two design proposals. Focused regression-test additions
+and Bazel runs are explicitly authorized for this batch. Broad disruption exercises remain deferred.
 
-| Lane                   | Next reviewable outcome                                                                                                | Prerequisite / stopping point                                                                                |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| P0 execution recovery  | `EXEC_ENVIRONMENT_RECOVERY`: typed environment failures and recovery from stale Gateway routes                         | No wake mutation or new wake policy; retain unknown operation outcomes                                       |
-| P0 incarnation control | `EXEC_INCARNATION_FENCING`: optional model fence before workspace/command effects                                      | Independent of resume, provisioning and broad runtime redesign                                               |
-| P0 policy review       | `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`: concrete caller/target matrix for explicit resume and message wake           | Stakeholder selection precedes `EXEC_SUSPENDED_RESUME` implementation                                        |
-| P1 delegation          | Finish the already-approved `SESSION_PRINCIPAL_READS` draft and prepare the remaining tools against existing contracts | Enforcing backend changes precede normal-caller exposure; use the existing PRs rather than duplicate them    |
-| P1 scheduling          | `SCHEDULED_AGENT_WAKE_DESIGN`: the smallest durable daily-wake proposal                                                | Review delivery/overlap/authority before runtime implementation; can proceed in parallel as capacity permits |
+| Lane                   | Owner                                | Next reviewable outcome                                                                                                        | Prerequisite / stopping point                                                        |
+| ---------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| P0 execution recovery  | `/root/exec_environment_recovery`    | `EXEC_ENVIRONMENT_RECOVERY`: typed environment failures and recovery from stale Gateway routes                                 | No wake mutation or new wake policy; retain unknown operation outcomes               |
+| P0 incarnation control | `/root/exec_incarnation_fencing`     | `EXEC_INCARNATION_FENCING`: optional model fence before workspace/command effects                                              | Independent of resume, provisioning and broad runtime redesign                       |
+| P0 policy review       | `/root`                              | `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`: concrete caller/target matrix for explicit resume and message wake                   | Proposal only; stakeholder selection precedes `EXEC_SUSPENDED_RESUME` implementation |
+| P1 delegation          | `/root/delegation_history_and_tools` | Finish the approved `SESSION_PRINCIPAL_READS` draft and prepare remaining tool/result/client slices against existing contracts | Separate reviewable PRs; enforcing backends precede normal-caller exposure           |
+| P1 scheduling          | `/root`                              | `SCHEDULED_AGENT_WAKE_DESIGN`: the smallest durable daily-wake proposal                                                        | Proposal only; delivery/overlap/authority review precedes runtime implementation     |
 
 Finish reviews of #13384, #13390, #13391 and #13392 alongside this batch. Platform guidance
 activation remains a separate deployment hold. After the lifecycle policy is selected, resume
@@ -226,7 +228,7 @@ auto-wake policy. Neither is selected or a prerequisite for v1 inbox messaging.
 
 ### `SCHEDULED_AGENT_WAKE_DESIGN` — choose the durable scheduled-wake contract
 
-**Selected P1 decision; next proposal, unassigned.** For the daily CI-maintenance workflow,
+**Proposal drafting, `/root`, operator dispatch 2026-11-01 UTC; implementation awaits review.** For the daily CI-maintenance workflow,
 choose the smallest sound scheduling/delivery contract: compare
 an existing scheduler feeding authorized Session commands with a Notification-owned schedule.
 Review cadence/timezone, missed runs, overlap, stable run identities, delivery receipts and
@@ -432,7 +434,7 @@ flowchart TD
     SESSION_PLATFORM_GUIDANCE[In review: default platform guidance]
     SESSION_PLATFORM_GUIDANCE_ACTIVATION[Held draft: activate managed sampler guidance]
     SESSION_CALLER_AUTHORITY[In review: trusted same-SA authority]
-    SESSION_PRINCIPAL_READS[Paused draft: retained same-principal History reads]
+    SESSION_PRINCIPAL_READS[In flight: retained same-principal History reads]
     SESSION_TARGET_DISCOVERY[In review: existing target discovery]
     SESSION_DELEGATION_TOOLS[Remaining MCP and result tools]
     SESSION_DELEGATION_TRANSPORT[In review: workload proxy route for Session calls]
@@ -596,11 +598,15 @@ do not infer ownership by name, from a replacement SA or from a parent edge.
 
 ### `SESSION_PRINCIPAL_READS` — narrow retained same-principal History access
 
-**Paused, unpublished local draft from `/root/delegation_dispatcher_authority`; resume in the
-next P1 batch. Approved scope, operator dispatch 2026-11-01 UTC.** Finish a separate PR on the repaired association contract in
+**In flight, `/root/delegation_history_and_tools`, operator dispatch 2026-11-01 UTC; resumes the
+preserved unpublished draft.** Finish a separate PR on the repaired association contract in
 [`SESSION_CALLER_AUTHORITY`](#session_caller_authority--same-sa-admission-and-immutable-session-authority),
 stacking while that prerequisite remains unmerged. Review the native/central write-trust map
 before broad implementation. No shared delegated-auth dependency for direct caller reads.
+History and discovery share the authority prerequisite but are independent siblings. If native
+GitHub stacks cannot represent that fork, publish History against the authority branch with an
+explicit dependency/tooling-limit note, then retarget to `devel` after the parent merges; do not
+invent a discovery prerequisite or rewrite its branch to fit stack bookkeeping.
 Propagate and store its immutable principal through designated authenticated native/central paths,
 separately from the producer SA and Sandbox metadata. Enforce the narrow same-principal read rule,
 including source lookup, batch/filter/watch reads and revocation. Retained reads do not require a
@@ -618,7 +624,8 @@ and admission remain separate checks, with same-name/UID replacement refused.
 
 ### `SESSION_DELEGATION_TOOLS` — usable Session CLI/MCP operations
 
-**MCP and compact History/result projection remain to dispatch.** Direct Dispatcher CLI commands
+**Contract/client/result preparation in flight, `/root/delegation_history_and_tools`, operator
+dispatch 2026-11-01 UTC; backend enforcement still gates exposure.** Direct Dispatcher CLI commands
 landed in [#13386](https://github.com/agentydragon/ducktape/pull/13386); full workflow exposure waits
 for backend enforcement.
 Expose open, submit, get, command-correlated observe, retained turn reads, queued cancel and exact
@@ -1725,7 +1732,7 @@ Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-co
 
 ### `EXEC_ENVIRONMENT_RECOVERY` — actionable execution failures and stale-route recovery
 
-**Selected P0 reliability sprint; ready to assign, operator, 2026-10-31 PDT.** A central sampler
+**In flight, `/root/exec_environment_recovery`, operator dispatch 2026-11-01 UTC; selected P0.** A central sampler
 Session can keep thinking after its execution Sandbox suspends, but a nested `exec` does not wake it. In
 [this thread](https://agentplane-staging.allegedly.works/#/threads/ccd8f68a-a2b7-459f-969a-51b70a06321b),
 the agent could not continue after idle suspension and later saw a dial timeout. Investigation found
@@ -1749,7 +1756,7 @@ No wake permission decision or automatic environment mutation is part of this sl
 
 ### `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN` — authorize explicit resume and message wake
 
-**Selected P0 decision, promoted from the freezer; next stakeholder review.** Explicit resume first
+**Selected P0 decision; proposal drafting by `/root`, operator dispatch 2026-11-01 UTC.** Explicit resume first
 and optional model incarnation fencing are selected. Define the remaining authority matrix for
 agents, external MCP callers, users and backend automation against existing Sandbox targets.
 This consolidates the earlier same-SA wake-allowlist question without equating the triggers:
@@ -1801,7 +1808,7 @@ resume and recovery. Broader notices, model fencing and fresh provisioning are n
 
 ### `EXEC_INCARNATION_FENCING` — let the model choose whether exec crosses an incarnation change
 
-**Selected P0 reliability sprint; ready to assign, operator, 2026-10-31 PDT.** Expose the current
+**In flight, `/root/exec_incarnation_fencing`, operator dispatch 2026-11-01 UTC; selected P0.** Expose the current
 execution Sandbox incarnation UID and add optional `expected_incarnation_uid` to nested environment
 execution calls, starting with `exec_command`. This fences the remote operation, not the outer
 JavaScript cell. Update tool schemas and delegate validation together. On a mismatch, reject the
