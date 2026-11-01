@@ -37,8 +37,8 @@
       "sha256": "vrOsi8MiTTukG2VZNXgqzAfIB4eNA3gIDe3APkRo+Cw="
     },
     "workspace-gc": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/workspace-gc-1a8e8901b1ca/workspace_gc-0.1.0-py3-none-any.whl",
-      "sha256": "Go6JAbHKJ2hIh0snybIgiati8yOf5B0KD0ZKXugVWXA="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/workspace-gc-5c562e7a9aa6/workspace_gc-0.1.0-py3-none-any.whl",
+      "sha256": "XFYuepqmU7d/Fy5lucO11ouQI61KGsJ5UQqz8xbgrhY="
     },
     "ws": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ws-b62afdfdcbe8/ducktape_ws-0.1.0-py3-none-any.whl",
@@ -97,8 +97,8 @@
       "sha256": "q2KKVGkPSF8/IxH+FoJlYg8Lyh/L9WUura4KwO5J7vM="
     },
     "skill-workspace-gc": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-workspace-gc-758423eb36cd/workspace-gc.skill",
-      "sha256": "dYQj6zbNIqWuRL88U+vpJ5+oI17zkW6d3k6s29oqrkE="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-workspace-gc-44212d9e4185/workspace-gc.skill",
+      "sha256": "RCEtnkGF+swcXpBscwDtoDTemWEkz1Er2SWFYLT3g3M="
     },
     "skill-debundle_architect": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_architect-1cc6bea07822/debundle_architect.skill",
