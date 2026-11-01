@@ -86,14 +86,15 @@ def _assert_stages(
         assert not missing, f"{role} Sandbox {name} ({uid}) is missing Runner stages: {missing}"
 
 
-def assert_vm_process_trace_contract(output_dir: Path) -> None:
+def assert_vm_process_trace_contract(output_dir: Path, *, require_central_sampler: bool = True) -> None:
     test_spans = _read_jsonl(output_dir / "test-spans.jsonl")
     process_spans = _read_jsonl(output_dir / "process-spans.jsonl")
     scenario_ready = _sandbox_identities(test_spans, "system_test.sandbox.ready")
     central_ready = _sandbox_identities(test_spans, "system_test.central_sampler.sandbox.ready")
     ready = scenario_ready | central_ready
     assert scenario_ready, "no ready VM Sandbox spans reached test-spans.jsonl"
-    assert central_ready, "central-sampler Sandbox identity did not reach test-spans.jsonl"
+    if require_central_sampler:
+        assert central_ready, "central-sampler Sandbox identity did not reach test-spans.jsonl"
 
     runner_spans = [span for span in process_spans if span.get("service") == "agentplane-runner"]
     assert runner_spans, "no Runner spans reached process-spans.jsonl"

@@ -17,6 +17,22 @@ from util.net import Listener, listen_tcp
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    group = os.environ.get("AGENTPLANE_MCP_SPIKE_GROUP")
+    if group is None:
+        return
+    assert group in {"a", "b"}, group
+    first = {
+        "test_agent_executes_mcp_action",
+        "test_agent_mcp_bff_decision",
+        "test_launcher_drives_only_the_sandbox_it_launched",
+        "test_operator_links_oauth_mcp_server",
+    }
+    selected = [item for item in items if (item.name.split("[")[0] in first) == (group == "a")]
+    config.hook.pytest_deselected(items=[item for item in items if item not in selected])
+    items[:] = selected
+
+
 @pytest.fixture(scope="session")
 def scripted_listener() -> Iterator[Listener]:
     """Retain the scripted model's binding until the deployment and all scenarios stop."""
