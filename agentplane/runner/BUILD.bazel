@@ -70,6 +70,7 @@ py_test(
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
     shard_count = 2,
+    tags = ["manual"],
     target_compatible_with = [
         "@platforms//cpu:x86_64",  # keep: pinned harness binaries
         "@platforms//os:linux",  # keep: kernel process accounting
