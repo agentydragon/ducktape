@@ -4,19 +4,26 @@ from __future__ import annotations
 
 import json
 import time
-import uuid
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 
 import docker
 import httpx
+from testcontainers.core.network import Network
 
-from third_party.containers import grafana_visual, prometheus_visual
+from third_party.containers import grafana_visual, prometheus_visual, ryuk
 from util.oci import load_oci_image
+from util.testing.container_logs import LoggedContainer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 TEST_PASSWORD = "isolated-synthetic-grafana"
+
+
+def record_stage(stage: str) -> None:
+    with (undeclared_outputs_dir() / "grafana-stages.log").open("a") as log:
+        log.write(stage + "\n")
 
 
 def _wait_ready(url: str) -> None:
@@ -33,10 +40,16 @@ def _wait_ready(url: str) -> None:
 
 @contextmanager
 def grafana_dashboard(tmp_path: Path, dashboard_path: Path, samples: str) -> Iterator[str]:
-    load_oci_image(grafana_visual.IMAGE)
-    load_oci_image(prometheus_visual.IMAGE)
+    record_stage("loading Grafana, Prometheus and cleanup images")
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        grafana_image = executor.submit(load_oci_image, grafana_visual.IMAGE)
+        prometheus_image = executor.submit(load_oci_image, prometheus_visual.IMAGE)
+        ryuk_image = executor.submit(load_oci_image, ryuk.IMAGE)
+        grafana_image.result()
+        prometheus_image.result()
+        ryuk_image.result()
+    record_stage("creating synthetic TSDB")
     client = docker.from_env()
-    unique = uuid.uuid4().hex[:12]
     data = tmp_path / "data"
     data.mkdir()
     (data / "fixture.om").write_text(samples)
@@ -50,80 +63,76 @@ def grafana_dashboard(tmp_path: Path, dashboard_path: Path, samples: str) -> Ite
         user="0",
         remove=True,
     )
-    network = client.networks.create(f"grafana-visual-{unique}", internal=True)
-    prometheus = None
-    grafana = None
+    record_stage("starting Prometheus and Grafana")
     try:
-        prom_name = f"grafana-prometheus-{unique}"
-        prometheus = client.containers.run(
-            prometheus_visual.IMAGE.tag,
-            [
-                "--config.file=/etc/prometheus/prometheus.yml",
-                "--storage.tsdb.path=/fixture/tsdb",
-                "--storage.tsdb.retention.time=87600h",
-            ],
-            name=prom_name,
-            user="0",
-            network=network.name,
-            volumes=mount,
-            detach=True,
-        )
-        grafana = client.containers.run(
-            grafana_visual.IMAGE.tag,
-            name=f"grafana-visual-{unique}",
-            network=network.name,
-            environment={
-                "GF_AUTH_ANONYMOUS_ENABLED": "true",
-                "GF_AUTH_ANONYMOUS_ORG_ROLE": "Viewer",
-                "GF_ANALYTICS_REPORTING_ENABLED": "false",
-                "GF_ANALYTICS_CHECK_FOR_UPDATES": "false",
-                "GF_PLUGINS_PREINSTALL": "",
-                "GF_SECURITY_ADMIN_PASSWORD": TEST_PASSWORD,
-                "GF_USERS_DEFAULT_THEME": "dark",
-            },
-            detach=True,
-        )
-        deadline = time.monotonic() + 20
-        address = None
-        while time.monotonic() < deadline:
-            grafana.reload()
-            if grafana.status in ("exited", "dead"):
-                raise AssertionError(f"Grafana exited before joining the network: {grafana.attrs['State']}")
-            address = grafana.attrs["NetworkSettings"].get("Networks", {}).get(network.name, {}).get("IPAddress")
-            if address:
-                break
-            time.sleep(0.1)
-        if not address:
-            raise AssertionError(f"Grafana did not join its network: {grafana.attrs['State']}")
-        url = f"http://{address}:3000"
-        _wait_ready(f"{url}/api/health")
-        with httpx.Client(base_url=url, timeout=15, auth=("admin", TEST_PASSWORD), trust_env=False) as http:
-            response = http.post(
-                "/api/datasources",
-                json={
-                    "name": "Mimir",
-                    "uid": "mimir",
-                    "type": "prometheus",
-                    "access": "proxy",
-                    "url": f"http://{prom_name}:9090",
-                },
+        with Network(docker_network_kw={"internal": True}) as network:
+            prometheus = (
+                LoggedContainer(prometheus_visual.IMAGE.tag, test_name="synthetic-prometheus", user="0")
+                .with_network(network)
+                .with_network_aliases("prometheus")
+                .with_volume_mapping(data, "/fixture", "rw")
+                .with_command(
+                    [
+                        "--config.file=/etc/prometheus/prometheus.yml",
+                        "--storage.tsdb.path=/fixture/tsdb",
+                        "--storage.tsdb.retention.time=87600h",
+                    ]
+                )
             )
-            response.raise_for_status()
-            dashboard = json.loads(dashboard_path.read_text())
-            dashboard["id"] = None
-            dashboard["version"] = 0
-            dashboard = json.loads(json.dumps(dashboard).replace("${DS_MIMIR}", "Mimir"))
-            response = http.post("/api/dashboards/db", json={"dashboard": dashboard, "overwrite": False})
-            response.raise_for_status()
-        yield url
+            grafana = (
+                LoggedContainer(grafana_visual.IMAGE.tag, test_name="synthetic-grafana")
+                .with_network(network)
+                .with_envs(
+                    GF_AUTH_ANONYMOUS_ENABLED="true",
+                    GF_AUTH_ANONYMOUS_ORG_ROLE="Viewer",
+                    GF_ANALYTICS_REPORTING_ENABLED="false",
+                    GF_ANALYTICS_CHECK_FOR_UPDATES="false",
+                    GF_PLUGINS_PREINSTALL="",
+                    GF_SECURITY_ADMIN_PASSWORD=TEST_PASSWORD,
+                    GF_USERS_DEFAULT_THEME="dark",
+                )
+            )
+            with prometheus, grafana:
+                wrapped = grafana.get_wrapped_container()
+                deadline = time.monotonic() + 20
+                address = None
+                while time.monotonic() < deadline:
+                    wrapped.reload()
+                    if wrapped.status in ("exited", "dead"):
+                        raise AssertionError(f"Grafana exited before joining the network: {wrapped.attrs['State']}")
+                    address = (
+                        wrapped.attrs["NetworkSettings"].get("Networks", {}).get(network.name, {}).get("IPAddress")
+                    )
+                    if address:
+                        break
+                    time.sleep(0.1)
+                if not address:
+                    raise AssertionError(f"Grafana did not join its network: {wrapped.attrs['State']}")
+
+                url = f"http://{address}:3000"
+                record_stage("waiting for Grafana health")
+                _wait_ready(f"{url}/api/health")
+                record_stage("provisioning datasource and dashboard")
+                with httpx.Client(base_url=url, timeout=15, auth=("admin", TEST_PASSWORD), trust_env=False) as http:
+                    response = http.post(
+                        "/api/datasources",
+                        json={
+                            "name": "Mimir",
+                            "uid": "mimir",
+                            "type": "prometheus",
+                            "access": "proxy",
+                            "url": "http://prometheus:9090",
+                        },
+                    )
+                    response.raise_for_status()
+                    dashboard = json.loads(dashboard_path.read_text())
+                    dashboard["id"] = None
+                    dashboard["version"] = 0
+                    dashboard = json.loads(json.dumps(dashboard).replace("${DS_MIMIR}", "Mimir"))
+                    response = http.post("/api/dashboards/db", json={"dashboard": dashboard, "overwrite": False})
+                    response.raise_for_status()
+                record_stage("dashboard ready")
+                yield url
     finally:
-        output = undeclared_outputs_dir()
-        for name, container in (("grafana", grafana), ("prometheus", prometheus)):
-            if container is not None:
-                (output / f"{name}.log").write_bytes(container.logs())
-                container.reload()
-                (output / f"{name}-state.json").write_text(json.dumps(container.attrs["State"], indent=2))
-                (output / f"{name}-network.json").write_text(json.dumps(container.attrs["NetworkSettings"], indent=2))
-                container.remove(force=True)
-        network.remove()
+        record_stage("stopping Grafana and Prometheus")
         client.close()

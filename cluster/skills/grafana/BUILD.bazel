@@ -47,10 +47,13 @@ py_library(
     deps = [
         "//third_party/containers:grafana_visual",
         "//third_party/containers:prometheus_visual",
+        "//third_party/containers:ryuk",
         "//util:oci",
+        "//util/testing:container_logs",
         "//util/testing:undeclared_outputs",
         "@pypi//docker",
         "@pypi//httpx",
+        "@pypi//testcontainers",
     ],
 )
 
