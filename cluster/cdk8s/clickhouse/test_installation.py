@@ -37,7 +37,7 @@ def test_shared_client_services_select_the_same_replica_during_incident(scratch_
     template_name = chi["spec"]["defaults"]["templates"]["serviceTemplate"]
     template = next(t for t in chi["spec"]["templates"]["serviceTemplates"] if t["name"] == template_name)
     gate = template["spec"]["selector"]
-    assert gate == {"clickhouse.altinity.com/replica": "1"}
+    assert gate == {"statefulset.kubernetes.io/pod-name": "chi-clickhouse-default-0-1-0"}
     assert client_service["spec"]["selector"].items() >= gate.items()
     assert template["spec"]["type"] == "ClusterIP"
     assert {port["name"] for port in template["spec"]["ports"]} == {"http", "tcp"}

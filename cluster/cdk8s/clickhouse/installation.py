@@ -89,7 +89,7 @@ _CLICKHOUSE_PIRAEUS_102453_POD_TEMPLATE = "clickhouse-piraeus-102453"
 _CLICKHOUSE_PIRAEUS_HDD_CLAIM = "data-piraeus-hdd"
 # During the HDD-pool incident, keep shared client traffic on the healthy existing replica.
 # Remove the pin only after the replacement has passed independent catch-up and query checks.
-_CLIENT_REPLICA_SELECTOR = {"clickhouse.altinity.com/replica": "1"}
+_CLIENT_REPLICA_SELECTOR = {"statefulset.kubernetes.io/pod-name": "chi-clickhouse-default-0-1-0"}
 _CLIENT_SERVICE_TEMPLATE = "incident-client-service"
 _ANY_ADDRESS = ["0.0.0.0/0", "::/0"]
 _HDD_NODE_SELECTOR = {**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "hdd"}
