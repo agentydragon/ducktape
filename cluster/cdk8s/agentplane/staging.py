@@ -61,7 +61,7 @@ from cluster.cdk8s.agentplane import (
     notifications,
     policy_controller,
     policy_controller_rbac,
-    runner_vm,
+    environment_vm,
     staging_config,
     staging_grants,
 )

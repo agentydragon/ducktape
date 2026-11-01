@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/discovery"
 	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
@@ -141,12 +141,12 @@ runtime_catalog:
 		t.Fatalf("discovery response = %+v", response)
 	}
 	harnessName := response.Items[0].Configurations[0].Harness
-	harnessValue, ok := runnerpb.Harness_value[harnessName]
+	harnessValue, ok := sessionpb.Harness_value[harnessName]
 	if !ok {
 		t.Fatalf("discovery returned harness %q, which does not decode as SessionSpec.Harness", harnessName)
 	}
-	spec := &runnerpb.SessionSpec{Harness: runnerpb.Harness(harnessValue)}
-	if spec.GetHarness() != runnerpb.Harness_HARNESS_CLAUDE {
+	spec := &sessionpb.SessionSpec{Harness: sessionpb.Harness(harnessValue)}
+	if spec.GetHarness() != sessionpb.Harness_HARNESS_CLAUDE {
 		t.Fatalf("discovery harness decoded to %s", spec.GetHarness())
 	}
 }

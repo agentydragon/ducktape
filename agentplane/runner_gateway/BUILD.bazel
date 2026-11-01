@@ -205,7 +205,7 @@ go_test(
     ],
     embed = [":main_lib"],
     deps = [
-        "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:session_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/discovery",
         "//agentplane/sandboxes/discovery:environment_discovery_go_proto",

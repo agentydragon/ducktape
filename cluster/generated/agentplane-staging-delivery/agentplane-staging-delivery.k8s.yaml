@@ -166,15 +166,15 @@ data:
             - anthropic-api/ant-messages/claude-haiku-5-5
             - anthropic-api/ant-messages/claude-fable-5-1
       templates:
-        runner-ducktape:
+        environment-tools:
           workspace_root: /state/workspaces
           workspace_provenance: DEPLOYMENT_CONFIG
           workspace_root_enforced: false
           creates_missing_cwd: true
-        runner-vm:
+        environment-vm:
           workspace_root: /state/workspaces
           workspace_provenance: DEPLOYMENT_CONFIG
-          workspace_root_enforced: false
+          workspace_root_enforced: true
           creates_missing_cwd: true
     wake_callers:
       - agentplane-staging/actions
