@@ -88,6 +88,164 @@ fn builder_entry_defers_the_callbacks_in_its_input() {
     assert_preserved_entry_output(&fixture, "42\n");
 }
 
+// Preservation controls for live retained inputs. Existing broad fallback can
+// already preserve their ordering; these are not baseline-failing regressions.
+fn assert_live_retained_input(setup: &str, mutation: &str, use_result: &str) {
+    let provider = format!(
+        "export function wrap(value) {{ return {{ value }}; }}\nexport function use(box) {{ return {use_result}; }}\n"
+    );
+    let source = format!(
+        r#"import {{ wrap, use }} from './peer.js';
+function read() {{ try {{ return later; }} catch (error) {{ return error.name; }} }}
+{setup}
+const wrapped = wrap(input);
+{mutation}
+const observed = use(wrapped);
+const later = 42;
+console.log(observed);
+"#
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(&source, vec![])
+            .with_extra_chunks(&[("static/peer", provider.as_str())])
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "ReferenceError\n");
+    let graph = fixture.dependency_graph();
+    let observed = source_unit_for_binding(&graph, "observed");
+    let later = source_unit_for_binding(&graph, "later");
+    assert!(graph.edges.iter().any(|edge| {
+        edge.source == observed
+            && edge.target == later
+            && edge.binding.as_deref() == Some("later")
+            && edge.constrains_init_order
+    }));
+}
+
+#[test]
+fn returned_result_preserves_live_input_aliases() {
+    assert_live_retained_input(
+        "const input = {}; const alias = input;",
+        "alias.read = read;",
+        "box.value.read()",
+    );
+}
+
+#[test]
+fn returned_result_preserves_cyclic_input_reach() {
+    assert_live_retained_input(
+        "const input = {}; input.self = input;",
+        "input.self.read = read;",
+        "box.value.self.read()",
+    );
+}
+
+#[test]
+fn returned_result_keeps_array_insertion_conservative() {
+    assert_live_retained_input("const input = [];", "input.push(read);", "box.value[0]()");
+}
+
+#[test]
+fn returned_result_keeps_map_key_insertion_conservative() {
+    assert_live_retained_input(
+        "const input = new Map();",
+        "input.set(read, 1);",
+        "[...box.value.keys()][0]()",
+    );
+}
+
+#[test]
+fn returned_result_keeps_map_value_insertion_conservative() {
+    assert_live_retained_input(
+        "const input = new Map();",
+        "input.set('read', read);",
+        "box.value.get('read')()",
+    );
+}
+
+#[test]
+fn returned_result_keeps_set_insertion_conservative() {
+    assert_live_retained_input(
+        "const input = new Set();",
+        "input.add(read);",
+        "[...box.value][0]()",
+    );
+}
+
+#[test]
+fn equal_retained_inputs_do_not_prove_result_identity_or_shape() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { wrap } from './peer.js';\nconst input = {};\nconst first = wrap(input);\nconst second = wrap(input);\nconst selected = first.value;\nconsole.log(first === second, selected === second.value);\n",
+            vec![],
+        )
+        .with_extra_chunks(&[("static/peer", "export function wrap(value) { return { value }; }\n")]),
+    );
+    assert_preserved_entry_output(&fixture, "false true\n");
+    let graph = fixture.dependency_graph();
+    let selected = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "selected")
+        })
+        .expect("selected owner");
+    assert!(
+        !selected
+            .synchronous_execution
+            .as_ref()
+            .expect("execution")
+            .complete,
+        "an opaque returned carrier must not prove an ordinary own-data read"
+    );
+}
+
+#[test]
+fn opaque_result_does_not_certify_an_audited_factory_input() {
+    let source = r#"import { wrap, outer } from './peer.js';
+const input = { get read() { try { return later; } catch (error) { return error.name; } } };
+const intermediate = wrap(input);
+const wrapped = outer(intermediate);
+const later = 42;
+console.log(wrapped.value);
+"#;
+    let provider = "export function wrap(value) { return { value }; }\nexport function outer(value) { return { value: value.value.read }; }\n";
+    let assertion = ChunkExportPurityBuilder::new("static/peer")
+        .with_retained_callback_factory("outer", 1, &[0])
+        .build();
+    let colocated = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_extra_chunks(&[("static/peer", provider)])
+            .with_chunk_export_purity(std::slice::from_ref(&assertion))
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&colocated, "ReferenceError\n");
+    // The outer contract excludes accessors in its input graph. An opaque
+    // foreign result does not establish that eligibility condition.
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[
+                        Member::new("input"),
+                        Member::new("intermediate"),
+                        Member::new("wrapped"),
+                    ],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", provider)])
+        .with_chunk_export_purity(&[assertion]),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+}
+
 #[test]
 fn a_method_on_the_summarized_result_stays_unknown() {
     // The value model has no foreign object identity, so `.describe` is an

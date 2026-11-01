@@ -62,6 +62,44 @@ fn a_retained_instance_can_flow_into_another_audited_constructor() {
 }
 
 #[test]
+fn a_constructor_result_does_not_certify_an_ordinary_factory_input() {
+    // The constructor audit permits a provider-private prototype helper.
+    // The ordinary factory contract excludes that extra input capability.
+    let source = "import { Box, outer } from './peer.js';\n\
+                  const inner = new Box(() => { try { return later; } catch (error) { return error.name; } });\n\
+                  const wrapped = outer(inner);\nconst later = 42;\nconsole.log(wrapped.value);\n";
+    let provider = "export class Box { constructor(callback) { this.callback = callback; } invoke() { return this.callback(); } }\n\
+                    export function outer(input) { return { value: Object.getPrototypeOf(input).invoke?.call(input) }; }\n";
+    let contracts = [ChunkExportPurityBuilder::new("static/peer")
+        .with_retained_callback_constructor("Box", 1, &[0])
+        .with_retained_callback_factory("outer", 1, &[0])
+        .build()];
+    let colocated = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_extra_chunks(&[("static/peer", provider)])
+            .with_chunk_export_purity(&contracts)
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&colocated, "ReferenceError\n");
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[Member::new("inner"), Member::new("wrapped")],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", provider)])
+        .with_chunk_export_purity(&contracts),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+}
+
+#[test]
 fn invalid_constructor_signatures_report_spec_errors() {
     for (count, positions, message) in [
         (1, vec![], "must list at least one callback argument"),

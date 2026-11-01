@@ -2,7 +2,7 @@
 
 use super::super::value_model::{
     AbstractValue, ArrayIteration, CallSite, Captured, CapturedContext, Context, DenseArray,
-    FrozenNamespaceProof, MemberKey, ValueExpr, Values,
+    FrozenNamespaceProof, MemberKey, RetainedResultKind, ValueExpr, Values,
 };
 use super::runtime_callbacks::{CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
@@ -364,7 +364,7 @@ struct CallbackPoolObservation {
     accumulated_values: OrdMap<u32, Values>,
     applied_accessors: OrdMap<u32, BTreeMap<String, AppliedAccessor>>,
     class_superclasses: OrdMap<u32, Values>,
-    set_sizes: [usize; 10],
+    set_sizes: [usize; 11],
     array_intrinsic_mutated: bool,
     uncertain_native_execution: bool,
 }
@@ -691,6 +691,7 @@ pub(super) struct ExecutionState {
     unsettled_objects: BTreeSet<u32>,
     tainted_native_sets: BTreeSet<u32>,
     tainted_functions: BTreeSet<u32>,
+    revoked_audited_results: BTreeSet<usize>,
     tainted_classes: BTreeSet<u32>,
     escaped_class_capabilities: BTreeSet<u32>,
     exported_runtime_values: Values,
@@ -3927,7 +3928,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     visit(value);
                 }
             }
-            AbstractValue::DeferredCallbacks(captured) => {
+            AbstractValue::DeferredCallbacks(captured)
+            | AbstractValue::AuditedRetainedResult(_, captured) => {
                 for value in captured.values.iter() {
                     visit(value);
                 }
@@ -3997,7 +3999,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::ForeignDeferredRecord => {
                     callbacks.insert(value.clone());
                 }
-                AbstractValue::DeferredCallbacks(_) => {
+                AbstractValue::DeferredCallbacks(_)
+                | AbstractValue::AuditedRetainedResult(_, _) => {
                     expand_stored_references = callbacks.insert(value.clone());
                 }
                 AbstractValue::OwnDescriptorMap(site) => {
@@ -4088,8 +4091,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 ),
                 ForeignReturn::FreshAllocation => {
                     let retained = self.retain_foreign_arguments(summary, args);
-                    let callbacks = self.callback_values(&retained);
-                    result.insert(self.deferred_callbacks(callbacks));
+                    // Keep live input identities, including containers that
+                    // acquire callbacks after this call. The carrier remains
+                    // opaque; its interned captures prove no result identity.
+                    result.insert(self.deferred_callbacks(retained));
                 }
                 ForeignReturn::Primitive => {
                     result.insert(AbstractValue::PRIMITIVE);
@@ -4136,6 +4141,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             &self.inputs.index.retained_callback_calls.get(&site)?.call,
             expressions,
             args,
+            RetainedResultKind::Factory,
         )
     }
 
@@ -4149,6 +4155,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.inputs.index.retained_constructor_calls.get(&site)?,
             expressions,
             args,
+            RetainedResultKind::Constructor,
         )
     }
 
@@ -4192,7 +4199,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             callback_argument_exprs: BTreeMap::new(),
             require_single_callback_identity: contract.require_single_callback_identity,
         };
-        let callbacks = self.retained_callbacks(&contract, expressions, args)?;
+        let callbacks =
+            self.retained_callbacks(&contract, expressions, args, RetainedResultKind::Factory)?;
         // Independently exported aliases and already exposed callbacks keep
         // ordinary conservative timing; the provider audit cannot hide them.
         if !callbacks.is_disjoint(&self.export_callback_values()) {
@@ -4237,6 +4245,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         contract: &RetainedCallbackCall,
         expressions: &[ValueExpr],
         args: &[Values],
+        admission: RetainedResultKind,
     ) -> Option<Values> {
         if let Some((namespace, member)) = &contract.namespace_member
             && !self
@@ -4269,7 +4278,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             self.inputs.index.callables.contains_key(key)
                                 && !self.state.tainted_functions.contains(key)
                         }
-                        AbstractValue::DeferredCallbacks(_) => true,
+                        AbstractValue::AuditedRetainedResult(kind, captured) => {
+                            (*kind == RetainedResultKind::Factory
+                                || admission == RetainedResultKind::Constructor)
+                                && self.audited_result_is_clean(captured)
+                        }
                         _ => false,
                     })
                 {
@@ -4552,6 +4565,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }
                     AbstractValue::Value(Value::Top)
                     | AbstractValue::DeferredCallbacks(_)
+                    | AbstractValue::AuditedRetainedResult(_, _)
                     | AbstractValue::ForeignDeferredRecord => {
                         self.taint_objects(&values);
                         // A write through an untracked object may publish the
@@ -4609,9 +4623,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 )
             });
             if !callable_surface
-                && !callbacks
-                    .iter()
-                    .any(|value| matches!(value, AbstractValue::DeferredCallbacks(_)))
+                && !callbacks.iter().any(|value| {
+                    matches!(
+                        value,
+                        AbstractValue::DeferredCallbacks(_)
+                            | AbstractValue::AuditedRetainedResult(_, _)
+                    )
+                })
             {
                 continue;
             }
@@ -4678,6 +4696,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     AbstractValue::Value(Value::Top)
                     | AbstractValue::ForeignDeferredRecord
                     | AbstractValue::DeferredCallbacks(_)
+                    | AbstractValue::AuditedRetainedResult(_, _)
                     | AbstractValue::Instance(_, _) => true,
                     _ => false,
                 })
@@ -4744,6 +4763,66 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    fn audited_retained_result(
+        &mut self,
+        kind: RetainedResultKind,
+        values: Values,
+    ) -> AbstractValue {
+        AbstractValue::AuditedRetainedResult(kind, self.intern_callback_set(values))
+    }
+
+    fn audited_result_is_clean(&self, captured: &Captured<Values>) -> bool {
+        if self
+            .state
+            .revoked_audited_results
+            .contains(&captured.cache_identity())
+            || self
+                .state
+                .global_escaped_callbacks
+                .contains(&AbstractValue::AuditedRetainedResult(
+                    RetainedResultKind::Factory,
+                    captured.clone(),
+                ))
+            || self
+                .state
+                .global_escaped_callbacks
+                .contains(&AbstractValue::AuditedRetainedResult(
+                    RetainedResultKind::Constructor,
+                    captured.clone(),
+                ))
+            || self
+                .state
+                .global_escaped_callbacks
+                .contains(&AbstractValue::DeferredCallbacks(captured.clone()))
+        {
+            return false;
+        }
+        self.callback_values(&captured.values).iter().all(|value| {
+            !self.state.global_escaped_callbacks.contains(value)
+                && match value {
+                    AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                    | AbstractValue::Closure(key, _) => !self.state.tainted_functions.contains(key),
+                    AbstractValue::AuditedRetainedResult(_, nested) => !self
+                        .state
+                        .revoked_audited_results
+                        .contains(&nested.cache_identity()),
+                    _ => true,
+                }
+        })
+    }
+
+    fn revoke_audited_result(&mut self, captured: &Captured<Values>) {
+        // Equal capture sets can denote distinct runtime allocations. Sharing
+        // revocation only loses precision; it never proves freshness or privacy.
+        if self
+            .state
+            .revoked_audited_results
+            .insert(captured.cache_identity())
+        {
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+        }
+    }
+
     /// Code the interpreter did not run may have reached `values`: every
     /// object they reach, through stored references or through what a
     /// reachable body reads, may since hold anything.
@@ -4755,6 +4834,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 continue;
             }
             match &value {
+                AbstractValue::DeferredCallbacks(captured)
+                | AbstractValue::AuditedRetainedResult(_, captured) => {
+                    self.revoke_audited_result(captured);
+                }
                 AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
                     self.state.unsettled_objects.insert(*object);
                 }
@@ -4788,6 +4871,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             let mut expand_stored_references = true;
             match &value {
+                AbstractValue::DeferredCallbacks(captured)
+                | AbstractValue::AuditedRetainedResult(_, captured) => {
+                    self.revoke_audited_result(captured);
+                }
                 AbstractValue::ArrayIntrinsic => {
                     self.state.array_intrinsic_mutated = true;
                 }
@@ -5106,9 +5193,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 return global(GlobalReachCause::TaintedInput);
             }
             match &value {
+                AbstractValue::DeferredCallbacks(captured)
+                | AbstractValue::AuditedRetainedResult(_, captured)
+                    if self
+                        .state
+                        .revoked_audited_results
+                        .contains(&captured.cache_identity()) =>
+                {
+                    return global(GlobalReachCause::TaintedInput);
+                }
                 AbstractValue::Value(Value::Prim(_) | Value::Unavailable)
                 | AbstractValue::ObjectAssign
                 | AbstractValue::DeferredCallbacks(_)
+                | AbstractValue::AuditedRetainedResult(_, _)
                 | AbstractValue::OwnDescriptorMap(_) => {}
                 AbstractValue::Value(Value::Top)
                 | AbstractValue::GlobalObject
@@ -5811,6 +5908,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 state.tainted_objects.len(),
                 state.tainted_native_sets.len(),
                 state.tainted_functions.len(),
+                state.revoked_audited_results.len(),
                 state.tainted_classes.len(),
                 state.escaped_class_capabilities.len(),
                 state.ordinary_spread_copies.len(),
@@ -5901,7 +5999,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.promote_class_members(key, outcome);
                     continue;
                 }
-                AbstractValue::DeferredCallbacks(captured) => {
+                AbstractValue::DeferredCallbacks(captured)
+                | AbstractValue::AuditedRetainedResult(_, captured) => {
                     self.promote_deferred_callbacks(&captured.values, outcome);
                     continue;
                 }
@@ -6547,7 +6646,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         AbstractValue::Value(Value::Unavailable) => {
                             values.insert(AbstractValue::Value(Value::Unavailable));
                         }
-                        AbstractValue::DeferredCallbacks(captured) => {
+                        AbstractValue::DeferredCallbacks(captured)
+                        | AbstractValue::AuditedRetainedResult(_, captured) => {
                             values.insert(AbstractValue::DeferredCallbacks(captured));
                         }
                         AbstractValue::Value(Value::Alloc(Kind::Class, key))
@@ -6704,7 +6804,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 if let Some(callbacks) = self.retained_factory_callbacks(*span, expressions, &args)
                 {
-                    let result = self.deferred_callbacks(callbacks);
+                    let result =
+                        self.audited_retained_result(RetainedResultKind::Factory, callbacks);
                     return if args_may_throw {
                         Values::from([result, AbstractValue::Value(Value::Unavailable)])
                     } else {
@@ -6715,7 +6816,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     return Values::from([self.deferred_callbacks(callbacks)]);
                 }
                 let deferred_callback = matches!(args.as_slice(), [values] if !values.is_empty()
-                    && values.iter().all(|value| matches!(value, AbstractValue::DeferredCallbacks(_))));
+                    && values.iter().all(|value| matches!(value, AbstractValue::AuditedRetainedResult(RetainedResultKind::Factory, captured) if self.audited_result_is_clean(captured))));
                 let mut returns = Values::new();
                 let no_targets = targets.is_empty();
                 let may_throw = args_may_throw
@@ -6742,13 +6843,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 );
                             }
                             let callbacks = self.callback_values(&args[0]);
-                            returns.insert(self.deferred_callbacks(callbacks));
+                            returns.insert(
+                                self.audited_retained_result(
+                                    RetainedResultKind::Factory,
+                                    callbacks,
+                                ),
+                            );
                         }
                         AbstractValue::InlineCallbackFactory if inline_callback => {
                             let callbacks = self.callback_values(&args[0]);
-                            returns.insert(self.deferred_callbacks(callbacks));
+                            returns.insert(
+                                self.audited_retained_result(
+                                    RetainedResultKind::Factory,
+                                    callbacks,
+                                ),
+                            );
                         }
-                        AbstractValue::DeferredCallbacks(captured) => {
+                        AbstractValue::DeferredCallbacks(captured)
+                        | AbstractValue::AuditedRetainedResult(_, captured) => {
                             returns.insert(AbstractValue::DeferredCallbacks(captured));
                             returns.insert(AbstractValue::Value(Value::Top));
                         }
@@ -6856,7 +6968,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     if let Some(callbacks) =
                         self.retained_constructor_callbacks(*span, args, &successful_args)
                     {
-                        let result = self.deferred_callbacks(callbacks);
+                        let result = self
+                            .audited_retained_result(RetainedResultKind::Constructor, callbacks);
                         return if may_throw {
                             Values::from([result, AbstractValue::Value(Value::Unavailable)])
                         } else {
@@ -7501,7 +7614,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 )
                         })
                 }
-                AbstractValue::DeferredCallbacks(_) => true,
+                AbstractValue::DeferredCallbacks(_)
+                | AbstractValue::AuditedRetainedResult(_, _) => true,
                 _ => false,
             }) || !accessor_getters.is_empty();
             if unsupported_local {
@@ -7862,6 +7976,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     target,
                     AbstractValue::Value(Value::Top)
                         | AbstractValue::DeferredCallbacks(_)
+                        | AbstractValue::AuditedRetainedResult(_, _)
                         | AbstractValue::ClassMembers(_)
                         | AbstractValue::Instance(_, _)
                 )
@@ -7879,7 +7994,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.taint_objects(&possible_objects);
         }
         let retained_callback = matches!(args.as_slice(), [values] if !values.is_empty()
-            && values.iter().all(|value| matches!(value, AbstractValue::DeferredCallbacks(_))));
+            && values.iter().all(|value| matches!(value, AbstractValue::AuditedRetainedResult(RetainedResultKind::Factory, captured) if self.audited_result_is_clean(captured))));
         if targets.is_empty() {
             outcome.lose_call_target(call.owner, call.span);
             outcome.unknown_call = true;
@@ -7919,7 +8034,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.note_unknown_call(call);
                     self.invoke_possible_callbacks(&opaque_args, false, outcome);
                 }
-                AbstractValue::DeferredCallbacks(captured) => {
+                AbstractValue::DeferredCallbacks(captured)
+                | AbstractValue::AuditedRetainedResult(_, captured) => {
                     outcome.lose_call_target(call.owner, call.span);
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
@@ -8912,6 +9028,7 @@ pub(crate) fn annotate_synchronous_calls(
         unsettled_objects: BTreeSet::new(),
         tainted_native_sets: BTreeSet::new(),
         tainted_functions: BTreeSet::new(),
+        revoked_audited_results: BTreeSet::new(),
         tainted_classes: BTreeSet::new(),
         escaped_class_capabilities: BTreeSet::new(),
         exported_runtime_values: index

@@ -1501,6 +1501,14 @@ before suspension while excluding reads after an unconditional await. Complete
 raw rebinds remain conservative; incomplete reachability or uncovered callable
 surfaces retain whole-body read effects.
 
+Opaque returned carriers retain live actual inputs, including aliases and later
+container insertions. They do not prove an ordinary graph for a subsequent
+audited factory. A separate internal factory-result capability comes only from
+the existing source proof or audited factory contract. Exposure and possible
+mutation revoke it monotonically; member projection and invocation keep callback
+reach without transferring that capability. Interned capture keys may share
+revocation conservatively, but do not represent runtime allocation identity.
+
 Callable own/prototype properties are not tracked as ordinary object records.
 Installing nonprimitive values through a recognized callable receiver or local
 alias therefore promotes the supplied callbacks conservatively at the write.

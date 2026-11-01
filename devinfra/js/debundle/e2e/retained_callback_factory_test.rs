@@ -152,6 +152,58 @@ fn inert_metadata_and_retained_results_can_occupy_explicit_positions() {
 }
 
 #[test]
+fn exposed_or_mutated_factory_results_do_not_certify_later_factory_inputs() {
+    for mutation in [
+        "install(inner, getter);",
+        "Object.defineProperty(inner, 'read', { get() { return { value: getter() }; } });",
+        "inner.read = { get value() { return getter(); } };",
+        "inner.__proto__ = { get read() { return { value: getter() }; } };",
+    ] {
+        let source = format!(
+            "import {{ factory, outer, install }} from './peer.js';\n\
+             const getter = () => {{ try {{ return later; }} catch (error) {{ return error.name; }} }};\n\
+             const inner = factory(() => 1);\n{mutation}\n\
+             const wrapped = outer(inner);\nconst later = 42;\nconsole.log(wrapped.value);\n"
+        );
+        let provider = "export function factory(callback) { return { invoke: callback }; }\n\
+                        export function outer(input) { return { value: input.read.value }; }\n\
+                        export function install(input, getter) { Object.defineProperty(input, 'read', { get() { return { value: getter() }; } }); }\n";
+        let contracts = [ChunkExportPurityBuilder::new("static/peer")
+            .with_retained_callback_factory("factory", 1, &[0])
+            .with_retained_callback_factory("outer", 1, &[0])
+            .build()];
+        let colocated = run_fixture(
+            FixtureOpts::new(&source, vec![])
+                .with_extra_chunks(&[("static/peer", provider)])
+                .with_chunk_export_purity(&contracts)
+                .with_unassigned_mode(unassigned_mode_inline()),
+        );
+        assert_preserved_entry_output(&colocated, "ReferenceError\n");
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module_with_anon(
+                        "callbacks/wrapped",
+                        &[
+                            Member::new("getter"),
+                            Member::new("inner"),
+                            Member::new("wrapped"),
+                        ],
+                        &[mutation],
+                    ),
+                    logical_module("values/later", &[Member::new("later")]),
+                ],
+            )
+            .with_extra_chunks(&[("static/peer", provider)])
+            .with_chunk_export_purity(&contracts),
+            &["callbacks/wrapped", "values/later"],
+            &[],
+        );
+    }
+}
+
+#[test]
 fn invalid_signature_positions_report_spec_errors() {
     for (count, positions, message) in [
         (1, vec![], "must list at least one callback argument"),
