@@ -186,7 +186,8 @@ def _deployment(chart: Chart) -> None:
                             ),
                         ),
                         k8s.Volume(
-                            name="cache", persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name="zot-cache")
+                            name="cache",
+                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name="zot-cache"),
                         ),
                     ],
                 ),
