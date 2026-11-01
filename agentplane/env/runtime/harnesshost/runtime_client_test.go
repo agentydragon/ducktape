@@ -116,7 +116,7 @@ func TestHostSealsOnlyAfterMatchingExecutionFence(t *testing.T) {
 	if err := r.ApplyIntent(ctx, drain); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.applyIntent(ctx, intentFor(r, 2, runtimepb.LifecycleIntent_QUIESCING)); err == nil {
+	if err := r.ApplyIntent(ctx, intentFor(r, 2, runtimepb.LifecycleIntent_QUIESCING)); err == nil {
 		t.Fatal("same-generation Execution fence regressed")
 	}
 	if err := r.lifecycle.wait(ctx, runnerlifecycle.Flushing); err != nil {
@@ -169,11 +169,11 @@ func TestRunnerFenceRequiresExactBinding(t *testing.T) {
 
 func TestHostUsesCosiExecutionFenceFact(t *testing.T) {
 	r, ctx := boundaryHost(t)
-	if err := r.applyIntent(ctx, intentFor(r, 1, runtimepb.LifecycleIntent_RUNNING)); err != nil {
+	if err := r.ApplyIntent(ctx, intentFor(r, 1, runtimepb.LifecycleIntent_RUNNING)); err != nil {
 		t.Fatal(err)
 	}
 	drain := intentFor(r, 2, runtimepb.LifecycleIntent_QUIESCING)
-	if err := r.applyIntent(ctx, drain); err != nil {
+	if err := r.ApplyIntent(ctx, drain); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.lifecycle.waitFor(ctx, func() (bool, error) {
