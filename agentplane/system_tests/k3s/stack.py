@@ -574,8 +574,8 @@ def running_stack(
                     mcp,
                 )
                 if fixture.vm_sandboxes:
-                    vm_sandboxes.select_boot_probe(
-                        fixture.objects, enabled=os.environ.get("AGENTPLANE_VM_BOOT_PROBE") == "1"
+                    vm_sandboxes.select_boot_evidence(
+                        fixture.objects, enabled=os.environ.get("AGENTPLANE_VM_BOOT_EVIDENCE") == "1"
                     )
                     vm_sandboxes.select_native_profile(
                         fixture.objects,
@@ -704,6 +704,7 @@ def running_stack(
                         kubevirt_namespace=vm_sandboxes.KUBEVIRT_NAMESPACE,
                         destination=undeclared_outputs_dir() / "vm-artifacts",
                         validate_shutdown=validate_vm_shutdown,
+                        require_boot_evidence=os.environ.get("AGENTPLANE_VM_BOOT_EVIDENCE") == "1",
                     )
                 )
         yield Stack(k3s=k3s, cluster=cluster, base_url=fixture.app_origin, token=token, mcp_fixtures=access)

@@ -1,0 +1,17 @@
+[Unit]
+Description=Report fixture guest block-device discovery state
+ConditionKernelCommandLine=agentplane.boot-evidence=1
+After=agentplane-environment-runtime.service
+
+[Service]
+Type=exec
+RuntimeMaxSec=35s
+TimeoutStopSec=2s
+ExecStart=/usr/sbin/agentplane-boot-evidence
+Environment=PATH=/usr/sbin:/usr/bin
+Environment=LC_ALL=C
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

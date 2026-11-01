@@ -26,12 +26,14 @@ _STACKS = {
     "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = [_HARNESSES_LAYOUT]),
 }
 
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False):
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False):
     """Run a Python suite entrypoint against one session-scoped k3s stack."""
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
     if profile_guest and stack != "vm":
         fail("profile_guest requires the VM stack")
+    if boot_evidence and stack != "vm":
+        fail("boot_evidence requires the VM stack")
     config = _STACKS[stack]
     layouts = K3S_SERVICE_LAYOUTS + config.images
     data = [config.fixture, K3S_BINARY, _CERT_MANAGER_INSTALL, _TRUST_MANAGER_INSTALL] + layouts
@@ -55,6 +57,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False):
         ]
         data += K3S_VM_DATA + guests
         env |= K3S_VM_ENV | {
+            "AGENTPLANE_VM_BOOT_EVIDENCE": "1" if boot_evidence else "0",
             "K3S_GUEST_IMAGE_LAYOUTS": " ".join(["$(rlocationpath " + image + ")" for image in guests]),
             "K3S_PROFILE_GUEST_ROOT": "1" if profile_guest else "0",
         }

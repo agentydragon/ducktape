@@ -87,6 +87,7 @@ k3s_suite(
 k3s_suite(
     name = "test_vm",
     srcs = ["test_vm.py"],
+    boot_evidence = True,
     stack = "vm",
     deps = [
         ":conftest",

@@ -1,0 +1,32 @@
+#!/usr/bin/busybox sh
+set -eu
+
+# udevadm prints each transport label only after that netlink monitor has been set up. Waiting for
+# the final kernel label lets the service report readiness before systemd coldplug replays devices.
+fifo=/run/agentplane-boot-evidence-$$.fifo
+/usr/bin/busybox mkfifo "$fifo"
+trap '/usr/bin/busybox rm -f "$fifo"' EXIT
+
+/usr/bin/udevadm monitor --kernel --udev --property --subsystem-match=block >"$fifo" 2>&1 &
+monitor_pid=$!
+ready=0
+while IFS= read -r line; do
+	printf '%s\n' "$line"
+	if [ "$line" = "KERNEL - the kernel uevent" ]; then
+		/usr/bin/systemd-notify --ready --status="block kernel and udev monitors are bound"
+		printf '%s\n' AGENTPLANE_UDEV_MONITOR_READY
+		printf '%s\n' AGENTPLANE_UDEV_MONITOR_READY >/dev/ttyS0
+		ready=1
+	fi
+done <"$fifo"
+
+set +e
+wait "$monitor_pid"
+monitor_status=$?
+set -e
+if [ "$ready" -eq 0 ]; then
+	printf 'AGENTPLANE_UDEV_MONITOR_FAILED no readiness header (udevadm exit %s)\n' "$monitor_status"
+	printf 'AGENTPLANE_UDEV_MONITOR_FAILED no readiness header (udevadm exit %s)\n' "$monitor_status" >/dev/ttyS0
+	[ "$monitor_status" -ne 0 ] || monitor_status=1
+fi
+exit "$monitor_status"
