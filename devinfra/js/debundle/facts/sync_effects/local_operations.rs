@@ -1,0 +1,217 @@
+//! Source-covered local operations collected before value lowering erases writes.
+
+use super::value_model::ValueExpr;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+use swc_ecma_ast::*;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum LocalBinding {
+    Parameter,
+    Var,
+    Let,
+    Const,
+}
+
+#[derive(Debug, Clone)]
+pub(super) enum LocalExpression {
+    Value(ValueExpr),
+    Sequence(Arc<[Self]>),
+    Assign(Id, Arc<Self>),
+}
+
+#[derive(Debug, Clone)]
+pub(super) enum LocalOperation {
+    Initialize(Id, Option<LocalExpression>),
+    Evaluate(LocalExpression),
+    Return(Option<LocalExpression>),
+    Throw(LocalExpression),
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct LocalBody {
+    pub(super) bindings: BTreeMap<Id, LocalBinding>,
+    pub(super) operations: Arc<[LocalOperation]>,
+}
+
+fn simple_binding(pattern: &Pat) -> Option<Id> {
+    match pattern {
+        Pat::Ident(binding) if binding.type_ann.is_none() && !binding.id.optional => {
+            Some(binding.id.to_id())
+        }
+        _ => None,
+    }
+}
+
+/// The central allocation transfer has no conditional-path provenance. Keep
+/// branches outside this ordered subset until their effects can be tagged.
+fn unconditional_value(value: &ValueExpr) -> bool {
+    match value {
+        ValueExpr::Binding(_) | ValueExpr::NonCallable(_) | ValueExpr::Undefined => true,
+        ValueExpr::ObjectLiteral(_, properties) => properties
+            .iter()
+            .all(|(_, value)| unconditional_value(value)),
+        ValueExpr::StrictEquality(left, right) => {
+            unconditional_value(left) && unconditional_value(right)
+        }
+        ValueExpr::Void(value) => unconditional_value(value),
+        _ => false,
+    }
+}
+
+impl LocalExpression {
+    fn optional(expression: Option<&Expr>) -> Option<Option<Self>> {
+        match expression {
+            Some(expression) => Some(Some(Self::lower(expression)?)),
+            None => Some(None),
+        }
+    }
+
+    fn lower(expression: &Expr) -> Option<Self> {
+        match expression.unwrap_parens() {
+            Expr::Seq(sequence) => Some(Self::Sequence(
+                sequence
+                    .exprs
+                    .iter()
+                    .map(|expression| Self::lower(expression))
+                    .collect::<Option<Arc<[_]>>>()?,
+            )),
+            Expr::Assign(assignment) if assignment.op == AssignOp::Assign => {
+                let AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) = &assignment.left
+                else {
+                    return None;
+                };
+                Some(Self::Assign(
+                    binding.id.to_id(),
+                    Arc::new(Self::lower(&assignment.right)?),
+                ))
+            }
+            _ => {
+                let (value, covered) = ValueExpr::from_expr_with_coverage(expression);
+                (covered && unconditional_value(&value)).then_some(Self::Value(value))
+            }
+        }
+    }
+
+    fn local_targets(&self, bindings: &BTreeMap<Id, LocalBinding>) -> bool {
+        match self {
+            Self::Value(_) => true,
+            Self::Sequence(expressions) => expressions
+                .iter()
+                .all(|expression| expression.local_targets(bindings)),
+            Self::Assign(binding, expression) => {
+                bindings.contains_key(binding) && expression.local_targets(bindings)
+            }
+        }
+    }
+
+    fn reads(&self, reads: &mut BTreeSet<Id>) {
+        match self {
+            Self::Value(value) => value.bindings(reads),
+            Self::Sequence(expressions) => {
+                for expression in expressions.iter() {
+                    expression.reads(reads);
+                }
+            }
+            Self::Assign(_, expression) => expression.reads(reads),
+        }
+    }
+}
+
+impl LocalBody {
+    /// Called by the canonical function collector. Unsupported syntax discards
+    /// the entire candidate; the ordinary conservative lanes remain available.
+    pub(super) fn lower<'a>(
+        parameters: impl Iterator<Item = &'a Pat>,
+        body: &FunctionBody,
+    ) -> Option<Self> {
+        let mut bindings = BTreeMap::new();
+        for parameter in parameters {
+            if bindings
+                .insert(simple_binding(parameter)?, LocalBinding::Parameter)
+                .is_some()
+            {
+                return None;
+            }
+        }
+        let mut operations = Vec::new();
+        let mut terminal = false;
+        for statement in &body.stmts {
+            if terminal {
+                return None;
+            }
+            match statement {
+                Stmt::Empty(_) => {}
+                Stmt::Decl(Decl::Var(declaration)) if !declaration.declare => {
+                    let kind = match declaration.kind {
+                        VarDeclKind::Var => LocalBinding::Var,
+                        VarDeclKind::Let => LocalBinding::Let,
+                        VarDeclKind::Const => LocalBinding::Const,
+                    };
+                    for declarator in &declaration.decls {
+                        if declarator.definite {
+                            return None;
+                        }
+                        let binding = simple_binding(&declarator.name)?;
+                        match bindings.get(&binding) {
+                            Some(LocalBinding::Var | LocalBinding::Parameter)
+                                if kind == LocalBinding::Var => {}
+                            Some(_) => return None,
+                            None => {
+                                bindings.insert(binding.clone(), kind);
+                            }
+                        }
+                        let value = LocalExpression::optional(declarator.init.as_deref())?;
+                        if kind == LocalBinding::Const && value.is_none() {
+                            return None;
+                        }
+                        operations.push(LocalOperation::Initialize(binding, value));
+                    }
+                }
+                Stmt::Expr(expression) => operations.push(LocalOperation::Evaluate(
+                    LocalExpression::lower(&expression.expr)?,
+                )),
+                Stmt::Return(statement) => {
+                    operations.push(LocalOperation::Return(LocalExpression::optional(
+                        statement.arg.as_deref(),
+                    )?));
+                    terminal = true;
+                }
+                Stmt::Throw(statement) => {
+                    operations.push(LocalOperation::Throw(LocalExpression::lower(
+                        &statement.arg,
+                    )?));
+                    terminal = true;
+                }
+                _ => return None,
+            }
+        }
+        let body = Self {
+            bindings,
+            operations: operations.into(),
+        };
+        let local_targets = body
+            .expressions()
+            .all(|expression| expression.local_targets(&body.bindings));
+        local_targets.then_some(body)
+    }
+
+    pub(super) fn reads(&self) -> BTreeSet<Id> {
+        let mut reads = BTreeSet::new();
+        for expression in self.expressions() {
+            expression.reads(&mut reads);
+        }
+        reads
+    }
+
+    fn expressions(&self) -> impl Iterator<Item = &LocalExpression> {
+        self.operations
+            .iter()
+            .filter_map(|operation| match operation {
+                LocalOperation::Initialize(_, value) | LocalOperation::Return(value) => {
+                    value.as_ref()
+                }
+                LocalOperation::Evaluate(value) | LocalOperation::Throw(value) => Some(value),
+            })
+    }
+}

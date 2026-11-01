@@ -1207,6 +1207,19 @@ Ordinary eager reads and synchronous callback reads stay between the known
 preceding and following writes of the binding, including `var` initializers
 and later assignments, even when the eager reader's source unit is pure.
 
+For ordinary synchronous functions and block-bodied arrows with simple
+parameters, the canonical index can retain a complete straight-line local
+body: simple declarations, local assignments and sequences, unconditional
+noncoercing values, and terminal return or throw. Execution initializes `var`
+locals to `undefined`, retains lexical TDZ and const-write errors, and applies
+local writes in source order. Only completing paths reach the next operation;
+binding observations retain callback-path provenance through ordinary outcome
+composition and invocation memos. Thrown capabilities remain conservatively
+published. The value operations use the shared literal-allocation transfers.
+Calls, member access or mutation, branches, unknown free bindings, dynamic
+scope and unsupported syntax retain the conservative execution path. This
+coverage does not certify initializer effects or an imported provider summary.
+
 Synchronous execution also completes an exact member read from a TS enum
 object when, at the read, the binding is `PlainData`, no statement but its
 declaration writes it, its initializer has run, and the static key is one of

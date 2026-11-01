@@ -290,13 +290,14 @@ pub(super) fn record(
     let mut may_throw = false;
     let mut can_complete = true;
     for (property, expression) in properties {
+        if !can_complete {
+            break;
+        }
         let child = context.child(expression)?;
         judgment.compose(&child.judgment);
         let mut values = child.values;
-        if values.remove(&AbstractValue::Value(Value::Unavailable)) {
-            may_throw = true;
-            can_complete &= !values.is_empty();
-        }
+        may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
+        can_complete &= !values.is_empty();
         evaluated
             .entry(property.clone())
             .or_default()

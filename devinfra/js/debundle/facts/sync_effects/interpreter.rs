@@ -1,5 +1,6 @@
 //! Call-site execution effects distinguish function values from function bodies: returning a closure never executes it.
 
+use super::super::local_operations::{LocalBinding, LocalBody, LocalExpression, LocalOperation};
 use super::super::value_model::{
     AbstractValue, ArrayIteration, CallSite, Captured, CapturedContext, Context, DenseArray,
     FrozenNamespaceProof, MemberKey, RetainedResultKind, ValueExpr, Values,
@@ -813,6 +814,54 @@ impl super::super::allocation_transfer::AllocationContext
             self.executor
                 .evaluate_allocation_child(expression, self.environment, self.captures),
         )
+    }
+
+    fn literal_layout(&self, allocation: u32) -> super::super::allocation_transfer::LiteralLayout {
+        self.executor.inputs.index.allocation_layout(allocation)
+    }
+
+    fn heap(&mut self) -> super::super::allocation_transfer::LiteralHeap<'_> {
+        self.executor.literal_heap()
+    }
+}
+
+struct LocalAllocationContext<'a, 'source, 'rule> {
+    executor: &'a mut Executor<'source, 'rule>,
+    environment: &'a Context,
+    owner: SourceUnitOrdinal,
+    outcome: &'a mut Outcome,
+}
+
+impl super::super::allocation_transfer::AllocationContext for LocalAllocationContext<'_, '_, '_> {
+    fn source_covered(&self) -> bool {
+        true
+    }
+
+    fn binding(
+        &mut self,
+        binding: &Id,
+    ) -> Option<super::super::allocation_transfer::AllocationValue> {
+        if self.executor.inputs.top_bindings.contains(binding) {
+            self.executor
+                .promote_top_effects(vec![binding], Vec::new(), self.owner, self.outcome);
+        }
+        // A read's timing is known here, but its value is not a closed
+        // symbolic input or an allocation-only proof for another owner.
+        Some(super::super::allocation_transfer::AllocationValue::opaque(
+            self.executor.evaluate_binding(binding, self.environment),
+        ))
+    }
+
+    fn child(
+        &mut self,
+        expression: &ValueExpr,
+    ) -> Option<super::super::allocation_transfer::AllocationValue> {
+        Some(self.executor.evaluate_local_value(
+            expression,
+            self.environment,
+            self.owner,
+            self.outcome,
+        ))
     }
 
     fn literal_layout(&self, allocation: u32) -> super::super::allocation_transfer::LiteralLayout {
@@ -7474,6 +7523,198 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    /// LocalBody's covered value nodes and their covered children only. No
+    /// owner-completion or imported-provider certificate follows from this.
+    fn evaluate_local_value(
+        &mut self,
+        expression: &ValueExpr,
+        environment: &Context,
+        owner: SourceUnitOrdinal,
+        outcome: &mut Outcome,
+    ) -> super::super::allocation_transfer::AllocationValue {
+        super::super::allocation_transfer::transfer(
+            &mut LocalAllocationContext {
+                executor: self,
+                environment,
+                owner,
+                outcome,
+            },
+            expression,
+        )
+        .expect("covered unconditional local values use the shared allocation transfers")
+    }
+
+    /// Keep completing paths in the frame; abrupt paths never execute its
+    /// later operations. Unavailable also carries explicit source throws.
+    fn local_completing_values(mut values: Values, outcome: &mut Outcome) -> Values {
+        if values.remove(&AbstractValue::Value(Value::Unavailable)) {
+            outcome
+                .returns
+                .insert(AbstractValue::Value(Value::Unavailable));
+        }
+        values
+    }
+
+    fn evaluate_local_expression(
+        &mut self,
+        expression: &LocalExpression,
+        body: &LocalBody,
+        environment: &mut Context,
+        owner: SourceUnitOrdinal,
+        outcome: &mut Outcome,
+    ) -> Values {
+        match expression {
+            LocalExpression::Value(expression) => {
+                let value = self.evaluate_local_value(expression, environment, owner, outcome);
+                Self::local_completing_values(value.values, outcome)
+            }
+            LocalExpression::Sequence(expressions) => {
+                let mut values = Values::from([AbstractValue::UNDEFINED]);
+                for expression in expressions.iter() {
+                    values = self.evaluate_local_expression(
+                        expression,
+                        body,
+                        environment,
+                        owner,
+                        outcome,
+                    );
+                    if values.is_empty() {
+                        break;
+                    }
+                }
+                values
+            }
+            LocalExpression::Assign(binding, expression) => {
+                let values =
+                    self.evaluate_local_expression(expression, body, environment, owner, outcome);
+                if values.is_empty() {
+                    return values;
+                }
+                if body.bindings[binding] == LocalBinding::Const
+                    || (body.bindings[binding] == LocalBinding::Let
+                        && environment
+                            .get(binding)
+                            .expect("instantiated local binding")
+                            .contains(&AbstractValue::Value(Value::Unavailable)))
+                {
+                    outcome
+                        .returns
+                        .insert(AbstractValue::Value(Value::Unavailable));
+                    return Values::new();
+                }
+                environment.insert(binding.clone(), values.clone());
+                values
+            }
+        }
+    }
+
+    fn execute_local_body(
+        &mut self,
+        body: &LocalBody,
+        environment: &mut Context,
+        owner: SourceUnitOrdinal,
+    ) -> Outcome {
+        let mut outcome = Outcome {
+            complete: true,
+            ..Outcome::default()
+        };
+        outcome.executed_owners.insert(owner);
+        for (binding, kind) in &body.bindings {
+            match kind {
+                LocalBinding::Parameter => {}
+                LocalBinding::Var => {
+                    environment
+                        .entry(binding.clone())
+                        .or_insert_with(|| Values::from([AbstractValue::UNDEFINED]));
+                }
+                LocalBinding::Let | LocalBinding::Const => {
+                    environment.insert(
+                        binding.clone(),
+                        Values::from([AbstractValue::Value(Value::Unavailable)]),
+                    );
+                }
+            }
+        }
+        for operation in body.operations.iter() {
+            match operation {
+                LocalOperation::Initialize(binding, expression) => {
+                    let values = match expression {
+                        Some(expression) => self.evaluate_local_expression(
+                            expression,
+                            body,
+                            environment,
+                            owner,
+                            &mut outcome,
+                        ),
+                        None if matches!(
+                            body.bindings[binding],
+                            LocalBinding::Var | LocalBinding::Parameter
+                        ) =>
+                        {
+                            continue;
+                        }
+                        None => Values::from([AbstractValue::UNDEFINED]),
+                    };
+                    if values.is_empty() {
+                        return outcome;
+                    }
+                    environment.insert(binding.clone(), values);
+                }
+                LocalOperation::Evaluate(expression) => {
+                    if self
+                        .evaluate_local_expression(
+                            expression,
+                            body,
+                            environment,
+                            owner,
+                            &mut outcome,
+                        )
+                        .is_empty()
+                    {
+                        return outcome;
+                    }
+                }
+                LocalOperation::Return(expression) => {
+                    let values = match expression {
+                        Some(expression) => self.evaluate_local_expression(
+                            expression,
+                            body,
+                            environment,
+                            owner,
+                            &mut outcome,
+                        ),
+                        None => Values::from([AbstractValue::UNDEFINED]),
+                    };
+                    for value in &values {
+                        if let AbstractValue::OwnDescriptorMap(site) = value {
+                            self.invalidate_own_descriptor_map(*site);
+                        }
+                    }
+                    outcome.returns.extend(values);
+                    return outcome;
+                }
+                LocalOperation::Throw(expression) => {
+                    let values = self.evaluate_local_expression(
+                        expression,
+                        body,
+                        environment,
+                        owner,
+                        &mut outcome,
+                    );
+                    // The catcher may be opaque code. Retain thrown callback
+                    // and object capabilities through ordinary publication.
+                    self.publish_values(&values);
+                    outcome
+                        .returns
+                        .insert(AbstractValue::Value(Value::Unavailable));
+                    return outcome;
+                }
+            }
+        }
+        outcome.returns.insert(AbstractValue::UNDEFINED);
+        outcome
+    }
+
     fn invoke(
         &mut self,
         key: u32,
@@ -7640,6 +7881,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }
                 }
             }
+        }
+        if !unsupported_inputs
+            && self.inputs.index.dynamic_scope_owners.is_empty()
+            && let Some(body) = &callable.local_body
+            && body.reads().iter().all(|binding| {
+                body.bindings.contains_key(binding)
+                    || env.contains_key(binding)
+                    || self.inputs.top_bindings.contains(binding)
+            })
+        {
+            let outcome = self.execute_local_body(body, &mut env, callable.owner);
+            self.state.active.remove(&active_invocation);
+            self.state.invocation_depth -= 1;
+            self.remember_invocation(signature, &outcome);
+            return outcome;
         }
         for (id, value) in &callable.local_assignments {
             let values = self.evaluate(value, &env, &env);
