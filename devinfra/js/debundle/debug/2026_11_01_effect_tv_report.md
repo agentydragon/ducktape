@@ -62,8 +62,11 @@ retains twenty pair examples and twenty cells per sampled pair, with exact
 cell counts and explicit pair/cell truncation. It retains neither a global
 pair matrix nor the current statement's full partner/cell matrix.
 
-Full-detail CLI export remains unimplemented. This is an initial report-only
-TV2 tranche; the migration remains incomplete. Legacy gate decisions,
+The initial tranche had no full-detail CLI export. The follow-up
+`--effect-conflicts-jsonl` now streams full rows through the same fallible
+visitor, including endpoint opacity and every cell's provenance. The bounded
+summary retains the same limits. This remains report-only TV2; effect-domain
+coverage and canonical comparisons are incomplete. Legacy gate decisions,
 forward-edge handling, placement checks and the edge-TV oracle are unchanged.
 
 ## Forward-read control from the canonical audit
@@ -113,3 +116,43 @@ all three targets pass (4 effect controls, 4 staged controls, 5 legacy
 differential controls). The staged target was reused from the immediately
 preceding passing execution with the same code inputs. No canonical effect-TV
 comparison or full-detail export validation is claimed by this focused run.
+
+## Streaming follow-up
+
+The follow-up adds `debundle run --effect-conflicts-jsonl`. The existing
+ordinal-suffix sweep invokes an optional fallible borrowed row visitor; both
+bounded examples and JSONL use the same cell iterator. Without an active
+sink, statement/module metadata is constructed only for the bounded examples.
+The stream includes every cell, typed provenance and disposition, existing
+premise locations, legacy-pair membership, and both endpoints' typed opacity.
+It retains one candidate pair's cell map at a time. Serialization, newline,
+and explicit buffer-flush errors propagate before writing the summary.
+
+Repeated `--effect-conflicts-chunk <CHUNK>` arguments require the export flag
+and reject unknown materialized chunk names. They select only S4 JSONL sinks:
+the full configured input, selected import closure, census, staged analysis,
+graphs, emitted order, and every bounded report remain unchanged. This allows
+the canonical `mcp` and `remoteWorkerWire` streams to be inspected without
+writing the much larger Tana stream. Existing dry-run policy is authoritative:
+rejection reports can include JSONL; a policy that suppresses the requested
+sink produces an explicit error.
+
+The same three-target command above passes on devel base
+`55bdc1da22c84f3bcf0dff44567fb20159caad5b` with this follow-up:
+[BuildBuddy invocation](https://app.buildbuddy.io/invocation/3d84800e-3583-433d-a15f-04107bcced0e).
+It executes 18 cases (7 effect controls, 6 staged controls, 5 legacy
+differential controls). New controls compare full row/cell/disposition counts
+to the exact summary, cover more than twenty rows and cells, verify default
+non-export and dry-run behavior, and compare filtered versus unfiltered
+non-JSONL output byte for byte after removing command provenance. Selected
+streams match exactly, and filtered direct/staged runs reuse the same full
+analysis artifact. Repeated filters cover both chunks without changing output.
+
+A separate neutral public CLI run saved a 762-byte, one-row/one-cell stream
+under `/tmp/debundle-cutover-20261101/tv-effects/jsonl-example/out/reports/tree/main/effect_conflicts.jsonl`.
+Its uncovered disposition and pair/cell counts match the summary. The CLI
+exits 1 for the fixture's existing constraining cycle after writing complete
+rejection reports:
+[BuildBuddy invocation](https://app.buildbuddy.io/invocation/bff74aad-ebd2-4feb-8e13-aad8c9539878).
+This validates streaming access, not narrower semantic coverage or a change
+to either TV verdict. Full TV2 remains incomplete.

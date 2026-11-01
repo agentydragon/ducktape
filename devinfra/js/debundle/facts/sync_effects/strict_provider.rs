@@ -1,0 +1,184 @@
+//! The allocation-only provider consumer of the shared value transfers.
+
+use super::super::allocation_transfer::{
+    self, AllocationContext, AllocationJudgment, AllocationValue, LiteralHeap, LiteralLayout,
+};
+use super::super::value_model::{
+    AbstractValue, Context, DenseArray, ProviderScopeId, SymbolicInputId, ValueExpr, Values,
+};
+use super::ExecutionIndex;
+use crate::analysis_inputs::{ForeignInvocation, ForeignReturn};
+use crate::facts::abstract_domain::foreign_call::DerivedForeignCall;
+use crate::facts::abstract_domain::value::{Kind, Value};
+use imbl::OrdMap;
+use std::collections::{BTreeMap, BTreeSet};
+use swc_ecma_ast::Id;
+
+struct ProviderContext<'a> {
+    index: &'a ExecutionIndex,
+    scope: ProviderScopeId,
+    parameters: Context,
+    properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
+    arrays: OrdMap<u32, DenseArray>,
+    revision: u64,
+}
+
+impl AllocationContext for ProviderContext<'_> {
+    fn source_covered(&self) -> bool {
+        true
+    }
+    fn binding(&mut self, binding: &Id) -> Option<AllocationValue> {
+        allocation_transfer::closed_binding(&self.parameters, binding, self.scope)
+    }
+    fn child(&mut self, expression: &ValueExpr) -> Option<AllocationValue> {
+        allocation_transfer::transfer(self, expression)
+    }
+    fn literal_layout(&self, allocation: u32) -> LiteralLayout {
+        self.index.allocation_layout(allocation)
+    }
+    fn heap(&mut self) -> LiteralHeap<'_> {
+        LiteralHeap {
+            properties: &mut self.properties,
+            arrays: &mut self.arrays,
+            revision: &mut self.revision,
+        }
+    }
+}
+
+/// Called only for a canonically lowered, whole-body direct return. The same
+/// source collector retained syntax coverage before ValueExpr erased anything.
+pub(super) fn derive(index: &ExecutionIndex, callable: u32) -> Option<DerivedForeignCall> {
+    let body = index.callables.get(&callable)?;
+    let expression = body.allocation_return.as_ref()?;
+    let scope = ProviderScopeId::fresh()?;
+    let parameters = body
+        .params
+        .iter()
+        .enumerate()
+        .map(|(parameter, param)| {
+            Some((
+                param.binding.clone()?,
+                Values::from([AbstractValue::SymbolicInput(SymbolicInputId {
+                    scope,
+                    parameter,
+                })]),
+            ))
+        })
+        .collect::<Option<Context>>()?;
+    let mut context = ProviderContext {
+        index,
+        scope,
+        parameters,
+        properties: OrdMap::new(),
+        arrays: OrdMap::new(),
+        revision: 0,
+    };
+    let result = allocation_transfer::transfer(&mut context, expression)?;
+    let AllocationJudgment::CoveredAllocationOnly(dependencies) = result.judgment else {
+        return None;
+    };
+    // This tranche needs only closed inputs and literal semantics. A future
+    // premise-dependent transfer must first carry its dependencies through
+    // DerivedForeignCall; never silently discard a child's proof conditions.
+    if !dependencies.is_empty() {
+        return None;
+    }
+    let mut returns = BTreeSet::new();
+    let mut retained_arguments = BTreeSet::new();
+    for value in result.values {
+        match value {
+            AbstractValue::SymbolicInput(input) if input.scope == scope => {
+                returns.insert(ForeignReturn::Argument {
+                    index: input.parameter,
+                });
+            }
+            AbstractValue::Value(Value::Prim(_)) => {
+                returns.insert(ForeignReturn::Primitive);
+            }
+            AbstractValue::Value(Value::Alloc(Kind::Object, allocation)) => {
+                returns.insert(ForeignReturn::FreshAllocation);
+                let mut pending = vec![allocation];
+                let mut visited = BTreeSet::new();
+                while let Some(allocation) = pending.pop() {
+                    if !visited.insert(allocation) {
+                        continue;
+                    }
+                    for value in context.properties.get(&allocation)?.values().flatten() {
+                        match value {
+                            AbstractValue::SymbolicInput(input) if input.scope == scope => {
+                                retained_arguments.insert(input.parameter);
+                            }
+                            AbstractValue::Value(Value::Alloc(Kind::Object, nested)) => {
+                                pending.push(*nested)
+                            }
+                            AbstractValue::Value(Value::Prim(_)) => {}
+                            _ => return None,
+                        }
+                    }
+                }
+            }
+            _ => return None,
+        }
+    }
+    Some(DerivedForeignCall {
+        invocation: ForeignInvocation::Call,
+        returns,
+        retained_arguments,
+        native_constructions: BTreeSet::new(),
+        record: None,
+        closure: None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::facts::StableArraySpreadShapes;
+    use crate::facts::item_views::top_level_item_views;
+    use swc_ecma_ast::{Decl, Expr, ModuleItem, Stmt};
+
+    #[test]
+    fn function_and_const_arrow_keys_reach_the_central_query() {
+        js_ast::with_swc_globals(|| {
+            for source in [
+                "function make(input) { return { input }; }",
+                "const make = input => ({ input });",
+            ] {
+                let module = js_ast::parse_js_module("provider.js", source)
+                    .unwrap()
+                    .module;
+                let key = match &module.body[0] {
+                    ModuleItem::Stmt(Stmt::Decl(Decl::Fn(function))) => function.function.span.lo.0,
+                    ModuleItem::Stmt(Stmt::Decl(Decl::Var(variable))) => {
+                        let Expr::Arrow(arrow) = variable.decls[0].init.as_deref().unwrap() else {
+                            panic!("arrow fixture");
+                        };
+                        arrow.span.lo.0
+                    }
+                    _ => panic!("provider fixture"),
+                };
+                let views = top_level_item_views(&module.body);
+                let prepared = super::super::prepare_callable_capabilities(
+                    &views,
+                    StableArraySpreadShapes::default(),
+                    BTreeSet::from(["make".into()]),
+                    Vec::new(),
+                    Vec::new(),
+                    Default::default(),
+                    Default::default(),
+                );
+                assert!(
+                    prepared.index.callables[&key].allocation_return.is_some(),
+                    "{source}"
+                );
+                let summary =
+                    derive(&prepared.index, key).expect("central query, without legacy fallback");
+                assert_eq!(
+                    summary.returns,
+                    BTreeSet::from([ForeignReturn::FreshAllocation])
+                );
+                assert_eq!(summary.retained_arguments, BTreeSet::from([0]));
+            }
+        });
+    }
+}

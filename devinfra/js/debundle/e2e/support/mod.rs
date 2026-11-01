@@ -208,9 +208,13 @@ pub struct DryRunFixture {
 }
 
 pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
+    run_fixture_with_args(opts, &[])
+}
+
+pub fn run_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> Fixture {
     let setup = prepare_fixture(&opts);
 
-    let result = spawn_transform(&setup.spec_path);
+    let result = spawn_transform_with_args(&setup.spec_path, extra_args);
     assert!(
         result.status.success(),
         "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
@@ -435,7 +439,7 @@ pub fn run_dry_run_fixture(opts: FixtureOpts<'_>) -> DryRunFixture {
 
 /// `exit_code` is 1 for a refused spec, or the gate-rejected status of an
 /// `--emit-on-rejection` run; a panic exits 101 and is no refusal.
-fn run_rejection_fixture_with_args(
+pub fn run_rejection_fixture_with_args(
     opts: FixtureOpts<'_>,
     extra_args: &[&str],
     exit_code: i32,
@@ -1132,6 +1136,15 @@ pub fn write_yaml_file<T: Serialize + ?Sized>(path: &Path, value: &T) {
     fs::write(path, format!("{}\n", serde_yaml::to_string(&yaml).unwrap())).unwrap();
 }
 
+pub fn read_jsonl(path: &Path) -> Vec<Value> {
+    let input = std::io::BufReader::new(
+        fs::File::open(path).unwrap_or_else(|error| panic!("reading {}: {error}", path.display())),
+    );
+    std::io::BufRead::lines(input)
+        .map(|line| serde_json::from_str(&line.expect("JSONL line")).expect("valid JSONL row"))
+        .collect()
+}
+
 pub fn read_json<T: DeserializeOwned>(path: &Path) -> T {
     read_json_with_stderr(path, None)
 }
@@ -1330,10 +1343,6 @@ pub fn find_outcome<'a>(outcomes: &'a [Value], kind: &str, export_name: &str) ->
                 && record["placement"]["entity"]["export"] == export_name
         })
         .unwrap_or_else(|| panic!("missing {kind} outcome for export {export_name}: {outcomes:#?}"))
-}
-
-fn spawn_transform(spec_path: &Path) -> CommandResult {
-    run_debundler(spec_path, &[])
 }
 
 fn spawn_transform_with_args(spec_path: &Path, extra_args: &[&str]) -> CommandResult {

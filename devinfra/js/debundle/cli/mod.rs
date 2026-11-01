@@ -357,6 +357,14 @@ pub(crate) struct RunArgs {
     /// or for another analysis projection, naming what differs.
     #[arg(long)]
     pub(crate) analysis: Option<std::path::PathBuf>,
+    /// Stream all effect-conflict pairs and cells as per-chunk JSONL beside
+    /// reports. An accepted dry-run suppresses reports and refuses this request.
+    #[arg(long)]
+    pub(crate) effect_conflicts_jsonl: bool,
+    /// Export JSONL only for these materialized chunks (repeatable). Analysis
+    /// and bounded reports still cover the full configured input.
+    #[arg(long = "effect-conflicts-chunk", requires = "effect_conflicts_jsonl", value_parser = artifact::paths::normalize_module_path)]
+    pub(crate) effect_conflicts_chunks: Vec<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -503,6 +511,8 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
         DebundleCommand::Run(RunArgs {
             transform: args,
             analysis,
+            effect_conflicts_jsonl,
+            effect_conflicts_chunks,
         }) => {
             let output = args.run_output()?;
             let keep_going = !args.fail_fast;
@@ -514,6 +524,8 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
                     keep_going,
                     report_dir_override: None,
                     list_template_identifiers: false,
+                    effect_conflicts_jsonl,
+                    effect_conflicts_chunks: effect_conflicts_chunks.into_iter().collect(),
                 },
                 analysis.as_deref(),
             )?;

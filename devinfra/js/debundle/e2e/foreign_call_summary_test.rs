@@ -88,6 +88,90 @@ fn builder_entry_defers_the_callbacks_in_its_input() {
     assert_preserved_entry_output(&fixture, "42\n");
 }
 
+#[test]
+fn central_direct_return_migration_preserves_literal_input_retention() {
+    // Migration controls: these supported cases also pass the former strict
+    // source evaluator. They assert the external runtime and summary contract.
+    for (returned, projection) in [
+        ("{ value }", "wrapped.value()"),
+        ("[value]", "wrapped[0]()"),
+        ("{ nested: [{ value }] }", "wrapped.nested[0].value()"),
+    ] {
+        let source = format!(
+            "import {{ make }} from './peer.js';\nconst wrapped = make(() => later, () => later);\nconst later = 42;\nconsole.log({projection});\n"
+        );
+        let provider = format!("export function make(value, unused) {{ return {returned}; }}\n");
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, modules()).with_extra_chunks(&[("static/peer", &provider)]),
+        );
+        assert_preserved_entry_output(&fixture, "42\n");
+        let report: serde_json::Value =
+            read_json(&fixture.report_root.join("static/app/modules.json"));
+        assert_eq!(
+            report["imported_callables"]["make"]["foreign_call"]["retained_arguments"],
+            serde_json::json!([0])
+        );
+    }
+}
+
+#[test]
+fn erased_or_uncovered_provider_operations_do_not_get_a_strict_summary() {
+    // Conservative coverage controls, not baseline-failing regressions. In
+    // particular, a global store can be absent from SynchronousCalls despite
+    // a complete outcome; the full canonical body must still reject it.
+    for (provider, observed) in [
+        (
+            "export function make(input) { globalThis.flag = 1; return { input }; }",
+            1,
+        ),
+        (
+            "export function make(input) { return (globalThis.flag = 1, { input }); }",
+            1,
+        ),
+        (
+            "export function make(input) { return { value: (globalThis.flag = 1) }; }",
+            1,
+        ),
+        ("export function make(input) { return `${input}`; }", 0),
+        ("export function make(input) { return +input; }", 0),
+        (
+            "export function make(input) { return input ? { input } : {}; }",
+            0,
+        ),
+        (
+            "export function make(input) { return { value: input.value }; }",
+            0,
+        ),
+        ("export function make(input = {}) { return { input }; }", 0),
+        ("export function make({ value }) { return { value }; }", 0),
+        ("export async function make(input) { return { input }; }", 0),
+        ("export function* make(input) { return { input }; }", 0),
+        ("export function make(input) { throw input; }", 0),
+        (
+            "export function make(input) { try { return { input }; } catch { return {}; } }",
+            0,
+        ),
+        ("export function make(input) { return { [input]: 1 }; }", 0),
+        ("export function make(input) { return { ...input }; }", 0),
+        (
+            "export function make(input) { return { __proto__: input }; }",
+            0,
+        ),
+    ] {
+        let fixture = run_fixture(
+            FixtureOpts::new("import { make } from './peer.js';\nglobalThis.flag = 0;\ntry { make(1); } catch {}\nconsole.log(globalThis.flag);\n", vec![])
+                .with_extra_chunks(&[("static/peer", provider)]),
+        );
+        assert_preserved_entry_output(&fixture, &format!("{observed}\n"));
+        let report: serde_json::Value =
+            read_json(&fixture.report_root.join("static/app/modules.json"));
+        assert!(
+            report["imported_callables"]["make"]["foreign_call"].is_null(),
+            "uncovered provider: {provider}"
+        );
+    }
+}
+
 // Preservation controls for live retained inputs. Existing broad fallback can
 // already preserve their ordering; these are not baseline-failing regressions.
 fn assert_live_retained_input(setup: &str, mutation: &str, use_result: &str) {

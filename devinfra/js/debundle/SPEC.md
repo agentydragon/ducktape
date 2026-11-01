@@ -232,8 +232,18 @@ coverage remains conservative Havoc independently of purity or synchronous
 completeness. Counts include every conflicting swapped pair and existing
 pair-premise disposition; observed contradictions are diagnostics only.
 Twenty deterministic examples bound default output, with explicit truncation
-and coverage limitations. Full-detail CLI export and full semantic precision
-remain incomplete; see <docs/wire_format.md#translation-validation>.
+and coverage limitations. `run --effect-conflicts-jsonl` additionally streams
+every pair, cell, access provenance, premise disposition and endpoint opacity
+to `effect_conflicts.jsonl` in each chunk's report directory, using the same
+enumeration. Write and flush errors fail the run. Missing report roots and
+accepted dry runs that suppress reports refuse an explicit export request;
+rejected dry runs retain their existing report policy and can export.
+Repeatable `--effect-conflicts-chunk` requires the export flag and validates
+names against configured materialized chunks. It filters only S4 JSONL sinks:
+source inputs, analysis/census selection, graphs and bounded summaries are
+unchanged. With no filter every materialized chunk can export.
+Full semantic precision remains incomplete; see
+<docs/wire_format.md#translation-validation>.
 
 A command that combines a saved graph with current spec or source checks the
 recorded baseline before reading claims or writing edits. It refuses changed,
@@ -1976,6 +1986,25 @@ the provider derivation and the caller's own-property derivation in
 `synchronous_execution.inference_uses`.
 
 ## Derived foreign call summaries
+
+Simple-parameter functions with one direct return of an input, primitive, or
+static ordinary record/array literal use the same value and literal-heap
+transfers as application execution. The canonical lowering retains complete
+source coverage before value lowering can erase syntax. This narrow
+`CoveredAllocationOnly` certificate excludes external access/write,
+publication, invocation and throwing operations. Parameters are scoped opaque
+values: forwarding/storing/returning one proves no input kind, property shape,
+native identity or coercion behavior. Any unsupported input access or transfer
+declines the summary. A failed migrated query does not retry a different
+evaluator. Other supported bodies retain their existing strict source proof.
+
+Source coverage excludes async/generator functions, defaults/rest/destructuring,
+extra statements, assignments, sequence/template/operator/conditional syntax,
+member reads, computed/spread/accessor/prototype fields, calls, throws and
+control flow. Local-assignment pre-evaluation and a complete synchronous
+execution outcome do not establish this certificate. Child transfer judgments
+and proof dependencies compose; this initial premise-free literal consumer
+declines any unexpected nonempty dependency set rather than discarding it.
 
 A directly imported, stable top-level function or class declaration of another
 analyzed chunk receives a summary when every operation its call performs runs

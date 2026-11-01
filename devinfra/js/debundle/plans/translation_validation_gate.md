@@ -137,8 +137,9 @@ Traversal is output-sensitive. Ordered suffix queries cost O(A log N), and
 merging them by partner costs O(K log(A + 1)) before pair/cell aggregation,
 where A is access count and K is conflict incidence. K can be quadratic.
 Default reports count all pairs/categories but retain deterministic bounded
-examples, with explicit truncation. Full-detail tooling remains necessary
-before calling the full TV2 migration complete.
+examples, with explicit truncation. Opt-in `--effect-conflicts-jsonl` streams
+the full rows from the same visitor; effect-domain coverage and clean
+canonical comparisons remain necessary for the full TV2 migration.
 
 ## Effect facts the pair check needs
 
@@ -294,7 +295,8 @@ Defaults retain twenty deterministic pair examples with up to twenty cells
 each, and exact pair/cell counts. The sweep merges per-cell ordered suffix
 iterators and aggregates one pair's cells at a time. `examples_truncated`
 and each pair's `cells_truncated` state whether details were omitted;
-full-detail CLI export is not yet implemented. This tranche makes
+`--effect-conflicts-jsonl` now provides full rows through the same enumeration.
+The report makes
 no full semantic precision claim and does not complete step 2. In particular
 the active Claude mcp/remoteWorkerWire forward reads remain reportable with
 their existing pair-premise dispositions; oldgate acceptance is not proof

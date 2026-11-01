@@ -157,9 +157,24 @@ false. `examples` retains at most twenty deterministic pairs, each with at
 most twenty conflicting cells and their access provenance. Each sampled pair
 retains its exact `cell_count` and `cells_truncated` marker;
 `examples_truncated` makes omitted pairs explicit. Counts remain exact when
-examples are truncated. `full_detail_export_available` is false until
-streaming full-detail CLI tooling exists; this report is not a substitute
-semantic input for staged facts.
+examples are truncated. `full_detail_export_available` is true: request
+`debundle run --effect-conflicts-jsonl` for complete per-chunk rows in
+`effect_conflicts.jsonl`. The default does not write this file.
+Repeatable `--effect-conflicts-chunk <chunk-id>` selects only JSONL sinks;
+it leaves every graph, bounded summary, source input and census scope intact.
+
+Each JSONL line is one pair in the same deterministic order used to select
+summary examples. It includes `runs_first`, `runs_later`, every `cells` entry
+with access provenance, exact `cell_count`, `havoc`, typed `disposition`,
+`premise_locations`, and `legacy_edge_conflict`. `first_opacity` and
+`later_opacity` retain each endpoint's unknown coverage, dataflow opacity,
+execution completeness/losses and heap opacity. Cells serialize one at a time;
+the export does not retain a full-row or global pair vector. Empty streams
+are valid when the summary counts zero pairs. A write failure can leave a
+partial file; compare row/cell counts to the sibling summary, which is written
+only after the stream flushes. Gate-rejected chunks can have complete exports
+even though the command exits nonzero.
+These reports are not substitute semantic inputs for staged facts.
 
 `translation_validation.json` is written beside `dependency_graph.json`: the
 translation-validation verdict on the emitted order, report only (the gate

@@ -1,6 +1,7 @@
 //! Position-specific execution facts. A later source prefix consumes the
 //! preceding prefix's settled state and never changes that earlier state.
 
+use super::super::allocation_transfer::AllocationJudgment;
 use super::super::property_inference::OwnPropertyProof;
 use super::super::value_model::{CapturedContext, Context, ValueExpr, Values};
 use super::Call;
@@ -96,6 +97,7 @@ struct RuntimeRequest {
 pub(super) struct RuntimeResult {
     pub(super) state: Box<ExecutionState>,
     pub(super) value: RuntimeValue,
+    pub(super) allocation_judgment: AllocationJudgment,
 }
 
 /// Transfers consume settled inputs and cannot send information back to their
@@ -349,7 +351,8 @@ impl RuntimeRules<'_, '_> {
         };
         let mut executor = Executor::new(self.inputs, state, queries);
         let effects = executor.execute_owner(owner);
-        let state = executor.into_state();
+        executor.mark_allocation_opaque();
+        let (state, _) = executor.into_transfer();
         context.propose(
             RuntimeKey::Effects(owner),
             RuntimeFact::Effects(Box::new(effects)),
@@ -378,6 +381,9 @@ impl RuntimeRules<'_, '_> {
             context: RefCell::new(context),
         };
         let mut executor = Executor::new(inputs, state, queries);
+        if !matches!(&operation, RuntimeOperation::Evaluate { .. }) {
+            executor.mark_allocation_opaque();
+        }
         let value = match operation {
             RuntimeOperation::Heap(operation) => {
                 RuntimeValue::Heap(operation.execute(&mut executor))
@@ -418,10 +424,17 @@ impl RuntimeRules<'_, '_> {
                 RuntimeValue::Callbacks(runtime_callbacks::dispatch(&mut executor, operation))
             }
         };
-        let state = executor.into_state();
+        let (state, allocation_judgment) = executor.into_transfer();
+        if let AllocationJudgment::CoveredAllocationOnly(dependencies) = &allocation_judgment {
+            context.assume(dependencies);
+        }
         context.propose(
             RuntimeKey::Result(point.clone()),
-            RuntimeFact::Result(Box::new(RuntimeResult { state, value })),
+            RuntimeFact::Result(Box::new(RuntimeResult {
+                state,
+                value,
+                allocation_judgment,
+            })),
         );
     }
 }
