@@ -258,6 +258,18 @@ impl Effects {
         self
     }
 
+    pub(crate) fn proof_dependencies(&self) -> ProofDependencies {
+        let mut dependencies = self.dependencies.clone();
+        for event in &self.events {
+            if let EffectEvent::Call { callee, .. } = event
+                && let Some(callee_dependencies) = callee.dependencies()
+            {
+                dependencies.extend(callee_dependencies);
+            }
+        }
+        dependencies
+    }
+
     /// Discharge the call of an impure function at `span` when it is the only
     /// such call there: a certificate proved that call's execution adds no
     /// observable effect. Every other effect stays.

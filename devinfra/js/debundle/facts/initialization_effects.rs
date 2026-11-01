@@ -9,23 +9,63 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 use source_identity::SourceUnitOrdinal;
 
+use super::evaluation_effects::{GlobalAccessKind, GlobalMayAccess};
 use super::{DataflowOpacityCause, EffectCell, StatementFacts, StatementKind};
 use crate::reports::schema::{AssumedEffectReason, ExecutionPrecisionLoss};
 
 #[derive(Debug, Clone, Serialize)]
+pub struct InitializationEffectEvidence {
+    #[serde(flatten)]
+    basis: InitializationEffectBasis,
+    /// Indexed may-accesses stay separate from the cell's existing evidence.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    global_may_accesses: Vec<GlobalMayAccess>,
+    #[serde(skip_serializing_if = "zero")]
+    global_may_access_count: usize,
+    #[serde(skip_serializing_if = "not_truncated")]
+    global_may_accesses_truncated: bool,
+}
+
+fn zero(value: &usize) -> bool {
+    *value == 0
+}
+fn not_truncated(value: &bool) -> bool {
+    !*value
+}
+
+#[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum InitializationEffectEvidence {
+enum InitializationEffectBasis {
     Observed,
     Fallback {
         reason: AssumedEffectReason,
     },
     /// Composed heap summaries do not retain per-access execution provenance.
     UnclassifiedCalleeHeap,
+    /// Canonical runtime may-accesses, including reordered/conditional lanes.
+    /// These never certify that an operation definitely executes.
+    IndexedMayAccess,
 }
 
 impl InitializationEffectEvidence {
     pub fn is_observed(&self) -> bool {
-        matches!(self, Self::Observed)
+        matches!(self.basis, InitializationEffectBasis::Observed)
+    }
+
+    /// Bound only the presentation; retain the exact source-operation count.
+    pub fn sampled(&self, limit: usize) -> Self {
+        Self {
+            basis: self.basis.clone(),
+            global_may_accesses: self
+                .global_may_accesses
+                .iter()
+                .take(limit)
+                .cloned()
+                .collect(),
+            global_may_access_count: self.global_may_access_count,
+            global_may_accesses_truncated: self.global_may_accesses_truncated
+                || self.global_may_access_count > limit,
+        }
     }
 }
 
@@ -142,6 +182,24 @@ impl StatementFacts {
             record(&mut effects.writes, cell.clone(), None);
         }
         if let Some(calls) = &self.synchronous_calls {
+            for (site, evidence) in &calls.evaluation_effects.global_accesses {
+                let target = match site.access {
+                    GlobalAccessKind::Read => &mut effects.reads,
+                    GlobalAccessKind::Write => &mut effects.writes,
+                };
+                let entry = target.entry(EffectCell::GlobalProp(site.property.clone()));
+                let previous = entry.or_insert_with(|| InitializationEffectEvidence {
+                    basis: InitializationEffectBasis::IndexedMayAccess,
+                    global_may_accesses: Vec::new(),
+                    global_may_access_count: 0,
+                    global_may_accesses_truncated: false,
+                });
+                previous.global_may_accesses.push(GlobalMayAccess {
+                    site: site.clone(),
+                    evidence: evidence.clone(),
+                });
+                previous.global_may_access_count += 1;
+            }
             effects.incomplete_execution = !calls.complete;
             effects.execution_losses = calls.precision_losses.clone();
             effects.opaque_heap |= calls.heap_contents.opaque;
@@ -176,7 +234,12 @@ impl StatementFacts {
                 for cell in cells {
                     target
                         .entry(cell.clone())
-                        .or_insert(InitializationEffectEvidence::UnclassifiedCalleeHeap);
+                        .or_insert_with(|| InitializationEffectEvidence {
+                            basis: InitializationEffectBasis::UnclassifiedCalleeHeap,
+                            global_may_accesses: Vec::new(),
+                            global_may_access_count: 0,
+                            global_may_accesses_truncated: false,
+                        });
                 }
             }
         } else {
@@ -191,17 +254,22 @@ fn record(
     cell: EffectCell,
     fallback: Option<&AssumedEffectReason>,
 ) {
-    let evidence = fallback.map_or(InitializationEffectEvidence::Observed, |reason| {
-        InitializationEffectEvidence::Fallback {
+    let evidence = fallback.map_or(InitializationEffectBasis::Observed, |reason| {
+        InitializationEffectBasis::Fallback {
             reason: reason.clone(),
         }
     });
     target
         .entry(cell)
         .and_modify(|previous| {
-            if evidence.is_observed() {
-                *previous = evidence.clone();
+            if matches!(evidence, InitializationEffectBasis::Observed) {
+                previous.basis = evidence.clone();
             }
         })
-        .or_insert(evidence);
+        .or_insert(InitializationEffectEvidence {
+            basis: evidence,
+            global_may_accesses: Vec::new(),
+            global_may_access_count: 0,
+            global_may_accesses_truncated: false,
+        });
 }

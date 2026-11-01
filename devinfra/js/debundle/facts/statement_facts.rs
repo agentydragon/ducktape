@@ -203,6 +203,8 @@ pub struct CallbackFactoryWriteWitness {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct SynchronousCalls {
+    /// Report-only, source-site may-accesses; never a legacy graph input.
+    pub(crate) evaluation_effects: super::evaluation_effects::EvaluationEffects,
     pub local_record_factory_uses: Vec<crate::reports::schema::LocalRecordFactoryUse>,
     pub local_record_factory_rejections: Vec<crate::reports::schema::LocalRecordFactoryRejection>,
     /// Internal call-site certificate produced only after the checked local

@@ -62,6 +62,7 @@ pub struct EffectTranslationValidationReport {
     pub examples: Vec<EffectConflictExample>,
     pub example_limit: usize,
     pub cell_example_limit: usize,
+    pub global_access_example_limit: usize,
     pub examples_truncated: bool,
     pub full_detail_export_available: bool,
     pub limitations: Vec<&'static str>,
@@ -88,14 +89,31 @@ pub enum EffectConflictDisposition {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct EffectConflictCell {
+pub struct EffectConflictCell<Evidence = InitializationEffectEvidence> {
     pub cell: EffectCellReport,
-    pub first_read: Option<InitializationEffectEvidence>,
-    pub first_write: Option<InitializationEffectEvidence>,
-    pub later_read: Option<InitializationEffectEvidence>,
-    pub later_write: Option<InitializationEffectEvidence>,
+    pub first_read: Option<Evidence>,
+    pub first_write: Option<Evidence>,
+    pub later_read: Option<Evidence>,
+    pub later_write: Option<Evidence>,
     pub allocation_involved: bool,
     pub observed_conflict: bool,
+}
+
+impl<Evidence> EffectConflictCell<Evidence> {
+    fn map_evidence<Next>(
+        self,
+        mut project: impl FnMut(Evidence) -> Next,
+    ) -> EffectConflictCell<Next> {
+        EffectConflictCell {
+            cell: self.cell,
+            first_read: self.first_read.map(&mut project),
+            first_write: self.first_write.map(&mut project),
+            later_read: self.later_read.map(&mut project),
+            later_write: self.later_write.map(&mut project),
+            allocation_involved: self.allocation_involved,
+            observed_conflict: self.observed_conflict,
+        }
+    }
 }
 
 /// Borrowed full-detail view of one conflict. Cells serialize one at a time;
@@ -142,15 +160,15 @@ struct EffectConflictCells<'a> {
 }
 
 impl EffectConflictCells<'_> {
-    fn iter(&self) -> impl Iterator<Item = EffectConflictCell> + '_ {
+    fn iter(&self) -> impl Iterator<Item = EffectConflictCell<&InitializationEffectEvidence>> + '_ {
         self.cells
             .iter()
             .map(|(cell, observed)| EffectConflictCell {
                 cell: EffectCellReport::from(cell),
-                first_read: self.first.reads.get(cell).cloned(),
-                first_write: self.first.writes.get(cell).cloned(),
-                later_read: self.later.reads.get(cell).cloned(),
-                later_write: self.later.writes.get(cell).cloned(),
+                first_read: self.first.reads.get(cell),
+                first_write: self.first.writes.get(cell),
+                later_read: self.later.reads.get(cell),
+                later_write: self.later.writes.get(cell),
                 allocation_involved: self.first.allocates.contains(cell)
                     || self.later.allocates.contains(cell),
                 observed_conflict: *observed,
@@ -159,7 +177,9 @@ impl EffectConflictCells<'_> {
 }
 
 impl EffectConflictRow<'_> {
-    pub fn cells(&self) -> impl Iterator<Item = EffectConflictCell> + '_ {
+    pub fn cells(
+        &self,
+    ) -> impl Iterator<Item = EffectConflictCell<&InitializationEffectEvidence>> + '_ {
         self.cells.iter()
     }
 
@@ -167,7 +187,11 @@ impl EffectConflictRow<'_> {
         EffectConflictExample {
             runs_first: self.runs_first.clone(),
             runs_later: self.runs_later.clone(),
-            cells: self.cells().take(EXAMPLE_LIMIT).collect(),
+            cells: self
+                .cells()
+                .take(EXAMPLE_LIMIT)
+                .map(|cell| cell.map_evidence(|evidence| evidence.sampled(EXAMPLE_LIMIT)))
+                .collect(),
             cell_count: self.cell_count,
             cells_truncated: self.cell_count > EXAMPLE_LIMIT,
             havoc: self.havoc,
@@ -272,6 +296,7 @@ pub fn effect_translation_validate<E>(
         examples: Vec::new(),
         example_limit: EXAMPLE_LIMIT,
         cell_example_limit: EXAMPLE_LIMIT,
+        global_access_example_limit: EXAMPLE_LIMIT,
         examples_truncated: false,
         full_detail_export_available: true,
         limitations: vec![

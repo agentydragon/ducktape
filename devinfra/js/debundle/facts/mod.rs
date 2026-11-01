@@ -54,6 +54,7 @@ mod at_init_fallback_tests;
 mod callable_inference;
 mod collector;
 mod dynamic_scope;
+mod evaluation_effects;
 mod global_object;
 mod heap_contents;
 mod initialization_effects;
@@ -114,6 +115,9 @@ pub use analyze::{
     module_has_top_level_await,
 };
 pub(crate) use analyze::{complete_chunk_structural_with_flow, structural_value_flow};
+pub use evaluation_effects::{
+    GlobalAccessEvidence, GlobalAccessKind, GlobalAccessSite, GlobalMayAccess,
+};
 pub use initialization_effects::{
     InitializationEffectEvidence, InitializationEffects, UnknownEffectCoverage,
 };

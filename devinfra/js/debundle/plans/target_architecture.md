@@ -71,9 +71,11 @@ source, analysis projection and engine (`lowering/analysis_projection.rs`,
 
 Validation is translation validation (<translation_validation_gate.md>).
 
-- **Swapped pairs.** Diff the emitted order against source order. A linear
-  sweep in emitted order, keeping the last writer per cell, finds every
-  swapped pair that conflicts, without enumerating the pairs.
+- **Swapped pairs.** Diff the emitted order against source order. A sweep
+  retains ordered reader/writer participants per cell. Full conflict reporting
+  traverses conflicting partners in output-sensitive order, merging cells for
+  one pair at a time. A pair-specific premise classifies that pair without
+  changing the participants or hiding its other conflicts.
 - **Diagnostics.** Each conflict is reported with:
   - the statements: X now runs before Y;
   - the cell and the fact that put it in both effect sets;

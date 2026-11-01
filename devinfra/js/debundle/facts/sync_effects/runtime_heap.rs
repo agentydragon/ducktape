@@ -2,13 +2,13 @@
 
 use super::super::value_model::{CallSite, Context, ValueExpr, Values};
 use super::CallKind;
+use super::MemberValueWrite;
 use super::interpreter::{Executor, NativeCallResolution};
 use std::collections::BTreeSet;
-use swc_ecma_ast::Id;
 
 pub(super) enum HeapOperation {
     WriteMembers {
-        writes: Vec<(Id, Option<String>, ValueExpr)>,
+        writes: Vec<MemberValueWrite>,
         environment: Context,
         captures: Context,
         certified_data_receivers: BTreeSet<u32>,

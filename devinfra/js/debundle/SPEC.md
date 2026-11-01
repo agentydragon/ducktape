@@ -279,6 +279,16 @@ and streams remain inside the existing reports tree.
 Full semantic precision remains incomplete; see
 <docs/wire_format.md#translation-validation>.
 
+Canonical runtime transfers additionally compose static global-property
+may-accesses into these reports, retaining lexical source-operation sites,
+proof dependencies and conservative callback assumptions. They do not alter
+legacy global cells or graph edges. Indexed, conditional and prejoined lanes
+remain may-access evidence and cannot establish observed contradictions or
+domain completeness. Every existing unknown-coverage/Havoc obligation remains.
+Default examples retain twenty source operations per cell access, with exact
+counts and explicit truncation; full JSONL borrows and streams all retained
+operation provenance.
+
 A command that combines a saved graph with current spec or source checks the
 recorded baseline before reading claims or writing edits. It refuses changed,
 added, deleted, or mismapped inputs and reports the mismatch with a regeneration
