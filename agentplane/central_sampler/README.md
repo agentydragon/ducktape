@@ -1,7 +1,7 @@
 # Central sampler
 
 An independent, opt-in runner type backed by its own PostgreSQL database. The sampler owns the
-Responses and native Anthropic Messages loops and lazily starts one shared pinned **Codex 0.162.1** JavaScript host for many
+Responses and native Anthropic Messages loops and lazily starts one shared pinned **Codex 0.166.0** JavaScript host for many
 logical Sessions. `store()` / `load()` values persist across cells and idle turns in that host's
 memory. Each code-mode cell runs in a fresh V8 isolate with no JavaScript globals shared between
 cells, and provider continuation remains in the sampler. `notify()` outputs are queued durably and
@@ -61,7 +61,7 @@ environment variable. Gateway mode requires `gateway_target` and a rotating proj
 local-test targets. It keeps one `OpenSession` gRPC stream to Runner and sends process and file
 operations as typed unary RPCs. Runner owns the connection to Codex's exec-server; the gRPC stream
 is not the Codex session itself. Closing the stream releases that adapter connection without
-sending a process-termination request. Pinned Codex 0.162.1 keeps a detached native session for up
+sending a process-termination request. Pinned Codex 0.166.0 keeps a detached native session for up
 to 30 seconds, then expires it and terminates processes still running in it. The adapter adds no
 durable session storage or new process policy. Unary request IDs correlate with the
 sampler's durable intent journal; they do not deduplicate or cache server results. Configure

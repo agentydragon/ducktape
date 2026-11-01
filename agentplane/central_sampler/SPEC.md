@@ -165,7 +165,7 @@ The pinned code-mode host V1 passes `delegate/response` errors to JavaScript as 
 the delegate response has a `message` field but no structured error or cause field. Catching code
 must parse the JSON string for these fields; native `Error` properties require a host protocol change.
 
-Process handles inherit upstream's detached retention limit: pinned Codex 0.162.1 retains a
+Process handles inherit upstream's detached retention limit: pinned Codex 0.166.0 retains a
 disconnected native session for 30 seconds, then expires it and terminates processes still running
 in that session. This is upstream behavior, not sampler or adapter persistence. The adapter's gRPC
 `OpenSession` stream owns its local WebSocket connection to that Codex session; stream lifetime and
@@ -483,7 +483,7 @@ on live adapter connections, not Codex native sessions, sampler conversations, o
 `max_live_sessions` setting. The sampler releases its connection when no live cells or processes
 require it; Runner drain or observer fencing closes it as well. The adapter introduces no durable
 session persistence or process policy. A stream loss leaves the native Codex session detached for up
-to 30 seconds, after which pinned Codex 0.162.1 expires it and terminates remaining processes. See
+to 30 seconds, after which pinned Codex 0.166.0 expires it and terminates remaining processes. See
 the [Executor API resource and lifecycle contract](../executor/README.md) for connection budgets
 and ownership.
 
