@@ -1,7 +1,8 @@
 # Delegated authorization
 
-Status: **approved contract; shared protocol primitives and durable Action caller-UID retention are
-implemented. Caller-delegating Action adapters and receiving service integrations remain separate work.**
+Status: **approved contract; shared protocol primitives, durable Action caller-UID retention, and the
+Runner Gateway Dispatcher and History Service receiving paths are implemented. Caller-delegating Action
+adapters and their end-to-end use remain separate work.**
 Use this contract when an Agentplane service invokes another service on behalf of a ServiceAccount.
 The first consumer is routine caller-privilege Actions. Direct callers continue using the
 [workload authentication](workload_authentication.md) contract.

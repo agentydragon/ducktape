@@ -1,7 +1,7 @@
 """The sandbox Actions' own boxes, behind the egress path every agentplane box shares (sandbox_pod.py),
 with no harness and no state volume. The command box runs the plain sandbox image
-(agentplane/images/sandbox.nix) and costs the namespace quota what a command needs; the build box is
-the same box sized for a build, on the build image (agentplane/images/build.nix), which adds Bazel
+(agentplane/env/images/sandbox.nix) and costs the namespace quota what a command needs; the build box is
+the same box sized for a build, on the build image (agentplane/env/images/build.nix), which adds Bazel
 and its toolchain. Each is a core PodTemplate, not a SandboxTemplate: the Action Service creates
 every box as a plain Pod from one, and staging.py offers both by name (`TEMPLATES`).
 """
@@ -26,7 +26,7 @@ NAME = "sandbox"
 BUILD_NAME = "sandbox-build"
 # The workload container, which `exec` runs commands in.
 CONTAINER = "sandbox"
-# The image's HOME and WorkingDir, writable by its uid 1000 (agentplane/images/sandbox.nix).
+# The image's HOME and WorkingDir, writable by its uid 1000 (agentplane/env/images/sandbox.nix).
 HOME = "/home/runner"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox"
 _BUILD_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox-build"

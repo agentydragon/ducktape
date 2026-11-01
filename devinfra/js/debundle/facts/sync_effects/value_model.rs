@@ -379,7 +379,7 @@ pub(super) enum ValueExpr {
     /// A primitive of the given types: a literal, a template, or a value
     /// known only to be primitive.
     NonCallable(PrimKinds),
-    Member(Box<Self>, Option<String>, MemberKey),
+    Member(Box<Self>, Option<String>, MemberKey, CallSite),
     Call(Box<Self>, Vec<Self>, CallSite),
     New(Box<Self>, Vec<Self>, CallSite),
     /// Source spelling of `Object.getPrototypeOf([][Symbol.iterator]())`.
@@ -643,6 +643,7 @@ impl ValueExpr {
                 Box::new(Self::lower(&member.obj, covered)),
                 static_prop(&member.prop),
                 MemberKey::of(&member.prop),
+                member.span.into(),
             ),
             Expr::OptChain(chain) => match chain.base.as_ref() {
                 OptChainBase::Call(call) if call.args.iter().all(|arg| arg.spread.is_none()) => {
@@ -671,6 +672,7 @@ impl ValueExpr {
                             Box::new(Self::lower(&member.obj, covered)),
                             static_prop(&member.prop),
                             MemberKey::of(&member.prop),
+                            member.span.into(),
                         ),
                     ];
                     if !matches!(member.obj.unwrap_parens(), Expr::Ident(_))
@@ -812,7 +814,7 @@ impl ValueExpr {
                     alternative.bindings(result);
                 }
             }
-            Self::Member(object, _, _) => object.bindings(result),
+            Self::Member(object, _, _, _) => object.bindings(result),
             Self::Call(callee, args, _) | Self::New(callee, args, _) => {
                 callee.bindings(result);
                 for arg in args {
@@ -857,7 +859,7 @@ impl ValueExpr {
                 .expect("alternative expression")
                 .iter()
                 .any(|value| value.carries_namespace(id, aliases)),
-            Self::Member(object, _, _) => {
+            Self::Member(object, _, _, _) => {
                 matches!(object.as_ref(), Self::Call(callee, _, _)
                     if Self::is_direct_namespace_member_callee(callee, id))
                     || object.carries_namespace(id, aliases)
@@ -882,7 +884,7 @@ impl ValueExpr {
     }
 
     fn is_direct_namespace_member_callee(callee: &Self, id: &Id) -> bool {
-        matches!(callee, Self::Member(object, Some(_), MemberKey::Static)
+        matches!(callee, Self::Member(object, Some(_), MemberKey::Static, _)
             if matches!(object.as_ref(), Self::Binding(namespace) if namespace == id))
     }
 
@@ -947,7 +949,7 @@ impl ValueExpr {
                 .expect("alternative expression")
                 .iter()
                 .any(|value| value.may_equal_namespace(id, aliases, facts, visiting)),
-            Self::Member(object, Some(property), MemberKey::Static) => {
+            Self::Member(object, Some(property), MemberKey::Static, _) => {
                 if let Some(value) = facts.own_data_member(object, property, id, aliases) {
                     value.may_equal_namespace(id, aliases, facts, visiting)
                 } else {
@@ -1000,7 +1002,7 @@ impl ValueExpr {
                         visiting_classes,
                     )
                 }),
-            Self::Member(object, property, is_static) => {
+            Self::Member(object, property, is_static, _) => {
                 let projected = property
                     .as_deref()
                     .filter(|_| is_static.is_static())
@@ -1149,7 +1151,7 @@ impl ValueExpr {
                         facts,
                     )
                 }),
-            Self::Member(object, property, is_static) => {
+            Self::Member(object, property, is_static, _) => {
                 if let Some(value) = property
                     .as_deref()
                     .filter(|_| is_static.is_static())
@@ -1200,7 +1202,7 @@ impl ValueExpr {
         match self {
             Self::ObjectLiteral(_, properties) => properties.iter().any(|(name, value)| {
                 let direct_member_value = name.is_some()
-                    && matches!(value, Self::Member(object, Some(_), MemberKey::Static)
+                    && matches!(value, Self::Member(object, Some(_), MemberKey::Static, _)
                         if matches!(object.as_ref(), Self::Binding(namespace) if namespace == id));
                 !direct_member_value
                     && value.may_publish_namespace_in_factory_result(id, aliases, facts)
@@ -1367,7 +1369,7 @@ impl NamespaceValueFacts {
                 .expect("alternative expression")
                 .iter()
                 .any(|value| self.may_be_local_class_value(value, visiting)),
-            ValueExpr::Member(object, _, _) => {
+            ValueExpr::Member(object, _, _, _) => {
                 self.resolve_class(object, &mut BTreeSet::new()).is_some()
                     || self.may_be_local_class_value(object, visiting)
             }

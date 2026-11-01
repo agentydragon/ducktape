@@ -22,7 +22,7 @@ _TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_instal
 _STACKS = {
     "pod": struct(fixture = _FIXTURE, vm = False, real_model = False, images = [_HARNESSES_LAYOUT]),
     "mcp": struct(fixture = _MCP_FIXTURE, vm = False, real_model = False, images = [_HARNESSES_LAYOUT, _SAMPLER_LAYOUT] + _MCP_LAYOUTS),
-    "vm": struct(fixture = _VM_FIXTURE, vm = True, real_model = False, images = [_SAMPLER_LAYOUT]),
+    "vm": struct(fixture = _VM_FIXTURE, vm = True, real_model = False, images = []),
     "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = [_HARNESSES_LAYOUT]),
 }
 

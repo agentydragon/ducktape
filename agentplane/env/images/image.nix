@@ -1,4 +1,4 @@
-# The native harness image: the sandbox image's definition (<../../images/sandbox.nix>) plus nixpkgs' Claude
+# The native harness image: the sandbox image's definition (<./sandbox.nix>) plus nixpkgs' Claude
 # Code and Codex, and with `extraPaths` the repository's own hook/build tools. Published as
 # runner-ducktape by .github/workflows/agentplane-runner-ducktape-image.yml and run by the runner
 # SandboxTemplate (cluster/cdk8s/agentplane/runner_sandbox.py), which names the harnesses by their
@@ -22,7 +22,7 @@
   name,
   extraPaths ? [ ],
 }:
-import ../../images/sandbox.nix {
+import ./sandbox.nix {
   inherit pkgs name;
   extraPaths = [
     pkgsUnstable.claude-code

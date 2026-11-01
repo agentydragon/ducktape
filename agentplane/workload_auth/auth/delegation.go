@@ -31,6 +31,13 @@ type ServiceAccountUIDReader interface {
 	GetServiceAccountUID(context.Context, Account) (uid string, found bool, err error)
 }
 
+// ServiceAccountUIDReaderFunc adapts a Kubernetes lookup at a service's composition root.
+type ServiceAccountUIDReaderFunc func(context.Context, Account) (uid string, found bool, err error)
+
+func (read ServiceAccountUIDReaderFunc) GetServiceAccountUID(ctx context.Context, account Account) (string, bool, error) {
+	return read(ctx, account)
+}
+
 // Delegator grants one actor permission to assert callers in the listed namespaces for the method
 // whose Rule it is attached to. It does not grant direct caller or privileged backend authority.
 type Delegator struct {

@@ -14,9 +14,6 @@
   };
 
   window.__threadPage = {
-    // Resolves after the paint that follows the next layout, and any effect or observer it runs.
-    frames: () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
-
     // The reader's place, sampled once two consecutive frames agree, so a pending re-measure right
     // after a just-ended gesture cannot register as a false position.
     settledAnchor: (area) =>

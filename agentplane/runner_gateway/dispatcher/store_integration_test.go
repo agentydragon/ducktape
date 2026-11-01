@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net"
 	"slices"
 	"strings"
 	"sync"
@@ -20,6 +21,8 @@ import (
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -36,11 +39,64 @@ func configuredDispatcherCallers() map[auth.Account]struct{} {
 	return map[auth.Account]struct{}{caller: {}}
 }
 
-// admitted is a call context admitted as caller.
-func admitted() context.Context {
-	account := auth.ServiceAccountPrincipal{Account: caller, ServiceAccountUID: "test-account-uid"}
-	pod := auth.Principal{Account: caller, ServiceAccountUID: account.ServiceAccountUID, PodName: "test-pod", PodUID: "test-pod-uid"}
-	return auth.WithReviewedCaller(context.Background(), auth.ReviewedCaller{ServiceAccount: account, Pod: &pod})
+type admissionContextCapture struct {
+	dispatcherpb.UnimplementedSessionDispatcherServer
+	captured chan context.Context
+	release  chan struct{}
+}
+
+func (s admissionContextCapture) GetDispatch(ctx context.Context, _ *dispatcherpb.GetDispatchRequest) (*dispatcherpb.GetDispatchResponse, error) {
+	s.captured <- ctx
+	<-s.release
+	return nil, status.Error(codes.Canceled, "fixture complete")
+}
+
+// admitted returns a live context captured behind the real shared gRPC admission middleware.
+// The fixture holds its RPC open so the context remains valid for direct handler/store tests.
+func admitted(t *testing.T) context.Context {
+	t.Helper()
+	const audience, token = "dispatcher-test", "dispatcher-test-token"
+	resolver, err := auth.NewResolver(tokenReviewStub{
+		token: {account: caller, uid: "test-account-uid", pod: true},
+	}, audience, []string{caller.Namespace}, auth.WithVerdictTTL(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods := auth.Methods{dispatcherpb.SessionDispatcher_GetDispatch_FullMethodName: auth.ReviewedServiceAccount(resolver)}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := admissionContextCapture{captured: make(chan context.Context, 1), release: make(chan struct{})}
+	server := grpc.NewServer(methods.ServerOptions(0)...)
+	dispatcherpb.RegisterSessionDispatcherServer(server, service)
+	go func() { _ = server.Serve(listener) }()
+	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		server.Stop()
+		t.Fatal(err)
+	}
+	callContext, cancel := context.WithCancel(context.Background())
+	callContext = metadata.AppendToOutgoingContext(callContext, "authorization", "Bearer "+token)
+	go func() {
+		_, _ = dispatcherpb.NewSessionDispatcherClient(connection).GetDispatch(callContext, &dispatcherpb.GetDispatchRequest{})
+	}()
+	var captured context.Context
+	select {
+	case captured = <-service.captured:
+	case <-time.After(5 * time.Second):
+		cancel()
+		server.Stop()
+		connection.Close()
+		t.Fatal("shared auth middleware did not admit the fixture call")
+	}
+	t.Cleanup(func() {
+		cancel()
+		close(service.release)
+		server.Stop()
+		_ = connection.Close()
+	})
+	return captured
 }
 
 type oneSandbox struct{}
@@ -397,7 +453,7 @@ func TestRPCAdmissionReturnsSameQueuedReceiptAndConflicts(t *testing.T) {
 	service := &Service{
 		Store: store, DispatcherCallers: configuredDispatcherCallers(), WakeCallers: map[auth.Account]struct{}{caller: {}}, Sandboxes: oneSandbox{},
 	}
-	ctx := admitted()
+	ctx := admitted(t)
 	request := &dispatcherpb.SubmitInputRequest{CommandId: "api-a", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, Text: "hello"}
 	first, err := service.SubmitInput(ctx, request)
 	if err != nil || first.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER {
@@ -456,7 +512,7 @@ func (w *blockedDispatchWatch) Send(*dispatcherpb.WatchDispatchesResponse) error
 }
 
 func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
-	ctx := admitted()
+	ctx := admitted(t)
 	store := testStore(t, 5)
 	for _, id := range []string{"watch-a", "watch-b", "watch-c"} {
 		if _, err := store.Enqueue(ctx, "watch-session", "sandbox-api", sandboxUID, input(id, "x"), nil); err != nil {
@@ -500,7 +556,7 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 		{name: "caller cancellation", lease: time.Hour, cancel: true, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			base := admitted()
+			base := admitted(t)
 			ctx, cancel := context.WithCancel(base)
 			defer cancel()
 			release := make(chan struct{})
@@ -549,7 +605,7 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 
 func TestInterruptTurnRequiresTurnAndPropagatesRunnerRejection(t *testing.T) {
 	callers := map[auth.Account]struct{}{caller: {}}
-	ctx := admitted()
+	ctx := admitted(t)
 
 	blocked := &Service{
 		Store: testStore(t, 3), DispatcherCallers: configuredDispatcherCallers(), WakeCallers: callers, Sandboxes: blockedSandbox{},
@@ -1231,7 +1287,7 @@ func TestWorkerSerializesCommandsPerSession(t *testing.T) {
 }
 
 func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
-	ctx := admitted()
+	ctx := admitted(t)
 	store := testStore(t, 3)
 	spec := &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER}
 	opening, err := store.OpenSession(ctx, "central-unready-session", "sandbox-api", sandboxUID, spec, nil, nil)
@@ -1261,7 +1317,7 @@ func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 }
 
 func TestCentralOpeningUsesConfiguredSampler(t *testing.T) {
-	ctx := admitted()
+	ctx := admitted(t)
 	store := testStore(t, 3)
 	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: blockedSandbox{}, CentralTarget: &CentralTarget{Target: "configured", TokenFile: "configured"}}
 	request := &dispatcherpb.OpenSessionRequest{SessionId: "central-configured-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test"}}

@@ -35,6 +35,8 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -71,13 +73,18 @@ func accountSet(accounts []auth.Account) map[auth.Account]struct{} {
 	return result
 }
 
-func accountNamespaces(accounts []auth.Account, extra *auth.Account) []string {
-	names := make(map[string]struct{}, len(accounts)+1)
+func accountNamespaces(accounts []auth.Account, extra *auth.Account, additional ...auth.Account) []string {
+	names := make(map[string]struct{}, len(accounts)+1+len(additional))
 	for _, account := range accounts {
 		names[account.Namespace] = struct{}{}
 	}
 	if extra != nil {
 		names[extra.Namespace] = struct{}{}
+	}
+	for _, account := range additional {
+		if account.Namespace != "" {
+			names[account.Namespace] = struct{}{}
+		}
 	}
 	result := make([]string, 0, len(names))
 	for name := range names {
@@ -215,8 +222,12 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	if err != nil {
 		return err
 	}
+	var delegatedActors []auth.Account
+	if c.Delegation != nil {
+		delegatedActors = append(delegatedActors, c.Delegation.Actor)
+	}
 	dispatchAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.DispatcherAudience,
-		accountNamespaces(c.DispatcherCallers, &auth.Account{Namespace: c.Namespace}))
+		accountNamespaces(c.DispatcherCallers, &auth.Account{Namespace: c.Namespace}, delegatedActors...))
 	if err != nil {
 		return err
 	}
@@ -286,8 +297,28 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		Sandboxes: catalog, Runner: runner,
 		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
+	dispatcherMethods := dispatcher.Methods(dispatchAuth)
+	if c.Delegation != nil {
+		delegator := auth.Delegator{Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces}
+		uidReader := auth.ServiceAccountUIDReaderFunc(func(ctx context.Context, account auth.Account) (string, bool, error) {
+			serviceAccount, err := kube.CoreV1().ServiceAccounts(account.Namespace).Get(ctx, account.Name, metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				return "", false, nil
+			}
+			if err != nil {
+				return "", false, err
+			}
+			return string(serviceAccount.UID), true, nil
+		})
+		dispatcherMethods, err = dispatcher.MethodsWithDelegation(
+			dispatchAuth, delegator, uidReader, c.Delegation.Methods,
+		)
+		if err != nil {
+			return fmt.Errorf("configure Dispatcher delegation: %w", err)
+		}
+	}
 	methods := auth.HealthMethods()
-	maps.Copy(methods, dispatcher.Methods(dispatchAuth))
+	maps.Copy(methods, dispatcherMethods)
 	maps.Copy(methods, g.Methods())
 	server := grpc.NewServer(append(
 		methods.ServerOptions(0),

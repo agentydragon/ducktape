@@ -335,10 +335,10 @@ in
     ];
   };
 
-  # The guest's package set: the tools every Sandbox kind shares (<../../images/tools.nix>), the same
+  # The guest's package set: the tools every Sandbox kind shares (<./tools.nix>), the same
   # hook/build tools as runner-ducktape, what the guest needs of its own, and the harnesses.
   environment.systemPackages =
-    import ../../images/tools.nix pkgs
+    import ./tools.nix pkgs
     ++ preCommitPackages
     ++ (with pkgs; [
       bashInteractive

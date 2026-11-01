@@ -179,7 +179,7 @@ success receipt from that guest's own console. No separate root image or extra V
 Workspace ownership, native identity/security settings, systemd and kernel resource properties, and
 detached-child cleanup run through ordinary Session setup and retained History in both harness
 scenarios. Their turns also verify the runner certificate and identity, authenticated session,
-command admission and retained History. The sampler, two turn guests and one OOM guest boot together.
+command admission and retained History. The two turn guests and one Codex sandbox/OOM guest boot together.
 The suite requests an 8-unit worker so the guests and k3s services fit without waiting for another
 group to exit.
 
@@ -195,9 +195,10 @@ exits; otherwise Pod termination can stop the state filesystem while the guest c
 Existing KubeVirt initializers run before these daemons; ContainerPath daemons retain their ordinary
 container placement for KubeVirt reconciliation.
 
-`test_vm` starts three VM Sandboxes concurrently in one stack: one per harness for the
-scripted turn and one for Codex tool OOM containment. The OOM scenario drives the real Codex
-app-server to run a memory-exhausting shell command through its isolated exec-server. The allocator
+`test_vm` starts five VM Sandboxes concurrently in one stack: one per harness for the
+scripted turn, one per harness for credential authentication, and one for Codex tool OOM containment.
+The OOM scenario drives the real Codex app-server to run a memory-exhausting shell command through
+its isolated exec-server. The allocator
 touches memory beyond the configured executor limit, with a raised `oom_score_adj` to select that
 tool as the victim. The test checks a single
 `memory.events` OOM kill with `memory.oom.group=0`, a tool result reporting exit 137, and a failed

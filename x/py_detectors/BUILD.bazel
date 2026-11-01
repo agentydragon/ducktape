@@ -1,0 +1,77 @@
+# gazelle:exclude rules
+# rules/ is excluded (macro-generated packages), so imports into it need pins:
+# gazelle:resolve py x.py_detectors.rules.broad_except_order.rule //x/py_detectors/rules:broad_except_order
+# gazelle:resolve py x.py_detectors.rules.dynamic_attr_probe.rule //x/py_detectors/rules:dynamic_attr_probe
+# gazelle:resolve py x.py_detectors.rules.flatten_nested_guards.rule //x/py_detectors/rules:flatten_nested_guards
+# gazelle:resolve py x.py_detectors.rules.import_aliasing.rule //x/py_detectors/rules:import_aliasing
+# gazelle:resolve py x.py_detectors.rules.imports_inside_def.rule //x/py_detectors/rules:imports_inside_def
+# gazelle:resolve py x.py_detectors.rules.magic_tuple_indices.rule //x/py_detectors/rules:magic_tuple_indices
+# gazelle:resolve py x.py_detectors.rules.optional_string_simplify.rule //x/py_detectors/rules:optional_string_simplify
+# gazelle:resolve py x.py_detectors.rules.pathlike_str_casts.rule //x/py_detectors/rules:pathlike_str_casts
+# gazelle:resolve py x.py_detectors.rules.pydantic_v1_shims.rule //x/py_detectors/rules:pydantic_v1_shims
+# gazelle:resolve py x.py_detectors.rules.swallow_errors.rule //x/py_detectors/rules:swallow_errors
+# gazelle:resolve py x.py_detectors.rules.trivial_alias.rule //x/py_detectors/rules:trivial_alias
+# gazelle:resolve py x.py_detectors.rules.trivial_passthrough.rule //x/py_detectors/rules:trivial_passthrough
+# gazelle:resolve py x.py_detectors.rules.walrus_suggest.rule //x/py_detectors/rules:walrus_suggest
+
+"""Python detectors package — entry points and shared infrastructure."""
+
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":registry",
+        "//x/py_detectors/rules:broad_except_order",
+        "//x/py_detectors/rules:dynamic_attr_probe",
+        "//x/py_detectors/rules:flatten_nested_guards",
+        "//x/py_detectors/rules:import_aliasing",
+        "//x/py_detectors/rules:imports_inside_def",
+        "//x/py_detectors/rules:magic_tuple_indices",
+        "//x/py_detectors/rules:optional_string_simplify",
+        "//x/py_detectors/rules:pathlike_str_casts",
+        "//x/py_detectors/rules:pydantic_v1_shims",
+        "//x/py_detectors/rules:swallow_errors",
+        "//x/py_detectors/rules:trivial_alias",
+        "//x/py_detectors/rules:trivial_passthrough",
+        "//x/py_detectors/rules:walrus_suggest",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "registry",
+    srcs = ["registry.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":models",
+        ":utils",
+    ],
+)
+
+py_library(
+    name = "import_graph",
+    srcs = ["import_graph.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "utils",
+    srcs = ["utils.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_binary(
+    name = "py_detectors_cli",
+    main_module = "x.py_detectors.main",
+    visibility = ["//:__subpackages__"],
+    deps = [":main"],
+)

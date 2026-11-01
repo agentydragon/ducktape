@@ -47,11 +47,7 @@ async def test_dispatcher_central_setup_tool_and_retained_answer(
     cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream
 ) -> None:
     await central_sampler.dispatcher_central_setup_tool_and_retained_answer(
-        cluster,
-        tmp_path,
-        scripted,
-        Executor(template="runner", cwd="/state/workspaces/central-acceptance"),
-        central_sampler.POD_EXECUTION,
+        cluster, tmp_path, scripted, Executor(template="runner", cwd="/state/workspaces/central-acceptance")
     )
 
 

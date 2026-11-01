@@ -75,3 +75,12 @@ filegroup(
     ],
     visibility = ["//agentplane/app/frontend:__pkg__"],
 )
+
+py_library(
+    name = "history_interactions",
+    srcs = ["history_interactions.py"],
+    deps = [
+        "//agentplane/app/testing:thread_view_marks",
+        "@pypi//playwright",
+    ],
+)

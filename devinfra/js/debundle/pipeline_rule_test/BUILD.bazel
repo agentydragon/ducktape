@@ -106,12 +106,74 @@ pipeline_report_flags_test(
     target_under_test = ":jsonl_readable_filtered",
 )
 
+[
+    debundle_pipeline(
+        name = name,
+        emit_on_rejection = readable,
+        full_report_chunks = chunks,
+        full_reports = kinds,
+        input_data = [":source"],
+        spec_tree_inputs = [":spec"],
+        split_dependency_graphs = readable,
+        tags = ["manual"],
+        tree_config = "fixture/config.yaml",
+        tree_modules = "fixture/modules",
+        tree_source_root = ":source",
+        tree_vendor_marks = "fixture/vendor_marks.yaml",
+    )
+    for name, chunks, readable, kinds in [
+        (
+            "full_translation",
+            [],
+            False,
+            ["translation-validation"],
+        ),
+        (
+            "full_reentry",
+            [],
+            False,
+            ["export-reentry"],
+        ),
+        (
+            "full_translation_filtered",
+            ["static/quote'; $(printf injected) `printf injected`"],
+            True,
+            ["translation-validation"],
+        ),
+    ]
+]
+
+pipeline_report_flags_test(
+    name = "full_report_test",
+    baseline = ":jsonl_default",
+    expected_flags = "--full-report 'translation-validation'",
+    target_under_test = ":full_translation",
+)
+
+pipeline_report_flags_test(
+    name = "full_report_filtered_test",
+    baseline = ":jsonl_readable_default",
+    expected_flags = "--full-report 'translation-validation' --full-report-chunk 'static/quote'\\''; $(printf injected) `printf injected`'",
+    readable = True,
+    target_under_test = ":full_translation_filtered",
+)
+
+pipeline_report_flags_test(
+    name = "full_reentry_test",
+    baseline = ":jsonl_default",
+    expected_flags = "--full-report 'export-reentry'",
+    target_under_test = ":full_reentry",
+)
+
 test_suite(
     name = "tests",
     tests = [
         ":default_test",
         ":export_test",
         ":filtered_test",
+        ":full_reentry_test",
+        ":full_report_filtered_test",
+        ":full_report_test",
         ":readable_test",
     ],
 )

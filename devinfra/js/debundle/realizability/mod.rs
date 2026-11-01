@@ -61,7 +61,10 @@ pub use effect_translation_validation::{
 use esm_simulator::EsmEvaluationSimulator;
 use incremental_quotient::{IncrementalQuotient, QuotientOverlay};
 pub use incremental_quotient::{LadderDecision, ModuleAssignmentDelta};
-pub use translation_validation::{TranslationValidationReport, translation_validate};
+pub use translation_validation::{
+    TranslationValidationEvidenceReport, TranslationValidationReport, TranslationValidationResult,
+    translation_validate,
+};
 
 /// Canonical in-memory diagnosis of one offending module-quotient
 /// SCC. The presence of any such diagnosis on a

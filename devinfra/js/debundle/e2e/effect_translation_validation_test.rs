@@ -3,6 +3,375 @@
 use debundle_e2e_support::*;
 use serde_json::Value;
 
+#[test]
+fn composed_global_cells_keep_sites_dependencies_and_may_provenance() {
+    let fixture = run_rejection_fixture_with_args(
+        composed_global_access_fixture(),
+        &["--effect-conflicts-jsonl"],
+        1,
+    );
+    let rows = read_jsonl(
+        &fixture
+            .report_root
+            .join(&fixture.chunk_id)
+            .join("effect_conflicts.jsonl"),
+    );
+    let pair = rows
+        .iter()
+        .find(|pair| pair["runs_first"]["unit"] == 7 && pair["runs_later"]["unit"] == 6)
+        .expect("interleaved tail and writer");
+    let cell = pair["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|cell| cell["cell"]["kind"] == "global_prop" && cell["cell"]["key"] == "marker")
+        .unwrap_or_else(|| panic!("composed marker cell: {pair:#}"));
+    assert_eq!(cell["observed_conflict"], false, "{cell:#}");
+    for (access, owner, kind) in [
+        ("first_read", 1, "read"),
+        ("first_write", 1, "write"),
+        ("later_write", 0, "write"),
+    ] {
+        let evidence = &cell[access];
+        assert_eq!(evidence["kind"], "indexed_may_access", "{cell:#}");
+        let operations = evidence["global_may_accesses"].as_array().unwrap();
+        assert_eq!(
+            operations.len(),
+            1,
+            "physical operation is idempotent across flattened/value/memo paths: {cell:#}"
+        );
+        assert_eq!(operations[0]["site"]["lexical_owner"], owner);
+        assert_eq!(operations[0]["site"]["access"], kind);
+        let source = composed_global_access_fixture().source;
+        let (start, length) = if kind == "read" {
+            (
+                source.find("return globalThis.marker;").unwrap() + "return ".len(),
+                "globalThis.marker".len(),
+            )
+        } else {
+            let owner_start = if owner == 0 {
+                0
+            } else {
+                source.find("function peek()").unwrap()
+            };
+            (
+                owner_start + source[owner_start..].find("globalThis.marker = 1").unwrap(),
+                "globalThis.marker = 1".len(),
+            )
+        };
+        assert_eq!(operations[0]["site"]["start"], start + 1);
+        assert_eq!(operations[0]["site"]["end"], start + length + 1);
+    }
+    let dependency = &cell["first_read"]["global_may_accesses"][0]["evidence"]["dependencies"]["program_premises"];
+    assert!(
+        dependency
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("intrinsics_never_written")),
+        "{cell:#}"
+    );
+    for endpoint in ["first_opacity", "later_opacity"] {
+        assert_eq!(
+            pair[endpoint]["unknown_coverage"],
+            serde_json::json!(["global_properties", "general_heap", "host_effects"])
+        );
+    }
+    assert!(
+        rows.iter()
+            .flat_map(|row| row["cells"].as_array().unwrap())
+            .all(|cell| cell["cell"]["key"] != "unused"),
+        "lazy bodies are not invocation certificates"
+    );
+
+    let mut co_located = composed_global_access_fixture();
+    co_located.logical_modules = vec![logical_module(
+        "all",
+        &[
+            Member::new("mutate"),
+            Member::new("peek"),
+            Member::new("nested"),
+            Member::new("unused"),
+            Member::new("install"),
+            Member::new("first"),
+            Member::new("second"),
+            Member::new("tail"),
+        ],
+    )];
+    assert_preserved_entry_output(&run_fixture(co_located), "1 2 1\n");
+}
+
+#[test]
+fn global_aliases_and_shadowed_receivers_keep_conservative_provenance() {
+    for (alias, output) in [
+        ("globalThis", "1 2 1\n"),
+        ("globalThis.choose ? globalThis : {}", "1 2 undefined\n"),
+        ("global", "1 2 1\n"),
+    ] {
+        let host = || HostBehavior {
+            predefined_globals: if alias == "global" {
+                PredefinedGlobals::Standard
+            } else {
+                PredefinedGlobals::Unknown
+            },
+            ..HostBehavior::default()
+        };
+        let source = format!(
+            "const alias = {alias};\n\
+             function mutate() {{ alias.marker = 1; return 1; }}\n\
+             function peek() {{ alias.marker = 1; return alias.marker; }}\n\
+             function shadow(globalThis) {{ globalThis.shadowed = 1; return globalThis.shadowed; }}\n\
+             const first = peek();\n\
+             const second = mutate();\n\
+             const tail = (shadow({{}}), peek()) + first;\n\
+             console.log(first, tail, globalThis.marker);\n\
+             export {{ alias, mutate, peek, shadow, first, second, tail }};\n"
+        );
+        let fixture = run_rejection_fixture_with_args(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module(
+                        "outer",
+                        &[
+                            Member::new("alias"),
+                            Member::new("mutate"),
+                            Member::new("peek"),
+                            Member::new("shadow"),
+                            Member::new("first"),
+                            Member::new("tail"),
+                        ],
+                    ),
+                    logical_module("inner", &[Member::new("second")]),
+                ],
+            )
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_host_behavior(host()),
+            &["--effect-conflicts-jsonl"],
+            1,
+        );
+        let rows = read_jsonl(
+            &fixture
+                .report_root
+                .join(&fixture.chunk_id)
+                .join("effect_conflicts.jsonl"),
+        );
+        assert_eq!(
+            rows.iter()
+                .flat_map(|row| row["cells"].as_array().unwrap())
+                .any(|cell| cell["cell"]["kind"] == "global_prop"
+                    && cell["cell"]["key"] == "marker"
+                    && cell["observed_conflict"] == false),
+            alias != "global",
+            "only aliases modeled by the execution value domain contribute cells; census-only Node global stays opaque: {rows:#?}"
+        );
+        assert!(
+            rows.iter()
+                .flat_map(|row| row["cells"].as_array().unwrap())
+                .all(|cell| cell["cell"]["key"] != "shadowed"),
+            "a parameter named globalThis is an ordinary receiver: {rows:#?}"
+        );
+        assert!(
+            rows.iter().all(|row| row["havoc"] == true),
+            "alias/value precision cannot clear missing coverage"
+        );
+        let co_located = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "all",
+                    &[
+                        Member::new("alias"),
+                        Member::new("mutate"),
+                        Member::new("peek"),
+                        Member::new("shadow"),
+                        Member::new("first"),
+                        Member::new("second"),
+                        Member::new("tail"),
+                    ],
+                )],
+            )
+            .with_host_behavior(host()),
+        );
+        assert_preserved_entry_output(&co_located, output);
+    }
+}
+
+#[test]
+fn opaque_callback_accesses_retain_their_assumption_without_contaminating_other_owners() {
+    let source = composed_global_access_fixture().source.replace(
+        "const tail = nested() + first;",
+        "const tail = JSON.parse(\"[1]\").map(peek);",
+    );
+    let mut opts = composed_global_access_fixture();
+    opts.source = &source;
+    let fixture = run_rejection_fixture_with_args(opts, &["--effect-conflicts-jsonl"], 1);
+    let rows = read_jsonl(
+        &fixture
+            .report_root
+            .join(&fixture.chunk_id)
+            .join("effect_conflicts.jsonl"),
+    );
+    let cell = rows
+        .iter()
+        .flat_map(|row| row["cells"].as_array().unwrap())
+        .find(|cell| cell["cell"]["kind"] == "global_prop" && cell["cell"]["key"] == "marker")
+        .expect("callback global conflict");
+    assert_eq!(cell["observed_conflict"], false);
+    let operations = cell["first_read"]["global_may_accesses"]
+        .as_array()
+        .unwrap();
+    assert!(
+        operations
+            .iter()
+            .any(|operation| operation["evidence"]["assumptions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|reason| reason["path"] == "opaque_callback_invocation")),
+        "{cell:#}"
+    );
+    assert!(
+        cell["later_write"]["global_may_accesses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|operation| operation["evidence"]["assumptions"]
+                .as_array()
+                .unwrap()
+                .is_empty()),
+        "another owner's direct write must not inherit the opaque callback path: {cell:#}"
+    );
+}
+
+#[test]
+fn default_export_value_evaluation_keeps_child_global_effects() {
+    let source = "function mutate() { globalThis.marker = 1; return 1; }\n\
+                  function peek() { return globalThis.marker; }\n\
+                  function nested() { return peek(); }\n\
+                  const before = mutate();\n\
+                  const gap = mutate();\n\
+                  export default nested();\n\
+                  console.log(before, gap, globalThis.marker);\n";
+    let members = || {
+        [
+            Member::new("mutate"),
+            Member::new("peek"),
+            Member::new("nested"),
+            Member::new("before"),
+        ]
+    };
+    let fixture = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon("outer", &members(), &["export default nested();"]),
+                logical_module("inner", &[Member::new("gap")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--effect-conflicts-jsonl"],
+        1,
+    );
+    let rows = read_jsonl(
+        &fixture
+            .report_root
+            .join(&fixture.chunk_id)
+            .join("effect_conflicts.jsonl"),
+    );
+    assert!(
+        rows.iter().any(|row| row["runs_first"]["unit"] == 5
+            && row["cells"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|cell| cell["cell"]["kind"] == "global_prop"
+                    && cell["cell"]["key"] == "marker"
+                    && cell["first_read"]["global_may_accesses"]
+                        .as_array()
+                        .is_some_and(|operations| operations
+                            .iter()
+                            .any(|operation| operation["site"]["lexical_owner"] == 1)))),
+        "default export must retain nested return evaluation: {rows:#?}"
+    );
+    let mut all = members().into_iter().collect::<Vec<_>>();
+    all.push(Member::new("gap"));
+    assert_preserved_entry_output(
+        &run_fixture(FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "all",
+                &all,
+                &["export default nested();"],
+            )],
+        )),
+        "1 1 1\n",
+    );
+}
+
+#[test]
+fn default_cell_provenance_is_bounded_but_full_stream_keeps_every_site() {
+    let writes = "globalThis.marker = 1; ".repeat(24);
+    let source = format!(
+        "function mutate() {{ globalThis.marker = 1; return 1; }}\n\
+         function many() {{ {writes} return globalThis.marker; }}\n\
+         const first = many();\n\
+         const second = mutate();\n\
+         const tail = many() + first;\n\
+         export {{ mutate, many, first, second, tail }};\n"
+    );
+    let fixture = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module(
+                    "outer",
+                    &[
+                        Member::new("mutate"),
+                        Member::new("many"),
+                        Member::new("first"),
+                        Member::new("tail"),
+                    ],
+                ),
+                logical_module("inner", &[Member::new("second")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--effect-conflicts-jsonl"],
+        1,
+    );
+    let rows = read_jsonl(
+        &fixture
+            .report_root
+            .join(&fixture.chunk_id)
+            .join("effect_conflicts.jsonl"),
+    );
+    let report = fixture.effect_translation_validation();
+    let find_write = |pairs: &[Value]| {
+        pairs
+            .iter()
+            .flat_map(|row| row["cells"].as_array().unwrap())
+            .find(|cell| {
+                cell["cell"]["kind"] == "global_prop"
+                    && cell["cell"]["key"] == "marker"
+                    && cell["first_write"]["global_may_access_count"] == 24
+            })
+            .unwrap()["first_write"]
+            .clone()
+    };
+    let full = find_write(&rows);
+    let sampled = find_write(examples(&report));
+    assert_eq!(report["global_access_example_limit"], 20);
+    assert_eq!(full["global_may_accesses"].as_array().unwrap().len(), 24);
+    assert!(full["global_may_accesses_truncated"].is_null());
+    assert_eq!(sampled["global_may_access_count"], 24);
+    assert_eq!(sampled["global_may_accesses"].as_array().unwrap().len(), 20);
+    assert_eq!(sampled["global_may_accesses_truncated"], true);
+    assert_eq!(
+        sampled["global_may_accesses"],
+        serde_json::json!(&full["global_may_accesses"].as_array().unwrap()[..20])
+    );
+}
+
 fn examples(report: &Value) -> &[Value] {
     report["examples"]
         .as_array()

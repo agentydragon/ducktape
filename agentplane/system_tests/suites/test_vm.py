@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-from pathlib import Path
 
 import pytest
 import pytest_bazel
@@ -12,12 +11,11 @@ import pytest_bazel
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.k3s.vm_trace_contract import assert_vm_process_trace_contract
 from agentplane.system_tests.offered_models import models_offered_for
 from agentplane.system_tests.sandbox import VM_TEMPLATE
 from agentplane.system_tests.scenario import ScenarioResources
-from agentplane.system_tests.scenarios import central_sampler, vm_sandbox
+from agentplane.system_tests.scenarios import vm_sandbox
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.tracing import traced_scenario
 from agentplane.system_tests.vm_configuration import SUPERVISION_TEMPLATE
@@ -55,7 +53,7 @@ async def _wait_for_vm_process_trace_contract() -> None:
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
 async def test_vm_scenarios(
-    cluster: Cluster, tmp_path: Path, client: Client, scenario_resources: ScenarioResources, scripted: ScriptedUpstream
+    cluster: Cluster, client: Client, scenario_resources: ScenarioResources, scripted: ScriptedUpstream
 ) -> None:
     harnesses = [runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX]
     models = await models_offered_for(client, harnesses)
@@ -79,20 +77,8 @@ async def test_vm_scenarios(
 
     # pytest-asyncio serializes separate tests. Launch every independent boot here so a
     # finished scenario never leaves its worker capacity idle behind another test's teardown.
-    # Each task owns its guests and cleanup; the sampler has its own ownership scope.
+    # Each task owns its guests and cleanup.
     async with asyncio.TaskGroup() as scenarios:
-        scenarios.create_task(
-            traced_scenario(
-                "central-sampler",
-                central_sampler.dispatcher_central_setup_tool_and_retained_answer(
-                    cluster,
-                    tmp_path,
-                    scripted,
-                    Executor(template="runner-vm", cwd="/state/workspaces/accept"),
-                    central_sampler.VM_EXECUTION,
-                ),
-            )
-        )
         # Only Claude selects the private supervisor checks; both use the ordinary guest image.
         scenarios.create_task(
             traced_scenario("vm-turn-harness_claude", turn(runner_pb2.HARNESS_CLAUDE, SUPERVISION_TEMPLATE))

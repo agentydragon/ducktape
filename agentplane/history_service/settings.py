@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.log_levels import LogLevels
@@ -13,6 +13,18 @@ from agentplane.subjects import ServiceAccountRef
 from util.yaml_file_settings import YamlFileSettings
 
 RUNNER_INGRESS_AUDIENCE = "agentplane-runner-ingress"
+type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]+$")]
+
+
+class DelegationSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    actor: ServiceAccountName = Field(description="Actions ServiceAccount trusted to delegate, as namespace/name.")
+    caller_namespaces: tuple[str, ...] = Field(
+        min_length=1, description="Namespaces whose caller identity Actions may assert."
+    )
+    methods: tuple[str, ...] = Field(
+        min_length=1, description="Full HistoryService RPC method names that admit delegation."
+    )
 
 
 class IngressSettings(BaseModel):
@@ -46,6 +58,10 @@ class Settings(YamlFileSettings):
 
     database_url: str = Field(min_length=1)
     reader_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
+    delegation: DelegationSettings | None = Field(
+        default=None,
+        description="Independent Actions delegation trust; a delegated actor keeps ordinary caller read scope.",
+    )
     token_audience: str = Field(min_length=1)
     request_timeout_s: float = Field(default=15, gt=0, le=60)
     log_levels: LogLevels

@@ -233,6 +233,14 @@ fn gate_rejected_split_matches_a_direct_run() {
     assert_staged_run_matches(rejected_split(), &["--emit-on-rejection"]);
 }
 
+#[test]
+fn composed_global_sites_and_dependencies_round_trip() {
+    assert_staged_run_matches(
+        composed_global_access_fixture(),
+        &["--effect-conflicts-jsonl", "--emit-on-rejection"],
+    );
+}
+
 /// Renaming a logical module is an assignment edit: the projection keeps its
 /// bytes and the artifact computed before the edit serves the edited spec.
 #[test]
@@ -294,8 +302,11 @@ fn full_effect_stream_matches_between_direct_and_staged_runs() {
     );
 }
 
-#[test]
-fn export_filter_changes_only_jsonl_sinks_and_keeps_staged_facts() {
+fn assert_export_filter_changes_only_sinks(
+    export_args: &[&str],
+    filter_flag: &str,
+    filename: &str,
+) {
     let extra_modules = [(
         "static/peer",
         vec![logical_module("provider", &[Member::new("value")])],
@@ -305,25 +316,16 @@ fn export_filter_changes_only_jsonl_sinks_and_keeps_staged_facts() {
         vec![logical_module("outer", &[Member::new("first"), Member::new("tail")]), logical_module("inner", &[Member::new("second")])],
     ).with_extra_chunks(&[("static/peer", "globalThis.externalMarker = 1;\nexport const value = 1;\n")]).with_extra_chunk_logical_modules(&extra_modules);
     let (staged, _fixture) = staged(opts);
-    assert_ok(
-        &staged.run(&["--effect-conflicts-jsonl"]),
-        "unfiltered export",
-    );
+    assert_ok(&staged.run(export_args), "unfiltered export");
     let all = staged.set_aside("all-conflicts");
-    let flags = [
-        "--effect-conflicts-jsonl",
-        "--effect-conflicts-chunk",
-        "static/app",
-    ];
+    let mut flags = export_args.to_vec();
+    flags.extend([filter_flag, "static/app"]);
     assert_ok(&staged.run(&flags), "filtered export");
     let filtered = staged.set_aside("filtered-conflicts");
     let without_streams = |root: &Path| {
         tree(root)
             .into_iter()
-            .filter(|(path, _)| {
-                path.file_name()
-                    .is_none_or(|name| name != "effect_conflicts.jsonl")
-            })
+            .filter(|(path, _)| path.file_name().is_none_or(|name| name != filename))
             .collect::<BTreeMap<_, _>>()
     };
     // tree() removes only command provenance. Every other byte, including
@@ -332,14 +334,14 @@ fn export_filter_changes_only_jsonl_sinks_and_keeps_staged_facts() {
         without_streams(&all.join("out")),
         without_streams(&filtered.join("out"))
     );
-    let main_stream = Path::new("reports/tree/static/app/effect_conflicts.jsonl");
-    let peer_stream = Path::new("reports/tree/static/peer/effect_conflicts.jsonl");
+    let main_stream = PathBuf::from(format!("reports/tree/static/app/{filename}"));
+    let peer_stream = PathBuf::from(format!("reports/tree/static/peer/{filename}"));
     assert_eq!(
-        fs::read(all.join("out").join(main_stream)).unwrap(),
-        fs::read(filtered.join("out").join(main_stream)).unwrap()
+        fs::read(all.join("out").join(&main_stream)).unwrap(),
+        fs::read(filtered.join("out").join(&main_stream)).unwrap()
     );
-    assert!(all.join("out").join(peer_stream).exists());
-    assert!(!filtered.join("out").join(peer_stream).exists());
+    assert!(all.join("out").join(&peer_stream).exists());
+    assert!(!filtered.join("out").join(&peer_stream).exists());
     let artifact = path(&staged.artifact).to_owned();
     let mut loaded_flags = flags.to_vec();
     loaded_flags.extend(["--analysis", &artifact]);
@@ -349,15 +351,58 @@ fn export_filter_changes_only_jsonl_sinks_and_keeps_staged_facts() {
     );
     assert_same_trees(&filtered.join("out"), &staged.root().join("out"));
     staged.set_aside("filtered-loaded");
+    let mut all_selected = export_args.to_vec();
+    all_selected.extend([filter_flag, "static/app", filter_flag, "static/peer"]);
     assert_ok(
-        &staged.run(&[
-            "--effect-conflicts-jsonl",
-            "--effect-conflicts-chunk",
-            "static/app",
-            "--effect-conflicts-chunk",
-            "static/peer",
-        ]),
+        &staged.run(&all_selected),
         "repeated filter selects both chunks",
     );
     assert_same_trees(&all.join("out"), &staged.root().join("out"));
+}
+
+#[test]
+fn export_filter_changes_only_jsonl_sinks_and_keeps_staged_facts() {
+    assert_export_filter_changes_only_sinks(
+        &["--effect-conflicts-jsonl"],
+        "--effect-conflicts-chunk",
+        "effect_conflicts.jsonl",
+    );
+}
+
+#[test]
+fn full_report_filter_changes_only_sinks_and_keeps_staged_facts() {
+    assert_export_filter_changes_only_sinks(
+        &["--full-report", "translation-validation"],
+        "--full-report-chunk",
+        "translation_validation.full.jsonl",
+    );
+}
+
+#[test]
+fn full_translation_report_matches_direct_and_staged_runs() {
+    assert_staged_run_matches(
+        rejected_split(),
+        &[
+            "--emit-on-rejection",
+            "--full-report",
+            "translation-validation",
+        ],
+    );
+}
+
+#[test]
+fn full_reentry_export_matches_staged_and_filters_only_sinks() {
+    assert_staged_run_matches(
+        split_with_pure_import(),
+        &["--full-report", "export-reentry"],
+    );
+    assert_staged_run_matches(
+        rejected_split(),
+        &["--emit-on-rejection", "--full-report", "export-reentry"],
+    );
+    assert_export_filter_changes_only_sinks(
+        &["--full-report", "export-reentry"],
+        "--full-report-chunk",
+        "export_reentry.full.json",
+    );
 }

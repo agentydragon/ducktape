@@ -61,18 +61,6 @@ def _filled_fixture() -> rendered_fixture.RenderedFixture:
     )
 
 
-def _filled_vm_fixture() -> rendered_fixture.RenderedFixture:
-    cached = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
-    return rendered_fixture.fill(
-        cached,
-        RuntimeInputs(
-            ca_cert="fixture-ca\n", ca_key="fixture-key\n", system_roots="system-roots\n", cluster_ca="cluster-ca\n"
-        ),
-        LocalModel(url="http://scripted-model.k3s-fixture.invalid:4000"),
-        None,
-    )
-
-
 def test_direct_fixture_uses_gateway_and_embedded_migrations() -> None:
     fixture = _filled_fixture()
     assert fixture.central_sampler
@@ -427,6 +415,7 @@ def test_vm_boot_evidence_selects_only_oom_guest_at_runtime() -> None:
 
 def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
+    assert not fixture.central_sampler
     template = _resource(fixture.objects, "SandboxTemplate", "runner-vm")["spec"]
     state = template["stateVolume"]
     workspace = template["workspaceVolume"]
@@ -494,100 +483,92 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     }
 
 
-def test_central_sampler_fixtures_render_app_ingress_gateway_and_history_wiring() -> None:
-    for fixture, vm in ((_filled_fixture(), False), (_filled_vm_fixture(), True)):
-        assert fixture.central_sampler
-        assert fixture.vm_sandboxes is vm
-        docs = fixture.objects
-        if vm:
-            assert _resource(docs, "SandboxTemplate", "runner-vm")
+def test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring() -> None:
+    fixture = _filled_fixture()
+    assert fixture.central_sampler
+    assert not fixture.vm_sandboxes
+    docs = fixture.objects
 
-        app_config = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
-        catalog = ModelCatalog.model_validate(app_config["models"])
-        assert "central_sampler" not in app_config["models"]
-        assert catalog.harnesses[Harness.CENTRAL_SAMPLER] == [fixture_chart.GPT6_LUNA_RESPONSES.id]
+    app_config = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
+    catalog = ModelCatalog.model_validate(app_config["models"])
+    assert "central_sampler" not in app_config["models"]
+    assert catalog.harnesses[Harness.CENTRAL_SAMPLER] == [fixture_chart.GPT6_LUNA_RESPONSES.id]
 
-        deployment = _resource(docs, "Deployment", central_sampler.NAME)
-        assert deployment["spec"]["replicas"] == 1
-        assert deployment["spec"]["strategy"]["type"] == "Recreate"
-        pod = deployment["spec"]["template"]["spec"]
-        assert not pod.get("initContainers")
-        assert pod["serviceAccountName"] == central_sampler.NAME
-        container = next(container for container in pod["containers"] if container["name"] == central_sampler.NAME)
-        assert container["startupProbe"]["grpc"]["port"] == central_sampler.PORT
-        database_env = next(
-            entry for entry in container["env"] if entry["name"] == env_name(CentralSamplerSettings, "database_url")
-        )
-        assert database_env["valueFrom"]["secretKeyRef"]["name"] == "postgres-central-sampler"
-        settings = CentralSamplerSettings.model_validate_json(
-            _resource(docs, "ConfigMap", f"{central_sampler.NAME}-settings")["data"]["settings.json"]
-        )
-        ingress_connection = settings.connections["llm-ingress"]
-        assert ingress_connection.base_url == llm_ingress.proxied_url(NAMESPACE)
-        assert ingress_connection.auth.type == "bearer"
-        assert str(ingress_connection.auth.credential_file) == "/var/run/secrets/central-sampler/llm"
-        assert set(settings.connections) == {"llm-ingress"}
-        assert settings.rpc_timeout_seconds == 10
-        assert settings.executor_initialize_timeout_seconds == (120 if vm else 30)
-        without_initialize_timeout = CentralSamplerSettings.model_validate(
-            settings.model_dump(exclude={"executor_initialize_timeout_seconds"})
-        )
-        assert without_initialize_timeout.executor_initialize_timeout_seconds == 30
-        invalid_timeout = settings.model_dump()
-        invalid_timeout["executor_initialize_timeout_seconds"] = MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS + 1
-        with pytest.raises(ValidationError):
-            CentralSamplerSettings.model_validate(invalid_timeout)
-        assert set(settings.models) == {fixture_chart.GPT6_LUNA_RESPONSES.id}
-        model = settings.models[fixture_chart.GPT6_LUNA_RESPONSES.id]
-        assert model.connection == "llm-ingress"
-        assert model.provider_model == fixture_chart.GPT6_LUNA_RESPONSES.id
-        assert model.api == "responses"
-        assert any(
-            mount["name"] == "caller-tokens" and mount["mountPath"] == "/var/run/secrets/central-sampler"
-            for mount in container["volumeMounts"]
-        )
-        token_reviewer = _resource(docs, "ClusterRole", f"{NAMESPACE}-central-sampler-token-reviewer")
-        assert token_reviewer["rules"] == [
-            {"apiGroups": ["authentication.k8s.io"], "resources": ["tokenreviews"], "verbs": ["create"]}
-        ]
-        database_uri = urlsplit(_resource(docs, "Secret", "postgres-central-sampler")["stringData"]["uri"])
-        assert database_uri.username == "central_sampler"
-        assert database_uri.path == "/central_sampler"
-        assert database_uri.hostname == f"{fixture_database.SERVICE}.{NAMESPACE}.svc"
+    deployment = _resource(docs, "Deployment", central_sampler.NAME)
+    assert deployment["spec"]["replicas"] == 1
+    assert deployment["spec"]["strategy"]["type"] == "Recreate"
+    pod = deployment["spec"]["template"]["spec"]
+    assert not pod.get("initContainers")
+    assert pod["serviceAccountName"] == central_sampler.NAME
+    container = next(container for container in pod["containers"] if container["name"] == central_sampler.NAME)
+    assert container["startupProbe"]["grpc"]["port"] == central_sampler.PORT
+    database_env = next(
+        entry for entry in container["env"] if entry["name"] == env_name(CentralSamplerSettings, "database_url")
+    )
+    assert database_env["valueFrom"]["secretKeyRef"]["name"] == "postgres-central-sampler"
+    settings = CentralSamplerSettings.model_validate_json(
+        _resource(docs, "ConfigMap", f"{central_sampler.NAME}-settings")["data"]["settings.json"]
+    )
+    ingress_connection = settings.connections["llm-ingress"]
+    assert ingress_connection.base_url == llm_ingress.proxied_url(NAMESPACE)
+    assert ingress_connection.auth.type == "bearer"
+    assert str(ingress_connection.auth.credential_file) == "/var/run/secrets/central-sampler/llm"
+    assert set(settings.connections) == {"llm-ingress"}
+    assert settings.rpc_timeout_seconds == 10
+    assert settings.executor_initialize_timeout_seconds == 30
+    without_initialize_timeout = CentralSamplerSettings.model_validate(
+        settings.model_dump(exclude={"executor_initialize_timeout_seconds"})
+    )
+    assert without_initialize_timeout.executor_initialize_timeout_seconds == 30
+    invalid_timeout = settings.model_dump()
+    invalid_timeout["executor_initialize_timeout_seconds"] = MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS + 1
+    with pytest.raises(ValidationError):
+        CentralSamplerSettings.model_validate(invalid_timeout)
+    assert set(settings.models) == {fixture_chart.GPT6_LUNA_RESPONSES.id}
+    model = settings.models[fixture_chart.GPT6_LUNA_RESPONSES.id]
+    assert model.connection == "llm-ingress"
+    assert model.provider_model == fixture_chart.GPT6_LUNA_RESPONSES.id
+    assert model.api == "responses"
+    assert any(
+        mount["name"] == "caller-tokens" and mount["mountPath"] == "/var/run/secrets/central-sampler"
+        for mount in container["volumeMounts"]
+    )
+    token_reviewer = _resource(docs, "ClusterRole", f"{NAMESPACE}-central-sampler-token-reviewer")
+    assert token_reviewer["rules"] == [
+        {"apiGroups": ["authentication.k8s.io"], "resources": ["tokenreviews"], "verbs": ["create"]}
+    ]
+    database_uri = urlsplit(_resource(docs, "Secret", "postgres-central-sampler")["stringData"]["uri"])
+    assert database_uri.username == "central_sampler"
+    assert database_uri.path == "/central_sampler"
+    assert database_uri.hostname == f"{fixture_database.SERVICE}.{NAMESPACE}.svc"
 
-        projected = next(
-            volume["projected"]["sources"] for volume in pod["volumes"] if volume["name"] == "caller-tokens"
-        )
-        token_audiences = {
-            source["serviceAccountToken"]["path"]: source["serviceAccountToken"]["audience"] for source in projected
-        }
-        assert token_audiences == {
-            "llm": WORKLOAD_TOKEN_AUDIENCE,
-            "gateway": runner_gateway.TOKEN_AUDIENCE,
-            "history": history_service.RUNNER_INGRESS_AUDIENCE,
-        }
-        assert _resource(docs, "Service", central_sampler.NAME)["spec"]["ports"][0]["port"] == central_sampler.PORT
+    projected = next(volume["projected"]["sources"] for volume in pod["volumes"] if volume["name"] == "caller-tokens")
+    token_audiences = {
+        source["serviceAccountToken"]["path"]: source["serviceAccountToken"]["audience"] for source in projected
+    }
+    assert token_audiences == {
+        "llm": WORKLOAD_TOKEN_AUDIENCE,
+        "gateway": runner_gateway.TOKEN_AUDIENCE,
+        "history": history_service.RUNNER_INGRESS_AUDIENCE,
+    }
+    assert _resource(docs, "Service", central_sampler.NAME)["spec"]["ports"][0]["port"] == central_sampler.PORT
 
-        llm_config = yaml.safe_load(_resource(docs, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"])
-        assert llm_config["central_sampler_accounts"] == [f"{NAMESPACE}/{central_sampler.NAME}"]
-        gateway_config = yaml.safe_load(
-            _resource(docs, "ConfigMap", "runner-gateway-settings")["data"]["settings.yaml"]
-        )
-        assert gateway_config["central_sampler"]["target"] == central_sampler.target(NAMESPACE)
-        assert f"{NAMESPACE}/{central_sampler.NAME}" in gateway_config["executor_callers"]
-        gateway_pod = _resource(docs, "Deployment", "runner-gateway")["spec"]["template"]["spec"]
-        gateway_tokens = next(
-            volume["projected"]["sources"]
-            for volume in gateway_pod["volumes"]
-            if volume["name"] == "runner-gateway-token"
-        )
-        assert any(
-            source["serviceAccountToken"]["audience"] == central_sampler.TOKEN_AUDIENCE
-            and source["serviceAccountToken"]["path"] == "central-sampler"
-            for source in gateway_tokens
-        )
-        history_config = yaml.safe_load(_resource(docs, "ConfigMap", "history-service-config")["data"]["config.yaml"])
-        assert {"namespace": NAMESPACE, "name": central_sampler.NAME} in history_config["ingress"]["sampler_accounts"]
+    llm_config = yaml.safe_load(_resource(docs, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"])
+    assert llm_config["central_sampler_accounts"] == [f"{NAMESPACE}/{central_sampler.NAME}"]
+    gateway_config = yaml.safe_load(_resource(docs, "ConfigMap", "runner-gateway-settings")["data"]["settings.yaml"])
+    assert gateway_config["central_sampler"]["target"] == central_sampler.target(NAMESPACE)
+    assert f"{NAMESPACE}/{central_sampler.NAME}" in gateway_config["executor_callers"]
+    gateway_pod = _resource(docs, "Deployment", "runner-gateway")["spec"]["template"]["spec"]
+    gateway_tokens = next(
+        volume["projected"]["sources"] for volume in gateway_pod["volumes"] if volume["name"] == "runner-gateway-token"
+    )
+    assert any(
+        source["serviceAccountToken"]["audience"] == central_sampler.TOKEN_AUDIENCE
+        and source["serviceAccountToken"]["path"] == "central-sampler"
+        for source in gateway_tokens
+    )
+    history_config = yaml.safe_load(_resource(docs, "ConfigMap", "history-service-config")["data"]["config.yaml"])
+    assert {"namespace": NAMESPACE, "name": central_sampler.NAME} in history_config["ingress"]["sampler_accounts"]
 
 
 if __name__ == "__main__":

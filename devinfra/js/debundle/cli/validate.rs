@@ -154,6 +154,8 @@ fn run_spec_validate(args: ValidateArgs) -> Result<ValidateReport> {
             list_template_identifiers: true,
             effect_conflicts_jsonl: false,
             effect_conflicts_chunks: Default::default(),
+            full_reports: Default::default(),
+            full_report_chunks: Default::default(),
         },
     );
 

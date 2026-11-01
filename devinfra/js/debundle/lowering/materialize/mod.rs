@@ -14,7 +14,7 @@ use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
 
 use super::analysis_projection::AnalysisProjection;
 use super::commuting_statements::resolve_chunk_commuting_statements;
-use super::io::{ProgramGraphOutput, chunk_report_path, write_chunk_report_json};
+use super::io::{JsonlReport, ProgramGraphOutput, chunk_report_path, write_chunk_report_json};
 use super::util::{render_atomic_group_cause_guidance, target_file_for_request};
 use crate::chunk_ast::{ChunkAstAnalysis, analyze_chunk_ast};
 use crate::chunk_renames::collect_chunk_renames;
@@ -100,6 +100,8 @@ pub(super) struct ChunkContext<'a> {
     pub(super) report_emission: &'a ReportEmission,
     pub(super) effect_conflicts_jsonl: bool,
     pub(super) effect_conflicts_chunks: &'a BTreeSet<String>,
+    pub(super) full_reports: &'a BTreeSet<super::FullReportKind>,
+    pub(super) full_report_chunks: &'a BTreeSet<String>,
     pub(super) gate_rejection: GateRejectionPolicy,
     pub(super) export_reentry_policies: &'a BTreeMap<ChunkId, ExportReentryPolicy>,
     pub(super) export_reentry_reports: &'a BTreeMap<ChunkId, ExportReentryReport>,
@@ -524,6 +526,8 @@ pub(super) fn finish_logical_chunk(
         report_emission,
         effect_conflicts_jsonl,
         effect_conflicts_chunks,
+        full_reports,
+        full_report_chunks,
         gate_rejection: gate_rejection_policy,
         vendor_import_oracle,
         export_reentry_policies,
@@ -674,6 +678,11 @@ pub(super) fn finish_logical_chunk(
             report_emission,
             policy: gate_rejection_policy,
             effect_conflicts_jsonl,
+            full_export_reentry: full_reports.contains(&super::FullReportKind::ExportReentry)
+                && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
+            full_translation_validation: full_reports
+                .contains(&super::FullReportKind::TranslationValidation)
+                && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
         },
         program_graph,
         &assignment_analysis,
@@ -1511,6 +1520,8 @@ struct ChunkReportContext<'a> {
     report_emission: &'a ReportEmission,
     policy: GateRejectionPolicy,
     effect_conflicts_jsonl: bool,
+    full_translation_validation: bool,
+    full_export_reentry: bool,
 }
 
 fn validate_and_emit_reports<'a>(
@@ -1525,6 +1536,8 @@ fn validate_and_emit_reports<'a>(
         report_emission,
         policy,
         effect_conflicts_jsonl,
+        full_translation_validation,
+        full_export_reentry,
     } = context;
     let validation = assignment_analysis.validate_for_emission();
     let assignment_report = match &validation {
@@ -1533,7 +1546,6 @@ fn validate_and_emit_reports<'a>(
     };
     let rejected = !assignment_report.atomic_group_conflicts.is_empty()
         || !assignment_report.cycles.is_empty();
-    let translation_validation = assignment_analysis.translation_validation(assignment_report);
     // Full mode writes the dependency graph unconditionally; OnRejection
     // writes it only alongside rejection evidence (`gate describe`
     // recomputes per-edge blame from it).
@@ -1546,33 +1558,50 @@ fn validate_and_emit_reports<'a>(
         !effect_conflicts_jsonl || report_out_dir.is_some(),
         "--effect-conflicts-jsonl requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
     );
-    if let Some(report_out_dir) = report_out_dir {
-        let jsonl_path = chunk_report_path(
-            report_out_dir,
+    ensure!(
+        !(full_translation_validation || full_export_reentry) || report_out_dir.is_some(),
+        "--full-report requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
+    );
+    let mut full_tv = if full_translation_validation {
+        Some(JsonlReport::create(chunk_report_path(
+            report_out_dir.expect("full-report output was checked"),
             chunk_id,
-            output_layout::EFFECT_CONFLICTS_JSONL,
-        );
+            output_layout::TRANSLATION_VALIDATION_FULL_REPORT,
+        ))?)
+    } else {
+        None
+    };
+    let translation_validation = {
+        let mut write_row = |row: &gate::TranslationValidationEvidenceReport| -> Result<()> {
+            full_tv
+                .as_mut()
+                .expect("active full-report sink")
+                .write(row)
+        };
+        assignment_analysis.translation_validation(
+            assignment_report,
+            full_translation_validation.then_some(&mut write_row),
+        )?
+    };
+    if let Some(writer) = full_tv {
+        writer.finish()?;
+    }
+    if let Some(report_out_dir) = report_out_dir {
         let mut jsonl = if effect_conflicts_jsonl {
-            if let Some(parent) = jsonl_path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            Some(std::io::BufWriter::new(
-                std::fs::File::create(&jsonl_path)
-                    .with_context(|| format!("creating {}", jsonl_path.display()))?,
-            ))
+            Some(JsonlReport::create(chunk_report_path(
+                report_out_dir,
+                chunk_id,
+                output_layout::EFFECT_CONFLICTS_JSONL,
+            ))?)
         } else {
             None
         };
         let effects = {
             let mut write_row = |row: &gate::EffectConflictRow<'_>| -> Result<()> {
-                if let Some(writer) = &mut jsonl {
-                    serde_json::to_writer(&mut *writer, row)
-                        .with_context(|| format!("writing {}", jsonl_path.display()))?;
-                    writer
-                        .write_all(b"\n")
-                        .with_context(|| format!("writing {}", jsonl_path.display()))?;
-                }
-                Ok(())
+                jsonl
+                    .as_mut()
+                    .expect("active effect-conflict sink")
+                    .write(row)
             };
             assignment_analysis.effect_translation_validation(
                 facts,
@@ -1580,10 +1609,8 @@ fn validate_and_emit_reports<'a>(
                 effect_conflicts_jsonl.then_some(&mut write_row),
             )?
         };
-        if let Some(writer) = &mut jsonl {
-            writer
-                .flush()
-                .with_context(|| format!("flushing {}", jsonl_path.display()))?;
+        if let Some(writer) = jsonl {
+            writer.finish()?;
         }
         write_chunk_report_json(
             report_out_dir,
@@ -1600,17 +1627,25 @@ fn validate_and_emit_reports<'a>(
                 program_graph.author_inputs(),
             ),
         )?;
+        if full_export_reentry {
+            write_chunk_report_json(
+                report_out_dir,
+                chunk_id,
+                output_layout::EXPORT_REENTRY_FULL_REPORT,
+                export_reentry_report,
+            )?;
+        }
         write_chunk_report_json(
             report_out_dir,
             chunk_id,
             EXPORT_REENTRY_REPORT,
-            export_reentry_report,
+            &super::reentry_report::ExportReentrySummary::from(export_reentry_report),
         )?;
         write_chunk_report_json(
             report_out_dir,
             chunk_id,
             TRANSLATION_VALIDATION_REPORT,
-            &translation_validation,
+            &translation_validation.report,
         )?;
     }
     // Atomic-group conflicts take precedence over cycles: a split atom

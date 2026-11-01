@@ -12,7 +12,7 @@ use artifact::{ChunkId, EmissionFiles};
 use emit_harness::emit_browser_harness;
 use graph_provenance::{CurrentRoots, GraphProvenance, InputCapture, ProvenanceRoots};
 use lowering::{
-    AnalysisMode, AnalysisSpec, AnalyzeProgramInputs, GateRejectionPolicy,
+    AnalysisMode, AnalysisSpec, AnalyzeProgramInputs, FullReportKind, GateRejectionPolicy,
     MaterializeLogicalModulesOptions, MaterializeSpecInputs, Materialized, ReportEmission,
     materialize_logical_modules, naturalize_cross_chunk_imports,
 };
@@ -90,6 +90,8 @@ pub struct TransformRunOptions {
     pub effect_conflicts_jsonl: bool,
     /// Emission-only JSONL selection; empty exports all materialized chunks.
     pub effect_conflicts_chunks: BTreeSet<String>,
+    pub full_reports: BTreeSet<FullReportKind>,
+    pub full_report_chunks: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -461,6 +463,32 @@ impl ContractAudit {
     }
 }
 
+/// Sink selection never changes the analyzed or materialized source scope.
+fn validate_report_chunk_selection(
+    selector: &str,
+    export: &str,
+    enabled: bool,
+    selected: &BTreeSet<String>,
+    materialized: &[String],
+) -> Result<()> {
+    if selected.is_empty() {
+        return Ok(());
+    }
+    if !enabled {
+        bail!("{selector} requires {export}");
+    }
+    let materialized: BTreeSet<_> = materialized
+        .iter()
+        .map(|chunk| artifact::paths::normalize_module_path(chunk))
+        .collect::<Result<_>>()?;
+    for chunk in selected {
+        if !materialized.contains(chunk) {
+            bail!("unknown {selector} {chunk:?}: expected a configured materialized chunk");
+        }
+    }
+    Ok(())
+}
+
 fn audit_options() -> TransformRunOptions {
     TransformRunOptions {
         output: RunOutput::DryRun,
@@ -469,6 +497,8 @@ fn audit_options() -> TransformRunOptions {
         list_template_identifiers: false,
         effect_conflicts_jsonl: false,
         effect_conflicts_chunks: BTreeSet::new(),
+        full_reports: BTreeSet::new(),
+        full_report_chunks: BTreeSet::new(),
     }
 }
 
@@ -578,21 +608,29 @@ fn run_prepared_transform(
     } = source;
     let materialise_chunk_ids: Vec<String> = spec.materialize_chunk_ids().into_iter().collect();
     let dry_run = options.output == RunOutput::DryRun;
-    if !options.effect_conflicts_chunks.is_empty() {
-        if !options.effect_conflicts_jsonl {
-            bail!("--effect-conflicts-chunk requires --effect-conflicts-jsonl");
-        }
-        let materialized: BTreeSet<_> = materialise_chunk_ids
-            .iter()
-            .map(|chunk| artifact::paths::normalize_module_path(chunk))
-            .collect::<Result<_>>()?;
-        for chunk in &options.effect_conflicts_chunks {
-            if !materialized.contains(chunk) {
-                bail!(
-                    "unknown --effect-conflicts-chunk {chunk:?}: expected a configured materialized chunk"
-                );
-            }
-        }
+    validate_report_chunk_selection(
+        "--effect-conflicts-chunk",
+        "--effect-conflicts-jsonl",
+        options.effect_conflicts_jsonl,
+        &options.effect_conflicts_chunks,
+        &materialise_chunk_ids,
+    )?;
+    validate_report_chunk_selection(
+        "--full-report-chunk",
+        "--full-report",
+        !options.full_reports.is_empty(),
+        &options.full_report_chunks,
+        &materialise_chunk_ids,
+    )?;
+    if !options.full_reports.is_empty()
+        && (suppress_reports
+            || options
+                .report_dir_override
+                .as_ref()
+                .or(spec.materialize_logical_modules.report_out_dir.as_ref())
+                .is_none())
+    {
+        bail!("--full-report requires a configured report output directory");
     }
     if options.effect_conflicts_jsonl
         && (suppress_reports
@@ -657,6 +695,8 @@ fn run_prepared_transform(
                 list_template_identifiers: options.list_template_identifiers,
                 effect_conflicts_jsonl: options.effect_conflicts_jsonl,
                 effect_conflicts_chunks: options.effect_conflicts_chunks.clone(),
+                full_reports: options.full_reports.clone(),
+                full_report_chunks: options.full_report_chunks.clone(),
                 // Dry-run keeps the no-output contract on the
                 // accept path but still materializes rejection
                 // evidence (dependency graph + cycles/conflicts) at the
@@ -973,6 +1013,12 @@ fn canonical_generation_command(
     for chunk in &options.effect_conflicts_chunks {
         argv.extend(["--effect-conflicts-chunk".to_string(), chunk.clone()]);
     }
+    for report in &options.full_reports {
+        argv.extend(["--full-report".to_string(), report.as_str().to_string()]);
+    }
+    for chunk in &options.full_report_chunks {
+        argv.extend(["--full-report-chunk".to_string(), chunk.clone()]);
+    }
     Ok(argv)
 }
 
@@ -1142,6 +1188,8 @@ mod tests {
         list_template_identifiers: false,
         effect_conflicts_jsonl: false,
         effect_conflicts_chunks: BTreeSet::new(),
+        full_reports: BTreeSet::new(),
+        full_report_chunks: BTreeSet::new(),
     };
 
     // This real-pipeline boundary test changes files between preparation and
@@ -1497,6 +1545,8 @@ mod tests {
                     list_template_identifiers: false,
                     effect_conflicts_jsonl: false,
                     effect_conflicts_chunks: BTreeSet::new(),
+                    full_reports: BTreeSet::new(),
+                    full_report_chunks: BTreeSet::new(),
                 },
             )?;
 

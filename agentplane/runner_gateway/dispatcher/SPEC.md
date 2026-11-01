@@ -15,6 +15,26 @@ It scopes existing Sessions and existing environments; it does not create enviro
   Pod-bound identity.
 - Creator/broker identity is retained for provenance only. It is never Session authority.
 
+## Delegated callers
+
+- An independent `delegation` setting names the Actions ServiceAccount, the namespaces whose caller identity it may assert,
+  and the exact full RPC method names that accept delegated calls. It does not inherit `dispatcher_callers` or
+  `wake_callers`; those remain separate direct-caller policies.
+- Shared workload-auth middleware admits the Actions token and rechecks the effective caller's current ServiceAccount UID
+  before the handler runs. Direct and delegated calls both use the typed `EffectiveCaller` admission. Missing or replaced
+  ServiceAccounts fail closed, and backend lookup failures return `UNAVAILABLE`.
+- Delegated calls always use ordinary Session ownership checks, even when the Actions actor is in `dispatcher_callers` or
+  arrives with Pod proof. The effective caller must match the opening's retained execution identity and the current
+  controller-owned account for writes. Reads use the same retained owner scope as direct calls.
+- Wake eligibility is evaluated against the effective caller. Actor membership in either backend allowlist does not grant
+  the effective caller service-wide access, opening-before-ready authority, or wake authority.
+- Durable opening and dispatch rows retain the verified actor, effective caller and any verified actor Pod proof separately.
+  Action request and execution UUIDs are correlation fields only. Existing Session IDs, command IDs and domain request
+  equality remain the reconciliation keys; a retry returns the original attribution and cannot duplicate an effect or
+  rewrite its admission evidence.
+- No credentials or Action lease token are persisted. The Gateway performs no Actions or app lookup. Delegation does not
+  alter the Runner transport boundary below.
+
 ## Session binding
 
 - A normal `OpenSession` can target only the current Sandbox-owned ServiceAccount whose namespace, name and UID

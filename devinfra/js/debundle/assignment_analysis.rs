@@ -17,7 +17,8 @@ use crate::AssignmentInputs;
 use crate::esm_import_order::EsmImportOrder;
 use crate::realizability::{
     EffectConflictRow, EffectTranslationValidationInputs, EffectTranslationValidationReport,
-    TranslationValidationReport, effect_translation_validate, translation_validate,
+    TranslationValidationEvidenceReport, TranslationValidationReport, TranslationValidationResult,
+    effect_translation_validate, translation_validate,
 };
 use crate::validation::{AssignmentReport, validate_assignment};
 
@@ -259,8 +260,23 @@ impl AssignmentAnalysis {
     /// gate's ordering edges the two must agree, so with `DEBUNDLE_TV_ORACLE`
     /// set a disagreement panics: it is a bug in the loader model, the sweep
     /// or the gate.
-    pub fn translation_validation(&self, report: &AssignmentReport) -> TranslationValidationReport {
+    pub fn translation_validation<E>(
+        &self,
+        report: &AssignmentReport,
+        mut visitor: Option<&mut impl FnMut(&TranslationValidationEvidenceReport) -> Result<(), E>>,
+    ) -> Result<TranslationValidationResult, E> {
         let dependency_graph = self.inputs.dependency_graph();
+        let exporting = visitor.is_some();
+        let mut project = |evidence| {
+            visitor.as_mut().expect("active evidence visitor")(
+                &TranslationValidationEvidenceReport::new(
+                    evidence,
+                    dependency_graph,
+                    &self.assignment,
+                    &|id| self.module_path(id),
+                ),
+            )
+        };
         let verdict = translation_validate(
             dependency_graph,
             &self.assignment,
@@ -269,7 +285,8 @@ impl AssignmentAnalysis {
                 self.assignment.entry_destination().module_id(),
             ),
             &self.import_order,
-        );
+            exporting.then_some(&mut project),
+        )?;
         let wire = TranslationValidationReport::new(
             &verdict,
             report.cycles.is_empty()
@@ -284,14 +301,17 @@ impl AssignmentAnalysis {
             "DEBUNDLE_TV_ORACLE: chunk {}: translation validation disagrees with the gate: {wire:#?}",
             self.inputs.chunk_id(),
         );
-        wire
+        Ok(TranslationValidationResult {
+            report: wire,
+            conflict_pairs: verdict.conflict_pairs,
+        })
     }
 
     /// Facts-backed diagnostics only; never part of acceptance or TV1's oracle.
     pub fn effect_translation_validation<E>(
         &self,
         facts: &[analysis::facts::StatementFacts],
-        legacy: &TranslationValidationReport,
+        legacy: &TranslationValidationResult,
         visitor: Option<&mut impl FnMut(&EffectConflictRow<'_>) -> Result<(), E>>,
     ) -> Result<EffectTranslationValidationReport, E> {
         effect_translation_validate(

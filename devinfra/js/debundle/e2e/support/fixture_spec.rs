@@ -17,6 +17,34 @@ use spec::{
 use spec::{MemberEffect, MemberPurity};
 use std::collections::BTreeMap;
 
+/// Nested return-value calls and repeated source evaluation exercise the
+/// operation ledger, including a native guard's proof dependency.
+pub fn composed_global_access_fixture() -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        "function mutate() { globalThis.marker = 1; return 1; }\n\
+         function peek() { const map = new Map(); globalThis.marker = 1; return globalThis.marker; }\n\
+         function nested() { return peek(); }\n\
+         function unused() { globalThis.unused = 1; }\n\
+         function install(target, key, value) { Object.defineProperty(Object.getPrototypeOf(target), key, { value }); }\n\
+         const first = nested();\n\
+         const second = mutate();\n\
+         const tail = nested() + first;\n\
+         console.log(first, tail, globalThis.marker);\n\
+         export { mutate, peek, nested, unused, first, second, tail };\n",
+        vec![
+            logical_module("outer", &[
+                Member::new("mutate"), Member::new("peek"), Member::new("nested"),
+                Member::new("unused"), Member::new("install"), Member::new("first"), Member::new("tail"),
+            ]),
+            logical_module("inner", &[Member::new("second")]),
+        ],
+    ).with_unassigned_mode(unassigned_mode_inline()).with_program_premises(
+        serde_json::from_value(serde_json::json!({
+            "intrinsics_never_written": { "families": "all", "note": "neutral source contains no intrinsic mutation" }
+        })).unwrap()
+    )
+}
+
 /// One member of a [`LogicalModuleEntry`].
 ///
 /// `name` is the exported name in the materialized module; `selector` pins the

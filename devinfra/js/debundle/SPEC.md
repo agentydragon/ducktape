@@ -230,6 +230,31 @@ effective env-provided values, the original cwd, logical root paths, and the
 config's chunk-to-module-tree mapping. A graph created before this metadata
 existed remains a historical report only.
 
+`translation_validation.json` is a bounded diagnostic view of the unchanged
+edge-based translation validator. `gate_accepts`, `accepts` and `swapped_pairs`
+are exact. `counts` contains exact totals for conflicts, forward-kept,
+forward-swapped and placement-split edges, plus conflict totals by dependency
+kind. Each corresponding list is `{total, examples, truncated}` with at most
+twenty deterministic examples. Acceptance and the gate oracle use complete
+category totals; effect-set comparison receives the complete legacy conflict
+pair set, including pairs beyond the samples. Forward-swapped edges retain
+their existing report-only role. Bounds never narrow checks or source scope.
+
+`run --full-report translation-validation` additionally streams every result
+from that same checker to `translation_validation.full.jsonl`. Rows have a
+`category` of `conflict`, `forward_edge_kept`, `forward_edge_swapped` or
+`placement_split`; conflict rows retain both statements, dependency-edge key
+and kind, while other rows retain their dependency-edge key. The default does
+not write this stream. Repeatable `--full-report-chunk` selects only full-report
+sinks and validates configured materialized chunk IDs. Full diagnostic evidence
+and full graph requests are independent. `full_detail_export_available` and
+`full_detail_export_command` advertise the capability, not a completed file.
+An active stream must finish and explicitly flush before its sibling summary
+is written; any write/flush failure fails the run. Existing invalid-spec,
+accepted-dry-run, typed gate rejection and final-program checks remain intact.
+Bazel `full_reports` and `full_report_chunks` attrs forward the same selection
+only to the final Pipeline action; analysis artifacts/projections are unchanged.
+
 Full per-chunk report emission also writes
 `effect_translation_validation.json`: report-only effect conflicts for the
 emitter's exact statement order, derived from staged facts. It leaves the
@@ -253,6 +278,16 @@ and `effect_conflicts_chunks`; only its final run action receives these flags,
 and streams remain inside the existing reports tree.
 Full semantic precision remains incomplete; see
 <docs/wire_format.md#translation-validation>.
+
+Canonical runtime transfers additionally compose static global-property
+may-accesses into these reports, retaining lexical source-operation sites,
+proof dependencies and conservative callback assumptions. They do not alter
+legacy global cells or graph edges. Indexed, conditional and prejoined lanes
+remain may-access evidence and cannot establish observed contradictions or
+domain completeness. Every existing unknown-coverage/Havoc obligation remains.
+Default examples retain twenty source operations per cell access, with exact
+counts and explicit truncation; full JSONL borrows and streams all retained
+operation provenance.
 
 A command that combines a saved graph with current spec or source checks the
 recorded baseline before reading claims or writing edits. It refuses changed,
@@ -1059,6 +1094,19 @@ JavaScript. `Full` reports include accepted and rejected chunks; rejection-only
 reports include it on rejection, while accepted dry runs remain silent. The
 typed wire schema and blocker fields are described in
 <docs/wire_format.md#export-reentry-diagnostics>.
+
+The default is an output-only borrowed summary with exact collection/site
+counts and at most twenty deterministic examples per blocker, builtin, request,
+loaded-chunk or reentry-name collection. Truncation is explicit. Loader failure
+counts and their existing first witnesses remain complete. The actual policy,
+loader derivation and staged analysis payload remain complete and unchanged;
+no semantic check consumes the presentation view. `run --full-report
+export-reentry` streams the original complete schema as compact
+`export_reentry.full.json` and explicitly flushes it before writing the summary.
+Write/flush errors fail the run. Optional `--full-report-chunk` filters only
+full-report sinks; graph exports remain independent. Accepted dry runs refuse
+an explicit full-report request when they suppress reports. No output capability
+flag asserts that an unrequested full file exists.
 
 The static import closure admits a source with no AST items, including a
 comments-only file: it cannot execute statements or reenter an importer.

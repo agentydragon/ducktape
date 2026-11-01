@@ -1,12 +1,13 @@
 use analysis::ProgramGraphReport;
 use analysis::analysis_inputs::NativeIntegrity;
 use analysis::reports::author_inputs::AuthorInputLocations;
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use artifact::{ChunkBundle, ChunkId};
 use graph_provenance::GraphProvenance;
 use output_layout::{DEPENDENCY_GRAPH_REPORT, PROGRAM_GRAPH_REPORT};
 use serde::Serialize;
 use std::fs;
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -34,6 +35,9 @@ pub(super) fn write_chunk_report_json<T: Serialize>(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
+    if filename == output_layout::EXPORT_REENTRY_FULL_REPORT {
+        return artifact::reports::write_json(path, value);
+    }
     if filename == DEPENDENCY_GRAPH_REPORT {
         report_io::write_json_gzip(&path, value)?;
     } else {
@@ -41,6 +45,43 @@ pub(super) fn write_chunk_report_json<T: Serialize>(
         fs::write(path, body)?;
     }
     Ok(())
+}
+
+/// A complete-evidence stream. Call `finish` before writing its summary;
+/// drop alone cannot report the final buffered write's failure.
+pub(super) struct JsonlReport {
+    path: PathBuf,
+    writer: BufWriter<fs::File>,
+}
+
+impl JsonlReport {
+    pub(super) fn create(path: PathBuf) -> Result<Self> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+        }
+        let writer = BufWriter::new(
+            fs::File::create(&path).with_context(|| format!("creating {}", path.display()))?,
+        );
+        Ok(Self { path, writer })
+    }
+
+    pub(super) fn write(&mut self, row: &impl Serialize) -> Result<()> {
+        serde_json::to_writer(&mut self.writer, row)
+            .with_context(|| format!("writing {}", self.path.display()))?;
+        self.writer
+            .write_all(b"\n")
+            .with_context(|| format!("writing {}", self.path.display()))
+    }
+
+    pub(super) fn finish(mut self) -> Result<()> {
+        flush_jsonl(&mut self.writer, &self.path)
+    }
+}
+
+fn flush_jsonl(writer: &mut impl Write, path: &Path) -> Result<()> {
+    writer
+        .flush()
+        .with_context(|| format!("flushing {}", path.display()))
 }
 
 /// The run's `program_graph.json.gz`, written at most once and only when a chunk
@@ -127,4 +168,26 @@ pub(super) fn prepare_output_dir(out_dir: &Path) -> Result<()> {
     }
     fs::create_dir_all(out_dir)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod jsonl_tests {
+    use super::*;
+
+    struct FlushFailure;
+    impl Write for FlushFailure {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::other("final write failed"))
+        }
+    }
+
+    #[test]
+    fn final_buffered_write_failure_is_not_reported_as_complete() {
+        let error = flush_jsonl(&mut FlushFailure, Path::new("evidence.jsonl")).unwrap_err();
+        assert!(error.to_string().contains("flushing evidence.jsonl"));
+        assert!(error.chain().any(|cause| cause.is::<std::io::Error>()));
+    }
 }

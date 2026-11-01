@@ -20,7 +20,7 @@ use source_identity::SourceUnitOrdinal;
 use spec::ModulePath;
 
 use super::translation_validation::{
-    StatementReport, TranslationValidationReport, emitted_statement_order,
+    StatementReport, TranslationValidationResult, emitted_statement_order,
 };
 use crate::esm_import_order::EsmImportOrder;
 
@@ -62,6 +62,7 @@ pub struct EffectTranslationValidationReport {
     pub examples: Vec<EffectConflictExample>,
     pub example_limit: usize,
     pub cell_example_limit: usize,
+    pub global_access_example_limit: usize,
     pub examples_truncated: bool,
     pub full_detail_export_available: bool,
     pub limitations: Vec<&'static str>,
@@ -88,14 +89,31 @@ pub enum EffectConflictDisposition {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct EffectConflictCell {
+pub struct EffectConflictCell<Evidence = InitializationEffectEvidence> {
     pub cell: EffectCellReport,
-    pub first_read: Option<InitializationEffectEvidence>,
-    pub first_write: Option<InitializationEffectEvidence>,
-    pub later_read: Option<InitializationEffectEvidence>,
-    pub later_write: Option<InitializationEffectEvidence>,
+    pub first_read: Option<Evidence>,
+    pub first_write: Option<Evidence>,
+    pub later_read: Option<Evidence>,
+    pub later_write: Option<Evidence>,
     pub allocation_involved: bool,
     pub observed_conflict: bool,
+}
+
+impl<Evidence> EffectConflictCell<Evidence> {
+    fn map_evidence<Next>(
+        self,
+        mut project: impl FnMut(Evidence) -> Next,
+    ) -> EffectConflictCell<Next> {
+        EffectConflictCell {
+            cell: self.cell,
+            first_read: self.first_read.map(&mut project),
+            first_write: self.first_write.map(&mut project),
+            later_read: self.later_read.map(&mut project),
+            later_write: self.later_write.map(&mut project),
+            allocation_involved: self.allocation_involved,
+            observed_conflict: self.observed_conflict,
+        }
+    }
 }
 
 /// Borrowed full-detail view of one conflict. Cells serialize one at a time;
@@ -142,15 +160,15 @@ struct EffectConflictCells<'a> {
 }
 
 impl EffectConflictCells<'_> {
-    fn iter(&self) -> impl Iterator<Item = EffectConflictCell> + '_ {
+    fn iter(&self) -> impl Iterator<Item = EffectConflictCell<&InitializationEffectEvidence>> + '_ {
         self.cells
             .iter()
             .map(|(cell, observed)| EffectConflictCell {
                 cell: EffectCellReport::from(cell),
-                first_read: self.first.reads.get(cell).cloned(),
-                first_write: self.first.writes.get(cell).cloned(),
-                later_read: self.later.reads.get(cell).cloned(),
-                later_write: self.later.writes.get(cell).cloned(),
+                first_read: self.first.reads.get(cell),
+                first_write: self.first.writes.get(cell),
+                later_read: self.later.reads.get(cell),
+                later_write: self.later.writes.get(cell),
                 allocation_involved: self.first.allocates.contains(cell)
                     || self.later.allocates.contains(cell),
                 observed_conflict: *observed,
@@ -159,7 +177,9 @@ impl EffectConflictCells<'_> {
 }
 
 impl EffectConflictRow<'_> {
-    pub fn cells(&self) -> impl Iterator<Item = EffectConflictCell> + '_ {
+    pub fn cells(
+        &self,
+    ) -> impl Iterator<Item = EffectConflictCell<&InitializationEffectEvidence>> + '_ {
         self.cells.iter()
     }
 
@@ -167,7 +187,11 @@ impl EffectConflictRow<'_> {
         EffectConflictExample {
             runs_first: self.runs_first.clone(),
             runs_later: self.runs_later.clone(),
-            cells: self.cells().take(EXAMPLE_LIMIT).collect(),
+            cells: self
+                .cells()
+                .take(EXAMPLE_LIMIT)
+                .map(|cell| cell.map_evidence(|evidence| evidence.sampled(EXAMPLE_LIMIT)))
+                .collect(),
             cell_count: self.cell_count,
             cells_truncated: self.cell_count > EXAMPLE_LIMIT,
             havoc: self.havoc,
@@ -206,7 +230,7 @@ pub struct EffectTranslationValidationInputs<'a> {
     pub emitted_modules: &'a BTreeSet<ModuleId>,
     pub import_order: &'a EsmImportOrder,
     pub facts: &'a [StatementFacts],
-    pub legacy: &'a TranslationValidationReport,
+    pub legacy: &'a TranslationValidationResult,
     pub module_path: &'a dyn Fn(ModuleId) -> ModulePath,
 }
 
@@ -264,14 +288,15 @@ pub fn effect_translation_validate<E>(
     let mut report = EffectTranslationValidationReport {
         report_only: true,
         full_semantic_precision: false,
-        legacy_gate_accepts: legacy.gate_accepts,
-        legacy_tv_accepts: legacy.accepts,
-        swapped_pairs: legacy.swapped_pairs,
+        legacy_gate_accepts: legacy.report.gate_accepts,
+        legacy_tv_accepts: legacy.report.accepts,
+        swapped_pairs: legacy.report.swapped_pairs,
         counts: EffectConflictCounts::default(),
         coverage,
         examples: Vec::new(),
         example_limit: EXAMPLE_LIMIT,
         cell_example_limit: EXAMPLE_LIMIT,
+        global_access_example_limit: EXAMPLE_LIMIT,
         examples_truncated: false,
         full_detail_export_available: true,
         limitations: vec![
@@ -281,16 +306,7 @@ pub fn effect_translation_validate<E>(
             "Legacy edge comparison excludes its separate forward-edge and placement diagnostics; this report never changes acceptance.",
         ],
     };
-    let mut legacy_pairs: BTreeSet<_> = legacy
-        .conflicts
-        .iter()
-        .map(|conflict| {
-            (
-                SourceUnitId(conflict.runs_first.unit.0),
-                SourceUnitId(conflict.runs_later.unit.0),
-            )
-        })
-        .collect();
+    let mut legacy_pairs = legacy.conflict_pairs.clone();
     let mut premises: BTreeMap<_, Vec<_>> = BTreeMap::new();
     for premise in graph.commuting_premises() {
         premises
