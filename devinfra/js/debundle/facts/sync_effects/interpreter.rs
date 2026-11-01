@@ -364,7 +364,7 @@ struct CallbackPoolObservation {
     accumulated_values: OrdMap<u32, Values>,
     applied_accessors: OrdMap<u32, BTreeMap<String, AppliedAccessor>>,
     class_superclasses: OrdMap<u32, Values>,
-    set_sizes: [usize; 11],
+    set_sizes: [usize; 12],
     array_intrinsic_mutated: bool,
     uncertain_native_execution: bool,
 }
