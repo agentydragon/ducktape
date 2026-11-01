@@ -2266,9 +2266,41 @@ contract is [HTTP/JSON facades](../docs/grpc_services.md#httpjson-facades); what
 
 ```mermaid
 flowchart LR
+    APP_API_GRPC_FACADE[Selected, unscheduled: uniform app gRPC APIs with generated HTTP facades]
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
 ```
+
+### `APP_API_GRPC_FACADE` — uniform app gRPC APIs with generated HTTP facades
+
+**Selected by the operator, 2026-10-31; unscheduled.** Migrate the app-owned browser APIs from
+handwritten HTTP contracts to protobuf-defined gRPC services with generated HTTP/JSON facades.
+Generate TypeScript request/response messages and codecs from the same protos; remove the replaced
+OpenAPI-derived contracts, mirrored wire types and handwritten route implementations as callers move.
+UI-specific view models and adapters may remain.
+
+Scope includes frontend configuration; Sandbox inventory, lifecycle, policy and Runner status;
+Session opening; Thread mutations and commands; Action policy, caller grants and system status;
+and app-owned live snapshots, event, notice, notification and console streams. Inventory the raw
+streams and Electric synchronization path explicitly: migrate app-owned API contracts to generated
+facades, while recording any protocol-specific transport that must remain. Login/OAuth redirects,
+static assets, health probes, API documentation and OTLP telemetry are protocol-specific HTTP
+surfaces, not application RPCs to convert mechanically.
+
+**Prerequisites:** no dependency on the separate History-read facade track or a service rename.
+Before each independently reviewable migration, identify the owning service and preserve the app's
+client-only boundary; backend responsibilities still in the app belong with their backend authority.
+Give Thread archive checks, Thread-to-Sandbox resolution and model-catalog validation an explicit
+home before replacing the Thread command routes. Preserve authorization, CSRF at the browser proxy,
+error semantics, client-chosen Session identity and unknown-outcome recovery, and stream
+retry/reconnect behavior. Keep the current same-origin app proxy; direct browser access and
+per-operator delegated attribution remain separate decisions.
+
+**Exit:** scoped application RPCs use generated gRPC/HTTP contracts and generated TypeScript codecs;
+replaced route/type-generation paths are removed, and remaining protocol-specific HTTP surfaces are
+listed with reasons. Focused API/browser tests cover ordinary calls, authorization denials,
+idempotency and ambiguous outcomes, and stream reconnects. Each migration records its rollout and
+rollback; update the app's contract documentation as behavior changes.
 
 ### `HISTORY_READS_FACADE` — History reads as a generated browser API
 
