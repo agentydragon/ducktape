@@ -41,7 +41,7 @@ default external-command wait. HDD satellites set `ExtCmd/WaitTimeout=180000`.
 | `piraeus-ssd-local`         | `ssd` |      1 | Strict-local: the PV pins its node; remote access disabled                                         |
 | `piraeus-hdd-local`         | `hdd` |      1 | Strict-local                                                                                       |
 | `piraeus-ssd-2-autodiskful` | `ssd` |      2 | Synchronous copies on distinct OVH nodes, diskless attach in-zone, auto-diskful, quorum suspend-io |
-| `piraeus-hdd-2`             | `hdd` |      2 | Synchronous copies on distinct OVH nodes, diskless attach in-zone, quorum suspend-io               |
+| `piraeus-hdd-2`             | `hdd` |      2 | Synchronous copies on distinct OVH nodes, diskless attach in-zone, auto-diskful, quorum suspend-io |
 
 All are WaitForFirstConsumer, Retain and expandable; none is the cluster default.
 The strict-local classes keep the default DRBD layer and rely on the
@@ -50,7 +50,10 @@ peers) or backups for durability. Do not add a second Piraeus copy under an
 application that already replicates.
 
 The replicated classes keep copies and attachments within `hil-ovh`, never across
-the home/OVH link. SSD node-loss failover is accepted by the diskless-primary test
+the home/OVH link. Auto-diskful starts after a diskless consumer has been primary
+for one minute and can resynchronize a full replica before cleaning up an excess
+copy; monitor HDD pool space and resync traffic when workloads move.
+SSD node-loss failover is accepted by the diskless-primary test
 ([results](../debug/drbd_canary/failover/results.md)); the accepted test took
 84 seconds with the HA controller and did not require a separate data-copy-loss
 or resync exercise. HDD failure recovery and replicated-volume expansion are not yet accepted; see the

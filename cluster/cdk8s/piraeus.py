@@ -678,8 +678,7 @@ def cluster_chart(app: App) -> Chart:
                     },
                 },
                 {
-                    # Large volumes keep their existing copies instead of automatically moving a
-                    # diskful replica when a workload schedules onto another HDD node.
+                    # Auto-diskful moves a replica to the consumer after it stays on an HDD node.
                     "name": "piraeus-hdd-2",
                     "reclaimPolicy": "Retain",
                     "volumeBindingMode": "WaitForFirstConsumer",
@@ -694,6 +693,8 @@ def cluster_chart(app: App) -> Chart:
                             f"- fromSame:\n  - {node_scheduling.ZONE_LABEL}\n"
                         ),
                         "DrbdOptions/auto-quorum": "suspend-io",
+                        "DrbdOptions/auto-diskful": "1",
+                        "DrbdOptions/auto-diskful-allow-cleanup": "true",
                     },
                 },
             ],

@@ -274,7 +274,8 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
         == replicated_parameters["linstor.csi.linbit.com/allowRemoteVolumeAccess"]
     )
     assert hdd_replicated_parameters["DrbdOptions/auto-quorum"] == "suspend-io"
-    assert "DrbdOptions/auto-diskful" not in hdd_replicated_parameters
+    assert hdd_replicated_parameters["DrbdOptions/auto-diskful"] == "1"
+    assert hdd_replicated_parameters["DrbdOptions/auto-diskful-allow-cleanup"] == "true"
 
     operator_flux = next(
         doc
