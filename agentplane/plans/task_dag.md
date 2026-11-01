@@ -445,6 +445,7 @@ flowchart TD
     HISTORY_SANDBOX_ASSOCIATION_SOURCE[Unscheduled: an authoritative Sandbox UID source for History]
     SESSION_PLATFORM_GUIDANCE[In review: default platform guidance]
     SESSION_PLATFORM_GUIDANCE_ACTIVATION[Held draft: activate managed sampler guidance]
+    PLATFORM_GUIDANCE_OWNERSHIP_DESIGN[Later decision: platform-guidance ownership and composition]
     SESSION_DELEGATION_RECEIVER_ADMISSION[In flight: delegated caller enforcement at Dispatcher and History]
     SESSION_TARGET_DISCOVERY[In review: existing target discovery]
     SESSION_DELEGATION_TOOLS[Remaining CLI, MCP and result tools]
@@ -591,6 +592,26 @@ new key. Passing CI or merging the reader does not discharge this deployment hol
 the two layers together. Existing stored prompts remain frozen. For rollback, remove the setting
 and reconcile that removal before returning to a pre-reader image. This gate belongs to managed
 configuration activation, not unrelated delegation backend/client implementation.
+
+### `PLATFORM_GUIDANCE_OWNERSHIP_DESIGN` — decide platform-guidance ownership and composition
+
+**Later decision; current duplication is accepted.** Explore one authoritative owner/source for
+platform guidance while allowing placement- and environment-specific variants. Compare ownership and
+composition in the native Harness Host and Central Sampler. The existing shared template is a textual
+source of truth; it does not settle which services distribute or compose guidance, or how deployment-
+specific content and runtime-specific needs reach each Session. Use the [Session/runtime model](session_runtime_model.md)
+to compare concrete native-host and central-Sampler cases with zero, one and multiple attached
+environments, including deployment-specific URLs/configuration, placement and capability-specific
+guidance, and per-environment instructions.
+
+The review outcome is an ownership and composition/distribution proposal that explains update/version
+and failure semantics, and how the default platform guide remains truthful while an additive caller
+brief remains separate, without requiring presets. Keep current duplication until that proposal is
+reviewed; do not assume native and central runtime needs are interchangeable. This entry selects no
+guidance service, new network dependency, Dispatcher ownership, or runtime-unification mechanism.
+It is independent of the [default guidance implementation](#session_platform_guidance--platform-guidance-independent-of-presets)
+and its [managed activation hold](#session_platform_guidance_activation--enable-managed-sampler-platform-guidance),
+and does not block either one or current reliability and delegation work.
 
 ### `SESSION_DELEGATION_RECEIVER_ADMISSION` — enforce delegated callers at Dispatcher and History
 
