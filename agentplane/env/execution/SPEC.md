@@ -26,7 +26,9 @@ ownership lease so Runtime can recover the backend. If the in-container fence fa
 exits and the outer runtime's whole-namespace cleanup supplies the stronger fence. VM ownership is
 a systemd unit, its lifetime marker and explicit scope, with startup fencing and stop proof from the
 shared supervisor. No second owner may start native work while the prior owner remains live. A
-failed fence is not permission to launch a successor.
+failed fence is not permission to launch a successor. Before taking the lock, the service opens its
+state directory without following symlinks and enforces mode `0700`; this restores private access
+when a persistent-volume remount adds `fsGroup` permissions.
 
 ## Sessions and effects
 

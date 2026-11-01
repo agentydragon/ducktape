@@ -48,6 +48,64 @@ func TestOwnerLockFencesContenderAndSurvivesSocketReplacement(t *testing.T) {
 	defer successor.Close()
 }
 
+func TestOwnerLockRestoresPrivateModeAfterVolumeRemount(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "service")
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	// fsGroup may add group permissions and setgid to a persistent directory
+	// when Kubernetes mounts it into a replacement Pod.
+	if err := os.Chmod(directory, 02770); err != nil {
+		t.Fatal(err)
+	}
+
+	owner, err := lock(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+
+	info, err := os.Stat(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0700 || info.Mode()&os.ModeSetgid != 0 {
+		t.Fatalf("execution state directory mode = %v, want 0700", info.Mode())
+	}
+}
+
+func TestOwnerLockRejectsDirectoryAndOwnerSymlinks(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "target")
+	if err := os.Mkdir(target, 0700); err != nil {
+		t.Fatal(err)
+	}
+	directoryLink := filepath.Join(root, "service-link")
+	if err := os.Symlink(target, directoryLink); err != nil {
+		t.Fatal(err)
+	}
+	if owner, err := lock(directoryLink); err == nil {
+		_ = owner.Close()
+		t.Fatal("owner lock followed a symlink for the state directory")
+	}
+
+	ownerLinkDir := filepath.Join(root, "service")
+	if err := os.Mkdir(ownerLinkDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	ownerTarget := filepath.Join(root, "outside-owner")
+	if err := os.WriteFile(ownerTarget, []byte("outside"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(ownerTarget, filepath.Join(ownerLinkDir, ".agentplane-execution-owner")); err != nil {
+		t.Fatal(err)
+	}
+	if owner, err := lock(ownerLinkDir); err == nil {
+		_ = owner.Close()
+		t.Fatal("owner lock followed a symlink for the lock file")
+	}
+}
+
 func TestSocketPathCanBeShortenedIndependentlyOfOwnerState(t *testing.T) {
 	config := Config{
 		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
