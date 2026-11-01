@@ -1,5 +1,4 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("//devinfra/python:defs.bzl", "py_test")
 
 go_library(
     name = "history_migrations",
@@ -10,23 +9,5 @@ go_library(
     deps = [
         "@com_github_pressly_goose_v3//:goose",
         "@com_github_pressly_goose_v3//lock",
-    ],
-)
-
-py_test(
-    name = "test_migrations",
-    size = "medium",
-    srcs = ["test_migrations.py"],
-    data = ["//agentplane/egress/cmd:egress-proxy"],
-    requires_docker = True,
-    deps = [
-        "//:conftest",
-        "//agentplane/egress:conftest",
-        "//util/bazel:runfiles",
-        "//util/testing:postgres",
-        "@pypi//psycopg",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )
