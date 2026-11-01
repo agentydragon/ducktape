@@ -17,9 +17,9 @@ exclude = [  # keep-sorted start
     "cluster/docs/inference/model_comparison",
     "props/specimens/*/*/code",
     "props/testing/fixtures/testdata",
+    "tana/testdata",
     "x/py_detectors/rules/**/bad/**",
     "x/py_detectors/rules/**/ok/**",
-    "tana/testdata",
     "x/sysrw/testdata",
 ]  # keep-sorted end
 
