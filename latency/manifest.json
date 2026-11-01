@@ -1,8 +1,8 @@
 {
-  "source_devel_commit": "55bdc1da22c84f3bcf0dff44567fb20159caad5b",
+  "source_devel_commit": "8a4df4b1c32bf60b526020efa4a34f3882132b9b",
   "window_start_utc": "2026-10-29T20:50:00Z",
-  "window_end_utc": "2026-11-01T06:41:32.386674+00:00",
-  "published_at_utc": "2026-11-01T06:41:32.461993+00:00",
+  "window_end_utc": "2026-11-01T08:45:37.410364+00:00",
+  "published_at_utc": "2026-11-01T08:51:49.840245+00:00",
   "attribution": "not collected",
   "sampling_design": "Retained cohort: Four fixed complete 90-minute arrival windows with gaps, not a continuous census or random sample. Focused suite experiments are a separate selected sample, not additional sampled fleet hours.",
   "sampling_windows_utc": [
@@ -30,6 +30,12 @@
     "start": "2026-11-01T06:00:06.594512Z",
     "end": "2026-11-01T06:34:13.094158Z"
   },
-  "report_html_sha256": "93a3bccd308f5fd4be43f57ea878f1a15228dfcd1274927ade24d2bc31cb2e86",
-  "visual_validation_invocation": "ee85bf8d-9e79-4717-84de-aed49dc42048"
+  "implementation_update_window_utc": {
+    "start": "2026-11-01T08:08:06.898611Z",
+    "end": "2026-11-01T08:35:07.322716Z"
+  },
+  "implementation_update_scope": "Implementation-status update and two selected hosted executions; retained fleet cohort unchanged. No combined-revision or matched before/after speedup measurement.",
+  "previous_report_commit": "f1af47e031",
+  "report_html_sha256": "510477a290e1c7836ce2121c6f1a6b3f0ae695aa0c094dbfcb89afa6eb176dfd",
+  "visual_validation_invocation": "26f129a9-fae2-4fc7-ab3b-74946cf769b1"
 }

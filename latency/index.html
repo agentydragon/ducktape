@@ -403,61 +403,61 @@
     <header>
       <div class="eyebrow">Ducktape · CI latency · 1 November 2026</div>
       <span class="report-status"
-        >Updated: long poles, setup reuse and bounded concurrency</span
+        >Implemented · source changes merged · 1 November 2026</span
       >
-      <h1>Pod concurrency helps. VM remains the long pole.</h1>
+      <h1>Three VM guests. Shared Pod runners. Lighter browser fixtures.</h1>
       <p class="lead">
-        Two Pod case slots overlap repeated guest startup on one stack. VM
-        checks can be consolidated from six guests to four, but those guests
-        already boot concurrently: fewer boots have not established a runtime
-        win. Cold stack setup and the remaining slow VM guest still limit
-        progress toward twice-as-fast CI.
+        The approved changes have merged: credential assertions share existing
+        VM turns, the sampler matrix runs on Pods, four Pod protocol cases reuse
+        runners, browser layout permutations use the frontend fixture, and the
+        native resource benchmark is manual. Five-minute VM and Pod actions
+        remain in the selected hosted observations.
       </p>
       <p>
-        <strong>Pod:</strong> Two-slot Pod runs passed all 13 scenarios in
-        238–239s versus 342–375s for serial controls; the case envelope was
-        33–35% shorter. This is a promising suite improvement, with worker/cache
-        confounding and full-gate impact still unmeasured.
-        <strong>VM:</strong> Four-guest VM consolidation passed its retained
-        checks, but both runs were slower than controls. Observed peak memory
-        was lower; a latency or CPU saving remains unproved.
+        <strong>What is established:</strong> the source changes and retained
+        checks passed hosted CI. The latest selected VM action took
+        <strong>303.5s</strong>; Pod took <strong>304.3s</strong>, with all 13
+        cases passing. <strong>What remains unmeasured:</strong> their combined
+        effect on required-check feedback. These are separate PR revisions and
+        workers, not a matched before/after pair.
       </p>
       <p class="scope">
-        Runtime experiments inspect devel
+        Implementation status inspected on devel
         <a
-          href="https://github.com/agentydragon/ducktape/commit/55bdc1da22c84f3bcf0dff44567fb20159caad5b"
-          >55bdc1da22c8</a
-        >. The retained feedback cohort covers four fixed 90-minute arrival
-        windows, 29 October–1 November 02:30 UTC, from the previous snapshot. No
-        new fleet percentile, complete auto-merge-readiness or agent-delivery
-        claim is made. Manual experiments do not change production CI.
+          href="https://github.com/agentydragon/ducktape/commit/8a4df4b1c32bf60b526020efa4a34f3882132b9b"
+          >8a4df4b1c32b</a
+        >. The retained fleet cohort still covers four fixed 90-minute arrival
+        windows ending 1 November 02:30 UTC. The focused hosted actions below
+        add no new fleet percentile, auto-merge-readiness or agent-delivery
+        measurement. Earlier manual experiments remain historical evidence.
       </p>
       <div class="metrics">
         <div class="metric">
-          <strong>342–375 → 238–239 s</strong
+          <strong>6 → 3 guests</strong
           ><span
-            >Pod fresh process wall · serial → two slots · image-store state
-            uncontrolled</span
+            >Current VM suite · both native harnesses, supervision and OOM
+            recovery retained</span
           >
         </div>
         <div class="metric">
-          <strong>233–241 → 156–157 s</strong
+          <strong>13 / 13 cases</strong
           ><span
-            >Pod case envelope · includes owned startup and cleanup · all 13
-            scenarios</span
+            >Pod reuse passed · one pair served four eligible cases in the
+            observed run</span
           >
         </div>
         <div class="metric">
-          <strong>6 → 4 guests</strong
+          <strong>303.5 / 304.3 s</strong
           ><span
-            >VM consolidation passes its checks · runtime benefit remains
-            unestablished</span
+            >Selected fresh VM / Pod actions · separate revisions · n=1
+            each</span
           >
         </div>
       </div>
       <nav aria-label="Report sections">
-        <a href="#decisions">Decisions</a
-        ><a href="#runtimes">New runtime experiments</a
+        <a href="#implemented">Shipped changes</a
+        ><a href="#decisions">Next experiments</a
+        ><a href="#runtimes">Historical experiments</a
         ><a href="#feedback">Retained PR feedback</a
         ><a href="#queues">Queues &amp; runner cost</a
         ><a href="#timelines">Linked timelines</a
@@ -467,101 +467,344 @@
       </nav>
     </header>
     <main>
-      <section id="decisions">
-        <div class="eyebrow">
-          Next interventions · measured experiments below
+      <section id="implemented">
+        <div class="eyebrow">Shipped · source and hosted proof</div>
+        <h2>The approved changes are now in ordinary CI.</h2>
+        <p>
+          All changes below are merged, and their merge commits are ancestors of
+          the inspected devel revision. This records implementation and
+          validation; it does not assign a causal saving to each PR.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Change</th>
+                <th>Merged PR</th>
+                <th>Coverage and ownership</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Change">MCP partitions</td>
+                <td data-label="Merged PR">
+                  <a href="https://github.com/agentydragon/ducktape/pull/13447"
+                    >#13447</a
+                  >
+                </td>
+                <td data-label="Coverage and ownership">
+                  Nine cases preserved across 5/4 targets; each owns a stack.
+                  Earlier experiments and hosted validation remain below.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Change">Pod case concurrency</td>
+                <td data-label="Merged PR">
+                  <a href="https://github.com/agentydragon/ducktape/pull/13466"
+                    >#13466</a
+                  >
+                </td>
+                <td data-label="Coverage and ownership">
+                  Two active cases on one stack; storage stays exclusive.
+                  Individual pytest/JUnit identities, selection, cancellation
+                  and cleanup retained.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Change">Native resource benchmark</td>
+                <td data-label="Merged PR">
+                  <a href="https://github.com/agentydragon/ducktape/pull/13471"
+                    >#13471</a
+                  >
+                </td>
+                <td data-label="Coverage and ownership">
+                  The whole 1/10/100-turn resource measurement target is tagged
+                  manual, following the benchmark convention. It no longer runs
+                  in ordinary CI.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Change">Sampler matrix on Pods</td>
+                <td data-label="Merged PR">
+                  <a href="https://github.com/agentydragon/ducktape/pull/13475"
+                    >#13475</a
+                  >
+                </td>
+                <td data-label="Coverage and ownership">
+                  Removed the VM duplicate, its VM-only execution probe and the
+                  sampler image/deployment from the VM fixture. Pod
+                  protocol/history and suspend/rebind checks remain.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Change">VM credential assertions</td>
+                <td data-label="Merged PR">
+                  <a href="https://github.com/agentydragon/ducktape/pull/13476"
+                    >#13476</a
+                  >
+                </td>
+                <td data-label="Coverage and ownership">
+                  Folded both credential guests into existing native turns. With
+                  sampler removal, six guests become three: Claude
+                  supervision/turn, Codex turn, Codex OOM/recovery.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Change">Pod runner reuse</td>
+                <td data-label="Merged PR">
+                  <a href="https://github.com/agentydragon/ducktape/pull/13479"
+                    >#13479</a
+                  >
+                </td>
+                <td data-label="Coverage and ownership">
+                  Four protocol-only scenarios lease unchanged Claude/Codex
+                  runners, with fresh Sessions and case-owned clients/queues. At
+                  most two pairs; failed leases close their runners.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Change">Browser layout permutations</td>
+                <td data-label="Merged PR">
+                  <a href="https://github.com/agentydragon/ducktape/pull/13474"
+                    >#13474</a
+                  >
+                </td>
+                <td data-label="Coverage and ownership">
+                  Eight parameterized cases moved to the production frontend
+                  fixture, retaining React, virtualizer, CodeMirror and Chromium
+                  interactions. All eight passed; 16 screenshots reviewed. Real
+                  Electric replication/streaming journeys remain.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Change">Native opt-outs</td>
+                <td data-label="Merged PR">
+                  <a href="https://github.com/agentydragon/ducktape/pull/13434"
+                    >#13434</a
+                  >
+                  /
+                  <a href="https://github.com/agentydragon/ducktape/pull/13436"
+                    >#13436</a
+                  >
+                </td>
+                <td data-label="Coverage and ownership">
+                  Codex plugins, analytics, apps, hooks, skills MCP dependency
+                  installation, feedback and update checks disabled. Both native
+                  launchers have telemetry-collector TODOs. Latency effect
+                  unmeasured.
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        <h2>
-          Adopt bounded Pod concurrency next; keep VM consolidation
-          experimental.
-        </h2>
+        <h3>Latest selected action budgets</h3>
+        <p>
+          Two originating RBE TestRunner executions,
+          <strong>one observation per suite</strong>. Bars show whole action
+          time on a common seconds scale. Hover or focus a segment for its
+          value. Source revisions, image stores and workers differ; this chart
+          is <strong>not a before/after comparison</strong>.
+        </p>
+        <div id="implementation-phase-chart" class="runtime-chart"></div>
+        <div id="implementation-legend" class="runtime-legend"></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Execution</th>
+                <th>Action, s</th>
+                <th>Shared setup, s</th>
+                <th>Case envelope, s</th>
+                <th>Shared teardown, s</th>
+                <th>Launch/other, s</th>
+                <th>Worker CPU, s</th>
+                <th>JUnit cases</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Execution">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/73b7c5cd-4344-54de-8137-7990e06a11d6"
+                    >VM: three guests</a
+                  >
+                </td>
+                <td data-label="Action, s">303.5</td>
+                <td data-label="Shared setup, s">102.8</td>
+                <td data-label="Case envelope, s">169.9</td>
+                <td data-label="Shared teardown, s">7.1</td>
+                <td data-label="Launch/other, s">23.7</td>
+                <td data-label="Worker CPU, s">1070.0</td>
+                <td data-label="JUnit cases">1</td>
+              </tr>
+              <tr>
+                <td data-label="Execution">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/275b8175-9517-5b38-9abc-a198fe43b5dd"
+                    >Pod: shared protocol runners</a
+                  >
+                </td>
+                <td data-label="Action, s">304.3</td>
+                <td data-label="Shared setup, s">134.3</td>
+                <td data-label="Case envelope, s">144.3</td>
+                <td data-label="Shared teardown, s">9.4</td>
+                <td data-label="Launch/other, s">16.3</td>
+                <td data-label="Worker CPU, s">819.2</td>
+                <td data-label="JUnit cases">13</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small">
+          Shared setup is the stack setup span. The case envelope includes each
+          case's own provisioning, native execution and cleanup, with overlap.
+          Shared teardown spans the final case end through k3s stop, including
+          deferred pooled-runner cleanup and gaps. Launch/other is the remaining
+          action time. Nested spans are not summed; CPU seconds are a separate
+          resource. The two actions did not test the combined merged revision.
+        </p>
+        <details>
+          <summary>Source, outcomes and reuse evidence</summary>
+          <p>
+            <strong>VM:</strong> source head <code>ade6a81524f4</code>, tested
+            synthetic merge <code>8288210be9d5</code>, invocation
+            <a
+              href="https://app.buildbuddy.io/invocation/73b7c5cd-4344-54de-8137-7990e06a11d6"
+              >73b7c5cd</a
+            >. The aggregate item passed with all three guests,
+            credential/admission/history checks, native shell/systemd/cgroup
+            checks, OOM follow-up and shutdown/trace proofs.
+          </p>
+          <p>
+            <strong>Pod:</strong> source head <code>51df46ad17e8</code>, tested
+            synthetic merge <code>fef316d81410</code>, invocation
+            <a
+              href="https://app.buildbuddy.io/invocation/275b8175-9517-5b38-9abc-a198fe43b5dd"
+              >275b8175</a
+            >. JUnit records 13 passed, zero errors/failures/skips. Ten fresh
+            Session opens on one Claude/Codex pair span all four eligible cases.
+            Identity checks passed before leases; storage finished before pool
+            creation; both runners were deleted before cluster shutdown. The
+            configured maximum is two concurrent pairs.
+          </p>
+          <p>
+            Compatible cases are model proxy routing, per-session standing
+            instructions, tabs/reconnect streams and unwatched/failed turns.
+            Messaging, dynamic policy, launch presets, credential replacement,
+            storage and suspend/resume keep fresh Sandboxes. Claude's credential
+            proof now uses the existing supervision template on the same guest
+            root rather than a separate ordinary-template boot.
+          </p>
+          <p>
+            <strong>Enclosing outcomes matter:</strong> the Pod action passed in
+            an invocation that later failed at the unrelated VM target's RBE
+            snapshot-pause boundary (<code>fc.sock: connection refused</code>).
+            Its
+            <a
+              href="https://app.buildbuddy.io/invocation/2e379da2-05bf-55d2-87e9-189b9041d032"
+              >single hosted retry</a
+            >
+            passed; earlier failed cost remains part of that PR's experience.
+            The first credential run failed teardown because the OOM guest's
+            boot monitor had exited before intentional OOM and a readiness
+            receipt was missing. The updated-base run passed. That does not
+            identify the boot-monitor cause or a flake rate, and the new pause
+            error is not attributed to the earlier kernel panic without its own
+            evidence.
+          </p>
+        </details>
+        <h3>Image caching: retain the existing boundary</h3>
+        <p>
+          Current RBE workers already retain containerd content blobs and
+          unpacked layers; setup sends only missing blobs. Bazel caches the
+          built OCI inputs. No application/test images are baked into the global
+          RBE base at the inspected source. The
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/8a4df4b1c32bf60b526020efa4a34f3882132b9b/devinfra/buildbuddy/images/rbe/Dockerfile"
+            >RBE image</a
+          >
+          carries OS/build/runtime dependencies and a Docker wrapper; app and
+          guest images arrive as Bazel inputs. The caution about baking changing
+          app images was a proposed-design tradeoff, not a diagnosed current
+          problem.
+        </p>
+        <p class="small">
+          The earlier
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/8a4df4b1c32bf60b526020efa4a34f3882132b9b/agentplane/system_tests/k3s/debug/stack_timings.md#recycled-runners-2026-10-23"
+            >recycling observations</a
+          >
+          recorded about 101s fresh versus 10–12s recycled import time, on
+          different historical runs. The
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/8a4df4b1c32bf60b526020efa4a34f3882132b9b/devinfra/debug/2026_10_27_oci_loader_comparison.md"
+            >separate Docker-loader experiment</a
+          >
+          supported digest/daemon guards but established no material tar-backend
+          advantage. Guest-root LZ4 already reduced its artifact from 906.6MB to
+          552.8MB. Further import skipping needs expected manifest and
+          unpacked-state verification; a mutable tag or blob presence alone is
+          insufficient.
+        </p>
+      </section>
+
+      <section id="decisions">
+        <div class="eyebrow">Next experiments · not implemented</div>
+        <h2>Reduce shared setup and both five-minute lanes.</h2>
         <ol>
           <li>
-            <strong
-              >A · Run two independent Pod cases on one owned stack.</strong
-            >
-            Keep fresh case-owned guests, clients, model exchanges and cleanup;
-            run storage exclusively before the concurrent group. Two
-            policy-matched passes took 237.7/239.0s versus 341.5/375.0s for two
-            serial controls (about 30–36% less process time). The case envelope
-            fell from 232.6/240.6s to 156.6/155.8s: 76–85s, or 33–35%, of
-            observed case-wall reduction. All 13 scenarios passed, with storage
-            exclusive and at most two active case scopes. CPU was 580–587s
-            versus 714–799s. Shared setup was also faster (61–62s versus
-            68–98s), so the entire process delta is not attributed to
-            concurrency. Controls and candidates stayed on different recycled
-            workers; cache and host effects remain confounded, and this is a
-            small experiment rather than a fleet estimate. The spike invokes all
-            13 existing scenarios but reports one aggregate pytest item plus
-            individual case artifacts and spans. Preserve ordinary per-case
-            selection/results and failure cleanup before adopting it as the
-            production runner.
+            <strong>A · Compare the same VM suite under KVM.</strong> Keep the
+            current guest images and retained assertions; verify hardware
+            virtualization inside the actual test action on a selected executor
+            pool. Compare fresh/recycled image stores, action time, CPU, memory,
+            failure cost and whole required-check completion. A Firecracker
+            backend rewrite is not a prerequisite for the existing QEMU/KubeVirt
+            comparison.
+          </li>
+          <li>
+            <strong>B · Test a prepared infrastructure baseline.</strong> Retain
+            versioned KubeVirt/cert-manager installation and immutable image
+            state while giving each run its own application revision, databases,
+            credentials, namespace and workspace volumes. Keep a clean-install
+            check. Current selected setup spans are 103s VM and 134s Pod; they
+            are opportunities to investigate, not promised removable time. This
+            is a larger fixture experiment; no snapshot facility or cluster
+            deployment has been implemented.
           </li>
           <li>
             <strong
-              >B · Reduce cold setup without duplicating more stacks.</strong
+              >C · Compare two, three and four concurrent Pod cases.</strong
             >
-            In the successful hosted MCP split, shared initialization took
-            172/210 seconds, 57%/69% of process time. Serial image imports took
-            113/157 seconds, including 35–59 seconds for the runner image.
-            Current workers already retain image blobs and overlap imports with
-            readiness. Further guest reuse for four protocol-only Pod cases
-            could remove roughly 37 seconds of initial provisioning in the
-            earlier control, before reset/isolation costs; this remains untested
-            and overlaps the new concurrency saving. Use the existing containerd
-            profiles to select a specific unpacking change; a versioned,
-            isolated immutable infrastructure baseline is a larger unvalidated
-            option. No RBE image repin or snapshot facility is presumed.
+            Start from merged runner reuse, keep storage exclusive and preserve
+            all 13 results, fresh Session boundaries and cleanup. Compare whole
+            actions and resource peaks; more slots can increase contention. The
+            earlier two-slot spike is not evidence for four slots.
           </li>
           <li>
-            <strong
-              >C · Keep the four-guest VM implementation as a measured
-              prototype.</strong
-            >
-            The prototype places each harness’s
-            certificate/identity/admission/history assertions on its existing
-            shell-turn guest. It retains real first native startup, supervision,
-            the dedicated OOM/same-session recovery guest, central sampler and
-            orderly shutdown/trace receipts. Four-guest VM consolidation passed
-            its retained checks, but both runs were slower than controls.
-            Observed peak memory was lower; a latency or CPU saving remains
-            unproved. The Claude credential proof moves to the supervision
-            template, which copies the normal template and adds the
-            supervisor-check boot argument; the ordinary-template-specific
-            Claude sample is no longer separate. Do not deploy this as a proven
-            latency improvement.
-          </li>
-          <li>
-            <strong>D · Accelerate the remaining VM and shutdown path.</strong>
-            These fixtures use QEMU software emulation with one-vCPU guests.
-            More outer worker units did not establish a benefit. A KVM-capable
-            pool using the existing backend is a separate hardware experiment.
-            The 27–40-second post-delete tail needs finalization evidence while
-            retaining guest shutdown and volume fencing. The outer-kernel panic
-            requires provider build/core evidence; ordinary unprofiled spikes at
-            both 8 and 16 outer units have reproduced it.
+            <strong>D · Measure the combined merged revision.</strong> Use the
+            same selected workload and repeated fresh-action runs, labeling
+            image-store and worker effects. Include retries and every required
+            gate. A target budget of 150–160s per blocking integration lane plus
+            about 90s of orchestration gives roughly 4–4.5 minutes; this is an
+            engineering budget, not an achieved result. MCP's fixed setup also
+            needs to fit that budget as VM and Pod improve.
           </li>
         </ol>
-        <div class="callout caution">
-          <strong>Full-gate limit:</strong> No matched full-gate saving was
-          measured. In the representative integration run, VM was last and Pod
-          finished 46s earlier; accelerating Pod alone would not shorten that
-          observed gate. The hosted MCP split still took about 301–304s in its
-          colder run and may become the next floor if VM improves. Reaching
-          twice-as-fast feedback requires reducing the remaining VM path and
-          cold setup across selected suites, then measuring the complete
-          required checks together. The prior 558-second median is a retained
-          workflow-created feedback proxy, not a new treatment measurement.
-          Tests, image-cache state, worker CPU and required-gate wall time are
-          kept separate.
-        </div>
+        <p class="callout">
+          <strong>2× is still unproved.</strong> The earlier Pod and MCP
+          experiments reduced their individual suite times. The merged
+          VM/Pod/browser changes are validated, but no representative after
+          cohort or matched combined-revision required-gate saving has been
+          collected. The retained 558-second median below belongs to its
+          original cohort.
+        </p>
       </section>
 
       <section id="runtimes">
         <div class="eyebrow">
-          New · suite internals and coverage-preserving experiments
+          Historical · suite internals and coverage-preserving experiments
         </div>
-        <h2>VM is a long scenario; Pod is many repeated startups.</h2>
+        <h2>Earlier experiments explain why the changes were selected.</h2>
         <p>
           Earlier fresh controls on source <code>7d755083749b</code> took
           338–352 seconds for VM and 319 seconds for Pod. The new comparisons
@@ -880,18 +1123,18 @@
           CPU win. Both controls used one recycled worker and both successful
           candidates another, so this does not isolate a code regression. Trial
           1 additionally lost a 221.1s physical attempt to an outer-worker
-          kernel panic; full invocation was 801.0s. Keep the prototype, but
-          require worker-controlled validation before adoption for speed. Two
-          policy-matched passes took 237.7/239.0s versus 341.5/375.0s for two
-          serial controls (about 30–36% less process time). The case envelope
-          fell from 232.6/240.6s to 156.6/155.8s: 76–85s, or 33–35%, of observed
-          case-wall reduction. All 13 scenarios passed, with storage exclusive
-          and at most two active case scopes. CPU was 580–587s versus 714–799s.
-          Shared setup was also faster (61–62s versus 68–98s), so the entire
-          process delta is not attributed to concurrency. Controls and
-          candidates stayed on different recycled workers; cache and host
-          effects remain confounded, and this is a small experiment rather than
-          a fleet estimate.
+          kernel panic; full invocation was 801.0s. The later credential fold
+          and sampler removal are now merged above; these older prototype
+          results still do not establish a causal speedup. Two policy-matched
+          passes took 237.7/239.0s versus 341.5/375.0s for two serial controls
+          (about 30–36% less process time). The case envelope fell from
+          232.6/240.6s to 156.6/155.8s: 76–85s, or 33–35%, of observed case-wall
+          reduction. All 13 scenarios passed, with storage exclusive and at most
+          two active case scopes. CPU was 580–587s versus 714–799s. Shared setup
+          was also faster (61–62s versus 68–98s), so the entire process delta is
+          not attributed to concurrency. Controls and candidates stayed on
+          different recycled workers; cache and host effects remain confounded,
+          and this is a small experiment rather than a fleet estimate.
         </p>
         <div id="benchmark-panel">
           <div class="chart-controls">
@@ -1165,9 +1408,9 @@
             <strong>Pod:</strong> all 13 scenario bodies remain; each owns
             guests and cleanup. Storage is exclusive and other cases have two
             slots. Model requests retain Pod/dialect routing and per-case
-            settlement checks. One aggregate pytest node is a spike reporting
-            limitation; production integration still needs individual case
-            reporting/filtering and failure/cancellation validation.
+            settlement checks. One aggregate pytest node was a spike reporting
+            limitation. Merged #13466 now preserves individual reporting,
+            filtering and cancellation; #13479 adds compatible runner reuse.
           </p>
         </details>
         <h3>Excluded failures and repairs</h3>
@@ -2115,12 +2358,13 @@
           The second failure is curl exit 35 while downloading Nix 2.35.4,
           followed by a secondary linkage upload with no path. It is unrelated
           to Bazel tests, the former GetEventLog HTTP/2 reset or
-          execution-result <code>UNAVAILABLE</code>. There is no evidence here
-          identifying a server/network owner for the TLS EOF. Certificate
-          validation remains required. Both rerun records identify the
-          repository owner account as triggering actor; that does not
-          distinguish a person from automation using the account. These gaps are
-          observed intervals, not proven operator or scheduler delays.
+          execution-result
+          <code>UNAVAILABLE</code>. There is no evidence here identifying a
+          server/network owner for the TLS EOF. Certificate validation remains
+          required. Both rerun records identify the repository owner account as
+          triggering actor; that does not distinguish a person from automation
+          using the account. These gaps are observed intervals, not proven
+          operator or scheduler delays.
         </p>
         <p class="small">
           The historical slices contain ten additional rerun workflow records.
@@ -2167,9 +2411,9 @@
           >
           were read before selecting this sample. That earlier report also
           retains the 29–30 October investigation and its rejected experiments.
-          This focused update retains that cohort and its original source
-          clocks, adds the suite-phase and concurrency experiments, and revises
-          stale recommendations.
+          The earlier runtime update retains that cohort and its original source
+          clocks. This implementation update records merged changes and selected
+          hosted actions; it does not recollect the fleet cohort.
         </p>
         <div class="table-wrap">
           <table>
@@ -2216,9 +2460,9 @@
                 >
                   Retain merged #13213/#13319/#13327/#13339 and focused
                   source-specific mechanisms. Old minute Pod deletion traces do
-                  not justify new Pod edits. Current VM cleanup still takes
-                  27–32 seconds in the selected run; a different backend and
-                  source. No matched fleet effect measured.
+                  not justify new Pod edits. Earlier VM cleanup took 27–32
+                  seconds in the selected run; a different backend and source.
+                  No matched fleet effect measured.
                 </td>
               </tr>
               <tr>
@@ -2252,8 +2496,10 @@
                   pass, first-case setup 33–67 seconds; Python profile excludes
                   earlier imports and child PostgreSQL/Electric CPU. Defer
                   child-process CPU attribution because fresh selected critical
-                  paths are VM. Next step is whole child-process CPU capture on
-                  the same 16-shard input. No shard policy change.
+                  paths are VM. Merged #13474 subsequently moves eight layout
+                  permutations to the frontend fixture, preserving real Electric
+                  protocol journeys. A matched whole-workload CPU or feedback
+                  saving remains unmeasured; the 16-shard input is historical.
                 </td>
               </tr>
               <tr>
@@ -2346,6 +2592,20 @@
 
       <section id="methods">
         <p>
+          <strong>Implementation update:</strong> merge states and
+          required-check results were read from GitHub; all listed merge commits
+          were verified as ancestors of inspected devel. Selected hosted phases
+          come from exact TestRunner records and OTel/JUnit artifacts, tied to
+          their synthetic merge parents. GitHub metadata timestamps and
+          execution clocks are not calibrated or joined into a new feedback
+          metric. The existing fleet cohort, queue distributions and
+          agent-signal results are retained with their original window.
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/f1af47e031/latency/index.html"
+            >Previous complete report</a
+          >.
+        </p>
+        <p>
           <strong>Focused runtime update:</strong> fresh physical RBE TestRunner
           records, existing driver/process spans, unchanged controls and manual
           candidates. Inner and outer clocks remain separate. Current required
@@ -2366,7 +2626,7 @@
           in evidence.
         </p>
         <p>
-          Required devel contexts were re-read for this update:
+          The retained policy audit read these required devel contexts:
           <code>Build artifacts + imports check</code>,
           <code>Pre-commit checks</code>,
           <code>bazel-ci / Test &amp; Build</code>. Rules require zero ordinary
@@ -2653,7 +2913,7 @@ bbapi tool-log cat 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 "critical path"</pre>
             "suite": "vm",
             "variant": "control",
             "trial": 1,
-            "label": "VM control · trial 1",
+            "label": "VM control \u00b7 trial 1",
             "invocation_id": "76505ccd-115d-495f-8451-6bd18c7707e8",
             "target": "//agentplane/system_tests/suites:test_vm",
             "cache_note": "Fresh test; 173s stack setup; image-store state uncontrolled",
@@ -2849,7 +3109,7 @@ bbapi tool-log cat 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 "critical path"</pre>
             "suite": "pod",
             "variant": "control",
             "trial": 1,
-            "label": "Pod control · trial 1",
+            "label": "Pod control \u00b7 trial 1",
             "invocation_id": "0e2dd6a9-f2de-4fe7-90fa-033e8255f459",
             "target": "//agentplane/system_tests/suites:test_pod",
             "cache_note": "Fresh test; 68s stack setup; image-store state uncontrolled",
@@ -3166,7 +3426,7 @@ bbapi tool-log cat 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 "critical path"</pre>
             "suite": "pod",
             "variant": "pilot",
             "trial": 1,
-            "label": "Pod 2 slots + diagnostics · pilot",
+            "label": "Pod 2 slots + diagnostics \u00b7 pilot",
             "invocation_id": "a0c39b2e-90dc-409b-8e00-02451cdb7487",
             "target": "//agentplane/system_tests/suites/x:test_pod_concurrent",
             "cache_note": "Pilot adds native captures absent from control; not policy-matched",
@@ -3541,7 +3801,7 @@ bbapi tool-log cat 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 "critical path"</pre>
             "suite": "vm",
             "variant": "candidate",
             "trial": 1,
-            "label": "VM four guests · trial 1",
+            "label": "VM four guests \u00b7 trial 1",
             "invocation_id": "773eca13-421a-47f5-958e-1a0201718f4e",
             "target": "//agentplane/system_tests/suites/x/vm_consolidation:test_vm_consolidated",
             "cache_note": "246s stack setup; 221s failed physical attempt excluded from process bar",
@@ -3693,7 +3953,7 @@ bbapi tool-log cat 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 "critical path"</pre>
             "suite": "pod",
             "variant": "pilot",
             "trial": 2,
-            "label": "Pod 2 slots + diagnostics · pilot 2",
+            "label": "Pod 2 slots + diagnostics \u00b7 pilot 2",
             "invocation_id": "2d6463d4-3c8d-4c6a-a821-3eb37a7d52c2",
             "target": "//agentplane/system_tests/suites/x:test_pod_concurrent",
             "cache_note": "Pilot adds native captures absent from control; not policy-matched",
@@ -4068,7 +4328,7 @@ bbapi tool-log cat 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 "critical path"</pre>
             "suite": "vm",
             "variant": "control",
             "trial": 2,
-            "label": "VM control · trial 2",
+            "label": "VM control \u00b7 trial 2",
             "invocation_id": "7c073314-1d09-4e31-a5cf-4f59a6abf73a",
             "target": "//agentplane/system_tests/suites:test_vm",
             "cache_note": "98s stack setup; overlaps candidate trial 2 submission; cache state uncontrolled",
@@ -4264,7 +4524,7 @@ bbapi tool-log cat 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 "critical path"</pre>
             "suite": "pod",
             "variant": "candidate",
             "trial": 1,
-            "label": "Pod two slots · trial 1",
+            "label": "Pod two slots \u00b7 trial 1",
             "invocation_id": "26afde75-b3c1-497f-a3dc-38cdc8e26dae",
             "target": "//agentplane/system_tests/suites/x:test_pod_concurrent",
             "cache_note": "Matched diagnostics; 62s init; image-store state uncontrolled",
@@ -4634,7 +4894,7 @@ bbapi tool-log cat 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 "critical path"</pre>
             "suite": "pod",
             "variant": "control",
             "trial": 2,
-            "label": "Pod control · trial 2",
+            "label": "Pod control \u00b7 trial 2",
             "invocation_id": "1eed61a0-50d6-431b-8e34-eb30b455cd07",
             "target": "//agentplane/system_tests/suites:test_pod",
             "cache_note": "98s init; overlaps matched candidate submission; cache uncontrolled",
@@ -4956,7 +5216,7 @@ bbapi tool-log cat 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 "critical path"</pre>
             "suite": "vm",
             "variant": "candidate",
             "trial": 2,
-            "label": "VM four guests · trial 2",
+            "label": "VM four guests \u00b7 trial 2",
             "invocation_id": "b1158edc-f4c2-44de-acaf-5d84ddcf0ca5",
             "target": "//agentplane/system_tests/suites/x/vm_consolidation:test_vm_consolidated",
             "cache_note": "Fresh test; no physical retry; worker/image-store state uncontrolled",
@@ -5096,7 +5356,7 @@ bbapi tool-log cat 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 "critical path"</pre>
             "suite": "pod",
             "variant": "candidate",
             "trial": 2,
-            "label": "Pod two slots · trial 2",
+            "label": "Pod two slots \u00b7 trial 2",
             "invocation_id": "e5df022b-809d-4427-98c2-416261d46329",
             "target": "//agentplane/system_tests/suites/x:test_pod_concurrent",
             "cache_note": "Matched diagnostics; unchanged repeat; image-store state uncontrolled",
@@ -5461,6 +5721,89 @@ bbapi tool-log cat 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 "critical path"</pre>
             "case_native_diagnostic_count": 0,
             "case_native_diagnostic_sum_seconds": 0
           }
+        ],
+        "implementation_runs": [
+          {
+            "suite": "vm",
+            "label": "VM: three guests",
+            "pull_request": 13476,
+            "invocation_id": "73b7c5cd-4344-54de-8137-7990e06a11d6",
+            "tested_commit": "8288210be9d5359ab3995905a8f05624741bbd6d",
+            "source_head": "ade6a81524f4666713296530d78775deb2c2071f",
+            "tested_parents": [
+              "7f0e907d7fee194c0351a93de56037e7070b4b14",
+              "ade6a81524f4666713296530d78775deb2c2071f"
+            ],
+            "action_digest": {
+              "hash": "fd3403a6818ffd225bd1cfdfd6fbaafc22b620736b950f151e88552581a284a1",
+              "sizeBytes": "534"
+            },
+            "execution_id": "/uploads/e8d22c43-86fc-48e7-a672-03479d78faf0/blobs/fd3403a6818ffd225bd1cfdfd6fbaafc22b620736b950f151e88552581a284a1/534",
+            "invocation_link_type": 1,
+            "execution_start_utc": "2026-11-01T08:30:03.793934Z",
+            "execution_end_utc": "2026-11-01T08:35:07.322716Z",
+            "action_seconds": 303.528782,
+            "setup_seconds": 102.812378,
+            "cases_seconds": 169.863295,
+            "shared_teardown_envelope_seconds": 7.118118,
+            "launch_other_seconds": 23.73499099999999,
+            "cpu_seconds": 1069.956161,
+            "peak_memory_bytes": 7212810240,
+            "junit_tests": 1,
+            "junit_errors": 0,
+            "junit_failures": 0,
+            "junit_skipped": 0,
+            "span_count": 98,
+            "spans_sha256": "8562b5f104f8f8e6b8299f943e73f3dbcd6965fafc2d92d7213420bd78b2e75b",
+            "xml_sha256": "af5d3b72408bc3e59d013c404184469efbd68173b6af92d9af176d5538d80621",
+            "invocation_outcome": "SUCCESS",
+            "sample_count": 1
+          },
+          {
+            "suite": "pod",
+            "label": "Pod: shared protocol runners",
+            "pull_request": 13479,
+            "invocation_id": "275b8175-9517-5b38-9abc-a198fe43b5dd",
+            "tested_commit": "fef316d81410d6cad40e340456579be37e982ca6",
+            "source_head": "51df46ad17e8587b3d7327e279a79f2b650e82fe",
+            "tested_parents": [
+              "dcec89735235e6632550ad29f8e297b08257e5a0",
+              "51df46ad17e8587b3d7327e279a79f2b650e82fe"
+            ],
+            "action_digest": {
+              "hash": "c5df4a90a4e1070d2775b07df1920977a3614945e71822d8b774e3ccec4da59f",
+              "sizeBytes": "502"
+            },
+            "execution_id": "/uploads/089a4d5f-a75e-4424-8b57-c93edebda27d/blobs/c5df4a90a4e1070d2775b07df1920977a3614945e71822d8b774e3ccec4da59f/502",
+            "invocation_link_type": 1,
+            "execution_start_utc": "2026-11-01T08:08:06.898611Z",
+            "execution_end_utc": "2026-11-01T08:13:11.185952Z",
+            "action_seconds": 304.287341,
+            "setup_seconds": 134.292313,
+            "cases_seconds": 144.289139,
+            "shared_teardown_envelope_seconds": 9.393191,
+            "launch_other_seconds": 16.31269800000001,
+            "cpu_seconds": 819.240108,
+            "peak_memory_bytes": 5030531072,
+            "junit_tests": 13,
+            "junit_errors": 0,
+            "junit_failures": 0,
+            "junit_skipped": 0,
+            "span_count": 288,
+            "spans_sha256": "1ddf3403cb04d3c0fb8b8408be0a1b6bb79b09ac754b3ee84b9c3c137a3088de",
+            "xml_sha256": "b0680c62cc909d875756feca04ad78d5504f5ad4cca2b2fa55d1c70c90dfa4ce",
+            "invocation_outcome": "REMOTE_ERROR",
+            "sample_count": 1,
+            "protocol_reuse": {
+              "observed_pairs": 1,
+              "configured_max_pairs": 2,
+              "cases_served": 4,
+              "fresh_session_opens": 10,
+              "stable_identity_checked_before_leases": true,
+              "cleanup_before_k3s_stop": true,
+              "storage_before_pool_creation": true
+            }
+          }
         ]
       }
     </script>
@@ -5603,7 +5946,11 @@ bbapi tool-log cat 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 "critical path"</pre>
                   202 + (710 * (offset + value / 2)) / max,
                   y + 15,
                   `${f(value)}s`,
-                  { fill: "#fff", "font-size": 12, "text-anchor": "middle" },
+                  {
+                    fill: "#fff",
+                    "font-size": 12,
+                    "text-anchor": "middle",
+                  },
                 );
               offset += value;
             }
@@ -5698,7 +6045,10 @@ bbapi tool-log cat 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 "critical path"</pre>
               y + 32,
               r.cache_note ||
                 "Fresh test result; image-store state uncontrolled",
-              { "font-size": 11, fill: "#526477" },
+              {
+                "font-size": 11,
+                fill: "#526477",
+              },
             );
             bar(
               svg,
@@ -5858,7 +6208,11 @@ bbapi tool-log cat 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 "critical path"</pre>
                   4 + (328 * (offset + value / 2)) / max,
                   y + 28,
                   `${f(value)}s`,
-                  { "font-size": 11, fill: "#fff", "text-anchor": "middle" },
+                  {
+                    "font-size": 11,
+                    fill: "#fff",
+                    "text-anchor": "middle",
+                  },
                 );
               offset += value;
             }
@@ -5885,7 +6239,10 @@ bbapi tool-log cat 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 "critical path"</pre>
               335,
               y,
               `${f(r.fixture_setup + r.body + r.fixture_cleanup)}s`,
-              { "font-size": 11, "text-anchor": "end" },
+              {
+                "font-size": 11,
+                "text-anchor": "end",
+              },
             );
             let offset = 0;
             for (const [key, kind] of [
@@ -6049,6 +6406,95 @@ bbapi tool-log cat 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 "critical path"</pre>
           execution: "Remaining scenario work",
           cleanup: "Diagnostics and cleanup",
         });
+
+        function implementationBudgets() {
+          const rows = data.implementation_runs;
+          const width = mobile ? 340 : 1000;
+          const step = mobile ? 100 : 73;
+          const x = mobile ? 4 : 220;
+          const plotWidth = mobile ? 328 : 690;
+          const max = 350;
+          const svg = chart(
+            document.getElementById("implementation-phase-chart"),
+            width,
+            rows.length * step + 58,
+            "Selected hosted actions, seconds; separate sources, one observation per suite",
+          );
+          rows.forEach((r, i) => {
+            const y = 25 + i * step;
+            text(
+              svg,
+              4,
+              y,
+              r.suite === "vm" ? "VM: three guests" : "Pod: protocol reuse",
+              {
+                "font-size": 13,
+                "font-weight": "600",
+              },
+            );
+            const barY = mobile ? y + 12 : y - 16;
+            let offset = 0;
+            for (const [key, kind, label] of [
+              ["setup_seconds", "setup", "Shared setup"],
+              ["cases_seconds", "execution", "Case envelope"],
+              [
+                "shared_teardown_envelope_seconds",
+                "cleanup",
+                "Shared teardown envelope",
+              ],
+              ["launch_other_seconds", "other", "Launch/other"],
+            ]) {
+              const value = r[key];
+              bar(
+                svg,
+                x + (plotWidth * offset) / max,
+                barY,
+                (plotWidth * value) / max,
+                29,
+                colors[kind],
+                r.suite + ": " + label + " " + f(value) + "s",
+              );
+              if ((plotWidth * value) / max > 45)
+                text(
+                  svg,
+                  x + (plotWidth * (offset + value / 2)) / max,
+                  barY + 19,
+                  f(value) + "s",
+                  {
+                    fill: "#fff",
+                    "text-anchor": "middle",
+                    "font-size": 12,
+                  },
+                );
+              offset += value;
+            }
+            text(
+              svg,
+              mobile ? 332 : 980,
+              mobile ? y + 64 : y + 4,
+              f(r.action_seconds) + "s total",
+              {
+                "font-size": 12,
+                "text-anchor": "end",
+              },
+            );
+          });
+          const axisY = rows.length * step + 25;
+          for (let tick = 0; tick <= max; tick += 50)
+            text(svg, x + (plotWidth * tick) / max, axisY, tick + "s", {
+              "font-size": 11,
+              "text-anchor":
+                tick === 0 ? "start" : tick === max ? "end" : "middle",
+            });
+          legend("implementation-legend", {
+            setup: "Shared setup",
+            execution: "Case envelope",
+            cleanup: "Shared teardown envelope",
+            other: "Launch/other",
+          });
+        }
+
+        implementationBudgets();
         breakdown();
         podComposition();
         const suite = document.getElementById("benchmark-suite");
