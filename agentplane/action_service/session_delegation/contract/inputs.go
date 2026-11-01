@@ -204,15 +204,3 @@ func (inputs Inputs) SessionActions() map[string]catalog.ActionDefinition {
 		inputs.InterruptTurn.Name(): inputs.InterruptTurn.Definition(),
 	}
 }
-
-// SessionMutationActions are the Session operations currently implemented by the executor. Retained snapshot and
-// turn projections are deliberately not offered until their composition adapters are present.
-func (inputs Inputs) SessionMutationActions() map[string]catalog.ActionDefinition {
-	return map[string]catalog.ActionDefinition{
-		inputs.OpenSession.Name():   inputs.OpenSession.Definition(),
-		inputs.SubmitInput.Name():   inputs.SubmitInput.Definition(),
-		inputs.ObserveInput.Name():  inputs.ObserveInput.Definition(),
-		inputs.CancelInput.Name():   inputs.CancelInput.Definition(),
-		inputs.InterruptTurn.Name(): inputs.InterruptTurn.Definition(),
-	}
-}

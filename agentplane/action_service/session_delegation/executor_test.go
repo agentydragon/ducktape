@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"net"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
@@ -40,6 +42,7 @@ const (
 type delegatedBackend struct {
 	discoverypb.UnimplementedEnvironmentDiscoveryServer
 	dispatcherpb.UnimplementedSessionDispatcherServer
+	historypb.UnimplementedHistoryServiceServer
 	testing        *testing.T
 	gotOpen        *dispatcherpb.OpenSessionRequest
 	openErr        error
@@ -52,6 +55,10 @@ type delegatedBackend struct {
 	lookup         *dispatcherpb.Dispatch
 	lookupErr      error
 	cancels        int
+	opening        *dispatcherpb.SessionOpening
+	summary        *historypb.SessionSummary
+	summaryErr     error
+	readEvents     func(*historypb.ReadSessionEventsRequest) (*historypb.ReadSessionEventsResponse, error)
 }
 
 func (b *delegatedBackend) ListEnvironments(ctx context.Context, request *discoverypb.ListEnvironmentsRequest) (*discoverypb.ListEnvironmentsResponse, error) {
@@ -64,6 +71,33 @@ func (b *delegatedBackend) GetEnvironment(ctx context.Context, request *discover
 	b.assertCaller(ctx, testRequestID, testExecutionID)
 	b.gotGet = proto.Clone(request).(*discoverypb.GetEnvironmentRequest)
 	return &discoverypb.EnvironmentDescriptor{Target: proto.Clone(request.GetTarget()).(*discoverypb.TargetHandle)}, nil
+}
+
+func (b *delegatedBackend) GetSessionOpening(ctx context.Context, request *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error) {
+	b.assertCaller(ctx, testRequestID, testExecutionID)
+	if b.opening == nil {
+		return nil, status.Error(codes.NotFound, "opening not found")
+	}
+	return &dispatcherpb.GetSessionOpeningResponse{Opening: proto.Clone(b.opening).(*dispatcherpb.SessionOpening)}, nil
+}
+
+func (b *delegatedBackend) GetSessionSummary(ctx context.Context, request *historypb.GetSessionSummaryRequest) (*historypb.SessionSummary, error) {
+	b.assertCaller(ctx, testRequestID, testExecutionID)
+	if b.summaryErr != nil {
+		return nil, b.summaryErr
+	}
+	if b.summary == nil {
+		return nil, status.Error(codes.NotFound, "summary not found")
+	}
+	return proto.Clone(b.summary).(*historypb.SessionSummary), nil
+}
+
+func (b *delegatedBackend) ReadSessionEvents(ctx context.Context, request *historypb.ReadSessionEventsRequest) (*historypb.ReadSessionEventsResponse, error) {
+	b.assertCaller(ctx, testRequestID, testExecutionID)
+	if b.readEvents == nil {
+		return nil, status.Error(codes.NotFound, "history not found")
+	}
+	return b.readEvents(request)
 }
 
 func (b *delegatedBackend) assertCaller(ctx context.Context, wantRequest, wantExecution uuid.UUID) {
@@ -168,6 +202,7 @@ func newDelegatedExecutorForGroup(t *testing.T, backend *delegatedBackend, group
 	server := grpc.NewServer()
 	discoverypb.RegisterEnvironmentDiscoveryServer(server, backend)
 	dispatcherpb.RegisterSessionDispatcherServer(server, backend)
+	historypb.RegisterHistoryServiceServer(server, backend)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() {
 		server.Stop()
@@ -183,7 +218,7 @@ func newDelegatedExecutorForGroup(t *testing.T, backend *delegatedBackend, group
 	}
 	t.Cleanup(func() { _ = connection.Close() })
 	executor, err := NewExecutor(group, catalog.SessionDelegationBinding{Description: "forwards caller"},
-		discoverypb.NewEnvironmentDiscoveryClient(connection), dispatcherpb.NewSessionDispatcherClient(connection), nil)
+		discoverypb.NewEnvironmentDiscoveryClient(connection), dispatcherpb.NewSessionDispatcherClient(connection), historypb.NewHistoryServiceClient(connection))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +253,7 @@ func TestEachExecutorOffersOnlyItsOwnActionGroup(t *testing.T) {
 		want  []string
 	}{
 		{group: "environments", want: []string{"get", "list"}},
-		{group: "sessions", want: []string{"cancel_input", "interrupt_turn", "observe_input", "open", "submit_input"}},
+		{group: "sessions", want: []string{"cancel_input", "get", "interrupt_turn", "observe_input", "open", "read_turns", "submit_input"}},
 	} {
 		t.Run(test.group, func(t *testing.T) {
 			executor, err := NewExecutor(test.group, catalog.SessionDelegationBinding{Description: "forwards caller"}, nil, nil, nil)
@@ -229,7 +264,134 @@ func TestEachExecutorOffersOnlyItsOwnActionGroup(t *testing.T) {
 			if !slices.Equal(got, test.want) {
 				t.Fatalf("offered actions = %v, want %v", got, test.want)
 			}
+			if test.group == "sessions" {
+				for _, name := range []string{"get", "read_turns"} {
+					definition := executor.Actions()[name]
+					if len(definition.InputSchema) == 0 {
+						t.Errorf("%s has no advertised input schema", name)
+					}
+				}
+			}
 		})
+	}
+}
+
+func TestGetSessionRetainsObservedOpeningAndSanitizedHistoryError(t *testing.T) {
+	backend := &delegatedBackend{
+		testing: t,
+		opening: &dispatcherpb.SessionOpening{
+			SessionId: testSessionID, State: dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED,
+		},
+		summaryErr: status.Error(codes.Unavailable, "private history detail"),
+	}
+	executor := newDelegatedExecutor(t, backend)
+	uid := testCallerUID
+	outcome, err := executor.attempt(t.Context(), requestFor("get", map[string]any{"session_id": testSessionID}, &uid))
+	if err != nil || outcome.State != store.ExecutionSucceeded {
+		t.Fatalf("outcome=%+v error=%v", outcome, err)
+	}
+	var result struct {
+		SessionID string `json:"session_id"`
+		Opening   struct {
+			Kind  string          `json:"kind"`
+			Value json.RawMessage `json:"value"`
+		} `json:"opening"`
+		History struct {
+			Kind  string `json:"kind"`
+			Error struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		} `json:"history"`
+	}
+	if err := json.Unmarshal(outcome.Result, &result); err != nil {
+		t.Fatal(err)
+	}
+	var opening struct {
+		SessionID string `json:"sessionId"`
+		State     string `json:"state"`
+	}
+	if err := json.Unmarshal(result.Opening.Value, &opening); err != nil {
+		t.Fatal(err)
+	}
+	if result.SessionID != testSessionID || result.Opening.Kind != "observed" || opening.SessionID != testSessionID ||
+		opening.State != dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED.String() {
+		t.Fatalf("Dispatcher opening was not preserved: %+v opening=%+v", result, opening)
+	}
+	if result.History.Kind != "unavailable" || result.History.Error.Code != codes.Unavailable.String() ||
+		result.History.Error.Message != "service unavailable" {
+		t.Fatalf("History source error = %+v", result.History)
+	}
+}
+
+func TestReadTurnsReturnsPartialTurnsAndSanitizedHistoryError(t *testing.T) {
+	const historyTail = uint64(1003)
+	backend := &delegatedBackend{testing: t}
+	backend.readEvents = func(request *historypb.ReadSessionEventsRequest) (*historypb.ReadSessionEventsResponse, error) {
+		if request.GetAfterCursor() == 1000 {
+			return nil, status.Error(codes.Unavailable, "private history detail")
+		}
+		response := &historypb.ReadSessionEventsResponse{LastCursor: historyTail}
+		for cursor := request.GetAfterCursor() + 1; cursor <= historyTail && uint32(len(response.Entries)) < request.GetLimit(); cursor++ {
+			var observation *eventpb.Event
+			switch cursor {
+			case 1:
+				observation = &eventpb.Event{Observation: &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: "first-turn"}}}
+			case 2:
+				observation = &eventpb.Event{Observation: &eventpb.Event_TurnCompleted{TurnCompleted: &eventpb.TurnCompleted{
+					TurnId: "first-turn", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED,
+				}}}
+			case 3:
+				observation = &eventpb.Event{Observation: &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: "partial-turn"}}}
+			case historyTail:
+				observation = &eventpb.Event{Observation: &eventpb.Event_TurnCompleted{TurnCompleted: &eventpb.TurnCompleted{
+					TurnId: "partial-turn", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED,
+				}}}
+			default:
+				observation = &eventpb.Event{Observation: &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{
+					ItemId: fmt.Sprintf("tool-%d", cursor), Kind: eventpb.ItemKind_ITEM_KIND_TOOL_CALL, ToolName: "exec",
+				}}}
+			}
+			response.Entries = append(response.Entries, &eventlogpb.EventEntry{Cursor: cursor, Event: observation})
+		}
+		return response, nil
+	}
+	executor := newDelegatedExecutor(t, backend)
+	uid := testCallerUID
+	outcome, err := executor.attempt(t.Context(), requestFor("read_turns", map[string]any{
+		"session_id": testSessionID, "count": 2,
+	}, &uid))
+	if err != nil || outcome.State != store.ExecutionSucceeded {
+		t.Fatalf("outcome=%+v error=%v", outcome, err)
+	}
+	var result struct {
+		Turns []struct {
+			TurnID    string `json:"turn_id"`
+			ToolCalls []struct {
+				Name string `json:"name"`
+			} `json:"tool_calls"`
+			Status *string `json:"status"`
+		} `json:"turns"`
+		ThroughCursor string `json:"through_cursor"`
+		NextCursor    string `json:"next_cursor"`
+		Error         struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(outcome.Result, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Turns) != 2 || result.Turns[0].TurnID != "first-turn" || result.Turns[0].Status == nil ||
+		*result.Turns[0].Status != eventpb.TurnStatus_TURN_STATUS_COMPLETED.String() {
+		t.Fatalf("completed turn facts = %+v", result.Turns)
+	}
+	if result.Turns[1].TurnID != "partial-turn" || result.Turns[1].Status != nil || len(result.Turns[1].ToolCalls) != 997 {
+		t.Fatalf("partial turn facts were lost or finalized: id=%q status=%v tool_calls=%d", result.Turns[1].TurnID, result.Turns[1].Status, len(result.Turns[1].ToolCalls))
+	}
+	if result.ThroughCursor != "1000" || result.NextCursor == "" || result.Error.Code != codes.Unavailable.String() ||
+		result.Error.Message != "service unavailable" {
+		t.Fatalf("partial History page = %+v", result)
 	}
 }
 

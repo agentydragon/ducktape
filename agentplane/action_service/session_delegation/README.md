@@ -12,17 +12,17 @@ select the caller. An absent caller UID fails closed.
 Action group/action names remain the approved contract names. MCP Edge exposes each configured
 direct tool as `<group>__<action>`:
 
-| Action                    | Direct MCP tool            | Current executor                              |
-| ------------------------- | -------------------------- | --------------------------------------------- |
-| `environments/list`       | `environments__list`       | Offered                                       |
-| `environments/get`        | `environments__get`        | Offered                                       |
-| `sessions/open`           | `sessions__open`           | Offered                                       |
-| `sessions/submit_input`   | `sessions__submit_input`   | Offered                                       |
-| `sessions/observe_input`  | `sessions__observe_input`  | Offered                                       |
-| `sessions/get`            | `sessions__get`            | Reserved for the retained snapshot projection |
-| `sessions/read_turns`     | `sessions__read_turns`     | Reserved for the retained turn projection     |
-| `sessions/cancel_input`   | `sessions__cancel_input`   | Offered                                       |
-| `sessions/interrupt_turn` | `sessions__interrupt_turn` | Offered                                       |
+| Action                    | Direct MCP tool            | Current executor |
+| ------------------------- | -------------------------- | ---------------- |
+| `environments/list`       | `environments__list`       | Offered          |
+| `environments/get`        | `environments__get`        | Offered          |
+| `sessions/open`           | `sessions__open`           | Offered          |
+| `sessions/submit_input`   | `sessions__submit_input`   | Offered          |
+| `sessions/observe_input`  | `sessions__observe_input`  | Offered          |
+| `sessions/get`            | `sessions__get`            | Offered          |
+| `sessions/read_turns`     | `sessions__read_turns`     | Offered          |
+| `sessions/cancel_input`   | `sessions__cancel_input`   | Offered          |
+| `sessions/interrupt_turn` | `sessions__interrupt_turn` | Offered          |
 
 The schemas are defined by the typed Go input records in `contract/inputs.go`; unknown fields are
 rejected. Target references include namespace, name and immutable UID. Session and command IDs are
@@ -31,11 +31,19 @@ caller-minted UUIDs. An opening accepts one offered runtime configuration and op
 task separately with `sessions__submit_input`.
 
 `environments__list` returns the owning Discovery page; `environments__get` refreshes one exact
-incarnation. Open, submit and cancel results wrap the owning Dispatcher's ProtoJSON receipt; an
-interrupt returns its typed ProtoJSON response. Observation returns `session_client.ObserveInput`'s
-typed source projections, retaining Dispatcher and History facts, gaps, resume token and sanitized
-source errors separately. Protobuf enum strings keep their generated domain names. All successful
-values are stored and returned by MCP Edge as structured JSON with the same JSON text fallback.
+incarnation. `sessions__get` returns `session_client.GetSession`'s independently sourced retained
+Dispatcher opening and History summary. It does not look up a live environment. Each source keeps
+its observed, missing or unavailable state and sanitized error; an interrupted composite read adds
+an aggregate `read_error` while preserving facts already read. `sessions__read_turns` returns
+`session_client.ReadTurns`' compact retained turns, cursor coverage, gaps, continuation cursor and
+sanitized History error. Incomplete turns remain unfinished when a read stops early. These cursors
+are continuation hints scoped to a Session and carry no authority.
+
+Open, submit and cancel results wrap the owning Dispatcher’s ProtoJSON receipt; an interrupt returns
+its typed ProtoJSON response. Observation returns `session_client.ObserveInput`'s typed source
+projections, retaining Dispatcher and History facts, gaps, resume token and sanitized source errors
+separately. Protobuf enum strings keep their generated domain names. All successful values are
+stored and returned by MCP Edge as structured JSON with the same JSON text fallback.
 
 ## Authorization and recovery
 

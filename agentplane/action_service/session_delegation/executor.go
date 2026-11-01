@@ -58,7 +58,7 @@ func (e *Executor) Actions() map[string]catalog.ActionDefinition {
 	case contract.GroupEnvironments:
 		return e.inputs.EnvironmentActions()
 	case contract.GroupSessions:
-		return e.inputs.SessionMutationActions()
+		return e.inputs.SessionActions()
 	default:
 		return map[string]catalog.ActionDefinition{}
 	}
@@ -123,21 +123,15 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 			return nil, readFailure("Environment Discovery", err)
 		}
 		return protoResult(response)
-	case contract.ActionGetEnvironment:
-		args, err := e.inputs.GetEnvironment.Decode(request.Arguments)
-		if err != nil {
-			return nil, err
+	case "get":
+		switch e.group {
+		case contract.GroupEnvironments:
+			return e.getEnvironment(ctx, request)
+		case contract.GroupSessions:
+			return e.getSession(ctx, request)
+		default:
+			return nil, refuse("unknown_action", "this executor does not expose %q", request.Action.Name)
 		}
-		response, err := e.discovery.GetEnvironment(ctx, &discoverypb.GetEnvironmentRequest{Target: &discoverypb.TargetHandle{
-			Namespace: args.Target.Namespace, Name: args.Target.Name, Uid: args.Target.UID,
-		}})
-		if err != nil {
-			if status.Code(err) == codes.NotFound {
-				return nil, refuse("target_not_found", "the exact environment incarnation is no longer available")
-			}
-			return nil, readFailure("Environment Discovery", err)
-		}
-		return protoResult(response)
 	case contract.ActionOpenSession:
 		args, err := e.inputs.OpenSession.Decode(request.Arguments)
 		if err != nil {
@@ -202,6 +196,31 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 			return result, nil
 		}
 		return result, nil
+	case contract.ActionReadTurns:
+		args, err := e.inputs.ReadTurns.Decode(request.Arguments)
+		if err != nil {
+			return nil, err
+		}
+		sessionID, err := uuid.Parse(args.SessionID)
+		if err != nil {
+			return nil, refuse("invalid_arguments", "session_id must be a UUID")
+		}
+		var pageCursor string
+		if args.PageCursor != nil {
+			pageCursor = *args.PageCursor
+		}
+		page, err := sessionclient.ReadTurns(ctx, e.history, sessionclient.ReadTurnsRequest{
+			SessionID: sessionID, Count: uint32(args.Count), PageCursor: pageCursor,
+		})
+		if err != nil {
+			if status.Code(err) == codes.InvalidArgument {
+				return nil, refuse("invalid_arguments", "History rejected the Session page cursor or count")
+			}
+			// ReadTurns can return already projected turns alongside a context error. Its coverage
+			// error belongs to History, so attach it there and keep the partial page.
+			page.Error = sanitizedSourceError(err)
+		}
+		return page, nil
 	case contract.ActionCancelInput:
 		args, err := e.inputs.CancelInput.Decode(request.Arguments)
 		if err != nil {
@@ -245,6 +264,46 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 	default:
 		return nil, refuse("unknown_action", "this executor does not expose %q", request.Action.Name)
 	}
+}
+
+func (e *Executor) getEnvironment(ctx context.Context, request store.ExecutionRequest) (any, error) {
+	args, err := e.inputs.GetEnvironment.Decode(request.Arguments)
+	if err != nil {
+		return nil, err
+	}
+	response, err := e.discovery.GetEnvironment(ctx, &discoverypb.GetEnvironmentRequest{Target: &discoverypb.TargetHandle{
+		Namespace: args.Target.Namespace, Name: args.Target.Name, Uid: args.Target.UID,
+	}})
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return nil, refuse("target_not_found", "the exact environment incarnation is no longer available")
+		}
+		return nil, readFailure("Environment Discovery", err)
+	}
+	return protoResult(response)
+}
+
+func (e *Executor) getSession(ctx context.Context, request store.ExecutionRequest) (any, error) {
+	args, err := e.inputs.GetSession.Decode(request.Arguments)
+	if err != nil {
+		return nil, err
+	}
+	sessionID, err := uuid.Parse(args.SessionID)
+	if err != nil {
+		return nil, refuse("invalid_arguments", "session_id must be a UUID")
+	}
+	snapshot, err := sessionclient.GetSession(ctx, e.dispatcher, e.history, sessionID)
+	if err != nil {
+		// GetSession may return facts read before the context ended. Keep those facts and report
+		// the aggregate interruption without misattributing it to either source.
+		return sessionSnapshotResult{SessionSnapshot: snapshot, ReadError: sanitizedSourceError(err)}, nil
+	}
+	return sessionSnapshotResult{SessionSnapshot: snapshot}, nil
+}
+
+type sessionSnapshotResult struct {
+	sessionclient.SessionSnapshot
+	ReadError *sessionclient.SourceError `json:"read_error,omitempty"`
 }
 
 func validateTargetNamespace(callerNamespace string, target contract.TargetRef) error {
