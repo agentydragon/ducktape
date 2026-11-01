@@ -163,6 +163,15 @@ allocate before their lexical statement. This ordering also applies to pure read
 call purity does not make an observed array's contents immutable. It is emitted
 in both strict and dataflow-aware S-chain modes.
 
+Statement purity has separate preparatory and completed facts. Current-owner
+proof preparation retains the existing classifier, including enum initializers.
+The final verdict is published after assignment/export evaluation, exact
+existing certificate discharge and heap aggregation, before the next source
+prefix. Graph and at-init consumers use that completed verdict; initializer-only
+trust retains callback fallback roots. Complete synchronous timing does not
+prove evaluation purity. A classifier-pure/completed-impure disagreement is
+reported with its source site and per-chunk count and is an e2e bug.
+
 Array member writes, method calls such as `push`, escaped arrays, and calls
 whose callable body has no direct graph summary remain opaque heap barriers.
 The shared synchronous-call analysis also makes a source unit an opaque heap

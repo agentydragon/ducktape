@@ -187,7 +187,30 @@ impl RejectedFixture {
 }
 
 fn read_dependency_graph(report_root: &Path, chunk_id: &str) -> DependencyGraphReport {
-    read_json(&report_root.join(chunk_id).join("dependency_graph.json.gz"))
+    let report: DependencyGraphReport =
+        read_json(&report_root.join(chunk_id).join("dependency_graph.json.gz"));
+    assert_no_purity_disagreements(&report);
+    report
+}
+
+fn assert_no_purity_disagreements(report: &DependencyGraphReport) {
+    let disagreements: Vec<_> = report
+        .nodes
+        .iter()
+        .filter(|node| {
+            node.synchronous_execution
+                .as_ref()
+                .is_some_and(|execution| execution.purity_disagreement.is_some())
+        })
+        .map(|node| (&node.id, &node.source_location))
+        .collect();
+    assert!(
+        disagreements.is_empty(),
+        "classifier-pure completion regressions count={} chunk={} sites={:?}",
+        disagreements.len(),
+        report.chunk_id,
+        disagreements
+    );
 }
 
 /// The `program_graph.json.gz` that the graph at `graph_path` references.
@@ -1206,6 +1229,11 @@ pub struct CommandResult {
 }
 
 fn command_result(output: std::process::Output) -> CommandResult {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("purity-completion-disagreement"),
+        "classifier-pure completion regression is an e2e bug: {stderr}"
+    );
     CommandResult {
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),

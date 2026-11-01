@@ -566,9 +566,19 @@ pub struct InferenceUse {
     pub native_operation_input_refs: BTreeSet<crate::analysis_inputs::NativeOperationInputRef>,
 }
 
+/// A classifier-pure owner becoming impure at completion is an inference bug.
+/// The containing source-unit node supplies the exact source/chunk/site.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PurityCompletionDisagreement {
+    pub prepared: Purity,
+    pub completed: Purity,
+}
+
 /// Completeness of the existing synchronous-effect inference, independent of purity.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SynchronousExecutionReport {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purity_disagreement: Option<PurityCompletionDisagreement>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inference_uses: Vec<InferenceUse>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

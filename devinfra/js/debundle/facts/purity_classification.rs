@@ -61,24 +61,86 @@ impl StatementPurityContext<'_> {
     }
 }
 
-/// A statement's purity before and after synchronous execution refines it.
-pub(crate) struct SettledPurity {
-    /// The verdict execution consumed at the statement's program point; it
-    /// also gates the at-init fallback.
-    pub(crate) executed: Purity,
-    /// `executed` with a certificate execution produced applied (a checked
-    /// local record factory call drops its impure-call effect); `None` when
-    /// execution refined nothing.
-    pub(crate) refined: Option<Purity>,
+/// The unchanged classifier obligations consumed while preparing one owner.
+/// Timing completeness is independent of these evaluation-effect obligations.
+pub(crate) struct PreparedPurity(Effects);
+
+/// Final evaluation purity after retaining residual classifier obligations
+/// and applying only exact existing execution certificates. This is not a
+/// claim that the current timing Outcome is a complete effect ledger.
+pub(crate) struct CompletedPurity {
+    pub(crate) verdict: Purity,
+    // NotPure's projection drops dependencies; runtime ledger evidence must
+    // retain them independently of the projected verdict.
+    dependencies: ProofDependencies,
 }
 
-impl SettledPurity {
-    /// The verdict of a statement no execution refines.
+impl PreparedPurity {
+    pub(crate) fn new(effects: Effects) -> Self {
+        Self(effects)
+    }
+
+    pub(crate) fn is_pure(&self) -> bool {
+        self.0.is_pure()
+    }
+
+    pub(crate) fn proof_dependencies(&self) -> ProofDependencies {
+        self.0.proof_dependencies()
+    }
+
+    pub(crate) fn complete(
+        self,
+        certificate: Option<&LocalRecordFactoryPurityCertificate>,
+    ) -> (
+        CompletedPurity,
+        Option<crate::reports::schema::PurityCompletionDisagreement>,
+    ) {
+        let Some(certificate) =
+            certificate.filter(|certificate| !certificate.checked_owners.is_empty())
+        else {
+            // Both facts have exactly the same projection without a discharge.
+            return (CompletedPurity::unrefined(self.0), None);
+        };
+        // A disagreement is possible only for a previously pure owner.
+        // Preserve that exact diagnostic projection only on this rare path.
+        let prepared = self.is_pure().then(|| self.0.clone().project());
+        let effects = self
+            .0
+            .discharge_call(certificate.call_span, &certificate.dependencies);
+        let dependencies = effects.proof_dependencies();
+        let completed = effects.project();
+        let disagreement = prepared.filter(|_| !completed.is_pure()).map(|prepared| {
+            crate::reports::schema::PurityCompletionDisagreement {
+                prepared,
+                completed: completed.clone(),
+            }
+        });
+        (
+            CompletedPurity {
+                verdict: completed,
+                dependencies,
+            },
+            disagreement,
+        )
+    }
+}
+
+impl CompletedPurity {
+    /// The vendor-prune path finalizes the same classifier without executing
+    /// or minting a runtime refinement certificate.
     pub(crate) fn unrefined(effects: Effects) -> Self {
         Self {
-            executed: effects.project(),
-            refined: None,
+            dependencies: effects.proof_dependencies(),
+            verdict: effects.project(),
         }
+    }
+
+    pub(crate) fn proof_dependencies(&self) -> &ProofDependencies {
+        &self.dependencies
+    }
+
+    pub(crate) fn is_pure(&self) -> bool {
+        self.verdict.is_pure()
     }
 }
 

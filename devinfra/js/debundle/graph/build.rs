@@ -285,6 +285,7 @@ pub fn build_dependency_graph_with(
             heap_native_integrity_uses: stmt.heap_native_integrity_uses.clone(),
             synchronous_execution: stmt.synchronous_calls.as_ref().map(|calls| {
                 crate::reports::schema::SynchronousExecutionReport {
+                    purity_disagreement: calls.purity_disagreement.clone(),
                     local_record_factory_uses: calls.local_record_factory_uses.clone(),
                     local_record_factory_rejections: calls.local_record_factory_rejections.clone(),
                     complete: calls.complete,

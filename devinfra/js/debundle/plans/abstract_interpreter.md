@@ -358,12 +358,14 @@ Pipeline order (<../docs/design.md> § Purity and synchronous execution share
 one context): source facts, function effects (`ChunkCodeGraph`) and the
 whole-chunk heap state (`facts/abstract_domain/heap.rs`) → per-body
 heap-content cells (`facts/heap_contents.rs`) → synchronous execution, which
-computes each statement's purity at its own program point
-(`RuntimeKey::Purity`) and consumes it there, and unions the heap-content
-cells of the callables each statement invokes. Dependencies run forward only:
-nothing at a source prefix refines an earlier prefix's purity, function
-effects or the whole-chunk heap state. The vendor-prune path
-(`analyze_vendor_prune_chunk`) runs the same purity transfer without
+prepares classifier obligations as `RuntimeKey::PreparedPurity` for current-owner
+proofs and aggregates invoked callable heap cells. Owner finalization publishes
+`RuntimeKey::CompletedPurity` after assignment/export evaluation and exact
+existing certificate discharge, before the next prefix. Residual classifier
+obligations remain until a complete evaluation ledger can replace them.
+Dependencies run forward only: nothing at a source prefix refines an earlier
+prefix's purity, function effects or the whole-chunk heap state. The vendor-prune
+path (`analyze_vendor_prune_chunk`) finalizes the same classifier without
 execution. A step that derives from the interpreter a fact that per-body
 heap-content cells or function effects consume owns that reorder and measures
 its cost.
