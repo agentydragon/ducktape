@@ -10,9 +10,9 @@ import (
 	"syscall"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
-	"github.com/agentydragon/ducktape/agentplane/env/harnesshost"
-	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/workspace"
 	runtime "github.com/agentydragon/ducktape/agentplane/env/runtime"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/workspace"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"go.opentelemetry.io/otel/attribute"

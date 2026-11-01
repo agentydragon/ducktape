@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/harnesshost"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"google.golang.org/grpc"

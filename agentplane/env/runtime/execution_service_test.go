@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/env/execution/service"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/service"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
