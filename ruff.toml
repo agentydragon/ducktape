@@ -17,9 +17,9 @@ exclude = [  # keep-sorted start
     "cluster/docs/inference/model_comparison",
     "props/specimens/*/*/code",
     "props/testing/fixtures/testdata",
-    "py_detectors/rules/**/bad/**",
-    "py_detectors/rules/**/ok/**",
     "tana/testdata",
+    "x/py_detectors/rules/**/bad/**",
+    "x/py_detectors/rules/**/ok/**",
     "x/sysrw/testdata",
 ]  # keep-sorted end
 
@@ -163,7 +163,6 @@ known-first-party = [
     "loom",
     "mcp_infra",
     "openai_utils",
-    "py_detectors",
     "ssh_mcp_server",
     "sysrw",
     "tana",
