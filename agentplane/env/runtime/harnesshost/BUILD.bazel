@@ -132,17 +132,3 @@ go_test(
         "@org_golang_google_protobuf//types/known/emptypb",
     ],
 )
-
-py_library(
-    name = "platform_instructions",
-    srcs = ["platform_instructions.py"],
-    data = ["platform_instructions.j2"],
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//jinja2",
-    ],
-)

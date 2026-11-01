@@ -52,7 +52,8 @@ Gateway and History. The service and its shared JavaScript host use the Pod cont
 CPU and memory limits.
 
 Server-owned configuration names the service, provider connections and credential sources,
-model contracts and per-model reasoning-effort allowlists, TokenReview audience and allowed caller accounts,
+model contracts and per-model reasoning-effort allowlists, the rendered Agentplane
+optional `platform_instructions`, TokenReview audience and allowed caller accounts,
 code-mode host binary, executor-side Codex path, logs, concurrency/deadlines and limits. Each named connection uses `auth.type` (`bearer` or `anthropic_api_key`) and exactly one of
 `auth.credential` or `auth.credential_file`; the service reads the file before each request so projected service-account tokens can rotate. `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL`
 overrides `database_url` in the JSON settings, so database credentials can stay in a Secret-backed
@@ -119,7 +120,10 @@ container limits stop meeting the production resource contract.
   account in `ingress.sampler_accounts`; it retains the distinct executor Sandbox identity.
 - The app's `HARNESS_CENTRAL_SAMPLER` model list offers **Central sampler** alongside Codex and Claude.
   App and Actions callers do not supply service names or endpoints. A non-empty setup script runs once on the bound executor, in the resolved working directory,
-  before sampling starts. Its stdout, stderr and terminal outcome are retained in History.
+  before sampling starts. Opening only reserves the Session and may run setup; the first model turn
+  requires an explicit `SubmitInput`. Caller `additional_instructions` are an additive briefing
+  mapped into `SessionSpec.instructions`, after server-owned platform guidance and the child
+  notification destination. Its stdout, stderr and terminal outcome are retained in History.
 - LLM ingress must allow the sampler account in `central_sampler_accounts` to accept its
   `x-agentplane-session-id` claim. Ingress validates a canonical UUID and generates trusted
   metadata. Langfuse links filter by public Session ID; Sandbox identity describes execution.

@@ -1,8 +1,17 @@
+{# This injected guide keeps provider-loop and Sandbox execution ownership explicit. #}
+
 # Agentplane environment
 
+{% if session_runtime == "central_sampler" -%}
+Your provider conversation and Code Mode host run in the central sampler, outside the Sandbox.
+The Sandbox supplies the execution environment and its Kubernetes ServiceAccount; code tools run
+there through its Environment Runtime. A Session is one conversation bound to one Sandbox, and several Sessions
+can share that Sandbox's permissions.
+{%- else -%}
 You run inside an Agentplane Sandbox, which provides an execution environment and its own
 Kubernetes ServiceAccount. A Session is one harness conversation within that Sandbox; several
 Sessions can share its permissions. Your assignment follows this platform guidance.
+{%- endif %}
 
 Agentplane components:
 
@@ -14,9 +23,11 @@ Agentplane components:
   current bindings; a launch preset or catalog entry does not establish permission.
 - **Notifications:** follows Actions and enabled external sources, including GitHub, and delivers
   inbox notices as user messages to your Session.
-- **Environment Runtime and Harness Host:** Runtime manages this Sandbox environment; Harness Host
+- **Environment Runtime and Harness Host:** {% if session_runtime == "central_sampler" %}Environment Runtime executes code tools in the bound Sandbox; the central sampler owns
+  this Session's provider loop and Code Mode host. The Session Dispatcher sends commands to the
+  sampler, and the Runner Gateway carries Sandbox executor traffic. History retains Session events.{% else %}Runtime manages this Sandbox environment; Harness Host
   runs your native harness and retains Session events. The Session Dispatcher delivers commands,
-  and the Runner Gateway carries Environment Runtime control traffic. The Sandbox
+  and the Runner Gateway carries Environment Runtime control traffic.{% endif %} The Sandbox
   Controller manages the execution environment; the Policy Controller manages grant lifetimes
   and Kubernetes bindings. The integration app is the operator's UI over these services.
 

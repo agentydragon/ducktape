@@ -26,7 +26,6 @@ from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
 
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.egress.resources import placeholder_of
 from agentplane.env import config as configuration
 from agentplane.env.config import (
     CONFIG_FILE,
@@ -39,24 +38,22 @@ from agentplane.env.config import (
     Harness,
     PodEnvironment,
 )
-from agentplane.env.runtime.harnesshost.platform_instructions import render_platform_instructions
 from agentplane.environment_runtime_transport.config import MTLS, TLS
 from agentplane.sandboxes.runtimeconfig.model_catalog import WORKSPACE_ROOT
+from agentplane.session_instructions.platform_instructions import SessionRuntime
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import (
-    actions,
     egress,
     environment_vm,
     launcher_relay,
     llm_ingress,
-    notifications,
     platform_routes,
     runner_gateway,
     sandbox_pod,
-    session_dispatcher,
     telemetry,
 )
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate_ingress
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
@@ -96,8 +93,6 @@ _CONFIG_VOLUME = "environment-runtime-config"
 # The bearers a Session presents: the placeholders the agentplane-workload and the notifications
 # EgressCredentials derive from their names, which the egress proxy substitutes.
 _WORKLOAD_PLACEHOLDER = "agentplane-credential-agentplane-workload"
-_NOTIFICATIONS_PLACEHOLDER = "agentplane-credential-agentplane-notifications-workload"
-_SESSIONS_PLACEHOLDER = placeholder_of(session_dispatcher.WORKLOAD_CREDENTIAL)
 
 
 @dataclass(frozen=True)
@@ -129,56 +124,6 @@ class KeyFile:
 
     def env(self) -> k8s.EnvVar:
         return k8s.EnvVar(name=self.env_var, value=self.path)
-
-
-@dataclass(frozen=True)
-class ServiceUrls:
-    """The service URLs made available to a managed Session and its CLI."""
-
-    egress: str
-    actions: str
-    sessions: str
-    notifications: str
-
-
-def service_urls(env: Environment, *, egress_api_service: ServiceRef | None = None) -> ServiceUrls:
-    actions_service = actions.service(env.namespace)
-    sessions_service = session_dispatcher.service(env.namespace)
-    notifications_http = notifications.http_service(env.namespace)
-    egress_api = egress_api_service or egress.agent_api(env.namespace)
-    egress_port = f":{egress_api.port.number}" if egress_api.port.number != 80 else ""
-    return ServiceUrls(
-        egress=f"http://{egress_api.fqdn}{egress_port}",
-        actions=f"http://{actions_service.fqdn}:{actions_service.port.number}",
-        sessions=f"http://{sessions_service.fqdn}:{sessions_service.port.number}",
-        notifications=f"http://{notifications_http.fqdn}:{notifications_http.port.number}",
-    )
-
-
-def platform_instructions(env: Environment, *, egress_api_service: ServiceRef | None = None) -> str:
-    """The complete deployment-wide prompt: shared guidance with this environment's service URLs."""
-    urls = service_urls(env, egress_api_service=egress_api_service)
-    return render_platform_instructions(
-        egress_api_url=urls.egress,
-        actions_service_url=urls.actions,
-        sessions_service_url=urls.sessions,
-        notifications_service_url=urls.notifications,
-    )
-
-
-def agent_cli_environment(urls: ServiceUrls) -> dict[str, str]:
-    """What the `agentplane` command reads (agentplane/docs/agent_cli.md): each group's base URL and
-    the placeholder bearer the egress proxy swaps for the real credential."""
-    return {
-        "AGENTPLANE_ACTIONS_URL": urls.actions,
-        "AGENTPLANE_ACTIONS_CREDENTIAL": _WORKLOAD_PLACEHOLDER,
-        "AGENTPLANE_SESSIONS_URL": urls.sessions,
-        "AGENTPLANE_SESSIONS_CREDENTIAL": _SESSIONS_PLACEHOLDER,
-        "AGENTPLANE_NOTIFICATIONS_URL": urls.notifications,
-        "AGENTPLANE_NOTIFICATIONS_CREDENTIAL": _NOTIFICATIONS_PLACEHOLDER,
-        "AGENTPLANE_EGRESS_URL": urls.egress,
-        "AGENTPLANE_EGRESS_CREDENTIAL": _WORKLOAD_PLACEHOLDER,
-    }
 
 
 def pods(namespace: str) -> Pods:
@@ -285,7 +230,9 @@ class EnvironmentSandbox(Construct):
                 workspace_volume=workspace_volume_spec(
                     vm_state_volume, layout_type="BlockFilesystem", storage_class=workspace_storage_class
                 ),
-                platform_instructions=platform_instructions(env, egress_api_service=egress_api_service),
+                platform_instructions=platform_instructions(
+                    env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_api_service=egress_api_service
+                ),
                 harness_env=template.agent_cli_env,
                 session_reconcile_concurrency=session_reconcile_concurrency,
                 codex_readiness=vm_codex_readiness,
@@ -452,7 +399,9 @@ class EnvironmentSandboxTemplate(Construct):
                 ),
             ),
             ingress=Endpoint(target=ingress.local_target, bearer=platform_routes.ROUTE_BEARER),
-            platform_instructions=platform_instructions(self.env, egress_api_service=self.egress_api_service),
+            platform_instructions=platform_instructions(
+                self.env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_api_service=self.egress_api_service
+            ),
             harness_environment=configuration.EnvironmentVariables(
                 inherit=tuple(dict.fromkeys((*self.env.harness_inherited_env, *harness_env))),
                 values={"HOME": _HOME_DIR},

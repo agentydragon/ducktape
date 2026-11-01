@@ -112,10 +112,10 @@ func TestReopeningSessionCannotChangeItsNativeAPI(t *testing.T) {
 	if err := proto.Unmarshal(session.Configuration, request); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.OpenSession(t.Context(), request, session.AccountUID, protocol.APIStyleAnthropicMessages); !errors.Is(err, protocol.ErrPrecondition) {
+	if _, err := openStoreSession(t, store, request, session.AccountUID, protocol.APIStyleAnthropicMessages); !errors.Is(err, protocol.ErrPrecondition) {
 		t.Fatalf("reopening a Responses conversation as Anthropic: %v", err)
 	}
-	if _, err := store.OpenSession(t.Context(), request, session.AccountUID, protocol.APIStyleResponses); err != nil {
+	if _, err := openStoreSession(t, store, request, session.AccountUID, protocol.APIStyleResponses); err != nil {
 		t.Fatalf("reopening the original protocol: %v", err)
 	}
 }

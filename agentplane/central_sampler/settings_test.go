@@ -14,10 +14,65 @@ import (
 )
 
 func fixtureSettings() Settings {
+	platformInstructions := "Fixture Agentplane guidance."
 	return Settings{
 		Models:      map[string]ModelConfig{"test-model": {Connection: "provider", ProviderModel: "test-model", API: protocol.APIStyleResponses, Responses: responses.Config{Dialect: responses.DialectLite}, ExecEncoding: protocol.ExecEncodingFreeform, ReasoningEfforts: []string{"", "high"}}},
 		Connections: map[string]ConnectionConfig{"provider": {BaseURL: "https://model.invalid", Auth: AuthConfig{Type: AuthTypeBearer, Credential: "test-credential"}}},
-		DatabaseURL: "postgresql://fixture.invalid/sampler", Listen: "127.0.0.1:0", Audience: "test-sampler", AllowedAccounts: []string{"test/client"}, CodeModeHost: "/fixture/host", ExecutorCodex: "/fixture/codex", Logs: "/fixture/logs", DirectExecutorTarget: "127.0.0.1:4501", DirectExecutorInsecureLocaltest: true, MaxLiveSessions: 2, TurnTimeoutSeconds: 40, RPCTimeoutSeconds: 10, LeaseSeconds: 60,
+		DatabaseURL: "postgresql://fixture.invalid/sampler", Listen: "127.0.0.1:0", Audience: "test-sampler", AllowedAccounts: []string{"test/client"}, PlatformInstructions: &platformInstructions, CodeModeHost: "/fixture/host", ExecutorCodex: "/fixture/codex", Logs: "/fixture/logs", DirectExecutorTarget: "127.0.0.1:4501", DirectExecutorInsecureLocaltest: true, MaxLiveSessions: 2, TurnTimeoutSeconds: 40, RPCTimeoutSeconds: 10, LeaseSeconds: 60,
+	}
+}
+
+func TestSettingsPlatformGuidanceAcceptsOldConfigurationAndRejectsEmptyGuide(t *testing.T) {
+	encoded, err := json.Marshal(fixtureSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	configured, empty, whitespace := "Fixture configured guide.", "", " \n\t"
+	for _, tc := range []struct {
+		name    string
+		guide   *string
+		invalid bool
+	}{
+		{name: "omitted"},
+		{name: "configured", guide: &configured},
+		{name: "empty", guide: &empty, invalid: true},
+		{name: "whitespace", guide: &whitespace, invalid: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(encoded, &fields); err != nil {
+				t.Fatal(err)
+			}
+			delete(fields, "platform_instructions")
+			if tc.guide != nil {
+				encodedGuide, err := json.Marshal(*tc.guide)
+				if err != nil {
+					t.Fatal(err)
+				}
+				fields["platform_instructions"] = encodedGuide
+			}
+			wire, err := json.Marshal(fields)
+			if err != nil {
+				t.Fatal(err)
+			}
+			settings, err := DecodeSettings(strings.NewReader(string(wire)))
+			if tc.invalid {
+				if err == nil {
+					t.Fatal("accepted an explicitly empty platform guide")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.guide == nil {
+				if settings.PlatformInstructions != nil {
+					t.Fatal("old configuration unexpectedly enabled platform guidance")
+				}
+			} else if settings.PlatformInstructions == nil || *settings.PlatformInstructions != *tc.guide {
+				t.Fatal("configuration did not retain the supplied platform guide")
+			}
+		})
 	}
 }
 

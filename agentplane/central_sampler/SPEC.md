@@ -15,6 +15,22 @@ uses TokenReview and the allowed-account policy; Session UUID knowledge grants n
 Reusing an identifier with a different payload conflicts. The integration app owns neither this
 admission nor the continuation database.
 
+`spec.instructions` is the caller's briefing. Callers that expose an additive
+`additional_instructions` parameter map it to this field; it never replaces Agentplane guidance.
+At the first durable open, the Store composes the configured `platform_instructions`, the current
+executor Sandbox and child Session notification destination, then the caller briefing. It persists
+that effective prompt separately from the raw opening request, which remains the idempotency key.
+An exact duplicate open reuses the stored prompt even if the configured guide has changed; a new
+Session receives the current guide. Provider and harness base instructions remain separate.
+
+If `platform_instructions` is omitted, startup logs a warning and new Sessions retain the previous
+caller-only prompt. An explicitly configured guide must be nonempty. This allows the reader to
+deploy before managed configuration enables the guide; the omission is controlled by the operator,
+never by a Session's opening request. Enabling or changing the guide affects only new Sessions.
+
+Opening or briefing a Session does not start a provider turn. Optional setup may execute first, but
+the first model turn starts only after an explicit `SubmitInput`.
+
 `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, `InterruptTurn` and `Compact` admit durable,
 idempotent commands. A returned admission is not execution completion. `GetCommand` exposes its
 outcome; `FollowEvents` replays committed evidence. `GetSession` and `ListSessions` provide persisted
@@ -496,7 +512,8 @@ frames to the sampler's existing boundary journal without exposing native JSON a
 For `view_image` block reads, frame payloads are stored as byte counts and SHA-256 digests so raw
 image bytes remain excluded from the journal. Dispatcher does not relay tools. Every provider
 request carries Codex's `gpt-6.1-sol` base instructions as Responses `instructions` or Anthropic
-`system`, whatever the model. Standing instructions are supported; remote
+`system`, whatever the model. The stored effective Session prompt is added as standing guidance;
+it does not replace the provider/harness base. Standing instructions are supported; remote
 AGENTS.md discovery, subagents, skills/MCP and approvals/hooks are deferred.
 
 The conversation carries Codex's `<environment_context>` user message: the Session cwd, the name of

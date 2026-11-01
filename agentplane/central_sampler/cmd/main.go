@@ -30,6 +30,9 @@ import (
 )
 
 func run(ctx context.Context, settings centralsampler.Settings) error {
+	if settings.PlatformInstructions == nil {
+		slog.Warn("Agentplane platform guidance is not configured; new Sessions retain caller-only instructions")
+	}
 	databaseURL := strings.Replace(settings.DatabaseURL, "postgresql+asyncpg://", "postgresql://", 1)
 	if err := migrate.Run(ctx, databaseURL, centralsampler.Migrate); err != nil {
 		return err

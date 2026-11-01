@@ -139,6 +139,7 @@ def settings(
                 exec_encoding="freeform",
             ),
         },
+        platform_instructions="Fixture Agentplane guidance.",
         audience="sampler-test",
         allowed_accounts={"test/client"},
         code_mode_host=Path(host),

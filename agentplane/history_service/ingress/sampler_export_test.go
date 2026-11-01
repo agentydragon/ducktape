@@ -203,6 +203,7 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 
 func (f samplerExportFixture) openSession(t *testing.T) *centralsampler.Session {
 	t.Helper()
+	platformInstructions := "Fixture Agentplane platform guidance."
 	session, err := f.sampler.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
@@ -216,7 +217,7 @@ func (f samplerExportFixture) openSession(t *testing.T) *centralsampler.Session 
 			Owner:      &sandboxespb.ServiceAccount{Namespace: testNamespace, Name: "test-execution-sandbox"},
 		},
 		ExpectedIncarnationUid: uuid.NewString(),
-	}, samplerOwnerUID, protocol.APIStyleResponses)
+	}, samplerOwnerUID, protocol.APIStyleResponses, &platformInstructions)
 	if err != nil {
 		t.Fatal(err)
 	}
