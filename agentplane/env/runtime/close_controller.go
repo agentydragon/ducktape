@@ -176,10 +176,6 @@ func (c *runtimeCloseController) runStage(ctx context.Context, stage lifecycle.R
 			return c.r.waitForExecutionFenced(p.fenceCtx, p.binding)
 		}
 		if p.hostLifetimeExists {
-			c.r.cancelExecutionCalls()
-			if err := c.r.waitForExecutionCalls(p.fenceCtx); err != nil {
-				return fmt.Errorf("drain Execution calls after Host lifecycle loss: %w", err)
-			}
 			if err := c.r.stopExecution(p.fenceCtx); err != nil {
 				return fmt.Errorf("fence Execution after Host lifecycle loss: %w", err)
 			}

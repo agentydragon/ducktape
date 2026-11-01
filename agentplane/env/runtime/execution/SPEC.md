@@ -70,13 +70,23 @@ retries starts, writes, signals or other mutations. The adapter has no durable m
 
 ## Shutdown
 
+Embedded Runtime publishes its desired incarnation to the Execution COSI controller. The
+controller owns each embedded API start, readiness, backend-loss transition, and completed fence
+generation. A lost backend closes admission and joins forwarded calls before the old service's
+native process-domain fence is accepted. It may then start another lifetime for the same running
+incarnation; quiescing and closing suppress that recovery. A failed or unknown fence retains the
+old owner and blocks every successor. Each admitted startup belongs to one caller epoch and
+desired-state demand. If that epoch is canceled or a newer demand arrives before readiness is
+published, the old startup is fenced before any successor is admitted. A proven fence returns
+the startup's readiness error to its caller; an uncertain startup fence remains terminal.
+
 The Execution API closes admission and held connections, joins direct adapter calls (or drains
 standalone gRPC calls), and stops its native
 backend before releasing ownership. Pod cleanup fences all remaining processes in the companion's
 private namespace, including descendants that escaped a process group; if that proof fails, Pod
 exit invokes the runtime's whole-namespace fence. VM cleanup proves its execution cgroup empty;
 Runtime death also removes its lifetime marker and stops bound transient units. A backend exit ends
-the API lifetime; Runtime may create a replacement only after the old lifetime returns fenced proof.
+the API lifetime; the controller may create a replacement only after the old lifetime returns fenced proof.
 
 Authored workspace files survive service shutdown. This contract promises no persistence for the
 native backend's in-memory session registry; its loss must not be reported as successful execution

@@ -184,11 +184,6 @@ func (r *Runtime) maybeFenceExecution(binding *runtimepb.Binding) {
 		defer cancel()
 		// Retain the in-flight marker on failure: an uncertain stop or fence
 		// publication must not be attempted again for this binding.
-		r.cancelExecutionCalls()
-		if err := r.waitForExecutionCalls(ctx); err != nil {
-			r.fail(fmt.Errorf("drain forwarded Execution calls before fencing: %w", err))
-			return
-		}
 		if err := r.stopExecution(ctx); err != nil {
 			r.fail(fmt.Errorf("fence embedded Execution API: %w", err))
 			return
