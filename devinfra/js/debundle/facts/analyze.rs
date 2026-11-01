@@ -639,6 +639,7 @@ where
             .map(|fact| SettledPurity::unrefined(purity_context.statement_effects(fact)))
             .collect(),
     };
+    let global_object_names = unshadowed_global_object_aliases(&body);
     for ((fact, purity), item_view) in facts.iter_mut().zip(purities).zip(&body) {
         settle_statement_purity(
             fact,
@@ -647,6 +648,7 @@ where
             &shadowed,
             hints,
             &graph,
+            &global_object_names,
         );
     }
     for fact in &mut facts {
@@ -945,7 +947,15 @@ fn settle_statement_purity(
     shadowed: &BTreeSet<&'static str>,
     hints: &AnalysisInputs,
     graph: &ChunkCodeGraph,
+    global_object_names: &BTreeSet<&'static str>,
 ) {
+    if let Some(aliases) = fact
+        .synchronous_calls
+        .as_ref()
+        .and_then(|calls| calls.global_object_aliases.clone())
+    {
+        resolve_global_alias_escape(item, global_object_names, &aliases, fact);
+    }
     if purity.executed.is_pure() && !has_trusted_initializer_purity(item, hints) {
         fact.at_init_unresolved_sources.clear();
         fact.at_init_unresolved_inline_fn = false;
