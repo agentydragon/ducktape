@@ -1,8 +1,4 @@
-"""`PolicySet` and `PolicyBinding` as their Python readers see them (agentplane/crds/manifests/).
-
-Each reader parses only the rule types it needs. Expiry is not a reader's concern: the Policy
-Controller deletes a binding once its `expiresAt` passes, so a binding that exists grants.
-"""
+"""Constants and wire models used by Agentplane's Python Kubernetes readers."""
 
 from __future__ import annotations
 
@@ -14,8 +10,6 @@ from typing import Any
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
-
-from agentplane.subjects import ServiceAccountRef
 
 logger = logging.getLogger(__name__)
 
@@ -61,24 +55,6 @@ class Condition(_Wire):
     message: str
     observed_generation: int | None = None
     last_transition_time: AwareDatetime
-
-
-class BindingStatus(_Wire):
-    conditions: list[Condition] = Field(default_factory=list)
-
-
-class BindingSpec(_Wire):
-    subject: ServiceAccountRef
-    policy_sets: list[str] = Field(description="PolicySet names in the binding's namespace, in grant order.")
-    expires_at: AwareDatetime | None = Field(
-        default=None, description="Shown to operators only: the Policy Controller deletes the binding at this instant."
-    )
-
-
-class PolicyBinding(_Wire):
-    metadata: ObjectMeta
-    spec: BindingSpec
-    status: BindingStatus = Field(default_factory=BindingStatus)
 
 
 @dataclass(frozen=True)
