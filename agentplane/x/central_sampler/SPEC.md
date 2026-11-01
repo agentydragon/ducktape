@@ -64,7 +64,8 @@ and the model is notified before later operations can use the fresh session.
 
 An authenticated Gateway may report `ExecutionEnvironmentFailure` after it verifies the exact
 Sandbox UID and refuses a request before forwarding it. Scoped Runtime may report a local
-readiness refusal before native dispatch. The catchable error exposes `environment_state` and
+readiness refusal before native dispatch. The catchable error exposes `environment_state` as the
+proto enum name (for example, `"STATE_SUSPENDED"`) and
 `request_outcome: "not_dispatched"`; it never wakes, resumes, provisions or retries the operation.
 The outer `remote_outcome` is `not_dispatched` for a refused process start. If a refused
 `process/read` was observing a process started earlier, that process outcome is `unknown`: the

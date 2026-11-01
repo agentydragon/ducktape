@@ -465,7 +465,7 @@ func executionFailureMessage(facts map[string]any) (string, error) {
 func executionEnvironmentStateFromError(err error) string {
 	var environment *executorEnvironmentFailureError
 	if errors.As(err, &environment) {
-		return executionEnvironmentStateName(environment.state)
+		return environment.state.String()
 	}
 	return ""
 }

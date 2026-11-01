@@ -738,7 +738,7 @@ type executorEnvironmentFailureError struct {
 }
 
 func (e *executorEnvironmentFailureError) Error() string {
-	message := fmt.Sprintf("execution environment is %s; typed execution %s was not admitted", executionEnvironmentStateName(e.state), e.method)
+	message := fmt.Sprintf("execution environment is %s; typed execution %s was not admitted", e.state.String(), e.method)
 	if e.remoteOutcome == "unknown" {
 		return message + "; the existing process outcome remains unknown and was not replayed"
 	}
@@ -751,7 +751,7 @@ func (e *executorEnvironmentFailureError) intentEvidence() map[string]any {
 	result := map[string]any{
 		"status": IntentResultAbandoned, "remote_outcome": NestedNotDispatched, "request_outcome": NestedNotDispatched,
 		"automatic_replay": false, "method": e.method,
-		"environment_state": executionEnvironmentStateName(e.state), "transport_error": e.cause.Error(),
+		"environment_state": e.state.String(), "transport_error": e.cause.Error(),
 	}
 	if e.intentID != "" {
 		result["intent_id"] = e.intentID
@@ -808,23 +808,6 @@ func executionEnvironmentFailureDetail(err error) (*executorpb.ExecutionEnvironm
 		}
 	}
 	return nil, false
-}
-
-func executionEnvironmentStateName(state executorpb.ExecutionEnvironmentFailure_State) string {
-	switch state {
-	case executorpb.ExecutionEnvironmentFailure_STATE_SUSPENDED:
-		return "suspended"
-	case executorpb.ExecutionEnvironmentFailure_STATE_STARTING:
-		return "starting"
-	case executorpb.ExecutionEnvironmentFailure_STATE_NOT_READY:
-		return "not_ready"
-	case executorpb.ExecutionEnvironmentFailure_STATE_QUIESCING:
-		return "quiescing"
-	case executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE:
-		return "control_route_unavailable"
-	default:
-		return "unknown"
-	}
 }
 
 func (e *executorTransportError) Error() string {

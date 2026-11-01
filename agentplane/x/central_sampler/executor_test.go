@@ -147,7 +147,7 @@ func TestOpenSessionEnvironmentFailureIsCatchableAndNotDispatched(t *testing.T) 
 	if err := json.Unmarshal([]byte(outcome.Error()), &message); err != nil {
 		t.Fatalf("environment failure is not structured JSON: %v: %s", err, outcome.Error())
 	}
-	if message["environment_state"] != "suspended" || message["remote_outcome"] != "not_dispatched" ||
+	if message["environment_state"] != "STATE_SUSPENDED" || message["remote_outcome"] != "not_dispatched" ||
 		message["request_outcome"] != "not_dispatched" || message["automatic_replay"] != false ||
 		message["method"] != "process/start" {
 		t.Fatalf("environment failure facts=%+v", message)
@@ -189,7 +189,7 @@ func TestTypedStartEnvironmentFailureIsNotReplayed(t *testing.T) {
 	if err := json.Unmarshal([]byte(outcome.Error()), &message); err != nil {
 		t.Fatalf("environment failure is not structured JSON: %v: %s", err, outcome.Error())
 	}
-	if message["environment_state"] != "not_ready" || message["remote_outcome"] != "not_dispatched" ||
+	if message["environment_state"] != "STATE_NOT_READY" || message["remote_outcome"] != "not_dispatched" ||
 		message["request_outcome"] != "not_dispatched" || message["automatic_replay"] != false || message["intent_id"] == "" {
 		t.Fatalf("environment failure facts=%+v", message)
 	}
@@ -236,7 +236,7 @@ func TestTypedReadEnvironmentFailurePreservesUnknownProcessEvidence(t *testing.T
 	if err := json.Unmarshal([]byte(outcome.Error()), &message); err != nil {
 		t.Fatalf("environment failure is not structured JSON: %v: %s", err, outcome.Error())
 	}
-	if message.EnvironmentState != "suspended" || message.RemoteOutcome != "unknown" || message.RequestOutcome != "not_dispatched" ||
+	if message.EnvironmentState != "STATE_SUSPENDED" || message.RemoteOutcome != "unknown" || message.RequestOutcome != "not_dispatched" ||
 		message.AutomaticReplay || message.Method != "process/read" || message.ProcessID != "suspended-process" ||
 		message.ExecutionSessionID != "retained-executor" || message.AfterSeq == nil || *message.AfterSeq != 8 ||
 		message.ObservedOutput.Text != "output before suspension\n" {
@@ -262,7 +262,7 @@ func TestTypedReadEnvironmentFailurePreservesUnknownProcessEvidence(t *testing.T
 		t.Fatal(err)
 	}
 	if evidence["remote_outcome"] != "not_dispatched" || evidence["request_outcome"] != "not_dispatched" ||
-		evidence["environment_state"] != "suspended" || evidence["after_seq"] != float64(8) ||
+		evidence["environment_state"] != "STATE_SUSPENDED" || evidence["after_seq"] != float64(8) ||
 		evidence["buffered_output_base64"] != base64.StdEncoding.EncodeToString([]byte("output before suspension\n")) {
 		t.Fatalf("nested read intent did not retain pre-dispatch evidence: %+v", evidence)
 	}
@@ -294,7 +294,7 @@ func TestTypedWriteEnvironmentFailureDoesNotReplayInput(t *testing.T) {
 	if err := json.Unmarshal([]byte(outcome.Error()), &message); err != nil {
 		t.Fatalf("environment failure is not structured JSON: %v: %s", err, outcome.Error())
 	}
-	if message["environment_state"] != "control_route_unavailable" || message["remote_outcome"] != "not_dispatched" ||
+	if message["environment_state"] != "STATE_CONTROL_ROUTE_UNAVAILABLE" || message["remote_outcome"] != "not_dispatched" ||
 		message["request_outcome"] != "not_dispatched" || message["automatic_replay"] != false || message["method"] != "process/write" {
 		t.Fatalf("write refusal facts=%+v", message)
 	}
