@@ -250,6 +250,8 @@ async def test_parent_session_delegates_through_the_action_cli(
     workspace = current["workspace"]
     assert workspace["availability"] == "AVAILABILITY_CONFIGURED"
     configuration = one(choice for choice in current["configurations"] if choice["harness"] == "HARNESS_CODEX")
+    reasoning_effort = "low"
+    assert reasoning_effort in configuration["reasoning_efforts"]
 
     session_id = str(uuid4())
     opened = await _submit(
@@ -263,6 +265,7 @@ async def test_parent_session_delegates_through_the_action_cli(
             "spec": {
                 "harness": configuration["harness"],
                 "model": configuration["model"],
+                "reasoning_effort": reasoning_effort,
                 "cwd": f"{workspace['root'].rstrip('/')}/parent-delegated-{uuid4()}",
             },
             "additional_instructions": guidance_marker,
@@ -326,7 +329,7 @@ async def test_parent_session_delegates_through_the_action_cli(
             caller_name=caller_name,
             caller_uid=caller_uid,
         )
-        assert observation["observation"]["kind"] == "turn_completed"
+        assert observation["observation"]["kind"] == "turn_completed", observation["observation"]
         assert observation["observation"]["turn"]["final_assistant_message"] == answer
         expected_answers.append(answer)
 
