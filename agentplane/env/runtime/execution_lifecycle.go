@@ -552,7 +552,6 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 					h.r.executionServer = nil
 					h.r.executionRecovering = true
 				}
-				h.r.idleSince = nil
 				h.r.changedLocked()
 				h.r.mu.Unlock()
 				if input.UID == event.uid && input.Demand == event.demand && validEpoch {
@@ -579,7 +578,6 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			}
 			h.r.executionServer = nil
 			h.r.executionRecovering = true
-			h.r.idleSince = nil
 			h.r.changedLocked()
 			h.r.mu.Unlock()
 			h.stop(event.handle, event.uid)
