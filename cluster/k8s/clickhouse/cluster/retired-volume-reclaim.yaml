@@ -1,5 +1,4 @@
-# Temporary, UID-pinned handoff of the retired 0-0 PVC to Flux. The subsequent
-# cleanup removes the PVC from this Kustomization after this guard is observed.
+# Keep the UID guard while Flux prunes the retired PVC and CSI deletes its PV.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -28,25 +27,3 @@ spec:
     namespaceSelector:
       matchLabels:
         kubernetes.io/metadata.name: clickhouse
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: pvc-05bb6184-88de-4de2-a74c-abe6c9da5663
-  uid: fb4d1fb2-50a5-4596-8fa9-6f4103442ebf
-  annotations:
-    kustomize.toolkit.fluxcd.io/ssa: Merge
-    kustomize.toolkit.fluxcd.io/prune: disabled
-spec:
-  persistentVolumeReclaimPolicy: Delete
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: data-piraeus-hdd-chi-clickhouse-default-0-0-0
-  namespace: clickhouse
-  uid: 05bb6184-88de-4de2-a74c-abe6c9da5663
-  annotations:
-    kustomize.toolkit.fluxcd.io/ssa: Merge
-spec:
-  volumeName: pvc-05bb6184-88de-4de2-a74c-abe6c9da5663
