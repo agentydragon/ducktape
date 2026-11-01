@@ -11,7 +11,7 @@ import (
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	discovery "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/discovery"
 	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	corev1 "k8s.io/api/core/v1"
