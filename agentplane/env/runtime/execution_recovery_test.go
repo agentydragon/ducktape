@@ -24,6 +24,7 @@ type recoveryTestHandle struct {
 func (h *recoveryTestHandle) Executor() executorpb.ExecutorServer {
 	return &executorpb.UnimplementedExecutorServer{}
 }
+
 func (h *recoveryTestHandle) StopAndFence(context.Context) error {
 	h.mu.Lock()
 	h.expected = true

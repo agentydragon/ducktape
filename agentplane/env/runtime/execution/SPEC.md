@@ -14,8 +14,8 @@ only after a backend readiness probe and a successful health check on that socke
 on that socket, where filesystem access grants the environment's execution authority. Every
 call carries the destination, incarnation and attributing Session; a foreign destination or stale
 incarnation is rejected before native dispatch. The service cannot adopt another environment or
-advance a Runner watch epoch. Harness Host supplies the current Session and incarnation context over
-its private connection; Environment Runtime owns service health and lifecycle fencing. Gateway
+advance a Runner watch epoch. Callers supply Session and incarnation context with each request;
+Environment Runtime owns service health and lifecycle fencing. Gateway
 retains remote authorization and routing. When the expected incarnation is stale, Gateway or
 Environment Runtime may attach the typed `SandboxIncarnationChanged` status detail only after
 verifying the same destination Sandbox UID and observing a nonempty current incarnation. Invalid or
