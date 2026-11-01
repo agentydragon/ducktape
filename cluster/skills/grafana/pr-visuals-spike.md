@@ -1,6 +1,6 @@
 # Grafana dashboard PR visuals spike
 
-`//cluster/skills/grafana:piraeus_dashboard_visual_test` renders the actual
+`//cluster/cdk8s/monitoring/dashboards:piraeus_dashboard_visual_test` renders the actual
 Piraeus dashboard with Grafana 12.4.1 and a Prometheus TSDB populated with fixed,
 synthetic samples. It uses an isolated Docker network, a fixed clock and a pinned
 browser; it does not read a cluster Secret or contact production Grafana. The
@@ -12,15 +12,16 @@ failed or interrupted runs cannot publish a partial screenshot set.
 Run it on the remote Docker-capable executor:
 
 ```sh
-bbr test //cluster/skills/grafana:piraeus_dashboard_visual_test
+bbr test //cluster/cdk8s/monitoring/dashboards:piraeus_dashboard_visual_test
 ```
 
 `grafana_dashboard_visual_test` in `visual_test.bzl` takes a dashboard file,
 a synthetic metrics Python library, and a Python test that owns the scenarios and
 screenshots. It supplies the shared isolated service and browser dependencies,
 the Docker requirement, the `visual` tag, and the dashboard's runfile path in
-`GRAFANA_DASHBOARD_RLOCATION`. The Piraeus target is the first example; the
-shared service currently supports one Prometheus datasource.
+`GRAFANA_DASHBOARD_RLOCATION`. The Piraeus target, scenario, and synthetic
+fixture live beside the dashboard JSON; the shared service currently supports one
+Prometheus datasource.
 
 The synthetic fixture covers several nodes, SSD and HDD pools, per-copy metrics,
 and PVC usage. This is a rendering and representative-query check, not proof

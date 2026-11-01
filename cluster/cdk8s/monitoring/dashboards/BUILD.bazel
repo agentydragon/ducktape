@@ -1,0 +1,32 @@
+# gazelle:ignore
+
+load("//cluster/skills/grafana:visual_test.bzl", "grafana_dashboard_visual_test")
+load("//devinfra/python:defs.bzl", "py_library")
+
+exports_files(
+    ["home-network-overview.json"],
+    visibility = ["//cluster/cdk8s/monitoring:__pkg__"],
+)
+
+filegroup(
+    name = "dashboards",
+    srcs = glob(["*.json"]),
+    visibility = [
+        "//cluster/cdk8s/monitoring:__pkg__",
+        "//cluster/skills/grafana:__pkg__",
+    ],
+)
+
+py_library(
+    name = "piraeus_metrics",
+    testonly = True,
+    srcs = ["piraeus_metrics.py"],
+    deps = ["//util/testing:frontend_visual"],
+)
+
+grafana_dashboard_visual_test(
+    name = "piraeus_dashboard_visual_test",
+    src = "test_piraeus_dashboard_visual.py",
+    dashboard = ":piraeus-storage.json",
+    fixture = ":piraeus_metrics",
+)

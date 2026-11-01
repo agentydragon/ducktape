@@ -11,7 +11,7 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Response, async_playwright, expect
 
-from cluster.skills.grafana import piraeus_metrics
+from cluster.cdk8s.monitoring.dashboards import piraeus_metrics
 from cluster.skills.grafana.visual_harness import grafana_dashboard, record_stage
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import FROZEN_NOW_MS, deterministic_browser_context

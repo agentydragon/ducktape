@@ -2,7 +2,6 @@
 
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//skills:defs.bzl", "skill_package")
-load(":visual_test.bzl", "grafana_dashboard_visual_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -11,7 +10,7 @@ py_binary(
     srcs = ["verify_dashboard.py"],
     data = [
         "//cluster:generated/monitoring/grafana-instance/grafana-instance.k8s.yaml",
-        "//cluster/cdk8s/monitoring:dashboards",
+        "//cluster/cdk8s/monitoring/dashboards",
         "@chrome_headless_shell//:executable",
     ],
     env = {
@@ -55,20 +54,6 @@ py_library(
         "@pypi//httpx",
         "@pypi//testcontainers",
     ],
-)
-
-py_library(
-    name = "piraeus_metrics",
-    testonly = True,
-    srcs = ["piraeus_metrics.py"],
-    deps = ["//util/testing:frontend_visual"],
-)
-
-grafana_dashboard_visual_test(
-    name = "piraeus_dashboard_visual_test",
-    src = "test_piraeus_dashboard_visual.py",
-    dashboard = "//cluster/cdk8s/monitoring:piraeus_dashboard",
-    fixture = ":piraeus_metrics",
 )
 
 skill_package(
