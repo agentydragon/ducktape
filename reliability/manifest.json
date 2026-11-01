@@ -1,7 +1,12 @@
 {
-  "source_devel_commit": "49475cae74abd6a669879908f63c04fa78f41242",
-  "window_start_utc": "2026-10-23T22:10:00Z",
-  "window_end_utc": "2026-10-30T22:10:00Z",
-  "published_at_utc": "2026-10-30T23:27:37.583464+00:00",
-  "attribution": "not collected"
+  "source_devel_commit": "de5f671002f516e952c3dfafcbf06659a4bc731b",
+  "window_start_utc": "2026-10-30T22:10:00Z",
+  "window_end_utc": "2026-11-01T21:45:00Z",
+  "published_at_utc": "2026-11-01T22:13:41.565804+00:00",
+  "attribution": "not collected",
+  "previous_report_branch_commit": "a7aba03c0c745de172872fda1393303cbd55dd70",
+  "report_html_sha256": "62fec8f56a414138dcdd27a7883c18045fc01845b43ef81d97ad5b463c88f4a9",
+  "evidence_sha256": "731f0079fdde9b9a23b562a32b36bf88e991c03e4b613c21b41a963542ae65d0",
+  "visual_validation_invocation": "0ab77479-9c78-4b32-afbe-fd2e35f132d5",
+  "sampling_design": "Target tracker and merged-PR census since previous report; separate shorter Actions job-attempt subset; selected physical failure/retry examples."
 }
