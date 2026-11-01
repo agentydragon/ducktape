@@ -86,6 +86,13 @@ errors remain failures, and incomplete cleanup retains ownership. Controllers st
 journals close after workers, and the Host owner releases last. Runtime retains the environment owner
 until its Host and Execution domains are fenced.
 
+Runtime's own COSI engine also runs its Close aggregate alongside bootstrap and process controllers.
+The aggregate observes a Closing desired generation and advances through bound Host native-stop,
+Execution fence, optional Host flush, Host join and bootstrap settlement. Blocking waits and stops run
+in coordinator-owned one-shot workers, leaving the COSI event loop free. Its ready-to-join status
+allows Runtime to stop and join that engine, join its workers, fence the Pod PID namespace and release
+the environment owner. Failed or uncertain stages retain that owner and are not replayed.
+
 ## Process domains
 
 Production Pod Runtime is PID1; the embedded Host shares its PID1 reaper. Native helpers can occupy

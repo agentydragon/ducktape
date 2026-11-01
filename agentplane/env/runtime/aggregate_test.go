@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -16,6 +20,86 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
+
+type failingCloseHostLifetime struct {
+	hostLifetime
+	stops atomic.Int32
+}
+
+type uncertainCloseExecution struct{ fences atomic.Int32 }
+
+func (*uncertainCloseExecution) Executor() executorpb.ExecutorServer { return nil }
+func (e *uncertainCloseExecution) StopAndFence(context.Context) error {
+	e.fences.Add(1)
+	return errors.New("uncertain Execution backend fence")
+}
+
+func TestRuntimeCloseUncertainExecutionFenceRetainsOwner(t *testing.T) {
+	proxy := modelConfigServer(t)
+	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
+	config.expectCloseError = true
+	r := newLifecycleRunner(t, config)
+	execution := &uncertainCloseExecution{}
+	r.mu.Lock()
+	r.executionOwner = execution
+	r.mu.Unlock()
+
+	for range 2 {
+		ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+		err := r.Close(ctx)
+		cancel()
+		if err == nil || !strings.Contains(err.Error(), "uncertain Execution backend fence") {
+			t.Fatalf("Close = %v, want uncertain fence error", err)
+		}
+	}
+	if got := execution.fences.Load(); got != 1 {
+		t.Fatalf("Execution fence attempts = %d, want one", got)
+	}
+	status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
+	if err != nil || !found || status.Stage != lifecycle.RuntimeCloseFailed {
+		t.Fatalf("Close aggregate = %+v, found=%t, err=%v", status, found, err)
+	}
+	if owner, err := openEnvironmentOwner(config.StateDir); err == nil {
+		_ = owner.Close()
+		t.Fatal("uncertain Execution fence released environment owner")
+	}
+}
+
+func (h *failingCloseHostLifetime) Stop(ctx context.Context) error {
+	h.stops.Add(1)
+	return errors.Join(h.hostLifetime.Stop(ctx), errors.New("injected Host join failure"))
+}
+
+func TestRuntimeCloseFailureRetainsOwnerAndDoesNotRetryHostStop(t *testing.T) {
+	proxy := modelConfigServer(t)
+	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
+	config.expectCloseError = true
+	r := newLifecycleRunner(t, config)
+	host := &failingCloseHostLifetime{hostLifetime: r.hostLifetime}
+	r.mu.Lock()
+	r.hostLifetime = host
+	r.mu.Unlock()
+
+	for range 2 {
+		ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+		err := r.Close(ctx)
+		cancel()
+		if err == nil || !strings.Contains(err.Error(), "injected Host join failure") {
+			t.Fatalf("Close = %v, want exact Host join failure", err)
+		}
+	}
+	if got := host.stops.Load(); got != 1 {
+		t.Fatalf("Host stop calls = %d, want one", got)
+	}
+	status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
+	if err != nil || !found || status.Stage != lifecycle.RuntimeCloseFailed || !strings.Contains(status.Error, "injected Host join failure") {
+		t.Fatalf("Close aggregate = %+v, found=%t, err=%v", status, found, err)
+	}
+	if owner, err := openEnvironmentOwner(config.StateDir); err == nil {
+		_ = owner.Close()
+		t.Fatal("failed Host join released environment owner")
+	}
+}
 
 func TestFreshSessionAdmissionInvalidatesIdleToken(t *testing.T) {
 	proxy := modelConfigServer(t)
