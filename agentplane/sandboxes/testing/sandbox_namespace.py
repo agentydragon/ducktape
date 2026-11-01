@@ -64,7 +64,7 @@ class SandboxNamespace:
             "SandboxTemplate",
             TEMPLATE,
             {
-                "pod": {"spec": {"containers": [{"name": "runner", "image": RUNNER_IMAGE}]}},
+                "pod": {"spec": {"containers": [{"name": "environment-runtime", "image": RUNNER_IMAGE}]}},
                 "stateVolume": {"name": "state", "claim": {}, "layout": {"type": "DirectoryTree"}},
             },
         )
@@ -179,7 +179,7 @@ class SandboxNamespace:
                     ],
                 ),
                 spec=k8s_client.V1PodSpec(
-                    containers=[k8s_client.V1Container(name="runner", image=RUNNER_IMAGE)],
+                    containers=[k8s_client.V1Container(name="environment-runtime", image=RUNNER_IMAGE)],
                     node_name="test-node",
                     service_account_name=None if owner is None else owner["metadata"]["name"],
                 ),
@@ -200,7 +200,7 @@ class SandboxNamespace:
                     "conditions": [{"type": "Ready", "status": "True" if ready else "False"}],
                     "containerStatuses": [
                         {
-                            "name": "runner",
+                            "name": "environment-runtime",
                             "image": RUNNER_IMAGE,
                             "imageID": "",
                             "ready": ready,

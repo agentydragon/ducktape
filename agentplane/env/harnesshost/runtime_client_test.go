@@ -11,9 +11,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -61,7 +61,7 @@ func TestHostRejectsStaleGenerationBeforeDurableAdmission(t *testing.T) {
 	if err := r.applyIntent(ctx, next); err != nil {
 		t.Fatal(err)
 	}
-	_, err := r.SubmitInput(bindingContext(ctx, first.Binding), &runnerservicepb.SubmitInputRequest{SessionId: "never-created", CommandId: "stale", Text: "must not run"})
+	_, err := r.SubmitInput(bindingContext(ctx, first.Binding), &environmentruntimepb.SubmitInputRequest{SessionId: "never-created", CommandId: "stale", Text: "must not run"})
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("stale admission returned %v", err)
 	}
@@ -82,7 +82,7 @@ func TestHostSealsOnlyAfterMatchingExecutionFence(t *testing.T) {
 	if err := r.applyIntent(ctx, first); err != nil {
 		t.Fatal(err)
 	}
-	record, err := retained.NewRecord(&runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: r.config.StateDir, Model: "test"}, "", nil)
+	record, err := retained.NewRecord(&sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: r.config.StateDir, Model: "test"}, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

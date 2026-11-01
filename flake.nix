@@ -417,9 +417,9 @@
       # One binding, because `system` is dynamic: Nix merges repeated *static* attribute paths but
       # rejects a repeated dynamic one, so a second `checks.${system}.…` is an eval error.
       checks.${system} = {
-        runner-ducktape-tools = import ./agentplane/env/images/ducktape_tools_check.nix {
+        environment-tools = import ./agentplane/env/images/ducktape_tools_check.nix {
           inherit pkgs;
-          tools = self.packages.${system}.runner-ducktape-tools;
+          tools = self.packages.${system}.environment-tools;
         };
 
         claude-code-permissions = import ./nix/home/tests/claude-code-permissions.nix {
@@ -587,8 +587,8 @@
         };
 
         # NixOS guest used by the KubeVirt Agentplane execution environment.
-        agentplane-runner-vm = mkNixos {
-          hostname = "agentplane-runner-vm";
+        agentplane-environment-vm = mkNixos {
+          hostname = "agentplane-environment-vm";
           username = "runner";
           hostModule = ./agentplane/env/images/vm.nix;
           # Keep the guest's repository tooling identical to the Pod runner's.

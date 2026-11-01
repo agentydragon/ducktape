@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
-	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
+	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"golang.org/x/sync/errgroup"
@@ -50,7 +50,7 @@ func exportSession(ctx context.Context, store *Store, sessionID, target string, 
 		}
 		callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		err = func() error {
-			call, err := ingresspb.NewRunnerIngressClient(channel).Push(callCtx)
+			call, err := ingresspb.NewSessionJournalIngressClient(channel).Push(callCtx)
 			if err != nil {
 				return err
 			}

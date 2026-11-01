@@ -24,7 +24,7 @@ async def test_fresh_workspace_storage_survives_replacement(
 
 @pytest.fixture
 def executor() -> Executor:
-    return Executor(template="runner-vm", cwd="/state/workspaces/accept")
+    return Executor(template="environment-vm", cwd="/state/workspaces/accept")
 
 
 @pytest.fixture

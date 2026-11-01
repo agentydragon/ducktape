@@ -17,7 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
@@ -61,7 +61,7 @@ func withTestSessionFacilities(t *testing.T, config Config) Config {
 	config.EnsureWorkspace = func(_ context.Context, cwd string) (string, error) {
 		return workspace.Resolve(cwd, config.WorkspaceRoot)
 	}
-	config.ResolveModelConfig = func(context.Context, runnerpb.Harness, string) (*int, error) { return nil, nil }
+	config.ResolveModelConfig = func(context.Context, sessionpb.Harness, string) (*int, error) { return nil, nil }
 	return config
 }
 
@@ -73,8 +73,8 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	record, err := retained.NewRecord(&runnerpb.SessionSpec{
-		Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: root, Model: "test-model",
+	record, err := retained.NewRecord(&sessionpb.SessionSpec{
+		Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: root, Model: "test-model",
 	}, "echo setup", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +85,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	resources := state.WrapCore(namespaced.NewState(inmem.Build))
 	publishErrors := make(chan error, 16)
 	var publicationMu sync.Mutex
-	publications := map[string][]runnerpb.SetupState{}
+	publications := map[string][]sessionpb.SetupState{}
 	m, err := NewManager(withTestSessionFacilities(t, Config{
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root),
 		Destination: func(string) string { return "test-destination" },
@@ -147,18 +147,18 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 		}
 	}
 	publicationMu.Lock()
-	retainedPublications := append([]runnerpb.SetupState(nil), publications["one-session"]...)
+	retainedPublications := append([]sessionpb.SetupState(nil), publications["one-session"]...)
 	publicationMu.Unlock()
 	if len(retainedPublications) == 0 {
 		t.Fatal("retained session was never published")
 	}
 	for _, setup := range retainedPublications {
-		if setup != runnerpb.SetupState_SETUP_STATE_INTERRUPTED {
+		if setup != sessionpb.SetupState_SETUP_STATE_INTERRUPTED {
 			t.Fatalf("retained setup was published before recovery: %v", retainedPublications)
 		}
 	}
 	input, found, err := ReadInput(ctx, resources, "one-session")
-	if err != nil || !found || input.Setup != runnerpb.SetupState_SETUP_STATE_INTERRUPTED {
+	if err != nil || !found || input.Setup != sessionpb.SetupState_SETUP_STATE_INTERRUPTED {
 		t.Fatalf("recovered setup was not published: %+v, found=%t, err=%v", input, found, err)
 	}
 	entries, err := loaded[0].journal.Since(ctx, 0, 10)
@@ -168,8 +168,8 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	if len(entries) != 1 || entries[0].GetEvent().GetSetupInterrupted() == nil {
 		t.Fatalf("durable setup recovery not recorded: %v", entries)
 	}
-	freshRecord, err := retained.NewRecord(&runnerpb.SessionSpec{
-		Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: root, Model: "test-model",
+	freshRecord, err := retained.NewRecord(&sessionpb.SessionSpec{
+		Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: root, Model: "test-model",
 	}, "echo fresh setup", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -205,7 +205,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 		t.Fatalf("competing retained load did not share the fresh Session owner: %+v, fresh=%p", result, fresh)
 	}
 	input, found, err = ReadInput(ctx, resources, "fresh-session")
-	if err != nil || !found || input.Setup != runnerpb.SetupState_SETUP_STATE_RUNNING {
+	if err != nil || !found || input.Setup != sessionpb.SetupState_SETUP_STATE_RUNNING {
 		t.Fatalf("fresh setup was not published as running: %+v, found=%t, err=%v", input, found, err)
 	}
 	waitResult := make(chan error, 1)
@@ -238,8 +238,8 @@ func TestReopenRetryClearsSealedAcknowledgementAfterJournalReopened(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	record, err := retained.NewRecord(&runnerpb.SessionSpec{
-		Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: root, Model: "test-model",
+	record, err := retained.NewRecord(&sessionpb.SessionSpec{
+		Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: root, Model: "test-model",
 	}, "echo retained setup", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -342,7 +342,7 @@ func TestReopenRetryClearsSealedAcknowledgementAfterJournalReopened(t *testing.T
 		}
 	}
 	input, found, err := ReadInput(ctx, resources, "reopen-session")
-	if err != nil || !found || input.Setup != runnerpb.SetupState_SETUP_STATE_INTERRUPTED {
+	if err != nil || !found || input.Setup != sessionpb.SetupState_SETUP_STATE_INTERRUPTED {
 		t.Fatalf("retained setup state = %+v, found=%t, err=%v", input, found, err)
 	}
 	if reopened != 1 || interrupted != 1 || s.journal.SealState() != nil {
@@ -368,8 +368,8 @@ func TestCodexExitBeforeProcessInstall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	record, err := retained.NewRecord(&runnerpb.SessionSpec{
-		Harness: runnerpb.Harness_HARNESS_CODEX, Cwd: root, Model: "test-model",
+	record, err := retained.NewRecord(&sessionpb.SessionSpec{
+		Harness: sessionpb.Harness_HARNESS_CODEX, Cwd: root, Model: "test-model",
 	}, "", nil)
 	if err != nil {
 		t.Fatal(err)

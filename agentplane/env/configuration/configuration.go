@@ -24,21 +24,21 @@ import (
 // Configuration is the file contract used by every Runner deployment. Sandbox
 // identity/bootstrap are supplied separately by the Sandbox Controller.
 type Configuration struct {
-	Version                     int                           `json:"version"`
-	SessionReconcileConcurrency *int                          `json:"session_reconcile_concurrency"`
-	StateDir                    string                        `json:"state_dir"`
-	WorkspaceRoot               *string                       `json:"workspace_root"`
-	InitializationCwd           string                        `json:"initialization_cwd"`
-	Control                     RunnerControlConfiguration    `json:"control"`
-	Ingress                     Endpoint                      `json:"ingress"`
-	PlatformInstructions        string                        `json:"platform_instructions"`
-	RunnerEnvironment           EnvironmentVariables          `json:"runner_environment"`
-	HarnessEnvironment          *EnvironmentVariables         `json:"harness_environment"`
-	Claude                      *HarnessConfiguration         `json:"claude"`
-	Codex                       *HarnessConfiguration         `json:"codex"`
-	Environment                 json.RawMessage               `json:"environment"`
-	CodexReadiness              *CodexReadinessConfiguration  `json:"codex_readiness"`
-	DebugCheckpoint             *DebugCheckpointConfiguration `json:"debug_checkpoint"`
+	Version                       int                                    `json:"version"`
+	SessionReconcileConcurrency   *int                                   `json:"session_reconcile_concurrency"`
+	StateDir                      string                                 `json:"state_dir"`
+	WorkspaceRoot                 *string                                `json:"workspace_root"`
+	InitializationCwd             string                                 `json:"initialization_cwd"`
+	Control                       EnvironmentRuntimeControlConfiguration `json:"control"`
+	Ingress                       Endpoint                               `json:"ingress"`
+	PlatformInstructions          string                                 `json:"platform_instructions"`
+	EnvironmentRuntimeEnvironment EnvironmentVariables                   `json:"environment_runtime_environment"`
+	HarnessEnvironment            *EnvironmentVariables                  `json:"harness_environment"`
+	Claude                        *HarnessConfiguration                  `json:"claude"`
+	Codex                         *HarnessConfiguration                  `json:"codex"`
+	Environment                   json.RawMessage                        `json:"environment"`
+	CodexReadiness                *CodexReadinessConfiguration           `json:"codex_readiness"`
+	DebugCheckpoint               *DebugCheckpointConfiguration          `json:"debug_checkpoint"`
 }
 
 const DefaultSessionReconcileConcurrency = 16
@@ -316,7 +316,7 @@ func load(path, launchPath string) (Resolved, Endpoint, map[string]string, error
 	return config, file.Ingress, environment, err
 }
 
-func validateRunnerControl(control RunnerControlConfiguration) error {
+func validateEnvironmentRuntimeControl(control EnvironmentRuntimeControlConfiguration) error {
 	if err := control.Security.Validate(); err != nil {
 		return fmt.Errorf("control.security: %w", err)
 	}
@@ -339,7 +339,7 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 	if !filepath.IsAbs(f.StateDir) || !filepath.IsAbs(f.InitializationCwd) || (f.WorkspaceRoot != nil && !filepath.IsAbs(*f.WorkspaceRoot)) {
 		return Resolved{}, nil, errors.New("state, initialization and configured workspace paths must be absolute")
 	}
-	if err := validateRunnerControl(f.Control); err != nil {
+	if err := validateEnvironmentRuntimeControl(f.Control); err != nil {
 		return Resolved{}, nil, err
 	}
 	if f.Ingress.Target == "" || f.Ingress.Bearer == "" {
@@ -360,7 +360,7 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 		key, value, _ := strings.Cut(entry, "=")
 		environ[key] = value
 	}
-	environment, err := f.RunnerEnvironment.resolve(environ)
+	environment, err := f.EnvironmentRuntimeEnvironment.resolve(environ)
 	if err != nil {
 		return Resolved{}, nil, err
 	}

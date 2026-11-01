@@ -10,8 +10,8 @@ import (
 	"time"
 
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -199,7 +199,7 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	}, hub)
 
 	opened, err := client.OpenSession(authorityContext(t, "owner-account"), &dispatcherpb.OpenSessionRequest{
-		SessionId: "authority-owned-session", Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Spec: &runnerpb.SessionSpec{},
+		SessionId: "authority-owned-session", Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Spec: &sessionpb.SessionSpec{},
 	})
 	if err != nil {
 		t.Fatalf("owner OpenSession: %v", err)
@@ -232,7 +232,7 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 		t.Fatalf("foreign SubmitInput = %v, want PermissionDenied", err)
 	}
 
-	legacy, err := store.OpenSession(ctx, "authority-legacy-session", caller.Name, authoritySandboxUID, &runnerpb.SessionSpec{}, nil, nil)
+	legacy, err := store.OpenSession(ctx, "authority-legacy-session", caller.Name, authoritySandboxUID, &sessionpb.SessionSpec{}, nil, nil)
 	if err != nil || legacy.ExecutionPrincipal != nil {
 		t.Fatalf("seed legacy opening: %#v %v", legacy, err)
 	}
@@ -359,7 +359,7 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	}
 
 	const sessionID = "delegated-owned-session"
-	spec := &runnerpb.SessionSpec{}
+	spec := &sessionpb.SessionSpec{}
 	directOpening, err := client.OpenSession(authorityContext(t, "effective-token"), &dispatcherpb.OpenSessionRequest{
 		SessionId: sessionID, Sandbox: snapshot.Name, SandboxUid: snapshot.UID, Spec: spec,
 	})
@@ -429,7 +429,7 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	// The Action actor can use its Pod-bound backend admission to access legacy rows with no
 	// retained owner. That authority must not pass through to the effective caller.
 	actorLegacy, err := store.OpenSession(ctx, "delegated-actor-legacy-session", snapshot.Name, snapshot.UID,
-		&runnerpb.SessionSpec{}, nil, nil)
+		&sessionpb.SessionSpec{}, nil, nil)
 	if err != nil {
 		t.Fatal("seed actor-only legacy opening:", err)
 	}
@@ -461,7 +461,7 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	foreignID := "delegated-foreign-session"
 	foreignIdentity := ServiceAccountIdentity{Account: Account(foreign), UID: "foreign-caller-uid"}
 	foreignOpening, err := store.OpenSessionWithIdentity(ctx, foreignID, snapshot.Name, snapshot.UID,
-		&runnerpb.SessionSpec{}, nil, nil, &foreignIdentity, &foreignIdentity, nil)
+		&sessionpb.SessionSpec{}, nil, nil, &foreignIdentity, &foreignIdentity, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -563,8 +563,18 @@ func TestPendingExecutionUIDBindsOnceAndReplacementStopsRunnerDelivery(t *testin
 	store := testStore(t, 3)
 	snapshot := SandboxSnapshot{Name: caller.Name, Namespace: caller.Namespace, UID: pendingSandboxUID}
 	pending := ServiceAccountIdentity{Account: Account(caller)}
-	opening, err := store.OpenSessionWithIdentity(ctx, "authority-pending-session", snapshot.Name, snapshot.UID,
-		&runnerpb.SessionSpec{}, nil, nil, &pending, &ServiceAccountIdentity{Account: Account(caller), UID: "creator-uid"}, nil)
+	opening, err := store.OpenSessionWithIdentity(
+		ctx,
+		"authority-pending-session",
+		snapshot.Name,
+		snapshot.UID,
+		&sessionpb.SessionSpec{},
+		nil,
+		nil,
+		&pending,
+		&ServiceAccountIdentity{Account: Account(caller), UID: "creator-uid"},
+		nil,
+	)
 	if err != nil || opening.ExecutionPrincipal == nil || opening.ExecutionPrincipal.UID != "" {
 		t.Fatalf("seed pending opening: %#v %v", opening, err)
 	}

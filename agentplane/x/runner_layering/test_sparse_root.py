@@ -13,10 +13,10 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from agentplane.proto import event_pb2, runner_pb2
-from agentplane.runner.testing import events, launches
-from agentplane.runner.testing.driver import RunnerDriver
-from agentplane.runner.testing.process_fixtures import RunnerProcess
+from agentplane.env.e2e.testing import events, launches
+from agentplane.env.e2e.testing.driver import RunnerDriver
+from agentplane.env.e2e.testing.process_fixtures import RunnerProcess
+from agentplane.proto import event_pb2, session_pb2
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
@@ -37,17 +37,17 @@ def _extract_oci_rootfs(rloc_file: str, destination: Path) -> None:
             archive.extractall(destination, filter="data")
 
 
-@pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=["codex"])
+@pytest.mark.parametrize("harness", [session_pb2.HARNESS_CODEX], ids=["codex"])
 async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     model: ScriptedModel,
-    spec: runner_pb2.SessionSpec,
+    spec: session_pb2.SessionSpec,
     start_runner: Callable[..., Awaitable[RunnerProcess]],
     driver: RunnerDriver,
     tmp_path: Path,
 ) -> None:
     """Pinned Codex runs a workload-image tool and keeps workspace/session state across restart."""
-    child_spec = runner_pb2.SessionSpec()
+    child_spec = session_pb2.SessionSpec()
     child_spec.CopyFrom(spec)
     child_spec.cwd = "/workspace"
     child_root = tmp_path / "child-root"

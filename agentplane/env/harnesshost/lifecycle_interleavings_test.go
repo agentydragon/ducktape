@@ -10,7 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
@@ -66,7 +66,7 @@ func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 	finishAdmission := holdJournalBatch(t, ctx, s)
 	admitted := make(chan error, 1)
 	go func() {
-		_, err := r.SubmitInput(hostContext(r, ctx), &runnerservicepb.SubmitInputRequest{
+		_, err := r.SubmitInput(hostContext(r, ctx), &environmentruntimepb.SubmitInputRequest{
 			SessionId: s.ID(), CommandId: "held-input", Text: "input",
 		})
 		admitted <- err

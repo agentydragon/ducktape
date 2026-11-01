@@ -27,7 +27,7 @@ from pydantic import BaseModel
 
 from agentplane.app.testing.client import Client
 from agentplane.notification_service import notifications_pb2
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests import send_grant
 from agentplane.system_tests.agent import Agent
@@ -92,7 +92,7 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
     client: Client,
     dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:
@@ -175,5 +175,5 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
     assert followed.acknowledged, f"the recipient acknowledged its inbox through the message: {followed}"
 
 
-# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf

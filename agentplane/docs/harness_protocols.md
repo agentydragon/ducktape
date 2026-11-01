@@ -119,7 +119,7 @@ findings in the [native driver notes](../native/docs/claude_source_findings.md#q
 The [protocol roster](../native/docs/protocol_roster.md) and focused owner docs describe current
 coverage: [driver-hosted tools](driver_tools.md), [hooks](hooks.md), and
 [background work](background_work.md). The runner's transcript durability boundary is in its
-[specification](../runner/SPEC.md#what-the-harnesses-do-not-promise), which also records that native
+[Harness Host session protocol](../env/harnesshost/docs/session_protocol.md#what-the-harnesses-do-not-promise), which also records that native
 approval prompts and unsupported control requests do not block a turn.
 
 ### Resume

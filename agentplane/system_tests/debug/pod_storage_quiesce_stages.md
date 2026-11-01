@@ -45,7 +45,7 @@ boundary is the Gateway-to-Runner forwarding result and the corresponding Runner
 do not infer a component-level cause from status 14 alone.
 
 Focused checks passed on RBE in [invocation `b4d634d8`](https://app.buildbuddy.io/invocation/b4d634d8-7029-44ad-b34c-57312104460c):
-`//agentplane/runner/control:control_test`, `//agentplane/runner_gateway/gateway:gateway_test`,
+`//agentplane/env/e2e/control:control_test`, `//agentplane/runner_gateway/gateway:gateway_test`,
 `//agentplane/sandbox_controller:sandbox_controller_test`, and
 `//agentplane/system_tests/k3s:test_process_traces` (4/4). Pre-commit passed on the changed files.
 

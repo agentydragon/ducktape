@@ -4,7 +4,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.app.model_catalog import ModelCatalog
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.system_tests.ollama_catalog import ollama_cases
 
 # gazelle:include_dep @pypi//protobuf
@@ -25,9 +25,9 @@ def test_cases_use_offered_harnesses_and_prioritize_128k() -> None:
     small = "ollama/oai-chat/example-128k"
     catalog = _catalog({"HARNESS_CLAUDE": [large, small, "other/messages/example"], "HARNESS_CODEX": [small]})
     assert ollama_cases(catalog) == [
-        (runner_pb2.HARNESS_CLAUDE, small),
-        (runner_pb2.HARNESS_CODEX, small),
-        (runner_pb2.HARNESS_CLAUDE, large),
+        (session_pb2.HARNESS_CLAUDE, small),
+        (session_pb2.HARNESS_CODEX, small),
+        (session_pb2.HARNESS_CLAUDE, large),
     ]
 
 

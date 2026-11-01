@@ -27,8 +27,8 @@ import (
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -60,7 +60,7 @@ func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(r.config.StateDir, "sessions", "session-1", "journal.sqlite")); err != nil {
 		t.Fatalf("reservation journal was not created: %v", err)
 	}
-	statusResponse, err := r.GetStatus(context.Background(), &runnerpb.GetStatusRequest{})
+	statusResponse, err := r.GetStatus(context.Background(), &sessionpb.GetStatusRequest{})
 	if err != nil || len(statusResponse.Processes) != 0 {
 		t.Fatalf("open started a native process: status=%v err=%v", statusResponse, err)
 	}
@@ -177,8 +177,8 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 	const sessionID = "setup-restart"
 	marker := filepath.Join(t.TempDir(), "setup-ran")
 	setupScript := fmt.Sprintf("touch %s", shellQuote(marker))
-	spec := &runnerpb.SessionSpec{
-		Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: filepath.Join(workspace, "project"), Model: "test-model",
+	spec := &sessionpb.SessionSpec{
+		Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: filepath.Join(workspace, "project"), Model: "test-model",
 		Instructions: config.Launch.Instructions(sessionID, ""),
 	}
 	store, err := retained.NewStore(filepath.Join(config.StateDir, "sessions"))
@@ -215,7 +215,7 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 		t.Fatalf("open recovered Session without resupplying setup source: %v", err)
 	}
 	input, found, err := session.ReadInput(r.ctx, r.lifecycle.state, sessionID)
-	if err != nil || !found || input.Setup != runnerpb.SetupState_SETUP_STATE_INTERRUPTED || !input.SetupRequested {
+	if err != nil || !found || input.Setup != sessionpb.SetupState_SETUP_STATE_INTERRUPTED || !input.SetupRequested {
 		t.Fatalf("recovered setup input = %+v, found=%t, err=%v; want retained but interrupted", input, found, err)
 	}
 	if err := closeRunnerForTest(t, r); err != nil {
@@ -257,10 +257,10 @@ func TestInvalidInputAndStaleTurnNeverAdmitCommands(t *testing.T) {
 	if _, err := r.OpenSession(hostContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.SubmitInput(hostContext(r, context.Background()), &runnerservicepb.SubmitInputRequest{SessionId: "session-1", Text: "hello"}); status.Code(err) != codes.InvalidArgument {
+	if _, err := r.SubmitInput(hostContext(r, context.Background()), &environmentruntimepb.SubmitInputRequest{SessionId: "session-1", Text: "hello"}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("empty command ID error = %v, want InvalidArgument", err)
 	}
-	if _, err := r.InterruptTurn(hostContext(r, context.Background()), &runnerservicepb.InterruptTurnRequest{SessionId: "session-1", CommandId: "stale", TurnId: "not-active"}); status.Code(err) != codes.FailedPrecondition {
+	if _, err := r.InterruptTurn(hostContext(r, context.Background()), &environmentruntimepb.InterruptTurnRequest{SessionId: "session-1", CommandId: "stale", TurnId: "not-active"}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("stale interrupt error = %v, want FailedPrecondition", err)
 	}
 	session := r.sessions.Get("session-1")
@@ -279,7 +279,7 @@ func TestStartupFailureSettlesAdmissionAndReturnsToIdle(t *testing.T) {
 	if _, err := r.OpenSession(hostContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.SubmitInput(hostContext(r, context.Background()), &runnerservicepb.SubmitInputRequest{SessionId: "session-1", CommandId: "input-1", Text: "hello"}); err != nil {
+	if _, err := r.SubmitInput(hostContext(r, context.Background()), &environmentruntimepb.SubmitInputRequest{SessionId: "session-1", CommandId: "input-1", Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	session := r.sessions.Get("session-1")
@@ -304,7 +304,7 @@ func TestStartupFailureSettlesAdmissionAndReturnsToIdle(t *testing.T) {
 		case <-changed:
 		}
 	}
-	statusResponse, err := r.GetStatus(ctx, &runnerpb.GetStatusRequest{})
+	statusResponse, err := r.GetStatus(ctx, &sessionpb.GetStatusRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,7 +418,7 @@ func failedInitialOperationRunner(t *testing.T, failTeardown bool) (*Runner, *in
 	if _, err := r.OpenSession(hostContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.SubmitInput(hostContext(r, context.Background()), &runnerservicepb.SubmitInputRequest{SessionId: "session-1", CommandId: "input-1", Text: "hello"}); err != nil {
+	if _, err := r.SubmitInput(hostContext(r, context.Background()), &environmentruntimepb.SubmitInputRequest{SessionId: "session-1", CommandId: "input-1", Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
@@ -634,10 +634,10 @@ func newLifecycleRunnerWithState(t *testing.T, config Config, store state.State)
 	return r
 }
 
-func openLifecycleSession(sessionID, cwd string) *runnerservicepb.OpenSessionRequest {
-	return &runnerservicepb.OpenSessionRequest{
+func openLifecycleSession(sessionID, cwd string) *environmentruntimepb.OpenSessionRequest {
+	return &environmentruntimepb.OpenSessionRequest{
 		SessionId: sessionID,
-		Spec:      &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: cwd, Model: "test-model"},
+		Spec:      &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: cwd, Model: "test-model"},
 	}
 }
 

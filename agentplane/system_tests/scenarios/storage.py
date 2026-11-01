@@ -20,6 +20,7 @@ from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.k3s import guest_logs
 from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
+from agentplane.system_tests.sandbox import ENVIRONMENT_RUNTIME_CONTAINER
 from agentplane.system_tests.tracing import tracer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -256,12 +257,16 @@ async def fresh_workspace_storage_survives_replacement(
     template = name
     spec = copy.deepcopy(base["spec"])
     workspace_dir = "/state/workspaces" if vm else "/workspace"
-    # The guest creates .home before starting its runner on a fresh disk. The runner requires a
+    # The guest creates .home before starting Environment Runtime on a fresh disk. Runtime requires a
     # child of its workspace root; the mount root itself is forbidden.
     cwd = f"{workspace_dir}/.home" if vm else workspace_dir
     if not vm:
-        runner = next(container for container in spec["pod"]["spec"]["containers"] if container["name"] == "runner")
-        runner["volumeMounts"].append({"name": "workspace", "mountPath": workspace_dir})
+        environment_runtime = next(
+            container
+            for container in spec["pod"]["spec"]["containers"]
+            if container["name"] == ENVIRONMENT_RUNTIME_CONTAINER
+        )
+        environment_runtime["volumeMounts"].append({"name": "workspace", "mountPath": workspace_dir})
     marker = f"storage-test-{uuid4().hex}"
     bootstrap = f"set -eu\nprintf '%s\\n' {marker} > /state/storage-systest-state\nprintf '%s\\n' {marker} > {workspace_dir}/storage-systest-workspace\nsync\n"
     config = await _object(cluster, "configmap", "app-config")
@@ -351,6 +356,17 @@ async def fresh_workspace_storage_survives_replacement(
                 evidence["readiness_snapshot"] = await _readiness_snapshot(cluster, name)
             except Exception as diagnostic_error:
                 evidence["readiness_snapshot_error"] = str(diagnostic_error)
+            try:
+                evidence["sandbox_controller_logs"] = await cluster.kubectl(
+                    "logs",
+                    "deployment/sandbox-controller",
+                    "--all-pods=true",
+                    "--all-containers=true",
+                    "--tail=200",
+                    "--since=10m",
+                )
+            except Exception as diagnostic_error:
+                evidence["sandbox_controller_logs_error"] = str(diagnostic_error)
             save()
             raise
         with tracer.start_as_current_span(

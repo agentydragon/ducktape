@@ -18,7 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -29,7 +29,7 @@ type interruptTargetKey struct{}
 // Run read-only reconciliation off the stdout reader, which must deliver its RPC replies.
 func (s *Session) startHarness(ctx context.Context) (resultErr error) {
 	s.mu.Lock()
-	s.processState = runnerpb.ProcessState_PROCESS_STATE_STARTING
+	s.processState = sessionpb.ProcessState_PROCESS_STATE_STARTING
 	s.nativeStop = stopNone
 	harnessKind := s.record.Harness
 	s.mu.Unlock()
@@ -38,9 +38,9 @@ func (s *Session) startHarness(ctx context.Context) (resultErr error) {
 	))
 	defer func() { observability.End(span, resultErr) }()
 	switch {
-	case harnessKind == runnerpb.Harness_HARNESS_CLAUDE && s.deps.claude != nil:
+	case harnessKind == sessionpb.Harness_HARNESS_CLAUDE && s.deps.claude != nil:
 		return s.startProcess(ctx, claude.New(s, *s.deps.claude))
-	case harnessKind == runnerpb.Harness_HARNESS_CODEX && s.deps.codexAppServer != nil:
+	case harnessKind == sessionpb.Harness_HARNESS_CODEX && s.deps.codexAppServer != nil:
 		return s.startOnCodexServer(ctx)
 	default:
 		return errors.New("this runner is not configured for the selected harness")
@@ -98,7 +98,7 @@ func (s *Session) startProcess(ctx context.Context, adapter harness.ProcessAdapt
 	if err := s.prepare(ctx, adapter, process.PID()); err != nil {
 		s.mu.Lock()
 		s.nativeStop = stopStartupFailure
-		s.processState = runnerpb.ProcessState_PROCESS_STATE_STOPPING
+		s.processState = sessionpb.ProcessState_PROCESS_STATE_STOPPING
 		s.mu.Unlock()
 		stopErr := process.Stop(context.WithoutCancel(ctx))
 		if stopErr == nil {
@@ -447,7 +447,7 @@ func (s *Session) harnessEnded(ctx context.Context, code int) error {
 	stoppedByRunner := s.nativeStop != stopNone
 	s.codexAppServer = nil
 	s.processID = ""
-	s.processState = runnerpb.ProcessState_PROCESS_STATE_UNSPECIFIED
+	s.processState = sessionpb.ProcessState_PROCESS_STATE_UNSPECIFIED
 	s.mu.Unlock()
 	s.connection.end(code)
 	// History may end its stream at HarnessExited. Publish the lost turn and its

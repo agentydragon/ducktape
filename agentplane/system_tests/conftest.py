@@ -16,7 +16,7 @@ import pytest
 from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests import native_artifacts, scenario, scripted_upstream
 from agentplane.system_tests.case_batch import CASE_RESULT
@@ -30,7 +30,7 @@ from util.net import Listener
 from util.testing.otel_tracing import configure_tracing
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
 
 BASE_URL = "AGENTPLANE_SYSTEM_TEST_URL"
@@ -121,14 +121,14 @@ async def dispatcher(cluster: Cluster, tmp_path: Path) -> AsyncIterator[SessionD
         yield client
 
 
-@pytest.fixture(params=[runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX], ids=["claude", "codex"])
-def harness(request: pytest.FixtureRequest) -> runner_pb2.Harness:
+@pytest.fixture(params=[session_pb2.HARNESS_CLAUDE, session_pb2.HARNESS_CODEX], ids=["claude", "codex"])
+def harness(request: pytest.FixtureRequest) -> session_pb2.Harness:
     """Every scenario runs on every harness: one runner protocol, so one test body covers both."""
-    return cast(runner_pb2.Harness, request.param)
+    return cast(session_pb2.Harness, request.param)
 
 
 @pytest.fixture
-async def offered_model(client: Client, harness: runner_pb2.Harness, phase_tracer: trace.Tracer) -> str:
+async def offered_model(client: Client, harness: session_pb2.Harness, phase_tracer: trace.Tracer) -> str:
     """A model this deployment offers for this harness, asked of the app rather than hardcoded."""
     with phase_tracer.start_as_current_span(
         "system_test.model.discovery", record_exception=False, set_status_on_exception=False

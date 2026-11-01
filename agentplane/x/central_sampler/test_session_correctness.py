@@ -20,11 +20,11 @@ import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 
 from agentplane.env.execution import executor_pb2, executor_pb2_grpc
+from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.grpc.serving import serving
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, FunctionCall, Message, response_stream
 from agentplane.native.testing.model_endpoint import JsonResponse, SseEvent
 from agentplane.proto import event_pb2
-from agentplane.runner import runner_service_pb2
 from agentplane.x.central_sampler import sampler_pb2, sampler_pb2_grpc
 from agentplane.x.central_sampler.testing import METADATA, Endpoint, open_request, service, settings
 from agentplane.x.central_sampler.testing_store import Store
@@ -227,7 +227,9 @@ async def test_turn_outcomes_preserve_safe_continuation(
             request = open_request(tmp_path)
             await stub.OpenSession(request, metadata=METADATA)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(session_id=request.session_id, command_id="first", text="Start"),
+                environment_runtime_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="first", text="Start"
+                ),
                 metadata=METADATA,
             )
             async with await endpoint.next() as exchange:
@@ -307,7 +309,7 @@ async def test_turn_outcomes_preserve_safe_continuation(
             if failure == "partial":
                 return
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="second", text="Continue"
                 ),
                 metadata=METADATA,
@@ -332,7 +334,7 @@ async def test_lost_process_read_reply_resumes_same_process_and_cursor(
             request = open_request(tmp_path)
             await stub.OpenSession(request, metadata=METADATA)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="read-recovery", text="Run one command."
                 ),
                 metadata=METADATA,
@@ -409,7 +411,7 @@ async def test_lost_process_read_after_observed_output_is_catchable_without_repl
             request = open_request(tmp_path)
             await stub.OpenSession(request, metadata=METADATA)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="observed-read-fault", text="Run one command."
                 ),
                 metadata=METADATA,
@@ -526,7 +528,7 @@ async def test_lost_process_start_ack_rejects_tool_and_caught_call_continues(
             request = open_request(tmp_path)
             await stub.OpenSession(request, metadata=METADATA)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="start-ack-lost", text="Run one command."
                 ),
                 metadata=METADATA,
@@ -609,7 +611,7 @@ async def test_uncaught_lost_apply_patch_ack_reaches_model_and_thread_continues(
             request = open_request(tmp_path)
             await stub.OpenSession(request, metadata=METADATA)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="uncaught-patch", text="Apply one patch."
                 ),
                 metadata=METADATA,
@@ -695,7 +697,7 @@ async def test_explicit_recovery_resets_javascript_session_after_host_loss(
             request = open_request(tmp_path)
             await stub.OpenSession(request, metadata=METADATA)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="recover-start", text="Start the operation."
                 ),
                 metadata=METADATA,
@@ -750,7 +752,7 @@ async def test_explicit_recovery_resets_javascript_session_after_host_loss(
             )
 
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="continue-after-recovery", text="Continue safely."
                 ),
                 metadata=METADATA,
@@ -803,7 +805,7 @@ async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
             request = open_request(tmp_path)
             await stub.OpenSession(request, metadata=METADATA)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="stale-json-cell", text="Start a process and continue."
                 ),
                 metadata=METADATA,
@@ -910,7 +912,7 @@ async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
                 assert process.status == "running"
 
                 await stub.SubmitInput(
-                    runner_service_pb2.SubmitInputRequest(
+                    environment_runtime_pb2.SubmitInputRequest(
                         session_id=request.session_id, command_id="after-stale-json-cell", text="Continue once more."
                     ),
                     metadata=METADATA,

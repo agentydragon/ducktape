@@ -13,9 +13,9 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -149,13 +149,13 @@ ready:
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	client := runnerservicepb.NewRunnerClient(conn)
+	client := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
 	valid := metadata.NewOutgoingContext(ctx, metadata.Pairs(runtimeBootMetadata, intent.Binding.RuntimeBootId, hostBootMetadata, hello.HostBootId, generationMetadata, "1"))
-	if _, err := client.GetStatus(valid, &runnerpb.GetStatusRequest{}); err != nil {
+	if _, err := client.GetStatus(valid, &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("bound RPC: %v", err)
 	}
 	stale := metadata.NewOutgoingContext(ctx, metadata.Pairs(runtimeBootMetadata, intent.Binding.RuntimeBootId, hostBootMetadata, hello.HostBootId, generationMetadata, "2"))
-	if _, err := client.GetStatus(stale, &runnerpb.GetStatusRequest{}); status.Code(err) != codes.FailedPrecondition {
+	if _, err := client.GetStatus(stale, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("stale RPC: %v", err)
 	}
 	owner, err := retained.OpenOwner(filepath.Join(root, "harness-host"))

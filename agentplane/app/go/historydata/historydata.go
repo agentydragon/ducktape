@@ -10,7 +10,7 @@ import (
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/settledcursors"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -52,7 +52,7 @@ type FeedEnd struct{ Message string }
 
 type FeedSnapshot struct {
 	Status   historypb.FeedStatus
-	Attached *runnerpb.Attached
+	Attached *sessionpb.Attached
 	End      *FeedEnd
 }
 

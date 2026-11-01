@@ -22,7 +22,7 @@ from agentplane.history_service.channels import Channel
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity
 from agentplane.history_service.fold.views import EntityKind
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, go_history_service
-from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
@@ -39,7 +39,7 @@ class History:
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         # The runner's latest snapshot per Session, announced again with every push: an announcement replaces the
         # stored feed state, and the service stores it only once the committed entries cover its cursor.
-        self._attached: dict[UUID, runner_pb2.Attached] = {}
+        self._attached: dict[UUID, session_pb2.Attached] = {}
 
     async def open(
         self, session_id: UUID, *, sandbox_name: str | None = None, sandbox_namespace: str | None = None
@@ -90,7 +90,7 @@ class History:
         session_id: UUID,
         entries: Sequence[event_log_pb2.EventEntry],
         *,
-        attached: runner_pb2.Attached | None = None,
+        attached: session_pb2.Attached | None = None,
     ) -> None:
         """Push `entries` as the Session's writer and return once the fold has caught up with them.
 
@@ -112,7 +112,7 @@ class History:
         )
         await self.service.until(lambda: self._operational_status_is_failed(session_id))
 
-    async def set_attached(self, session_id: UUID, attached: runner_pb2.Attached) -> None:
+    async def set_attached(self, session_id: UUID, attached: session_pb2.Attached) -> None:
         """Announce the runner's snapshot. A snapshot ahead of the Session's entries is stored once they cover it."""
         snapshot = self._snapshot(session_id, attached)
         self._attached[session_id] = snapshot
@@ -122,8 +122,8 @@ class History:
         await self._folded(session_id, committed, snapshot)
 
     @staticmethod
-    def _snapshot(session_id: UUID, attached: runner_pb2.Attached) -> runner_pb2.Attached:
-        snapshot = runner_pb2.Attached()
+    def _snapshot(session_id: UUID, attached: session_pb2.Attached) -> session_pb2.Attached:
+        snapshot = session_pb2.Attached()
         snapshot.CopyFrom(attached)
         snapshot.session_id = str(session_id)
         return snapshot
@@ -215,7 +215,7 @@ class History:
         operational = view.state["operational"]
         return isinstance(operational, dict) and operational["status"] == "failed"
 
-    async def _folded(self, session_id: UUID, committed: int, attached: runner_pb2.Attached | None) -> None:
+    async def _folded(self, session_id: UUID, committed: int, attached: session_pb2.Attached | None) -> None:
         """Wait for the summary to show the entries through `committed` and, once they cover it, `attached`."""
 
         def shows(summary: history_service_pb2.SessionSummary) -> bool:

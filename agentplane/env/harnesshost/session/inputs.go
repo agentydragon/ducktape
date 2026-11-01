@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
@@ -83,7 +83,7 @@ func (s *Session) executionClosed() bool {
 
 func (s *Session) waitSetup(ctx context.Context) error {
 	s.mu.Lock()
-	pending := s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING
+	pending := s.setup == sessionpb.SetupState_SETUP_STATE_RUNNING
 	s.mu.Unlock()
 	if !pending {
 		return nil
@@ -96,7 +96,7 @@ func (s *Session) waitSetup(ctx context.Context) error {
 			if !ok {
 				return false, fmt.Errorf("unexpected Session input resource %T", value)
 			}
-			return input.TypedSpec().Setup != runnerpb.SetupState_SETUP_STATE_RUNNING, nil
+			return input.TypedSpec().Setup != sessionpb.SetupState_SETUP_STATE_RUNNING, nil
 		}),
 	)
 	return err

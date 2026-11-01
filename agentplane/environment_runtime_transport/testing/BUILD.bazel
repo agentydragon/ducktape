@@ -1,0 +1,13 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_testonly = True)
+
+go_library(
+    name = "testing",
+    srcs = ["certificates.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/environment_runtime_transport",
+    ],
+)

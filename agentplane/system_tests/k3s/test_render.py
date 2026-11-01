@@ -280,7 +280,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations() -> None:
     template = _resource(docs, "SandboxTemplate", fixture_chart.POD_TEMPLATE)
     assert template["spec"]["stateVolume"]["claim"]["storageClassName"] == "local-path"
     pod_containers = {container["name"]: container for container in template["spec"]["pod"]["spec"]["containers"]}
-    runner_env = {entry["name"]: entry.get("value") for entry in pod_containers["runner"]["env"]}
+    runner_env = {entry["name"]: entry.get("value") for entry in pod_containers["environment-runtime"]["env"]}
     assert "OTEL_SDK_DISABLED" not in runner_env
     assert runner_env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://127.0.0.1:3132"
     runner_sidecar = template["spec"]["pod"]["spec"]["initContainers"]
@@ -381,7 +381,7 @@ def test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling() -> No
     fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
     vm_sandboxes.select_native_profile(fixture.objects, enabled=True, profile_root=True)
     selected = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
-    other = _resource(fixture.objects, "SandboxTemplate", "runner-vm")
+    other = _resource(fixture.objects, "SandboxTemplate", "environment-vm")
     selected_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
     other_args = other["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
     assert selected_args == other_args + " agentplane.native-profile=1"
@@ -407,7 +407,7 @@ def test_vm_boot_evidence_selects_only_oom_guest_at_runtime() -> None:
     fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
     vm_sandboxes.select_boot_evidence(fixture.objects, enabled=True)
     selected = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
-    other = _resource(fixture.objects, "SandboxTemplate", "runner-vm")
+    other = _resource(fixture.objects, "SandboxTemplate", "environment-vm")
     selected_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
     other_args = other["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
     assert selected_args == other_args + " agentplane.boot-evidence=1"
@@ -415,8 +415,7 @@ def test_vm_boot_evidence_selects_only_oom_guest_at_runtime() -> None:
 
 def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
-    assert not fixture.central_sampler
-    template = _resource(fixture.objects, "SandboxTemplate", "runner-vm")["spec"]
+    template = _resource(fixture.objects, "SandboxTemplate", "environment-vm")["spec"]
     state = template["stateVolume"]
     workspace = template["workspaceVolume"]
 
@@ -426,8 +425,12 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     assert workspace["claim"]["storageClassName"] == STORAGE_CLASS
     assert workspace["claim"]["volumeMode"] == "Block"
 
-    vm_template = _resource(fixture.objects, "SandboxTemplate", "runner-vm")["spec"]
+    vm_template = _resource(fixture.objects, "SandboxTemplate", "environment-vm")["spec"]
     vm_spec = vm_template["vm"]["template"]["spec"]
+    runner_disk = next(disk for disk in vm_spec["domain"]["devices"]["disks"] if disk["name"] == "runner")
+    assert runner_disk["serial"] == "agentplane-runner"  # vm.nix mounts virtio-agentplane-runner from fstab.
+    runner_volume = next(volume for volume in vm_spec["volumes"] if volume["name"] == "runner")
+    assert runner_volume["containerDisk"]["image"] == ("git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset")
     supervision = _resource(fixture.objects, "SandboxTemplate", SUPERVISION_TEMPLATE)["spec"]["vm"]["template"]["spec"]
     oom_template = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)["spec"]["vm"]["template"]["spec"]
     ordinary_root = next(
@@ -436,7 +439,7 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     assert ordinary_root == "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"
     assert supervision["volumes"] == vm_spec["volumes"]
     ordinary_config_volume = next(
-        volume for volume in vm_spec["volumes"] if volume.get("configMap", {}).get("name") == "runner-vm-config"
+        volume for volume in vm_spec["volumes"] if volume.get("configMap", {}).get("name") == "environment-vm-config"
     )
     oom_config_volume = next(
         volume for volume in oom_template["volumes"] if volume["name"] == ordinary_config_volume["name"]
@@ -450,10 +453,10 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     }
     interface = next(item for item in vm_spec["domain"]["devices"]["interfaces"] if item["name"] == "default")
     assert {"port": 9090} in interface["ports"]
-    config_map = _resource(fixture.objects, "ConfigMap", "runner-vm-config")
-    config = json.loads(config_map["data"]["runner.json"])
+    config_map = _resource(fixture.objects, "ConfigMap", "environment-vm-config")
+    config = json.loads(config_map["data"]["environment-runtime.json"])
     oom_config_map = _resource(fixture.objects, "ConfigMap", oom_config_volume["configMap"]["name"])
-    oom_config = json.loads(oom_config_map["data"]["runner.json"])
+    oom_config = json.loads(oom_config_map["data"]["environment-runtime.json"])
     oom_resources = oom_config["environment"]["resources"]
     ordinary_resources = config["environment"]["resources"]
     oom_executor = oom_resources["executor"]
@@ -468,16 +471,18 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
         "exec_server_probe_timeout_ms": 5_000,
         "exec_server_dependency_timeout_ms": 120_000,
     }
-    pod_config = json.loads(_resource(fixture.objects, "ConfigMap", "runner-config")["data"]["runner.json"])
+    pod_config = json.loads(
+        _resource(fixture.objects, "ConfigMap", "environment-tools-config")["data"]["environment-runtime.json"]
+    )
     assert "codex_readiness" not in pod_config
     assert config["control"] == {
         "listen_address": "0.0.0.0:9090",
         "security": {
             "mode": "mtls",
             "tls": {
-                "cert_file": "/run/agentplane/runner-tls/tls.crt",
-                "key_file": "/run/agentplane/runner-tls/tls.key",
-                "ca_file": "/run/agentplane/runner-trust/ca-certificates.crt",
+                "cert_file": "/run/agentplane/environment-runtime-tls/tls.crt",
+                "key_file": "/run/agentplane/environment-runtime-tls/tls.key",
+                "ca_file": "/run/agentplane/environment-runtime-trust/ca-certificates.crt",
             },
         },
     }

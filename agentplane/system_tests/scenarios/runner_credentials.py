@@ -10,7 +10,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.app.testing.models import SandboxView
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.agent import WORKING_DIRECTORY, Agent, scripted_turn_with_admission_and_history
@@ -19,7 +19,7 @@ from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes, wait_until_
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.tracing import tracer
 
-_RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/runner-credential"
+_RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/environment-runtime-credential"
 _SANDBOX_LABEL = "agentplane.allegedly.works/sandbox"
 
 
@@ -37,7 +37,7 @@ async def _ready_certificate(
         certificate = json.loads(await cluster.kubectl("get", "certificate", name, "-o", "json"))
         spec = certificate["spec"]
         assert spec["secretName"] == f"runner-{credential_id}"
-        assert spec["uris"] == [f"spiffe://agentplane/runner/{namespace}/{sandbox_uid}/{credential_id}"]
+        assert spec["uris"] == [f"spiffe://agentplane/environment-runtime/{namespace}/{sandbox_uid}/{credential_id}"]
         assert set(spec["usages"]) == {"digital signature", "server auth"}
         assert any(
             condition["type"] == "Ready" and condition["status"] == "True"
@@ -79,7 +79,7 @@ async def _open_agent(
     client: Client,
     dispatcher: SessionDispatcherClient,
     view: SandboxView,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     model_name: str,
     *,
     cwd: str = WORKING_DIRECTORY,
@@ -137,7 +137,7 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
     client: Client,
     dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:

@@ -380,7 +380,7 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: agentplane-runner
+            app.kubernetes.io/name: agentplane-environment-runtime
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:

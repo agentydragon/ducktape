@@ -13,11 +13,11 @@ from cluster.cdk8s.agentplane import (
     actions,
     app,
     chart as agentplane_chart,
+    environment_sandbox,
     history_service,
     notifications,
     runner_gateway,
     runner_gateway_workload,
-    runner_sandbox,
     sandbox_controller,
     session_dispatcher,
     staging,
@@ -125,7 +125,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert (notifications.NAME, str(http.pod_port)) in ingress
     assert (runner_gateway.NAME, "8080") in ingress
     assert (sandbox_controller.NAME, "8080") in ingress
-    runner_label = runner_sandbox.pods(staging.ENV.namespace).selector["app.kubernetes.io/name"]
+    runner_label = environment_sandbox.pods(staging.ENV.namespace).selector["app.kubernetes.io/name"]
     assert (runner_label, "8090") not in ingress
     runner_egress = {
         (endpoint["matchLabels"].get("app.kubernetes.io/name"), str(port["port"]))
@@ -133,7 +133,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         for endpoint in rule.get("toEndpoints", [])
         for port in rule.get("toPorts", [{}])[0].get("ports", [])
     }
-    assert (runner_label, str(runner_sandbox.RUNNER_SERVICE_PORT)) in runner_egress
+    assert (runner_label, str(environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT)) in runner_egress
     role = _resource(docs, "Role", runner_gateway.NAME.removeprefix("agentplane-"))
     assert {resource for rule in role["rules"] for resource in rule["resources"]} >= {
         "pods",
@@ -224,23 +224,23 @@ def test_runner_mtls_is_direct_and_outside_platform_routes(staging_manifests: li
         for target in rule.get("toPorts", [])
         for port in target["ports"]
     )
-    runner_label = runner_sandbox.pods(staging.ENV.namespace).selector["app.kubernetes.io/name"]
+    runner_label = environment_sandbox.pods(staging.ENV.namespace).selector["app.kubernetes.io/name"]
     assert any(
         endpoint["matchLabels"].get("app.kubernetes.io/name") == runner_label
         and any(
-            port["port"] == str(runner_sandbox.RUNNER_SERVICE_PORT)
+            port["port"] == str(environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT)
             for target in rule.get("toPorts", [])
             for port in target["ports"]
         )
         for rule in gateway["egress"]
         for endpoint in rule.get("toEndpoints", [])
     )
-    runner_listener = _resource(staging_manifests, "CiliumNetworkPolicy", "runner-listener")["spec"]
+    runner_listener = _resource(staging_manifests, "CiliumNetworkPolicy", "environment-tools-listener")["spec"]
     gateway_label = runner_gateway.service(staging.ENV.namespace).pods.selector["app.kubernetes.io/name"]
     assert any(
         endpoint["matchLabels"].get("app.kubernetes.io/name") == gateway_label
         and any(
-            port["port"] == str(runner_sandbox.RUNNER_SERVICE_PORT)
+            port["port"] == str(environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT)
             for target in rule.get("toPorts", [])
             for port in target["ports"]
         )

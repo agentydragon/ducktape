@@ -30,7 +30,7 @@ call, and the VM executor started process `92e5cda1-982c-47ae-8b1f-0de98b0a9969`
 `process/read` returned `VM_PID1 systemd` with `exited: false` at 01:11:57.903 UTC. A second
 `process/read` was dispatched at 01:11:57.908; at 01:11:57.919 the sampler recorded
 `command_failed`, a blocked Session, and an unresolved cell intent. No tool result or second
-model request was retained. The Sandbox still reported `RunnerConnected=True`; its Lease's
+model request was retained. The Sandbox still reported `EnvironmentRuntimeConnected=True`; its Lease's
 last renewal was at 01:11:57.918. These states do not establish that the second read returned.
 
 The exact sampler execution error is missing. The failed Session's sampler Pod was UID

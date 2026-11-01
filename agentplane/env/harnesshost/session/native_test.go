@@ -33,7 +33,7 @@ import (
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
 
 type frameTestAdapter struct {
@@ -345,7 +345,7 @@ func frameTestSessionWithControllerGate(t *testing.T, command []string, withCont
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := NewManager(Config{Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root), Scripts: scriptRunner, WaitBootstrap: bootstrapHost.Wait, Environment: func() Environment { return Environment{IncarnationUID: "test-incarnation"} }, EnsureWorkspace: func(_ context.Context, cwd string) (string, error) { return workspace.Resolve(cwd, filepath.Dir(root)) }, LaunchProcess: launch, ResolveModelConfig: func(context.Context, runnerpb.Harness, string) (*int, error) { return nil, nil }, Destination: func(string) string { return "test-destination" }, PublishSeal: func(string, *journal.SealState) error { return nil }, PublishAck: func(string, retained.Acknowledgement) error { return nil }, OnChange: func() {}, OnError: func(err error) {
+	m, err := NewManager(Config{Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root), Scripts: scriptRunner, WaitBootstrap: bootstrapHost.Wait, Environment: func() Environment { return Environment{IncarnationUID: "test-incarnation"} }, EnsureWorkspace: func(_ context.Context, cwd string) (string, error) { return workspace.Resolve(cwd, filepath.Dir(root)) }, LaunchProcess: launch, ResolveModelConfig: func(context.Context, sessionpb.Harness, string) (*int, error) { return nil, nil }, Destination: func(string) string { return "test-destination" }, PublishSeal: func(string, *journal.SealState) error { return nil }, PublishAck: func(string, retained.Acknowledgement) error { return nil }, OnChange: func() {}, OnError: func(err error) {
 		if err != nil && !errors.Is(err, context.Canceled) {
 			t.Error(err)
 		}
@@ -378,7 +378,7 @@ func frameTestSessionWithControllerGate(t *testing.T, command []string, withCont
 			t.Error(err)
 		}
 	}()
-	record, err := retained.NewRecord(&runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: root, Model: "test"}, "", nil)
+	record, err := retained.NewRecord(&sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: root, Model: "test"}, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -703,7 +703,7 @@ func TestConfirmationReplayKeepsTerminalReceipt(t *testing.T) {
 		t.Fatal(err)
 	}
 	resources := state.WrapCore(namespaced.NewState(inmem.Build))
-	record, err := retained.NewRecord(&runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: t.TempDir(), Model: "test-model"}, "", nil)
+	record, err := retained.NewRecord(&sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: t.TempDir(), Model: "test-model"}, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -826,7 +826,7 @@ func setRuntimeReady(t *testing.T, m *Manager, s *Session) {
 			t.Fatal(err)
 		}
 		s.mu.Lock()
-		s.processState = runnerpb.ProcessState_PROCESS_STATE_RUNNING
+		s.processState = sessionpb.ProcessState_PROCESS_STATE_RUNNING
 		s.mu.Unlock()
 		return
 	}
@@ -843,7 +843,7 @@ func setRuntimeReady(t *testing.T, m *Manager, s *Session) {
 		t.Fatal(err)
 	}
 	s.mu.Lock()
-	s.processState = runnerpb.ProcessState_PROCESS_STATE_RUNNING
+	s.processState = sessionpb.ProcessState_PROCESS_STATE_RUNNING
 	s.mu.Unlock()
 }
 

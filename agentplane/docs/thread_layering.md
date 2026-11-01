@@ -6,7 +6,7 @@ state observation and the authorized live Runner proxy. The materialized Thread 
 conversation sync described in [Thread view synchronization](thread_view_sync.md) are implemented;
 remaining acceptance gates are in [conversation acceptance](../debug/conversation_acceptance.md).
 This document covers identity, durability, command handling and presentation, while the
-[runner specification](../runner/SPEC.md) describes the implemented runner contract. It does not
+[Harness Host session protocol](../env/harnesshost/docs/session_protocol.md) describes the implemented runner contract. It does not
 claim every recovery case works today. Protocol changes are atomic monorepo cutovers, with no
 old-runner/data compatibility.
 
@@ -281,7 +281,7 @@ E(41, command_admitted { command: M }) = EventEntry {
 have the same value; they do not advance independently. The app submits the command through the
 Session Dispatcher and receives a durable `Dispatch`; the Dispatcher delivers to the runner through
 the Gateway proxy, and the runner later pushes `CommandAdmitted` and other entries to History with
-`RunnerIngress.Push`. HTTP/SSE carry generated payloads in protobuf JSON. Native sketches omit
+`SessionJournalIngress.Push`. HTTP/SSE carry generated payloads in protobuf JSON. Native sketches omit
 unrelated request fields.
 
 ### Dispatcher admission, runner result
@@ -597,7 +597,7 @@ SQLite owns crash recovery; no custom JSONL repair or old-format import remains.
 
 ### Remaining identity and delivery boundaries
 
-The [current runner specification](../runner/SPEC.md) exposes a session-scoped SQLite
+The [Harness Host retained-state contract](../env/harnesshost/docs/retained_state.md) exposes a session-scoped SQLite
 journal with atomic command/Event commits and publication after the storage fence.
 The target runner Thread identity/cursor change and native crash recovery need implementation
 and integration evidence. Canonical Thread pages replay the archived prefix without a live runner;

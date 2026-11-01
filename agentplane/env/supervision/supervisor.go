@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	// SupervisorMode is the private runner child mode for native process supervision.
-	SupervisorMode = "--agentplane-runner-supervisor"
+	// SupervisorMode is the private Environment Runtime child mode for native process supervision.
+	SupervisorMode = "--agentplane-environment-runtime-supervisor"
 
 	parentLivenessFDDefault = 3
 	nativePIDFDDefault      = 4

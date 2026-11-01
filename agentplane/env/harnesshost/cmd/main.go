@@ -52,7 +52,7 @@ func run() int {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	shutdownTracing, err := observability.Init(
-		ctx, "agentplane-runner", attribute.String("sandbox.uid", config.settings.Launch.Sandbox.UID),
+		ctx, "agentplane-harness-host", attribute.String("sandbox.uid", config.settings.Launch.Sandbox.UID),
 	)
 	if err != nil {
 		zap.L().Error("harness-host tracing setup failed", zap.Error(err))

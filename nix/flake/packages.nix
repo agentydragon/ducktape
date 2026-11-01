@@ -110,24 +110,24 @@ ducktapePkgs
     binary = artifacts.agentplane-cli;
   };
   # Shared by the image and its Nix check, so validation cannot drift to another tool list.
-  # Size reference: runner-ducktape:devel-20261008225612-c58bc67 measured 5.93 GiB
+  # Size reference: environment-tools:devel-20261008225612-c58bc67 measured 5.93 GiB
   # unpacked (whole image, not just these tools), with a 1.86 GiB Kubernetes image size.
   # Unpacked: Rust/Cargo/rustfmt/LLVM 2,242 MiB; Ansible/core 703 MiB; Codex 547 MiB;
   # Python interpreters 419 MiB; Claude Code 230 MiB; other tools/libraries 1,929 MiB.
   # rustfmt retains rustc -> LLVM and cargo -> cargo-bootstrap -> rustc-bootstrap.
-  runner-ducktape-tools = pkgs.buildEnv {
-    name = "runner-ducktape-tools";
+  environment-tools = pkgs.buildEnv {
+    name = "environment-tools";
     paths = preCommitPackages;
     pathsToLink = [ "/bin" ];
   };
   # Same harnesses, with the shared repository hook/build clients preinstalled.
-  runner-ducktape-image = import ../../agentplane/env/images/image.nix {
+  environment-tools-image = import ../../agentplane/env/images/image.nix {
     inherit pkgs pkgsUnstable;
-    name = "runner-ducktape";
-    extraPaths = [ self.packages.${system}.runner-ducktape-tools ];
+    name = "environment-tools";
+    extraPaths = [ self.packages.${system}.environment-tools ];
   };
   # KubeVirt's NixOS guest packaged as a containerDisk; publish through the dedicated workflow.
-  agentplane-runner-vm-container-disk = import ../../agentplane/env/images/container-disk.nix {
+  agentplane-environment-vm-container-disk = import ../../agentplane/env/images/container-disk.nix {
     inherit pkgs self;
   };
   # Parked Codex pod image experiment (plain Docker, no NixOS/systemd). Flake

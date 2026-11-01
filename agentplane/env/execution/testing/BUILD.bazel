@@ -1,4 +1,6 @@
-load("//devinfra/python:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_testonly = True)
 
 py_test(
     name = "test_service",
@@ -21,5 +23,22 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "codex_exec_server_container",
+    srcs = ["codex_exec_server_container.py"],
+    visibility = [
+        "//agentplane/env/e2e:__pkg__",
+        "//agentplane/x/central_sampler:__pkg__",
+    ],
+    deps = [
+        "//agentplane/env/e2e/testing:launches",
+        "//third_party/containers:debian_slim",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:container_logs",
+        "@pypi//pytest",
     ],
 )

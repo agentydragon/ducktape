@@ -14,9 +14,9 @@ from cdk8s_plus_34 import k8s
 from more_itertools import one
 
 from agentplane.crd_group import GROUP
-from agentplane.runner.configuration import CONFIG_FILE, LAUNCH_FILE, CodexReadiness, Configuration
+from agentplane.env.config import CONFIG_FILE, LAUNCH_FILE, CodexReadiness, Configuration
 from cluster.cdk8s.agentplane import sandbox_pod, staging
-from cluster.cdk8s.agentplane.runner_sandbox import RunnerTemplate
+from cluster.cdk8s.agentplane.environment_sandbox import EnvironmentSandboxTemplate
 from cluster.cdk8s.pod_policy import workload_kind
 
 
@@ -30,27 +30,27 @@ def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]
 
 
 def _runner_configuration(docs: list[dict[str, Any]], pod: dict[str, Any]) -> dict[str, Any]:
-    volume = one(volume for volume in pod["volumes"] if volume["name"] == "runner-config")
+    volume = one(volume for volume in pod["volumes"] if volume["name"] == "environment-runtime-config")
     config_map = _by_name(docs, "ConfigMap", volume["configMap"]["name"])
-    return cast(dict[str, Any], json.loads(config_map["data"]["runner.json"]))
+    return cast(dict[str, Any], json.loads(config_map["data"]["environment-runtime.json"]))
 
 
 def _runner_pod(
     *,
     app: App,
     isolated_executor: bool,
-    runner_resources: k8s.ResourceRequirements,
+    environment_runtime_resources: k8s.ResourceRequirements,
     executor_resources: k8s.ResourceRequirements | None,
     session_reconcile_concurrency: int | None = None,
 ) -> dict[str, Any]:
     chart = Chart(app, "runner-template-test")
-    RunnerTemplate(
+    EnvironmentSandboxTemplate(
         chart,
         "runner-template",
         replace(staging.ENV, isolated_codex_executor=isolated_executor),
         name="test-runner",
         image="example.invalid/runner",
-        runner_resources=runner_resources,
+        environment_runtime_resources=environment_runtime_resources,
         executor_resources=executor_resources,
         session_reconcile_concurrency=session_reconcile_concurrency,
     )
@@ -80,17 +80,17 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     template = _by_name(staging_manifests, "SandboxTemplate", staging.POD_TEMPLATE)
     pod = template["spec"]["pod"]["spec"]
     containers = {container["name"]: container for container in pod["containers"]}
-    runner = containers["runner"]
+    runner = containers["environment-runtime"]
     executor = containers["codex-executor"]
 
     assert pod["shareProcessNamespace"] is False
     assert pod["restartPolicy"] == "Always"
     assert pod["securityContext"]["runAsUser"] == pod["securityContext"]["runAsGroup"] == 1000
     assert executor["securityContext"] == runner["securityContext"]
-    assert [container["name"] for container in pod["containers"]] == ["runner", "codex-executor"]
+    assert [container["name"] for container in pod["containers"]] == ["environment-runtime", "codex-executor"]
     assert [container["name"] for container in pod["initContainers"]] == ["egress-sidecar"]
     assert pod["initContainers"][0]["restartPolicy"] == "Always"
-    assert runner["command"] == ["/run/agentplane/runner/bin/agentplane-environment-runtime"]
+    assert runner["command"] == ["/run/agentplane/environment/bin/agentplane-environment-runtime"]
     assert runner["args"] == ["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE]
     config = _runner_configuration(staging_manifests, pod)
     assert config["environment"] == {
@@ -98,7 +98,7 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
         "supervision": "pid1",
         "executor": {"url": "ws://127.0.0.1:4501", "socket": "/run/agentplane/executor/control.sock"},
     }
-    assert executor["command"] == ["/run/agentplane/runner/bin/agentplane-execution-service"]
+    assert executor["command"] == ["/run/agentplane/environment/bin/agentplane-execution-service"]
     assert executor["args"] == [
         "companion",
         "--socket",
@@ -132,7 +132,7 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     for path in (
         "/state",
         "/state/workspaces",
-        "/run/agentplane/runner",
+        "/run/agentplane/environment",
         "/home/runner",
         "/tmp",
         "/run/agentplane/executor",
@@ -151,7 +151,7 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     # The executor shares the BuildBuddy key, which `bbr` in a Codex shell needs; the runner's own
     # config and the sidecar's token are its alone.
     assert "buildbuddy-api-key" in executor_mount_names
-    assert executor_mount_names.isdisjoint({"egress-token", "runner-config"})
+    assert executor_mount_names.isdisjoint({"egress-token", "environment-runtime-config"})
     executor_env = {variable["name"]: variable["value"] for variable in executor["env"]}
     runner_env = {variable["name"]: variable["value"] for variable in runner["env"]}
     for name in (*sandbox_pod.PROXY_VAR_NAMES, *sandbox_pod.NO_PROXY_VAR_NAMES, *sandbox_pod.CA_BUNDLE_VAR_NAMES):
@@ -161,7 +161,7 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
 
 
 def test_runner_template_can_override_executor_resources_independently(scratch_app: App) -> None:
-    runner_resources = k8s.ResourceRequirements(
+    environment_runtime_resources = k8s.ResourceRequirements(
         requests={"cpu": k8s.Quantity.from_string("17m"), "memory": k8s.Quantity.from_string("127Mi")},
         limits={"cpu": k8s.Quantity.from_string("31m"), "memory": k8s.Quantity.from_string("251Mi")},
     )
@@ -172,33 +172,36 @@ def test_runner_template_can_override_executor_resources_independently(scratch_a
     pod = _runner_pod(
         app=scratch_app,
         isolated_executor=True,
-        runner_resources=runner_resources,
+        environment_runtime_resources=environment_runtime_resources,
         executor_resources=executor_resources,
     )
     containers = {container["name"]: container for container in pod["containers"]}
-    assert containers["runner"]["resources"]["requests"] == {"cpu": "17m", "memory": "127Mi"}
-    assert containers["runner"]["resources"]["limits"] == {"cpu": "31m", "memory": "251Mi"}
+    assert containers["environment-runtime"]["resources"]["requests"] == {"cpu": "17m", "memory": "127Mi"}
+    assert containers["environment-runtime"]["resources"]["limits"] == {"cpu": "31m", "memory": "251Mi"}
     assert containers["codex-executor"]["resources"]["requests"] == {"cpu": "43m", "memory": "509Mi"}
     assert containers["codex-executor"]["resources"]["limits"] == {"cpu": "71m", "memory": "997Mi"}
 
 
 def test_environment_can_keep_codex_execution_inside_the_runner(scratch_app: App) -> None:
-    runner_resources = k8s.ResourceRequirements(
+    environment_runtime_resources = k8s.ResourceRequirements(
         requests={"cpu": k8s.Quantity.from_string("17m"), "memory": k8s.Quantity.from_string("127Mi")},
         limits={"cpu": k8s.Quantity.from_string("31m"), "memory": k8s.Quantity.from_string("251Mi")},
     )
     pod = _runner_pod(
-        app=scratch_app, isolated_executor=False, runner_resources=runner_resources, executor_resources=None
+        app=scratch_app,
+        isolated_executor=False,
+        environment_runtime_resources=environment_runtime_resources,
+        executor_resources=None,
     )
     containers = {container["name"]: container for container in pod["containers"]}
     assert "codex-executor" not in containers
-    assert containers["runner"]["args"] == ["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE]
+    assert containers["environment-runtime"]["args"] == ["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE]
     assert {"home", "tmp", "codex-executor"}.isdisjoint({volume["name"] for volume in pod["volumes"]})
 
 
 def test_runner_template_configures_session_reconcile_concurrency(scratch_app: App) -> None:
     chart = Chart(scratch_app, "runner-concurrency-test")
-    RunnerTemplate(
+    EnvironmentSandboxTemplate(
         chart,
         "runner-template",
         staging.ENV,
@@ -214,7 +217,7 @@ def test_runner_template_configures_session_reconcile_concurrency(scratch_app: A
 
 def test_runner_template_serializes_codex_readiness_overrides(scratch_app: App) -> None:
     chart = Chart(scratch_app, "runner-codex-readiness-test")
-    RunnerTemplate(
+    EnvironmentSandboxTemplate(
         chart,
         "runner-template",
         staging.ENV,
@@ -240,27 +243,36 @@ def test_runner_template_serializes_codex_readiness_overrides(scratch_app: App) 
 def test_environment_cannot_configure_resources_for_a_disabled_executor(scratch_app: App) -> None:
     resources = k8s.ResourceRequirements(limits={"memory": k8s.Quantity.from_string("1Gi")})
     with pytest.raises(ValueError, match="executor_resources cannot be set"):
-        _runner_pod(app=scratch_app, isolated_executor=False, runner_resources=resources, executor_resources=resources)
+        _runner_pod(
+            app=scratch_app,
+            isolated_executor=False,
+            environment_runtime_resources=resources,
+            executor_resources=resources,
+        )
 
 
 def test_runner_template_renders_mtls_server_listener(scratch_app: App) -> None:
     chart = Chart(scratch_app, "runner-template-test")
-    RunnerTemplate(chart, "runner-template", staging.ENV, name="test-runner", image="example.invalid/runner")
+    EnvironmentSandboxTemplate(
+        chart, "runner-template", staging.ENV, name="test-runner", image="example.invalid/runner"
+    )
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
     template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
     pod = template["spec"]["pod"]["spec"]
-    runner = one(container for container in pod["containers"] if container["name"] == "runner")
+    runner = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
     config = _runner_configuration(docs, pod)
 
-    assert runner["ports"] == [{"name": "runner-control", "containerPort": 9090}]
+    assert len(runner["ports"]) == 1
+    assert len(runner["ports"][0]["name"]) <= 15  # Kubernetes port names are limited to 15 characters.
+    assert runner["ports"][0]["containerPort"] == 9090
     assert config["control"] == {
         "listen_address": "0.0.0.0:9090",
         "security": {
             "mode": "mtls",
             "tls": {
-                "cert_file": "/run/agentplane/runner-tls/tls.crt",
-                "key_file": "/run/agentplane/runner-tls/tls.key",
-                "ca_file": "/run/agentplane/runner-tls/ca.crt",
+                "cert_file": "/run/agentplane/environment-runtime-tls/tls.crt",
+                "key_file": "/run/agentplane/environment-runtime-tls/tls.key",
+                "ca_file": "/run/agentplane/environment-runtime-tls/ca.crt",
             },
         },
     }
@@ -294,7 +306,7 @@ def test_pod_template_projects_the_buildbuddy_key_to_runner_and_executor(
     containers = {container["name"]: container for container in pod["containers"]}
     secret = next(volume for volume in pod["volumes"] if volume["name"] == "buildbuddy-api-key")
     assert secret["secret"] == {"secretName": "buildbuddy-api-key", "defaultMode": 288}
-    for name in ("runner", "codex-executor"):
+    for name in ("environment-runtime", "codex-executor"):
         mount = next(mount for mount in containers[name]["volumeMounts"] if mount["name"] == "buildbuddy-api-key")
         assert mount == {"name": "buildbuddy-api-key", "mountPath": "/run/buildbuddy", "readOnly": True}
         key_file = next(env for env in containers[name]["env"] if env["name"] == "BBR_BUILDBUDDY_API_KEY_FILE")
@@ -350,7 +362,7 @@ def test_runner_tool_config_role_is_scoped_to_the_canonical_map(staging_manifest
 
     volumes = one(_templates(staging_manifests))["spec"]["pod"]["spec"]["volumes"]
     config_maps = {volume["name"]: volume["configMap"]["name"] for volume in volumes if "configMap" in volume}
-    assert config_maps["runner-config"] == f"{staging.POD_TEMPLATE}-config"
+    assert config_maps["environment-runtime-config"] == f"{staging.POD_TEMPLATE}-config"
     assert config_maps["tool-config"] == "sandbox-tool-config"
 
 

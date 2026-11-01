@@ -9,7 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
@@ -49,7 +49,7 @@ func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger
 	}
 	result := make([]resource.Pointer, 0, rows.Len())
 	rows.ForEach(func(row *typed.Resource[Input, componentExtension[Input]]) {
-		if ptr.Type() == codexappserver.RuntimeType && row.TypedSpec().Harness != runnerpb.Harness_HARNESS_CODEX {
+		if ptr.Type() == codexappserver.RuntimeType && row.TypedSpec().Harness != sessionpb.Harness_HARNESS_CODEX {
 			return
 		}
 		result = append(result, row.Metadata())
@@ -114,7 +114,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		s.mu.Lock()
 		script, job := s.record.SetupScript, s.setupJob
 		s.mu.Unlock()
-		if script != "" && job == nil && input.Setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
+		if script != "" && job == nil && input.Setup == sessionpb.SetupState_SETUP_STATE_RUNNING {
 			op, startErr := s.startOperation(&s.setupJob, func(ctx context.Context) error { return s.runSetup(ctx, script) })
 			if op != nil {
 				current.SetupAttempt = op.ID()
@@ -143,7 +143,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		if op.Err() == nil && live && desiredState.Mode == runnerlifecycle.Running && current.Phase == Preparing {
 			current.Phase, current.ProcessID = Ready, processID
 			s.mu.Lock()
-			s.processState = runnerpb.ProcessState_PROCESS_STATE_RUNNING
+			s.processState = sessionpb.ProcessState_PROCESS_STATE_RUNNING
 			s.mu.Unlock()
 		} else if desiredState.Mode == runnerlifecycle.Running {
 			current.Phase = Dormant
@@ -252,7 +252,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 		if current.Phase == Halted && outer.Stage >= runnerlifecycle.Stopping && !current.ProcessStopped {
 			s.mu.Lock()
-			shared := s.deps.codexAppServer != nil && s.record.Harness == runnerpb.Harness_HARNESS_CODEX
+			shared := s.deps.codexAppServer != nil && s.record.Harness == sessionpb.Harness_HARNESS_CODEX
 			s.mu.Unlock()
 			if shared {
 				status, found, err := codexappserver.ReadRuntime(ctx, r)

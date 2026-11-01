@@ -11,8 +11,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/httperror"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -20,7 +20,7 @@ import (
 )
 
 type sessionOpener interface {
-	OpenSession(context.Context, string, string, uuid.UUID, *runnerpb.SessionSpec, *string) (*dispatcherpb.SessionOpening, error)
+	OpenSession(context.Context, string, string, uuid.UUID, *sessionpb.SessionSpec, *string) (*dispatcherpb.SessionOpening, error)
 	SessionOpening(context.Context, string, uuid.UUID) (*dispatcherpb.SessionOpening, error)
 }
 
@@ -123,8 +123,8 @@ type sessionOpeningInput struct {
 	SessionID uuid.UUID `path:"session_id" format:"uuid"`
 }
 
-func sessionDefaults(config Config, sandbox *sandboxespb.Sandbox, setupWasSet bool, requestedSetup *string) (*runnerpb.SessionSpec, *string, error) {
-	defaults := &runnerpb.SessionSpec{}
+func sessionDefaults(config Config, sandbox *sandboxespb.Sandbox, setupWasSet bool, requestedSetup *string) (*sessionpb.SessionSpec, *string, error) {
+	defaults := &sessionpb.SessionSpec{}
 	var setupScript *string
 	if presetName := sandbox.GetPreset(); presetName != "" {
 		preset, ok := config.SandboxPresets[presetName]
@@ -135,11 +135,11 @@ func sessionDefaults(config Config, sandbox *sandboxespb.Sandbox, setupWasSet bo
 		if !ok {
 			return nil, nil, errors.New("Sandbox preset " + quote(presetName) + " names an unknown ThreadPreset")
 		}
-		harness, ok := runnerpb.Harness_value[thread.Harness]
+		harness, ok := sessionpb.Harness_value[thread.Harness]
 		if !ok {
 			return nil, nil, errors.New("ThreadPreset names an unknown Harness " + quote(thread.Harness))
 		}
-		defaults.Harness = runnerpb.Harness(harness)
+		defaults.Harness = sessionpb.Harness(harness)
 		defaults.Model = thread.Model
 		defaults.Cwd = thread.CWD
 		if thread.ReasoningEffort != nil {

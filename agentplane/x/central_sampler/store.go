@@ -16,7 +16,7 @@ import (
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
 	"github.com/google/uuid"
@@ -297,7 +297,7 @@ func scanSession(row rowScanner) (*Session, error) {
 		return nil, err
 	}
 	session.Cursor = uint64(cursor)
-	session.SetupState = runnerpb.SetupState(setupState)
+	session.SetupState = sessionpb.SetupState(setupState)
 	if activeTurn.Valid {
 		session.ActiveTurn = &activeTurn.String
 	}
@@ -408,9 +408,9 @@ func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionR
 			conversationID, instructions, api); err != nil {
 			return err
 		}
-		setupState := runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED
+		setupState := sessionpb.SetupState_SETUP_STATE_NOT_REQUIRED
 		if request.GetSetupScript() != "" {
-			setupState = runnerpb.SetupState_SETUP_STATE_RUNNING
+			setupState = sessionpb.SetupState_SETUP_STATE_RUNNING
 		}
 		opened = &Session{
 			ID: request.GetSessionId(), ConversationID: conversationID, AccountUID: ownerUID,
@@ -428,7 +428,7 @@ func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionR
 		}}); err != nil {
 			return err
 		}
-		if setupState != runnerpb.SetupState_SETUP_STATE_RUNNING {
+		if setupState != sessionpb.SetupState_SETUP_STATE_RUNNING {
 			if _, err := appendEvent(ctx, tx, opened, &eventpb.Event{Observation: &eventpb.Event_HarnessStarted{HarnessStarted: &eventpb.HarnessStarted{}}}); err != nil {
 				return err
 			}
@@ -619,7 +619,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 		if activeLease {
 			return protocol.ErrPrecondition
 		}
-		if session.SetupState != runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED && session.SetupState != runnerpb.SetupState_SETUP_STATE_SUCCEEDED {
+		if session.SetupState != sessionpb.SetupState_SETUP_STATE_NOT_REQUIRED && session.SetupState != sessionpb.SetupState_SETUP_STATE_SUCCEEDED {
 			return protocol.ErrPrecondition
 		}
 		if session.ActiveCommand != nil || session.ActiveTurn != nil {
@@ -897,19 +897,19 @@ func Describe(session *Session) (*samplerpb.GetSessionResponse, error) {
 	if err := proto.Unmarshal(session.Configuration, request); err != nil {
 		return nil, fmt.Errorf("decode stored session configuration: %w", err)
 	}
-	spec := proto.Clone(request.GetSpec()).(*runnerpb.SessionSpec)
+	spec := proto.Clone(request.GetSpec()).(*sessionpb.SessionSpec)
 	spec.Model, spec.ReasoningEffort = session.Model, session.Effort
-	state := runnerpb.HarnessState_HARNESS_STATE_RUNNING
-	if session.Blocked || session.SetupState == runnerpb.SetupState_SETUP_STATE_RUNNING {
-		state = runnerpb.HarnessState_HARNESS_STATE_STOPPED
+	state := sessionpb.HarnessState_HARNESS_STATE_RUNNING
+	if session.Blocked || session.SetupState == sessionpb.SetupState_SETUP_STATE_RUNNING {
+		state = sessionpb.HarnessState_HARNESS_STATE_STOPPED
 	}
-	outcome := runnerpb.LaunchOutcome_LAUNCH_OUTCOME_STARTED
-	if session.SetupState == runnerpb.SetupState_SETUP_STATE_RUNNING {
-		outcome = runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING
-	} else if session.SetupState == runnerpb.SetupState_SETUP_STATE_FAILED || session.SetupState == runnerpb.SetupState_SETUP_STATE_INTERRUPTED {
-		outcome = runnerpb.LaunchOutcome_LAUNCH_OUTCOME_FAILED
+	outcome := sessionpb.LaunchOutcome_LAUNCH_OUTCOME_STARTED
+	if session.SetupState == sessionpb.SetupState_SETUP_STATE_RUNNING {
+		outcome = sessionpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING
+	} else if session.SetupState == sessionpb.SetupState_SETUP_STATE_FAILED || session.SetupState == sessionpb.SetupState_SETUP_STATE_INTERRUPTED {
+		outcome = sessionpb.LaunchOutcome_LAUNCH_OUTCOME_FAILED
 	}
-	attached := &runnerpb.Attached{
+	attached := &sessionpb.Attached{
 		SessionId: session.ID, Spec: spec, LastCursor: session.Cursor,
 		HarnessState: state, SetupState: session.SetupState, LaunchOutcome: outcome,
 		ExecutionPrincipal: cloneExecutionPrincipal(request.GetExecutionPrincipal()),
@@ -1148,7 +1148,7 @@ func (s *Store) RecoverableSessions(ctx context.Context, exclude []string, limit
 	rows, err := s.db.QueryContext(ctx, `SELECT ss.id FROM sampler_session ss JOIN sampler_conversation c ON c.id=ss.conversation_id
 		WHERE ss.blocked=FALSE AND (c.owner IS NULL OR c.lease_until IS NULL OR c.lease_until<=clock_timestamp())
 		AND NOT (ss.id=ANY($1::varchar[])) AND `+sessionWork+`
-		ORDER BY ss.id LIMIT $4`, pq.Array(exclude), int32(runnerpb.SetupState_SETUP_STATE_RUNNING),
+		ORDER BY ss.id LIMIT $4`, pq.Array(exclude), int32(sessionpb.SetupState_SETUP_STATE_RUNNING),
 		int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED), limit)
 	if err != nil {
 		return nil, err
@@ -1173,7 +1173,7 @@ func (s *Store) OwnedWork(ctx context.Context, tokens []string) ([]string, error
 	rows, err := s.db.QueryContext(ctx, `SELECT ss.id FROM sampler_session ss JOIN sampler_conversation c ON c.id=ss.conversation_id
 		WHERE ss.blocked=FALSE AND c.owner=ANY($1::uuid[])
 		AND c.lease_until>clock_timestamp() AND `+sessionWork+` ORDER BY ss.id`, pq.Array(tokens),
-		int32(runnerpb.SetupState_SETUP_STATE_RUNNING), int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED))
+		int32(sessionpb.SetupState_SETUP_STATE_RUNNING), int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED))
 	if err != nil {
 		return nil, err
 	}
@@ -2088,21 +2088,21 @@ func (s *Store) FinishSetup(ctx context.Context, owner Owner, sessionID string, 
 }
 
 func (s *Store) settleSetup(ctx context.Context, tx *sql.Tx, conversation *Conversation, session *Session, exitCode *int) error {
-	if session.SetupState != runnerpb.SetupState_SETUP_STATE_RUNNING {
+	if session.SetupState != sessionpb.SetupState_SETUP_STATE_RUNNING {
 		return protocol.ErrPrecondition
 	}
 	session.Blocked = false
 	session.BlockedReason = nil
 	if exitCode == nil {
-		session.SetupState = runnerpb.SetupState_SETUP_STATE_INTERRUPTED
+		session.SetupState = sessionpb.SetupState_SETUP_STATE_INTERRUPTED
 		if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_SetupInterrupted{SetupInterrupted: &eventpb.SetupInterrupted{}}}); err != nil {
 			return err
 		}
 	} else {
 		if *exitCode == 0 {
-			session.SetupState = runnerpb.SetupState_SETUP_STATE_SUCCEEDED
+			session.SetupState = sessionpb.SetupState_SETUP_STATE_SUCCEEDED
 		} else {
-			session.SetupState = runnerpb.SetupState_SETUP_STATE_FAILED
+			session.SetupState = sessionpb.SetupState_SETUP_STATE_FAILED
 		}
 		if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_SetupFinished{
 			SetupFinished: &eventpb.SetupFinished{ExitCode: int32(*exitCode)},

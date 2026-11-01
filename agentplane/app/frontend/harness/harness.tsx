@@ -2948,17 +2948,17 @@ routes.push(
     "GET",
     /^\/sandboxes\/([^/]+)\/runner-status$/,
     () => ({
-      runner_boot_id: "visual-runner-boot-01",
+      environment_runtime_boot_id: "visual-runner-boot-01",
       lifecycle: {
-        desired_mode: "RUNNER_LIFECYCLE_MODE_QUIESCING",
+        desired_mode: "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING",
         desired_generation: "3",
         progress_generation: "3",
         progress_available: true,
         progress_current: true,
-        stage: "RUNNER_LIFECYCLE_STAGE_FLUSHING",
+        stage: "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING",
         error: "",
         blocker: {
-          kind: "RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT",
+          kind: "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT",
           error: "",
           resource_type: "IngressAcknowledgements.agentplane",
           resource_id: "ready-session",

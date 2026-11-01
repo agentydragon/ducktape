@@ -1,0 +1,203 @@
+# Environment Runtime configuration
+
+Pods and VMs start the same executable with the same configuration contract:
+
+```sh
+/run/agentplane/environment/bin/agentplane-environment-runtime \
+  --config /run/agentplane/config/environment-runtime.json \
+  --launch-file /run/agentplane/sandbox/launch.json
+```
+
+Both arguments are required. Unknown flags, positional arguments, unknown JSON fields and unsupported
+versions fail before Runtime opens state. The executable name does not select a mode. The file schema
+is [`config.py`](../../config.py); [`configuration.go`](../../configuration/configuration.go) validates and
+composes it into the runtime configuration. The [protocol contract](SPEC.md) covers Session behavior.
+
+## Ownership and composition
+
+1. The template writes `environment-runtime.json`: endpoints, paths, providers, environment declarations,
+   platform instructions and isolation policy. `environment_sandbox.py` writes Pod configuration;
+   `environment_vm.py` writes VM configuration using the same schema.
+   The process environment field is `environment_runtime_environment` after the direct cutover.
+2. The image supplies only explicitly inherited environment names. Provider `token_env` fields
+   name Environment Runtime variables containing credential placeholders; tokens are not serialized in the file.
+3. The Sandbox Controller supplies `launch.json`: namespace, name, UID and optional bootstrap source.
+   Deployment policy and platform instructions cannot be supplied by this file.
+4. `SessionSpec` supplies harness, absolute working directory, model, optional reasoning effort,
+   task instructions and Session setup. A Session cannot raise template resource limits.
+
+The loader resolves `environment_runtime_environment` against the process environment, overlays its explicit
+values, and resolves `harness_environment` against that result. In each declaration `inherit` is an
+allowlist of names, and `values` is a map that takes precedence over inherited values. Missing
+inherited names are omitted with a warning. Undeclared process variables never enter harnesses.
+VM services also receive systemd-generated service metadata. Login-environment defaults are
+disabled; the configured environment values override manager defaults. Environment Runtime-only credentials
+and telemetry are not inherited by the manager-launched process. All validation completes before
+Environment Runtime environment changes or state ownership begins.
+
+## File fields
+
+`environment-runtime.json` is a strict JSON object with `version: 2`.
+
+| Field                             | Meaning                                                                                                                            |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `session_reconcile_concurrency`   | Optional positive count of concurrent Session COSI reconciliations; defaults to `16` and does not limit Session admission.         |
+| `state_dir`                       | Required absolute persistent state path; deployed as `/state`.                                                                     |
+| `initialization_cwd`              | Required absolute bootstrap working directory.                                                                                     |
+| `workspace_root`                  | Optional absolute directory constraining Session working directories. Omission permits requested absolute paths directly.          |
+| `control`                         | Required Environment Runtime listener with `listen_address` (`host:port`) and explicit `security` (`mtls` or `insecure`).          |
+| `ingress`                         | Required History ingress endpoint with `target` (`host:port`) and `bearer`; it remains independent of Environment Runtime control. |
+| `platform_instructions`           | Required deployment-wide Session guidance, rendered from `platform_instructions.j2`.                                               |
+| `environment_runtime_environment` | Optional `inherit` names and `values` map applied to Environment Runtime itself.                                                   |
+| `harness_environment`             | Required `inherit` names and `values` map defining the native process environment.                                                 |
+| `claude`, `codex`                 | Optional provider objects: absolute `binary`, HTTP(S) `base_url`, and `token_env`. An omitted provider is disabled.                |
+| `environment`                     | Required tagged Pod or VM policy, including the optional executor.                                                                 |
+| `codex_readiness`                 | Optional independent Codex executor and app-server readiness windows in positive integer milliseconds.                             |
+| `debug_checkpoint`                | Optional test-only object containing nonempty `name` and `command_id`.                                                             |
+
+`codex_readiness` accepts these optional positive `int64` millisecond values. Omitted fields keep
+the listed defaults; each window is configured independently.
+
+| Field                               | Default |
+| ----------------------------------- | ------: |
+| `exec_server_ready_timeout_ms`      | `20000` |
+| `exec_server_probe_timeout_ms`      |  `2000` |
+| `exec_server_probe_interval_ms`     |   `100` |
+| `exec_server_dependency_timeout_ms` | `30000` |
+| `app_server_start_timeout_ms`       | `90000` |
+| `app_server_initialize_timeout_ms`  | `60000` |
+
+Values must be representable as a Go `time.Duration` after conversion from milliseconds.
+
+`control` always serves the Environment Runtime protocol. Its required `security.mode` selects `mtls` or
+`insecure`; there is no default. Cluster and k3s templates explicitly select `mtls` with absolute TLS paths:
+
+```json
+{
+  "listen_address": "0.0.0.0:9090",
+  "security": {
+    "mode": "mtls",
+    "tls": {
+      "cert_file": "/run/agentplane/environment-runtime-tls/tls.crt",
+      "key_file": "/run/agentplane/environment-runtime-tls/tls.key",
+      "ca_file": "/run/agentplane/environment-runtime-trust/ca-certificates.crt"
+    }
+  }
+}
+```
+
+In `mtls` mode, Environment Runtime verifies that its server certificate URI names the Sandbox namespace and UID from `launch.json`;
+the Gateway presents the fixed `spiffe://agentplane/runner-gateway` identity. Both directions require
+mTLS. Missing, malformed or expired credentials fail; they never select plaintext.
+
+Local and subprocess tests may explicitly select `"security": {"mode": "insecure"}` and omit `tls`.
+This serves plaintext without peer authentication. An insecure configuration containing a `tls`
+block is rejected. The Gateway selects the same mode through `runner_security`. Sandbox,
+incarnation, boot-ID and epoch fencing still apply; that metadata is not an authenticated identity.
+Sandbox Controller provisioning continues to require cert-manager-issued credentials in every
+cluster/k3s stack. Environment Runtime control has no bearer credential; `ingress.bearer` remains scoped to History ingress.
+
+The control listener serves the standard gRPC health API and reports `SERVING` once local Environment Runtime
+startup completes, before a Gateway state watch connects. The Gateway starts
+`Environment Runtime.WatchState` with the Sandbox UID, current workload incarnation UID and Lease connection epoch.
+The Environment Runtime adopts that incarnation before sending facts, then sends changed state and a ten-second
+heartbeat. Unary calls and executor streams carry the Sandbox UID, incarnation UID, Environment Runtime boot ID
+and connection epoch; a stale epoch is rejected. `Executor.OpenSession` owns one local Codex
+connection per server stream. Typed unary process and file calls use the returned session ID.
+The adapter retains the existing per-Environment Runtime open-connection and per-native-frame limits, without adding
+persistence, operation receipts or execution configuration.
+
+`environment` has exactly one discriminator, `kind`:
+
+- `kind: "pod"`: required `supervision` (`pid1` for a private container PID namespace,
+  `subprocess` for non-PID1 fixtures), plus optional `executor` with loopback `url` and absolute ownership `socket`.
+  Kubernetes owns the container resource limits.
+- `kind: "vm"`: required `resources`, non-root `agent_uid`/`agent_gid`, absolute `block_devices`,
+  optional `console_autologin` (false when omitted), and optional `executor` with loopback `url`.
+  Systemd owns containment; both native service slices use the VM identity and block devices.
+
+The VM `resources` object contains `guest_memory_bytes`, `guest_vcpu_count`, `os_reserve_bytes`,
+`service_memory_high_bytes`, `service_memory_max_bytes`, `service_cpu_quota_micros`,
+`service_pids_max`, and `aggregate`/`process` harness budgets. Its optional `executor` budget must be supplied together with
+the VM executor endpoint. Each budget contains `memory_max_bytes`, `cpu_quota_micros` per fixed
+100,000 µs period, `pids_max`, `read_bps`, `write_bps`, `read_iops` and `write_iops`. Environment Runtime derives
+cgroup limits from these budgets; the document contains each budget once. Process memory/CPU/PID
+ceilings must fit the aggregate; harness and executor caps must fit the enclosing service.
+
+Omitting `environment.executor` selects local tools. An executor requires Codex, and its endpoint
+must be `ws://127.0.0.1:<nonzero port>`. `CODEX_EXEC_SERVER_URL` belongs to Environment Runtime and is rejected in
+the harness environment. Lifecycle, recovery and scope are documented in
+[Codex executor isolation](docs/codex_executor.md).
+
+## Shared layout
+
+The delivery mechanism differs: a Pod mounts ConfigMaps, while a VM mounts read-only ConfigMap disks.
+The paths consumed by Runtime and tools are identical.
+
+| Path                                                             | Owner and contents                                      |
+| ---------------------------------------------------------------- | ------------------------------------------------------- |
+| `/run/agentplane/config/environment-runtime.json`                | Template-owned environment configuration.               |
+| `/run/agentplane/sandbox/launch.json`                            | Controller-owned Sandbox identity and bootstrap.        |
+| `/run/agentplane/config/kubeconfig`                              | Sandbox workload identity through the egress proxy.     |
+| `/run/agentplane/trust/ca-certificates.crt`                      | Egress proxy CA bundle.                                 |
+| `/run/agentplane/trust/ca-certificates.p12`                      | Java proxy trust store.                                 |
+| `/run/agentplane/environment/bin/agentplane-environment-runtime` | Environment owner and Pod PID 1.                        |
+| `/run/agentplane/environment/bin/agentplane-harness-host`        | Session, harness and journal owner, started by Runtime. |
+| `/run/agentplane/environment/bin/agentplane-execution-service`   | Execution API owner and Pod companion entrypoint.       |
+| `/state`                                                         | Durable Session journals and native persistence.        |
+| `/state/workspaces`                                              | Sandbox-owned workspace storage.                        |
+
+The Pod also mounts the CA at the system trust location for clients which do not read CA environment
+variables. Its environment config is a per-template ConfigMap, including specializations such as the
+BuildBuddy-enabled tools image. The Execution Service companion mounts workspace/home/tmp and tool
+configuration; it does not mount environment configuration, provider token variables or projected
+sidecar tokens.
+
+Home persistence is explicit template policy. Pod configuration uses `/home/runner`, shared through
+an `emptyDir` in isolated mode. VM configuration uses the existing `/state/workspaces/.home` on the
+workspace disk. This contract change neither moves nor deletes home/state data. Image installation
+paths also remain explicit: `/bin/{claude,codex}` in Pods and `/run/current-system/sw/bin/{claude,codex}`
+in the NixOS guest. VM native processes use uid/gid 107, matching KubeVirt's virtiofs owner; Pod
+processes use uid/gid 1000.
+
+## VM boot and resource policy
+
+VM boot policy lives in `environment-runtime.json`'s `environment` variant. `GuestResources` and both environment
+variants are defined in [`config.py`](../../config.py). The strict decoder rejects fields
+belonging to another environment; there is no separate boot document or executor discriminator.
+
+One typed `Environment.vm_resources` value supplies KubeVirt RAM/vCPU sizing and the VM variant's
+resource policy, including boot service limits and harness/executor budgets. `vm.nix` mounts the disks
+and installs the shared systemd units; it does not supply an alternate Environment Runtime configuration loader.
+
+Before Environment Runtime starts, systemd invokes the executable's private `--vm-resource-properties` mode
+with `environment-runtime.json`. The preflight validates resource relationships and live `/proc/meminfo` before
+printing `MemoryHigh`, `MemoryMax`, `MemorySwapMax=0`, `CPUQuota` and `TasksMax`. The maximum must be
+below live `MemTotal`, and nominal sizing must leave the configured OS reserve. The helper applies
+these properties to `agentplane.slice`, enclosing Runtime, Host, Execution Service, workloads and
+executor. The Environment Runtime unit uses `OOMPolicy=continue`. Aggregate and native process cgroups use `memory.oom.group=0`, so a cgroup OOM
+selects individual victims. The kernel may select the harness or executor and may kill more processes
+if pressure persists. Native leader exit still fences all descendants. Runtime logs OOM counters and
+available peak memory before releasing a native service.
+See [supervision](docs/supervision.md) for the unit hierarchy and startup fence.
+
+`/run/agentplane/config/environment-runtime.env` supplies the VM systemd unit's Environment Runtime-only OpenTelemetry
+settings. Pod templates set the corresponding container environment directly. The Go guest loader
+has been removed; the common file explicitly supplies proxy, trust, tool paths and identities.
+
+## Provider, Session and telemetry settings
+
+Deployed providers read `ANTHROPIC_AUTH_TOKEN` and `OPENAI_API_KEY`, set to the workload credential
+placeholder. The egress proxy substitutes credentials and the authenticated LLM ingress routes
+requests. Claude uses the ingress origin; Codex uses its `/v1` API base. Claude retains its resolved
+context budget for resume; Codex obtains metadata from the ingress catalog.
+
+Environment Runtime composes platform instructions, the Session's notification destination and caller task in
+that order. They are persisted and must match when reopened. Sandbox bootstrap and Session setup
+remain distinct one-time operations. Claude has one process per Session; Codex Sessions are threads
+in one shared app-server, with model/effort/cwd/instructions selected per thread.
+
+OpenTelemetry uses the standard `OTEL_*` environment contract, including SDK disable and sampler
+settings. Templates set service name, deployment attributes and the local OTLP/gRPC route. Telemetry
+variables are Environment Runtime-only unless explicitly included in the harness allowlist. Instrumentation
+records protocol/lifecycle metadata without prompts, model content, bodies, credentials or headers.

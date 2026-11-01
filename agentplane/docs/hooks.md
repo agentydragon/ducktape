@@ -14,7 +14,7 @@ but `PreToolUse` allow/deny is now also pinned by scripted tests against a mocke
 [`capture/codex_hook.py`](../capture/codex_hook.py) verbatim as Codex's spawned hook command. This
 confirms live capture's finding in CI: a `PreToolUse` decision, allow or deny, supersedes Claude's
 `can_use_tool` permission prompt entirely. The runner itself still refuses the one callback it
-receives ([SPEC](../runner/SPEC.md) § What the harnesses do not promise); these tests pin native
+receives ([Harness Host session protocol](../env/harnesshost/docs/session_protocol.md#what-the-harnesses-do-not-promise)); these tests pin native
 harness behavior, not a runner capability.
 
 ## Claude Code: the driver is the hook

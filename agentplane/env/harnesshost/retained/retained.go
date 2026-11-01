@@ -14,7 +14,7 @@ import (
 	"syscall"
 
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 )
 
@@ -37,7 +37,7 @@ func OpenOwner(root string) (*Owner, error) {
 	if err := EnsureDirectory(root); err != nil {
 		return nil, err
 	}
-	file, err := os.OpenFile(filepath.Join(root, ".agentplane-runner-owner"), os.O_RDONLY|os.O_CREATE, 0o600)
+	file, err := os.OpenFile(filepath.Join(root, ".agentplane-harness-host-owner"), os.O_RDONLY|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, &ownershipError{Err: fmt.Errorf("cannot fence runner state directory %s: %w", root, err)}
 	}
@@ -134,7 +134,7 @@ func WriteDurable(path string, data []byte) error {
 // Record is the durable session.json format. Its JSON names and string-valued
 // harness enum match the Python runner's persisted records.
 type Record struct {
-	Harness                  runnerpb.Harness
+	Harness                  sessionpb.Harness
 	CWD                      string
 	Model                    string
 	TotalContextBudgetTokens *int
@@ -163,8 +163,8 @@ type sessionRecordJSON struct {
 }
 
 func (r Record) MarshalJSON() ([]byte, error) {
-	name, ok := runnerpb.Harness_name[int32(r.Harness)]
-	if !ok || (r.Harness != runnerpb.Harness_HARNESS_CLAUDE && r.Harness != runnerpb.Harness_HARNESS_CODEX) {
+	name, ok := sessionpb.Harness_name[int32(r.Harness)]
+	if !ok || (r.Harness != sessionpb.Harness_HARNESS_CLAUDE && r.Harness != sessionpb.Harness_HARNESS_CODEX) {
 		return nil, fmt.Errorf("invalid persisted harness value %d", r.Harness)
 	}
 	setupScriptSHA256 := r.SetupScriptSHA256
@@ -187,8 +187,8 @@ func (r *Record) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
 	}
-	harness, ok := runnerpb.Harness_value[wire.Harness]
-	if !ok || (harness != int32(runnerpb.Harness_HARNESS_CLAUDE) && harness != int32(runnerpb.Harness_HARNESS_CODEX)) {
+	harness, ok := sessionpb.Harness_value[wire.Harness]
+	if !ok || (harness != int32(sessionpb.Harness_HARNESS_CLAUDE) && harness != int32(sessionpb.Harness_HARNESS_CODEX)) {
 		return fmt.Errorf("invalid persisted harness %q", wire.Harness)
 	}
 	legacySetupScriptSHA256 := wire.SetupScriptSHA256
@@ -198,7 +198,7 @@ func (r *Record) UnmarshalJSON(data []byte) error {
 		legacySetupScriptSHA256 = nil
 	}
 	*r = Record{
-		Harness: runnerpb.Harness(harness), CWD: wire.CWD, Model: wire.Model,
+		Harness: sessionpb.Harness(harness), CWD: wire.CWD, Model: wire.Model,
 		TotalContextBudgetTokens: wire.TotalContextBudgetTokens, ReasoningEffort: wire.ReasoningEffort,
 		Instructions: wire.Instructions, SetupScript: wire.SetupScript, SetupScriptSHA256: legacySetupScriptSHA256,
 		EventSourceID: wire.EventSourceID, NativeSessionID: wire.NativeSessionID,
@@ -211,7 +211,7 @@ func (r *Record) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func NewRecord(spec *runnerpb.SessionSpec, setupScript string, totalContextBudgetTokens *int) (Record, error) {
+func NewRecord(spec *sessionpb.SessionSpec, setupScript string, totalContextBudgetTokens *int) (Record, error) {
 	if spec == nil {
 		return Record{}, errors.New("session spec is required")
 	}
@@ -247,8 +247,8 @@ func setupScriptDigest(script string) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func (r Record) Spec() *runnerpb.SessionSpec {
-	return &runnerpb.SessionSpec{
+func (r Record) Spec() *sessionpb.SessionSpec {
+	return &sessionpb.SessionSpec{
 		Harness: r.Harness, Cwd: r.CWD, Model: r.Model,
 		ReasoningEffort: r.ReasoningEffort, Instructions: r.Instructions,
 	}

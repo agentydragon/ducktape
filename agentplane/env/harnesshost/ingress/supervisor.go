@@ -7,7 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/stream"
-	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
+	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 )
 
 // SupervisorConfig supplies the Runner-owned session inventory and observation
@@ -46,7 +46,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 	defer conn.Close()
 
-	client := NewClient(ingresspb.NewRunnerIngressClient(conn), s.config.Store, s.config.OnAcknowledgement)
+	client := NewClient(ingresspb.NewSessionJournalIngressClient(conn), s.config.Store, s.config.OnAcknowledgement)
 	return s.supervise(ctx, func(ctx context.Context, source Source) error {
 		return client.Deliver(stream.Authenticated(ctx, s.config.Bearer), source)
 	})

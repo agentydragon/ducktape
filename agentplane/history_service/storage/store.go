@@ -15,8 +15,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
@@ -98,7 +98,7 @@ func (scope ReadScope) Predicate(alias string, firstArgument int) (string, []any
 type Checkpoint struct {
 	Cursor uint64
 	// Seal is the seal at Cursor, once committed: nothing more is accepted from its own incarnation.
-	Seal *runnerpb.Sealed
+	Seal *sessionpb.Sealed
 }
 
 type OpenedSession struct {
@@ -586,13 +586,13 @@ func mergeFeedState(next, prior *historypb.SessionFeedState) error {
 		if next.GetSealed() != nil && !proto.Equal(next.GetSealed(), prior.GetSealed()) {
 			return conflict("conflicting seals")
 		}
-		next.Sealed = proto.Clone(prior.GetSealed()).(*runnerpb.Sealed)
+		next.Sealed = proto.Clone(prior.GetSealed()).(*sessionpb.Sealed)
 	}
 	switch priorCursor := prior.GetAttached().GetLastCursor(); {
 	case next.GetAttached().GetLastCursor() < priorCursor:
-		next.Attached = proto.Clone(prior.GetAttached()).(*runnerpb.Attached)
+		next.Attached = proto.Clone(prior.GetAttached()).(*sessionpb.Attached)
 	case next.GetAttached().GetLastCursor() == priorCursor && !proto.Equal(next.GetAttached(), prior.GetAttached()):
-		sameExceptHarness := proto.Clone(prior.GetAttached()).(*runnerpb.Attached)
+		sameExceptHarness := proto.Clone(prior.GetAttached()).(*sessionpb.Attached)
 		sameExceptHarness.HarnessState = next.GetAttached().GetHarnessState()
 		// A later incarnation announces again at the cursor the earlier one ended at.
 		sameExceptHarness.IncarnationUid = next.GetAttached().IncarnationUid
@@ -602,14 +602,14 @@ func mergeFeedState(next, prior *historypb.SessionFeedState) error {
 		nextState, priorState := next.GetAttached().GetHarnessState(), prior.GetAttached().GetHarnessState()
 		switch {
 		case nextState == priorState:
-		case prior.GetSealed() == nil && priorState == runnerpb.HarnessState_HARNESS_STATE_STOPPED &&
-			nextState == runnerpb.HarnessState_HARNESS_STATE_RUNNING:
+		case prior.GetSealed() == nil && priorState == sessionpb.HarnessState_HARNESS_STATE_STOPPED &&
+			nextState == sessionpb.HarnessState_HARNESS_STATE_RUNNING:
 			// Resume can be confirmed before HarnessStarted advances the journal.
-		case priorState == runnerpb.HarnessState_HARNESS_STATE_RUNNING &&
-			nextState == runnerpb.HarnessState_HARNESS_STATE_STOPPED:
+		case priorState == sessionpb.HarnessState_HARNESS_STATE_RUNNING &&
+			nextState == sessionpb.HarnessState_HARNESS_STATE_STOPPED:
 			// Stops have journal entries. A stopped snapshot at the same cursor after Resume belongs to
 			// the previous run.
-			next.Attached = proto.Clone(prior.GetAttached()).(*runnerpb.Attached)
+			next.Attached = proto.Clone(prior.GetAttached()).(*sessionpb.Attached)
 		default:
 			return conflict("conflicting attachment snapshots at one cursor")
 		}

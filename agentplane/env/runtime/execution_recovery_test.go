@@ -327,6 +327,7 @@ func TestSystemdHealthLossFencesInvocationBeforeReplacement(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("Runtime did not wait for replacement Health readiness")
 	}
+	waitForExecutionOwner(t, r, replacementHandle)
 	if got := starts.Load(); got != 1 {
 		t.Fatalf("replacement count = %d, want one", got)
 	}

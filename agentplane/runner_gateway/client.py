@@ -6,10 +6,10 @@ from uuid import UUID
 
 from google.protobuf.message import Message
 
+from agentplane.env.runtime.control import environment_runtime_pb2, environment_runtime_pb2_grpc
 from agentplane.grpc.calls import call_unary, dial
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
-from agentplane.runner import runner_service_pb2, runner_service_pb2_grpc
 from agentplane.runner_gateway.api import (
     SANDBOX_HEADER,
     SANDBOX_OWNER_NAME_HEADER,
@@ -40,7 +40,7 @@ class SandboxControlClient:
     async def runner_unary[T](
         self,
         destination: SandboxDestination,
-        call: Callable[[runner_service_pb2_grpc.RunnerAsyncStub], Callable[..., Awaitable[T]]],
+        call: Callable[[environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub], Callable[..., Awaitable[T]]],
         request: Message,
         *,
         timeout_s: float | None = None,
@@ -49,7 +49,9 @@ class SandboxControlClient:
         async with dial(
             self.control_target.format(sandbox=destination.sandbox, namespace=destination.owner.namespace)
         ) as channel:
-            runner: runner_service_pb2_grpc.RunnerAsyncStub = runner_service_pb2_grpc.RunnerStub(channel)
+            runner: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub = (
+                environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel)
+            )
             return await call_unary(
                 call(runner),
                 request,
@@ -63,10 +65,10 @@ class SandboxControlClient:
                 ),
             )
 
-    async def list_sessions(self, destination: SandboxDestination) -> list[runner_pb2.SessionSummary]:
+    async def list_sessions(self, destination: SandboxDestination) -> list[session_pb2.SessionSummary]:
         """Read live runner inventory through its proxy, fenced to the expected Sandbox identity."""
         response = await self.runner_unary(
-            destination, lambda stub: stub.ListSessions, runner_pb2.ListSessionsRequest()
+            destination, lambda stub: stub.ListSessions, session_pb2.ListSessionsRequest()
         )
         return list(response.sessions)
 
@@ -78,19 +80,19 @@ class SandboxRunner:
         self.control = control
         self.destination = destination
 
-    async def list_sessions(self) -> list[runner_pb2.SessionSummary]:
+    async def list_sessions(self) -> list[session_pb2.SessionSummary]:
         return await self.control.list_sessions(self.destination)
 
-    async def status(self) -> runner_pb2.RunnerStatus:
+    async def status(self) -> session_pb2.EnvironmentRuntimeStatus:
         return await self.control.runner_unary(
-            self.destination, lambda stub: stub.GetStatus, runner_pb2.GetStatusRequest()
+            self.destination, lambda stub: stub.GetStatus, session_pb2.GetStatusRequest()
         )
 
     async def open_session(
-        self, *, session_id: str | UUID, spec: runner_pb2.SessionSpec, setup_script: str | None = None
-    ) -> runner_pb2.Attached:
+        self, *, session_id: str | UUID, spec: session_pb2.SessionSpec, setup_script: str | None = None
+    ) -> session_pb2.Attached:
         """Open a Runner Session directly; its retry contract is owned by the Runner."""
-        request = runner_service_pb2.OpenSessionRequest(session_id=str(session_id), spec=spec)
+        request = environment_runtime_pb2.OpenSessionRequest(session_id=str(session_id), spec=spec)
         if setup_script is not None:
             request.setup_script = setup_script
         response = await self.control.runner_unary(

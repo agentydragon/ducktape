@@ -14,7 +14,7 @@ import {
 } from "../model_catalog";
 import { displayableError } from "../client";
 import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
-import { SessionSpecSchema, type SessionSpec } from "../../../proto/runner_pb";
+import { SessionSpecSchema, type SessionSpec } from "../../../proto/session_pb";
 
 type LoadedPresetDefaults = { preset: string | null; defaults: Partial<SessionDefaultsView> | null };
 

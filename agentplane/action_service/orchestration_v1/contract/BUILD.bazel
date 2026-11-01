@@ -8,7 +8,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract",
     deps = [
         "//agentplane/action_service/catalog",
-        "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:session_go_proto",
         "@com_github_invopop_jsonschema//:jsonschema",
         "@io_k8s_apimachinery//pkg/types",
     ],

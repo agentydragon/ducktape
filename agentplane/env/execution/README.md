@@ -110,3 +110,46 @@ distinct from Harness Host's process scope. Inventory retained sampler execution
 reconcile unfinished operations before restarting an executor: native sessions/processes are
 in-memory state. Preserve authored files and existing Session journals and volumes. See
 [staging data preservation](../../docs/staging_data_preservation.md) before a deployment rollback.
+
+## Pod companion container
+
+Environment Pods can run Codex command execution through a companion container in the same Pod. The runner
+retains the Codex app-server and journals; `agentplane-execution-service companion` runs as PID 1 and supervises
+`codex exec-server` in its private container PID namespace. The Execution Service claims the companion over a Unix socket before Codex
+starts and fences it before replacing a lost process. A companion exit or failed health probe lets
+Kubernetes restart that container with a fresh PID namespace; the environment services never replay an in-flight
+command. `Environment.isolated_codex_executor` controls this Pod-template policy and can be disabled
+for environments that need execution inside the Host container.
+
+Both containers run as the image's uid and gid 1000 and share the Sandbox state and workspace at the
+same absolute paths, plus `/home/runner`, `/tmp`, and the read-only runner disk image. They use the
+same proxy and CA settings. Processes in either container have the same filesystem identity and can
+change the shared files, so the companion is a process and resource boundary, not a trust boundary.
+Its Kubernetes requests and limits are independently configurable with `executor_resources` on
+`EnvironmentSandboxTemplate`; Environment Runtime resource overrides continue to apply only to that container. The
+companion receives the Sandbox kubeconfig and any optional BuildBuddy diagnostics key so its command
+tools keep the runner's intended access. It gets no model credentials or sidecar-projected tokens.
+
+`../env/harnesshost/codex/protocol` generates Go models at build time with Quicktype from schemas
+exported by the same pinned Codex executable used by the native tests. Requests,
+responses, notifications and known item payloads use these models. Method and item
+dispatch keep a raw JSON boundary for unknown variants; recorded native frames are
+never reconstructed from decoded models. Codex reconciliation uses turn-scoped
+`thread/items/list` RPCs on that connection, with the same generated protocol types; it does not
+read Codex's private files or databases. Schema export and JavaScript code generation are
+build dependencies only.
+
+Claude stream events and assistant content blocks use the Anthropic Go SDK's
+discriminated unions. Consumed variants are checked with strict JSON decoding
+because the SDK's response decoder tolerates malformed fields. Tool inputs use
+the SDK's raw-field metadata to preserve whitespace, numeric tokens and explicit
+`null`. Claude Code control packets use the standard-library-only
+`claude-agent-sdk-go/types` envelopes and matching subtype structs. Local
+extensions cover `appendSystemPrompt`, interrupt metadata, model/effort changes,
+raw tool inputs and explicit null reply fields. User tool results have their own
+wire type.
+
+The integration fixtures launch Runtime and its separate Host/Execution processes and drive its public control and ingress
+protocols. `test_turns.py`, `test_subagents.py`, and `test_restart.py` exercise the real
+native harnesses; App, History, Gateway, and Notification integration tests use the
+same process topology.

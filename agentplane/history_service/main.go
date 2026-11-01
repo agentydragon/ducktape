@@ -23,7 +23,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/history_service/projection"
 	"github.com/agentydragon/ducktape/agentplane/history_service/reads"
-	runneringresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
+	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
@@ -229,7 +229,7 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 			PermitWithoutStream: false,
 		}),
 	)
-	runneringresspb.RegisterRunnerIngressServer(ingressServer, &ingress.Service{
+	session_ingresspb.RegisterSessionJournalIngressServer(ingressServer, &ingress.Service{
 		Principals: writerAuth, SandboxUIDs: ingress.NewServiceAccountSandboxUIDResolver(kube),
 		History:         storage.NewStore(ingressDB, c.Ingress.SettleDeltas),
 		SamplerAccounts: c.Ingress.SamplerAccounts,

@@ -36,7 +36,7 @@ require kubevirt.io/api v1.8.2
 // Direct dependencies for agentplane/runner_gateway
 require github.com/go-logr/logr v1.4.4
 
-// Direct dependencies for agentplane/runner lifecycle orchestration
+// Direct dependencies for agentplane/env runtime lifecycle orchestration
 require (
 	github.com/cosi-project/runtime v1.16.2
 	github.com/siderolabs/gen v0.8.6
@@ -111,7 +111,7 @@ require (
 // Gotcha: op.Server and op.RegisterServer "may change until v4", in a v3 minor release too.
 require github.com/zitadel/oidc/v3 v3.51.16
 
-// Direct dependencies for agentplane/runner_transport (SPIFFE mTLS between Runner and Gateway)
+// Direct dependencies for agentplane/environment_runtime_transport (SPIFFE mTLS between Environment Runtime and Gateway)
 require github.com/spiffe/go-spiffe/v2 v2.7.0
 
 // Indirect dependencies (merged from genkit and worthy go.mods)

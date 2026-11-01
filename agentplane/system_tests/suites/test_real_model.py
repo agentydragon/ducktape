@@ -7,7 +7,7 @@ import pytest_bazel
 
 # gazelle:include_dep @pypi//protobuf
 from agentplane.app.testing.client import Client
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.sandbox import Sandboxes
@@ -20,7 +20,7 @@ async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     client: Client,
     dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     model: str,
 ) -> None:
     await egress.a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
@@ -30,7 +30,7 @@ async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
 
 @pytest.mark.real_model
 async def test_the_model_obeys_the_standing_instruction_its_session_was_opened_with(
-    client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
+    client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes, harness: session_pb2.Harness, model: str
 ) -> None:
     await session_instructions.the_model_obeys_the_standing_instruction_its_session_was_opened_with(
         client, dispatcher, sandbox, harness, model

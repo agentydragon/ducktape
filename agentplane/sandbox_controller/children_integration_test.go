@@ -107,8 +107,8 @@ func runFakeCertificateSigner(ctx context.Context, objects client.Client, namesp
 				}
 			}
 			labels := map[string]string{
-				sandboxapi.SandboxLabel:          certificate.GetLabels()[sandboxapi.SandboxLabel],
-				sandboxapi.RunnerCredentialLabel: certificate.GetLabels()[sandboxapi.RunnerCredentialLabel],
+				sandboxapi.SandboxLabel:                      certificate.GetLabels()[sandboxapi.SandboxLabel],
+				sandboxapi.EnvironmentRuntimeCredentialLabel: certificate.GetLabels()[sandboxapi.EnvironmentRuntimeCredentialLabel],
 			}
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -193,8 +193,8 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	if err := objects.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}); err != nil {
 		t.Fatal(err)
 	}
-	template := &sandboxapi.SandboxTemplate{ObjectMeta: metav1.ObjectMeta{Name: "runner", Namespace: ns}, Spec: sandboxapi.SandboxTemplateSpec{
-		Pod: &corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: RunnerContainer, Image: "example.invalid/runner:v1"}}}},
+	template := &sandboxapi.SandboxTemplate{ObjectMeta: metav1.ObjectMeta{Name: "environment-runtime", Namespace: ns}, Spec: sandboxapi.SandboxTemplateSpec{
+		Pod: &corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: EnvironmentRuntimeContainer, Image: "example.invalid/runner:v1"}}}},
 		StateVolume: sandboxapi.StateVolume{Name: "state", Layout: sandboxapi.VolumeLayout{Type: sandboxapi.DirectoryTree}, Claim: corev1.PersistentVolumeClaimSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources:   corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}},
@@ -266,7 +266,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	})
 	const otherID = "fedcba9876543210fedcba9876543210"
 	if err := objects.Patch(ctx, sandbox, client.RawPatch(types.MergePatchType, []byte(`{
-		"metadata": {"annotations": {"agentplane.allegedly.works/runner-credential": "`+otherID+`"}},
+		"metadata": {"annotations": {"agentplane.allegedly.works/environment-runtime-credential": "`+otherID+`"}},
 		"status": {"runnerCredential": {"id": "`+otherID+`", "kind": "Pod"}}
 	}`))); err != nil {
 		t.Fatal(err)
@@ -395,7 +395,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 			condition := meta.FindStatusCondition(other.Status.Conditions, sandboxapi.ConditionRunning)
 			return condition != nil && condition.Reason == "TemplateInvalid"
 		})
-		changed.Spec.Pod.Spec.Containers[0].Name = RunnerContainer
+		changed.Spec.Pod.Spec.Containers[0].Name = EnvironmentRuntimeContainer
 		if err := objects.Update(ctx, changed); err != nil {
 			t.Fatal(err)
 		}

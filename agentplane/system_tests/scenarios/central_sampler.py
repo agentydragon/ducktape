@@ -13,13 +13,13 @@ from agentplane.app.testing.client import Client
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2
 from agentplane.native.codex.testing import responses_sse
-from agentplane.proto import event_pb2, runner_pb2
+from agentplane.proto import event_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.central_sampler import MODEL, CentralStack, capture_sampler_diagnostics, central_stack
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
-from agentplane.system_tests.sandbox import SANDBOX_READY_SECONDS, wait_until_running
+from agentplane.system_tests.sandbox import ENVIRONMENT_RUNTIME_LEASE_SUFFIX, SANDBOX_READY_SECONDS, wait_until_running
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.tracing import tracer
 from agentplane.testing.codex_model import CodexModel
@@ -87,10 +87,12 @@ async def _capture_session_diagnostics(
         except Exception as error:
             diagnostic["sandbox_error"] = repr(error)
         try:
-            runner_lease = await cluster.kubectl("get", "lease", f"{deployed.sandbox}-runner", "-o", "json")
-            diagnostic["runner_lease"] = json.loads(runner_lease)
+            environment_runtime_lease = await cluster.kubectl(
+                "get", "lease", f"{deployed.sandbox}{ENVIRONMENT_RUNTIME_LEASE_SUFFIX}", "-o", "json"
+            )
+            diagnostic["environment_runtime_lease"] = json.loads(environment_runtime_lease)
         except Exception as error:
-            diagnostic["runner_lease_error"] = repr(error)
+            diagnostic["environment_runtime_lease_error"] = repr(error)
         try:
             diagnostic["cluster_services_endpoints_pods"] = json.loads(
                 await cluster.kubectl("get", "services,endpointslices,pods", "-o", "json")
@@ -200,9 +202,9 @@ async def dispatcher_central_setup_tool_and_retained_answer(
     reasoning = "I will read the marker created during setup."
     answer = "The executor returned prepared-on-executor."
     async with central_stack(cluster, tmp_path, template=template) as deployed:
-        model = scripted.model(deployed.sampler_pod_name, runner_pb2.HARNESS_CODEX)
+        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
-        session_spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CENTRAL_SAMPLER, cwd=cwd, model=MODEL)
+        session_spec = session_pb2.SessionSpec(harness=session_pb2.HARNESS_CENTRAL_SAMPLER, cwd=cwd, model=MODEL)
         interrupted_opening = await deployed.dispatcher.OpenSession(
             session_dispatcher_pb2.OpenSessionRequest(
                 session_id=interrupted_session_id,
@@ -386,7 +388,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
         )
         assert snapshot.executor.sandbox_uid == deployed.sandbox_uid
         assert snapshot.expected_incarnation_uid == deployed.incarnation_uid
-        assert snapshot.attached.setup_state == runner_pb2.SETUP_STATE_SUCCEEDED
+        assert snapshot.attached.setup_state == session_pb2.SETUP_STATE_SUCCEEDED
         async with asyncio.timeout(60), aclosing(deployed.history.watch_session_summaries()) as changes:
             async for _ in changes:
                 try:
@@ -463,7 +465,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
                     "source_id": terminal.origin.source_id,
                     "terminal_cursor": terminal.cursor,
                     "folded_through": summary.folded_through,
-                    "setup_state": runner_pb2.SetupState.Name(snapshot.attached.setup_state),
+                    "setup_state": session_pb2.SetupState.Name(snapshot.attached.setup_state),
                     "passed": True,
                 },
                 indent=2,
@@ -480,9 +482,9 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
     first_command_id, resumed_command_id = str(uuid4()), str(uuid4())
     cwd = executor.cwd
     async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
-        model = scripted.model(deployed.sampler_pod_name, runner_pb2.HARNESS_CODEX)
+        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
-        session_spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CENTRAL_SAMPLER, cwd=cwd, model=MODEL)
+        session_spec = session_pb2.SessionSpec(harness=session_pb2.HARNESS_CENTRAL_SAMPLER, cwd=cwd, model=MODEL)
         opening = await deployed.dispatcher.OpenSession(
             session_dispatcher_pb2.OpenSessionRequest(
                 session_id=session_id,

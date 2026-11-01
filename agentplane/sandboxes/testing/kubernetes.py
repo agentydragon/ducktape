@@ -20,15 +20,15 @@ from agentplane.sandboxes.launch import SandboxIdentity
 from agentplane.sandboxes.testing.reader import SandboxReader
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from agentplane.testing.tls import runner_identity_uri
+from agentplane.testing.tls import environment_runtime_identity_uri
 from util.kubernetes import CustomObjectsClient
 
 # gazelle:include_dep @pypi//protobuf
 
 SANDBOX = "test-runner"
 _MERGE_PATCH = "application/merge-patch+json"
-_RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/runner-credential"
-_RUNNER_CREDENTIAL_ID = "test-runner-credential"
+_RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/environment-runtime-credential"
+_RUNNER_CREDENTIAL_ID = "test-environment-runtime-credential"
 
 
 @dataclass(frozen=True)
@@ -59,8 +59,8 @@ class SandboxCluster:
         )
 
     @property
-    def runner_identity_uri(self) -> str:
-        return runner_identity_uri(self.namespace, self.uid, _RUNNER_CREDENTIAL_ID)
+    def environment_runtime_identity_uri(self) -> str:
+        return environment_runtime_identity_uri(self.namespace, self.uid, _RUNNER_CREDENTIAL_ID)
 
     async def pod_token(self, audience: str) -> str:
         """A token bound to the runner Pod, as its runner container holds one."""
@@ -156,7 +156,7 @@ async def sandbox_cluster(server: KubernetesApiServer, *, name: str = SANDBOX) -
             ),
             spec=k8s_client.V1PodSpec(
                 service_account_name=name,
-                containers=[k8s_client.V1Container(name="runner", image="registry.test/runner:unused")],
+                containers=[k8s_client.V1Container(name="environment-runtime", image="registry.test/runner:unused")],
             ),
         ),
     )

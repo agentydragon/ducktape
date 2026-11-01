@@ -11,7 +11,7 @@ import pytest_bazel
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.testing.client import Client
 from agentplane.env.harnesshost.harness import Harness
-from agentplane.proto import event_pb2, runner_pb2
+from agentplane.proto import event_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.ollama_catalog import ollama_cases
@@ -21,9 +21,9 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 # gazelle:include_dep @pypi//protobuf
 
 
-def _id(case: tuple[runner_pb2.Harness, str]) -> str:
+def _id(case: tuple[session_pb2.Harness, str]) -> str:
     harness, route = case
-    return f"{runner_pb2.Harness.Name(harness).lower()}-{route.replace('/', '-')}"
+    return f"{session_pb2.Harness.Name(harness).lower()}-{route.replace('/', '-')}"
 
 
 async def _exercise_case(
@@ -31,13 +31,13 @@ async def _exercise_case(
     dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
     catalog: ModelCatalog,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     route: str,
 ) -> None:
     case_id = _id((harness, route))
     evidence: dict[str, object] = {"case": case_id, "route": route, "status": "started"}
     try:
-        offered = catalog.harnesses[Harness(runner_pb2.Harness.Name(harness))]
+        offered = catalog.harnesses[Harness(session_pb2.Harness.Name(harness))]
         assert route in offered, f"route absent from offered models for {case_id}"
         view = await sandbox("systest-ollama-smoke")
         evidence["sandbox"] = view.name

@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	runneringresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
+	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	centralsampler "github.com/agentydragon/ducktape/agentplane/x/central_sampler"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
@@ -78,13 +78,13 @@ func (p *samplerExportPlan) entriesReceived() int {
 }
 
 type samplerExportIngressServer struct {
-	runneringresspb.UnimplementedRunnerIngressServer
+	session_ingresspb.UnimplementedSessionJournalIngressServer
 	service *Service
 	plans   []*samplerExportPlan
 	pushes  atomic.Int32
 }
 
-func (s *samplerExportIngressServer) Push(stream grpc.BidiStreamingServer[runneringresspb.PushFrame, runneringresspb.Acknowledgement]) error {
+func (s *samplerExportIngressServer) Push(stream grpc.BidiStreamingServer[session_ingresspb.PushFrame, session_ingresspb.Acknowledgement]) error {
 	index := int(s.pushes.Add(1)) - 1
 	if index >= len(s.plans) {
 		return status.Error(codes.Internal, "unexpected sampler export call")
@@ -98,11 +98,11 @@ func (s *samplerExportIngressServer) Push(stream grpc.BidiStreamingServer[runner
 }
 
 type samplerExportStream struct {
-	grpc.BidiStreamingServer[runneringresspb.PushFrame, runneringresspb.Acknowledgement]
+	grpc.BidiStreamingServer[session_ingresspb.PushFrame, session_ingresspb.Acknowledgement]
 	plan *samplerExportPlan
 }
 
-func (s *samplerExportStream) Send(ack *runneringresspb.Acknowledgement) error {
+func (s *samplerExportStream) Send(ack *session_ingresspb.Acknowledgement) error {
 	if (s.plan.holdInitialAck && ack.GetCursor() == 0) || (s.plan.holdAckCursor > 0 && ack.GetCursor() == s.plan.holdAckCursor) {
 		s.plan.ackSignalOnce.Do(func() { close(s.plan.ackHeld) })
 		select {
@@ -114,7 +114,7 @@ func (s *samplerExportStream) Send(ack *runneringresspb.Acknowledgement) error {
 	return s.BidiStreamingServer.Send(ack)
 }
 
-func (s *samplerExportStream) Recv() (*runneringresspb.PushFrame, error) {
+func (s *samplerExportStream) Recv() (*session_ingresspb.PushFrame, error) {
 	frame, err := s.BidiStreamingServer.Recv()
 	if err != nil || frame == nil {
 		return frame, err
@@ -189,7 +189,7 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	runneringresspb.RegisterRunnerIngressServer(server, &samplerExportIngressServer{service: service, plans: plans})
+	session_ingresspb.RegisterSessionJournalIngressServer(server, &samplerExportIngressServer{service: service, plans: plans})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
 
@@ -205,8 +205,8 @@ func (f samplerExportFixture) openSession(t *testing.T) *centralsampler.Session 
 	t.Helper()
 	session, err := f.sampler.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(),
-		Spec: &runnerpb.SessionSpec{
-			Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER,
+		Spec: &sessionpb.SessionSpec{
+			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER,
 			Model:   "test-model-initial",
 			Cwd:     "/test-workspace",
 		},

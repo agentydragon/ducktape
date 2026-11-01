@@ -6,7 +6,7 @@ paid model requests. Each harness completes 1, 10 or 100 turns with 2 KiB text m
 then a fresh runner/native process resumes the same durable session and sends another
 request. Exact prior user and assistant messages must reach the controlled upstream.
 
-Run `bbr test //agentplane/runner:test_native_resources`. Each shard emits a JSON
+Run `bbr test //agentplane/env/e2e:test_native_resources`. Each shard emits a JSON
 artifact with kernel-reported native RSS/high-water RSS and CPU ticks, native directory
 regular-file logical/allocated size grouped by top-level directory, and resumed
 conversation text bytes. Symlinks are counted separately; their targets do not inflate

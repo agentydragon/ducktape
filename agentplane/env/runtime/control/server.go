@@ -10,11 +10,11 @@ import (
 	"time"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
-	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
+	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
@@ -29,7 +29,7 @@ import (
 const (
 	SandboxMetadata     = "agentplane-sandbox-uid"
 	IncarnationMetadata = "agentplane-incarnation-uid"
-	BootMetadata        = "agentplane-runner-boot-id"
+	BootMetadata        = "agentplane-environment-runtime-boot-id"
 	EpochMetadata       = "agentplane-connection-epoch"
 
 	forwardHeartbeatInterval = 10 * time.Second
@@ -40,11 +40,11 @@ type Config struct {
 	SandboxUID    string
 	BootID        string
 	ListenAddress string
-	Security      runnertransport.Security
+	Security      environmentruntimetransport.Security
 
 	IsClosing        func() bool
 	AdoptIncarnation func(context.Context, string) error
-	Facts            func() (*runnerstatepb.RunnerFacts, error)
+	Facts            func() (*environmentruntimestatepb.EnvironmentRuntimeFacts, error)
 	Changes          func() <-chan struct{}
 }
 
@@ -72,7 +72,7 @@ func (e *Epoch) SandboxUID() string { return e.watch.sandboxUID }
 func (e *Epoch) IncarnationUID() string { return e.watch.incarnationUID }
 
 type Server struct {
-	runnerservicepb.RunnerServer
+	environmentruntimepb.EnvironmentRuntimeServer
 
 	config Config
 
@@ -83,14 +83,14 @@ type Server struct {
 	highestIncarnationUID string
 }
 
-func New(config Config, backend runnerservicepb.RunnerServer) *Server {
-	return &Server{config: config, RunnerServer: backend}
+func New(config Config, backend environmentruntimepb.EnvironmentRuntimeServer) *Server {
+	return &Server{config: config, EnvironmentRuntimeServer: backend}
 }
 
 // Listen opens the configured authenticated control listener and registers the
 // Runner, executor stream, and standard gRPC health services.
 func (s *Server) Listen(executor executorpb.ExecutorServer) (net.Listener, *grpc.Server, error) {
-	credentials, err := s.config.Security.ServerCredentials(runnertransport.GatewayURI)
+	credentials, err := s.config.Security.ServerCredentials(environmentruntimetransport.GatewayURI)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -113,15 +113,15 @@ func (s *Server) Listen(executor executorpb.ExecutorServer) (net.Listener, *grpc
 	)
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
-	healthServer.SetServingStatus(runnerservicepb.Runner_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus(environmentruntimepb.EnvironmentRuntime_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus(executorpb.Executor_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(server, healthServer)
-	runnerservicepb.RegisterRunnerServer(server, s)
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, s)
 	executorpb.RegisterExecutorServer(server, executor)
 	return listener, server, nil
 }
 
-func (s *Server) directWatchContext(req *runnerservicepb.WatchStateRequest, parent context.Context) (*watch, error) {
+func (s *Server) directWatchContext(req *environmentruntimepb.WatchStateRequest, parent context.Context) (*watch, error) {
 	if req == nil || req.SandboxUid == "" || req.IncarnationUid == "" || req.ConnectionEpoch == 0 {
 		return nil, status.Error(codes.InvalidArgument, "sandbox UID, incarnation UID, and nonzero connection epoch are required")
 	}
@@ -242,7 +242,7 @@ func (s *Server) validateLocked(epoch *Epoch) error {
 }
 
 func (s *Server) authorizeGatewayPeer(ctx context.Context) error {
-	if err := s.config.Security.AuthorizePeer(ctx, runnertransport.GatewayURI); err != nil {
+	if err := s.config.Security.AuthorizePeer(ctx, environmentruntimetransport.GatewayURI); err != nil {
 		return status.Error(codes.Unauthenticated, "Runner control peer is not authenticated as the Runner Gateway")
 	}
 	return nil
@@ -256,8 +256,8 @@ func oneMetadataValue(values []string) (string, bool) {
 }
 
 func (s *Server) WatchState(
-	request *runnerservicepb.WatchStateRequest,
-	server grpc.ServerStreamingServer[runnerservicepb.WatchStateResponse],
+	request *environmentruntimepb.WatchStateRequest,
+	server grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse],
 ) error {
 	if err := s.authorizeGatewayPeer(server.Context()); err != nil {
 		return err
@@ -278,14 +278,14 @@ func (s *Server) WatchState(
 	}
 	return s.forwardWatchState(
 		current.ctx,
-		func() (*runnerservicepb.WatchStateResponse, error) {
+		func() (*environmentruntimepb.WatchStateResponse, error) {
 			facts, err := s.config.Facts()
 			if err != nil {
 				return nil, err
 			}
-			return &runnerservicepb.WatchStateResponse{
+			return &environmentruntimepb.WatchStateResponse{
 				SandboxUid: current.sandboxUID, IncarnationUid: current.incarnationUID,
-				RunnerBootId: s.config.BootID, ConnectionEpoch: current.epoch, Facts: facts,
+				EnvironmentRuntimeBootId: s.config.BootID, ConnectionEpoch: current.epoch, Facts: facts,
 			}, nil
 		},
 		server.Send,
@@ -294,13 +294,13 @@ func (s *Server) WatchState(
 
 func (s *Server) forwardWatchState(
 	ctx context.Context,
-	response func() (*runnerservicepb.WatchStateResponse, error),
-	send func(*runnerservicepb.WatchStateResponse) error,
+	response func() (*environmentruntimepb.WatchStateResponse, error),
+	send func(*environmentruntimepb.WatchStateResponse) error,
 ) error {
 	ticker := time.NewTicker(forwardHeartbeatInterval)
 	defer ticker.Stop()
-	var lastResponse *runnerservicepb.WatchStateResponse
-	var lastStage runnerstatepb.RunnerFacts_QuiesceStage
+	var lastResponse *environmentruntimepb.WatchStateResponse
+	var lastStage environmentruntimestatepb.EnvironmentRuntimeFacts_QuiesceStage
 	stageSeen := false
 	forceHeartbeat := true
 	for {
@@ -319,8 +319,8 @@ func (s *Server) forwardWatchState(
 			if stageName, ok := quiesceStageName(stage); ok {
 				recordQuiesceStage(ctx, stageName)
 				trace.SpanFromContext(ctx).AddEvent(
-					"agentplane.runner.quiesce_stage",
-					trace.WithAttributes(attribute.String("agentplane.runner.quiesce.stage", stageName)),
+					"agentplane.environment_runtime.quiesce_stage",
+					trace.WithAttributes(attribute.String("agentplane.environment_runtime.quiesce.stage", stageName)),
 				)
 			}
 		}
@@ -344,15 +344,15 @@ func (s *Server) forwardWatchState(
 	}
 }
 
-func quiesceStageName(stage runnerstatepb.RunnerFacts_QuiesceStage) (string, bool) {
+func quiesceStageName(stage environmentruntimestatepb.EnvironmentRuntimeFacts_QuiesceStage) (string, bool) {
 	switch stage {
-	case runnerstatepb.RunnerFacts_QUIESCE_STAGE_UNSPECIFIED:
+	case environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_UNSPECIFIED:
 		return "none", true
-	case runnerstatepb.RunnerFacts_QUIESCE_STAGE_DRAINING:
+	case environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_DRAINING:
 		return "draining", true
-	case runnerstatepb.RunnerFacts_QUIESCE_STAGE_FLUSHING:
+	case environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_FLUSHING:
 		return "flushing", true
-	case runnerstatepb.RunnerFacts_QUIESCE_STAGE_QUIESCED:
+	case environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED:
 		return "quiesced", true
 	default:
 		return "", false
@@ -360,8 +360,8 @@ func quiesceStageName(stage runnerstatepb.RunnerFacts_QuiesceStage) (string, boo
 }
 
 func recordQuiesceStage(ctx context.Context, stage string) {
-	_, span := observability.Start(ctx, "agentplane.runner.quiesce_stage")
-	span.SetAttributes(attribute.String("agentplane.runner.quiesce.stage", stage))
+	_, span := observability.Start(ctx, "agentplane.environment_runtime.quiesce_stage")
+	span.SetAttributes(attribute.String("agentplane.environment_runtime.quiesce.stage", stage))
 	span.End()
 }
 
@@ -375,4 +375,4 @@ func (s *Server) markWatchReady(current *watch) error {
 	return nil
 }
 
-var _ runnerservicepb.RunnerServer = (*Server)(nil)
+var _ environmentruntimepb.EnvironmentRuntimeServer = (*Server)(nil)

@@ -10,7 +10,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/journal"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
@@ -46,21 +46,21 @@ func (s *Session) apply(entry *eventlogpb.EventEntry, ids []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	failed := e.GetHarnessLaunchFailed() != nil || e.GetHarnessExited() != nil || e.GetSetupInterrupted() != nil || (e.GetSetupFinished() != nil && e.GetSetupFinished().ExitCode != 0)
-	if s.launch == runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING && (e.GetHarnessStarted() != nil || failed) {
-		s.launch = runnerpb.LaunchOutcome_LAUNCH_OUTCOME_FAILED
+	if s.launch == sessionpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING && (e.GetHarnessStarted() != nil || failed) {
+		s.launch = sessionpb.LaunchOutcome_LAUNCH_OUTCOME_FAILED
 		if e.GetHarnessStarted() != nil {
-			s.launch = runnerpb.LaunchOutcome_LAUNCH_OUTCOME_STARTED
+			s.launch = sessionpb.LaunchOutcome_LAUNCH_OUTCOME_STARTED
 		}
 	}
-	if s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
+	if s.setup == sessionpb.SetupState_SETUP_STATE_RUNNING {
 		if f := e.GetSetupFinished(); f != nil {
-			s.setup = runnerpb.SetupState_SETUP_STATE_SUCCEEDED
+			s.setup = sessionpb.SetupState_SETUP_STATE_SUCCEEDED
 			if f.ExitCode != 0 {
-				s.setup = runnerpb.SetupState_SETUP_STATE_FAILED
+				s.setup = sessionpb.SetupState_SETUP_STATE_FAILED
 			}
 		}
 		if e.GetSetupInterrupted() != nil {
-			s.setup = runnerpb.SetupState_SETUP_STATE_INTERRUPTED
+			s.setup = sessionpb.SetupState_SETUP_STATE_INTERRUPTED
 		}
 	}
 	if e.GetHarnessLaunchFailed() != nil || e.GetSetupInterrupted() != nil || (e.GetSetupFinished() != nil && e.GetSetupFinished().ExitCode != 0) {

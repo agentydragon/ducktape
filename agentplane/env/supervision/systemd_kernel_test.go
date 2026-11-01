@@ -49,7 +49,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 	}
 	stateDir := "/state/.supervision-proof"
 	runtimeOwner := SystemdOwner{
-		Unit: "agentplane-environment-runtime.service", LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: SystemdRunnerScopeID,
+		Unit: "agentplane-environment-runtime.service", LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: SystemdEnvironmentRuntimeScopeID,
 	}
 	supervisor, err := launcher.PrepareForOwner(stateDir, sandboxUID, runtimeOwner)
 	if err != nil {
@@ -435,7 +435,7 @@ type systemdProofRunnerConfig struct {
 func loadSystemdProofConfiguration(t *testing.T) (systemdProofRunnerConfig, string) {
 	t.Helper()
 	var config systemdProofRunnerConfig
-	readSystemdProofJSON(t, "/run/agentplane/config/runner.json", &config)
+	readSystemdProofJSON(t, "/run/agentplane/config/environment-runtime.json", &config)
 	if config.StateDir == "" {
 		t.Fatal("Runner configuration has no state_dir")
 	}

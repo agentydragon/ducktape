@@ -3,7 +3,7 @@
 load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_SERVICE_LAYOUTS", "K3S_TAGS", "K3S_VM_DATA", "K3S_VM_ENV")
 load("//devinfra/python:defs.bzl", "py_test")
 
-_HARNESSES_LAYOUT = "//agentplane/system_tests/k3s:harnesses/runner_layout"
+_HARNESSES_LAYOUT = "//agentplane/system_tests/k3s:harnesses/environment_tools_layout"
 _FIXTURE = "//agentplane/system_tests/k3s:rendered/local-model.json"
 _MCP_FIXTURE = "//agentplane/system_tests/k3s:rendered/local-model-mcp-fixtures.json"
 _MCP_LAYOUTS = [

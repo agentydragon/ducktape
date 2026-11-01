@@ -47,7 +47,7 @@ reasoning item also omits `encrypted_content`; seeing a summary is not proof of 
 continuation payload. The runner compares observed item content, so that field difference alone does
 not establish that it needs private storage. The runner uses turn-scoped public history RPCs and
 reports unknown when those RPCs cannot establish continuation; see the
-[runner recovery contract](../runner/SPEC.md#interrupted-turns-and-continuation-recovery).
+[Harness Host recovery contract](../env/harnesshost/docs/session_protocol.md#interrupted-turns-and-continuation-recovery).
 
 ### Completed compaction
 
@@ -145,7 +145,7 @@ The 0.157.0 item-list cursor is an opaque string and entries carry optional time
 
 ## Runner regression coverage
 
-`//agentplane/runner:test_restart` runs the Go runner, the real pinned Codex binary and a scripted
+`//agentplane/env/e2e:test_restart` runs the Go runner, the real pinned Codex binary and a scripted
 model endpoint. The paginated recovery case includes 101 reasoning items, assistant text and a
 completed shell command followed by a failed turn and process replacement. It checks retained
 visible items, unchanged encrypted reasoning in the next model request, complete cursor traversal,

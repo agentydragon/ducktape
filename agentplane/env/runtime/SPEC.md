@@ -1,17 +1,18 @@
 # Environment Runtime
 
 The Environment Runtime is the authority for one Sandbox environment's identity, bootstrap,
-legacy environment-owner lock, durable quiesce marker, Gateway control listener, and lifecycle of
-its Harness Host and standalone Execution service. It serves `EnvironmentRuntime.Connect` to the
-Host on a private Unix socket and the existing Runner API to Runner Gateway. The Host owns Session
-records, journals, native harnesses and its separate owner lock.
+environment-owner lock, durable quiesce marker, Gateway control listener, and lifecycle of its
+Harness Host and standalone Execution service. It serves `EnvironmentRuntime.Connect` to the Host
+on a private Unix socket and the `EnvironmentRuntime` API to the existing Runner Gateway. The Host
+owns Session records, journals, native harnesses and its separate owner lock.
 
 ## Retained state
 
-Runtime opens `StateDir/.agentplane-runner-owner` and keeps that same file inode locked for its
-lifetime. It does not rename or replace the file during the service split. This prevents a queued
-legacy Runner scope or an older Runtime from overlapping the new owner. The Host lock is separate
-at `StateDir/harness-host/.agentplane-runner-owner`.
+Runtime opens `StateDir/.agentplane-environment-runtime-owner` and holds it locked for its lifetime.
+Harness Host separately locks `StateDir/harness-host/.agentplane-harness-host-owner`. This is a
+direct cutover from the old `.agentplane-runner-owner` lock paths: an old process does not contend
+on the new paths, so all pre-rename Sandbox workloads must stop before the new binaries use their
+state volumes. Old lock files may remain; Session records and journals do not move.
 
 The durable seal remains `StateDir/sessions/sealed`, with the existing incarnation UID bytes as
 its payload. Runtime reads, removes, and writes this marker using the old filename, directory,
@@ -94,15 +95,15 @@ IDs `harness-host` and `execution-service`. Their lifetime directories are respe
 Pod orchestration owns that separate container.
 
 The fixed VM service commands use the mounted configuration at
-`/run/agentplane/config/runner.json` and launch identity at
+`/run/agentplane/config/environment-runtime.json` and launch identity at
 `/run/agentplane/sandbox/launch.json`. Runtime also accepts optional
 `--harness-host-binary` and `--execution-service-binary` overrides for tests; production resolves
-the sibling binaries from its mounted disk. `--vm-resource-properties <runner.json>` remains the
+the sibling binaries from its mounted disk. `--vm-resource-properties <environment-runtime.json>` remains the
 systemd prestart interface for calculating the environment resource envelope.
 
 ## Configuration and startup
 
-Runtime accepts `--config <runner.json> --launch-file <launch.json>`. Resolved supervision is
+Runtime accepts `--config <environment-runtime.json> --launch-file <launch.json>`. Resolved supervision is
 explicit: `pid1` requires a Pod PID namespace, `systemd` requires the VM `SystemdLauncher`, and
 `subprocess` is selected explicitly for local/integration runs. Runtime never silently falls back
 between them. The same immutable config files are passed to Host; Runtime writes the per-incarnation

@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
-	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -54,24 +54,24 @@ func (l queueLease) StillOwns(ctx context.Context, owner dispatcher.Owner) (bool
 }
 
 type queuedRunnerRequest struct {
-	request  *runnerservicepb.SubmitInputRequest
+	request  *environmentruntimepb.SubmitInputRequest
 	metadata metadata.MD
 }
 
 type queueRunner struct {
-	runnerservicepb.UnimplementedRunnerServer
+	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	bootID    string
 	submitted chan queuedRunnerRequest
 }
 
-func (r *queueRunner) WatchState(request *runnerservicepb.WatchStateRequest, stream grpc.ServerStreamingServer[runnerservicepb.WatchStateResponse]) error {
+func (r *queueRunner) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
-		if err := stream.Send(&runnerservicepb.WatchStateResponse{
+		if err := stream.Send(&environmentruntimepb.WatchStateResponse{
 			SandboxUid: request.SandboxUid, IncarnationUid: request.IncarnationUid,
-			RunnerBootId: r.bootID, ConnectionEpoch: request.ConnectionEpoch,
-			Facts: &runnerstatepb.RunnerFacts{},
+			EnvironmentRuntimeBootId: r.bootID, ConnectionEpoch: request.ConnectionEpoch,
+			Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{},
 		}); err != nil {
 			return err
 		}
@@ -83,10 +83,10 @@ func (r *queueRunner) WatchState(request *runnerservicepb.WatchStateRequest, str
 	}
 }
 
-func (r *queueRunner) SubmitInput(ctx context.Context, request *runnerservicepb.SubmitInputRequest) (*runnerservicepb.SubmitInputResponse, error) {
+func (r *queueRunner) SubmitInput(ctx context.Context, request *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	r.submitted <- queuedRunnerRequest{request: request, metadata: md}
-	return &runnerservicepb.SubmitInputResponse{Admission: &eventlogpb.EventEntry{Cursor: 81}}, nil
+	return &environmentruntimepb.SubmitInputResponse{Admission: &eventlogpb.EventEntry{Cursor: 81}}, nil
 }
 
 // This test starts with a committed queue row and ends with the Runner's durable admission returned
@@ -119,13 +119,13 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runnerCredentials, err := f.runnerTLS.ServerCredentials(runner_transport.GatewayURI)
+	runnerCredentials, err := f.runnerTLS.ServerCredentials(environment_runtime_transport.GatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
 	runnerServer := grpc.NewServer(grpc.Creds(runnerCredentials))
 	runner := &queueRunner{bootID: "queue-runner-boot", submitted: make(chan queuedRunnerRequest, 1)}
-	runnerservicepb.RegisterRunnerServer(runnerServer, runner)
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(runnerServer, runner)
 	go func() { _ = runnerServer.Serve(runnerListener) }()
 	defer runnerServer.Stop()
 	runnerDestination.target = runnerListener.Addr().String()
@@ -202,7 +202,7 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 		if got := received.metadata.Get("agentplane-incarnation-uid"); len(got) != 1 || got[0] != string(f.pod.UID) {
 			t.Fatalf("Gateway omitted the incarnation fence: %v", received.metadata)
 		}
-		if got := received.metadata.Get("agentplane-runner-boot-id"); len(got) != 1 || got[0] != runner.bootID {
+		if got := received.metadata.Get("agentplane-environment-runtime-boot-id"); len(got) != 1 || got[0] != runner.bootID {
 			t.Fatalf("Gateway omitted the Runner boot fence: %v", received.metadata)
 		}
 		if got := received.metadata.Get("agentplane-connection-epoch"); len(got) != 1 || got[0] == "" {
@@ -260,4 +260,4 @@ func waitForRunnerConnection(ctx context.Context, gateway *Gateway, sandboxUID s
 	return ready
 }
 
-var _ runnerservicepb.RunnerServer = (*queueRunner)(nil)
+var _ environmentruntimepb.EnvironmentRuntimeServer = (*queueRunner)(nil)

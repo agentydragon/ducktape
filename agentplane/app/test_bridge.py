@@ -26,12 +26,12 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.runner_gateway import admitted, delivered_opening
+from agentplane.env.e2e.testing.failure_journal import FailureEvidence
+from agentplane.env.e2e.testing.process import RunningRunner, kill_harness
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from agentplane.history_service.testing.history import History
-from agentplane.proto import event_pb2, runner_pb2
-from agentplane.runner.testing.failure_journal import FailureEvidence
-from agentplane.runner.testing.process import RunningRunner, kill_harness
+from agentplane.proto import event_pb2, session_pb2
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
@@ -82,7 +82,7 @@ async def failed_bridge_state(
     evidence.write_json("bridge-state.json", state)
 
 
-async def _create(http: httpx.AsyncClient, spec: runner_pb2.SessionSpec, session_id: UUID, sandbox_uid: str) -> str:
+async def _create(http: httpx.AsyncClient, spec: session_pb2.SessionSpec, session_id: UUID, sandbox_uid: str) -> str:
     """Create a Session through the app, and wait for the Thread History's record of its opening gives it."""
     opened = await http.post(
         SESSIONS, json={"session_id": str(session_id), "sandbox_uid": sandbox_uid, "spec": MessageToDict(spec)}
@@ -100,7 +100,7 @@ async def _create(http: httpx.AsyncClient, spec: runner_pb2.SessionSpec, session
     return thread_id
 
 
-async def _runner_session(runner: SandboxRunner, thread_id: str | UUID) -> runner_pb2.SessionStatus:
+async def _runner_session(runner: SandboxRunner, thread_id: str | UUID) -> session_pb2.SessionStatus:
     status = await runner.status()
     return next(session for session in status.sessions if session.session_id == str(thread_id))
 
@@ -249,7 +249,7 @@ async def _next_model_request(model: ScriptedModel) -> Any:
 async def _open_thread_with_seed(
     http: httpx.AsyncClient,
     model: ScriptedModel,
-    spec: runner_pb2.SessionSpec,
+    spec: session_pb2.SessionSpec,
     sandbox_uid: str,
     *,
     seed_prompt: str,
@@ -279,7 +279,7 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
     model: ScriptedModel,
     runner: RunningRunner,
     history: History,
-    spec: runner_pb2.SessionSpec,
+    spec: session_pb2.SessionSpec,
     failed_bridge_state: None,
     stop_mode: str,
 ) -> None:
@@ -429,7 +429,7 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
     model: ScriptedModel,
     runner: RunningRunner,
     history: History,
-    spec: runner_pb2.SessionSpec,
+    spec: session_pb2.SessionSpec,
     workspace: Path,
     failed_bridge_state: None,
     stop_mode: str,
@@ -444,7 +444,7 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
         f"printf '%s\\n' ready > {shlex.quote(str(ready))}; "
         "printf 'partial tool output'; exec sleep 3600"
     )
-    codex = spec.harness == runner_pb2.HARNESS_CODEX
+    codex = spec.harness == session_pb2.HARNESS_CODEX
     expected = (
         {event_pb2.RECOVERY_DISPOSITION_UNKNOWN}
         if codex
@@ -548,7 +548,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
     model: ScriptedModel,
     runner: RunningRunner,
     history: History,
-    spec: runner_pb2.SessionSpec,
+    spec: session_pb2.SessionSpec,
     workspace: Path,
     failed_bridge_state: None,
     stop_mode: str,
@@ -670,7 +670,7 @@ async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
     runner: RunningRunner,
     session_dispatcher: SessionDispatcherClient,
     model: ScriptedModel,
-    spec: runner_pb2.SessionSpec,
+    spec: session_pb2.SessionSpec,
 ) -> None:
     sandboxes = SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace)
     gateway = GatewayAccess(gateway_service.target, app_token_file)
@@ -743,7 +743,7 @@ async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
     sandbox_control: SandboxControlClient,
     runner: RunningRunner,
     http: httpx.AsyncClient,
-    spec: runner_pb2.SessionSpec,
+    spec: session_pb2.SessionSpec,
 ) -> None:
     # No app HTTP request opened this Thread; History's Session opening creates its row.
     session_id = uuid4()
@@ -768,7 +768,7 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
     event_logs: SessionHistory,
     http: httpx.AsyncClient,
     model: ScriptedModel,
-    spec: runner_pb2.SessionSpec,
+    spec: session_pb2.SessionSpec,
     session_dispatcher: SessionDispatcherClient,
     history: History,
 ) -> None:
@@ -811,7 +811,7 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
         ):
             with attempt:
                 (summary,) = await sandbox_runner.list_sessions()
-                assert summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+                assert summary.harness_state == session_pb2.HARNESS_STATE_STOPPED
         receipt_response = await http.post(
             f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
             json={

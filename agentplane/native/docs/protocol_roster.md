@@ -214,7 +214,7 @@ id keeps the classic `exec_command` function-call shape the tests assert.
 
 ## What the runner consumes
 
-The runner in `agentplane/runner/` translates these surfaces into its protocol; everything else
+The runner in `agentplane/env/e2e/` translates these surfaces into its protocol; everything else
 stays evidence in `Native` events. Observed with the pinned builds while writing it:
 
 - Claude: `--session-id` fixes a fresh session's id, so the runner never waits for one;

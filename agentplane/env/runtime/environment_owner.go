@@ -8,11 +8,10 @@ import (
 	"syscall"
 )
 
-const legacyOwnerName = ".agentplane-runner-owner"
+const environmentRuntimeOwnerName = ".agentplane-environment-runtime-owner"
 
-// environmentOwner retains the original Runner ownership inode across the service split. The
-// filename and nonblocking flock are a deployment fence: a new Runtime cannot acquire state while
-// a legacy Runner still owns it, and a stale queued native launch cannot cross into a successor.
+// environmentOwner holds the Runtime lifetime fence. Its nonblocking flock prevents a second
+// Environment Runtime from taking ownership of the same Sandbox state concurrently.
 type environmentOwner struct {
 	file *os.File
 }
@@ -21,7 +20,7 @@ func openEnvironmentOwner(stateDir string) (*environmentOwner, error) {
 	if err := ensureDirectory(stateDir); err != nil {
 		return nil, err
 	}
-	file, err := os.OpenFile(filepath.Join(stateDir, legacyOwnerName), os.O_RDONLY|os.O_CREATE, 0o600)
+	file, err := os.OpenFile(filepath.Join(stateDir, environmentRuntimeOwnerName), os.O_RDONLY|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("cannot fence environment state directory %s: %w", stateDir, err)
 	}

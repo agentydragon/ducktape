@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	runneringresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
+	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
@@ -19,9 +19,9 @@ type acknowledgementSink struct {
 	grpc.ServerStream
 }
 
-func (acknowledgementSink) Send(*runneringresspb.Acknowledgement) error { return nil }
+func (acknowledgementSink) Send(*session_ingresspb.Acknowledgement) error { return nil }
 
-func (acknowledgementSink) Recv() (*runneringresspb.PushFrame, error) { return nil, io.EOF }
+func (acknowledgementSink) Recv() (*session_ingresspb.PushFrame, error) { return nil, io.EOF }
 
 // A runner that never pauses keeps the ingress's frame queue non-empty, so only the batch limits bound a
 // transaction. Each commit is one transaction, so the distinct transaction IDs on the stored entries count them.

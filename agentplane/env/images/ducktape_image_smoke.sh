@@ -7,7 +7,7 @@ image="$(printf '%s\n' "$loaded" | sed -n -e 's/^Loaded image: //p' -e 's/^Loade
 test -n "$image"
 docker run --rm --entrypoint /bin/claude "$image" --version
 docker run --rm --entrypoint /bin/codex "$image" --version
-nix build --no-link .#checks.x86_64-linux.runner-ducktape-tools
+nix build --no-link .#checks.x86_64-linux.environment-tools
 docker run --rm --network none --entrypoint /bin/bash "$image" -euo pipefail -c '
   test "$(id -u)" = 1000
   for tool in bb bbr bazelisk pre-commit ruff prettier nixfmt buildifier gazelle; do

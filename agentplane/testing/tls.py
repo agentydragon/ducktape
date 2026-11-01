@@ -102,8 +102,8 @@ def issue_leaf(ca: CertificateAuthority, hostname: str, directory: Path) -> tupl
     return cert_path, key_path
 
 
-def runner_identity_uri(namespace: str, sandbox_uid: str, credential_id: str) -> str:
-    """Return the Runner identity URI used by the Gateway and transport fixtures."""
+def environment_runtime_identity_uri(namespace: str, sandbox_uid: str, credential_id: str) -> str:
+    """Return the Environment Runtime identity URI used by Gateway and transport fixtures."""
     if (
         not namespace
         or len(namespace) > 63
@@ -122,7 +122,7 @@ def runner_identity_uri(namespace: str, sandbox_uid: str, credential_id: str) ->
             )
         ):
             raise ValueError(f"{name} must be a non-empty URI path segment")
-    return f"spiffe://agentplane/runner/{namespace}/{sandbox_uid}/{credential_id}"
+    return f"spiffe://agentplane/environment-runtime/{namespace}/{sandbox_uid}/{credential_id}"
 
 
 def issue_workload_leaf(

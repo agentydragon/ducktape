@@ -18,11 +18,11 @@ import (
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/projection"
-	runneringresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
+	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -75,7 +75,7 @@ func useAPIServer(server *kubeapiserver.Server) (err error) {
 type running struct {
 	reads   historypb.HistoryServiceClient
 	health  healthpb.HealthClient
-	ingress runneringresspb.RunnerIngressClient
+	ingress session_ingresspb.SessionJournalIngressClient
 	stop    func() error
 }
 
@@ -131,7 +131,7 @@ func start(t *testing.T, tune func(*config)) running {
 	readsConnection := dial(readsListener)
 	return running{
 		reads: historypb.NewHistoryServiceClient(readsConnection), health: healthpb.NewHealthClient(readsConnection),
-		ingress: runneringresspb.NewRunnerIngressClient(dial(ingressListener)), stop: stop,
+		ingress: session_ingresspb.NewSessionJournalIngressClient(dial(ingressListener)), stop: stop,
 	}
 }
 
@@ -157,11 +157,11 @@ func pushJournal(t *testing.T, service running, sessionID uuid.UUID, entries ...
 	if err != nil {
 		t.Fatal(err)
 	}
-	frames := []*runneringresspb.PushFrame{
-		{Frame: &runneringresspb.PushFrame_Announce{Announce: &runnerpb.Attached{SessionId: sessionID.String()}}},
+	frames := []*session_ingresspb.PushFrame{
+		{Frame: &session_ingresspb.PushFrame_Announce{Announce: &sessionpb.Attached{SessionId: sessionID.String()}}},
 	}
 	for _, entry := range entries {
-		frames = append(frames, &runneringresspb.PushFrame{Frame: &runneringresspb.PushFrame_Entry{Entry: entry}})
+		frames = append(frames, &session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_Entry{Entry: entry}})
 	}
 	for _, frame := range frames {
 		if err := push.Send(frame); err != nil {
@@ -479,7 +479,7 @@ func TestRunServesTheReadAPIAndTheIngressOnTheirConfiguredPorts(t *testing.T) {
 	readerListener.Close()
 	ingressListener.Close()
 	push := func(target string) error {
-		stream, err := runneringresspb.NewRunnerIngressClient(dial(target)).Push(call, grpc.WaitForReady(true))
+		stream, err := session_ingresspb.NewSessionJournalIngressClient(dial(target)).Push(call, grpc.WaitForReady(true))
 		if err != nil {
 			return err
 		}

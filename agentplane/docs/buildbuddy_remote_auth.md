@@ -7,7 +7,7 @@ alternative, not a prerequisite for the staging stopgap.
 
 ## Staging-only direct-key stopgap
 
-The staging runner SandboxTemplate (`runner-ducktape`, `cluster/cdk8s/agentplane/staging.py`) projects the existing canonical BuildBuddy key through
+The staging runner SandboxTemplate (`environment-tools`, `cluster/cdk8s/agentplane/staging.py`) projects the existing canonical BuildBuddy key through
 ESO into its **workload container only**. The launcher consumes the projected file via
 `BBR_BUILDBUDDY_API_KEY_FILE` for real `bbr` runs.
 The existing BuildBuddy egress policy still limits the sandbox's destination hosts. This does **not** keep the key secret from agent-controlled sandbox code or the

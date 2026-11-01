@@ -11,9 +11,9 @@ import grpc
 import pytest
 import pytest_bazel
 
+from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.native.codex.testing.responses_sse import Message, response_stream
-from agentplane.proto import event_pb2, runner_pb2
-from agentplane.runner import runner_service_pb2
+from agentplane.proto import event_pb2, session_pb2
 from agentplane.x.central_sampler import sampler_pb2, sampler_pb2_grpc
 from agentplane.x.central_sampler.testing import METADATA, Endpoint, Request, open_request, service, settings
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -76,11 +76,11 @@ async def test_setup_runs_at_open_and_gates_queued_sampling(
             """)
         async with service(config) as stub:
             opened = await stub.OpenSession(request, metadata=METADATA, timeout=10)
-            assert opened.attached.setup_state == runner_pb2.SETUP_STATE_RUNNING
+            assert opened.attached.setup_state == session_pb2.SETUP_STATE_RUNNING
             await through_event(stub, request.session_id, "setup_output")
             duplicate = await stub.OpenSession(request, metadata=METADATA, timeout=10)
-            assert duplicate.attached.setup_state == runner_pb2.SETUP_STATE_RUNNING
-            command = runner_service_pb2.SubmitInputRequest(
+            assert duplicate.attached.setup_state == session_pb2.SETUP_STATE_RUNNING
+            command = environment_runtime_pb2.SubmitInputRequest(
                 session_id=request.session_id, command_id="queued-during-setup", text="Read the prepared workspace."
             )
             admission = await stub.SubmitInput(command, metadata=METADATA, timeout=10)
@@ -107,7 +107,7 @@ async def test_setup_runs_at_open_and_gates_queued_sampling(
             assert await stub.SubmitInput(command, metadata=METADATA, timeout=10) == admission
         async with service(config) as stub:
             reopened = await stub.OpenSession(request, metadata=METADATA, timeout=10)
-            assert reopened.attached.setup_state == runner_pb2.SETUP_STATE_SUCCEEDED
+            assert reopened.attached.setup_state == session_pb2.SETUP_STATE_SUCCEEDED
             events = await recorded_events(stub, request.session_id)
             assert sum(event.HasField("setup_started") for event in events) == 1
             assert (workspace / "attempts").read_text() == "x"
@@ -137,14 +137,14 @@ async def test_failed_setup_remains_terminal_after_reopen(
                 assert events[-1].setup_finished.exit_code == 23
         async with service(config) as stub:
             reopened = await stub.OpenSession(request, metadata=METADATA, timeout=10)
-            assert reopened.attached.setup_state == runner_pb2.SETUP_STATE_FAILED
+            assert reopened.attached.setup_state == session_pb2.SETUP_STATE_FAILED
             snapshot = await stub.GetSession(
                 sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
             )
             assert snapshot.blocked
             with pytest.raises(grpc.aio.AioRpcError) as rejected:
                 await stub.SubmitInput(
-                    runner_service_pb2.SubmitInputRequest(
+                    environment_runtime_pb2.SubmitInputRequest(
                         session_id=request.session_id, command_id="after-failed-setup", text="Must not sample."
                     ),
                     metadata=METADATA,
@@ -182,14 +182,14 @@ async def test_restart_during_setup_interrupts_without_replaying_effects(
         async with service(config) as stub:
             await stub.OpenSession(request, metadata=METADATA, timeout=10)
             await through_event(stub, request.session_id, "setup_output")
-            command = runner_service_pb2.SubmitInputRequest(
+            command = environment_runtime_pb2.SubmitInputRequest(
                 session_id=request.session_id, command_id="waiting-for-setup", text="Never sample this input."
             )
             receipt = await stub.SubmitInput(command, metadata=METADATA, timeout=10)
         async with service(config) as stub:
             await through_event(stub, request.session_id, "setup_interrupted")
             reopened = await stub.OpenSession(request, metadata=METADATA, timeout=10)
-            assert reopened.attached.setup_state == runner_pb2.SETUP_STATE_INTERRUPTED
+            assert reopened.attached.setup_state == session_pb2.SETUP_STATE_INTERRUPTED
             snapshot = await stub.GetSession(
                 sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
             )

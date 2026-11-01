@@ -9,7 +9,7 @@ import (
 	"os"
 	"sync"
 
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -20,7 +20,7 @@ type Log struct {
 	path   string
 	file   *os.File
 	mu     sync.Mutex
-	events []*runnerpb.InitializationEvent
+	events []*sessionpb.InitializationEvent
 }
 
 func OpenLog(path string) (*Log, error) {
@@ -54,7 +54,7 @@ func (l *Log) load() error {
 		}
 		line := bytes.TrimSpace(raw)
 		if len(line) > 0 {
-			event := &runnerpb.InitializationEvent{}
+			event := &sessionpb.InitializationEvent{}
 			parseErr := protojson.UnmarshalOptions{}.Unmarshal(line, event)
 			if parseErr != nil {
 				incompleteTail := errors.Is(readErr, io.EOF) && len(raw) > 0 && raw[len(raw)-1] != '\n' && offset+len(raw) == len(data)
@@ -103,34 +103,34 @@ func (l *Log) Ended() bool {
 	return observation != nil && (observation.Name() == "result" || observation.Name() == "interrupted")
 }
 
-func (l *Log) Since(afterSequence uint64) []*runnerpb.InitializationEvent {
+func (l *Log) Since(afterSequence uint64) []*sessionpb.InitializationEvent {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if afterSequence >= uint64(len(l.events)) {
-		return []*runnerpb.InitializationEvent{}
+		return []*sessionpb.InitializationEvent{}
 	}
-	result := make([]*runnerpb.InitializationEvent, 0, len(l.events)-int(afterSequence))
+	result := make([]*sessionpb.InitializationEvent, 0, len(l.events)-int(afterSequence))
 	for _, event := range l.events[afterSequence:] {
-		result = append(result, proto.Clone(event).(*runnerpb.InitializationEvent))
+		result = append(result, proto.Clone(event).(*sessionpb.InitializationEvent))
 	}
 	return result
 }
 
-func (l *Log) AppendOutput(attempt uint32, stream runnerpb.InitializationStream, data []byte) error {
-	event := &runnerpb.InitializationEvent{
+func (l *Log) AppendOutput(attempt uint32, stream sessionpb.InitializationStream, data []byte) error {
+	event := &sessionpb.InitializationEvent{
 		Attempt: attempt,
-		Observation: &runnerpb.InitializationEvent_Output{Output: &runnerpb.InitializationOutput{
+		Observation: &sessionpb.InitializationEvent_Output{Output: &sessionpb.InitializationOutput{
 			Stream: stream, Data: append([]byte(nil), data...),
 		}},
 	}
 	return l.append(event)
 }
 
-func (l *Log) AppendResult(attempt uint32, exitCode int32) (*runnerpb.InitializeResult, error) {
-	result := &runnerpb.InitializeResult{Executed: true, ExitCode: exitCode}
-	event := &runnerpb.InitializationEvent{
+func (l *Log) AppendResult(attempt uint32, exitCode int32) (*sessionpb.InitializeResult, error) {
+	result := &sessionpb.InitializeResult{Executed: true, ExitCode: exitCode}
+	event := &sessionpb.InitializationEvent{
 		Attempt:     attempt,
-		Observation: &runnerpb.InitializationEvent_Result{Result: proto.Clone(result).(*runnerpb.InitializeResult)},
+		Observation: &sessionpb.InitializationEvent_Result{Result: proto.Clone(result).(*sessionpb.InitializeResult)},
 	}
 	if err := l.append(event); err != nil {
 		return nil, err
@@ -139,13 +139,13 @@ func (l *Log) AppendResult(attempt uint32, exitCode int32) (*runnerpb.Initialize
 }
 
 func (l *Log) AppendInterrupted(attempt uint32) error {
-	return l.append(&runnerpb.InitializationEvent{
+	return l.append(&sessionpb.InitializationEvent{
 		Attempt:     attempt,
-		Observation: &runnerpb.InitializationEvent_Interrupted{Interrupted: &runnerpb.InitializationInterrupted{}},
+		Observation: &sessionpb.InitializationEvent_Interrupted{Interrupted: &sessionpb.InitializationInterrupted{}},
 	})
 }
 
-func (l *Log) append(event *runnerpb.InitializationEvent) error {
+func (l *Log) append(event *sessionpb.InitializationEvent) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.file == nil {
@@ -174,7 +174,7 @@ func (l *Log) append(event *runnerpb.InitializationEvent) error {
 	if err := l.file.Sync(); err != nil {
 		return err
 	}
-	l.events = append(l.events, proto.Clone(event).(*runnerpb.InitializationEvent))
+	l.events = append(l.events, proto.Clone(event).(*sessionpb.InitializationEvent))
 	return nil
 }
 

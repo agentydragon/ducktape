@@ -28,7 +28,7 @@ from agentplane.app.testing.client import Client
 from agentplane.app.testing.models import ActionPolicyView, CallerGrantView, SandboxView
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests import mcp_servers
 from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, WORKING_DIRECTORY, Agent
@@ -42,8 +42,8 @@ from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, Shell
 # A status write follows the informer's next watch event; the bound covers a relist after a
 # dropped watch, not a healthy round trip.
 POLICY_READY_SECONDS = 120.0
-# Where the runner disk mounts the CLI in a Sandbox Pod (`agentplane/env/images/BUILD.bazel`).
-CLI = "/run/agentplane/runner/bin/agentplane"
+# Where the environment disk mounts the CLI in a Sandbox Pod (`agentplane/env/images/BUILD.bazel`).
+CLI = "/run/agentplane/environment/bin/agentplane"
 # The key of the orchestration_v1 group in every deployment that offers it (cluster/cdk8s/agentplane/actions.py).
 ORCHESTRATION_GROUP = "orchestration_v1"
 
@@ -115,7 +115,7 @@ class ScriptedAgent:
         dispatcher: SessionDispatcherClient,
         sandbox: SandboxView,
         *,
-        harness: runner_pb2.Harness,
+        harness: session_pb2.Harness,
         model: str,
         upstream: ScriptedUpstream,
     ) -> ScriptedAgent:
@@ -232,7 +232,7 @@ async def agent_executes_mcp_action(
     client: Client,
     dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
     policy_objects: PolicyObjects,
@@ -255,7 +255,7 @@ async def operator_links_oauth_mcp_server(
     client: Client,
     dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
     policy_objects: PolicyObjects,
@@ -327,7 +327,7 @@ async def agent_mcp_bff_decision(
     client: Client,
     dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:
@@ -468,7 +468,7 @@ async def policy_binding_auto_approves_the_bound_sandbox(
     client: Client,
     dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
     policy_objects: PolicyObjects,
@@ -567,7 +567,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
     client: Client,
     dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
     policy_objects: PolicyObjects,
@@ -608,7 +608,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
         session_id = str(uuid4())
         session = {"sandbox": target, "session_id": session_id}
         spec = {
-            "harness": runner_pb2.Harness.Name(harness),
+            "harness": session_pb2.Harness.Name(harness),
             "model": offered_model,
             "cwd": WORKING_DIRECTORY,
             "reasoning_effort": "low",
@@ -732,5 +732,5 @@ async def launcher_drives_only_the_sandbox_it_launched(
             await suspend_and_delete(cluster, client, name, UUID(target["uid"]))
 
 
-# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf

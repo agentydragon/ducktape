@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
@@ -189,7 +189,7 @@ func observedSandbox(obj any) (string, bool) {
 }
 
 type observedState struct {
-	response *runnerservicepb.WatchStateResponse
+	response *environmentruntimepb.WatchStateResponse
 	err      error
 }
 
@@ -213,7 +213,7 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 	if err != nil {
 		return err
 	}
-	watch, err := runnerservicepb.NewRunnerClient(conn).WatchState(ctx, &runnerservicepb.WatchStateRequest{
+	watch, err := environmentruntimepb.NewEnvironmentRuntimeClient(conn).WatchState(ctx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: destination.identity.UID, IncarnationUid: destination.podUID, ConnectionEpoch: epoch,
 	})
 	if err != nil {
@@ -264,10 +264,10 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 			if err := g.config.RunnerSecurity.AuthorizePeer(watch.Context(), destination.peerURI); err != nil {
 				return status.Error(codes.Unauthenticated, "runner certificate is no longer valid")
 			}
-			if response.GetRunnerBootId() == "" || response.GetSandboxUid() != destination.identity.UID || response.GetIncarnationUid() != destination.podUID || response.GetConnectionEpoch() != epoch || response.GetFacts() == nil {
+			if response.GetEnvironmentRuntimeBootId() == "" || response.GetSandboxUid() != destination.identity.UID || response.GetIncarnationUid() != destination.podUID || response.GetConnectionEpoch() != epoch || response.GetFacts() == nil {
 				return status.Error(codes.InvalidArgument, "runner state has invalid identity or facts")
 			}
-			if connection != nil && connection.bootID != response.RunnerBootId {
+			if connection != nil && connection.bootID != response.EnvironmentRuntimeBootId {
 				return status.Error(codes.Aborted, "runner boot changed")
 			}
 			facts, err := sandboxlease.FromProto(response.GetFacts())
@@ -281,14 +281,14 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 					recordRunnerQuiesceStage(watch.Context(), "agentplane.gateway.runner.quiesce_stage_observed", destination.identity, stageName)
 					span.AddEvent(
 						"agentplane.gateway.runner.quiesce_stage_observed",
-						trace.WithAttributes(attribute.String("agentplane.runner.quiesce.stage", stageName)),
+						trace.WithAttributes(attribute.String("agentplane.environment_runtime.quiesce.stage", stageName)),
 					)
 				}
 			}
 			validateCtx, release := context.WithTimeout(ctx, timing.LivenessTimeout)
 			err = g.validateRunnerDestination(validateCtx, destination)
 			if err == nil && connection == nil {
-				err = g.records.recordBootID(validateCtx, destination.identity, epoch, response.RunnerBootId)
+				err = g.records.recordBootID(validateCtx, destination.identity, epoch, response.EnvironmentRuntimeBootId)
 			}
 			if err == nil {
 				err = g.records.renew(validateCtx, destination.identity, epoch, time.Now(), &facts)
@@ -304,22 +304,22 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 					recordRunnerQuiesceStage(watch.Context(), "agentplane.gateway.runner.quiesce_stage_published", destination.identity, stageName)
 					span.AddEvent(
 						"agentplane.gateway.runner.quiesce_stage_published",
-						trace.WithAttributes(attribute.String("agentplane.runner.quiesce.stage", stageName)),
+						trace.WithAttributes(attribute.String("agentplane.environment_runtime.quiesce.stage", stageName)),
 					)
 				}
 			}
 			if connection == nil {
 				connection = &runnerConnection{
 					identity: destination.identity, podUID: destination.podUID, epoch: epoch,
-					bootID: response.RunnerBootId, ended: make(chan struct{}), closeDirect: cancel,
+					bootID: response.EnvironmentRuntimeBootId, ended: make(chan struct{}), closeDirect: cancel,
 				}
 				connection.direct = &fencedRunnerConn{conn: conn, connection: connection, identity: metadata.Pairs(
 					"agentplane-sandbox-uid", destination.identity.UID,
 					"agentplane-incarnation-uid", destination.podUID,
-					"agentplane-runner-boot-id", response.RunnerBootId,
+					"agentplane-environment-runtime-boot-id", response.EnvironmentRuntimeBootId,
 					"agentplane-connection-epoch", strconv.FormatUint(epoch, 10),
 				)}
-				connection.runner = runnerservicepb.NewRunnerClient(connection.direct)
+				connection.runner = environmentruntimepb.NewEnvironmentRuntimeClient(connection.direct)
 				g.connections.accept(connection)
 			}
 			if !liveness.Stop() {
@@ -353,7 +353,7 @@ func recordRunnerQuiesceStage(ctx context.Context, spanName string, identity san
 	span.SetAttributes(
 		attribute.String("sandbox.name", identity.Name),
 		attribute.String("sandbox.uid", identity.UID),
-		attribute.String("agentplane.runner.quiesce.stage", stage),
+		attribute.String("agentplane.environment_runtime.quiesce.stage", stage),
 	)
 	span.End()
 }

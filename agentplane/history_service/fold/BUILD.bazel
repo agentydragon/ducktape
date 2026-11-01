@@ -51,7 +51,7 @@ py_test(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
-        "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:session_pb2",
         "@pypi//protobuf",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

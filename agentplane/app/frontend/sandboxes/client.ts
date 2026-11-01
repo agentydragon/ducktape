@@ -2,23 +2,23 @@ import { toJson, type JsonObject } from "@bufbuild/protobuf";
 
 import type { components } from "../schema";
 import { api, ok } from "../client";
-import { SessionSpecSchema, type SessionSpec } from "../../../proto/runner_pb";
+import { SessionSpecSchema, type SessionSpec } from "../../../proto/session_pb";
 
 type Harness = NonNullable<components["schemas"]["ThreadView"]["harness"]>;
 /** The runner's protobuf JSON status; this route carries generated proto data as a raw JSON object. */
-export type RunnerLifecycleBlockerView = {
+export type EnvironmentRuntimeLifecycleBlockerView = {
   kind:
-    | "RUNNER_LIFECYCLE_BLOCKER_KIND_UNSPECIFIED"
-    | "RUNNER_LIFECYCLE_BLOCKER_KIND_ADMISSIONS"
-    | "RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_HALT"
-    | "RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_PROCESS"
-    | "RUNNER_LIFECYCLE_BLOCKER_KIND_CODEX_APP_SERVER"
-    | "RUNNER_LIFECYCLE_BLOCKER_KIND_CODEX_EXEC_SERVER"
-    | "RUNNER_LIFECYCLE_BLOCKER_KIND_BOOTSTRAP"
-    | "RUNNER_LIFECYCLE_BLOCKER_KIND_PROCESS_CLEANUP"
-    | "RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_INSPECTION"
-    | "RUNNER_LIFECYCLE_BLOCKER_KIND_JOURNAL_SEAL"
-    | "RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT";
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_UNSPECIFIED"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_ADMISSIONS"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_HALT"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_PROCESS"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_CODEX_APP_SERVER"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_CODEX_EXEC_SERVER"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_BOOTSTRAP"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_PROCESS_CLEANUP"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_INSPECTION"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_JOURNAL_SEAL"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT";
   resource_type: string;
   resource_id: string;
   process_id: string;
@@ -34,34 +34,34 @@ export type RunnerLifecycleBlockerView = {
   finalizers_pending: boolean;
   error: string;
 };
-export type RunnerLifecycleView = {
+export type EnvironmentRuntimeLifecycleView = {
   desired_mode:
-    | "RUNNER_LIFECYCLE_MODE_UNSPECIFIED"
-    | "RUNNER_LIFECYCLE_MODE_RUNNING"
-    | "RUNNER_LIFECYCLE_MODE_QUIESCING"
-    | "RUNNER_LIFECYCLE_MODE_CLOSING";
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_UNSPECIFIED"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_RUNNING"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_CLOSING";
   desired_generation: string;
   progress_generation: string;
   progress_available: boolean;
   progress_current: boolean;
   stage:
-    | "RUNNER_LIFECYCLE_STAGE_UNSPECIFIED"
-    | "RUNNER_LIFECYCLE_STAGE_RUNNING"
-    | "RUNNER_LIFECYCLE_STAGE_DRAINING"
-    | "RUNNER_LIFECYCLE_STAGE_HALTING"
-    | "RUNNER_LIFECYCLE_STAGE_STOPPING"
-    | "RUNNER_LIFECYCLE_STAGE_FENCING"
-    | "RUNNER_LIFECYCLE_STAGE_SEALING"
-    | "RUNNER_LIFECYCLE_STAGE_FLUSHING"
-    | "RUNNER_LIFECYCLE_STAGE_QUIESCED"
-    | "RUNNER_LIFECYCLE_STAGE_CLOSED";
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_UNSPECIFIED"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_RUNNING"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_DRAINING"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_HALTING"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_STOPPING"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FENCING"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_SEALING"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_QUIESCED"
+    | "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_CLOSED";
   error: string;
-  blocker: RunnerLifecycleBlockerView | null;
+  blocker: EnvironmentRuntimeLifecycleBlockerView | null;
 };
-export type RunnerStatusView = {
-  runner_boot_id: string;
+export type EnvironmentRuntimeStatusView = {
+  environment_runtime_boot_id: string;
   /** Missing on older Runner processes; protobuf JSON uses decimal strings for uint64 values. */
-  lifecycle?: RunnerLifecycleView | null;
+  lifecycle?: EnvironmentRuntimeLifecycleView | null;
   processes: {
     process_id: string;
     pid: number | string | null;
@@ -157,12 +157,12 @@ export async function getSessionOpening(sandbox: string, sessionId: string): Pro
   ) as SessionOpening;
 }
 
-export async function getRunnerStatus(sandbox: string): Promise<RunnerStatusView> {
+export async function getEnvironmentRuntimeStatus(sandbox: string): Promise<EnvironmentRuntimeStatusView> {
   return ok(
     await api.GET("/sandboxes/{name}/runner-status", {
       params: { path: { name: sandbox } },
     })
-  ) as RunnerStatusView;
+  ) as EnvironmentRuntimeStatusView;
 }
 
 /** Asks for the Sandbox to run; the watch behind the live streams brings back the change. */

@@ -17,8 +17,8 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
   New serving Pods run the queue migration before starting ([deployment](runner_gateway/README.md#deployment)).
 - [History Service](history_service/README.md): retained Session history, read by the
   integration app and the Notification service.
-- [Runner](runner/README.md) and [native drivers](native/README.md): run Claude Code or Codex in a
-  sandbox and journal what they do.
+- [Environment Runtime](env/README.md) and [native drivers](native/README.md): manage the Sandbox
+  environment and run Claude Code or Codex through Harness Host, which journals Session activity.
 - [Environment execution service](env/execution/README.md): standalone typed process/filesystem API
   managed by Environment Runtime and used by Harness Host.
 - [Egress proxy](egress/README.md): authenticates sandbox workloads and substitutes credentials.
@@ -48,7 +48,7 @@ The Go Action Service, MCP edge, relay, LLM ingress, Runner Gateway/Dispatcher, 
 Controller, egress proxy and egress sidecar build with `pure = "on"` on the pinned
 `gcr.io/distroless/static-debian13:nonroot` base (CA certificates and timezone data, no shell), with
 explicit UID/GID `1000:1000` and working directory `/`. LLM ingress also keeps the repository's
-explicit CA bundle layer. The Go runner uses its Nix sandbox image; Python services use their own
+explicit CA bundle layer. The Environment Runtime, Harness Host and Execution Service use the environment Nix images; Python services use their own
 runtime images.
 
 ## System overview
@@ -152,7 +152,7 @@ flowchart LR
     samplerdb -->|NOTIFY: central_sampler_work| sampler
     samplerdb -->|NOTIFY: central_sampler_outbox| sampler
     sampler -->|typed execution: Executor gRPC| gw
-    sampler -->|RunnerIngress.Push| hs
+    sampler -->|SessionJournalIngress.Push| hs
     sampler -->|Responses API| llm -->|model API| responses
     sampler -->|direct Anthropic Messages API| anthropic
     gw --> k8s
@@ -175,10 +175,10 @@ flowchart LR
     relay -->|OTLP/gRPC| alloy
     gw -->|mTLS Runner and Executor gRPC| runtime
     gw -->|mTLS Runner and Executor gRPC| vmruntime
-    runner -.->|dials RunnerIngress.Push| sidecar
+    runner -.->|dials SessionJournalIngress.Push| sidecar
     sidecar -.->|outbound ingress route| hs
     agent -.->|Session and EnvironmentDiscovery gRPC through HTTPS_PROXY/CONNECT| sidecar
-    guest -.->|dials RunnerIngress.Push| relay
+    guest -.->|dials SessionJournalIngress.Push| relay
     relay -.->|outbound ingress route| hs
     guest_agent -.->|Session and EnvironmentDiscovery gRPC through HTTPS_PROXY/CONNECT| relay
     egress -.->|allowlisted gRPC methods, substituted Sandbox bearer| gw

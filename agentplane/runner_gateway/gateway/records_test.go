@@ -63,7 +63,7 @@ func TestConnectionRecordsRejectForeignObjects(t *testing.T) {
 				test.mutate(&metadata)
 				var object runtime.Object
 				if kind == "Lease" {
-					metadata.Name = sandbox.Name + sandboxlease.RunnerLeaseSuffix
+					metadata.Name = sandbox.Name + sandboxlease.EnvironmentRuntimeLeaseSuffix
 					object = &coordinationv1.Lease{ObjectMeta: metadata}
 				} else {
 					metadata.Name = sandbox.Name + sandboxapi.ControlServiceSuffix
@@ -74,7 +74,7 @@ func TestConnectionRecordsRejectForeignObjects(t *testing.T) {
 				if kind == "EndpointSlice" {
 					objects = append(objects, &coordinationv1.Lease{
 						ObjectMeta: metav1.ObjectMeta{
-							Name: sandbox.Name + sandboxlease.RunnerLeaseSuffix, Namespace: testNamespace,
+							Name: sandbox.Name + sandboxlease.EnvironmentRuntimeLeaseSuffix, Namespace: testNamespace,
 							UID: leaseUID, OwnerReferences: []metav1.OwnerReference{owner},
 						},
 						Spec: coordinationv1.LeaseSpec{HolderIdentity: stringPointer("gateway"), LeaseTransitions: int32Pointer(1)},
@@ -116,7 +116,7 @@ func TestClaimExpiresByLocallyObservedRenewal(t *testing.T) {
 			writerClock := start.Add(skew)
 			kube := newKubernetesFake(&coordinationv1.Lease{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: testSandbox + sandboxlease.RunnerLeaseSuffix, Namespace: testNamespace,
+					Name: testSandbox + sandboxlease.EnvironmentRuntimeLeaseSuffix, Namespace: testNamespace,
 					UID:             "fixture-existing-lease",
 					OwnerReferences: []metav1.OwnerReference{sandboxOwnerReference(identity)},
 				},
@@ -144,7 +144,7 @@ func TestClaimExpiresByLocallyObservedRenewal(t *testing.T) {
 			refused(duration - time.Second)
 			// The holder renews by its own clock, which the claim never compares with this one.
 			renewedAt := duration - time.Second
-			lease, err := kube.CoordinationV1().Leases(testNamespace).Get(ctx, testSandbox+sandboxlease.RunnerLeaseSuffix, metav1.GetOptions{})
+			lease, err := kube.CoordinationV1().Leases(testNamespace).Get(ctx, testSandbox+sandboxlease.EnvironmentRuntimeLeaseSuffix, metav1.GetOptions{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -181,13 +181,13 @@ func TestConnectionRenewPublishesAndClearsAutosuspendBlockers(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessionID := "session-a"
-	busy := &sandboxlease.RunnerFacts{AutosuspendBlockers: []sandboxapi.AutosuspendBlocker{{
+	busy := &sandboxlease.EnvironmentRuntimeFacts{AutosuspendBlockers: []sandboxapi.AutosuspendBlocker{{
 		Reason: sandboxapi.AutosuspendBlockerActiveTurn, SessionID: &sessionID,
 	}}}
 	if err := records.renew(context.Background(), identity, epoch, time.Now(), busy); err != nil {
 		t.Fatal(err)
 	}
-	name := testSandbox + sandboxlease.RunnerLeaseSuffix
+	name := testSandbox + sandboxlease.EnvironmentRuntimeLeaseSuffix
 	lease, err := kube.CoordinationV1().Leases(testNamespace).Get(context.Background(), name, metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -195,7 +195,7 @@ func TestConnectionRenewPublishesAndClearsAutosuspendBlockers(t *testing.T) {
 	if lease.Annotations[sandboxlease.AutosuspendBlockersAnnotation] == "" {
 		t.Fatal("busy runner facts were not published on the connection Lease")
 	}
-	if err := records.renew(context.Background(), identity, epoch, time.Now(), &sandboxlease.RunnerFacts{}); err != nil {
+	if err := records.renew(context.Background(), identity, epoch, time.Now(), &sandboxlease.EnvironmentRuntimeFacts{}); err != nil {
 		t.Fatal(err)
 	}
 	lease, err = kube.CoordinationV1().Leases(testNamespace).Get(context.Background(), name, metav1.GetOptions{})
@@ -222,7 +222,7 @@ func TestObservationClaimsPreserveVerifiedContact(t *testing.T) {
 	}
 	read := func() *coordinationv1.Lease {
 		t.Helper()
-		lease, err := kube.CoordinationV1().Leases(testNamespace).Get(ctx, testSandbox+sandboxlease.RunnerLeaseSuffix, metav1.GetOptions{})
+		lease, err := kube.CoordinationV1().Leases(testNamespace).Get(ctx, testSandbox+sandboxlease.EnvironmentRuntimeLeaseSuffix, metav1.GetOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -240,7 +240,7 @@ func TestObservationClaimsPreserveVerifiedContact(t *testing.T) {
 			t.Fatal(err)
 		}
 		lease := read()
-		if lease.Annotations[sandboxlease.RunnerBootIDAnnotation] != "" {
+		if lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] != "" {
 			t.Fatal("claim retained current boot ID")
 		}
 		if sandboxlease.LastConnectedPodUID(lease.Annotations) != testPodUID {
@@ -261,7 +261,7 @@ func TestControlRouteRecoversAfterLeaseRecreation(t *testing.T) {
 	oldLeaseUID := types.UID("fixture-old-lease")
 	oldLease := &coordinationv1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: testSandbox + sandboxlease.RunnerLeaseSuffix, Namespace: testNamespace,
+			Name: testSandbox + sandboxlease.EnvironmentRuntimeLeaseSuffix, Namespace: testNamespace,
 			UID: oldLeaseUID, OwnerReferences: []metav1.OwnerReference{sandboxOwnerReference(identity)},
 		},
 		Spec: coordinationv1.LeaseSpec{
@@ -361,7 +361,7 @@ func TestDelayedRoutePublicationCannotRegressRecreatedLeaseRoute(t *testing.T) {
 	oldLeaseUID := types.UID("fixture-old-lease")
 	oldLease := &coordinationv1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: testSandbox + sandboxlease.RunnerLeaseSuffix, Namespace: testNamespace,
+			Name: testSandbox + sandboxlease.EnvironmentRuntimeLeaseSuffix, Namespace: testNamespace,
 			UID: oldLeaseUID, OwnerReferences: []metav1.OwnerReference{sandboxOwnerReference(identity)},
 		},
 		Spec: coordinationv1.LeaseSpec{

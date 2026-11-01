@@ -1,4 +1,4 @@
-// Package ingress serves RunnerIngress: a runner pushes each Session's journal here, one call per Session.
+// Package ingress serves SessionJournalIngress: a runner pushes each Session's journal here, one call per Session.
 //
 // Contract: agentplane/docs/runner_control.md § Event ingress. Every acknowledgement follows a commit, so the
 // runner's resume point is always durable here; Store.Append accepts exact replays and serializes concurrent
@@ -14,10 +14,10 @@ import (
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
-	runneringresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
+	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -43,10 +43,10 @@ type Timing struct {
 	SilenceLimit time.Duration
 }
 
-// Service is the RunnerIngress server. Each call is authenticated by Principals, and the Session it announces
+// Service is the SessionJournalIngress server. Each call is authenticated by Principals, and the Session it announces
 // is bound to the ServiceAccount that first pushed it.
 type Service struct {
-	runneringresspb.UnimplementedRunnerIngressServer
+	session_ingresspb.UnimplementedSessionJournalIngressServer
 	Principals      *auth.Resolver
 	SandboxUIDs     SandboxUIDResolver
 	History         *storage.Store
@@ -54,7 +54,7 @@ type Service struct {
 	SamplerAccounts []auth.Account
 }
 
-type pushStream = grpc.BidiStreamingServer[runneringresspb.PushFrame, runneringresspb.Acknowledgement]
+type pushStream = grpc.BidiStreamingServer[session_ingresspb.PushFrame, session_ingresspb.Acknowledgement]
 
 func (s *Service) Push(stream pushStream) error {
 	ctx := stream.Context()
@@ -100,7 +100,7 @@ func (c *pushCall) run(ctx context.Context, writer storage.Writer, account auth.
 		}
 		announce = sampler.GetSession()
 		executor := sampler.GetExecutor()
-		if announce == nil || announce.GetSpec().GetHarness() != runnerpb.Harness_HARNESS_CENTRAL_SAMPLER ||
+		if announce == nil || announce.GetSpec().GetHarness() != sessionpb.Harness_HARNESS_CENTRAL_SAMPLER ||
 			executor.GetSandbox() == "" ||
 			executor.GetOwner().GetNamespace() == "" || executor.GetOwner().GetName() == "" {
 			return status.Error(codes.InvalidArgument, "central sampler announcement is incomplete")
@@ -113,7 +113,7 @@ func (c *pushCall) run(ctx context.Context, writer storage.Writer, account auth.
 		if announce == nil {
 			return status.Error(codes.InvalidArgument, "the first frame is not an announcement")
 		}
-		if announce.GetSpec().GetHarness() == runnerpb.Harness_HARNESS_CENTRAL_SAMPLER {
+		if announce.GetSpec().GetHarness() == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
 			return status.Error(codes.PermissionDenied, "central Sessions require a sampler announcement")
 		}
 		if c.service.SandboxUIDs != nil {
@@ -166,7 +166,7 @@ func (c *pushCall) run(ctx context.Context, writer storage.Writer, account auth.
 			return err
 		}
 	}
-	if err := c.stream.Send(&runneringresspb.Acknowledgement{Cursor: checkpoint.Cursor, Sealed: checkpoint.Seal != nil}); err != nil {
+	if err := c.stream.Send(&session_ingresspb.Acknowledgement{Cursor: checkpoint.Cursor, Sealed: checkpoint.Seal != nil}); err != nil {
 		return err
 	}
 	if checkpoint.Seal != nil {
@@ -200,13 +200,13 @@ func (c *pushCall) receive(ctx context.Context, j *journal) error {
 		}
 		silent = 0
 		switch body := frame.GetFrame().(type) {
-		case *runneringresspb.PushFrame_Heartbeat:
+		case *session_ingresspb.PushFrame_Heartbeat:
 			if len(j.batch) > 0 {
 				if err := c.commitAndAcknowledge(ctx, j); err != nil {
 					return err
 				}
 			}
-		case *runneringresspb.PushFrame_Entry:
+		case *session_ingresspb.PushFrame_Entry:
 			size := proto.Size(body.Entry)
 			if len(j.batch) > 0 && j.batchBytes+size > commitByteLimit {
 				if err := j.commit(ctx); err != nil {
@@ -222,7 +222,7 @@ func (c *pushCall) receive(ctx context.Context, j *journal) error {
 					return err
 				}
 			}
-		case *runneringresspb.PushFrame_Sealed:
+		case *session_ingresspb.PushFrame_Sealed:
 			if err := j.seal(ctx, body.Sealed); err != nil {
 				return err
 			}
@@ -241,7 +241,7 @@ func (c *pushCall) commitAndAcknowledge(ctx context.Context, j *journal) error {
 }
 
 func (c *pushCall) acknowledge(cursor uint64, sealed bool) error {
-	return c.stream.Send(&runneringresspb.Acknowledgement{Cursor: cursor, Sealed: sealed})
+	return c.stream.Send(&session_ingresspb.Acknowledgement{Cursor: cursor, Sealed: sealed})
 }
 
 // failure answers a failed call. Refusals are already status errors; the message of any other error can carry
@@ -274,7 +274,7 @@ func (c *pushCall) failure(err error) error {
 type journal struct {
 	history   *storage.Store
 	sessionID uuid.UUID
-	announce  *runnerpb.Attached
+	announce  *sessionpb.Attached
 	committed uint64
 	// last is the cursor of the last entry this call carried, or the committed cursor before it carried any.
 	last uint64
@@ -317,7 +317,7 @@ func (j *journal) commit(ctx context.Context) error {
 	return nil
 }
 
-func (j *journal) seal(ctx context.Context, sealed *runnerpb.Sealed) error {
+func (j *journal) seal(ctx context.Context, sealed *sessionpb.Sealed) error {
 	if sealed.GetCursor() != j.last {
 		return status.Error(codes.InvalidArgument, "the seal does not follow the last entry")
 	}
@@ -328,7 +328,7 @@ func (j *journal) seal(ctx context.Context, sealed *runnerpb.Sealed) error {
 }
 
 type received struct {
-	frame *runneringresspb.PushFrame
+	frame *session_ingresspb.PushFrame
 	err   error
 }
 
@@ -362,7 +362,7 @@ func (f *frameReader) ready() bool { return len(f.queue) > 0 }
 
 // next returns the next frame; io.EOF once the runner has closed its side of the call; or timedOut after
 // timeout without either.
-func (f *frameReader) next(timeout time.Duration) (frame *runneringresspb.PushFrame, timedOut bool, err error) {
+func (f *frameReader) next(timeout time.Duration) (frame *session_ingresspb.PushFrame, timedOut bool, err error) {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {

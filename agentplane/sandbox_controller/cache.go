@@ -48,7 +48,7 @@ func CacheByObject(kubeVirt bool) (map[client.Object]cache.ByObject, error) {
 		byObject[&kubevirtv1.VirtualMachine{}] = cache.ByObject{Label: ours}
 		byObject[&kubevirtv1.VirtualMachineInstance{}] = cache.ByObject{Label: ours}
 	}
-	connection, err := labels.NewRequirement(sandboxlease.ConnectionLabel, selection.Equals, []string{"true"})
+	connection, err := labels.NewRequirement(sandboxlease.EnvironmentRuntimeConnectionLabel, selection.Equals, []string{"true"})
 	if err != nil {
 		return nil, err
 	}

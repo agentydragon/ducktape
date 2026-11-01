@@ -8,7 +8,7 @@ arbitrary user-supplied VM specifications are out of scope.
 
 - **SQLite and the owner lock on virtiofs.** The runner journal commits with `journal_mode=DELETE`
   and `synchronous=EXTRA` and fences with a nonblocking lifetime lock on the state directory
-  ([runner README](../runner/README.md#sqlite-storage)). Both assume storage that honours sync and
+  ([Harness Host retained-state contract](../env/harnesshost/docs/retained_state.md#sqlite-storage)). Both assume storage that honours sync and
   locks. Prove them on the `/state` virtiofs mount through KubeVirt's `virtiofsd` cache mode:
   crash-recover a journal commit by killing the guest mid-write, and show a second runner on the same
   state exits on the lock.

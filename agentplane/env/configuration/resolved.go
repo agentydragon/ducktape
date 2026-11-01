@@ -14,7 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/session"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
-	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
+	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 )
 
 type SandboxIdentity struct {
@@ -53,14 +53,14 @@ type Endpoint struct {
 	Bearer string `json:"bearer"`
 }
 
-// RunnerControlConfiguration exposes the Runner as a Gateway-dialed gRPC server.
-type RunnerControlConfiguration struct {
-	ListenAddress string                   `json:"listen_address"`
-	Security      runnertransport.Security `json:"security"`
+// EnvironmentRuntimeControlConfiguration exposes the Runner as a Gateway-dialed gRPC server.
+type EnvironmentRuntimeControlConfiguration struct {
+	ListenAddress string                               `json:"listen_address"`
+	Security      environmentruntimetransport.Security `json:"security"`
 }
 
 type Resolved struct {
-	Control                          RunnerControlConfiguration
+	Control                          EnvironmentRuntimeControlConfiguration
 	StateDir                         string
 	SessionReconcileConcurrency      int
 	Launch                           SandboxLaunch
@@ -75,18 +75,18 @@ type Resolved struct {
 	DebugCheckpoint                  *session.DebugCheckpointConfig
 }
 
-func ValidateControlIdentity(control RunnerControlConfiguration, sandbox SandboxIdentity) error {
+func ValidateControlIdentity(control EnvironmentRuntimeControlConfiguration, sandbox SandboxIdentity) error {
 	if err := control.Security.Validate(); err != nil {
 		return fmt.Errorf("Runner control security: %w", err)
 	}
-	if control.Security.Mode == runnertransport.Insecure {
+	if control.Security.Mode == environmentruntimetransport.Insecure {
 		return nil
 	}
 	identity, err := control.Security.TLS.LocalIdentity(x509.ExtKeyUsageServerAuth)
 	if err != nil {
 		return fmt.Errorf("Runner control certificate: %w", err)
 	}
-	namespace, sandboxUID, _, err := runnertransport.ParseRunnerURI(identity)
+	namespace, sandboxUID, _, err := environmentruntimetransport.ParseEnvironmentRuntimeURI(identity)
 	if err != nil {
 		return fmt.Errorf("Runner control certificate: %w", err)
 	}

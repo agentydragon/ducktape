@@ -3,16 +3,16 @@ package agentplane.x.central_sampler;
 
 import "agentplane/proto/event_log.proto";
 import "agentplane/proto/delegation.proto";
-import "agentplane/proto/runner.proto";
+import "agentplane/proto/session.proto";
 import "agentplane/proto/sandboxes.proto";
-import "agentplane/runner/runner_service.proto";
+import "agentplane/env/runtime/control/environment_runtime.proto";
 
 service Sampler {
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
-  rpc SubmitInput(agentplane.runner.SubmitInputRequest) returns (agentplane.runner.SubmitInputResponse);
-  rpc ChangeModel(agentplane.runner.ChangeModelRequest) returns (agentplane.runner.ChangeModelResponse);
-  rpc ChangeReasoningEffort(agentplane.runner.ChangeReasoningEffortRequest) returns (agentplane.runner.ChangeReasoningEffortResponse);
-  rpc InterruptTurn(agentplane.runner.InterruptTurnRequest) returns (agentplane.runner.InterruptTurnResponse);
+  rpc SubmitInput(agentplane.env.runtime.control.SubmitInputRequest) returns (agentplane.env.runtime.control.SubmitInputResponse);
+  rpc ChangeModel(agentplane.env.runtime.control.ChangeModelRequest) returns (agentplane.env.runtime.control.ChangeModelResponse);
+  rpc ChangeReasoningEffort(agentplane.env.runtime.control.ChangeReasoningEffortRequest) returns (agentplane.env.runtime.control.ChangeReasoningEffortResponse);
+  rpc InterruptTurn(agentplane.env.runtime.control.InterruptTurnRequest) returns (agentplane.env.runtime.control.InterruptTurnResponse);
   rpc RecoverSession(RecoverSessionRequest) returns (GetSessionResponse);
   rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);

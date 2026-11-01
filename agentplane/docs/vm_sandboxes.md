@@ -3,8 +3,8 @@
 A `SandboxTemplate` with `vm` runs its Sandbox's runner in a NixOS guest under KubeVirt instead of
 in a Pod. The Sandbox Controller owns the lifecycle
 ([`SPEC.md` § VMs](../sandbox_controller/SPEC.md)); the guest is
-[`env/images/vm.nix`](../env/images/vm.nix) and its shared configuration schema is [`runner/configuration.py`](../runner/configuration.py);
-the template is [`runner_vm.py`](../../cluster/cdk8s/agentplane/runner_vm.py) and the egress relay is
+[`env/images/vm.nix`](../env/images/vm.nix) and its shared configuration schema is [`env/config.py`](../env/config.py);
+the template is [`environment_vm.py`](../../cluster/cdk8s/agentplane/environment_vm.py) and the egress relay is
 [`launcher_relay.py`](../../cluster/cdk8s/agentplane/launcher_relay.py). The traffic diagram is in
 [`agentplane/README.md`](../README.md). The Gateway dials the guest's private mTLS gRPC listener through KubeVirt's forwarded runner port
 ([runner control](runner_control.md)).
@@ -59,12 +59,12 @@ lost.
   run as uid 107 and read the CA bundle and kubeconfig.
 - The runner and the `agentplane` command are not in the guest image. They arrive on the runner disk,
   a read-only erofs on a second `containerDisk` (`//agentplane/env/images:disk_image`, [`env/images/BUILD.bazel`](../env/images/BUILD.bazel)),
-  mounted at `/run/agentplane/runner`, and the harness `PATH` lists its `bin` after the system
+  mounted at `/run/agentplane/environment`, and the harness `PATH` lists its `bin` after the system
   profile. The guest system profile also installs the same `preCommitPackages` as the
-  `runner-ducktape` Pod image, so the repository hooks and build clients are available on either
+  `environment-tools` Pod image, so the repository hooks and build clients are available on either
   runner type. A runner or CLI release republishes only that small disk. The harnesses and tools are
   still in the guest image.
-- The deployed `runner-vm` template declares a Sandbox-owned `BlockFilesystem` workspace with ext4
+- The deployed `environment-vm` template declares a Sandbox-owned `BlockFilesystem` workspace with ext4
   directly on a block PVC. `RawDiskImage` remains supported for custom VM workspace claims backed
   by a filesystem PVC. The workspace claim survives stop/start and replacement of the VM object.
   The VM's separate state PVC remains a `DirectoryTree` on a `Filesystem` claim, attached through
@@ -90,7 +90,7 @@ lost.
 
 ## Fresh VM trial readiness
 
-Basic live acceptance passed on 2026-10-25 PDT against the deployed staging `runner-vm` template:
+Basic live acceptance passed on 2026-10-25 PDT against the deployed staging `environment-vm` template:
 both fresh 10 GiB claims bound on `piraeus-ssd-2-autodiskful`, with `Block` workspace and
 `Filesystem` state modes; the launcher became Ready; and the connected runner reported successful
 bootstrap for that incarnation. The bootstrap checked the workspace's ext4 filesystem and wrote,

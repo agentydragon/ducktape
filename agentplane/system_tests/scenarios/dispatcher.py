@@ -18,13 +18,17 @@ from kubernetes_asyncio import client as k8s, watch as k8s_watch
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc.calls import dial
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.dispatcher_transport import Caller, bound_caller as _bound_caller, forward as _forward
-from agentplane.system_tests.sandbox import POD_TEMPLATE
+from agentplane.system_tests.sandbox import (
+    ENVIRONMENT_RUNTIME_CONTAINER,
+    ENVIRONMENT_RUNTIME_LEASE_SUFFIX,
+    POD_TEMPLATE,
+)
 from agentplane.system_tests.tracing import tracer
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -62,10 +66,12 @@ async def _container_mount_sources(
 ) -> dict[str, Path]:
     pod = json.loads(await cluster.kubectl("get", "pod", name, "-o", "json"))
     statuses = pod.get("status", {}).get("containerStatuses", [])
-    runner = next((status for status in statuses if status.get("name") == "runner"), None)
-    if runner is None or not runner.get("containerID"):
-        raise RuntimeError("runner container id is unavailable")
-    container_id = runner["containerID"].removeprefix("containerd://")
+    environment_runtime = next(
+        (status for status in statuses if status.get("name") == ENVIRONMENT_RUNTIME_CONTAINER), None
+    )
+    if environment_runtime is None or not environment_runtime.get("containerID"):
+        raise RuntimeError("Environment Runtime container id is unavailable")
+    container_id = environment_runtime["containerID"].removeprefix("containerd://")
     crictl_config = artifact_dir / "crictl.yaml"
     crictl_config.write_text("runtime-endpoint: unix:///run/k3s/containerd/containerd.sock\ntimeout: 30\n")
     process = await asyncio.create_subprocess_exec(
@@ -202,10 +208,25 @@ async def _capture_cleanup_diagnostics(
         persist()
         commands = {
             "sandbox": ("get", "sandbox", name, "-o", "json"),
-            "runner_lease": ("get", "lease", f"{name}-runner", "-o", "json"),
+            "environment_runtime_lease": ("get", "lease", f"{name}{ENVIRONMENT_RUNTIME_LEASE_SUFFIX}", "-o", "json"),
             "pod": ("get", "pod", name, "-o", "json"),
-            "runner_log": ("logs", f"pod/{name}", "-c", "runner", "--since=10m", "--timestamps"),
-            "previous_runner_log": ("logs", f"pod/{name}", "-c", "runner", "--previous", "--since=10m", "--timestamps"),
+            "environment_runtime_log": (
+                "logs",
+                f"pod/{name}",
+                "-c",
+                ENVIRONMENT_RUNTIME_CONTAINER,
+                "--since=10m",
+                "--timestamps",
+            ),
+            "previous_environment_runtime_log": (
+                "logs",
+                f"pod/{name}",
+                "-c",
+                ENVIRONMENT_RUNTIME_CONTAINER,
+                "--previous",
+                "--since=10m",
+                "--timestamps",
+            ),
             "executor_log": ("logs", f"pod/{name}", "-c", "codex-executor", "--since=10m", "--timestamps"),
             "previous_executor_log": (
                 "logs",
@@ -508,8 +529,8 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                 sandbox=sandbox,
                 sandbox_uid=uid,
                 session_id=session,
-                spec=runner_pb2.SessionSpec(
-                    harness=runner_pb2.HARNESS_CODEX,
+                spec=session_pb2.SessionSpec(
+                    harness=session_pb2.HARNESS_CODEX,
                     model="chatgpt-sub/oai-responses/gpt-6-luna",
                     cwd="/state/work",
                     reasoning_effort="low",
@@ -737,8 +758,8 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                             sandbox=sandbox,
                             sandbox_uid=uid,
                             session_id=session,
-                            spec=runner_pb2.SessionSpec(
-                                harness=runner_pb2.HARNESS_CODEX,
+                            spec=session_pb2.SessionSpec(
+                                harness=session_pb2.HARNESS_CODEX,
                                 model="chatgpt-sub/oai-responses/gpt-6-luna",
                                 cwd="/state/work",
                                 reasoning_effort="low",

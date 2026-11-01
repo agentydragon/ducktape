@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
+	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 )
@@ -21,14 +21,14 @@ func startAcknowledgingHistory(t *testing.T) string {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	ingresspb.RegisterRunnerIngressServer(server, &acknowledgingHistory{acks: map[string]*ingresspb.Acknowledgement{}})
+	ingresspb.RegisterSessionJournalIngressServer(server, &acknowledgingHistory{acks: map[string]*ingresspb.Acknowledgement{}})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	return listener.Addr().String()
 }
 
 type acknowledgingHistory struct {
-	ingresspb.UnimplementedRunnerIngressServer
+	ingresspb.UnimplementedSessionJournalIngressServer
 	mu   sync.Mutex
 	acks map[string]*ingresspb.Acknowledgement
 }

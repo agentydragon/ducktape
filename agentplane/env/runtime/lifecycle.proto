@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package agentplane.env.runtime;
 
-import "agentplane/proto/runner_state.proto";
+import "agentplane/proto/environment_runtime_state.proto";
 import "google/protobuf/empty.proto";
 
 // Private Runtime-to-Host lifecycle protocol. The Runtime owns environment identity and
@@ -35,7 +35,7 @@ message HostReport {
   Binding binding = 1;
   bool ready = 2;
   bool native_stopped = 3;
-  agentplane.proto.RunnerFacts facts = 4;
+  agentplane.proto.EnvironmentRuntimeFacts facts = 4;
   string error = 5;
 }
 

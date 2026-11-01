@@ -56,7 +56,7 @@ retain their creation records and are never reapplied from a changed template.
 ## Running
 
 Every Agentplane environment runs it from `cluster/cdk8s/agentplane/sandbox_controller.py`, which
-also holds its RBAC; its runner `SandboxTemplate`s are in `runner_sandbox.py`.
+also holds its RBAC; its runner `SandboxTemplate`s are in `environment_sandbox.py`.
 Its settings are `AGENTPLANE_SANDBOX_CONTROLLER_*` environment variables, named by the fields of
 [`settings.py`](settings.py). Locally:
 
@@ -101,7 +101,7 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   write on the stale resource version. The next reconcile finds a runner in lameduck with no
   recorded cause; the Sandbox is to run, so the stop path seals it and replaces the incarnation.
   A restart between the call and the write ends the same way, at the cost of one incarnation.
-- **`RunnerConnected` watches the Lease.** A new connection, a different runner Pod or a change in
+- **`EnvironmentRuntimeConnected` watches the Lease.** A new connection, a different runner Pod or a change in
   the runner's published facts (quiesce stage, idle-since, bootstrap state, setup state, autosuspend
   blockers, valid only while the Lease's `pod-uid` is the incarnation's) enqueues the Sandbox, as does
   a renewal that revives a lapsed connection; other renewals do not. Time is not an event, so the

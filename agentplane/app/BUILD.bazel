@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
+load("//agentplane/env/e2e/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = [
@@ -15,7 +15,7 @@ proto_library(
     name = "config_service_proto",
     srcs = ["config_service.proto"],
     deps = [
-        "//agentplane/proto:runner_proto",
+        "//agentplane/proto:session_proto",
         "@googleapis//google/api:annotations_proto",
         "@protobuf//:empty_proto",
     ],
@@ -31,7 +31,7 @@ go_proto_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/app/configservicepb",
     proto = ":config_service_proto",
     deps = [
-        "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:session_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
@@ -42,7 +42,7 @@ ts_proto_library(
     node_modules = "//:node_modules",
     proto = ":config_service_proto",
     deps = [
-        "//agentplane/proto:runner_pb",
+        "//agentplane/proto:session_pb",
         "//google/api:annotations_pb",
     ],
 )
@@ -87,12 +87,12 @@ py_library(
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:runner_gateway",
         "//agentplane/app/testing:thread_test_support",
+        "//agentplane/env/e2e/testing:failure_journal",
+        "//agentplane/env/e2e/testing:fixtures",
         "//agentplane/history_service:client",
         "//agentplane/history_service/testing:fixtures",
         "//agentplane/history_service/testing:go_service",
         "//agentplane/history_service/testing:history",
-        "//agentplane/runner/testing:failure_journal",
-        "//agentplane/runner/testing:fixtures",
         "//agentplane/runner_gateway/testing:gateway_process",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/sandboxes/testing:sandbox_namespace",
@@ -214,13 +214,13 @@ py_test(
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:runner_gateway",
+        "//agentplane/env/e2e/testing:failure_journal",
+        "//agentplane/env/e2e/testing:process",
         "//agentplane/history_service:client",
         "//agentplane/history_service/fold:models",
         "//agentplane/history_service/testing:history",
         "//agentplane/proto:event_pb2",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/runner/testing:failure_journal",
-        "//agentplane/runner/testing:process",
+        "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "//agentplane/runner_gateway/dispatcher:testing_client",
@@ -580,13 +580,13 @@ py_test(
         "//:conftest",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:runner_gateway",
+        "//agentplane/env/e2e/testing:launches",
+        "//agentplane/env/e2e/testing:process",
+        "//agentplane/env/runtime/control:environment_runtime_pb2",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:history_service_pb2",
         "//agentplane/proto:command_pb2",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/runner:runner_service_pb2",
-        "//agentplane/runner/testing:launches",
-        "//agentplane/runner/testing:process",
+        "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "//agentplane/runner_gateway/dispatcher:testing_client",

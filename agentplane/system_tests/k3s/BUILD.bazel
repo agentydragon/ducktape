@@ -15,7 +15,7 @@ package(default_testonly = True)
 # production image supplies the full toolset. As in production, the runner is not in it: the Pod runs
 # it from the volume of the production runner disk image.
 oci_image(
-    name = "runner_image",
+    name = "environment_tools_image",
     base = "@debian_trixie_slim_linux_amd64",
     tars = [
         "//third_party/debian_slim:cacerts",
@@ -31,7 +31,7 @@ oci_image(
 pkg_tar(
     name = "runner_cli_link",
     package_dir = "/usr/bin",
-    symlinks = {"agentplane": "/run/agentplane/runner/bin/agentplane"},
+    symlinks = {"agentplane": "/run/agentplane/environment/bin/agentplane"},
 )
 
 pkg_tar(
@@ -51,8 +51,8 @@ pkg_tar(
 )
 
 oci_image(
-    name = "runner_claude_image",
-    base = ":runner_image",
+    name = "environment_tools_claude_image",
+    base = ":environment_tools_image",
     tars = [
         ":runner_claude_harness",
         ":runner_claude_link",
@@ -76,8 +76,8 @@ pkg_tar(
 
 # Both harnesses, for scenarios that run a turn.
 oci_image(
-    name = "runner_harnesses_image",
-    base = ":runner_claude_image",
+    name = "environment_tools_harnesses_image",
+    base = ":environment_tools_claude_image",
     tars = [
         ":runner_codex_harness",
         ":runner_codex_link",
@@ -86,9 +86,9 @@ oci_image(
 
 # Pod suites share the runner layout containing both harnesses.
 oci_layout_rloc(
-    name = "harnesses/runner_layout",
+    name = "harnesses/environment_tools_layout",
     testonly = True,
-    image = ":runner_harnesses_image",
+    image = ":environment_tools_harnesses_image",
     visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 
@@ -261,9 +261,9 @@ py_library(
         "//agentplane/app:settings",
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:policyset",
+        "//agentplane/env:config",
         "//agentplane/env/harnesshost:harness",
         "//agentplane/notification_service:settings",
-        "//agentplane/runner:configuration",
         "//agentplane/system_tests:launch_preset",
         "//agentplane/system_tests:probe_credential",
         "//agentplane/system_tests:runtime_grant",
@@ -282,6 +282,8 @@ py_library(
         "//cluster/cdk8s/agentplane:egress",
         "//cluster/cdk8s/agentplane:egress_credentials",
         "//cluster/cdk8s/agentplane:environment",
+        "//cluster/cdk8s/agentplane:environment_sandbox",
+        "//cluster/cdk8s/agentplane:environment_vm",
         "//cluster/cdk8s/agentplane:history_service",
         "//cluster/cdk8s/agentplane:llm_ingress",
         "//cluster/cdk8s/agentplane:mcp_edge",
@@ -291,8 +293,6 @@ py_library(
         "//cluster/cdk8s/agentplane:policy_controller_rbac",
         "//cluster/cdk8s/agentplane:runner_gateway",
         "//cluster/cdk8s/agentplane:runner_gateway_workload",
-        "//cluster/cdk8s/agentplane:runner_sandbox",
-        "//cluster/cdk8s/agentplane:runner_vm",
         "//cluster/cdk8s/agentplane:sandbox_controller",
         "//cluster/cdk8s/agentplane:sandbox_pod",
         "//cluster/cdk8s/agentplane:session_dispatcher",

@@ -27,7 +27,7 @@ from tenacity import AsyncRetrying, retry_if_exception, retry_if_result, stop_af
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.app.testing.models import ThreadView
-from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
+from agentplane.proto import event_log_pb2, event_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.tracing import tracer
@@ -50,7 +50,7 @@ def _runner_not_answering(error: BaseException) -> bool:
     return isinstance(error, httpx.HTTPStatusError) and error.response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
 
 
-def runner_startup_retries() -> AsyncRetrying:
+def environment_runtime_startup_retries() -> AsyncRetrying:
     return AsyncRetrying(
         stop=stop_after_delay(RUNNER_ANSWERS_SECONDS),
         wait=wait_fixed(2),
@@ -141,7 +141,7 @@ class Agent:
         *,
         sandbox: str,
         sandbox_uid: UUID,
-        harness: runner_pb2.Harness,
+        harness: session_pb2.Harness,
         model: str,
         instructions: str = "",
         cwd: str = WORKING_DIRECTORY,
@@ -156,14 +156,14 @@ class Agent:
         """
         with tracer.start_as_current_span(
             "system_test.session.open",
-            attributes={"sandbox.name": sandbox, "harness": runner_pb2.Harness.Name(harness)},
+            attributes={"sandbox.name": sandbox, "harness": session_pb2.Harness.Name(harness)},
         ):
-            spec = runner_pb2.SessionSpec(
+            spec = session_pb2.SessionSpec(
                 harness=harness, cwd=cwd, model=model, reasoning_effort="low", instructions=instructions
             )
             # Retry the same desired session even if an earlier Open reached the runner.
             session_id = uuid4()
-            async for attempt in runner_startup_retries():
+            async for attempt in environment_runtime_startup_retries():
                 with attempt:
                     await client.create_session(
                         sandbox, session_id, sandbox_uid=sandbox_uid, overrides=MessageToDict(spec)

@@ -24,8 +24,8 @@ py_library(
     srcs = ["client.py"],
     visibility = [
         "//agentplane/app:__subpackages__",
+        "//agentplane/env/e2e/testing:__pkg__",
         "//agentplane/history_service:__subpackages__",
-        "//agentplane/runner/testing:__pkg__",
         "//agentplane/system_tests:__subpackages__",
     ],
     deps = [
@@ -64,7 +64,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service",
     deps = [
         ":history_service_go_proto",
-        ":runner_ingress_go_proto",
+        ":session_ingress_go_proto",
         "//agentplane/grpc/graceful",
         "//agentplane/history_service/api",
         "//agentplane/history_service/ingress",
@@ -134,13 +134,13 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         ":history_service_go_proto",
-        ":runner_ingress_go_proto",
+        ":session_ingress_go_proto",
         "//agentplane/history_service/migrations",
         "//agentplane/history_service/projection",
         "//agentplane/history_service/testing/spans",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:session_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/testing/postgres",
@@ -158,26 +158,26 @@ go_test(
 )
 
 proto_library(
-    name = "runner_ingress_proto",
-    srcs = ["runner_ingress.proto"],
+    name = "session_ingress_proto",
+    srcs = ["session_ingress.proto"],
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/proto:event_log_proto",
-        "//agentplane/proto:runner_proto",
         "//agentplane/proto:sandboxes_proto",
+        "//agentplane/proto:session_proto",
     ],
 )
 
 py_proto_library_with_mypy_stubs(
-    name = "runner_ingress_pb2",
+    name = "session_ingress_pb2",
     visibility = ["//agentplane:__subpackages__"],
-    deps = [":runner_ingress_proto"],
+    deps = [":session_ingress_proto"],
 )
 
 py_grpc_service_library(
-    name = "runner_ingress_pb2_grpc",
-    proto = ":runner_ingress_proto",
-    py_proto = ":runner_ingress_pb2",
+    name = "session_ingress_pb2_grpc",
+    proto = ":session_ingress_proto",
+    py_proto = ":session_ingress_pb2",
     visibility = ["//agentplane:__subpackages__"],
 )
 
@@ -188,7 +188,7 @@ proto_library(
     deps = [
         "//agentplane/proto:event_log_proto",
         "//agentplane/proto:event_proto",
-        "//agentplane/proto:runner_proto",
+        "//agentplane/proto:session_proto",
         "@googleapis//google/api:annotations_proto",
         "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",
@@ -209,18 +209,18 @@ py_grpc_service_library(
 )
 
 go_proto_library(
-    name = "runner_ingress_go_proto",
+    name = "session_ingress_go_proto",
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
         "@io_bazel_rules_go//proto:go_grpc_v2",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb",
-    proto = ":runner_ingress_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb",
+    proto = ":session_ingress_proto",
     visibility = ["//visibility:public"],
     deps = [
         "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:runner_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/proto:session_go_proto",
     ],
 )
 
@@ -237,7 +237,7 @@ go_proto_library(
     deps = [
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:session_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
@@ -251,7 +251,7 @@ ts_proto_library(
     deps = [
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:event_pb",
-        "//agentplane/proto:runner_pb",
+        "//agentplane/proto:session_pb",
         "//google/api:annotations_pb",
     ],
 )

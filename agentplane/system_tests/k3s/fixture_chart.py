@@ -43,9 +43,9 @@ from trust_manager_crds.io.cert_manager.trust import (
 from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.settings import AppSettingsConfig, FrontendConfig, LangfuseSearchSettings, TraceSearchSettings
+from agentplane.env.config import CodexReadiness
 from agentplane.env.harnesshost.harness import Harness
 from agentplane.notification_service.settings import NoticeDebounceSettings
-from agentplane.runner.configuration import CodexReadiness
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests import launch_preset, probe_credential, runtime_grant, send_grant, vm_configuration
 from agentplane.system_tests.k3s import block_storage, dex, fixture_database
@@ -60,6 +60,8 @@ from cluster.cdk8s.agentplane import (
     central_sampler_workload,
     command_sandbox,
     egress,
+    environment_sandbox,
+    environment_vm,
     history_service,
     llm_ingress,
     mcp_edge,
@@ -68,8 +70,6 @@ from cluster.cdk8s.agentplane import (
     policy_controller_rbac,
     runner_gateway,
     runner_gateway_workload,
-    runner_sandbox,
-    runner_vm,
     sandbox_controller,
     sandbox_pod,
     session_dispatcher,
@@ -109,11 +109,11 @@ SESSION_DISPATCHER = "session-dispatcher"
 
 # The fixture's one Pod execution environment. Nothing outside the fixture names it -- no live Sandbox
 # or preset does -- so unlike staging's it is the fixture's own to rename.
-POD_TEMPLATE = "runner"
-# The image it runs: //agentplane/system_tests/k3s:runner_image, or its harnesses variant, which
+POD_TEMPLATE = "environment-tools"
+# The image it runs: //agentplane/system_tests/k3s:environment_tools_image, or its harnesses variant, which
 # stack.py imports into containerd under this reference. The runner binary itself still comes from the
 # runner disk image, as in staging.
-RUNNER_IMAGE = "git.allegedly.works/ducktape-ci/runner"
+ENVIRONMENT_TOOLS_IMAGE = "git.allegedly.works/ducktape-ci/environment-tools"
 RUNNER_GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
 DISPATCHER_PORT = 8080
 EGRESS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset"
@@ -327,7 +327,7 @@ def _add_runner_root(chart: Chart) -> None:
     )
     Bundle(
         chart,
-        "runner-trust",
+        "environment-runtime-trust",
         metadata=ApiObjectMetadata(name=RUNNER_TRUST_BUNDLE),
         sources=[BundleSpecSources(secret=BundleSpecSourcesSecret(name=root_secret, key="ca.crt"))],
         target=BundleSpecTarget(
@@ -422,7 +422,7 @@ def build_chart(
         "egress",
         env,
         database_url=egress_database_url,
-        runners=runner_sandbox.pods(env.namespace),
+        runners=environment_sandbox.pods(env.namespace),
         admin_grpc_callers=[ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)],
         agent_api_service=agent_api,
         litellm_host="litellm.allegedly.works" if isinstance(models, PublicLiteLLM) else None,
@@ -510,16 +510,16 @@ def build_chart(
         registry_secret_name=None,
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
     )
-    runner_sandbox.RunnerSandbox(
+    environment_sandbox.EnvironmentSandbox(
         chart,
-        "runner-sandbox",
+        "environment-sandbox",
         env,
         name=POD_TEMPLATE,
-        image=RUNNER_IMAGE,
+        image=ENVIRONMENT_TOOLS_IMAGE,
         egress_api_service=agent_api,
         storage_class="local-path",
         vm_workspace_storage_class=block_storage.STORAGE_CLASS if env.vm_sandboxes else None,
-        runner_resources=k8s.ResourceRequirements(
+        environment_runtime_resources=k8s.ResourceRequirements(
             requests={
                 "cpu": k8s.Quantity.from_string(Cpu.millis(500).amount),
                 "memory": k8s.Quantity.from_string(Size.gibibytes(1).as_string()),
@@ -726,7 +726,7 @@ def _boot_test_guest(objects: list[dict[str, Any]]) -> None:
     too slowly without KVM. KubeVirt boots the guest's kernel directly; its initramfs finds the root disk
     by serial."""
     template = one(
-        doc for doc in objects if doc["kind"] == "SandboxTemplate" and doc["metadata"]["name"] == runner_vm.NAME
+        doc for doc in objects if doc["kind"] == "SandboxTemplate" and doc["metadata"]["name"] == environment_vm.NAME
     )
     spec = template["spec"]["vm"]["template"]["spec"]
     spec["domain"]["firmware"] = {
@@ -744,7 +744,7 @@ def _boot_test_guest(objects: list[dict[str, Any]]) -> None:
     root["serial"] = _VM_GUEST_ROOT_SERIAL
     volume = one(volume for volume in spec["volumes"] if volume["name"] == root["name"])
     volume["containerDisk"]["image"] = _VM_GUEST_ROOT_IMAGE
-    # Keep the smaller executor cgroup local to the OOM scenario; all other VM cases share runner-vm.
+    # Keep the smaller executor cgroup local to the OOM scenario; all other VM cases share environment-vm.
     oom_template = deepcopy(template)
     oom_template["metadata"]["name"] = vm_configuration.OOM_TEMPLATE
     oom_config_map_name = f"{vm_configuration.OOM_TEMPLATE}-config"
@@ -752,16 +752,16 @@ def _boot_test_guest(objects: list[dict[str, Any]]) -> None:
         one(
             doc
             for doc in objects
-            if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == f"{runner_vm.NAME}-config"
+            if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == f"{environment_vm.NAME}-config"
         )
     )
     oom_config_map["metadata"]["name"] = oom_config_map_name
-    oom_config = json.loads(oom_config_map["data"]["runner.json"])
+    oom_config = json.loads(oom_config_map["data"]["environment-runtime.json"])
     oom_config["environment"]["resources"]["executor"]["memory_max_bytes"] = vm_configuration.OOM_EXECUTOR_MEMORY_BYTES
-    oom_config_map["data"]["runner.json"] = json.dumps(oom_config, separators=(",", ":"))
+    oom_config_map["data"]["environment-runtime.json"] = json.dumps(oom_config, separators=(",", ":"))
     oom_spec = oom_template["spec"]["vm"]["template"]["spec"]
     config_volume = one(
-        disk for disk in oom_spec["volumes"] if disk.get("configMap", {}).get("name") == f"{runner_vm.NAME}-config"
+        disk for disk in oom_spec["volumes"] if disk.get("configMap", {}).get("name") == f"{environment_vm.NAME}-config"
     )
     config_volume["configMap"]["name"] = oom_config_map_name
     objects.extend([oom_config_map, oom_template])

@@ -17,11 +17,11 @@ import (
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
-	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
-	runnertransporttesting "github.com/agentydragon/ducktape/agentplane/runner_transport/testing"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -31,31 +31,31 @@ import (
 )
 
 func TestForwardRunnerServesHealthAndFencesStateAndDirectCalls(t *testing.T) {
-	for _, mode := range []runnertransport.SecurityMode{runnertransport.MutualTLS, runnertransport.Insecure} {
+	for _, mode := range []environmentruntimetransport.SecurityMode{environmentruntimetransport.MutualTLS, environmentruntimetransport.Insecure} {
 		t.Run(string(mode), func(t *testing.T) {
 			testRunnerHealthAndFencing(t, mode)
 		})
 	}
 }
 
-func testRunnerHealthAndFencing(t *testing.T, mode runnertransport.SecurityMode) {
+func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.SecurityMode) {
 	t.Helper()
-	runnerSecurity := runnertransport.Security{Mode: mode}
-	gatewaySecurity := runnertransport.Security{Mode: mode}
+	runnerSecurity := environmentruntimetransport.Security{Mode: mode}
+	gatewaySecurity := environmentruntimetransport.Security{Mode: mode}
 	var runnerURI string
-	if mode == runnertransport.MutualTLS {
-		ca := runnertransporttesting.NewCA(t)
+	if mode == environmentruntimetransport.MutualTLS {
+		ca := environmentruntimetransporttesting.NewCA(t)
 		var err error
-		runnerURI, err = runnertransport.RunnerURI("test", "sandbox-uid", "credential-id")
+		runnerURI, err = environmentruntimetransport.EnvironmentRuntimeURI("test", "sandbox-uid", "credential-id")
 		if err != nil {
 			t.Fatal(err)
 		}
 		runnerTLS := ca.Issue(t, runnerURI)
-		gatewayTLS := ca.Issue(t, runnertransport.GatewayURI)
+		gatewayTLS := ca.Issue(t, environmentruntimetransport.GatewayURI)
 		runnerSecurity.TLS, gatewaySecurity.TLS = &runnerTLS, &gatewayTLS
 	}
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
-	config.Control = configuration.RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnerSecurity}
+	config.Control = configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnerSecurity}
 	r := newLifecycleRunner(t, config)
 	listener, server, err := r.control.Listen(r.executorProxy)
 	if err != nil {
@@ -83,7 +83,7 @@ func testRunnerHealthAndFencing(t *testing.T, mode runnertransport.SecurityMode)
 		t.Fatalf("pre-watch health = %v, error %v; want SERVING", health, err)
 	}
 
-	watch, err := runnerservicepb.NewRunnerClient(conn).WatchState(ctx, &runnerservicepb.WatchStateRequest{
+	watch, err := environmentruntimepb.NewEnvironmentRuntimeClient(conn).WatchState(ctx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid-1", ConnectionEpoch: 1,
 	})
 	if err != nil {
@@ -93,7 +93,7 @@ func testRunnerHealthAndFencing(t *testing.T, mode runnertransport.SecurityMode)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.GetRunnerBootId() == "" || first.GetSandboxUid() != "sandbox-uid" || first.GetIncarnationUid() != "pod-uid-1" || first.GetConnectionEpoch() != 1 || first.GetFacts() == nil {
+	if first.GetEnvironmentRuntimeBootId() == "" || first.GetSandboxUid() != "sandbox-uid" || first.GetIncarnationUid() != "pod-uid-1" || first.GetConnectionEpoch() != 1 || first.GetFacts() == nil {
 		t.Fatalf("first WatchState response has invalid identity or facts: %v", first)
 	}
 
@@ -106,30 +106,30 @@ func testRunnerHealthAndFencing(t *testing.T, mode runnertransport.SecurityMode)
 			control.EpochMetadata, uint64String(epoch),
 		)
 	}
-	statusClient := runnerservicepb.NewRunnerClient(conn)
-	if _, err := statusClient.GetStatus(ctx, &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Unauthenticated {
+	statusClient := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
+	if _, err := statusClient.GetStatus(ctx, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("GetStatus without fencing metadata = %v, want Unauthenticated", err)
 	}
-	if _, err := statusClient.GetStatus(callContext("pod-uid-1", "old-runner-boot", 1), &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+	if _, err := statusClient.GetStatus(callContext("pod-uid-1", "old-runner-boot", 1), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("GetStatus for old runner boot = %v, want Unavailable", err)
 	}
-	if _, err := statusClient.SubmitInput(callContext("pod-uid-1", "old-runner-boot", 1), &runnerservicepb.SubmitInputRequest{
+	if _, err := statusClient.SubmitInput(callContext("pod-uid-1", "old-runner-boot", 1), &environmentruntimepb.SubmitInputRequest{
 		SessionId: "not-created", CommandId: "stale-boot-input", Text: "must not be admitted",
 	}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("SubmitInput for old runner boot = %v, want retryable rejection before admission", err)
 	}
-	currentStatus, err := statusClient.GetStatus(callContext("pod-uid-1", first.GetRunnerBootId(), 1), &runnerpb.GetStatusRequest{})
+	currentStatus, err := statusClient.GetStatus(callContext("pod-uid-1", first.GetEnvironmentRuntimeBootId(), 1), &sessionpb.GetStatusRequest{})
 	if err != nil {
 		t.Fatalf("current-epoch GetStatus: %v", err)
 	}
-	if currentStatus.GetRunnerBootId() != first.GetRunnerBootId() {
-		t.Fatalf("GetStatus boot ID = %q, WatchState boot ID = %q", currentStatus.GetRunnerBootId(), first.GetRunnerBootId())
+	if currentStatus.GetEnvironmentRuntimeBootId() != first.GetEnvironmentRuntimeBootId() {
+		t.Fatalf("GetStatus boot ID = %q, WatchState boot ID = %q", currentStatus.GetEnvironmentRuntimeBootId(), first.GetEnvironmentRuntimeBootId())
 	}
-	if _, err := statusClient.GetStatus(callContext("pod-uid-1", first.GetRunnerBootId(), 2), &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+	if _, err := statusClient.GetStatus(callContext("pod-uid-1", first.GetEnvironmentRuntimeBootId(), 2), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("stale GetStatus error = %v, want Unavailable", err)
 	}
 
-	newWatch, err := runnerservicepb.NewRunnerClient(conn).WatchState(ctx, &runnerservicepb.WatchStateRequest{
+	newWatch, err := environmentruntimepb.NewEnvironmentRuntimeClient(conn).WatchState(ctx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid-2", ConnectionEpoch: 2,
 	})
 	if err != nil {
@@ -142,11 +142,11 @@ func testRunnerHealthAndFencing(t *testing.T, mode runnertransport.SecurityMode)
 	if second.GetIncarnationUid() != "pod-uid-2" || second.GetConnectionEpoch() != 2 {
 		t.Fatalf("successor WatchState response = %v", second)
 	}
-	if _, err := statusClient.GetStatus(callContext("pod-uid-2", second.GetRunnerBootId(), 2), &runnerpb.GetStatusRequest{}); err != nil {
+	if _, err := statusClient.GetStatus(callContext("pod-uid-2", second.GetEnvironmentRuntimeBootId(), 2), &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("successor watcher was deactivated by its predecessor: %v", err)
 	}
 	staleExecution, err := executorpb.NewExecutorClient(conn).OpenSession(
-		callContext("pod-uid-1", first.GetRunnerBootId(), 1),
+		callContext("pod-uid-1", first.GetEnvironmentRuntimeBootId(), 1),
 		&executorpb.OpenSessionRequest{
 			Scope: &executorpb.ExecutionScope{
 				Destination: &sandboxespb.SandboxDestination{
@@ -167,8 +167,8 @@ func testRunnerHealthAndFencing(t *testing.T, mode runnertransport.SecurityMode)
 }
 
 func TestRunnerRejectsControlCertificateForAnotherSandbox(t *testing.T) {
-	ca := runnertransporttesting.NewCA(t)
-	wrongURI, err := runnertransport.RunnerURI("another-namespace", "another-sandbox", "credential-id")
+	ca := environmentruntimetransporttesting.NewCA(t)
+	wrongURI, err := environmentruntimetransport.EnvironmentRuntimeURI("another-namespace", "another-sandbox", "credential-id")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,8 +176,8 @@ func TestRunnerRejectsControlCertificateForAnotherSandbox(t *testing.T) {
 	config := Config{
 		StateDir: t.TempDir(),
 		Launch:   configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}},
-		Control: configuration.RunnerControlConfiguration{
-			ListenAddress: "127.0.0.1:8090", Security: runnertransport.Security{Mode: runnertransport.MutualTLS, TLS: &wrongTLS},
+		Control: configuration.EnvironmentRuntimeControlConfiguration{
+			ListenAddress: "127.0.0.1:8090", Security: environmentruntimetransport.Security{Mode: environmentruntimetransport.MutualTLS, TLS: &wrongTLS},
 		},
 	}
 	if _, err := New(config); err == nil {
@@ -188,15 +188,15 @@ func TestRunnerRejectsControlCertificateForAnotherSandbox(t *testing.T) {
 func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	ca := runnertransporttesting.NewCA(t)
-	runnerURI, err := runnertransport.RunnerURI("test", "sandbox-uid", "credential-id")
+	ca := environmentruntimetransporttesting.NewCA(t)
+	runnerURI, err := environmentruntimetransport.EnvironmentRuntimeURI("test", "sandbox-uid", "credential-id")
 	if err != nil {
 		t.Fatal(err)
 	}
 	runnerTLS := ca.Issue(t, runnerURI)
-	gatewayTLS := ca.Issue(t, runnertransport.GatewayURI)
+	gatewayTLS := ca.Issue(t, environmentruntimetransport.GatewayURI)
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
-	config.Control = configuration.RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnertransport.Security{Mode: runnertransport.MutualTLS, TLS: &runnerTLS}}
+	config.Control = configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: environmentruntimetransport.Security{Mode: environmentruntimetransport.MutualTLS, TLS: &runnerTLS}}
 	r := newLifecycleRunner(t, config)
 	listener, server, err := r.control.Listen(r.executorProxy)
 	if err != nil {
@@ -223,9 +223,9 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 		options ...grpc.CallOption,
 	) error {
 		err := invoke(callCtx, method, request, response, connection, options...)
-		if method == "/agentplane.runner.Runner/SubmitInput" && err == nil && dropFirstReply {
+		if method == "/agentplane.env.runtime.control.EnvironmentRuntime/SubmitInput" && err == nil && dropFirstReply {
 			dropFirstReply = false
-			firstCursor = response.(*runnerservicepb.SubmitInputResponse).GetAdmission().GetCursor()
+			firstCursor = response.(*environmentruntimepb.SubmitInputResponse).GetAdmission().GetCursor()
 			cancelFirst()
 			return status.Error(codes.Unavailable, "simulated lost Runner admission reply")
 		}
@@ -242,9 +242,9 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	t.Cleanup(func() { _ = conn.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	client := runnerservicepb.NewRunnerClient(conn)
+	client := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
 	watchCtx, cancelWatch := context.WithCancel(ctx)
-	watch, err := client.WatchState(watchCtx, &runnerservicepb.WatchStateRequest{
+	watch, err := client.WatchState(watchCtx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 1,
 	})
 	if err != nil {
@@ -263,12 +263,12 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 			control.EpochMetadata, uint64String(epoch),
 		)
 	}
-	if _, err := client.OpenSession(callContext(ctx, 1, first.GetRunnerBootId()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := client.OpenSession(callContext(ctx, 1, first.GetEnvironmentRuntimeBootId()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	submitCtx, cancelSubmit := context.WithCancel(ctx)
 	cancelFirst = cancelSubmit
-	if _, err := client.SubmitInput(callContext(submitCtx, 1, first.GetRunnerBootId()), &runnerservicepb.SubmitInputRequest{
+	if _, err := client.SubmitInput(callContext(submitCtx, 1, first.GetEnvironmentRuntimeBootId()), &environmentruntimepb.SubmitInputRequest{
 		SessionId: "session-1", CommandId: "same-command", Text: "hello",
 	}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("first direct SubmitInput error = %v, want the simulated lost reply", err)
@@ -283,7 +283,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	cancelWatch()
 	deadline := time.Now().Add(time.Second)
 	for {
-		_, err := client.GetStatus(callContext(ctx, 1, first.GetRunnerBootId()), &runnerpb.GetStatusRequest{})
+		_, err := client.GetStatus(callContext(ctx, 1, first.GetEnvironmentRuntimeBootId()), &sessionpb.GetStatusRequest{})
 		if status.Code(err) == codes.Unavailable {
 			break
 		}
@@ -294,7 +294,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 			t.Fatal("GetStatus remained available after WatchState cancellation")
 		}
 	}
-	watch, err = client.WatchState(ctx, &runnerservicepb.WatchStateRequest{
+	watch, err = client.WatchState(ctx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 2,
 	})
 	if err != nil {
@@ -304,7 +304,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	retry, err := client.SubmitInput(callContext(ctx, 2, second.GetRunnerBootId()), &runnerservicepb.SubmitInputRequest{
+	retry, err := client.SubmitInput(callContext(ctx, 2, second.GetEnvironmentRuntimeBootId()), &environmentruntimepb.SubmitInputRequest{
 		SessionId: "session-1", CommandId: "same-command", Text: "hello",
 	})
 	if err != nil {
@@ -316,15 +316,15 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 }
 
 func TestForwardRunnerRejectsUnconfiguredExecutionSession(t *testing.T) {
-	ca := runnertransporttesting.NewCA(t)
-	runnerURI, err := runnertransport.RunnerURI("test", "sandbox-uid", "credential-id")
+	ca := environmentruntimetransporttesting.NewCA(t)
+	runnerURI, err := environmentruntimetransport.EnvironmentRuntimeURI("test", "sandbox-uid", "credential-id")
 	if err != nil {
 		t.Fatal(err)
 	}
 	runnerTLS := ca.Issue(t, runnerURI)
-	gatewayTLS := ca.Issue(t, runnertransport.GatewayURI)
+	gatewayTLS := ca.Issue(t, environmentruntimetransport.GatewayURI)
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
-	config.Control = configuration.RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnertransport.Security{Mode: runnertransport.MutualTLS, TLS: &runnerTLS}}
+	config.Control = configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: environmentruntimetransport.Security{Mode: environmentruntimetransport.MutualTLS, TLS: &runnerTLS}}
 	r := newLifecycleRunner(t, config)
 	listener, server, err := r.control.Listen(r.executorProxy)
 	if err != nil {
@@ -346,7 +346,7 @@ func TestForwardRunnerRejectsUnconfiguredExecutionSession(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	watch, err := runnerservicepb.NewRunnerClient(conn).WatchState(ctx, &runnerservicepb.WatchStateRequest{
+	watch, err := environmentruntimepb.NewEnvironmentRuntimeClient(conn).WatchState(ctx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 1,
 	})
 	if err != nil {
@@ -360,7 +360,7 @@ func TestForwardRunnerRejectsUnconfiguredExecutionSession(t *testing.T) {
 		ctx,
 		control.SandboxMetadata, "sandbox-uid",
 		control.IncarnationMetadata, "pod-uid",
-		control.BootMetadata, first.GetRunnerBootId(),
+		control.BootMetadata, first.GetEnvironmentRuntimeBootId(),
 		control.EpochMetadata, "1",
 	)
 	executorClient := executorpb.NewExecutorClient(conn)

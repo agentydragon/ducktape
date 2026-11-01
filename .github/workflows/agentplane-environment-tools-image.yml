@@ -1,0 +1,123 @@
+# Build agentplane's Nix environment-tools image (agentplane/env/images/image.nix plus the repository's
+# hook and build tools) and push it to the Forgejo registry, through nix-image.yml. The archive also
+# goes to the Attic cache. The tools include released executables (bb, bbr, gazelle, ...), so any
+# artifact pin bump rebuilds it. The runner and `agentplane` are not in the image: they come from
+# the runner disk image. Fork PR builds use pull_request_target with the trusted-fork review gate;
+# the reusable workflow never publishes from that event.
+name: Agentplane Environment Tools Image
+
+on:
+  push:
+    branches: [devel]
+    paths:
+      # keep-sorted start
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/agentplane-environment-tools-image.yml"
+      - ".github/workflows/nix-image.yml"
+      - ".pre-commit-config.yaml"
+      - "agentplane/env/images/ducktape_image_smoke.sh"
+      - "agentplane/env/images/ducktape_tools_check.nix"
+      - "agentplane/env/images/image.nix"
+      - "agentplane/env/images/sandbox.nix"
+      - "agentplane/env/images/tools.nix"
+      - "devinfra/ci/pr_mergeability.py"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/artifact-pins.json"
+      - "nix/flake/devtools.nix"
+      - "nix/flake/packages.nix"
+      - "nix/lib/nix-ld-image.nix"
+      - "nix/packages/**"
+      - "ruff.toml"
+      # keep-sorted end
+  # Same-repository PRs build directly. Forks use pull_request_target below because this build
+  # needs the Attic token; the fork build remains unable to publish.
+  pull_request:
+    paths:
+      # keep-sorted start
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/agentplane-environment-tools-image.yml"
+      - ".github/workflows/nix-image.yml"
+      - ".pre-commit-config.yaml"
+      - "agentplane/env/images/ducktape_image_smoke.sh"
+      - "agentplane/env/images/ducktape_tools_check.nix"
+      - "agentplane/env/images/image.nix"
+      - "agentplane/env/images/sandbox.nix"
+      - "agentplane/env/images/tools.nix"
+      - "devinfra/ci/pr_mergeability.py"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/artifact-pins.json"
+      - "nix/flake/devtools.nix"
+      - "nix/flake/packages.nix"
+      - "nix/lib/nix-ld-image.nix"
+      - "nix/packages/**"
+      - "ruff.toml"
+      # keep-sorted end
+  # Fork PRs use pull_request_target so the build can read the Attic cache. The caller resolves
+  # GitHub's merge commit and gates non-allowlisted authors with fork-ci-review before checkout.
+  pull_request_target:
+    branches: [devel]
+    paths:
+      # keep-sorted start
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/agentplane-environment-tools-image.yml"
+      - ".github/workflows/nix-image.yml"
+      - ".github/workflows/trusted-fork-pr-context.yml"
+      - ".pre-commit-config.yaml"
+      - "agentplane/env/images/ducktape_image_smoke.sh"
+      - "agentplane/env/images/ducktape_tools_check.nix"
+      - "agentplane/env/images/image.nix"
+      - "agentplane/env/images/sandbox.nix"
+      - "agentplane/env/images/tools.nix"
+      - "devinfra/ci/pr_mergeability.py"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/artifact-pins.json"
+      - "nix/flake/devtools.nix"
+      - "nix/flake/packages.nix"
+      - "nix/lib/nix-ld-image.nix"
+      - "nix/packages/**"
+      - "ruff.toml"
+      # keep-sorted end
+  workflow_dispatch:
+
+concurrency:
+  # Keep a skipped fork pull_request run from canceling its trusted pull_request_target run.
+  group: environment-tools-image-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fork-context:
+    uses: ./.github/workflows/trusted-fork-pr-context.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
+  image:
+    needs: [fork-context]
+    if: >-
+      always() &&
+      (github.event_name != 'pull_request_target' || needs.fork-context.outputs.source_commit != '') &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    uses: ./.github/workflows/nix-image.yml
+    with:
+      attr: environment-tools-image
+      image: git.allegedly.works/ducktape-ci/environment-tools
+      registry: forgejo
+      attic: true
+      # Starts each harness the runner SandboxTemplate names, once, as the image's own user, and
+      # checks the repository tools. Nothing here runs a turn, and the system tests run a Bazel-built
+      # runner image of their own: this image's first turn is on staging.
+      smoke: bash agentplane/env/images/ducktape_image_smoke.sh
+      source_commit: ${{ needs.fork-context.outputs.source_commit }}
+      allow_unsafe_pr_checkout: ${{ github.event_name == 'pull_request_target' }}
+      environment: ${{ needs.fork-context.outputs.environment }}
+    secrets:
+      FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
+      FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
+      ATTIC_TOKEN: ${{ secrets[github.event_name != 'pull_request_target' && github.ref_name == 'devel' && 'ATTIC_TOKEN' || 'ATTIC_READ_TOKEN'] }}
+      ATTIC_READ_TOKEN: ${{ secrets.ATTIC_READ_TOKEN }}

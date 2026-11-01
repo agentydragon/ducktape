@@ -14,8 +14,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
@@ -27,8 +27,8 @@ func openSessionForStore(t *testing.T, store *Store, setup string) *Session {
 	t.Helper()
 	request := &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(),
-		Spec: &runnerpb.SessionSpec{
-			Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
+		Spec: &sessionpb.SessionSpec{
+			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
 		},
 		SetupScript: &setup,
 	}
@@ -128,8 +128,8 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	const replacementIncarnationUID = "fixture-replacement-incarnation"
 	session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(),
-		Spec: &runnerpb.SessionSpec{
-			Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
+		Spec: &sessionpb.SessionSpec{
+			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
 		},
 		Executor: executor, ExpectedIncarnationUid: previousIncarnationUID,
 	}, "fixture-account", protocol.APIStyleResponses)
@@ -649,8 +649,8 @@ func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
 		t.Run(string(api), func(t *testing.T) {
 			store := newTestStore(t)
 			session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
-				SessionId: uuid.NewString(), Spec: &runnerpb.SessionSpec{
-					Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
+				SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{
+					Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
 				},
 			}, "fixture-account", api)
 			if err != nil {
@@ -1509,8 +1509,8 @@ func ptrInt(value int) *int { return &value }
 
 func TestDescribePreservesSessionConfigurationAndUpdatesModel(t *testing.T) {
 	store := newTestStore(t)
-	spec := &runnerpb.SessionSpec{
-		Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
+	spec := &sessionpb.SessionSpec{
+		Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
 		ReasoningEffort: "high", Instructions: "stored instructions",
 	}
 	executor := &sandboxespb.SandboxDestination{
@@ -1528,7 +1528,7 @@ func TestDescribePreservesSessionConfigurationAndUpdatesModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantSpec := proto.Clone(spec).(*runnerpb.SessionSpec)
+	wantSpec := proto.Clone(spec).(*sessionpb.SessionSpec)
 	wantSpec.Model = "updated-model"
 	if !proto.Equal(response.GetAttached().GetSpec(), wantSpec) ||
 		!proto.Equal(response.GetExecutor(), executor) ||
@@ -1823,7 +1823,7 @@ func TestPendingInterruptTakesPrecedenceOverSteering(t *testing.T) {
 
 func TestStoreReopeningIgnoresRetiredSessionRouting(t *testing.T) {
 	store := newTestStore(t)
-	request := &samplerpb.OpenSessionRequest{SessionId: uuid.NewString(), Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model"}}
+	request := &samplerpb.OpenSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model"}}
 	legacy := proto.Clone(request).(*samplerpb.OpenSessionRequest)
 	legacy.Spec.ProtoReflect().SetUnknown([]byte{0x32, 0x00})
 	if _, err := store.OpenSession(t.Context(), legacy, "fixture-account", protocol.APIStyleResponses); err != nil {

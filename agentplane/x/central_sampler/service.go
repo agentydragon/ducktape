@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerpbservice "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"
@@ -99,7 +99,7 @@ func (s *Sampler) OpenSession(ctx context.Context, request *samplerpb.OpenSessio
 			return invalid()
 		}
 	}
-	if len(spec.GetInstructions()) > 1024*1024 || len(spec.GetCwd()) > 4096 || len(request.GetSetupScript()) > 65536 || spec.GetHarness() != runnerpb.Harness_HARNESS_CENTRAL_SAMPLER || !strings.HasPrefix(spec.GetCwd(), "/") {
+	if len(spec.GetInstructions()) > 1024*1024 || len(spec.GetCwd()) > 4096 || len(request.GetSetupScript()) > 65536 || spec.GetHarness() != sessionpb.Harness_HARNESS_CENTRAL_SAMPLER || !strings.HasPrefix(spec.GetCwd(), "/") {
 		return invalid()
 	}
 	modelConfig, modelConfigured := s.Settings.Models[spec.GetModel()]
@@ -110,7 +110,7 @@ func (s *Sampler) OpenSession(ctx context.Context, request *samplerpb.OpenSessio
 	if err != nil {
 		return nil, samplerError(ctx, err)
 	}
-	if session.SetupState == runnerpb.SetupState_SETUP_STATE_RUNNING {
+	if session.SetupState == sessionpb.SetupState_SETUP_STATE_RUNNING {
 		s.Runtime.Wake(session.ID)
 	}
 	description, err := Describe(session)
@@ -165,24 +165,24 @@ func (s *Sampler) command(ctx context.Context, sessionID string, command *comman
 	return entry, nil
 }
 
-func (s *Sampler) SubmitInput(ctx context.Context, r *runnerpbservice.SubmitInputRequest) (*runnerpbservice.SubmitInputResponse, error) {
+func (s *Sampler) SubmitInput(ctx context.Context, r *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
 	entry, err := s.command(ctx, r.GetSessionId(), &commandpb.Command{CommandId: r.GetCommandId(), Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: r.GetText()}}})
-	return &runnerpbservice.SubmitInputResponse{Admission: entry}, err
+	return &environmentruntimepb.SubmitInputResponse{Admission: entry}, err
 }
 
-func (s *Sampler) ChangeModel(ctx context.Context, r *runnerpbservice.ChangeModelRequest) (*runnerpbservice.ChangeModelResponse, error) {
+func (s *Sampler) ChangeModel(ctx context.Context, r *environmentruntimepb.ChangeModelRequest) (*environmentruntimepb.ChangeModelResponse, error) {
 	entry, err := s.command(ctx, r.GetSessionId(), &commandpb.Command{CommandId: r.GetCommandId(), Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: r.GetModel()}}})
-	return &runnerpbservice.ChangeModelResponse{Admission: entry}, err
+	return &environmentruntimepb.ChangeModelResponse{Admission: entry}, err
 }
 
-func (s *Sampler) ChangeReasoningEffort(ctx context.Context, r *runnerpbservice.ChangeReasoningEffortRequest) (*runnerpbservice.ChangeReasoningEffortResponse, error) {
+func (s *Sampler) ChangeReasoningEffort(ctx context.Context, r *environmentruntimepb.ChangeReasoningEffortRequest) (*environmentruntimepb.ChangeReasoningEffortResponse, error) {
 	entry, err := s.command(ctx, r.GetSessionId(), &commandpb.Command{CommandId: r.GetCommandId(), Operation: &commandpb.Command_ChangeReasoningEffort{ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: r.GetEffort()}}})
-	return &runnerpbservice.ChangeReasoningEffortResponse{Admission: entry}, err
+	return &environmentruntimepb.ChangeReasoningEffortResponse{Admission: entry}, err
 }
 
-func (s *Sampler) InterruptTurn(ctx context.Context, r *runnerpbservice.InterruptTurnRequest) (*runnerpbservice.InterruptTurnResponse, error) {
+func (s *Sampler) InterruptTurn(ctx context.Context, r *environmentruntimepb.InterruptTurnRequest) (*environmentruntimepb.InterruptTurnResponse, error) {
 	entry, err := s.command(ctx, r.GetSessionId(), &commandpb.Command{CommandId: r.GetCommandId(), Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: r.GetTurnId()}}})
-	return &runnerpbservice.InterruptTurnResponse{Admission: entry}, err
+	return &environmentruntimepb.InterruptTurnResponse{Admission: entry}, err
 }
 
 func (s *Sampler) Compact(ctx context.Context, r *samplerpb.CompactRequest) (*samplerpb.CompactResponse, error) {

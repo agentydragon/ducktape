@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -31,7 +31,7 @@ func (s openingFixture) GetOpening(context.Context, string) (*Opening, error) {
 
 type nativeFixture struct{ calls int }
 
-func (r *nativeFixture) OpenSession(context.Context, SandboxSnapshot, string, *runnerpb.SessionSpec, *string, *delegationpb.ServiceAccountIdentity) error {
+func (r *nativeFixture) OpenSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *delegationpb.ServiceAccountIdentity) error {
 	r.calls++
 	return nil
 }
@@ -55,9 +55,9 @@ func (s *centralFixture) OpenSession(ctx context.Context, request *samplerpb.Ope
 	return &samplerpb.OpenSessionResponse{}, nil
 }
 
-func (s *centralFixture) InterruptTurn(_ context.Context, request *runnerservicepb.InterruptTurnRequest) (*runnerservicepb.InterruptTurnResponse, error) {
+func (s *centralFixture) InterruptTurn(_ context.Context, request *environmentruntimepb.InterruptTurnRequest) (*environmentruntimepb.InterruptTurnResponse, error) {
 	s.interrupted = request.GetTurnId()
-	return &runnerservicepb.InterruptTurnResponse{Admission: &eventlogpb.EventEntry{Cursor: 17}}, nil
+	return &environmentruntimepb.InterruptTurnResponse{Admission: &eventlogpb.EventEntry{Cursor: 17}}, nil
 }
 
 func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
@@ -75,7 +75,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 		t.Fatal(err)
 	}
 	native := &nativeFixture{}
-	spec := &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER}
+	spec := &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER}
 	sandbox := SandboxSnapshot{Name: "executor", Namespace: "test", UID: "sandbox-uid", Incarnation: "pod-uid", Blocker: "sandbox_not_ready"}
 	runner := &RoutingRunner{Native: native, Store: openingFixture{&Opening{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Spec: spec}}, Target: &CentralTarget{Target: listener.Addr().String(), TokenFile: tokenFile}, Timeout: time.Second}
 	setup := "printf 'executor setup\\n'"
@@ -94,7 +94,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 	if _, err := runner.Deliver(context.Background(), changed, "session", &commandpb.Command{}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("changed binding accepted: %v", err)
 	}
-	nativeSpec := &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CODEX}
+	nativeSpec := &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CODEX}
 	if err := runner.OpenSession(context.Background(), sandbox, "native", nativeSpec, nil, nil); err != nil {
 		t.Fatal(err)
 	}

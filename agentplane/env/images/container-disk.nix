@@ -4,14 +4,14 @@
   self,
 }:
 let
-  diskImage = self.nixosConfigurations.agentplane-runner-vm.config.system.build.images.qemu-efi;
-  diskRoot = pkgs.runCommand "agentplane-runner-vm-container-disk-root" { } ''
+  diskImage = self.nixosConfigurations.agentplane-environment-vm.config.system.build.images.qemu-efi;
+  diskRoot = pkgs.runCommand "agentplane-environment-vm-container-disk-root" { } ''
     mkdir -p $out/disk
     cp ${diskImage}/*.qcow2 $out/disk/disk.qcow2
   '';
 in
 pkgs.dockerTools.buildLayeredImage {
-  name = "git.allegedly.works/ducktape-ci/agentplane-runner-vm";
+  name = "git.allegedly.works/ducktape-ci/agentplane-environment-vm";
   contents = [ diskRoot ];
   includeStorePaths = false;
   maxLayers = 2;

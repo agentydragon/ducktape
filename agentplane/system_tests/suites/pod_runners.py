@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from agentplane.app.testing.client import Client
 from agentplane.app.testing.models import SandboxView
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.scenario import open_resources
 from agentplane.system_tests.tracing import tracer
@@ -22,11 +22,11 @@ class Pair:
     claude: SandboxView
     codex: SandboxView
 
-    def for_harness(self, harness: runner_pb2.Harness) -> SandboxView:
+    def for_harness(self, harness: session_pb2.Harness) -> SandboxView:
         match harness:
-            case runner_pb2.HARNESS_CLAUDE:
+            case session_pb2.HARNESS_CLAUDE:
                 return self.claude
-            case runner_pb2.HARNESS_CODEX:
+            case session_pb2.HARNESS_CODEX:
                 return self.codex
         raise ValueError(f"unsupported {harness=}")
 

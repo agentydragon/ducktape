@@ -9,7 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc/codes"
@@ -28,8 +28,8 @@ func (e *Executor) openSession(ctx context.Context, args contract.OpenSessionArg
 	}
 	response, err := e.dispatcher.OpenSession(ctx, &dispatcherpb.OpenSessionRequest{
 		SessionId: args.SessionID, Sandbox: args.Sandbox.Name, SandboxUid: string(args.Sandbox.UID), SetupScript: args.SetupScript,
-		Spec: &runnerpb.SessionSpec{
-			Harness: runnerpb.Harness(runnerpb.Harness_value[string(args.Spec.Harness)]), Model: args.Spec.Model,
+		Spec: &sessionpb.SessionSpec{
+			Harness: sessionpb.Harness(sessionpb.Harness_value[string(args.Spec.Harness)]), Model: args.Spec.Model,
 			Cwd:             strings.ReplaceAll(args.Spec.Cwd, "{session_id}", args.SessionID),
 			ReasoningEffort: args.Spec.ReasoningEffort, Instructions: args.Spec.Instructions,
 		},

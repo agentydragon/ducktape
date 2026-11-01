@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/harness"
-	"github.com/agentydragon/ducktape/agentplane/runner/testing/adaptertest"
+	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/testing/adaptertest"
 )
 
 func newAdapterTestHost() *adaptertest.Host { return adaptertest.NewHost() }

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
 
 func TestStorePreservesRunnerSessionJSONShape(t *testing.T) {
@@ -21,7 +21,7 @@ func TestStorePreservesRunnerSessionJSONShape(t *testing.T) {
 	nativeID := "native-session"
 	setupHash := "0123456789abcdef"
 	record := Record{
-		Harness: runnerpb.Harness_HARNESS_CLAUDE, CWD: "/workspace", Model: "route/model",
+		Harness: sessionpb.Harness_HARNESS_CLAUDE, CWD: "/workspace", Model: "route/model",
 		TotalContextBudgetTokens: &totalBudget, ReasoningEffort: "medium", Instructions: "Keep going.",
 		SetupScriptSHA256: &setupHash, EventSourceID: "bdb9e654-d77c-42a2-b006-9a0dd4f20655", NativeSessionID: &nativeID,
 	}
@@ -53,8 +53,8 @@ func TestStorePreservesRunnerSessionJSONShape(t *testing.T) {
 
 func TestNewRecordPersistsSetupSourceAndDerivedCompatibilityHash(t *testing.T) {
 	script := "printf setup"
-	record, err := NewRecord(&runnerpb.SessionSpec{
-		Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", Model: "route/model",
+	record, err := NewRecord(&sessionpb.SessionSpec{
+		Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", Model: "route/model",
 	}, script, nil)
 	if err != nil {
 		t.Fatal(err)

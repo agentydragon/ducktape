@@ -17,11 +17,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/workspace"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
-	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
+	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc"
 )
 
@@ -53,8 +53,8 @@ func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string
 	return runtimeTestConfig{Config: config, host: harnesshost.Config{StateDir: root, Launch: launch, WorkspaceRoot: workspace, InitializationCwd: workspace, RuntimeSocket: config.RuntimeSocket, ListenSocket: config.HostSocket, Claude: &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test"}, HTTPClient: http.DefaultClient}}
 }
 
-func insecureControl() configuration.RunnerControlConfiguration {
-	return configuration.RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnertransport.Security{Mode: runnertransport.Insecure}}
+func insecureControl() configuration.EnvironmentRuntimeControlConfiguration {
+	return configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: environmentruntimetransport.Security{Mode: environmentruntimetransport.Insecure}}
 }
 
 // The fixture composes production Runtime and Host endpoints through real private
@@ -145,8 +145,8 @@ func modelConfigServer(t *testing.T) *httptest.Server {
 	return server
 }
 
-func openLifecycleSession(id, cwd string) *runnerservicepb.OpenSessionRequest {
-	return &runnerservicepb.OpenSessionRequest{SessionId: id, Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: cwd, Model: "test-model"}}
+func openLifecycleSession(id, cwd string) *environmentruntimepb.OpenSessionRequest {
+	return &environmentruntimepb.OpenSessionRequest{SessionId: id, Spec: &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: cwd, Model: "test-model"}}
 }
 
 func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }

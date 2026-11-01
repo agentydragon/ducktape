@@ -9,7 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/state"
 )
 
@@ -37,7 +37,7 @@ type Config struct {
 	Environment          func() Environment
 	EnsureWorkspace      func(context.Context, string) (string, error)
 	LaunchProcess        func(context.Context, string, supervision.ProcessConfig) (*supervision.ManagedProcess, error)
-	ResolveModelConfig   func(context.Context, runnerpb.Harness, string) (*int, error)
+	ResolveModelConfig   func(context.Context, sessionpb.Harness, string) (*int, error)
 	PublishSeal          func(string, *journal.SealState) error
 	PublishAck           func(string, retained.Acknowledgement) error
 	OnChange             func()

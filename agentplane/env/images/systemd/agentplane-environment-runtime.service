@@ -2,7 +2,7 @@
 Description=Agentplane environment Runtime
 Wants=network.target
 After=network.target dbus.service
-RequiresMountsFor=/state /state/workspaces /run/agentplane/runner /run/agentplane/config /run/agentplane/sandbox /run/agentplane/trust /run/agentplane/runner-private/runner-tls /run/agentplane/runner-trust
+RequiresMountsFor=/state /state/workspaces /run/agentplane/environment /run/agentplane/config /run/agentplane/sandbox /run/agentplane/trust /run/agentplane/environment-runtime-private/environment-runtime-tls /run/agentplane/environment-runtime-trust
 
 [Service]
 Type=exec
@@ -10,11 +10,11 @@ Slice=agentplane.slice
 RuntimeDirectory=agentplane-environment-runtime-lifetime
 RuntimeDirectoryMode=0755
 RuntimeDirectoryPreserve=no
-EnvironmentFile=/run/agentplane/config/runner.env
+EnvironmentFile=/run/agentplane/config/environment-runtime.env
 Environment=ANTHROPIC_AUTH_TOKEN=agentplane-credential-agentplane-workload
 Environment=OPENAI_API_KEY=agentplane-credential-agentplane-workload
 ExecStartPre=/usr/libexec/agentplane/apply-resource-limits
-ExecStart=/run/agentplane/runner/bin/agentplane-environment-runtime --config /run/agentplane/config/runner.json --launch-file /run/agentplane/sandbox/launch.json
+ExecStart=/run/agentplane/environment/bin/agentplane-environment-runtime --config /run/agentplane/config/environment-runtime.json --launch-file /run/agentplane/sandbox/launch.json
 UMask=0007
 Restart=on-failure
 RestartSec=2s

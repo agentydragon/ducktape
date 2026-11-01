@@ -10,12 +10,12 @@ const (
 	// receipts. Must equal CREATE_INTENT in agentplane/sandboxes/testing/kubernetes_views.py.
 	CreateIntentAnnotation = "agentplane.allegedly.works/create-intent"
 
-	ConditionRunning         = "Running"
-	ConditionWorkloadReady   = "WorkloadReady"
-	ConditionRunnerConnected = "RunnerConnected"
-	ConditionBootstrapped    = "Bootstrapped"
-	ConditionReady           = "Ready"
-	ConditionQuiesced        = "Quiesced"
+	ConditionRunning                     = "Running"
+	ConditionWorkloadReady               = "WorkloadReady"
+	ConditionEnvironmentRuntimeConnected = "EnvironmentRuntimeConnected"
+	ConditionBootstrapped                = "Bootstrapped"
+	ConditionReady                       = "Ready"
+	ConditionQuiesced                    = "Quiesced"
 
 	RunnerProxySandboxMetadataKey               = "x-agentplane-sandbox"
 	RunnerProxySandboxUIDMetadataKey            = "x-agentplane-sandbox-uid"
@@ -25,9 +25,9 @@ const (
 	ControlServiceSuffix   = "-control"
 	ControlServicePortName = "grpc"
 	ControlServicePort     = 8080
-	// RunnerServicePort is the runner's mTLS listener port in a Pod or KubeVirt guest.
-	RunnerServicePort     = 9090
-	RunnerCredentialLabel = "agentplane.allegedly.works/runner-credential"
+	// EnvironmentRuntimeServicePort is the runner's mTLS listener port in a Pod or KubeVirt guest.
+	EnvironmentRuntimeServicePort     = 9090
+	EnvironmentRuntimeCredentialLabel = "agentplane.allegedly.works/environment-runtime-credential"
 )
 
 // ControlServiceTargetTemplate is the default target used by both the controller and dispatcher.

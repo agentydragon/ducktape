@@ -483,7 +483,7 @@ types; the linked existing protobufs remain authoritative for reused messages an
 
 `Dispatcher` below is [session_dispatcher.proto](../runner_gateway/dispatcher/session_dispatcher.proto),
 `History` is [history_service.proto](../history_service/history_service.proto), and `Harness` /
-`TurnStatus` are the [existing Runner enum](../proto/runner.proto) / [Event enums](../proto/event.proto).
+`TurnStatus` are the [existing Runner enum](../proto/session.proto) / [Event enums](../proto/event.proto).
 Examples use protobuf field names; JSON Schema must pin that field spelling explicitly. New
 projections belong to neutral shared clients/backends, with no `orchestration_v1` DTO dependency.
 
@@ -582,7 +582,7 @@ type CreationObservation = { creation_id: UUID; source: "environment" } & (
 defaults, resolved with the verified caller's execution account. It is not a new persisted template
 entity. Its revision covers the complete resolved configuration, including the execution account. `SandboxTemplateSpec` reuses the
 [existing public Pod/VM and volume schema](../sandboxes/api/types.go); Kubernetes quantities retain
-their explicit units. `Harness` reuses the [Runner enum](../proto/runner.proto), limited to offered
+their explicit units. `Harness` reuses the [Runner enum](../proto/session.proto), limited to offered
 non-unspecified values. Unsupported or unavailable runtime configuration is explicit; a failed
 discovery read cannot become an empty successful list.
 

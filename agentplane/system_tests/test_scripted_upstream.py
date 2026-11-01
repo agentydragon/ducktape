@@ -8,12 +8,12 @@ import pytest
 import pytest_bazel
 
 from agentplane.native.claude.testing.requests import Message, MessagesRequest, ThinkingConfig
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import Text
 from util.net import listen_tcp
 
-# runner_pb2.pyi imports protobuf stubs directly during mypy traversal.
+# session_pb2.pyi imports protobuf stubs directly during mypy traversal.
 # gazelle:include_dep @pypi//protobuf
 
 
@@ -36,7 +36,7 @@ async def test_case_scopes_isolate_unanswered_requests_and_release_their_queues(
 
             async def exchange(pod: str, *, answer: bool) -> None:
                 async with upstream.case_scope():
-                    model = upstream.model(pod, runner_pb2.HARNESS_CLAUDE)
+                    model = upstream.model(pod, session_pb2.HARNESS_CLAUDE)
                     async with asyncio.TaskGroup() as requests:
                         posting = requests.create_task(
                             client.post(

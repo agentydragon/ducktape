@@ -13,7 +13,7 @@ import (
 	"time"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
 	"google.golang.org/protobuf/proto"
@@ -615,11 +615,11 @@ func (r *Runtime) setup(ctx context.Context, sessionID string, owner Owner) (boo
 		return false, err
 	}
 	switch session.SetupState {
-	case runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED, runnerpb.SetupState_SETUP_STATE_SUCCEEDED:
+	case sessionpb.SetupState_SETUP_STATE_NOT_REQUIRED, sessionpb.SetupState_SETUP_STATE_SUCCEEDED:
 		return true, nil
-	case runnerpb.SetupState_SETUP_STATE_FAILED, runnerpb.SetupState_SETUP_STATE_INTERRUPTED:
+	case sessionpb.SetupState_SETUP_STATE_FAILED, sessionpb.SetupState_SETUP_STATE_INTERRUPTED:
 		return false, nil
-	case runnerpb.SetupState_SETUP_STATE_RUNNING:
+	case sessionpb.SetupState_SETUP_STATE_RUNNING:
 	default:
 		return false, fmt.Errorf("unknown setup state %s", session.SetupState)
 	}

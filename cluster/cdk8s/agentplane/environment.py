@@ -18,9 +18,9 @@ from agentplane.action_service.catalog import ActionGroup, Key
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.app.settings import AppSettingsConfig
+from agentplane.env.config import GuestResources
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.notification_service.settings import NoticeDebounceSettings
-from agentplane.runner.configuration import GuestResources
 from agentplane.subjects import ServiceAccountRef
 from agentplane.x.central_sampler import settings
 from cluster.cdk8s.secret_ref import SecretKey
@@ -195,7 +195,7 @@ class Environment:
     actions: ActionsProps
     mcp_edge: McpEdgeProps
     notifications_debounce: NoticeDebounceSettings
-    # Whether this environment has VM Sandboxes: the runner VM template (runner_vm.py) and the egress
+    # Whether this environment has VM Sandboxes: the runner VM template (environment_vm.py) and the egress
     # relay for their KubeVirt launchers (launcher_relay.py).
     vm_sandboxes: bool
     # None keeps the central code-mode service, its route, and its cross-service grants absent.

@@ -12,10 +12,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/session"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/workspace"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -23,7 +23,7 @@ import (
 )
 
 type Runner struct {
-	runnerservicepb.UnimplementedRunnerServer
+	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	config              Config
 	ctx                 context.Context
 	cancel              context.CancelFunc

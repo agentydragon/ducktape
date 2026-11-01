@@ -3,7 +3,7 @@ package gateway
 import (
 	"sync"
 
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -18,7 +18,7 @@ type runnerConnection struct {
 	podUID      string
 	epoch       uint64
 	bootID      string
-	runner      runnerservicepb.RunnerClient
+	runner      environmentruntimepb.EnvironmentRuntimeClient
 	direct      *fencedRunnerConn
 	closeDirect func()
 	ended       chan struct{}

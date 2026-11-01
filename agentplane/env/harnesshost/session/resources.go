@@ -6,7 +6,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/lifecycle"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
@@ -34,10 +34,10 @@ const (
 )
 
 type Input struct {
-	Harness           runnerpb.Harness
+	Harness           sessionpb.Harness
 	Demand            uint64
 	SetupRequested    bool
-	Setup             runnerpb.SetupState
+	Setup             sessionpb.SetupState
 	Pending           int
 	ProcessID         string
 	ProcessRunning    bool

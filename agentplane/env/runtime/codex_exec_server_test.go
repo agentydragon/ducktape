@@ -8,14 +8,14 @@ import (
 	"time"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
 
 func TestExecutionSessionAdmissionClosesWhenRuntimeQuiesces(t *testing.T) {
 	url, _, _ := startNativeExecutionTestServer(t, false)
 	r := newExecutionRuntime(t, url, nil)
 	client := startDirectExecutionTestClient(t, r, "incarnation")
-	if _, err := r.Quiesce(client.ctx, &runnerpb.QuiesceRequest{}); err != nil {
+	if _, err := r.Quiesce(client.ctx, &sessionpb.QuiesceRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	stream, err := client.open(client.callCtx, "late-session", "late-open")

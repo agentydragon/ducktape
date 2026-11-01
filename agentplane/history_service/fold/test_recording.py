@@ -21,7 +21,7 @@ from agentplane.history_service.fold.models import (
 )
 from agentplane.history_service.fold.views import EntityKind, ThreadOperationalState
 from agentplane.history_service.testing.history import History
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -58,7 +58,7 @@ async def open_thread(history: History) -> UUID:
 
 async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_projection(history: History) -> None:
     thread = await open_thread(history)
-    attached = runner_pb2.Attached(session_id=str(thread), spec=runner_pb2.SessionSpec())
+    attached = session_pb2.Attached(session_id=str(thread), spec=session_pb2.SessionSpec())
     await history.set_attached(thread, attached)
     await history.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted())])
     checkpoint_before, view_before = await view_state(history, thread)
@@ -75,7 +75,7 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
     }
 
     await history.set_attached(
-        thread, runner_pb2.Attached(session_id=str(thread), spec=runner_pb2.SessionSpec(), last_cursor=1)
+        thread, session_pb2.Attached(session_id=str(thread), spec=session_pb2.SessionSpec(), last_cursor=1)
     )
     _, view_reset = await view_state(history, thread)
     assert (view_reset.cursor, view_reset.revision_cursor) == semantic_revision

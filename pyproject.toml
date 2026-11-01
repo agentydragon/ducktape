@@ -270,7 +270,7 @@ dependencies = [
     "PyHamcrest>=2.1",
     "mypy==2.3.1",
 
-    # Protobuf and gRPC code generation for //agentplane/runner: grpcio-tools bundles protoc
+    # Protobuf and gRPC code generation for //agentplane/env/runtime/control: grpcio-tools bundles protoc
     # and the gRPC Python plugin; mypy-protobuf adds the .pyi stubs mypy reads.
     "grpcio>=1.84.0",
     # grpc.health.v1, which the agentplane services serve for Kubernetes gRPC probes.

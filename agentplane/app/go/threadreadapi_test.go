@@ -14,8 +14,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -108,12 +108,12 @@ func (f *threadReadInventoryFake) Get(context.Context, string) (*sandboxespb.San
 	return f.sandbox, f.err
 }
 
-type threadReadRunnerFake struct {
-	status *runnerpb.RunnerStatus
+type threadReadEnvironmentRuntimeFake struct {
+	status *sessionpb.EnvironmentRuntimeStatus
 	err    error
 }
 
-func (f *threadReadRunnerFake) RunnerStatus(context.Context, string) (*runnerpb.RunnerStatus, error) {
+func (f *threadReadEnvironmentRuntimeFake) EnvironmentRuntimeStatus(context.Context, string) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	return f.status, f.err
 }
 
@@ -261,7 +261,7 @@ func TestListThreadViewsFiltersBySandboxIncarnationAndBindsPageToken(t *testing.
 
 func TestMakeThreadViewPreservesFeedStatusEnum(t *testing.T) {
 	thread := threads.Thread{ID: uuid.New(), CreatedAt: time.Now().UTC()}
-	attachment := &runnerpb.Attached{HarnessState: runnerpb.HarnessState_HARNESS_STATE_STOPPED}
+	attachment := &sessionpb.Attached{HarnessState: sessionpb.HarnessState_HARNESS_STATE_STOPPED}
 	for _, test := range []struct {
 		status historypb.FeedStatus
 		want   string
@@ -287,7 +287,7 @@ func TestMakeThreadViewPreservesFeedStatusEnum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.FeedStatus != nil || view.HarnessState != runnerpb.HarnessState_HARNESS_STATE_UNSPECIFIED.String() {
+	if view.FeedStatus != nil || view.HarnessState != sessionpb.HarnessState_HARNESS_STATE_UNSPECIFIED.String() {
 		t.Fatalf("unattached view = %+v, want nil feed and unspecified harness", view)
 	}
 }
@@ -381,7 +381,7 @@ func TestThreadSandboxReadinessRequiresRunningReadyPod(t *testing.T) {
 	}
 }
 
-func TestEnsureThreadArchivableRejectsBusyRunnerButAllowsIdleRunner(t *testing.T) {
+func TestEnsureThreadArchivableRejectsBusyEnvironmentRuntime(t *testing.T) {
 	status, err := structpb.NewStruct(map[string]any{"conditions": []any{
 		map[string]any{"type": "Ready", "status": "True"},
 	}})
@@ -392,20 +392,20 @@ func TestEnsureThreadArchivableRejectsBusyRunnerButAllowsIdleRunner(t *testing.T
 	thread := threads.Thread{ID: id}
 	sandbox := &sandboxespb.Sandbox{
 		OperatingMode: stringPointer("Running"), Status: status,
-		Pod: &sandboxespb.SandboxPod{Name: "runner-pod"},
+		Pod: &sandboxespb.SandboxPod{Name: "environment-runtime-pod"},
 	}
 	inventory := &threadReadInventoryFake{sandbox: sandbox}
-	runner := &threadReadRunnerFake{status: &runnerpb.RunnerStatus{Sessions: []*runnerpb.SessionStatus{{SessionId: id.String(), Busy: true}}}}
-	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox"}, inventory, runner); !errors.Is(err, errThreadBusy) {
-		t.Fatalf("busy runner archive check = %v, want errThreadBusy", err)
+	environmentRuntime := &threadReadEnvironmentRuntimeFake{status: &sessionpb.EnvironmentRuntimeStatus{Sessions: []*sessionpb.SessionStatus{{SessionId: id.String(), Busy: true}}}}
+	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox"}, inventory, environmentRuntime); !errors.Is(err, errThreadBusy) {
+		t.Fatalf("busy Environment Runtime archive check = %v, want errThreadBusy", err)
 	}
-	runner.status.Sessions[0].Busy = false
-	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox"}, inventory, runner); err != nil {
-		t.Fatalf("idle runner archive check = %v, want nil", err)
+	environmentRuntime.status.Sessions[0].Busy = false
+	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox"}, inventory, environmentRuntime); err != nil {
+		t.Fatalf("idle Environment Runtime archive check = %v, want nil", err)
 	}
 	sandbox.OperatingMode = stringPointer("Suspended")
-	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox"}, inventory, runner); !errors.Is(err, errThreadRunnerUnready) {
-		t.Fatalf("unready Sandbox archive check = %v, want errThreadRunnerUnready", err)
+	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox"}, inventory, environmentRuntime); !errors.Is(err, errThreadEnvironmentRuntimeUnready) {
+		t.Fatalf("unready Environment Runtime archive check = %v, want errThreadEnvironmentRuntimeUnready", err)
 	}
 }
 
@@ -426,9 +426,9 @@ func TestThreadViewReadsHistoryIdentityActivityAndAttachedSpecification(t *testi
 				LastEventAt: &at, LastModelActivityAt: &at, IdleSince: &at, LastTurnStatus: &status,
 				Feed: &historydata.FeedSnapshot{
 					Status: historypb.FeedStatus_FEED_STATUS_ENDED,
-					Attached: &runnerpb.Attached{
-						HarnessState: runnerpb.HarnessState_HARNESS_STATE_STOPPED,
-						Spec:         &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CODEX, Model: "model", Cwd: "/workspace", ReasoningEffort: "high"},
+					Attached: &sessionpb.Attached{
+						HarnessState: sessionpb.HarnessState_HARNESS_STATE_STOPPED,
+						Spec:         &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CODEX, Model: "model", Cwd: "/workspace", ReasoningEffort: "high"},
 					},
 				},
 			})

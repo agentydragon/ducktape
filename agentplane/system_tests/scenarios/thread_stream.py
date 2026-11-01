@@ -28,7 +28,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.app.testing.models import SandboxView
 from agentplane.grpc.calls import ServiceError
-from agentplane.proto import command_pb2, runner_pb2
+from agentplane.proto import command_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, Agent
@@ -105,7 +105,7 @@ async def tab(http: httpx.AsyncClient, thread_id: UUID, *, last_event_id: int | 
 
 
 async def _open(
-    client: Client, dispatcher: SessionDispatcherClient, view: SandboxView, harness: runner_pb2.Harness, model: str
+    client: Client, dispatcher: SessionDispatcherClient, view: SandboxView, harness: session_pb2.Harness, model: str
 ) -> UUID:
     """A Thread whose runner feed is attached, so a tab's first frame is `attached`."""
     thread_id = (
@@ -197,7 +197,7 @@ async def every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event
     dispatcher: SessionDispatcherClient,
     http: httpx.AsyncClient,
     view: SandboxView,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:
@@ -262,7 +262,7 @@ async def turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_inp
     dispatcher: SessionDispatcherClient,
     http: httpx.AsyncClient,
     view: SandboxView,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:
@@ -306,5 +306,5 @@ async def turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_inp
     assert _texts(recovered) == ["AFTER_HTTP_ERROR_OK"]
 
 
-# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf

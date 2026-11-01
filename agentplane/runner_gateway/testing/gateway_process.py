@@ -17,11 +17,11 @@ import httpx
 import yaml
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 
+from agentplane.environment_runtime_transport.config import MTLS, TLS
 from agentplane.grpc.calls import ServiceError, dial
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.settings import Settings
-from agentplane.runner_transport.configuration import MTLS, TLS
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
@@ -68,14 +68,14 @@ class GatewayProcess:
     # The Dispatcher's generated HTTP/JSON facade.
     http_url: str
     log_path: Path
-    runner_ca: CertificateAuthority
-    runner_ca_file: Path
+    environment_runtime_ca: CertificateAuthority
+    environment_runtime_ca_file: Path
 
-    def issue_runner_tls(self, uri: str, directory: Path) -> TLS:
-        """Issue a Runner peer certificate trusted by this Gateway process."""
+    def issue_environment_runtime_tls(self, uri: str, directory: Path) -> TLS:
+        """Issue an Environment Runtime peer certificate trusted by this Gateway process."""
         directory.mkdir(parents=True, exist_ok=True)
-        cert_file, key_file = issue_workload_leaf(self.runner_ca, uri, directory)
-        return TLS(cert_file=str(cert_file), key_file=str(key_file), ca_file=str(self.runner_ca_file))
+        cert_file, key_file = issue_workload_leaf(self.environment_runtime_ca, uri, directory)
+        return TLS(cert_file=str(cert_file), key_file=str(key_file), ca_file=str(self.environment_runtime_ca_file))
 
     def gateway_client(
         self, token_file: Path, *, request_timeout_s: float = 20, lifecycle_timeout_s: float = 310
@@ -230,14 +230,18 @@ async def run_gateway(
         http_listener = listeners.enter_context(listen_tcp())
         with tempfile.TemporaryDirectory() as settings_dir, log_path.open("wb") as log_file:
             settings_directory = Path(settings_dir)
-            runner_ca = make_ca("runner transport test CA")
-            runner_ca_file, _ = write_ca(runner_ca, settings_directory, "runner-ca")
+            environment_runtime_ca = make_ca("Environment Runtime transport test CA")
+            environment_runtime_ca_file, _ = write_ca(
+                environment_runtime_ca, settings_directory, "environment-runtime-ca"
+            )
             gateway_cert, gateway_key = issue_workload_leaf(
-                runner_ca, "spiffe://agentplane/runner-gateway", settings_directory
+                environment_runtime_ca, "spiffe://agentplane/runner-gateway", settings_directory
             )
             runner_security = MTLS(
                 mode="mtls",
-                tls=TLS(cert_file=str(gateway_cert), key_file=str(gateway_key), ca_file=str(runner_ca_file)),
+                tls=TLS(
+                    cert_file=str(gateway_cert), key_file=str(gateway_key), ca_file=str(environment_runtime_ca_file)
+                ),
             )
             effective_settings = Settings(
                 sandbox_namespace=namespace,
@@ -294,8 +298,8 @@ async def run_gateway(
                     target=f"{grpc_listener.host}:{grpc_listener.port}",
                     http_url=f"http://{http_listener.host}:{http_listener.port}",
                     log_path=log_path,
-                    runner_ca=runner_ca,
-                    runner_ca_file=runner_ca_file,
+                    environment_runtime_ca=environment_runtime_ca,
+                    environment_runtime_ca_file=environment_runtime_ca_file,
                 )
                 cleanup = asyncio.create_task(orphan.stop())
                 try:
@@ -311,8 +315,8 @@ async def run_gateway(
                 target=f"{grpc_listener.host}:{grpc_listener.port}",
                 http_url=f"http://{http_listener.host}:{http_listener.port}",
                 log_path=log_path,
-                runner_ca=runner_ca,
-                runner_ca_file=runner_ca_file,
+                environment_runtime_ca=environment_runtime_ca,
+                environment_runtime_ca_file=environment_runtime_ca_file,
             )
             try:
                 await _wait_ready(service, timeout_s=startup_timeout_s)

@@ -17,7 +17,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -154,12 +154,12 @@ func (f projectorFixture) ended(t *testing.T, sessionID uuid.UUID) *string {
 	return document
 }
 
-func attachedFeed(sessionID uuid.UUID, attached *runnerpb.Attached) *historypb.SessionFeedState {
+func attachedFeed(sessionID uuid.UUID, attached *sessionpb.Attached) *historypb.SessionFeedState {
 	attached.SessionId = sessionID.String()
 	return &historypb.SessionFeedState{Attached: attached}
 }
 
-func (f projectorFixture) recordFeed(t *testing.T, sessionID uuid.UUID, attached *runnerpb.Attached) {
+func (f projectorFixture) recordFeed(t *testing.T, sessionID uuid.UUID, attached *sessionpb.Attached) {
 	t.Helper()
 	if err := f.history.RecordFeedState(t.Context(), sessionID, attachedFeed(sessionID, attached)); err != nil {
 		t.Fatal(err)
@@ -249,10 +249,10 @@ func TestASessionEndsOnlyOnceItsHarnessLaunchHasAnOutcome(t *testing.T) {
 	f := newProjectorFixture(t)
 	// The runner announces a Session whose setup script runs before its harness starts.
 	sessionID := f.retained(t, f.history, entry(1, &eventpb.Event{Observation: &eventpb.Event_SetupStarted{SetupStarted: &eventpb.SetupStarted{}}}))
-	f.recordFeed(t, sessionID, &runnerpb.Attached{
-		HarnessState:  runnerpb.HarnessState_HARNESS_STATE_STOPPED,
-		SetupState:    runnerpb.SetupState_SETUP_STATE_RUNNING,
-		LaunchOutcome: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING,
+	f.recordFeed(t, sessionID, &sessionpb.Attached{
+		HarnessState:  sessionpb.HarnessState_HARNESS_STATE_STOPPED,
+		SetupState:    sessionpb.SetupState_SETUP_STATE_RUNNING,
+		LaunchOutcome: sessionpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING,
 	})
 	lease := f.acquire(t, sessionID)
 
@@ -278,9 +278,9 @@ func TestASessionEndsOnlyOnceItsHarnessLaunchHasAnOutcome(t *testing.T) {
 func TestAnAdmittedInputKeepsADormantSessionOpenUntilItsStartupOutcome(t *testing.T) {
 	f := newProjectorFixture(t)
 	sessionID := f.retained(t, f.history, harnessStarted(1), harnessExited(2))
-	f.recordFeed(t, sessionID, &runnerpb.Attached{
-		HarnessState:  runnerpb.HarnessState_HARNESS_STATE_STOPPED,
-		LaunchOutcome: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_STARTED,
+	f.recordFeed(t, sessionID, &sessionpb.Attached{
+		HarnessState:  sessionpb.HarnessState_HARNESS_STATE_STOPPED,
+		LaunchOutcome: sessionpb.LaunchOutcome_LAUNCH_OUTCOME_STARTED,
 	})
 	lease := f.acquire(t, sessionID)
 	ended := func(entries ...*eventlogpb.EventEntry) *string {
@@ -320,10 +320,10 @@ func TestAnAdmittedSessionWithoutEventsGetsAnEmptyViewFromItsAttachment(t *testi
 		t.Fatal("a catalog row alone gave the Session a view")
 	}
 
-	f.recordFeed(t, sessionID, &runnerpb.Attached{
-		HarnessState:  runnerpb.HarnessState_HARNESS_STATE_STOPPED,
-		SetupState:    runnerpb.SetupState_SETUP_STATE_RUNNING,
-		LaunchOutcome: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING,
+	f.recordFeed(t, sessionID, &sessionpb.Attached{
+		HarnessState:  sessionpb.HarnessState_HARNESS_STATE_STOPPED,
+		SetupState:    sessionpb.SetupState_SETUP_STATE_RUNNING,
+		LaunchOutcome: sessionpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING,
 	})
 	f.fold(t, sessionID, lease)
 	if _, through := checkpointOf(t, f.db, sessionID); through != 0 {
@@ -564,10 +564,10 @@ func TestAFeedSnapshotPastTheFoldedPrefixWaitsForTheFoldToReachIt(t *testing.T) 
 		entries = append(entries, harnessStarted(cursor))
 	}
 	sessionID := f.retained(t, f.history, entries...)
-	f.recordFeed(t, sessionID, &runnerpb.Attached{
+	f.recordFeed(t, sessionID, &sessionpb.Attached{
 		LastCursor:    uint64(len(entries)),
-		HarnessState:  runnerpb.HarnessState_HARNESS_STATE_STOPPED,
-		LaunchOutcome: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_STARTED,
+		HarnessState:  sessionpb.HarnessState_HARNESS_STATE_STOPPED,
+		LaunchOutcome: sessionpb.LaunchOutcome_LAUNCH_OUTCOME_STARTED,
 	})
 	lease := f.acquire(t, sessionID)
 

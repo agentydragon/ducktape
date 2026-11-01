@@ -31,8 +31,8 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.crd_group import GROUP
+from agentplane.environment_runtime_transport.config import MTLS, TLS
 from agentplane.runner_gateway.settings import CentralSamplerTarget, Settings
-from agentplane.runner_transport.configuration import MTLS, TLS
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
@@ -41,9 +41,9 @@ from cluster.cdk8s.agentplane import (
     central_sampler,
     database,
     egress,
+    environment_sandbox,
     notifications,
     runner_gateway,
-    runner_sandbox,
     sandbox_controller,
     session_dispatcher,
 )
@@ -322,7 +322,9 @@ class RunnerGateway(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 database.egress(namespace),
                 proxy.egress(),
-                EgressRule.to_endpoints(runner_sandbox.pods(namespace).cilium, runner_sandbox.RUNNER_SERVICE_PORT),
+                EgressRule.to_endpoints(
+                    environment_sandbox.pods(namespace).cilium, environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT
+                ),
                 *([central_sampler.service(namespace).egress()] if self.env.central_sampler is not None else []),
             ],
         )

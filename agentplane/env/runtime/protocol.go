@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"path/filepath"
 
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
-	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -30,7 +30,7 @@ func (r *Runtime) Connect(stream runtimepb.EnvironmentRuntime_ConnectServer) err
 	}
 	host := &hostLink{
 		bootID: hello.HostBootId, controlSocket: hello.ControlSocket, conn: conn,
-		client: runnerservicepb.NewRunnerClient(conn), intentChanged: make(chan struct{}), connected: true,
+		client: environmentruntimepb.NewEnvironmentRuntimeClient(conn), intentChanged: make(chan struct{}), connected: true,
 	}
 	r.mu.Lock()
 	if r.closing || r.failed {
@@ -127,7 +127,7 @@ func (r *Runtime) Connect(stream runtimepb.EnvironmentRuntime_ConnectServer) err
 
 func (r *Runtime) acceptReport(host *hostLink, report *runtimepb.HostReport) error {
 	if report == nil || report.Binding == nil || report.Facts == nil {
-		return status.Error(codes.InvalidArgument, "HostReport requires a binding and RunnerFacts")
+		return status.Error(codes.InvalidArgument, "HostReport requires a binding and EnvironmentRuntimeFacts")
 	}
 	r.mu.Lock()
 	if r.host != host || !host.connected {
@@ -378,7 +378,7 @@ func (r *Runtime) waitForHostReady(ctx context.Context, binding *runtimepb.Bindi
 func (r *Runtime) waitForHostQuiesced(ctx context.Context, binding *runtimepb.Binding) error {
 	for {
 		report, ready := r.currentReport(binding)
-		if ready && report.Facts.GetQuiesceStage() == runnerstatepb.RunnerFacts_QUIESCE_STAGE_QUIESCED {
+		if ready && report.Facts.GetQuiesceStage() == environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED {
 			return nil
 		}
 		r.mu.Lock()

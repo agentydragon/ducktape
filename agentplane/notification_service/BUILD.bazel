@@ -247,6 +247,7 @@ go_test(
     deps = [
         ":notifications_go_proto",
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/notification_service/actions",
         "//agentplane/notification_service/github/testing",
@@ -256,9 +257,8 @@ go_test(
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:runner_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
-        "//agentplane/runner:runner_service_go_proto",
+        "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/testing/kubeapiserver",

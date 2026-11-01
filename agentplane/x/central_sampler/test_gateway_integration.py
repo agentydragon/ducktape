@@ -14,21 +14,22 @@ import pytest
 import pytest_bazel
 from PIL import Image
 
+from agentplane.env import config as configuration
+from agentplane.env.e2e.testing import launches
+from agentplane.env.e2e.testing.gateway import serve_gateway
+from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.env.execution import executor_pb2, executor_pb2_grpc
-from agentplane.grpc.calls import dial
-from agentplane.history_service.testing.go_service import WRITER_AUDIENCE, go_history_service, migrate_history_database
-from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream
-from agentplane.proto import event_pb2, runner_pb2
-from agentplane.runner import configuration, runner_service_pb2
-from agentplane.runner.testing import launches
-from agentplane.runner.testing.codex_exec_server_container import (
+from agentplane.env.execution.testing.codex_exec_server_container import (
     CodexExecServerContainer,
     inspect_codex_exec_server_container,
 )
-from agentplane.runner.testing.gateway import serve_gateway
-from agentplane.runner.testing.process import RunningRunner
+from agentplane.env.runtime.control import environment_runtime_pb2
+from agentplane.environment_runtime_transport.config import MTLS
+from agentplane.grpc.calls import dial
+from agentplane.history_service.testing.go_service import WRITER_AUDIENCE, go_history_service, migrate_history_database
+from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream
+from agentplane.proto import event_pb2, session_pb2
 from agentplane.runner_gateway.testing.gateway_process import run_gateway
-from agentplane.runner_transport.configuration import MTLS
 from agentplane.sandboxes.testing.kubernetes import sandbox_cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.electric_role import ensure_electric_role
@@ -94,7 +95,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
             )
             assert not initial_companion.owned
             config = launches.config(
-                runner_pb2.HARNESS_CODEX,
+                session_pb2.HARNESS_CODEX,
                 endpoint.origin,
                 state_dir=tmp_path / "runner-state",
                 home=tmp_path / "runner-home",
@@ -102,11 +103,13 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 codex_executor_socket=codex_exec_server_container.socket,
             )
             config = replace(config, launch=replace(config.launch, sandbox=sandbox.identity))
-            control = configuration.RunnerControl(
+            control = configuration.EnvironmentRuntimeControl(
                 listen_address="127.0.0.1:9090",
                 security=MTLS(
                     mode="mtls",
-                    tls=gateway.issue_runner_tls(sandbox.runner_identity_uri, tmp_path / "runner-transport"),
+                    tls=gateway.issue_environment_runtime_tls(
+                        sandbox.environment_runtime_identity_uri, tmp_path / "environment-runtime-transport"
+                    ),
                 ),
             )
             ingress = configuration.Endpoint(
@@ -145,7 +148,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 async with service(sampler_settings) as stub:
                     await stub.OpenSession(request, metadata=METADATA, timeout=10)
                     await stub.SubmitInput(
-                        runner_service_pb2.SubmitInputRequest(
+                        environment_runtime_pb2.SubmitInputRequest(
                             session_id=session_id, command_id="shell-and-patch", text="Write, patch and read the file."
                         ),
                         metadata=METADATA,

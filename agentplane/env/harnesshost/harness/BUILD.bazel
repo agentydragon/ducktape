@@ -12,7 +12,7 @@ go_library(
     visibility = [
         "//agentplane/env:__subpackages__",
         "//agentplane/env/harnesshost:__pkg__",
-        "//agentplane/runner/testing/adaptertest:__pkg__",
+        "//agentplane/env/harnesshost/testing/adaptertest:__pkg__",
     ],
     deps = [
         "//agentplane/proto:command_go_proto",

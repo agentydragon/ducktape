@@ -14,7 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"
@@ -30,7 +30,7 @@ func TestSamplingRecoveryReconcilesOnlyTheAbandonedResponse(t *testing.T) {
 				store := newTestStore(t)
 				session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
 					SessionId: uuid.NewString(),
-					Spec:      &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture"},
+					Spec:      &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture"},
 				}, "fixture-account", api)
 				if err != nil {
 					t.Fatal(err)

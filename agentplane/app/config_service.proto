@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package agentplane.app;
 
-import "agentplane/proto/runner.proto";
+import "agentplane/proto/session.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 

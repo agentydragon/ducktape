@@ -5,16 +5,16 @@ import (
 	"path/filepath"
 	"testing"
 
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestInitializationLogTruncatesOnlyIncompleteTail(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "events.jsonl")
-	first := &runnerpb.InitializationEvent{
+	first := &sessionpb.InitializationEvent{
 		Sequence: 1, Attempt: 1,
-		Observation: &runnerpb.InitializationEvent_Output{Output: &runnerpb.InitializationOutput{
-			Stream: runnerpb.InitializationStream_INITIALIZATION_STREAM_STDOUT, Data: []byte("ready"),
+		Observation: &sessionpb.InitializationEvent_Output{Output: &sessionpb.InitializationOutput{
+			Stream: sessionpb.InitializationStream_INITIALIZATION_STREAM_STDOUT, Data: []byte("ready"),
 		}},
 	}
 	line, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(first)
@@ -39,7 +39,7 @@ func TestInitializationLogTruncatesOnlyIncompleteTail(t *testing.T) {
 		t.Fatalf("append result = %v, %v", result, err)
 	}
 	events := log.Since(0)
-	if len(events) != 2 || events[0].GetOutput().GetStream() != runnerpb.InitializationStream_INITIALIZATION_STREAM_STDOUT || events[1].GetSequence() != 2 || !log.Ended() {
+	if len(events) != 2 || events[0].GetOutput().GetStream() != sessionpb.InitializationStream_INITIALIZATION_STREAM_STDOUT || events[1].GetSequence() != 2 || !log.Ended() {
 		t.Fatalf("initialization events after recovery = %v", events)
 	}
 }

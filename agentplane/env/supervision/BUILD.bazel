@@ -75,7 +75,7 @@ go_test(
 )
 
 go_test(
-    name = "runner_systemd_fixture",
+    name = "environment_runtime_systemd_fixture",
     srcs = ["systemd_kernel_test.go"],
     embed = [":supervision"],
     pure = "on",

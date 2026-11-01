@@ -15,7 +15,7 @@ from agentplane.system_tests.agent import TURN_SECONDS
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.harness_pair import run_harness_pair
-from agentplane.system_tests.sandbox import Sandboxes
+from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes
 from agentplane.system_tests.scenarios import (
     agent_messaging,
     egress,
@@ -146,7 +146,7 @@ async def fresh_workspace_storage_survives_replacement(resources: Resources) -> 
         await storage.fresh_workspace_storage_survives_replacement(
             resources.cluster,
             client,
-            Executor(template="runner", cwd="/state/work"),
+            Executor(template=POD_TEMPLATE, cwd="/state/work"),
             storage.StorageLayout.POD_DIRECTORY,
         )
 
@@ -166,7 +166,7 @@ async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(re
             resources.dispatcher,
             sandboxes,
             resources.scripted,
-            Executor(template="runner", cwd="/state/work"),
+            Executor(template=POD_TEMPLATE, cwd="/state/work"),
         )
 
 

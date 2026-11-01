@@ -9,7 +9,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.app.testing.client import Client
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.k3s.vm_trace_contract import assert_vm_process_trace_contract
@@ -22,7 +22,7 @@ from agentplane.system_tests.tracing import traced_scenario
 from agentplane.system_tests.vm_configuration import SUPERVISION_TEMPLATE
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-# runner_pb2.pyi imports protobuf stubs directly during mypy's dependency traversal.
+# session_pb2.pyi imports protobuf stubs directly during mypy's dependency traversal.
 # gazelle:include_dep @pypi//protobuf
 
 pytestmark = pytest.mark.vm_sandboxes
@@ -60,10 +60,10 @@ async def test_vm_scenarios(
     scenario_resources: ScenarioResources,
     scripted: ScriptedUpstream,
 ) -> None:
-    harnesses = [runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX]
+    harnesses = [session_pb2.HARNESS_CLAUDE, session_pb2.HARNESS_CODEX]
     models = await models_offered_for(client, harnesses)
 
-    async def turn(harness: runner_pb2.Harness, template: str) -> None:
+    async def turn(harness: session_pb2.Harness, template: str) -> None:
         async with scenario_resources() as (owned_client, sandbox):
             await vm_sandbox.vm_sandbox_turn(
                 cluster, owned_client, dispatcher, sandbox, harness, models[harness], scripted, template
@@ -76,7 +76,7 @@ async def test_vm_scenarios(
                 owned_client,
                 dispatcher,
                 sandbox,
-                models[runner_pb2.HARNESS_CODEX],
+                models[session_pb2.HARNESS_CODEX],
                 scripted,
                 native_profile=os.environ.get("AGENTPLANE_VM_NATIVE_PROFILE") == "1",
             )
@@ -87,9 +87,9 @@ async def test_vm_scenarios(
     async with asyncio.TaskGroup() as scenarios:
         # Only Claude selects the private supervisor checks; both use the ordinary guest image.
         scenarios.create_task(
-            traced_scenario("vm-turn-harness_claude", turn(runner_pb2.HARNESS_CLAUDE, SUPERVISION_TEMPLATE))
+            traced_scenario("vm-turn-harness_claude", turn(session_pb2.HARNESS_CLAUDE, SUPERVISION_TEMPLATE))
         )
-        scenarios.create_task(traced_scenario("vm-turn-harness_codex", turn(runner_pb2.HARNESS_CODEX, VM_TEMPLATE)))
+        scenarios.create_task(traced_scenario("vm-turn-harness_codex", turn(session_pb2.HARNESS_CODEX, VM_TEMPLATE)))
         scenarios.create_task(traced_scenario("codex-tool-oom", oom()))
 
     await _wait_for_vm_process_trace_contract()
