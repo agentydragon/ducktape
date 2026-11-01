@@ -60,7 +60,10 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         first = await client.post(evidence_path, json=params | {"afterCursor": "0", "limit": 2}, headers=agent_auth)
         assert first.status_code == 200, first.text
         assert first.json() == {
-            "observations": [{"observationCursor": "4", "hasNative": True}, {"observationCursor": "5"}],
+            "observations": [
+                {"observationCursor": "4", "hasNative": True},
+                {"observationCursor": "5", "hasNative": False},
+            ],
             "nextAfterCursor": "5",
         }
         remaining = await client.post(evidence_path, json=params | {"afterCursor": "5", "limit": 2}, headers=agent_auth)
