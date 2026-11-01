@@ -150,21 +150,22 @@ Independent foundations and clients can start against the approved contract; the
 needs both scheduled wake and Session creation/cooperation. Dedicated sampler disruption acceptance
 is not a prerequisite.
 
-**Remaining selected work, status checked 2026-11-01 21:49 UTC.** `/root` owns integration review
-and the two unpublished design proposals. `/root/delegation_discovery_receiver` and
+**Remaining selected work, status checked 2026-11-01 UTC.** `/root` owns integration review and
+the [resume policy proposal](https://github.com/agentydragon/ducktape/pull/13546) and
+[scheduled-wake proposal](scheduled_agent_wake.md). `/root/delegation_discovery_receiver` and
 `/root/delegation_result_projections` own the parent CLI and external MCP workflow examples;
-their focused scenarios have passed. External acceptance is in review as
-[#13536](https://github.com/agentydragon/ducktape/pull/13536); parent publication/review and the full
-capstone remain open.
+their focused scenarios have passed and are in review as
+[#13541](https://github.com/agentydragon/ducktape/pull/13541) and
+[#13536](https://github.com/agentydragon/ducktape/pull/13536). The natural-agent capstone remains open.
 Focused regression-test additions and Bazel runs remain authorized; broad disruption exercises
 remain deferred.
 
-| Lane               | Owner                                                  | Next reviewable outcome                                                                                 | Prerequisite / stopping point                                                                                             |
-| ------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| P0 concrete faults | Existing PR owner; new output investigation unassigned | `RUNTIME_QUIESCE_WAKE` review and `CODE_MODE_OUTPUT_LOSS` diagnosis                                     | Do not duplicate the quiesce repair or claim it explains every earlier shutdown failure                                   |
-| P0 policy review   | `/root`                                                | `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`: caller/target matrix for explicit resume and message wake     | Proposal only; stakeholder selection precedes `EXEC_SUSPENDED_RESUME`                                                     |
-| P1 delegation      | Workflow workers; `/root` integration                  | `THREAD_CREATE_AUTHORIZATION`: publish the realistic workflows and resolve `SESSION_OPEN_CONFIGURATION` | Backend tools and Discovery are implemented; verify the remaining integrated workflow, not another adapter implementation |
-| P1 scheduling      | `/root`                                                | `SCHEDULED_AGENT_WAKE_DESIGN`: smallest durable daily-wake proposal                                     | Proposal only; delivery/overlap/authority review precedes runtime implementation                                          |
+| Lane               | Owner                                                              | Next reviewable outcome                                                                             | Prerequisite / stopping point                                                                                             |
+| ------------------ | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| P0 concrete faults | Existing quiesce owner; `/root/code_mode_output_loss`              | Review `RUNTIME_QUIESCE_WAKE` and the native `CODE_MODE_OUTPUT_LOSS` repair candidate               | Do not duplicate the quiesce repair or claim it explains every earlier shutdown failure                                   |
+| P0 policy review   | `/root`                                                            | `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN`: caller/target matrix for explicit resume and message wake | Proposal only; stakeholder selection precedes `EXEC_SUSPENDED_RESUME`                                                     |
+| P1 delegation      | Workflow workers; `/root/session_open_effort`; `/root` integration | Review realistic workflows and the `SESSION_OPEN_CONFIGURATION` repair candidate                    | Backend tools and Discovery are implemented; verify the remaining integrated workflow, not another adapter implementation |
+| P1 scheduling      | `/root`                                                            | `SCHEDULED_AGENT_WAKE_DESIGN`: smallest durable daily-wake proposal                                 | Proposal only; delivery/overlap/authority review precedes runtime implementation                                          |
 
 Finish the platform-guidance reader [#13384](https://github.com/agentydragon/ducktape/pull/13384)
 alongside these tracks. Its current full CI is red in the VM output-loss scenario described below;
@@ -210,19 +211,21 @@ flowchart LR
 
 ### `CODE_MODE_OUTPUT_LOSS` — retain observed command output through Code Mode
 
-**Concrete P0 investigation; unassigned.** Full CI on the guidance reader and activation recorded
+**Repair candidate in review, [#13545](https://github.com/agentydragon/ducktape/pull/13545),
+`/root/code_mode_output_loss`; 2026-11-01 UTC.** Full CI on the guidance reader and activation recorded
 a native `commandExecution` completing with exit code 0 and the expected `VM_MEMORY` record, while
 the corresponding Code Mode `VM_EXEC_RESULT` reported exit code 0 and empty output. The test failed
 parsing that empty result. Evidence is retained in BuildBuddy invocations
 [`09492775`](https://app.buildbuddy.io/invocation/09492775-dbce-5619-be01-9c459c29be1d) and
 [`88eb6917`](https://app.buildbuddy.io/invocation/88eb6917-afac-57b1-9d32-bd712afe597d).
 
-Trace the nested-tool/result and cell yield/wait boundary on current code; the existing artifacts do
-not distinguish those paths. Reproduce the narrow output-loss mechanism and preserve observed bytes
-through it. Do not rerun a mutation to recover output, infer that a command failed, increase the VM
-suite timeout or reopen the waived disruption exercise. Exit with causal evidence and focused
-coverage of the repaired boundary; if reproduction remains elusive, retain the evidence and name
-the remaining visibility gap without claiming a repair.
+The candidate traces this to native Codex retiring a remote command handle before output closure
+and collection. Its deterministic FIFO regression fails on the old archive and passes with the
+candidate upstream update; native tool checks and the focused shared-host service check also pass.
+The original VM scenario and full hosted checks remain pending. Review the causal evidence in the
+candidate's `agentplane/debug/2026_11_01_native_command_output_loss.md`; it distinguishes the
+reproduced boundary from the unobserved internal interleaving. Do not rerun a mutation to recover
+output, infer command failure, increase the VM suite timeout or reopen the waived disruption exercise.
 
 ### `RUNTIME_QUIESCE_WAKE` — avoid a lost notification while waiting for Host quiescence
 
@@ -264,7 +267,7 @@ auto-wake policy. Neither is selected or a prerequisite for v1 inbox messaging.
 
 ### `SCHEDULED_AGENT_WAKE_DESIGN` — choose the durable scheduled-wake contract
 
-**Proposal pending, `/root`, operator dispatch 2026-11-01 UTC; no review document published.** For the daily CI-maintenance workflow,
+**[Proposal ready for review](scheduled_agent_wake.md), `/root`, 2026-11-01 UTC.** For the daily CI-maintenance workflow,
 choose the smallest sound scheduling/delivery contract: compare
 an existing scheduler feeding authorized Session commands with a Notification-owned schedule.
 Review cadence/timezone, missed runs, overlap, stable run identities, delivery receipts and
@@ -638,7 +641,8 @@ and does not block either one or current reliability and delegation work.
 
 ### `SESSION_OPEN_CONFIGURATION` — schema-valid optional opening configuration
 
-**Concrete P1 gap found by the workflow workers, 2026-11-01 UTC; unassigned.** The opening Action
+**Repair in review, [#13543](https://github.com/agentydragon/ducktape/pull/13543),
+`/root/session_open_effort`; 2026-11-01 UTC.** The opening Action
 schema permits omitting `reasoning_effort`; its executor forwards an empty string and the Codex
 adapter writes an empty `model_reasoning_effort`. Opening succeeds, but the first input fails at
 `thread/start` with `reasoning_effort must not be empty in model_reasoning_effort`.
