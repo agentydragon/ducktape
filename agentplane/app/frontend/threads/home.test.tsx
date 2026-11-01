@@ -83,19 +83,23 @@ const THREADS = [
 async function render(): Promise<string[]> {
   const threadStreams: string[] = [];
   const otherFetch = globalThis.fetch;
-  serveEventStreams((stream) => {
-    const { pathname, searchParams } = stream.url;
-    if (pathname === "/upstream/notifications/v1/operator/notices:watch") {
-      stream.send({ snapshot: { observedAt: "2026-01-01T00:00:00Z", inboxes: [] } });
-      return;
-    }
-    if (pathname === "/live/sandboxes") {
-      const inventory: SandboxesSnapshot = { sandboxes: [SANDBOX], watch: { healthy: true, failing: {} } };
-      stream.event("snapshot", JSON.stringify(inventory));
-      return;
-    }
-    throw new Error(`Unexpected event stream route: ${pathname}${searchParams}`);
-  }, otherFetch, new Set(["/upstream/notifications/v1/operator/notices:watch"]));
+  serveEventStreams(
+    (stream) => {
+      const { pathname, searchParams } = stream.url;
+      if (pathname === "/upstream/notifications/v1/operator/notices:watch") {
+        stream.send({ snapshot: { observedAt: "2026-01-01T00:00:00Z", inboxes: [] } });
+        return;
+      }
+      if (pathname === "/live/sandboxes") {
+        const inventory: SandboxesSnapshot = { sandboxes: [SANDBOX], watch: { healthy: true, failing: {} } };
+        stream.event("snapshot", JSON.stringify(inventory));
+        return;
+      }
+      throw new Error(`Unexpected event stream route: ${pathname}${searchParams}`);
+    },
+    otherFetch,
+    new Set(["/upstream/notifications/v1/operator/notices:watch"])
+  );
   const eventFetch = globalThis.fetch;
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
     if (new Headers(init?.headers).get("Accept") === "application/x-ndjson") {
