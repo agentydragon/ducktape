@@ -80,7 +80,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         missing = await client.post(
             frames_path, json=params | {"observationCursor": "8", "afterSequence": "7", "limit": 30}, headers=agent_auth
         )
-        assert missing.json()["frames"] == [{"sourceSequence": str(unavailable_sequence)}]
+        assert missing.json()["frames"] == [{"sourceSequence": str(unavailable_sequence), "entry": None}]
         assert "nextAfterSequence" not in missing.json()
         empty = await client.post(
             frames_path, json=params | {"observationCursor": "5", "afterSequence": "0", "limit": 30}, headers=agent_auth
@@ -109,7 +109,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
             json=params | {"entity": {"entityKind": "lifecycle", "entityId": "2"}, "afterCursor": "0", "limit": 30},
             headers=agent_auth,
         )
-        assert lifecycle.json() == {"observations": [{"observationCursor": "2"}]}
+        assert lifecycle.json() == {"observations": [{"observationCursor": "2", "hasNative": False}]}
         for limit in ("0", "201"):
             response = await client.post(evidence_path, json=params | {"limit": int(limit)}, headers=agent_auth)
             assert response.status_code == 400
