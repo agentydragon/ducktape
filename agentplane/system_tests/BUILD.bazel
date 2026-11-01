@@ -342,7 +342,7 @@ py_test(
         ":scripted_upstream",
         "//:conftest",
         "//agentplane/native/claude/testing:requests",
-        "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:session_pb2",
         "//agentplane/testing:scripted_model",
         "//util:net",
         "@pypi//httpx",
