@@ -26,7 +26,10 @@ environment generation it applied. Runtime applies a
 `LifecycleIntent` containing the Sandbox UID, incarnation UID, mode and seal UID. The initial mode
 is `INACTIVE`. Session RPCs are forwarded only after the Host reports `ready` for the exact binding.
 Runtime passes a copied binding with each direct Session call; Host checks it at ingress and inside
-its admission barrier. Intent and report snapshots are copied across the ownership boundary.
+its admission barrier. Runtime publishes immutable typed Host intent in the shared COSI store. A dedicated controller
+applies each intent once and records its exact binding and Execution fence acknowledgement before
+Runtime can finish that barrier. Failed or uncertain application is terminal; controller restart does
+not replay it. Report observation continues independently while application waits for Session setup.
 
 For quiesce and replacement, Runtime first asks Host to stop admissions and drain native work.
 `native_stopped` is reported only after admitted setup, Session calls, shared app-server work and

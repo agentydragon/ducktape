@@ -82,12 +82,11 @@ type executionHandle interface {
 }
 
 type hostLink struct {
-	bootID        string
-	client        *harnesshost.Runner
-	intent        *runtimepb.LifecycleIntent
-	report        *runtimepb.HostReport
-	intentChanged chan struct{}
-	connected     bool
+	bootID    string
+	client    *harnesshost.Runner
+	report    *runtimepb.HostReport
+	peer      hostLifecyclePeer
+	connected bool
 }
 
 // Runtime owns the embedded Host lifecycle and serves the Gateway-facing Runner API.
@@ -304,6 +303,9 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	}
 	r.closeCoordinator = &runtimeCloseController{r: r, transition: runtimeTransitionSequence{r: r}}
 	if err := engine.RegisterController(r.closeCoordinator); err != nil {
+		return err
+	}
+	if err := engine.RegisterController(&hostIntentController{runtime: r}); err != nil {
 		return err
 	}
 	if r.executionLifecycle != nil {
@@ -720,9 +722,15 @@ func (r *Runtime) changedLocked() {
 }
 
 func (r *Runtime) intentChangedLocked() {
-	if r.host != nil {
-		close(r.host.intentChanged)
-		r.host.intentChanged = make(chan struct{})
+	if err := r.publishHostIntentLocked(); err != nil {
+		r.failed = true
+		if r.failureErr == nil {
+			r.failureErr = err
+		}
+		select {
+		case r.fatal <- err:
+		default:
+		}
 	}
 	r.changedLocked()
 }

@@ -13,6 +13,7 @@ go_library(
         "execution_lifecycle.go",
         "execution_service.go",
         "forward.go",
+        "host_intent.go",
         "protocol.go",
         "runtime.go",
         "serve.go",

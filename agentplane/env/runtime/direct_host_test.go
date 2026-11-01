@@ -6,6 +6,12 @@ import (
 	"sync"
 	"testing"
 
+	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+	"go.uber.org/zap"
+
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
@@ -13,6 +19,22 @@ import (
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	"google.golang.org/protobuf/proto"
 )
+
+func startHostIntentController(t *testing.T, r *Runtime) {
+	t.Helper()
+	r.lifecycleState = state.WrapCore(namespaced.NewState(inmem.Build))
+	engine, err := cosiruntime.NewRuntime(r.lifecycleState, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.RegisterController(&hostIntentController{runtime: r}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- engine.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+}
 
 type heldHostPeer struct {
 	mu           sync.Mutex
@@ -67,6 +89,7 @@ func TestDirectHostFenceWaitsForHostToApplyIt(t *testing.T) {
 		config: Config{Launch: configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{UID: "sandbox"}}},
 		bootID: "runtime", changes: make(chan struct{}),
 	}
+	startHostIntentController(t, r)
 	initialRelease := make(chan struct{})
 	close(initialRelease)
 	peer := &heldHostPeer{
@@ -130,6 +153,7 @@ func TestDirectHostIntentPublishedWhileApplyIsBlocked(t *testing.T) {
 		config: Config{Launch: configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{UID: "sandbox"}}},
 		bootID: "runtime", changes: make(chan struct{}),
 	}
+	startHostIntentController(t, r)
 	peer := &heldHostPeer{started: make(chan struct{}, 1), release: make(chan struct{})}
 	done := make(chan error, 1)
 	go func() { done <- r.connectHost(ctx, nil, peer) }()
