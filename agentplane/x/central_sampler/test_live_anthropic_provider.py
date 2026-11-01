@@ -17,8 +17,8 @@ import pytest
 import pytest_bazel
 from pydantic import SecretStr
 
+from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.proto import event_pb2
-from agentplane.runner import runner_service_pb2
 from agentplane.x.central_sampler import sampler_pb2, sampler_pb2_grpc
 from agentplane.x.central_sampler.settings import (
     AnthropicBlockBindingConfig,
@@ -83,7 +83,7 @@ async def follow_turn(stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, 
 
 async def submit(stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, command_id: str, text: str) -> Turn:
     await stub.SubmitInput(
-        runner_service_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text=text),
+        environment_runtime_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text=text),
         metadata=METADATA,
         timeout=10,
     )
@@ -259,7 +259,7 @@ async def test_live_anthropic_exec_compaction_restart_and_signed_thinking_replay
         assert first.completed.status == event_pb2.TURN_STATUS_COMPLETED, first.completed.error
         assert any(token in text for text in first.assistant_text), first.assistant_text
         await stub.ChangeReasoningEffort(
-            runner_service_pb2.ChangeReasoningEffortRequest(
+            environment_runtime_pb2.ChangeReasoningEffortRequest(
                 session_id=request.session_id, command_id="anthropic-effort-change", effort="high"
             ),
             metadata=METADATA,
@@ -390,7 +390,7 @@ async def test_live_anthropic_exec_compaction_restart_and_signed_thinking_replay
 
     async with service(config) as stub:
         await stub.SubmitInput(
-            runner_service_pb2.SubmitInputRequest(
+            environment_runtime_pb2.SubmitInputRequest(
                 session_id=request.session_id,
                 command_id="anthropic-resume",
                 text=f"{resumed_marker}: what was the exact vault word I asked you to retain? Then use exec exactly "
@@ -483,7 +483,7 @@ async def test_live_anthropic_prompt_cache_survives_effort_change(
         assert second.completed.status == event_pb2.TURN_STATUS_COMPLETED, second.completed.error
 
         await stub.ChangeReasoningEffort(
-            runner_service_pb2.ChangeReasoningEffortRequest(
+            environment_runtime_pb2.ChangeReasoningEffortRequest(
                 session_id=request.session_id, command_id="cache-effort-change", effort="high"
             ),
             metadata=METADATA,

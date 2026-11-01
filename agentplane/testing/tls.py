@@ -122,7 +122,7 @@ def runner_identity_uri(namespace: str, sandbox_uid: str, credential_id: str) ->
             )
         ):
             raise ValueError(f"{name} must be a non-empty URI path segment")
-    return f"spiffe://agentplane/runner/{namespace}/{sandbox_uid}/{credential_id}"
+    return f"spiffe://agentplane/env/e2e/{namespace}/{sandbox_uid}/{credential_id}"
 
 
 def issue_workload_leaf(

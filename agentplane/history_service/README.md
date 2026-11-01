@@ -39,7 +39,7 @@ not call it.
 
 ## Runner ingress
 
-`ingress/` serves `RunnerIngress.Push`, the
+`ingress/` serves `SessionJournalIngress.Push`, the
 [runner ingress contract](../docs/runner_control.md#event-ingress): runners push each Session's
 journal here, one call per Session. `main.go` serves it on its own listener (`ingress.listen_address`), apart
 from the read API, since it takes untrusted input: the network fence admits the egress proxy to that

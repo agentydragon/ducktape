@@ -10,7 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/harness"
 
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
 
 func TestResolveModelConfigLeavesCodexToItsModelCatalog(t *testing.T) {
@@ -26,11 +26,11 @@ func TestResolveModelConfigLeavesCodexToItsModelCatalog(t *testing.T) {
 		HTTPClient: http.DefaultClient,
 	}
 
-	budget, err := config.ResolveModelConfig(context.Background(), runnerpb.Harness_HARNESS_CODEX, "configured-route")
+	budget, err := config.ResolveModelConfig(context.Background(), sessionpb.Harness_HARNESS_CODEX, "configured-route")
 	if err != nil || budget != nil || lookups.Load() != 0 {
 		t.Fatalf("Codex budget = %v, err = %v after %d lookups; want none and no lookup", budget, err, lookups.Load())
 	}
-	budget, err = config.ResolveModelConfig(context.Background(), runnerpb.Harness_HARNESS_CLAUDE, "configured-route")
+	budget, err = config.ResolveModelConfig(context.Background(), sessionpb.Harness_HARNESS_CLAUDE, "configured-route")
 	if err != nil || budget == nil || *budget != 32768 || lookups.Load() != 1 {
 		t.Fatalf("Claude budget = %v, err = %v after %d lookups; want 32768 from one lookup", budget, err, lookups.Load())
 	}

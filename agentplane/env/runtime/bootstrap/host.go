@@ -17,7 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
@@ -396,9 +396,9 @@ func (h *Host) runBootstrap(ctx context.Context) error {
 		cwd = h.config.StateDir
 	}
 	code, err := h.scripts.Run(ctx, ControllerName, *script, cwd, func(stdout bool, data []byte) error {
-		stream := runnerpb.InitializationStream_INITIALIZATION_STREAM_STDERR
+		stream := sessionpb.InitializationStream_INITIALIZATION_STREAM_STDERR
 		if stdout {
-			stream = runnerpb.InitializationStream_INITIALIZATION_STREAM_STDOUT
+			stream = sessionpb.InitializationStream_INITIALIZATION_STREAM_STDOUT
 		}
 		return log.AppendOutput(1, stream, data)
 	})

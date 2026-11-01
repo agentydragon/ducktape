@@ -24,7 +24,7 @@ go_library(
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/notification_service:notifications_go_proto",
-        "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/session_client",
         "@com_github_google_uuid//:uuid",

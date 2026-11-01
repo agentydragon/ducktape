@@ -9,7 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -23,9 +23,9 @@ func projectLifecycle(
 	page *historypb.ReadSessionEventsResponse, throughCursor uint64,
 ) (bool, error) {
 	previous := *summary
-	var attached *runnerpb.Attached
+	var attached *sessionpb.Attached
 	if summary.attached != nil {
-		attached = &runnerpb.Attached{}
+		attached = &sessionpb.Attached{}
 		if err := protojson.Unmarshal(summary.attached, attached); err != nil {
 			return false, err
 		}
@@ -49,7 +49,7 @@ func projectLifecycle(
 			if attached == nil || cursor != attached.GetLastCursor() {
 				end = nil
 			}
-			attached = proto.Clone(feed.GetAttached()).(*runnerpb.Attached)
+			attached = proto.Clone(feed.GetAttached()).(*sessionpb.Attached)
 		}
 	}
 	if attached == nil {
@@ -77,9 +77,9 @@ func projectLifecycle(
 			return false, err
 		}
 		end = nil
-		if attached.GetHarnessState() == runnerpb.HarnessState_HARNESS_STATE_STOPPED &&
-			attached.GetSetupState() != runnerpb.SetupState_SETUP_STATE_RUNNING &&
-			attached.GetLaunchOutcome() != runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING && !pendingCommand {
+		if attached.GetHarnessState() == sessionpb.HarnessState_HARNESS_STATE_STOPPED &&
+			attached.GetSetupState() != sessionpb.SetupState_SETUP_STATE_RUNNING &&
+			attached.GetLaunchOutcome() != sessionpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING && !pendingCommand {
 			end = map[string]string{}
 		}
 	}
@@ -117,14 +117,14 @@ func marshalEnd(end map[string]string) (json.RawMessage, error) {
 }
 
 // projectAttached advances an attachment snapshot over one Event.
-func projectAttached(attached *runnerpb.Attached, entry *eventlogpb.EventEntry) {
+func projectAttached(attached *sessionpb.Attached, entry *eventlogpb.EventEntry) {
 	attached.LastCursor = entry.GetCursor()
 	event := entry.GetEvent()
 	// The runner's own rule (env/harnesshost/session/events.go): the first outcome settles the launch. An announcement from a
 	// runner that predates the field leaves it unspecified until then.
-	undecided := attached.GetLaunchOutcome() == runnerpb.LaunchOutcome_LAUNCH_OUTCOME_UNSPECIFIED ||
-		attached.GetLaunchOutcome() == runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING
-	decide := func(outcome runnerpb.LaunchOutcome) {
+	undecided := attached.GetLaunchOutcome() == sessionpb.LaunchOutcome_LAUNCH_OUTCOME_UNSPECIFIED ||
+		attached.GetLaunchOutcome() == sessionpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING
+	decide := func(outcome sessionpb.LaunchOutcome) {
 		if undecided {
 			attached.LaunchOutcome = outcome
 		}
@@ -132,24 +132,24 @@ func projectAttached(attached *runnerpb.Attached, entry *eventlogpb.EventEntry) 
 	switch observation := event.GetObservation().(type) {
 	case *eventpb.Event_SetupFinished:
 		if observation.SetupFinished.GetExitCode() == 0 {
-			attached.SetupState = runnerpb.SetupState_SETUP_STATE_SUCCEEDED
-			decide(runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING)
+			attached.SetupState = sessionpb.SetupState_SETUP_STATE_SUCCEEDED
+			decide(sessionpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING)
 		} else {
-			attached.SetupState = runnerpb.SetupState_SETUP_STATE_FAILED
-			decide(runnerpb.LaunchOutcome_LAUNCH_OUTCOME_FAILED)
+			attached.SetupState = sessionpb.SetupState_SETUP_STATE_FAILED
+			decide(sessionpb.LaunchOutcome_LAUNCH_OUTCOME_FAILED)
 		}
 	case *eventpb.Event_SetupInterrupted:
-		attached.SetupState = runnerpb.SetupState_SETUP_STATE_INTERRUPTED
-		decide(runnerpb.LaunchOutcome_LAUNCH_OUTCOME_FAILED)
+		attached.SetupState = sessionpb.SetupState_SETUP_STATE_INTERRUPTED
+		decide(sessionpb.LaunchOutcome_LAUNCH_OUTCOME_FAILED)
 	case *eventpb.Event_HarnessLaunchFailed:
-		decide(runnerpb.LaunchOutcome_LAUNCH_OUTCOME_FAILED)
+		decide(sessionpb.LaunchOutcome_LAUNCH_OUTCOME_FAILED)
 	case *eventpb.Event_HarnessStarted:
-		attached.HarnessState = runnerpb.HarnessState_HARNESS_STATE_RUNNING
-		decide(runnerpb.LaunchOutcome_LAUNCH_OUTCOME_STARTED)
+		attached.HarnessState = sessionpb.HarnessState_HARNESS_STATE_RUNNING
+		decide(sessionpb.LaunchOutcome_LAUNCH_OUTCOME_STARTED)
 	case *eventpb.Event_HarnessExited, *eventpb.Event_HarnessLost:
-		attached.HarnessState = runnerpb.HarnessState_HARNESS_STATE_STOPPED
+		attached.HarnessState = sessionpb.HarnessState_HARNESS_STATE_STOPPED
 		attached.ActiveTurnId = ""
-		decide(runnerpb.LaunchOutcome_LAUNCH_OUTCOME_FAILED)
+		decide(sessionpb.LaunchOutcome_LAUNCH_OUTCOME_FAILED)
 	case *eventpb.Event_TurnStarted:
 		attached.ActiveTurnId = observation.TurnStarted.GetTurnId()
 	case *eventpb.Event_TurnCompleted:
@@ -161,9 +161,9 @@ func projectAttached(attached *runnerpb.Attached, entry *eventlogpb.EventEntry) 
 	}
 }
 
-func specOf(attached *runnerpb.Attached) *runnerpb.SessionSpec {
+func specOf(attached *sessionpb.Attached) *sessionpb.SessionSpec {
 	if attached.Spec == nil {
-		attached.Spec = &runnerpb.SessionSpec{}
+		attached.Spec = &sessionpb.SessionSpec{}
 	}
 	return attached.Spec
 }

@@ -71,7 +71,7 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   fresh credential ID used to bind each incarnation to its certificate.
 - Before starting a new workload, the controller creates a cert-manager `Certificate` named
   `runner-<credential-id>` and waits for its generated TLS Secret. The leaf URI SAN is exactly
-  `spiffe://agentplane/runner/<namespace>/<Sandbox UID>/<credential-id>` and has server
+  `spiffe://agentplane/env/e2e/<namespace>/<Sandbox UID>/<credential-id>` and has server
   authentication usage. The namespace Issuer signs it; cert-manager owns key generation and
   renewal. Runner TLS files mount from that generation's unique Secret, and the shared trust-manager
   CA bundle supplies the root. A renewed key can update only its own generation's Secret.
@@ -206,10 +206,10 @@ when no Event can be read the message says only that the Pod is not running yet.
 Otherwise it is False with `PodNotReady` when everything runs but the Pod is not Ready, and else
 with the reason and message of `Running`.
 
-`RunnerConnected` is True while the Runner Gateway's connection Lease for the Sandbox names the
+`EnvironmentRuntimeConnected` is True while the Runner Gateway's connection Lease for the Sandbox names the
 incarnation's Pod and was renewed within its duration plus a grace, so a connection from an earlier
 incarnation never counts and a gateway rollout's brief drop does not. It is False with `NeverConnected`,
-`AwaitingRunner`, `ConnectionLost`, `ConnectionPending` or `WorkloadNotReady`. `ConnectionPending`
+`AwaitingEnvironmentRuntime`, `ConnectionLost`, `ConnectionPending` or `WorkloadNotReady`. `ConnectionPending`
 means the Gateway has claimed observation of this incarnation but has not received its first valid
 `WatchState` message containing the runner boot ID. The Gateway initiates the mTLS connection to the
 runner listener; the claim precedes dialing and does not prove connectivity or authentication. Losing the connection restarts and replaces nothing. A controller not configured to
@@ -228,6 +228,6 @@ reported nothing, False with `BootstrapRunning` while the script runs, and False
 retries it. A controller not configured to read Leases
 omits it.
 
-`Ready` is True while `WorkloadReady` and `RunnerConnected` are True and `Bootstrapped` is not
+`Ready` is True while `WorkloadReady` and `EnvironmentRuntimeConnected` are True and `Bootstrapped` is not
 False (Unknown does not hold it), and otherwise False with the reason and message of the first
 that does not. It means the Sandbox can take work; the lifecycle phase is separate.

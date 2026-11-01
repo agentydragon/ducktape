@@ -6,8 +6,8 @@ load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 proto_library(
-    name = "runner_state_proto",
-    srcs = ["runner_state.proto"],
+    name = "environment_runtime_state_proto",
+    srcs = ["environment_runtime_state.proto"],
     deps = [
         ":sandboxes_proto",
         "@protobuf//:timestamp_proto",
@@ -15,8 +15,8 @@ proto_library(
 )
 
 py_proto_library_with_mypy_stubs(
-    name = "runner_state_pb2",
-    deps = [":runner_state_proto"],
+    name = "environment_runtime_state_pb2",
+    deps = [":environment_runtime_state_proto"],
 )
 
 proto_library(
@@ -96,8 +96,8 @@ ts_proto_library(
 )
 
 proto_library(
-    name = "runner_proto",
-    srcs = ["runner.proto"],
+    name = "session_proto",
+    srcs = ["session.proto"],
     visibility = ["//visibility:public"],
     deps = [
         ":delegation_proto",
@@ -106,16 +106,16 @@ proto_library(
 )
 
 py_proto_library_with_mypy_stubs(
-    name = "runner_pb2",
+    name = "session_pb2",
     visibility = ["//visibility:public"],
-    deps = [":runner_proto"],
+    deps = [":session_proto"],
 )
 
 ts_proto_library(
-    name = "runner_pb",
+    name = "session_pb",
     copy_files = False,
     node_modules = "//:node_modules",
-    proto = ":runner_proto",
+    proto = ":session_proto",
     visibility = ["//visibility:public"],
     deps = [":delegation_pb"],
 )
@@ -176,16 +176,16 @@ go_proto_library(
 )
 
 go_proto_library(
-    name = "runner_go_proto",
-    importpath = "github.com/agentydragon/ducktape/agentplane/proto/runner",
-    proto = ":runner_proto",
+    name = "session_go_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/session",
+    proto = ":session_proto",
     deps = [":delegation_go_proto"],
 )
 
 go_proto_library(
-    name = "runner_state_go_proto",
-    importpath = "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb",
-    proto = ":runner_state_proto",
+    name = "environment_runtime_state_go_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb",
+    proto = ":environment_runtime_state_proto",
     deps = [":sandboxes_go_proto"],
 )
 

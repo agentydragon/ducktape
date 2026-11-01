@@ -247,7 +247,7 @@ ts_library(
         "//agentplane/app/frontend/threads:new_thread_form",
         "//agentplane/app/frontend/threads:sandbox_threads",
         "//agentplane/app/frontend/threads:thread_status",
-        "//agentplane/proto:runner_pb",
+        "//agentplane/proto:session_pb",
     ],
 )
 
@@ -322,7 +322,7 @@ ts_library(
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:schema",
-        "//agentplane/proto:runner_pb",
+        "//agentplane/proto:session_pb",
     ],
 )
 

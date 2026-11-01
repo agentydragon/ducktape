@@ -104,7 +104,7 @@ pkg_tar(
 
 pkg_tar(
     name = "root_tmpfiles",
-    srcs = ["agentplane-runner.conf"],
+    srcs = ["agentplane-environment-runtime.conf"],
     mode = "0644",
     package_dir = "/etc/tmpfiles.d",
 )
@@ -128,8 +128,8 @@ pkg_files(
         "agentplane-boot-evidence",
         "agentplane-boot-evidence-monitor",
         "cgroup_observer",
+        "environment_runtime_start",
         "guest_prepare",
-        "runner_start",
         "shutdown_complete",
         "startup_profile",
         "supervision_check",
@@ -139,7 +139,7 @@ pkg_files(
     renames = {
         "cgroup_observer": "agentplane-cgroup-observer",
         "guest_prepare": "agentplane-guest-prepare",
-        "runner_start": "agentplane-runner-start",
+        "environment_runtime_start": "agentplane-environment-runtime-start",
         "startup_profile": "agentplane-startup-profile",
         "shutdown_complete": "agentplane-shutdown-complete",
         "supervision_check": "agentplane-supervision-check",
@@ -164,10 +164,10 @@ pkg_files(
         "agentplane-shutdown-proof.service",
         "agentplane-startup-profile.service",
         "agentplane-workspace.service",
-        "runner-guest.conf",
+        "environment-runtime-guest.conf",
     ],
     attributes = pkg_attributes(mode = "0644"),
-    renames = {"runner-guest.conf": "agentplane-environment-runtime.service.d/guest.conf"},
+    renames = {"environment-runtime-guest.conf": "agentplane-environment-runtime.service.d/guest.conf"},
 )
 
 pkg_tar(
@@ -212,9 +212,9 @@ pkg_tar(
 pkg_files(
     # Test data for the selected boot; ordinary guests never execute this binary.
     name = "root_supervision_fixture_file",
-    srcs = ["//agentplane/env/supervision:runner_systemd_fixture"],
+    srcs = ["//agentplane/env/supervision:environment_runtime_systemd_fixture"],
     attributes = pkg_attributes(mode = "0755"),
-    renames = {"//agentplane/env/supervision:runner_systemd_fixture": "runner-systemd-fixture"},
+    renames = {"//agentplane/env/supervision:environment_runtime_systemd_fixture": "environment-runtime-systemd-fixture"},
 )
 
 pkg_tar(

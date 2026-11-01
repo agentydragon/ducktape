@@ -319,7 +319,7 @@ func (r *Reconciler) connectedRunner(ctx context.Context, sandbox *sandboxapi.Sa
 // empty if no runner ever connected.
 func (r *Reconciler) runnerLease(ctx context.Context, sandbox *sandboxapi.Sandbox) (coordinationv1.Lease, error) {
 	var lease coordinationv1.Lease
-	err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + sandboxlease.RunnerLeaseSuffix}, &lease)
+	err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + sandboxlease.EnvironmentRuntimeLeaseSuffix}, &lease)
 	return lease, client.IgnoreNotFound(err)
 }
 
@@ -620,7 +620,7 @@ func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, c
 	}
 	annotations[RenderedSpecAnnotation] = renderedSpec(spec)
 	labels := withSandboxLabel(template.Spec.Pod.Labels, sandbox)
-	labels[sandboxapi.RunnerCredentialLabel] = credentialID
+	labels[sandboxapi.EnvironmentRuntimeCredentialLabel] = credentialID
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        sandbox.Name,
@@ -686,7 +686,7 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *sandboxapi.Sandb
 		(sandbox.Spec.Bootstrap != "" && incarnation != nil)
 	if needsConnectionLease {
 		var lease coordinationv1.Lease
-		err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + sandboxlease.RunnerLeaseSuffix}, &lease)
+		err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + sandboxlease.EnvironmentRuntimeLeaseSuffix}, &lease)
 		if err != nil && !apierrors.IsNotFound(err) {
 			return ctrl.Result{}, err
 		}
@@ -759,7 +759,7 @@ func workloadReadyCondition(sandbox *sandboxapi.Sandbox, running metav1.Conditio
 // the moment a live connection would lapse. A lapsed one needs none: the Lease watch enqueues when a
 // renewal revives it (`leaseRevived`).
 func runnerConnectedCondition(sandbox *sandboxapi.Sandbox, workload metav1.Condition, incarnation *corev1.Pod, lease *coordinationv1.Lease, now time.Time) (metav1.Condition, time.Duration) {
-	condition := metav1.Condition{Type: sandboxapi.ConditionRunnerConnected, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
+	condition := metav1.Condition{Type: sandboxapi.ConditionEnvironmentRuntimeConnected, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
 	if workload.Status != metav1.ConditionTrue {
 		condition.Reason, condition.Message = "WorkloadNotReady", "the incarnation is not Ready"
 		return condition, 0
@@ -769,10 +769,10 @@ func runnerConnectedCondition(sandbox *sandboxapi.Sandbox, workload metav1.Condi
 		return condition, 0
 	}
 	if runner := lease.Annotations[sandboxlease.PodUIDAnnotation]; runner == "" || runner != string(incarnation.UID) {
-		condition.Reason, condition.Message = "AwaitingRunner", fmt.Sprintf("the Runner Gateway has not established a connection to Pod %s's runner", incarnation.Name)
+		condition.Reason, condition.Message = "AwaitingEnvironmentRuntime", fmt.Sprintf("the Runner Gateway has not established a connection to Pod %s's Environment Runtime", incarnation.Name)
 		return condition, 0
 	}
-	if lease.Annotations[sandboxlease.RunnerBootIDAnnotation] == "" {
+	if lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] == "" {
 		condition.Reason, condition.Message = "ConnectionPending", "the Runner Gateway is waiting for the runner's first state message; connectivity and authentication are not yet confirmed"
 		return condition, 0
 	}
@@ -821,7 +821,7 @@ func bootstrappedCondition(sandbox *sandboxapi.Sandbox, incarnation *corev1.Pod,
 		condition.Status, condition.Reason, condition.Message = metav1.ConditionTrue, "NoBootstrap", "the Sandbox has no bootstrap"
 		return condition, nil
 	}
-	var facts sandboxlease.RunnerFacts
+	var facts sandboxlease.EnvironmentRuntimeFacts
 	if incarnation != nil && lease != nil {
 		var err error
 		if facts, err = sandboxlease.DecodeFacts(lease.Name, lease.Annotations, string(incarnation.UID)); err != nil {

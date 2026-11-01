@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/runner_transport"
-	tlstest "github.com/agentydragon/ducktape/agentplane/runner_transport/testing"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	tlstest "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
@@ -52,7 +52,7 @@ type sandboxFixture struct {
 	runnerToken, appToken, executorToken, controllerToken string
 	callerAuth                                            *auth.Resolver
 	ca                                                    *tlstest.CA
-	gatewayTLS, runnerTLS                                 runner_transport.Config
+	gatewayTLS, runnerTLS                                 environment_runtime_transport.Config
 }
 
 func newSandboxFixture(t *testing.T) *sandboxFixture {
@@ -84,7 +84,7 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 	f.pod, err = pods.Create(ctx, &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testPod, Namespace: f.namespace,
-			Labels: map[string]string{sandboxapi.RunnerCredentialLabel: "test-runner-credential"},
+			Labels: map[string]string{sandboxapi.EnvironmentRuntimeCredentialLabel: "test-environment-runtime-credential"},
 			OwnerReferences: []metav1.OwnerReference{{
 				APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: testSandbox,
 				UID: f.sandbox.UID, Controller: &controller,
@@ -131,8 +131,8 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 		t.Fatal(err)
 	}
 	f.ca = tlstest.NewCA(t)
-	f.gatewayTLS = f.ca.Issue(t, runner_transport.GatewayURI)
-	uri, err := runner_transport.RunnerURI(f.namespace, string(f.sandbox.UID), f.pod.Labels[sandboxapi.RunnerCredentialLabel])
+	f.gatewayTLS = f.ca.Issue(t, environment_runtime_transport.GatewayURI)
+	uri, err := environment_runtime_transport.EnvironmentRuntimeURI(f.namespace, string(f.sandbox.UID), f.pod.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func (f *sandboxFixture) newGatewayReading(
 	t.Helper()
 	gateway, err := New(Config{
 		Namespace:                f.namespace,
-		RunnerSecurity:           runner_transport.Security{Mode: runner_transport.MutualTLS, TLS: &f.gatewayTLS},
+		RunnerSecurity:           environment_runtime_transport.Security{Mode: environment_runtime_transport.MutualTLS, TLS: &f.gatewayTLS},
 		CallerAccounts:           []auth.Account{appAccount},
 		ExecutorCallers:          executorCallers,
 		SandboxControllerAccount: &controllerAccount,

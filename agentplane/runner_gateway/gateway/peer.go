@@ -6,7 +6,7 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/agentydragon/ducktape/agentplane/runner_transport"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
@@ -41,7 +41,7 @@ func (g *Gateway) runnerDestination(ctx context.Context, sandbox *sandboxapi.San
 	if !podIsReadyForSandbox(&pod, view) || pod.Status.PodIP == "" {
 		return runnerDestination{}, status.Error(codes.Unavailable, "runner Pod is unavailable")
 	}
-	credentialID := pod.Labels[sandboxapi.RunnerCredentialLabel]
+	credentialID := pod.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel]
 	owner := metav1.GetControllerOf(&pod)
 	if owner.APIVersion == sandboxVMIAPIVer && owner.Kind == sandboxVMIKind {
 		var vmi kubevirtv1.VirtualMachineInstance
@@ -62,19 +62,19 @@ func (g *Gateway) runnerDestination(ctx context.Context, sandbox *sandboxapi.San
 		if vm.UID != vmOwner.UID || !metav1.IsControlledBy(&vm, sandbox) {
 			return runnerDestination{}, status.Error(codes.PermissionDenied, "runner VM is not owned by its Sandbox")
 		}
-		credentialID = vmi.Labels[sandboxapi.RunnerCredentialLabel]
+		credentialID = vmi.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel]
 	}
 	var uri string
-	if g.config.RunnerSecurity.Mode == runner_transport.MutualTLS {
+	if g.config.RunnerSecurity.Mode == environment_runtime_transport.MutualTLS {
 		var err error
-		uri, err = runner_transport.RunnerURI(sandbox.Namespace, string(sandbox.UID), credentialID)
+		uri, err = environment_runtime_transport.EnvironmentRuntimeURI(sandbox.Namespace, string(sandbox.UID), credentialID)
 		if err != nil {
 			return runnerDestination{}, err
 		}
 	}
 	return runnerDestination{
 		identity: view.identity, podUID: ref.UID, peerURI: uri,
-		target: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(sandboxapi.RunnerServicePort)),
+		target: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(sandboxapi.EnvironmentRuntimeServicePort)),
 	}, nil
 }
 

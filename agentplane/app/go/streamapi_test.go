@@ -22,7 +22,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/google/uuid"
@@ -649,7 +649,7 @@ func TestThreadEventStreamResumesFollowAtCoveredCursorAndDrains(t *testing.T) {
 	history := &streamTestHistory{
 		feedSummary: historydata.FoldSummary{Feed: &historydata.FeedSnapshot{
 			Status:   historypb.FeedStatus_FEED_STATUS_ACTIVE,
-			Attached: &runnerpb.Attached{SessionId: threadID.String(), LastCursor: largeCursor + 1},
+			Attached: &sessionpb.Attached{SessionId: threadID.String(), LastCursor: largeCursor + 1},
 		}, CommittedCursor: largeCursor + 1},
 	}
 	updates := &streamTestChanges{changes: make(chan struct{}, 1)}
@@ -767,7 +767,7 @@ func TestThreadEventStreamWaitsForCoveredTerminalFeedAndAwaitedAdmission(t *test
 			CommittedCursor: 6,
 			Feed: &historydata.FeedSnapshot{
 				Status:   historypb.FeedStatus_FEED_STATUS_ENDED,
-				Attached: &runnerpb.Attached{SessionId: threadID.String(), LastCursor: 6},
+				Attached: &sessionpb.Attached{SessionId: threadID.String(), LastCursor: 6},
 				End:      &historydata.FeedEnd{},
 			},
 		},
@@ -829,7 +829,7 @@ func TestThreadEventStreamWaitsForCommittedCursorCoverage(t *testing.T) {
 			CommittedCursor: 6,
 			Feed: &historydata.FeedSnapshot{
 				Status:   historypb.FeedStatus_FEED_STATUS_ENDED,
-				Attached: &runnerpb.Attached{SessionId: threadID.String(), LastCursor: 6},
+				Attached: &sessionpb.Attached{SessionId: threadID.String(), LastCursor: 6},
 				End:      &historydata.FeedEnd{},
 			},
 		},

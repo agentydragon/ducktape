@@ -110,7 +110,7 @@ group: PKI during KubeVirt installation, service images during PKI readiness, an
 fixture application. Each workload waits for its own images before being applied, preventing registry
 pulls. Imports remain serial, and the importer joins before k3s teardown even when startup fails.
 
-The Pod runner uses the production `//agentplane/env/images:disk_image` volume at `/run/agentplane/runner`, with a
+The Pod runner uses the production `//agentplane/env/images:disk_image` volume at `/run/agentplane/environment`, with a
 tools image for the rest. Pod suites import `:runner_harnesses_image`, which adds pinned Claude Code and Codex.
 VM-only targets omit the Pod runner image:
 their Sandboxes use the runner disk and test guest images. Image volumes need containerd 2.1 or later and the
@@ -168,8 +168,8 @@ The runner comes from the production runner disk, as in a Pod; both harnesses, G
 are pinned in the root disk. Runner uses systemd's private manager connection; a real system bus
 also exercises denial of unprivileged management requests.
 
-The Claude sandbox scenario uses `runner-vm-supervision`, which differs from `runner-vm` only by
-an explicit boot argument. Its ordinary guest root includes `runner_systemd_fixture` as test data;
+The Claude sandbox scenario uses `environment-vm-supervision`, which differs from `environment-vm` only by
+an explicit boot argument. Its ordinary guest root includes `environment_runtime_systemd_fixture` as test data;
 that one boot executes the remaining supervisor integration tests before starting production Runner.
 The checks retain direct argv/stream semantics, stale invocation fencing, uncertain launch outcomes,
 scoped startup fencing, parent death, stop status and reaper retries. They need private injection or
@@ -213,8 +213,8 @@ victim counter proves the single kill: either the aggregate or leaf limit can tr
 This exercises the test guest's kernel, shared production systemd units, and production Runner/Codex
 binaries; it does not boot the production NixOS image or force exec-server death/restart.
 
-Only this OOM sandbox selects the cloned `runner-vm-codex-oom` template. Its guest RAM, service,
-aggregate, and process budgets match `runner-vm`; only the native executor leaf's `memory.max` is
+Only this OOM sandbox selects the cloned `environment-vm-codex-oom` template. Its guest RAM, service,
+aggregate, and process budgets match `environment-vm`; only the native executor leaf's `memory.max` is
 96 MiB. This keeps the exec-server startup path intact while reducing the memory the selected tool
 must charge before the kernel kills it. The rendered fixture test checks this is the sole resource
 difference; see [the measured budget probe](../debug/vm_oom_budget.md).

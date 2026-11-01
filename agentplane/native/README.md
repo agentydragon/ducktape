@@ -16,7 +16,7 @@ the pipe.
 
 Three consumers: the live-capture probe in <../capture/README.md>, which runs a scenario against a
 real model; the [scripted harness tests](#scripted-harness-tests), which drive the same run facades
-against a loopback model the test controls; and the runner in <../runner/README.md>, which reuses
+against a loopback model the test controls; and Harness Host in <../env/harnesshost/docs/session_protocol.md>, which reuses
 the frame constructors and launch configuration behind its harness-neutral protocol over its own
 supervised native-process pipe (`../env/supervision/`).
 

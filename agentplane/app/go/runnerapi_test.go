@@ -8,14 +8,14 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type runnerStatusFake struct{ status *runnerpb.RunnerStatus }
+type runnerStatusFake struct{ status *sessionpb.EnvironmentRuntimeStatus }
 
-func (f runnerStatusFake) RunnerStatus(context.Context, string) (*runnerpb.RunnerStatus, error) {
+func (f runnerStatusFake) EnvironmentRuntimeStatus(context.Context, string) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	return f.status, nil
 }
 
@@ -30,7 +30,7 @@ func (runnerStatusTokenReviewer) Create(context.Context, *authenticationv1.Token
 
 // The raw-proto route is not represented by Huma's typed response models. Exercise the browser
 // boundary when the protocol gains lifecycle fields, including integers beyond JS precision.
-func TestRunnerStatusServesLifecycleProgressAndExactCursors(t *testing.T) {
+func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testing.T) {
 	authentication, err := auth.New(auth.Config{
 		TokenReviews: runnerStatusTokenReviewer{}, TokenAudience: "agentplane",
 		TokenSubjects: []string{"system:serviceaccount:fixture:reader"},
@@ -39,14 +39,14 @@ func TestRunnerStatusServesLifecycleProgressAndExactCursors(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewHTTPServer(authentication)
-	RegisterRunnerRoutes(server, runnerStatusFake{status: &runnerpb.RunnerStatus{
-		RunnerBootId: "fixture-boot",
-		Lifecycle: &runnerpb.RunnerLifecycleStatus{
-			DesiredMode:       runnerpb.RunnerLifecycleMode_RUNNER_LIFECYCLE_MODE_QUIESCING,
+	RegisterRunnerRoutes(server, runnerStatusFake{status: &sessionpb.EnvironmentRuntimeStatus{
+		EnvironmentRuntimeBootId: "fixture-boot",
+		Lifecycle: &sessionpb.EnvironmentRuntimeLifecycleStatus{
+			DesiredMode:       sessionpb.EnvironmentRuntimeLifecycleMode_ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING,
 			DesiredGeneration: 1<<63 + 1, ProgressGeneration: 7, ProgressAvailable: true,
-			Stage: runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_FLUSHING,
-			Blocker: &runnerpb.RunnerLifecycleBlocker{
-				Kind:         runnerpb.RunnerLifecycleBlockerKind_RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT,
+			Stage: sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING,
+			Blocker: &sessionpb.EnvironmentRuntimeLifecycleBlocker{
+				Kind:         sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT,
 				ResourceType: "IngressAcknowledgements.agentplane", ResourceId: "fixture-session", ResourcePresent: true,
 				JournalSealPresent: true, JournalSealUid: "fixture-incarnation", ExpectedJournalSealUid: "fixture-incarnation",
 				JournalSealCursor: 1<<63 + 3, AcknowledgementPresent: true, AcknowledgementCursor: 1<<63 + 2,
@@ -79,11 +79,11 @@ func TestRunnerStatusServesLifecycleProgressAndExactCursors(t *testing.T) {
 		t.Fatal(err)
 	}
 	lifecycle := body.Lifecycle
-	if lifecycle.DesiredMode != "RUNNER_LIFECYCLE_MODE_QUIESCING" || lifecycle.Stage != "RUNNER_LIFECYCLE_STAGE_FLUSHING" ||
+	if lifecycle.DesiredMode != "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING" || lifecycle.Stage != "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING" ||
 		lifecycle.DesiredGeneration != "9223372036854775809" || lifecycle.ProgressGeneration != "7" || lifecycle.ProgressCurrent {
 		t.Fatalf("lifecycle progress = %+v", lifecycle)
 	}
-	if lifecycle.Blocker.Kind != "RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT" ||
+	if lifecycle.Blocker.Kind != "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT" ||
 		lifecycle.Blocker.ResourceType != "IngressAcknowledgements.agentplane" ||
 		lifecycle.Blocker.JournalSealCursor != "9223372036854775811" || lifecycle.Blocker.AcknowledgementCursor != "9223372036854775810" {
 		t.Fatalf("lifecycle blocker = %+v", lifecycle.Blocker)

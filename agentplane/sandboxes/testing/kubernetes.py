@@ -27,8 +27,8 @@ from util.kubernetes import CustomObjectsClient
 
 SANDBOX = "test-runner"
 _MERGE_PATCH = "application/merge-patch+json"
-_RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/runner-credential"
-_RUNNER_CREDENTIAL_ID = "test-runner-credential"
+_RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/environment-runtime-credential"
+_RUNNER_CREDENTIAL_ID = "test-environment-runtime-credential"
 
 
 @dataclass(frozen=True)
@@ -156,7 +156,7 @@ async def sandbox_cluster(server: KubernetesApiServer, *, name: str = SANDBOX) -
             ),
             spec=k8s_client.V1PodSpec(
                 service_account_name=name,
-                containers=[k8s_client.V1Container(name="runner", image="registry.test/runner:unused")],
+                containers=[k8s_client.V1Container(name="environment-runtime", image="registry.test/runner:unused")],
             ),
         ),
     )

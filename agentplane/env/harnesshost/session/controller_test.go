@@ -9,7 +9,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/codexappserver"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -33,9 +33,9 @@ func TestSessionControllerUsesConfiguredReconcileConcurrency(t *testing.T) {
 
 func TestSessionControllerMapsAppServerRuntimeToCodexSessions(t *testing.T) {
 	resources := state.WrapCore(namespaced.NewState(inmem.Build))
-	for id, harness := range map[string]runnerpb.Harness{
-		"claude-session": runnerpb.Harness_HARNESS_CLAUDE,
-		"codex-session":  runnerpb.Harness_HARNESS_CODEX,
+	for id, harness := range map[string]sessionpb.Harness{
+		"claude-session": sessionpb.Harness_HARNESS_CLAUDE,
+		"codex-session":  sessionpb.Harness_HARNESS_CODEX,
 	} {
 		if err := publish(context.Background(), resources, id, Input{Harness: harness}); err != nil {
 			t.Fatal(err)

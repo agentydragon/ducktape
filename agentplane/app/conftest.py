@@ -29,8 +29,8 @@ from agentplane.history_service.testing.fixtures import (
 )
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
 from agentplane.history_service.testing.history import History
-from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
-from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner_gateway, spec, workspace
+from agentplane.env.e2e.testing.failure_journal import pytest_runtest_makereport
+from agentplane.env.e2e.testing.fixtures import config, endpoint, harness, model, runner_gateway, spec, workspace
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace

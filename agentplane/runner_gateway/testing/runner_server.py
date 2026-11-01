@@ -11,9 +11,9 @@ from uuid import uuid4
 import grpc
 from cryptography import x509
 
-from agentplane.proto import runner_state_pb2
-from agentplane.runner import runner_service_pb2
-from agentplane.runner_transport.configuration import TLS
+from agentplane.proto import environment_runtime_state_pb2
+from agentplane.env.runtime.control import environment_runtime_pb2
+from agentplane.environment_runtime_transport.config import TLS
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -40,22 +40,22 @@ class _WatchStateInterceptor(grpc.aio.ServerInterceptor):
         self.boot_id = boot_id
 
     async def intercept_service(self, continuation, handler_call_details):
-        if handler_call_details.method != "/agentplane.runner.Runner/WatchState":
+        if handler_call_details.method != "/agentplane.env.runtime.control.EnvironmentRuntime/WatchState":
             return await continuation(handler_call_details)
 
         async def watch_state(
-            request: runner_service_pb2.WatchStateRequest, context: grpc.aio.ServicerContext
-        ) -> AsyncIterator[runner_service_pb2.WatchStateResponse]:
+            request: environment_runtime_pb2.WatchStateRequest, context: grpc.aio.ServicerContext
+        ) -> AsyncIterator[environment_runtime_pb2.WatchStateResponse]:
             if _gateway_peer_uri(context) != _RUNNER_GATEWAY_URI:
                 await context.abort(grpc.StatusCode.PERMISSION_DENIED, "peer is not the Runner Gateway")
             if not request.sandbox_uid or not request.incarnation_uid or request.connection_epoch == 0:
                 await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Sandbox, incarnation and epoch are required")
-            response = runner_service_pb2.WatchStateResponse(
+            response = environment_runtime_pb2.WatchStateResponse(
                 sandbox_uid=request.sandbox_uid,
                 incarnation_uid=request.incarnation_uid,
-                runner_boot_id=self.boot_id,
+                environment_runtime_boot_id=self.boot_id,
                 connection_epoch=request.connection_epoch,
-                facts=runner_state_pb2.RunnerFacts(),
+                facts=environment_runtime_state_pb2.EnvironmentRuntimeFacts(),
             )
             while True:
                 yield response
@@ -63,8 +63,8 @@ class _WatchStateInterceptor(grpc.aio.ServerInterceptor):
 
         return grpc.unary_stream_rpc_method_handler(
             watch_state,
-            request_deserializer=runner_service_pb2.WatchStateRequest.FromString,
-            response_serializer=runner_service_pb2.WatchStateResponse.SerializeToString,
+            request_deserializer=environment_runtime_pb2.WatchStateRequest.FromString,
+            response_serializer=environment_runtime_pb2.WatchStateResponse.SerializeToString,
         )
 
 

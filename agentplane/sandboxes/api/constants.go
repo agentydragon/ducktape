@@ -12,7 +12,7 @@ const (
 
 	ConditionRunning         = "Running"
 	ConditionWorkloadReady   = "WorkloadReady"
-	ConditionRunnerConnected = "RunnerConnected"
+	ConditionEnvironmentRuntimeConnected = "EnvironmentRuntimeConnected"
 	ConditionBootstrapped    = "Bootstrapped"
 	ConditionReady           = "Ready"
 	ConditionQuiesced        = "Quiesced"
@@ -25,9 +25,9 @@ const (
 	ControlServiceSuffix   = "-control"
 	ControlServicePortName = "grpc"
 	ControlServicePort     = 8080
-	// RunnerServicePort is the runner's mTLS listener port in a Pod or KubeVirt guest.
-	RunnerServicePort     = 9090
-	RunnerCredentialLabel = "agentplane.allegedly.works/runner-credential"
+	// EnvironmentRuntimeServicePort is the runner's mTLS listener port in a Pod or KubeVirt guest.
+	EnvironmentRuntimeServicePort     = 9090
+	EnvironmentRuntimeCredentialLabel = "agentplane.allegedly.works/environment-runtime-credential"
 )
 
 // ControlServiceTargetTemplate is the default target used by both the controller and dispatcher.

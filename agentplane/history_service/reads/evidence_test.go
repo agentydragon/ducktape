@@ -9,7 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
@@ -204,7 +204,7 @@ func TestFramesOfAnObservationTheEntityWasNotFoldedFromAreNotFound(t *testing.T)
 func TestAFoldFromAnAttachmentAloneHasNoSourceToServeEvidenceFrom(t *testing.T) {
 	f := newFixture(t)
 	sessionID := f.session(t, f.history, sandboxName("attached-"))
-	feed := &historypb.SessionFeedState{Attached: &runnerpb.Attached{SessionId: sessionID.String()}}
+	feed := &historypb.SessionFeedState{Attached: &sessionpb.Attached{SessionId: sessionID.String()}}
 	if err := f.history.RecordFeedState(t.Context(), sessionID, feed); err != nil {
 		t.Fatal(err)
 	}

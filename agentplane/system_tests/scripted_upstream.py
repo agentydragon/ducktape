@@ -22,13 +22,13 @@ from aiohttp import web
 
 from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.codex.testing.responses import OpenAIResponses
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.testing.claude_model import ClaudeModel
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import ScriptedModel
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
 
 # LLM ingress replaces any caller's value with the verified Pod's (agentplane/llm_ingress/README.md).
@@ -43,14 +43,14 @@ class ScriptedUpstream:
         self._received = itertools.count(1)
         self._case_pods: ContextVar[set[str] | None] = ContextVar("scripted_case_pods", default=None)
 
-    def model(self, pod: str, harness: runner_pb2.Harness) -> ScriptedModel[Any]:
+    def model(self, pod: str, harness: session_pb2.Harness) -> ScriptedModel[Any]:
         """The model `harness` in Sandbox Pod `pod` talks to."""
         if (pods := self._case_pods.get()) is not None:
             pods.add(pod)
         match harness:
-            case runner_pb2.HARNESS_CLAUDE:
+            case session_pb2.HARNESS_CLAUDE:
                 return ClaudeModel(self._messages[pod])
-            case runner_pb2.HARNESS_CODEX:
+            case session_pb2.HARNESS_CODEX:
                 return CodexModel(self._responses[pod])
         raise ValueError(f"unsupported {harness=}")
 

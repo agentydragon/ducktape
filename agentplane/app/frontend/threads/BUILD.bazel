@@ -679,7 +679,7 @@ ts_library(
         "//agentplane/app/frontend:model_catalog",
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/sandboxes:client",
-        "//agentplane/proto:runner_pb",
+        "//agentplane/proto:session_pb",
         "//util/frontend:disclosure",
     ],
 )

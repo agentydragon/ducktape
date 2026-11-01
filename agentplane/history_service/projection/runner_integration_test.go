@@ -9,7 +9,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"golang.org/x/sync/errgroup"
@@ -116,7 +116,7 @@ func TestCycleFoldsOnlySessionsWhoseHistoryChanged(t *testing.T) {
 		},
 		"feed state": {
 			change: func(t *testing.T, f projectorFixture, sessionID uuid.UUID) {
-				f.recordFeed(t, sessionID, &runnerpb.Attached{LastCursor: 1})
+				f.recordFeed(t, sessionID, &sessionpb.Attached{LastCursor: 1})
 			},
 			folded: func(t *testing.T, f projectorFixture, sessionID uuid.UUID) bool {
 				return f.summary(t, sessionID).attached != nil

@@ -17,6 +17,7 @@ import pytest_bazel
 from PIL import Image
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
+from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.native.codex.testing.responses_sse import (
     CustomToolCall,
     FunctionCall,
@@ -26,7 +27,6 @@ from agentplane.native.codex.testing.responses_sse import (
 )
 from agentplane.native.testing.model_endpoint import SseEvent
 from agentplane.proto import event_pb2
-from agentplane.runner import runner_service_pb2
 from agentplane.testing.codex_fixtures import ExecutorServer
 from agentplane.x.central_sampler import sampler_pb2, sampler_pb2_grpc
 from agentplane.x.central_sampler.settings import ModelConfig, ResponsesConfig
@@ -82,7 +82,7 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
             request.spec.model = "test-model"
             await stub.OpenSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="hold-turn", text="Wait for the response."
                 ),
                 metadata=METADATA,
@@ -96,7 +96,7 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
                 ):
                     with pytest.raises(grpc.aio.AioRpcError) as rejected:
                         await stub.ChangeModel(
-                            runner_service_pb2.ChangeModelRequest(
+                            environment_runtime_pb2.ChangeModelRequest(
                                 session_id=request.session_id, command_id=model, model=model
                             ),
                             metadata=METADATA,
@@ -104,7 +104,7 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
                         )
                     assert rejected.value.code() == code
                 await stub.ChangeModel(
-                    runner_service_pb2.ChangeModelRequest(
+                    environment_runtime_pb2.ChangeModelRequest(
                         session_id=request.session_id, command_id="compatible", model="compatible-model"
                     ),
                     metadata=METADATA,
@@ -112,7 +112,7 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
                 )
                 with pytest.raises(grpc.aio.AioRpcError) as rejected:
                     await stub.ChangeReasoningEffort(
-                        runner_service_pb2.ChangeReasoningEffortRequest(
+                        environment_runtime_pb2.ChangeReasoningEffortRequest(
                             session_id=request.session_id, command_id="unsupported-effort", effort="high"
                         ),
                         metadata=METADATA,
@@ -120,21 +120,21 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
                     )
                 assert rejected.value.code() == grpc.StatusCode.INVALID_ARGUMENT
                 await stub.ChangeModel(
-                    runner_service_pb2.ChangeModelRequest(
+                    environment_runtime_pb2.ChangeModelRequest(
                         session_id=request.session_id, command_id="restore-model", model="test-model"
                     ),
                     metadata=METADATA,
                     timeout=10,
                 )
                 await stub.ChangeReasoningEffort(
-                    runner_service_pb2.ChangeReasoningEffortRequest(
+                    environment_runtime_pb2.ChangeReasoningEffortRequest(
                         session_id=request.session_id, command_id="high-effort", effort="high"
                     ),
                     metadata=METADATA,
                     timeout=10,
                 )
                 await stub.ChangeModel(
-                    runner_service_pb2.ChangeModelRequest(
+                    environment_runtime_pb2.ChangeModelRequest(
                         session_id=request.session_id, command_id="restricted", model="restricted-model"
                     ),
                     metadata=METADATA,
@@ -142,7 +142,7 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
                 )
                 with pytest.raises(grpc.aio.AioRpcError) as rejected:
                     await stub.ChangeModel(
-                        runner_service_pb2.ChangeModelRequest(
+                        environment_runtime_pb2.ChangeModelRequest(
                             session_id=request.session_id, command_id="incompatible-effort", model="compatible-model"
                         ),
                         metadata=METADATA,
@@ -170,7 +170,7 @@ async def test_session_store_survives_idle_turns_and_is_separate_between_session
 
             async def run_cell(session_id: str, command_id: str, source: str, expected: str) -> int:
                 await stub.SubmitInput(
-                    runner_service_pb2.SubmitInputRequest(
+                    environment_runtime_pb2.SubmitInputRequest(
                         session_id=session_id, command_id=command_id, text="Run the next cell."
                     ),
                     metadata=METADATA,
@@ -214,7 +214,7 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
         async with service(config) as stub:
             opened = await stub.OpenSession(open_request(tmp_path), metadata=METADATA, timeout=10)
             assert opened.attached.session_id == "079bd706-77b3-4b71-8c7e-605a7e19324c"
-            request = runner_service_pb2.SubmitInputRequest(
+            request = environment_runtime_pb2.SubmitInputRequest(
                 session_id="079bd706-77b3-4b71-8c7e-605a7e19324c", command_id="first", text="Exercise execution. " * 100
             )
             first = await stub.SubmitInput(request, metadata=METADATA, timeout=10)
@@ -267,7 +267,7 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
                 assert "received:hello" in json.dumps(exchange.request.body)
                 # Input admitted while the provider is held steers the running turn.
                 queued = await stub.SubmitInput(
-                    runner_service_pb2.SubmitInputRequest(
+                    environment_runtime_pb2.SubmitInputRequest(
                         session_id="079bd706-77b3-4b71-8c7e-605a7e19324c",
                         command_id="queued",
                         text="Also mention the steering input.",
@@ -335,7 +335,7 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
         async with service(config) as stub:
             assert await stub.SubmitInput(request, metadata=METADATA, timeout=10) == first
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id="079bd706-77b3-4b71-8c7e-605a7e19324c", command_id="after", text="After compaction"
                 ),
                 metadata=METADATA,
@@ -376,7 +376,7 @@ async def test_interrupt_streaming_evidence_and_uid_authorization(
                     )
                 assert error.value.code() == expected
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id="079bd706-77b3-4b71-8c7e-605a7e19324c", command_id="active", text="Wait for interrupt"
                 ),
                 metadata=METADATA,
@@ -397,7 +397,7 @@ async def test_interrupt_streaming_evidence_and_uid_authorization(
                                 break
                 finally:
                     stream.cancel()
-                interrupt = runner_service_pb2.InterruptTurnRequest(
+                interrupt = environment_runtime_pb2.InterruptTurnRequest(
                     session_id="079bd706-77b3-4b71-8c7e-605a7e19324c", command_id="interrupt", turn_id="active"
                 )
                 receipt = await stub.InterruptTurn(interrupt, metadata=METADATA, timeout=10)
@@ -405,7 +405,7 @@ async def test_interrupt_streaming_evidence_and_uid_authorization(
             assert await stub.InterruptTurn(interrupt, metadata=METADATA, timeout=10) == receipt
             with pytest.raises(grpc.aio.AioRpcError) as error:
                 await stub.SubmitInput(
-                    runner_service_pb2.SubmitInputRequest(
+                    environment_runtime_pb2.SubmitInputRequest(
                         session_id="079bd706-77b3-4b71-8c7e-605a7e19324c",
                         command_id="interrupt",
                         text="different payload",
@@ -415,7 +415,7 @@ async def test_interrupt_streaming_evidence_and_uid_authorization(
                 )
             assert error.value.code() == grpc.StatusCode.ALREADY_EXISTS
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id="079bd706-77b3-4b71-8c7e-605a7e19324c", command_id="continued", text="Continue"
                 ),
                 metadata=METADATA,
@@ -437,7 +437,7 @@ async def test_nested_command_inherits_executor_environment(
             request = open_request(tmp_path)
             await stub.OpenSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="env", text="Show the environment."
                 ),
                 metadata=METADATA,
@@ -474,7 +474,7 @@ async def test_reasoning_summaries_are_requested_and_reach_history(
         async with service(config) as stub:
             await stub.OpenSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="think", text="Think, then answer."
                 ),
                 metadata=METADATA,
@@ -520,7 +520,7 @@ async def test_restart_never_replays_unresolved_provider_intent(
             stub = await active.enter_async_context(service(config))
             request = open_request(tmp_path)
             await stub.OpenSession(request, metadata=METADATA, timeout=10)
-            command = runner_service_pb2.SubmitInputRequest(
+            command = environment_runtime_pb2.SubmitInputRequest(
                 session_id=request.session_id, command_id="lost", text="Provider outcome will be lost"
             )
             receipt = await stub.SubmitInput(command, metadata=METADATA, timeout=10)
@@ -540,7 +540,7 @@ async def test_restart_never_replays_unresolved_provider_intent(
             assert await stub.SubmitInput(command, metadata=METADATA, timeout=10) == receipt
             with pytest.raises(grpc.aio.AioRpcError) as rejected:
                 await stub.SubmitInput(
-                    runner_service_pb2.SubmitInputRequest(
+                    environment_runtime_pb2.SubmitInputRequest(
                         session_id=request.session_id, command_id="new", text="Must not replay"
                     ),
                     metadata=METADATA,
@@ -569,7 +569,7 @@ async def test_interrupt_admission_survives_unavailable_executor(
             request = open_request(tmp_path)
             await stub.OpenSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="remote", text="Start a supervised process"
                 ),
                 metadata=METADATA,
@@ -591,7 +591,7 @@ async def test_interrupt_admission_survives_unavailable_executor(
             async with await endpoint.next():
                 executor_server.process.kill()
                 await executor_server.process.wait()
-                interrupt = runner_service_pb2.InterruptTurnRequest(
+                interrupt = environment_runtime_pb2.InterruptTurnRequest(
                     session_id=request.session_id, command_id="remote-interrupt", turn_id="remote"
                 )
                 receipt = await stub.InterruptTurn(interrupt, metadata=METADATA, timeout=10)
@@ -621,7 +621,7 @@ async def test_restart_cannot_reconstruct_live_javascript(
         async with service(config) as stub:
             await stub.OpenSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="yielded", text="Retain a live JS cell"
                 ),
                 metadata=METADATA,
@@ -659,7 +659,7 @@ async def test_restart_cannot_reconstruct_live_javascript(
             assert session.blocked
             with pytest.raises(grpc.aio.AioRpcError) as rejected:
                 await stub.SubmitInput(
-                    runner_service_pb2.SubmitInputRequest(
+                    environment_runtime_pb2.SubmitInputRequest(
                         session_id=request.session_id, command_id="lost-cell", text="Continue after host loss"
                     ),
                     metadata=METADATA,
@@ -687,7 +687,7 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
             for session in (request, second):
                 await stub.OpenSession(session, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id,
                     command_id="background",
                     text="Start a background process and answer.",
@@ -719,7 +719,7 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
             assert process is not None
             assert process.status == "running"
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=second.session_id, command_id="queued", text="Run once capacity is released."
                 ),
                 metadata=METADATA,
@@ -738,7 +738,7 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
             assert process.buffered_output == b"retained-output"
             assert process.conversation_owner is not None
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="read-retained", text="Read the retained output."
                 ),
                 metadata=METADATA,
@@ -794,7 +794,7 @@ async def test_unknown_custom_call_returns_failure_and_preserves_live_state(
         async with service(config) as stub:
             await stub.OpenSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="unknown-custom", text="Continue after an unknown tool."
                 ),
                 metadata=METADATA,
@@ -920,7 +920,7 @@ async def test_unknown_json_function_call_returns_function_output(
         async with service(config) as stub:
             await stub.OpenSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id,
                     command_id="unknown-function",
                     text="Continue after an unknown function.",
@@ -997,7 +997,7 @@ async def test_json_exec_runs_shell_resumes_and_recovers(
         async with service(config) as stub:
             await stub.OpenSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="standard-json", text="Run a shell command."
                 ),
                 metadata=METADATA,
@@ -1189,7 +1189,7 @@ async def test_notify_outputs_follow_the_step_that_emitted_them(
         async with service(config) as stub:
             await stub.OpenSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="notify", text="Notify from cells."
                 ),
                 metadata=METADATA,
@@ -1250,7 +1250,7 @@ async def test_interrupt_discards_queued_notify_output(
         async with service(config) as stub:
             await stub.OpenSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="interrupted", text="Notify, then get interrupted."
                 ),
                 metadata=METADATA,
@@ -1274,7 +1274,7 @@ async def test_interrupt_discards_queued_notify_output(
                     with attempt:
                         assert await store.queued_notifications(request.session_id) == ["discarded"]
                 await stub.InterruptTurn(
-                    runner_service_pb2.InterruptTurnRequest(
+                    environment_runtime_pb2.InterruptTurnRequest(
                         session_id=request.session_id, command_id="interrupt", turn_id="interrupted"
                     ),
                     metadata=METADATA,
@@ -1321,7 +1321,7 @@ async def test_view_image_reads_executor_file_and_prepares_cell_image(
             request = open_request(tmp_path)
             await stub.OpenSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="view-image", text="Look at the image."
                 ),
                 metadata=METADATA,
@@ -1363,7 +1363,7 @@ async def test_input_yields_a_running_cell_and_joins_the_turn(
         async with service(config) as stub:
             await stub.OpenSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="steered", text="Run a long cell."
                 ),
                 metadata=METADATA,
@@ -1376,7 +1376,7 @@ async def test_input_yields_a_running_cell_and_joins_the_turn(
                     *response_stream([CustomToolCall("long", "exec", source)], model="test-model").events
                 )
             await stub.SubmitInput(
-                runner_service_pb2.SubmitInputRequest(
+                environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="steer", text="Read this instead."
                 ),
                 metadata=METADATA,

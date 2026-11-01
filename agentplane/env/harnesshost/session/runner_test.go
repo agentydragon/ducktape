@@ -11,7 +11,7 @@ import (
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
@@ -53,7 +53,7 @@ func TestSessionBlockersTrackBusyReasonsAndReturnToIdle(t *testing.T) {
 
 	assertSessionBlockers(t, s, []string{"ActiveTurn", "PendingCommand", "Activation", AutosuspendSetup})
 	status, _ := s.Status()
-	if !status.Busy || status.ExecutionState != runnerpb.SessionExecutionState_SESSION_EXECUTION_STATE_PREPARING {
+	if !status.Busy || status.ExecutionState != sessionpb.SessionExecutionState_SESSION_EXECUTION_STATE_PREPARING {
 		t.Fatalf("busy session status = %+v, want preparing and busy", status)
 	}
 
@@ -72,7 +72,7 @@ func TestSessionBlockersTrackBusyReasonsAndReturnToIdle(t *testing.T) {
 
 	assertSessionBlockers(t, s, nil)
 	status, _ = s.Status()
-	if status.Busy || status.ExecutionState != runnerpb.SessionExecutionState_SESSION_EXECUTION_STATE_DORMANT {
+	if status.Busy || status.ExecutionState != sessionpb.SessionExecutionState_SESSION_EXECUTION_STATE_DORMANT {
 		t.Fatalf("idle session status = %+v, want dormant and not busy", status)
 	}
 }
@@ -116,8 +116,8 @@ func runnerTestManager(t *testing.T, environment map[string]string, destination 
 
 func runnerTestReserve(t *testing.T, ctx context.Context, manager *Manager, store *retained.Store, id, cwd, setup string) *Session {
 	t.Helper()
-	record, err := retained.NewRecord(&runnerpb.SessionSpec{
-		Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: cwd, Model: "test-model",
+	record, err := retained.NewRecord(&sessionpb.SessionSpec{
+		Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: cwd, Model: "test-model",
 	}, setup, nil)
 	if err != nil {
 		t.Fatal(err)

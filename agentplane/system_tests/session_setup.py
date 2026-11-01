@@ -6,7 +6,7 @@ from uuid import UUID
 from google.protobuf.json_format import MessageToDict
 
 from agentplane.app.testing.client import Client
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.system_tests.tracing import tracer
 
 BOUND_SECONDS = 300
@@ -18,12 +18,12 @@ async def run_setup(
     sandbox_name: str,
     sandbox_uid: UUID,
     session_id: UUID,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     model: str,
     cwd: str,
     setup_script: str,
 ) -> tuple[str, str]:
-    spec = runner_pb2.SessionSpec(harness=harness, cwd=cwd, model=model, reasoning_effort="low")
+    spec = session_pb2.SessionSpec(harness=harness, cwd=cwd, model=model, reasoning_effort="low")
     with tracer.start_as_current_span(
         "system_test.session_setup.admission",
         attributes={"session.id": str(session_id)},

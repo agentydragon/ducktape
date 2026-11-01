@@ -28,7 +28,7 @@ from agentplane.app.testing.models import (
     DecisionsUnavailable,
     NewSandbox,
     NewSession,
-    RunnerStatusView,
+    EnvironmentRuntimeStatusView,
     SandboxesSnapshot,
     SandboxPresetView,
     SandboxView,
@@ -153,8 +153,8 @@ class Client:
     async def sandbox(self, name: str) -> SandboxView:
         return SandboxView.model_validate(await self._json("GET", f"/sandboxes/{name}"))
 
-    async def runner_status(self, name: str) -> RunnerStatusView:
-        return RunnerStatusView.model_validate(await self._json("GET", f"/sandboxes/{name}/runner-status"))
+    async def runner_status(self, name: str) -> EnvironmentRuntimeStatusView:
+        return EnvironmentRuntimeStatusView.model_validate(await self._json("GET", f"/sandboxes/{name}/runner-status"))
 
     async def sandbox_snapshots(self) -> AsyncGenerator[SandboxesSnapshot]:
         """Initial inventory and watch-triggered changes; the caller bounds the subscription.

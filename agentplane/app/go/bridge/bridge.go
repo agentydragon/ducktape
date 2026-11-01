@@ -11,7 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
@@ -36,8 +36,8 @@ type Dispatcher interface {
 // Service. The concrete GatewayRunnerProxy binds all four identity values on
 // every call.
 type RunnerProxy interface {
-	ListSessions(context.Context, *sandboxespb.Sandbox) (*runnerpb.ListSessionsResponse, error)
-	RunnerStatus(context.Context, *sandboxespb.Sandbox) (*runnerpb.RunnerStatus, error)
+	ListSessions(context.Context, *sandboxespb.Sandbox) (*sessionpb.ListSessionsResponse, error)
+	EnvironmentRuntimeStatus(context.Context, *sandboxespb.Sandbox) (*sessionpb.EnvironmentRuntimeStatus, error)
 }
 
 // RunnerBridge joins the app's Sandbox identity, Dispatcher and Runner services.
@@ -59,7 +59,7 @@ func New(sandboxes SandboxGetter, runner RunnerProxy, dispatcher Dispatcher) (*R
 // UUID is the dispatcher's idempotency key, so a timeout is returned with that
 // same ID for reconciliation or retry.
 func (b *RunnerBridge) OpenSession(
-	ctx context.Context, sandbox, sandboxUID string, sessionID uuid.UUID, spec *runnerpb.SessionSpec, setupScript *string,
+	ctx context.Context, sandbox, sandboxUID string, sessionID uuid.UUID, spec *sessionpb.SessionSpec, setupScript *string,
 ) (*dispatcherpb.SessionOpening, error) {
 	if sandbox == "" || sandboxUID == "" || spec == nil {
 		return nil, errors.New("Sandbox name, UID and Session spec are required")
@@ -68,7 +68,7 @@ func (b *RunnerBridge) OpenSession(
 		return nil, fmt.Errorf("setup script exceeds %d characters", MaxSetupScriptCharacters)
 	}
 	request := &dispatcherpb.OpenSessionRequest{
-		Sandbox: sandbox, SandboxUid: sandboxUID, SessionId: sessionID.String(), Spec: proto.Clone(spec).(*runnerpb.SessionSpec),
+		Sandbox: sandbox, SandboxUid: sandboxUID, SessionId: sessionID.String(), Spec: proto.Clone(spec).(*sessionpb.SessionSpec),
 	}
 	if setupScript != nil {
 		value := *setupScript
@@ -111,7 +111,7 @@ func (b *RunnerBridge) SessionOpening(ctx context.Context, sandbox string, sessi
 
 // ListSessions proxies the live runner's durable Session inventory through its
 // current Sandbox incarnation.
-func (b *RunnerBridge) ListSessions(ctx context.Context, sandboxName string) ([]*runnerpb.SessionSummary, error) {
+func (b *RunnerBridge) ListSessions(ctx context.Context, sandboxName string) ([]*sessionpb.SessionSummary, error) {
 	if b.runner == nil {
 		return nil, errors.New("Runner proxy is not configured")
 	}
@@ -126,9 +126,9 @@ func (b *RunnerBridge) ListSessions(ctx context.Context, sandboxName string) ([]
 	return response.GetSessions(), nil
 }
 
-// RunnerStatus returns the live status snapshot for the current Sandbox
+// EnvironmentRuntimeStatus returns the live status snapshot for the current Sandbox
 // incarnation. The snapshot is informational and does not wake the Sandbox.
-func (b *RunnerBridge) RunnerStatus(ctx context.Context, sandboxName string) (*runnerpb.RunnerStatus, error) {
+func (b *RunnerBridge) EnvironmentRuntimeStatus(ctx context.Context, sandboxName string) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	if b.runner == nil {
 		return nil, errors.New("Runner proxy is not configured")
 	}
@@ -136,7 +136,7 @@ func (b *RunnerBridge) RunnerStatus(ctx context.Context, sandboxName string) (*r
 	if err != nil {
 		return nil, err
 	}
-	return b.runner.RunnerStatus(ctx, sandbox)
+	return b.runner.EnvironmentRuntimeStatus(ctx, sandbox)
 }
 
 func (b *RunnerBridge) currentSandbox(ctx context.Context, name string) (*sandboxespb.Sandbox, error) {
@@ -155,16 +155,16 @@ func (b *RunnerBridge) currentSandbox(ctx context.Context, name string) (*sandbo
 
 // ParseSessionSpec applies strict proto-JSON fields over a cloned set of
 // defaults. Explicit empty values override defaults, and unknown fields fail.
-func ParseSessionSpec(defaults *runnerpb.SessionSpec, fields map[string]any) (*runnerpb.SessionSpec, error) {
+func ParseSessionSpec(defaults *sessionpb.SessionSpec, fields map[string]any) (*sessionpb.SessionSpec, error) {
 	if defaults == nil {
-		defaults = &runnerpb.SessionSpec{}
+		defaults = &sessionpb.SessionSpec{}
 	}
-	merged := proto.Clone(defaults).(*runnerpb.SessionSpec)
+	merged := proto.Clone(defaults).(*sessionpb.SessionSpec)
 	encoded, err := json.Marshal(fields)
 	if err != nil {
 		return nil, &MalformedMessageError{Cause: err}
 	}
-	partial := &runnerpb.SessionSpec{}
+	partial := &sessionpb.SessionSpec{}
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(encoded, partial); err != nil {
 		return nil, &MalformedMessageError{Cause: err}
 	}

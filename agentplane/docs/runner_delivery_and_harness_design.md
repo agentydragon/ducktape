@@ -373,7 +373,7 @@ arrange one Codex app-server process per store or the current Claude stream-json
 Session. Process instances may appear as diagnostics with hosted Sessions/status. At-most-one
 process per store and shared-store concurrent safety remain open.
 
-Current [`SessionSpec`](../proto/runner.proto) already selects Claude or Codex and has no store
+Current [`SessionSpec`](../proto/session.proto) already selects Claude or Codex and has no store
 selector; the runner creates `CLAUDE_CONFIG_DIR` under the Session's runner-owned directory and
 one `CODEX_HOME` for the Runner. No production in-repo caller currently chooses either directory. A private default-store
 policy remains a candidate; future store-management needs can be considered separately without
@@ -539,7 +539,7 @@ concurrency remain separate decisions.
 The implementation changes protocol and callers together; publish a staging image-promotion hold
 before merging it. Testing receives the release first. The held staging image families are the app,
 Gateway/Dispatcher, Notification and History services (with migrations embedded in those images), `runner`,
-`runner-ducktape` and the runner VM. Testing acceptance must identify the exact tested tags rather
+`environment-tools` and the runner VM. Testing acceptance must identify the exact tested tags rather
 than assuming every image shares a build SHA.
 
 1. Validate the release on fresh Claude and Codex Sessions in testing, including Pod and VM paths.
@@ -618,7 +618,7 @@ does not settle those internal allocation questions; these tests do not authoriz
 ## Runner delivery acceptance without History
 
 A focused delivery integration target can omit the History Service while retaining PostgreSQL for
-the Session Dispatcher queue. The test owns a small real `RunnerIngress` endpoint implementing the
+the Session Dispatcher queue. The test owns a small real `SessionJournalIngress` endpoint implementing the
 runner's journal push and acknowledgement protocol, drives the Session Dispatcher API, and waits
 for the runner's journal receipt to arrive at that endpoint. Correlate the delivered command by
 Session ID and command ID; verify ingress cursor acknowledgements and that Quiesce reaches

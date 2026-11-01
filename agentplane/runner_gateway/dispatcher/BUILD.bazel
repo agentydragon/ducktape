@@ -27,6 +27,7 @@ go_library(
     deps = [
         ":dispatcher_notification_go_proto",
         ":session_dispatcher_go_proto",
+        "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/grpc/bearer",
         "//agentplane/grpc/streaming",
         "//agentplane/observability",
@@ -34,11 +35,10 @@ go_library(
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:runner_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
-        "//agentplane/runner:runner_service_go_proto",
+        "//agentplane/proto:session_go_proto",
         "//agentplane/sandboxes/api",
-        "//agentplane/sandboxes/runnerclient",
+        "//agentplane/sandboxes/environmentruntimeclient",
         "//agentplane/sandboxes/sandboxreader",
         "//agentplane/workload_auth/auth",
         "//agentplane/x/central_sampler:sampler_go_proto",
@@ -113,7 +113,7 @@ go_test(
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:session_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/runner_gateway/migrations",
         "//agentplane/testing/grpcmethods",
@@ -141,7 +141,7 @@ proto_library(
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/proto:event_log_proto",
-        "//agentplane/proto:runner_proto",
+        "//agentplane/proto:session_proto",
         "@googleapis//google/api:annotations_proto",
         "@protobuf//:timestamp_proto",
     ],
@@ -155,7 +155,7 @@ ts_proto_library(
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/proto:event_log_pb",
-        "//agentplane/proto:runner_pb",
+        "//agentplane/proto:session_pb",
         "//google/api:annotations_pb",
     ],
 )
@@ -205,7 +205,7 @@ go_proto_library(
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:session_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
@@ -222,11 +222,11 @@ go_test(
     srcs = ["central_runner_test.go"],
     embed = [":dispatcher"],
     deps = [
+        "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:runner_go_proto",
-        "//agentplane/runner:runner_service_go_proto",
+        "//agentplane/proto:session_go_proto",
         "//agentplane/x/central_sampler:sampler_go_proto",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",

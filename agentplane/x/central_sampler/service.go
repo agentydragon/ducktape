@@ -12,8 +12,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerpbservice "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	runnerpbservice "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"
@@ -99,7 +99,7 @@ func (s *Sampler) OpenSession(ctx context.Context, request *samplerpb.OpenSessio
 			return invalid()
 		}
 	}
-	if len(spec.GetInstructions()) > 1024*1024 || len(spec.GetCwd()) > 4096 || len(request.GetSetupScript()) > 65536 || spec.GetHarness() != runnerpb.Harness_HARNESS_CENTRAL_SAMPLER || !strings.HasPrefix(spec.GetCwd(), "/") {
+	if len(spec.GetInstructions()) > 1024*1024 || len(spec.GetCwd()) > 4096 || len(request.GetSetupScript()) > 65536 || spec.GetHarness() != sessionpb.Harness_HARNESS_CENTRAL_SAMPLER || !strings.HasPrefix(spec.GetCwd(), "/") {
 		return invalid()
 	}
 	modelConfig, modelConfigured := s.Settings.Models[spec.GetModel()]
@@ -110,7 +110,7 @@ func (s *Sampler) OpenSession(ctx context.Context, request *samplerpb.OpenSessio
 	if err != nil {
 		return nil, samplerError(ctx, err)
 	}
-	if session.SetupState == runnerpb.SetupState_SETUP_STATE_RUNNING {
+	if session.SetupState == sessionpb.SetupState_SETUP_STATE_RUNNING {
 		s.Runtime.Wake(session.ID)
 	}
 	description, err := Describe(session)

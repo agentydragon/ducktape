@@ -1,4 +1,4 @@
-// Package runner owns durable Sessions and supervises their native harnesses.
+// Package harnesshost owns durable Sessions and supervises their native harnesses.
 package harnesshost
 
 import (
@@ -17,7 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/session"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
 
 type Config struct {
@@ -47,15 +47,15 @@ func (c *Config) resolveSessionReconcileConcurrency() error {
 
 // ResolveModelConfig returns the context budget the LLM ingress configures for `model`, or nil for none.
 // Codex has no budget here: it reads its context window from the model catalog its provider names.
-func (c Config) ResolveModelConfig(ctx context.Context, harness runnerpb.Harness, model string) (*int, error) {
+func (c Config) ResolveModelConfig(ctx context.Context, harness sessionpb.Harness, model string) (*int, error) {
 	launch := c.Claude
-	if harness == runnerpb.Harness_HARNESS_CODEX {
+	if harness == sessionpb.Harness_HARNESS_CODEX {
 		launch = c.Codex
 	}
 	if launch == nil {
 		return nil, errors.New("the selected harness is not configured on this runner")
 	}
-	if harness == runnerpb.Harness_HARNESS_CODEX {
+	if harness == sessionpb.Harness_HARNESS_CODEX {
 		return nil, nil
 	}
 	u, err := launch.PlatformURL("/agentplane/model-config")

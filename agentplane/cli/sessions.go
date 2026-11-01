@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sessionclient "github.com/agentydragon/ducktape/agentplane/session_client"
 	"github.com/spf13/cobra"
@@ -339,12 +339,12 @@ required for correlation; it is not generated or replaced by this CLI. This call
 	return command
 }
 
-func (a *app) readSessionSpec(source, additionalInstructions string) (*runnerpb.SessionSpec, error) {
+func (a *app) readSessionSpec(source, additionalInstructions string) (*sessionpb.SessionSpec, error) {
 	data, err := a.readSessionValue("--spec", source)
 	if err != nil {
 		return nil, err
 	}
-	spec := &runnerpb.SessionSpec{}
+	spec := &sessionpb.SessionSpec{}
 	if err := protojson.Unmarshal([]byte(data), spec); err != nil {
 		return nil, usageFailure("--spec: %v", err)
 	}

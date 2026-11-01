@@ -185,7 +185,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	}
 
 	if desiredState.Mode != lifecycle.Running {
-		// RunnerLifecycleController reaches lifecycle.Stopping only after every Session has halted. Until
+		// EnvironmentRuntimeLifecycleController reaches lifecycle.Stopping only after every Session has halted. Until
 		// then, the app-server remains available to finish those Sessions' native observations.
 		if outer.Stage < lifecycle.Stopping {
 			return write()

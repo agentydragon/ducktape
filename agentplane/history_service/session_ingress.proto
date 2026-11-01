@@ -1,0 +1,50 @@
+// The runner's push of its Sessions' journals to the one ingress its Sandbox names, served by the
+// History Service or by a client that keeps no history; contract in
+// agentplane/docs/runner_control.md § Event ingress.
+syntax = "proto3";
+
+package agentplane.history_service;
+
+import "agentplane/proto/event_log.proto";
+import "agentplane/proto/session.proto";
+import "agentplane/proto/sandboxes.proto";
+
+service SessionJournalIngress {
+  // Each call carries one Session; concurrent calls may copy the same immutable journal.
+  // The first response answers `announce`.
+  rpc Push(stream PushFrame) returns (stream Acknowledgement);
+}
+
+message PushFrame {
+  oneof frame {
+    // First frame, exactly once: the Session's snapshot. Its `session_id` is the UUID the client
+    // minted when it created the Session.
+    agentplane.proto.Attached announce = 1;
+    // The runner journal's verbatim entries in cursor order, starting at most one past the first
+    // acknowledgement's cursor. An entry at or below a committed cursor is an exact replay.
+    agentplane.proto.EventEntry entry = 2;
+    // Terminal: the journal is sealed at this cursor, and every entry through it precedes this.
+    agentplane.proto.Sealed sealed = 3;
+    // Sent on an idle call every 10 s.
+    Heartbeat heartbeat = 4;
+    // Alternative first frame for an explicitly authorized central sampler.
+    SamplerAnnouncement sampler_announce = 5;
+  }
+}
+
+// The ingress repeats its latest acknowledgement on an idle call every 10 s.
+message Acknowledgement {
+  // Every entry of the Session through this cursor is committed, including entries supplied by
+  // another call. May exceed this call's sent prefix; never decreases within a call.
+  uint64 cursor = 1;
+  // The seal at `cursor` is committed; the ingress accepts nothing more from this journal.
+  bool sealed = 2;
+}
+
+message SamplerAnnouncement {
+  agentplane.proto.Attached session = 1;
+  // Execution metadata, separate from the authenticated producer identity.
+  agentplane.proto.SandboxDestination executor = 2;
+}
+
+message Heartbeat {}

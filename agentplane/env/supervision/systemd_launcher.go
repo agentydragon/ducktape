@@ -25,8 +25,8 @@ const (
 // SystemdScopeID selects the process namespace used for stale-unit fencing.
 type SystemdScopeID string
 
-// SystemdRunnerScopeID preserves Runner's existing native process scope.
-const SystemdRunnerScopeID SystemdScopeID = "runner"
+// SystemdEnvironmentRuntimeScopeID owns the Environment Runtime's environment-level scope.
+const SystemdEnvironmentRuntimeScopeID SystemdScopeID = "environment-runtime"
 
 // SystemdOwner identifies the service whose lifetime bounds native processes.
 type SystemdOwner struct {
@@ -142,7 +142,7 @@ func openSystemdConnection() (*systemd.Conn, context.CancelFunc, error) {
 // Prepare uses the environment Runtime's legacy native-process scope.
 func (p *SystemdLauncher) Prepare(stateDir, sandboxUID string) (*Supervisor, error) {
 	return p.PrepareForOwner(stateDir, sandboxUID, SystemdOwner{
-		Unit: runtimeUnit, LifetimeDirectory: runtimeLifetimeDirectory, ScopeID: SystemdRunnerScopeID,
+		Unit: runtimeUnit, LifetimeDirectory: runtimeLifetimeDirectory, ScopeID: SystemdEnvironmentRuntimeScopeID,
 	})
 }
 
@@ -212,7 +212,7 @@ func (p *SystemdLauncher) PrepareForOwner(stateDir, sandboxUID string, owner Sys
 
 func systemdScopeIdentity(stateDir, sandboxUID string, owner SystemdOwner) string {
 	identity := stateDir + "\x00" + sandboxUID
-	if owner.ScopeID != SystemdRunnerScopeID {
+	if owner.ScopeID != SystemdEnvironmentRuntimeScopeID {
 		identity += "\x00" + string(owner.ScopeID)
 	}
 	return identity

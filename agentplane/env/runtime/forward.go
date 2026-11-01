@@ -10,8 +10,8 @@ import (
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	runtimecontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -25,8 +25,8 @@ type executionProxy struct {
 
 func newExecutionProxy(r *Runtime) *executionProxy { return &executionProxy{runtime: r} }
 
-func (r *Runtime) authorizeHostCall(ctx context.Context, mutation bool) (runnerservicepb.RunnerClient, context.Context, func(), error) {
-	var client runnerservicepb.RunnerClient
+func (r *Runtime) authorizeHostCall(ctx context.Context, mutation bool) (environmentruntimepb.EnvironmentRuntimeClient, context.Context, func(), error) {
+	var client environmentruntimepb.EnvironmentRuntimeClient
 	var outgoing context.Context
 	var admitted bool
 	err := r.control.Admit(ctx, func(epoch *runtimecontrol.Epoch) error {
@@ -79,7 +79,7 @@ func (r *Runtime) hostContext(ctx context.Context, binding *runtimepb.Binding) c
 	))
 }
 
-func (r *Runtime) ListSessions(ctx context.Context, request *runnerpb.ListSessionsRequest) (*runnerpb.ListSessionsResponse, error) {
+func (r *Runtime) ListSessions(ctx context.Context, request *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
 	client, outgoing, finish, err := r.authorizeHostCall(ctx, false)
 	if err != nil {
 		return nil, err
@@ -88,7 +88,7 @@ func (r *Runtime) ListSessions(ctx context.Context, request *runnerpb.ListSessio
 	return client.ListSessions(outgoing, request)
 }
 
-func (r *Runtime) GetStatus(ctx context.Context, request *runnerpb.GetStatusRequest) (*runnerpb.RunnerStatus, error) {
+func (r *Runtime) GetStatus(ctx context.Context, request *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	client, outgoing, finish, err := r.authorizeHostCall(ctx, false)
 	if err != nil {
 		return nil, err
@@ -98,13 +98,13 @@ func (r *Runtime) GetStatus(ctx context.Context, request *runnerpb.GetStatusRequ
 	if err != nil {
 		return nil, err
 	}
-	// RunnerBootId is the public control-server identity used by Gateway fencing. Host has
+	// EnvironmentRuntimeBootId is the public control-server identity used by Gateway fencing. Host has
 	// its own private process boot ID, which stays within the Runtime-to-Host lifecycle binding.
-	response.RunnerBootId = r.bootID
+	response.EnvironmentRuntimeBootId = r.bootID
 	return response, nil
 }
 
-func (r *Runtime) OpenSession(ctx context.Context, request *runnerservicepb.OpenSessionRequest) (*runnerservicepb.OpenSessionResponse, error) {
+func (r *Runtime) OpenSession(ctx context.Context, request *environmentruntimepb.OpenSessionRequest) (*environmentruntimepb.OpenSessionResponse, error) {
 	client, outgoing, finish, err := r.authorizeHostCall(ctx, true)
 	if err != nil {
 		return nil, err
@@ -113,7 +113,7 @@ func (r *Runtime) OpenSession(ctx context.Context, request *runnerservicepb.Open
 	return client.OpenSession(outgoing, request)
 }
 
-func (r *Runtime) SubmitInput(ctx context.Context, request *runnerservicepb.SubmitInputRequest) (*runnerservicepb.SubmitInputResponse, error) {
+func (r *Runtime) SubmitInput(ctx context.Context, request *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
 	client, outgoing, finish, err := r.authorizeHostCall(ctx, true)
 	if err != nil {
 		return nil, err
@@ -122,7 +122,7 @@ func (r *Runtime) SubmitInput(ctx context.Context, request *runnerservicepb.Subm
 	return client.SubmitInput(outgoing, request)
 }
 
-func (r *Runtime) ChangeModel(ctx context.Context, request *runnerservicepb.ChangeModelRequest) (*runnerservicepb.ChangeModelResponse, error) {
+func (r *Runtime) ChangeModel(ctx context.Context, request *environmentruntimepb.ChangeModelRequest) (*environmentruntimepb.ChangeModelResponse, error) {
 	client, outgoing, finish, err := r.authorizeHostCall(ctx, true)
 	if err != nil {
 		return nil, err
@@ -131,7 +131,7 @@ func (r *Runtime) ChangeModel(ctx context.Context, request *runnerservicepb.Chan
 	return client.ChangeModel(outgoing, request)
 }
 
-func (r *Runtime) ChangeReasoningEffort(ctx context.Context, request *runnerservicepb.ChangeReasoningEffortRequest) (*runnerservicepb.ChangeReasoningEffortResponse, error) {
+func (r *Runtime) ChangeReasoningEffort(ctx context.Context, request *environmentruntimepb.ChangeReasoningEffortRequest) (*environmentruntimepb.ChangeReasoningEffortResponse, error) {
 	client, outgoing, finish, err := r.authorizeHostCall(ctx, true)
 	if err != nil {
 		return nil, err
@@ -140,7 +140,7 @@ func (r *Runtime) ChangeReasoningEffort(ctx context.Context, request *runnerserv
 	return client.ChangeReasoningEffort(outgoing, request)
 }
 
-func (r *Runtime) InterruptTurn(ctx context.Context, request *runnerservicepb.InterruptTurnRequest) (*runnerservicepb.InterruptTurnResponse, error) {
+func (r *Runtime) InterruptTurn(ctx context.Context, request *environmentruntimepb.InterruptTurnRequest) (*environmentruntimepb.InterruptTurnResponse, error) {
 	client, outgoing, finish, err := r.authorizeHostCall(ctx, true)
 	if err != nil {
 		return nil, err
@@ -391,6 +391,6 @@ func (p *executionProxy) CloseFile(ctx context.Context, request *executorpb.Clos
 }
 
 var (
-	_ runnerservicepb.RunnerServer = (*Runtime)(nil)
+	_ environmentruntimepb.EnvironmentRuntimeServer = (*Runtime)(nil)
 	_ executorpb.ExecutorServer    = (*executionProxy)(nil)
 )

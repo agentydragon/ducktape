@@ -16,7 +16,7 @@ stop grace at launch; later `Stop(ctx)` calls use that immutable process policy.
 
 The lifecycle stream begins with HostHello (Host boot ID and Session socket). Runtime sends a
 LifecycleIntent bound to Runtime boot ID, Host boot ID and nonzero generation. Host reports readiness,
-native cleanup and RunnerFacts with that exact binding. Mode/identity changes require a new generation;
+native cleanup and EnvironmentRuntimeFacts with that exact binding. Mode/identity changes require a new generation;
 Execution fence acknowledgement may advance monotonically within the same generation.
 
 Runtime forwards native RPCs with `agentplane-runtime-boot-id`, `agentplane-harness-host-boot-id` and
@@ -41,6 +41,6 @@ process groups; abnormal replacement requires the outer container fence. VM nati
 Host's distinct systemd scope and invocation marker.
 
 Runtime keeps the legacy environment owner inode and `<state_dir>/sessions/sealed`. Host locks
-`<state_dir>/harness-host/.agentplane-runner-owner`; its records remain in `<state_dir>/sessions`,
+`<state_dir>/harness-host/.agentplane-harness-host-owner`; its records remain in `<state_dir>/sessions`,
 journals keep their IDs/cursors, and native homes remain at their existing paths. Bootstrap waiters use
 Runtime's generation-bound WaitBootstrap RPC; cancellation ends a waiter, never the bootstrap effect.

@@ -6,8 +6,8 @@ import (
 	"time"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/runner_transport"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
@@ -21,7 +21,7 @@ import (
 // Config contains the per-process Gateway role wiring. Public callers use TokenReview;
 // runner connections use explicitly configured transport security and incarnation-fenced metadata.
 type Config struct {
-	RunnerSecurity           runner_transport.Security
+	RunnerSecurity           environment_runtime_transport.Security
 	Namespace                string
 	CallerAccounts           []auth.Account
 	SandboxControllerAccount *auth.Account
@@ -136,8 +136,8 @@ func New(
 	}, nil
 }
 
-// Methods admits the callers of the Runner proxy and the typed execution API. Only the Sandbox controller may
-// quiesce a runner; with no controller configured, nobody may.
+// Methods admits callers of the Environment Runtime proxy and the typed execution API. Only the Sandbox
+// controller may quiesce the Environment Runtime; with no controller configured, nobody may.
 func (g *Gateway) Methods() auth.Methods {
 	callers := auth.Accounts(g.callerAuth, g.config.CallerAccounts)
 	var controllers []auth.Account
@@ -146,30 +146,30 @@ func (g *Gateway) Methods() auth.Methods {
 	}
 	executors := auth.Accounts(g.callerAuth, g.config.ExecutorCallers)
 	return auth.Methods{
-		runnerservicepb.Runner_ListSessions_FullMethodName:          callers,
-		runnerservicepb.Runner_GetStatus_FullMethodName:             callers,
-		runnerservicepb.Runner_OpenSession_FullMethodName:           callers,
-		runnerservicepb.Runner_SubmitInput_FullMethodName:           callers,
-		runnerservicepb.Runner_ChangeModel_FullMethodName:           callers,
-		runnerservicepb.Runner_ChangeReasoningEffort_FullMethodName: callers,
-		runnerservicepb.Runner_InterruptTurn_FullMethodName:         callers,
-		runnerservicepb.Runner_Quiesce_FullMethodName:               auth.Accounts(g.callerAuth, controllers),
-		executorpb.Executor_OpenSession_FullMethodName:              executors,
-		executorpb.Executor_StartProcess_FullMethodName:             executors,
-		executorpb.Executor_ReadProcess_FullMethodName:              executors,
-		executorpb.Executor_WriteProcess_FullMethodName:             executors,
-		executorpb.Executor_SignalProcess_FullMethodName:            executors,
-		executorpb.Executor_TerminateProcess_FullMethodName:         executors,
-		executorpb.Executor_GetFileMetadata_FullMethodName:          executors,
-		executorpb.Executor_OpenFile_FullMethodName:                 executors,
-		executorpb.Executor_ReadFile_FullMethodName:                 executors,
-		executorpb.Executor_CloseFile_FullMethodName:                executors,
+		environmentruntimepb.EnvironmentRuntime_ListSessions_FullMethodName:          callers,
+		environmentruntimepb.EnvironmentRuntime_GetStatus_FullMethodName:             callers,
+		environmentruntimepb.EnvironmentRuntime_OpenSession_FullMethodName:           callers,
+		environmentruntimepb.EnvironmentRuntime_SubmitInput_FullMethodName:           callers,
+		environmentruntimepb.EnvironmentRuntime_ChangeModel_FullMethodName:           callers,
+		environmentruntimepb.EnvironmentRuntime_ChangeReasoningEffort_FullMethodName: callers,
+		environmentruntimepb.EnvironmentRuntime_InterruptTurn_FullMethodName:         callers,
+		environmentruntimepb.EnvironmentRuntime_Quiesce_FullMethodName:               auth.Accounts(g.callerAuth, controllers),
+		executorpb.Executor_OpenSession_FullMethodName:                               executors,
+		executorpb.Executor_StartProcess_FullMethodName:                              executors,
+		executorpb.Executor_ReadProcess_FullMethodName:                               executors,
+		executorpb.Executor_WriteProcess_FullMethodName:                              executors,
+		executorpb.Executor_SignalProcess_FullMethodName:                             executors,
+		executorpb.Executor_TerminateProcess_FullMethodName:                          executors,
+		executorpb.Executor_GetFileMetadata_FullMethodName:                           executors,
+		executorpb.Executor_OpenFile_FullMethodName:                                  executors,
+		executorpb.Executor_ReadFile_FullMethodName:                                  executors,
+		executorpb.Executor_CloseFile_FullMethodName:                                 executors,
 	}
 }
 
-// RegisterProxy installs the per-Sandbox Runner proxy.
+// RegisterProxy installs the per-Sandbox Environment Runtime proxy.
 func (g *Gateway) RegisterProxy(server *grpc.Server) {
-	runnerservicepb.RegisterRunnerServer(server, &runnerProxy{gateway: g})
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, &environmentRuntimeProxy{gateway: g})
 }
 
 // RegisterExecutor enables the typed execution path only when its own caller allowlist is

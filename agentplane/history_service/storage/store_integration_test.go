@@ -12,7 +12,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
@@ -138,8 +138,8 @@ func removedRanges(page *historypb.ReadSessionEventsResponse) []CursorRange {
 }
 
 func stoppedAt(sessionID uuid.UUID, cursor uint64) *historypb.SessionFeedState {
-	return &historypb.SessionFeedState{Attached: &runnerpb.Attached{
-		SessionId: sessionID.String(), LastCursor: cursor, HarnessState: runnerpb.HarnessState_HARNESS_STATE_STOPPED,
+	return &historypb.SessionFeedState{Attached: &sessionpb.Attached{
+		SessionId: sessionID.String(), LastCursor: cursor, HarnessState: sessionpb.HarnessState_HARNESS_STATE_STOPPED,
 	}}
 }
 
@@ -460,10 +460,10 @@ func TestFeedSnapshotNeedsCoveredBoundHistoryAndCannotRegress(t *testing.T) {
 	}
 	record(feed)
 	conflicting := proto.Clone(feed).(*historypb.SessionFeedState)
-	conflicting.Attached.Spec = &runnerpb.SessionSpec{Cwd: "/another-workspace"}
+	conflicting.Attached.Spec = &sessionpb.SessionSpec{Cwd: "/another-workspace"}
 	assertError(t, store.RecordFeedState(t.Context(), sessionID, conflicting), ErrConflict)
 
-	feed.Attached.HarnessState = runnerpb.HarnessState_HARNESS_STATE_RUNNING
+	feed.Attached.HarnessState = sessionpb.HarnessState_HARNESS_STATE_RUNNING
 	record(feed)
 	assertFeedState(t, NewStore(db, false), sessionID, feed)
 
@@ -474,7 +474,7 @@ func TestFeedSnapshotNeedsCoveredBoundHistoryAndCannotRegress(t *testing.T) {
 	appendEntries(t, store, sessionID, entryFrom("source", 2, true))
 	feed.Attached.LastCursor = 2
 	record(feed)
-	record(&historypb.SessionFeedState{Attached: &runnerpb.Attached{SessionId: sessionID.String(), LastCursor: 1}})
+	record(&historypb.SessionFeedState{Attached: &sessionpb.Attached{SessionId: sessionID.String(), LastCursor: 1}})
 	page := readPage(t, store, sessionID, 2, 128)
 	if page.LastCursor != 2 || len(page.Entries) != 0 || !proto.Equal(page.FeedState, feed) {
 		t.Fatalf("page %v does not carry the newer snapshot", page)
@@ -488,15 +488,15 @@ func TestSealEndsCommittedHistoryAndIsSticky(t *testing.T) {
 	store := testStore(t)
 	sessionID := opened(t, store)
 	appendEntries(t, store, sessionID, entry(1), entry(2))
-	attachedAt := func(cursor uint64) *runnerpb.Attached {
-		return &runnerpb.Attached{SessionId: sessionID.String(), LastCursor: cursor}
+	attachedAt := func(cursor uint64) *sessionpb.Attached {
+		return &sessionpb.Attached{SessionId: sessionID.String(), LastCursor: cursor}
 	}
 	sealedAt := func(cursor uint64) *historypb.SessionFeedState {
-		return &historypb.SessionFeedState{Attached: attachedAt(cursor), Sealed: &runnerpb.Sealed{Cursor: cursor}}
+		return &historypb.SessionFeedState{Attached: attachedAt(cursor), Sealed: &sessionpb.Sealed{Cursor: cursor}}
 	}
 	// A seal that stops short of the committed history is refused.
 	assertError(t, store.RecordFeedState(t.Context(), sessionID, &historypb.SessionFeedState{
-		Attached: attachedAt(1), Sealed: &runnerpb.Sealed{Cursor: 1},
+		Attached: attachedAt(1), Sealed: &sessionpb.Sealed{Cursor: 1},
 	}), ErrConflict)
 	if err := store.RecordFeedState(t.Context(), sessionID, sealedAt(2)); err != nil {
 		t.Fatal(err)
@@ -510,7 +510,7 @@ func TestSealEndsCommittedHistoryAndIsSticky(t *testing.T) {
 		t.Fatalf("a snapshot without a seal dropped it: %v", stored)
 	}
 	assertError(t, store.RecordFeedState(t.Context(), sessionID, &historypb.SessionFeedState{
-		Attached: attachedAt(2), Sealed: &runnerpb.Sealed{Cursor: 3},
+		Attached: attachedAt(2), Sealed: &sessionpb.Sealed{Cursor: 3},
 	}), ErrConflict)
 }
 
@@ -520,8 +520,8 @@ func TestReopeningASealNeedsASnapshotThatReachesIt(t *testing.T) {
 	appendEntries(t, store, sessionID, entry(1), entry(2))
 	incarnation := "test-incarnation-1"
 	sealed := &historypb.SessionFeedState{
-		Attached: &runnerpb.Attached{SessionId: sessionID.String(), LastCursor: 2},
-		Sealed:   &runnerpb.Sealed{Cursor: 2, IncarnationUid: &incarnation},
+		Attached: &sessionpb.Attached{SessionId: sessionID.String(), LastCursor: 2},
+		Sealed:   &sessionpb.Sealed{Cursor: 2, IncarnationUid: &incarnation},
 	}
 	if err := store.RecordFeedState(t.Context(), sessionID, sealed); err != nil {
 		t.Fatal(err)

@@ -9,9 +9,9 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -48,11 +48,11 @@ type RoutingRunner struct {
 	Timeout time.Duration
 }
 
-func centralSpec(spec *runnerpb.SessionSpec) bool {
-	return spec.GetHarness() == runnerpb.Harness_HARNESS_CENTRAL_SAMPLER
+func centralSpec(spec *sessionpb.SessionSpec) bool {
+	return spec.GetHarness() == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER
 }
 
-func sessionRequiresReadyExecutor(spec *runnerpb.SessionSpec) bool {
+func sessionRequiresReadyExecutor(spec *sessionpb.SessionSpec) bool {
 	return !centralSpec(spec)
 }
 
@@ -63,7 +63,7 @@ func validateOpeningExecutor(opening *Opening, sandbox SandboxSnapshot) error {
 	return nil
 }
 
-func ValidateRuntime(spec *runnerpb.SessionSpec, setup *string, target *CentralTarget) error {
+func ValidateRuntime(spec *sessionpb.SessionSpec, setup *string, target *CentralTarget) error {
 	if !centralSpec(spec) {
 		return nil
 	}
@@ -95,7 +95,7 @@ func (r *RoutingRunner) withClient(ctx context.Context, call func(context.Contex
 	return call(metadata.NewOutgoingContext(ctx, metadata.MD{}), samplerpb.NewSamplerClient(conn))
 }
 
-func (r *RoutingRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot, id string, spec *runnerpb.SessionSpec, setup *string, executionPrincipal *delegationpb.ServiceAccountIdentity) error {
+func (r *RoutingRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot, id string, spec *sessionpb.SessionSpec, setup *string, executionPrincipal *delegationpb.ServiceAccountIdentity) error {
 	if err := ValidateRuntime(spec, setup, r.Target); err != nil {
 		return err
 	}
@@ -134,25 +134,25 @@ func (r *RoutingRunner) Deliver(ctx context.Context, sandbox SandboxSnapshot, id
 	err = r.withClient(ctx, func(ctx context.Context, client samplerpb.SamplerClient) error {
 		switch payload := command.GetOperation().(type) {
 		case *commandpb.Command_SubmitInput:
-			reply, err := client.SubmitInput(ctx, &runnerservicepb.SubmitInputRequest{SessionId: id, CommandId: command.GetCommandId(), Text: payload.SubmitInput.GetText()})
+			reply, err := client.SubmitInput(ctx, &environmentruntimepb.SubmitInputRequest{SessionId: id, CommandId: command.GetCommandId(), Text: payload.SubmitInput.GetText()})
 			if err == nil {
 				admission = reply.GetAdmission()
 			}
 			return err
 		case *commandpb.Command_ChangeModel:
-			reply, err := client.ChangeModel(ctx, &runnerservicepb.ChangeModelRequest{SessionId: id, CommandId: command.GetCommandId(), Model: payload.ChangeModel.GetModel()})
+			reply, err := client.ChangeModel(ctx, &environmentruntimepb.ChangeModelRequest{SessionId: id, CommandId: command.GetCommandId(), Model: payload.ChangeModel.GetModel()})
 			if err == nil {
 				admission = reply.GetAdmission()
 			}
 			return err
 		case *commandpb.Command_ChangeReasoningEffort:
-			reply, err := client.ChangeReasoningEffort(ctx, &runnerservicepb.ChangeReasoningEffortRequest{SessionId: id, CommandId: command.GetCommandId(), Effort: payload.ChangeReasoningEffort.GetEffort()})
+			reply, err := client.ChangeReasoningEffort(ctx, &environmentruntimepb.ChangeReasoningEffortRequest{SessionId: id, CommandId: command.GetCommandId(), Effort: payload.ChangeReasoningEffort.GetEffort()})
 			if err == nil {
 				admission = reply.GetAdmission()
 			}
 			return err
 		case *commandpb.Command_InterruptTurn:
-			reply, err := client.InterruptTurn(ctx, &runnerservicepb.InterruptTurnRequest{SessionId: id, CommandId: command.GetCommandId(), TurnId: payload.InterruptTurn.GetTurnId()})
+			reply, err := client.InterruptTurn(ctx, &environmentruntimepb.InterruptTurnRequest{SessionId: id, CommandId: command.GetCommandId(), TurnId: payload.InterruptTurn.GetTurnId()})
 			if err == nil {
 				admission = reply.GetAdmission()
 			}

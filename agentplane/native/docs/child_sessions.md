@@ -13,7 +13,7 @@ The evidence establishes usable native execution and observation, not automatic 
 identity, authorization, transcript reconciliation or independent control. Discovery therefore does
 not by itself remove the remaining product/authority decisions for child Session projection.
 
-The runner's [root-only normalization contract](../../runner/README.md#native-subagents) retains
+The Harness Host's [root-only normalization contract](../../env/harnesshost/docs/session_protocol.md#native-subagents) retains
 raw child frames and parent delegation results without letting children mutate root turn/input state.
 Child Session discovery remains deferred; its unmeasured configurations and control experiments
 are not additional acceptance gates for native delegation.

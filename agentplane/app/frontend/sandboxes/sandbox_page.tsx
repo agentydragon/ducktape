@@ -40,7 +40,7 @@ import { langfuseSandboxTraceUrl } from "../langfuse_search";
 import { traceSearchUrl } from "../trace_search";
 import { useFrontendConfig } from "../frontend_config";
 import { TopbarActions, TopbarTitle } from "../topbar";
-import type { SessionSpec } from "../../../proto/runner_pb";
+import type { SessionSpec } from "../../../proto/session_pb";
 
 // Persist only the Session ID, never instructions or setup scripts (which can contain secrets).
 function pendingOpenKey(sandbox: string): string {

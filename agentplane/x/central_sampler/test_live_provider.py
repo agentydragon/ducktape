@@ -16,8 +16,8 @@ import pytest
 import pytest_bazel
 from pydantic import SecretStr
 
+from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.proto import event_pb2
-from agentplane.runner import runner_service_pb2
 from agentplane.x.central_sampler import sampler_pb2, sampler_pb2_grpc
 from agentplane.x.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig
 from agentplane.x.central_sampler.testing import METADATA, open_request, service, settings
@@ -60,7 +60,7 @@ async def follow_turn(stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, 
 
 async def submit(stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, command_id: str, text: str) -> Turn:
     await stub.SubmitInput(
-        runner_service_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text=text),
+        environment_runtime_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text=text),
         metadata=METADATA,
         timeout=10,
     )

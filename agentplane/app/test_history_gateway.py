@@ -12,10 +12,10 @@ from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.runner_gateway import admitted, delivered_opening
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2
-from agentplane.proto import command_pb2, runner_pb2
-from agentplane.runner import runner_service_pb2
-from agentplane.runner.testing import launches
-from agentplane.runner.testing.process import RunningRunner
+from agentplane.proto import command_pb2, session_pb2
+from agentplane.env.runtime.control import environment_runtime_pb2
+from agentplane.env.e2e.testing import launches
+from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
@@ -36,7 +36,7 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
     event_logs: SessionHistory,
     http: httpx.AsyncClient,
     runner: RunningRunner,
-    spec: runner_pb2.SessionSpec,
+    spec: session_pb2.SessionSpec,
     model: ScriptedModel,
 ) -> None:
     response = await http.post(
@@ -54,7 +54,7 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
     status = await runner_client.status()
     assert not status.processes
     (dormant,) = [row for row in status.sessions if row.session_id == str(thread)]
-    assert dormant.execution_state == runner_pb2.SESSION_EXECUTION_STATE_DORMANT
+    assert dormant.execution_state == session_pb2.SESSION_EXECUTION_STATE_DORMANT
     first = command_pb2.Command(command_id="remote-first", submit_input=command_pb2.SubmitInput(text="first"))
     receipt = await admitted(
         session_dispatcher,
@@ -99,7 +99,7 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
     stopped = await runner_client.status()
     assert not stopped.processes
     (stopped_session,) = [row for row in stopped.sessions if row.session_id == str(thread)]
-    assert stopped_session.execution_state == runner_pb2.SESSION_EXECUTION_STATE_DORMANT
+    assert stopped_session.execution_state == session_pb2.SESSION_EXECUTION_STATE_DORMANT
     assert stopped_session.native_session_id == native_session_id
     second = command_pb2.Command(command_id="remote-second", submit_input=command_pb2.SubmitInput(text="second"))
     next_receipt = await admitted(
@@ -170,20 +170,20 @@ async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
     sandbox_control: SandboxControlClient,
     session_dispatcher: SessionDispatcherClient,
     runner: RunningRunner,
-    spec: runner_pb2.SessionSpec,
+    spec: session_pb2.SessionSpec,
     model: ScriptedModel,
 ) -> None:
     session_id = str(uuid4())
     await sandbox_control.runner_unary(
         sandbox.destination,
         lambda stub: stub.OpenSession,
-        runner_service_pb2.OpenSessionRequest(session_id=session_id, spec=spec),
+        environment_runtime_pb2.OpenSessionRequest(session_id=session_id, spec=spec),
         timeout_s=sandbox_control.lifecycle_timeout_s,
     )
     await sandbox_control.runner_unary(
         sandbox.destination,
         lambda stub: stub.SubmitInput,
-        runner_service_pb2.SubmitInputRequest(session_id=session_id, command_id="first", text="hi"),
+        environment_runtime_pb2.SubmitInputRequest(session_id=session_id, command_id="first", text="hi"),
     )
     await model.reply(await model.request(), Text("hello"))
     client = sandbox_control.runner(sandbox.destination)
@@ -208,11 +208,11 @@ async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
     ):
         with attempt:
             (summary,) = await client.list_sessions()
-            assert summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+            assert summary.harness_state == session_pb2.HARNESS_STATE_STOPPED
     status = await client.status()
     assert not status.processes
     (dormant,) = [row for row in status.sessions if row.session_id == session_id]
-    assert dormant.execution_state == runner_pb2.SESSION_EXECUTION_STATE_DORMANT
+    assert dormant.execution_state == session_pb2.SESSION_EXECUTION_STATE_DORMANT
     assert dormant.native_session_id == native_session_id
 
     receipt = await admitted(

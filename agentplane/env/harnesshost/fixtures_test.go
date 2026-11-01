@@ -5,7 +5,7 @@ import (
 	"time"
 
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -41,7 +41,7 @@ func hostContext(r *Runner, ctx context.Context) context.Context {
 	return bindingContext(ctx, r.intent.Binding)
 }
 
-func quiesceHost(ctx context.Context, r *Runner) (*runnerpb.QuiesceResponse, error) {
+func quiesceHost(ctx context.Context, r *Runner) (*sessionpb.QuiesceResponse, error) {
 	r.mu.Lock()
 	intent := proto.Clone(r.intent).(*runtimepb.LifecycleIntent)
 	r.mu.Unlock()
@@ -70,5 +70,5 @@ func quiesceHost(ctx context.Context, r *Runner) (*runnerpb.QuiesceResponse, err
 			r.fail(err)
 		}
 	}()
-	return &runnerpb.QuiesceResponse{}, nil
+	return &sessionpb.QuiesceResponse{}, nil
 }

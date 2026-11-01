@@ -27,9 +27,9 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
+from agentplane.env.config import GuestResources, ResourceLimits
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
 from agentplane.notification_service.settings import NoticeDebounceSettings
-from agentplane.runner.configuration import GuestResources, ResourceLimits
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
 from agentplane.x.central_sampler.settings import (
@@ -88,10 +88,10 @@ from cluster.cdk8s.agentplane.environment import (
     ReplicaProfile,
     WebPushProps,
 )
+from cluster.cdk8s.agentplane.environment_sandbox import KeyFile
 from cluster.cdk8s.agentplane.generation import ManifestLayout
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, model_configs
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
-from cluster.cdk8s.agentplane.runner_sandbox import KeyFile
 from cluster.cdk8s.agentplane.sandbox_pod import SECRET_NAME as SANDBOX_SECRET_NAME, TOOL_CONFIG_GRANT
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
@@ -205,9 +205,9 @@ _OIDC_SESSION_SECRET = "agentplane-staging-session-secret"
 _CONNECTION_SERVICE = mcp_edge.service(STAGING_NAMESPACE)
 # staging's one Pod execution environment, and the ducktape tools image it runs; `image-pins/` selects
 # the published tag. Live Sandboxes and presets name this template, so it keeps the name it shipped with.
-POD_TEMPLATE = "runner-ducktape"
-_RUNNER_IMAGE = "git.allegedly.works/ducktape-ci/runner-ducktape"
-# The canonical BuildBuddy key, projected into the runner's workload containers for real `bbr` runs and
+POD_TEMPLATE = "environment-tools"
+_ENVIRONMENT_TOOLS_IMAGE = "git.allegedly.works/ducktape-ci/environment-tools"
+# The canonical BuildBuddy key, projected into the Environment Runtime workload containers for real `bbr` runs and
 # named there for the harnesses it spawns (agentplane/docs/buildbuddy_remote_auth.md's stopgap). ESO
 # copies the secret below; the egress policy still bounds where the key can travel.
 _BUILDBUDDY_KEY = KeyFile(
@@ -389,7 +389,7 @@ _ACTION_GROUPS = {
 LAYOUT = ManifestLayout(
     flux_description=(
         "Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, "
-        "Actions, app, runner template, and operator RBAC."
+        "Actions, app, environment-tools template, and operator RBAC."
     ),
     output_dir=f"{HAND_WRITTEN_ROOT}/{STAGING_NAMESPACE}",
     image_pins=f"{HAND_WRITTEN_ROOT}/{STAGING_NAMESPACE}/image-pins",
@@ -633,9 +633,9 @@ def chart(app: App) -> Chart:
         db=DbProps(
             instances=2, wal_archive=True, profile=cnpg.OVH_PIRAEUS_SSD, size="16Gi", resize_in_use_volumes=True
         ),
-        runner_name=POD_TEMPLATE,
-        runner_image=_RUNNER_IMAGE,
-        runner_key_files=(_BUILDBUDDY_KEY,),
+        environment_template_name=POD_TEMPLATE,
+        environment_tools_image=_ENVIRONMENT_TOOLS_IMAGE,
+        environment_runtime_key_files=(_BUILDBUDDY_KEY,),
     )
     NetworkPolicy(
         chart,
@@ -645,7 +645,7 @@ def chart(app: App) -> Chart:
         egress=[_CONNECTION_SERVICE.egress()],
     )
     # Reuse the canonical key via ESO; do not grant the sandbox ServiceAccount get-secrets RBAC. The
-    # runner template projects `_BUILDBUDDY_KEY` into its workload containers only.
+    # environment-tools template projects `_BUILDBUDDY_KEY` into its workload containers only.
     credential_external_secret(
         chart,
         namespace=STAGING_NAMESPACE,

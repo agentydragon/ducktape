@@ -21,7 +21,7 @@ import type { Live } from "../live";
 import { SandboxRoute } from "../app";
 import { SandboxPage } from "./sandbox_page";
 import { TopbarContext } from "../topbar";
-import type { RunnerStatusView } from "./client";
+import type { EnvironmentRuntimeStatusView } from "./client";
 import type { SandboxSnapshot } from "./live";
 
 const fetchMock = vi.hoisted(() => {
@@ -170,7 +170,7 @@ async function render(
   routeNavigation = false,
   runnerStatus: () => Promise<Response> = async () =>
     Response.json({
-      runner_boot_id: "boot-visual-001",
+      environment_runtime_boot_id: "boot-visual-001",
       processes: [
         {
           process_id: "process-claude-001",
@@ -445,18 +445,18 @@ it("opens the Kubernetes status items that have an unmet condition and no others
 });
 
 it("refreshes the runner snapshot and replaces old process and Session details", async () => {
-  let status: RunnerStatusView = {
-    runner_boot_id: "boot-before-refresh",
+  let status: EnvironmentRuntimeStatusView = {
+    environment_runtime_boot_id: "boot-before-refresh",
     lifecycle: {
-      desired_mode: "RUNNER_LIFECYCLE_MODE_QUIESCING",
+      desired_mode: "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING",
       desired_generation: "7",
       progress_generation: "7",
       progress_available: true,
       progress_current: true,
-      stage: "RUNNER_LIFECYCLE_STAGE_FLUSHING",
+      stage: "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING",
       error: "",
       blocker: {
-        kind: "RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT",
+        kind: "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT",
         error: "",
         resource_type: "IngressAcknowledgements.agentplane",
         resource_id: "session-before-refresh",
@@ -508,14 +508,14 @@ it("refreshes the runner snapshot and replaces old process and Session details",
   expect(container.textContent).toContain("Acknowledged cursor · 11 of 12 · sealed yes");
 
   status = {
-    runner_boot_id: "boot-after-refresh",
+    environment_runtime_boot_id: "boot-after-refresh",
     lifecycle: {
-      desired_mode: "RUNNER_LIFECYCLE_MODE_CLOSING",
+      desired_mode: "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_CLOSING",
       desired_generation: "8",
       progress_generation: "8",
       progress_available: true,
       progress_current: true,
-      stage: "RUNNER_LIFECYCLE_STAGE_CLOSED",
+      stage: "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_CLOSED",
       error: "",
       blocker: null,
     },

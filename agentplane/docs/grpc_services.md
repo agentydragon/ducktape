@@ -15,7 +15,7 @@ follows it; code that differs converges on it.
   (`<name>_pb2_grpc`, typed by its generated `.pyi`).
 - RPC `X` takes `XRequest` and returns `XResponse`, each its own message even when it wraps a single
   field, so either side can grow without a new method. The exception is a stream whose messages are
-  frames of a protocol rather than one call's arguments, like `RunnerIngress.Push`'s
+  frames of a protocol rather than one call's arguments, like `SessionJournalIngress.Push`'s
   `PushFrame`/`Acknowledgement`.
 
 ## Servicers
@@ -187,7 +187,7 @@ does not require an HTTP facade.
   timeout never limits a server stream, which ends with its request/session lifetime. Gateway clients
   disable retries so mutations cannot be replayed by the transport.
 - **Exposure:** only an RPC with a rule is on HTTP, so the full-duplex
-  `RunnerIngress.Push` and the private `Runner` service stay native gRPC. Operator and workload
+  `SessionJournalIngress.Push` and the private `Runner` service stay native gRPC. Operator and workload
   callers get separate proto services (`OperatorActionService` beside `ActionService`,
   `NotificationsOperator` beside `Notifications`), each authenticating its own audience. HTTP exposure is a separate choice from the service's implementation language.
 - **Wire form:** stock gRPC-Gateway. Fields are camelCase, enums their names, unpopulated fields

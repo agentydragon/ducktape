@@ -17,9 +17,9 @@ from agentplane.history_service.testing.fixtures import (
     service_database_template,
     service_history_db_url,
 )
-from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
-from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner_gateway, spec, workspace
-from agentplane.runner.testing.process import RunningRunner
+from agentplane.env.e2e.testing.failure_journal import pytest_runtest_makereport
+from agentplane.env.e2e.testing.fixtures import config, endpoint, harness, model, runner_gateway, spec, workspace
+from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
 from util.testing.postgres_fixtures import (

@@ -4401,7 +4401,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, Actions, app, runner template, and operator RBAC.
+    description: Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, Actions, app, environment-tools template, and operator RBAC.
   name: agentplane-staging
   namespace: ducktape-flux
 spec:

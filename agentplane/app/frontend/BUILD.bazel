@@ -83,8 +83,8 @@ filegroup(
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:event_pb",
-        "//agentplane/proto:runner_pb",
         "//agentplane/proto:sandboxes_pb",
+        "//agentplane/proto:session_pb",
     ],
 )
 
@@ -907,7 +907,7 @@ ts_library(
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:local_commands",
-        "//agentplane/proto:runner_pb",
+        "//agentplane/proto:session_pb",
         "//util/frontend:clamped_block",
         "//util/frontend:disclosure",
         "//util/frontend/transcript:history_sizes",

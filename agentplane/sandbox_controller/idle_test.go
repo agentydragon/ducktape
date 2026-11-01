@@ -26,7 +26,7 @@ var runnerIdleSince = testNow.Add(-time.Hour)
 func publishIdleSince(t *testing.T, c client.Client, at *time.Time) {
 	t.Helper()
 	var lease coordinationv1.Lease
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.RunnerLeaseSuffix}, &lease); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix}, &lease); err != nil {
 		t.Fatal(err)
 	}
 	if at == nil {
@@ -60,7 +60,7 @@ func idleRunner(t *testing.T, after *time.Duration) (r *Reconciler, c client.Cli
 	r.Now = func() time.Time { return *now }
 	// A connection that outlasts the test, so its lapse schedules no recheck of its own.
 	var lease coordinationv1.Lease
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.RunnerLeaseSuffix}, &lease); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix}, &lease); err != nil {
 		t.Fatal(err)
 	}
 	lease.Spec.LeaseDurationSeconds = new(int32)

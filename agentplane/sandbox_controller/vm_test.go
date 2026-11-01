@@ -25,7 +25,7 @@ func testVMTemplate(image string) *sandboxapi.SandboxTemplate {
 	template.Spec.VM = &kubevirtv1.VirtualMachineSpec{
 		DataVolumeTemplates: []kubevirtv1.DataVolumeTemplateSpec{{ObjectMeta: metav1.ObjectMeta{Name: workspaceVolume}}},
 		Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app.kubernetes.io/name": "test-runner-vm"}},
+			ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app.kubernetes.io/name": "test-environment-vm"}},
 			Spec: kubevirtv1.VirtualMachineInstanceSpec{
 				Domain: kubevirtv1.DomainSpec{Devices: kubevirtv1.Devices{Disks: []kubevirtv1.Disk{{Name: "root"}, {Name: workspaceVolume}}}},
 				Volumes: []kubevirtv1.Volume{
@@ -155,7 +155,7 @@ func TestVMTemplateGetsARunningVMWithStateOverVirtiofs(t *testing.T) {
 	if !vmRunning(vm) {
 		t.Errorf("VM run strategy = %v, want Always", vm.Spec.RunStrategy)
 	}
-	if labels := vm.Spec.Template.ObjectMeta.Labels; labels[sandboxapi.SandboxLabel] != sandboxName || labels["app.kubernetes.io/name"] != "test-runner-vm" {
+	if labels := vm.Spec.Template.ObjectMeta.Labels; labels[sandboxapi.SandboxLabel] != sandboxName || labels["app.kubernetes.io/name"] != "test-environment-vm" {
 		t.Errorf("VMI template labels = %v; the VMI and its virt-launcher Pod need the Sandbox label", labels)
 	}
 	state := volume(vm, "state")
@@ -167,7 +167,7 @@ func TestVMTemplateGetsARunningVMWithStateOverVirtiofs(t *testing.T) {
 	for _, filesystem := range filesystems {
 		filesystemNames[filesystem.Name] = filesystem.Virtiofs != nil
 	}
-	if len(filesystems) != 3 || !filesystemNames["state"] || !filesystemNames[RunnerTLSVolumeName] || !filesystemNames[RunnerTrustVolumeName] {
+	if len(filesystems) != 3 || !filesystemNames["state"] || !filesystemNames[EnvironmentRuntimeTLSVolumeName] || !filesystemNames[EnvironmentRuntimeTrustVolumeName] {
 		t.Errorf("VM filesystems = %v, want state and runner TLS/trust volumes over virtiofs", filesystems)
 	}
 	// One template serves many Sandboxes, and DataVolume names are per namespace.

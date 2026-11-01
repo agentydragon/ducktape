@@ -14,7 +14,7 @@ import (
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -26,7 +26,7 @@ type directExecutionTestClient struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 	conn        *grpc.ClientConn
-	runner      runnerservicepb.RunnerClient
+	runner      environmentruntimepb.EnvironmentRuntimeClient
 	executor    executorpb.ExecutorClient
 	callCtx     context.Context
 	bootID      string
@@ -56,8 +56,8 @@ func startDirectExecutionTestClient(t *testing.T, r *Runtime, incarnation string
 		_ = listener.Close()
 		t.Fatal(err)
 	}
-	runnerClient := runnerservicepb.NewRunnerClient(conn)
-	watch, err := runnerClient.WatchState(ctx, &runnerservicepb.WatchStateRequest{
+	runnerClient := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
+	watch, err := runnerClient.WatchState(ctx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: r.config.Launch.Sandbox.UID, IncarnationUid: incarnation, ConnectionEpoch: 1,
 	})
 	if err != nil {
@@ -79,7 +79,7 @@ func startDirectExecutionTestClient(t *testing.T, r *Runtime, incarnation string
 		ctx,
 		control.SandboxMetadata, r.config.Launch.Sandbox.UID,
 		control.IncarnationMetadata, incarnation,
-		control.BootMetadata, first.GetRunnerBootId(),
+		control.BootMetadata, first.GetEnvironmentRuntimeBootId(),
 		control.EpochMetadata, "1",
 	)
 	t.Cleanup(func() {
@@ -91,7 +91,7 @@ func startDirectExecutionTestClient(t *testing.T, r *Runtime, incarnation string
 	return &directExecutionTestClient{
 		ctx: ctx, cancel: cancel, conn: conn, runner: runnerClient,
 		executor: executorpb.NewExecutorClient(conn), callCtx: callCtx,
-		bootID: first.GetRunnerBootId(), incarnation: incarnation, identity: r.config.Launch.Sandbox,
+		bootID: first.GetEnvironmentRuntimeBootId(), incarnation: incarnation, identity: r.config.Launch.Sandbox,
 	}
 }
 
@@ -111,7 +111,7 @@ func (h *directExecutionTestClient) scope(sessionID string) *executorpb.Executio
 }
 
 func (h *directExecutionTestClient) replaceWatch(incarnation string, epoch uint64) error {
-	watch, err := h.runner.WatchState(h.ctx, &runnerservicepb.WatchStateRequest{
+	watch, err := h.runner.WatchState(h.ctx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: h.identity.UID, IncarnationUid: incarnation, ConnectionEpoch: epoch,
 	})
 	if err != nil {
@@ -122,7 +122,7 @@ func (h *directExecutionTestClient) replaceWatch(incarnation string, epoch uint6
 		return err
 	}
 	h.incarnation = incarnation
-	h.bootID = first.GetRunnerBootId()
+	h.bootID = first.GetEnvironmentRuntimeBootId()
 	h.callCtx = metadata.AppendToOutgoingContext(
 		h.ctx,
 		control.SandboxMetadata, h.identity.UID,

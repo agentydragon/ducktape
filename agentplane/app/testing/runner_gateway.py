@@ -14,16 +14,16 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.grpc.calls import bearer
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
-from agentplane.runner.configuration import Endpoint, RunnerControl
-from agentplane.runner.testing.config import RunnerTestConfig
-from agentplane.runner.testing.failure_journal import FailureEvidence
-from agentplane.runner.testing.gateway import Gateway
-from agentplane.runner.testing.process import RunningRunner
+from agentplane.env.config import Endpoint, EnvironmentRuntimeControl
+from agentplane.env.e2e.testing.config import RunnerTestConfig
+from agentplane.env.e2e.testing.failure_journal import FailureEvidence
+from agentplane.env.e2e.testing.gateway import Gateway
+from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
-from agentplane.runner_transport.configuration import MTLS
+from agentplane.environment_runtime_transport.config import MTLS
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
@@ -121,7 +121,7 @@ async def runner(
     """The production Go runner as `sandbox`'s, taking control through the Go Runner Gateway; it still
     pushes its journal directly to the Go History Service ingress. Failed tests retain native
     evidence."""
-    control = RunnerControl(
+    control = EnvironmentRuntimeControl(
         listen_address="127.0.0.1:9090",
         security=MTLS(
             mode="mtls",

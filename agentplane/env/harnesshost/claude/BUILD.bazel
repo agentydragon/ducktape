@@ -30,7 +30,7 @@ go_test(
     embed = [":claude"],
     deps = [
         "//agentplane/env/harnesshost/harness",
-        "//agentplane/runner/testing/adaptertest",
+        "//agentplane/env/harnesshost/testing/adaptertest",
         "@com_github_anthropics_anthropic_sdk_go//:anthropic-sdk-go",
     ],
 )

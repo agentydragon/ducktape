@@ -1,6 +1,6 @@
 """The egress relay of a VM Sandbox. KubeVirt builds a VM's virt-launcher Pod from the VirtualMachine,
 not from our SandboxTemplate's Pod, so this Kyverno policy adds the relay when the Pod is created: the
-same egress sidecar, routes and projected tokens as a runner Pod's (runner_sandbox.py), copied from the
+same egress sidecar, routes and projected tokens as a runner Pod's (environment_sandbox.py), copied from the
 rendered runner template, with settings rendered from the template's own so the two cannot drift.
 
 The guest reaches the relay at its masquerade gateway, `10.0.2.1`, on the ports a runner Pod's

@@ -24,7 +24,7 @@ import (
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/gateway"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/migrations"
-	"github.com/agentydragon/ducktape/agentplane/runner_transport"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -161,12 +161,12 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	if err := c.RunnerSecurity.Validate(); err != nil {
 		return err
 	}
-	if c.RunnerSecurity.Mode == runner_transport.MutualTLS {
+	if c.RunnerSecurity.Mode == environment_runtime_transport.MutualTLS {
 		identity, err := c.RunnerSecurity.TLS.LocalIdentity(x509.ExtKeyUsageClientAuth)
 		if err != nil {
 			return err
 		}
-		if identity != runner_transport.GatewayURI {
+		if identity != environment_runtime_transport.GatewayURI {
 			return errors.New("Gateway runner certificate has the wrong identity")
 		}
 	}

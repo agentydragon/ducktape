@@ -76,7 +76,7 @@ Codex process and a resumed turn, with the child unable to read a runner-only se
    would fail. Pointer: local `bazelisk run //agentplane/x/runner_layering:local_vm_probe` output.
 
 3. **2026-10-16 03:00 UTC, first remote integration attempt.** Action: `bbr test
-//agentplane/runner:test_restart`. Type: experiment. Cost: 101 s Bazel elapsed; 79.5 s test.
+//agentplane/env/e2e:test_restart`. Type: experiment. Cost: 101 s Bazel elapsed; 79.5 s test.
    Raw result: 24 tests passed and the new test failed before session launch because the Go executable
    runfile path was `.../child_exec_/child_exec`, not `.../child_exec`. Update: no process-boundary
    likelihood update. Pointer: BuildBuddy invocation
@@ -121,7 +121,7 @@ Is /proc mounted?` and failed with `Error: Codex executable path is not configur
 
 8. **2026-10-16 03:20 UTC, corrected child-exit and resume path.** Action: observe
    `harness_exited`, confirm runner liveness, reattach, and resume the same Codex session. Type:
-   experiment. Cost: 117.8 s Bazel elapsed; 105.1 s test. Raw result: `//agentplane/runner:test_restart`
+   experiment. Cost: 117.8 s Bazel elapsed; 105.1 s test. Raw result: `//agentplane/env/e2e:test_restart`
    passed; the test confirmed the sparse-root text turn, sentinel isolation, child exit without
    runner exit, `harness_started.resumed`, and that the next model request contained both the first
    and second user inputs plus prior assistant text. Update: U9 resolved yes. Pointer: BuildBuddy
@@ -136,7 +136,7 @@ Is /proc mounted?` and failed with `Error: Codex executable path is not configur
    the current shell-tool launch path is broken; it does not yet distinguish a missing executable or
    runtime file from a path, working-directory, or rootfs layout error. Update: U4 remains open; trace
    the concrete child process setup before adding another dependency. Pointer: BuildBuddy invocation
-   `44014602-68fe-4b86-90a7-00cfe9ecc376`, target `//agentplane/runner:test_restart`.
+   `44014602-68fe-4b86-90a7-00cfe9ecc376`, target `//agentplane/env/e2e:test_restart`.
 
 10. **2026-10-16 05:12 UTC, Codex shell tool and logical cwd.** Action: keep the runner's host
     workspace as the bind source while setting the persisted child `SessionSpec.cwd` to `/workspace`,
@@ -146,7 +146,7 @@ SPARSE_ROOT_TOOL_OK` shell tool call, child termination, runner survival, conver
     and private-state check. The direct Bash probe passed after mounting `/dev/null`; the Codex tool
     call still failed until its logical cwd matched the mounted path. Update: U4 resolved yes for this
     pinned Codex and Bash root. Pointer: BuildBuddy invocation
-    `d2e3808c-ad70-47ff-ad10-23868996d2c2`, target `//agentplane/runner:test_restart`.
+    `d2e3808c-ad70-47ff-ad10-23868996d2c2`, target `//agentplane/env/e2e:test_restart`.
 
 11. **2026-10-16 05:12 UTC, pinned Firecracker guest boot.** Action: pin the official Firecracker
     1.12 CI `vmlinux-6.1.128` ELF kernel (`sha256
@@ -184,7 +184,7 @@ SPARSE_ROOT_TOOL_OK` shell tool call, child termination, runner survival, conver
 
 14. **2026-10-16 05:28 UTC, rebased-head verification.** Action: rebase the spike on devel
     `3f8379123a`, rerun the focused Codex child test and boot the local VM from that tree. Type: RBE
-    and local experiments. Raw result: `//agentplane/runner:test_restart` passed in 27.6 s; local
+    and local experiments. Raw result: `//agentplane/env/e2e:test_restart` passed in 27.6 s; local
     Firecracker again ran Codex 0.157.0 and left init alive. Bazel analysis emitted 404 warnings for
     some pinned Debian snapshot index URLs but resolved the tools target and completed the test.
     Update: the current devel base preserves the tested behavior. Pointers: test invocation

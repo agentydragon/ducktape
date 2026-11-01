@@ -3,8 +3,8 @@ adds its environment-only objects to what it returns; that is what generate_mani
 disk) and the tests (synthesize it in memory via `cdk8s.Testing`) build.
 
 The caller names the Pod execution environment the chart offers and the image it runs
-(`runner_name`, `runner_image`), plus any Secret a runner workload reads as a file
-(`runner_key_files`). The chart provisions the shared cert-manager Issuer
+(`environment_template_name`, `environment_tools_image`), plus any Secret a runner workload reads as a file
+(`environment_runtime_key_files`). The chart provisions the shared cert-manager Issuer
 and Gateway certificate; the Sandbox Controller provisions a unique leaf Certificate for each
 workload incarnation.
 """
@@ -31,6 +31,7 @@ from cluster.cdk8s.agentplane import (
     database,
     egress,
     electric,
+    environment_sandbox,
     frontend,
     history_service,
     llm_ingress,
@@ -38,7 +39,6 @@ from cluster.cdk8s.agentplane import (
     notifications,
     runner_gateway,
     runner_gateway_workload,
-    runner_sandbox,
     sandbox_controller,
     sandbox_pod,
     session_dispatcher,
@@ -120,9 +120,9 @@ def environment_chart(
     env: Environment,
     *,
     db: database.DbProps,
-    runner_name: str,
-    runner_image: str,
-    runner_key_files: Sequence[runner_sandbox.KeyFile] = (),
+    environment_template_name: str,
+    environment_tools_image: str,
+    environment_runtime_key_files: Sequence[environment_sandbox.KeyFile] = (),
 ) -> Chart:
     """The shared objects. The fleet rules attach as a synth-time validation, so a caller
     may keep adding objects to the returned chart and they are still checked."""
@@ -170,7 +170,7 @@ def environment_chart(
         "egress",
         env,
         database_url=egress_database_url,
-        runners=runner_sandbox.pods(env.namespace),
+        runners=environment_sandbox.pods(env.namespace),
         admin_grpc_callers=[app_account],
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
@@ -222,13 +222,13 @@ def environment_chart(
         runner_control_target=runner_gateway.control_target(env.namespace),
     ).add_platform_resources()
     frontend.Frontend(chart, "frontend", env).add_platform_resources()
-    runner_sandbox.RunnerSandbox(
+    environment_sandbox.EnvironmentSandbox(
         chart,
         "runner-sandbox",
         env,
-        name=runner_name,
-        image=runner_image,
-        key_files=runner_key_files,
+        name=environment_template_name,
+        image=environment_tools_image,
+        key_files=environment_runtime_key_files,
         image_pull_secret_name=sandbox_pod.SECRET_NAME,
         egress_api_service=egress.agent_api(env.namespace),
     ).add_platform_resources()

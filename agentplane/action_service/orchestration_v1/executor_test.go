@@ -15,7 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
@@ -191,8 +191,8 @@ func TestSessionCommandsReachTheDispatcherForTheLaunchedIncarnationOnly(t *testi
 	want := []proto.Message{
 		&dispatcherpb.OpenSessionRequest{
 			SessionId: session, Sandbox: launched.Name, SandboxUid: string(launched.UID), SetupScript: new("true"),
-			Spec: &runnerpb.SessionSpec{
-				Harness: runnerpb.Harness_HARNESS_CODEX, Model: "test-model", Cwd: "/test/" + session, Instructions: "test",
+			Spec: &sessionpb.SessionSpec{
+				Harness: sessionpb.Harness_HARNESS_CODEX, Model: "test-model", Cwd: "/test/" + session, Instructions: "test",
 			},
 		},
 		&dispatcherpb.SubmitInputRequest{
@@ -226,8 +226,8 @@ func TestCentralSamplerHarnessReachesDispatcher(t *testing.T) {
 	}`, launched.Name, launched.UID, session)))
 	want := &dispatcherpb.OpenSessionRequest{
 		SessionId: session, Sandbox: launched.Name, SandboxUid: string(launched.UID),
-		Spec: &runnerpb.SessionSpec{
-			Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test/" + session,
+		Spec: &sessionpb.SessionSpec{
+			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test/" + session,
 		},
 	}
 	if got := f.dispatcher.received(); len(got) != 1 || !proto.Equal(got[0], want) {

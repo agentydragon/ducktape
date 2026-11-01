@@ -1,7 +1,7 @@
 #!/usr/bin/busybox sh
 set -eu
 # Requiring the receipt also catches an accidentally empty Go test selection.
-if ! /usr/libexec/agentplane/runner-systemd-fixture -test.run='^TestSystemdKernelFixture$' -test.v -test.timeout=90s ||
+if ! /usr/libexec/agentplane/environment-runtime-systemd-fixture -test.run='^TestSystemdKernelFixture$' -test.v -test.timeout=90s ||
 	! receipt=$(cat /state/supervision-checks.json); then
 	# Keep the manager's native-service evidence before fixture teardown removes the guest.
 	journalctl --boot --no-pager --unit='agentplane-native-*.service' >/dev/ttyS0 || :

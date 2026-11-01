@@ -1,10 +1,10 @@
 """The shared guest configuration used by the VM fixture and its assertions."""
 
-from agentplane.runner.configuration import GuestResources, ResourceLimits
+from agentplane.env.config import GuestResources, ResourceLimits
 
-SUPERVISION_TEMPLATE = "runner-vm-supervision"
+SUPERVISION_TEMPLATE = "environment-vm-supervision"
 SUPERVISION_KERNEL_ARG = "agentplane.supervision-checks=1"
-OOM_TEMPLATE = "runner-vm-codex-oom"
+OOM_TEMPLATE = "environment-vm-codex-oom"
 
 _MIB = 1024 * 1024
 OOM_EXECUTOR_MEMORY_BYTES = 96 * _MIB

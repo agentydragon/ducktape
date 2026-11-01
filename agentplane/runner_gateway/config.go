@@ -8,7 +8,7 @@ import (
 	"slices"
 
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
-	"github.com/agentydragon/ducktape/agentplane/runner_transport"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/go-viper/mapstructure/v2"
@@ -25,7 +25,7 @@ const settingPrefix = "AGENTPLANE_RUNNER_GATEWAY_"
 // The database URL is a Secret and the Pod IP comes from the Downward API, so both are environment
 // values. Kubernetes sets the Pod hostname to its name unless an explicit hostname is configured.
 type config struct {
-	RunnerSecurity              runner_transport.Security `mapstructure:"runner_security"`
+	RunnerSecurity              environment_runtime_transport.Security `mapstructure:"runner_security"`
 	Namespace                   string                    `mapstructure:"sandbox_namespace"`
 	DispatcherDatabaseURL       string                    `mapstructure:"dispatcher_database_url"`
 	PodName                     string                    `mapstructure:"pod_name"`

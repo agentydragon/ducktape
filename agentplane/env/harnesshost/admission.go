@@ -12,8 +12,8 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
@@ -21,7 +21,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenSessionRequest) (response *runnerservicepb.OpenSessionResponse, resultErr error) {
+func (r *Runner) OpenSession(ctx context.Context, request *environmentruntimepb.OpenSessionRequest) (response *environmentruntimepb.OpenSessionResponse, resultErr error) {
 	ctx, span := observability.Start(
 		ctx, "Runner OpenSession",
 		trace.WithAttributes(
@@ -42,9 +42,9 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 	if r.isClosing() || !r.lifecycle.accepting() {
 		return nil, status.Error(codes.Aborted, "this Sandbox is quiesced")
 	}
-	spec := proto.Clone(request.Spec).(*runnerpb.SessionSpec)
+	spec := proto.Clone(request.Spec).(*sessionpb.SessionSpec)
 	spec.Instructions = r.config.Launch.Instructions(request.SessionId, spec.Instructions)
-	if spec.Harness != runnerpb.Harness_HARNESS_CLAUDE && spec.Harness != runnerpb.Harness_HARNESS_CODEX {
+	if spec.Harness != sessionpb.Harness_HARNESS_CLAUDE && spec.Harness != sessionpb.Harness_HARNESS_CODEX {
 		return nil, status.Error(codes.InvalidArgument, "spec.harness must be CLAUDE or CODEX")
 	}
 	if !filepath.IsAbs(spec.Cwd) || spec.Model == "" {
@@ -99,7 +99,7 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 		if err != nil {
 			return nil, rpcError(err)
 		}
-		return &runnerservicepb.OpenSessionResponse{Attached: s.Attached()}, nil
+		return &environmentruntimepb.OpenSessionResponse{Attached: s.Attached()}, nil
 	}
 	budget, err := r.config.ResolveModelConfig(ctx, spec.Harness, spec.Model)
 	if err != nil {
@@ -141,7 +141,7 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 		return nil, rpcError(err)
 	}
 	r.changed()
-	return &runnerservicepb.OpenSessionResponse{Attached: s.Attached()}, nil
+	return &environmentruntimepb.OpenSessionResponse{Attached: s.Attached()}, nil
 }
 
 func validateExecutionPrincipal(principal *delegationpb.ServiceAccountIdentity) error {
@@ -214,24 +214,24 @@ func (r *Runner) finishAdmission(resultErr *error) {
 	}
 }
 
-func (r *Runner) SubmitInput(ctx context.Context, q *runnerservicepb.SubmitInputRequest) (*runnerservicepb.SubmitInputResponse, error) {
+func (r *Runner) SubmitInput(ctx context.Context, q *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
 	entry, err := r.admit(ctx, q.SessionId, &commandpb.Command{CommandId: q.CommandId, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: q.Text}}})
-	return &runnerservicepb.SubmitInputResponse{Admission: entry}, err
+	return &environmentruntimepb.SubmitInputResponse{Admission: entry}, err
 }
 
-func (r *Runner) ChangeModel(ctx context.Context, q *runnerservicepb.ChangeModelRequest) (*runnerservicepb.ChangeModelResponse, error) {
+func (r *Runner) ChangeModel(ctx context.Context, q *environmentruntimepb.ChangeModelRequest) (*environmentruntimepb.ChangeModelResponse, error) {
 	entry, err := r.admit(ctx, q.SessionId, &commandpb.Command{CommandId: q.CommandId, Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: q.Model}}})
-	return &runnerservicepb.ChangeModelResponse{Admission: entry}, err
+	return &environmentruntimepb.ChangeModelResponse{Admission: entry}, err
 }
 
-func (r *Runner) ChangeReasoningEffort(ctx context.Context, q *runnerservicepb.ChangeReasoningEffortRequest) (*runnerservicepb.ChangeReasoningEffortResponse, error) {
+func (r *Runner) ChangeReasoningEffort(ctx context.Context, q *environmentruntimepb.ChangeReasoningEffortRequest) (*environmentruntimepb.ChangeReasoningEffortResponse, error) {
 	entry, err := r.admit(ctx, q.SessionId, &commandpb.Command{CommandId: q.CommandId, Operation: &commandpb.Command_ChangeReasoningEffort{ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: q.Effort}}})
-	return &runnerservicepb.ChangeReasoningEffortResponse{Admission: entry}, err
+	return &environmentruntimepb.ChangeReasoningEffortResponse{Admission: entry}, err
 }
 
-func (r *Runner) InterruptTurn(ctx context.Context, q *runnerservicepb.InterruptTurnRequest) (*runnerservicepb.InterruptTurnResponse, error) {
+func (r *Runner) InterruptTurn(ctx context.Context, q *environmentruntimepb.InterruptTurnRequest) (*environmentruntimepb.InterruptTurnResponse, error) {
 	entry, err := r.admit(ctx, q.SessionId, &commandpb.Command{CommandId: q.CommandId, Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: q.TurnId}}})
-	return &runnerservicepb.InterruptTurnResponse{Admission: entry}, err
+	return &environmentruntimepb.InterruptTurnResponse{Admission: entry}, err
 }
 
 func rpcError(err error) error {

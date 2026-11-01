@@ -1,0 +1,47 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+go_library(
+    name = "environment_runtime_transport",
+    srcs = [
+        "credentials.go",
+        "security.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport",
+    deps = [
+        "@com_github_spiffe_go_spiffe_v2//bundle/x509bundle",
+        "@com_github_spiffe_go_spiffe_v2//spiffeid",
+        "@com_github_spiffe_go_spiffe_v2//spiffetls/tlsconfig",
+        "@com_github_spiffe_go_spiffe_v2//svid/x509svid",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//peer",
+    ],
+)
+
+go_test(
+    name = "environment_runtime_transport_test",
+    srcs = [
+        "credentials_test.go",
+        "security_test.go",
+    ],
+    embed = [":environment_runtime_transport"],
+    race = "on",
+    deps = [
+        "//agentplane/environment_runtime_transport/testing",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//peer",
+    ],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+    deps = ["@pypi//pydantic"],
+)

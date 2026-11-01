@@ -1,6 +1,6 @@
 # Exercise the same preinstalled tools as the image, with no Docker daemon or network.
 { pkgs, tools }:
-pkgs.runCommand "runner-ducktape-tools-check"
+pkgs.runCommand "environment-tools-check"
   {
     nativeBuildInputs = [
       tools

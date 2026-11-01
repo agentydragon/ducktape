@@ -15,7 +15,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	_ "github.com/lib/pq"
@@ -192,7 +192,7 @@ func TestAdmissionIsDurableAndIdempotent(t *testing.T) {
 func TestOpeningAndOwnershipFence(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t, 3)
-	spec := &runnerpb.SessionSpec{}
+	spec := &sessionpb.SessionSpec{}
 	opened, err := store.OpenSession(ctx, "session-b", "sandbox-b", sandboxUID, spec, nil, nil)
 	if err != nil || opened.State != QueueState {
 		t.Fatalf("open: %+v %v", opened, err)
@@ -903,7 +903,7 @@ func (r *acceptingRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string
 	return &eventlogpb.EventEntry{Cursor: 1}, nil
 }
 
-func (r *acceptingRunner) OpenSession(_ context.Context, _ SandboxSnapshot, sessionID string, _ *runnerpb.SessionSpec, _ *string, _ *delegationpb.ServiceAccountIdentity) error {
+func (r *acceptingRunner) OpenSession(_ context.Context, _ SandboxSnapshot, sessionID string, _ *sessionpb.SessionSpec, _ *string, _ *delegationpb.ServiceAccountIdentity) error {
 	r.calls <- "opening:" + sessionID
 	return nil
 }
@@ -925,7 +925,7 @@ func TestWorkerDeliversWakeLimitedWorkAfterSandboxBecomesReady(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := store.OpenSession(ctx, "wake-ready-opening-session", sandboxName, uid,
-		&runnerpb.SessionSpec{}, nil, &caller); err != nil {
+		&sessionpb.SessionSpec{}, nil, &caller); err != nil {
 		t.Fatal(err)
 	}
 	catalog := &growingCatalog{sandboxes: []SandboxSnapshot{{
@@ -1156,7 +1156,7 @@ func (r *retryRunner) Deliver(_ context.Context, sandbox SandboxSnapshot, _ stri
 	return &eventlogpb.EventEntry{Cursor: 1}, nil
 }
 
-func (*retryRunner) OpenSession(context.Context, SandboxSnapshot, string, *runnerpb.SessionSpec, *string, *delegationpb.ServiceAccountIdentity) error {
+func (*retryRunner) OpenSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *delegationpb.ServiceAccountIdentity) error {
 	return errors.New("unexpected opening")
 }
 
@@ -1233,7 +1233,7 @@ func (r *orderedRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string, 
 	return &eventlogpb.EventEntry{Cursor: 1}, nil
 }
 
-func (*orderedRunner) OpenSession(context.Context, SandboxSnapshot, string, *runnerpb.SessionSpec, *string, *delegationpb.ServiceAccountIdentity) error {
+func (*orderedRunner) OpenSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *delegationpb.ServiceAccountIdentity) error {
 	return errors.New("unexpected opening")
 }
 
@@ -1289,7 +1289,7 @@ func TestWorkerSerializesCommandsPerSession(t *testing.T) {
 func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 	ctx := admitted(t)
 	store := testStore(t, 3)
-	spec := &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER}
+	spec := &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER}
 	opening, err := store.OpenSession(ctx, "central-unready-session", "sandbox-api", sandboxUID, spec, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -1320,12 +1320,12 @@ func TestCentralOpeningUsesConfiguredSampler(t *testing.T) {
 	ctx := admitted(t)
 	store := testStore(t, 3)
 	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: blockedSandbox{}, CentralTarget: &CentralTarget{Target: "configured", TokenFile: "configured"}}
-	request := &dispatcherpb.OpenSessionRequest{SessionId: "central-configured-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test"}}
+	request := &dispatcherpb.OpenSessionRequest{SessionId: "central-configured-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, Spec: &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test"}}
 	if _, err := service.OpenSession(ctx, request); err != nil {
 		t.Fatal(err)
 	}
 	// Simulate a pre-upgrade stored spec containing retired field 6.
-	legacy := proto.Clone(request.Spec).(*runnerpb.SessionSpec)
+	legacy := proto.Clone(request.Spec).(*sessionpb.SessionSpec)
 	legacy.ProtoReflect().SetUnknown([]byte{0x32, 0x00})
 	encoded, err := wire(legacy)
 	if err != nil {

@@ -21,7 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/observability"
 
 	"github.com/agentydragon/ducktape/agentplane/env/lifecycle"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/state"
 	"go.opentelemetry.io/otel/attribute"
@@ -595,7 +595,7 @@ func (c *Host) drainProcess(ctx context.Context) error {
 }
 
 // Status describes the running app-server and the Sessions it hosts.
-func (c *Host) Status() *runnerpb.HarnessProcessStatus {
+func (c *Host) Status() *sessionpb.HarnessProcessStatus {
 	runtime, _, err := ReadRuntime(c.deps.Context, c.deps.State)
 	if err != nil {
 		c.deps.OnError(err)
@@ -607,14 +607,14 @@ func (c *Host) Status() *runnerpb.HarnessProcessStatus {
 	c.mu.Lock()
 	p := c.current
 	c.mu.Unlock()
-	state := runnerpb.ProcessState_PROCESS_STATE_STARTING
+	state := sessionpb.ProcessState_PROCESS_STATE_STARTING
 	switch runtime.Phase {
 	case Ready:
-		state = runnerpb.ProcessState_PROCESS_STATE_RUNNING
+		state = sessionpb.ProcessState_PROCESS_STATE_RUNNING
 	case Draining:
-		state = runnerpb.ProcessState_PROCESS_STATE_STOPPING
+		state = sessionpb.ProcessState_PROCESS_STATE_STOPPING
 	}
-	status := &runnerpb.HarnessProcessStatus{ProcessId: runtime.ProcessID, Harness: runnerpb.Harness_HARNESS_CODEX, State: state}
+	status := &sessionpb.HarnessProcessStatus{ProcessId: runtime.ProcessID, Harness: sessionpb.Harness_HARNESS_CODEX, State: state}
 	if p != nil && p.process.ID() == runtime.ProcessID {
 		for _, s := range p.router.Hosts() {
 			status.AssignedSessionIds = append(status.AssignedSessionIds, s.ID)

@@ -1,0 +1,27 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "environmentruntimeclient",
+    srcs = ["client.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/grpc/bearer",
+        "//agentplane/sandboxes/api",
+        "@org_golang_google_grpc//metadata",
+    ],
+)
+
+go_test(
+    name = "environmentruntimeclient_test",
+    srcs = ["client_test.go"],
+    embed = [":environmentruntimeclient"],
+    deps = [
+        "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "//agentplane/sandboxes/api",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
+    ],
+)

@@ -7,8 +7,8 @@ import (
 	"time"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"google.golang.org/grpc"
@@ -19,7 +19,7 @@ import (
 
 // registerStandIns registers servicers that answer Unimplemented to every call the policy admitted.
 func registerStandIns(server *grpc.Server) {
-	runnerservicepb.RegisterRunnerServer(server, runnerservicepb.UnimplementedRunnerServer{})
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, environmentruntimepb.UnimplementedEnvironmentRuntimeServer{})
 	executorpb.RegisterExecutorServer(server, executorpb.UnimplementedExecutorServer{})
 }
 
@@ -50,10 +50,10 @@ func TestEveryRPCAdmitsOnlyItsCallers(t *testing.T) {
 		admitted map[string]string
 	}{
 		{"with a Sandbox controller", withController, map[string]string{
-			runnerservicepb.Runner_Quiesce_FullMethodName: "controller",
+			environmentruntimepb.EnvironmentRuntime_Quiesce_FullMethodName: "controller",
 		}},
 		{"without a Sandbox controller", withoutController, map[string]string{
-			runnerservicepb.Runner_Quiesce_FullMethodName: "",
+			environmentruntimepb.EnvironmentRuntime_Quiesce_FullMethodName: "",
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -62,14 +62,14 @@ func TestEveryRPCAdmitsOnlyItsCallers(t *testing.T) {
 			for _, desc := range []struct {
 				service grpc.ServiceDesc
 				caller  string
-			}{{runnerservicepb.Runner_ServiceDesc, "app"}, {executorpb.Executor_ServiceDesc, "executor caller"}} {
+			}{{environmentruntimepb.EnvironmentRuntime_ServiceDesc, "app"}, {executorpb.Executor_ServiceDesc, "executor caller"}} {
 				for _, method := range grpcmethods.Of(desc.service) {
 					admitted, special := test.admitted[method.Name]
 					if !special {
 						admitted = desc.caller
 					}
 					t.Run(method.Name, func(t *testing.T) {
-						if method.Name == runnerservicepb.Runner_WatchState_FullMethodName {
+						if method.Name == environmentruntimepb.EnvironmentRuntime_WatchState_FullMethodName {
 							// The proxy does not relay WatchState, so nobody may call it.
 							for name, token := range tokens {
 								if got := status.Code(method.Call(bearing(t, token), connection)); got != codes.PermissionDenied {

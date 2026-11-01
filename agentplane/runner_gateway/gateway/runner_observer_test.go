@@ -12,11 +12,11 @@ import (
 	"time"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/runner_transport"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
@@ -38,17 +38,17 @@ import (
 )
 
 type observedRunner struct {
-	runnerservicepb.UnimplementedRunnerServer
+	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	bootID       string
 	calls        atomic.Int32
 	quiesceCalls atomic.Int32
 }
 
-func (r *observedRunner) WatchState(request *runnerservicepb.WatchStateRequest, stream grpc.ServerStreamingServer[runnerservicepb.WatchStateResponse]) error {
-	if err := stream.Send(&runnerservicepb.WatchStateResponse{
+func (r *observedRunner) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
+	if err := stream.Send(&environmentruntimepb.WatchStateResponse{
 		SandboxUid:   request.SandboxUid,
-		RunnerBootId: r.bootID, IncarnationUid: request.IncarnationUid, ConnectionEpoch: request.ConnectionEpoch,
-		Facts: &runnerstatepb.RunnerFacts{Bootstrap: runnerstatepb.RunnerFacts_BOOTSTRAP_SUCCEEDED},
+		EnvironmentRuntimeBootId: r.bootID, IncarnationUid: request.IncarnationUid, ConnectionEpoch: request.ConnectionEpoch,
+		Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{Bootstrap: environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_SUCCEEDED},
 	}); err != nil {
 		return err
 	}
@@ -56,37 +56,37 @@ func (r *observedRunner) WatchState(request *runnerservicepb.WatchStateRequest, 
 	return stream.Context().Err()
 }
 
-func (r *observedRunner) GetStatus(ctx context.Context, _ *runnerpb.GetStatusRequest) (*runnerpb.RunnerStatus, error) {
+func (r *observedRunner) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
-	if len(md.Get("agentplane-runner-boot-id")) != 1 || md.Get("agentplane-runner-boot-id")[0] != r.bootID ||
+	if len(md.Get("agentplane-environment-runtime-boot-id")) != 1 || md.Get("agentplane-environment-runtime-boot-id")[0] != r.bootID ||
 		len(md.Get("agentplane-sandbox-uid")) != 1 || len(md.Get("agentplane-incarnation-uid")) != 1 ||
 		len(md.Get("agentplane-connection-epoch")) != 1 {
 		return nil, status.Error(codes.PermissionDenied, "missing Runner request fence")
 	}
 	r.calls.Add(1)
-	return &runnerpb.RunnerStatus{}, nil
+	return &sessionpb.EnvironmentRuntimeStatus{}, nil
 }
 
-func (r *observedRunner) Quiesce(context.Context, *runnerpb.QuiesceRequest) (*runnerpb.QuiesceResponse, error) {
+func (r *observedRunner) Quiesce(context.Context, *sessionpb.QuiesceRequest) (*sessionpb.QuiesceResponse, error) {
 	r.quiesceCalls.Add(1)
-	return &runnerpb.QuiesceResponse{Stage: runnerpb.QuiesceStage_QUIESCE_STAGE_QUIESCED}, nil
+	return &sessionpb.QuiesceResponse{Stage: sessionpb.QuiesceStage_QUIESCE_STAGE_QUIESCED}, nil
 }
 
 func TestRunnerObserverPublishesFactsAndFencesRPCs(t *testing.T) {
-	for _, mode := range []runner_transport.SecurityMode{runner_transport.MutualTLS, runner_transport.Insecure} {
+	for _, mode := range []environment_runtime_transport.SecurityMode{environment_runtime_transport.MutualTLS, environment_runtime_transport.Insecure} {
 		t.Run(string(mode), func(t *testing.T) {
 			testRunnerObserver(t, mode)
 		})
 	}
 }
 
-func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
+func testRunnerObserver(t *testing.T, mode environment_runtime_transport.SecurityMode) {
 	t.Helper()
 	f := newSandboxFixture(t)
 	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
-	g.config.RunnerSecurity = runner_transport.Security{Mode: mode}
-	runnerSecurity := runner_transport.Security{Mode: mode}
-	if mode == runner_transport.MutualTLS {
+	g.config.RunnerSecurity = environment_runtime_transport.Security{Mode: mode}
+	runnerSecurity := environment_runtime_transport.Security{Mode: mode}
+	if mode == environment_runtime_transport.MutualTLS {
 		g.config.RunnerSecurity.TLS = &f.gatewayTLS
 		runnerSecurity.TLS = &f.runnerTLS
 	}
@@ -98,13 +98,13 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	creds, err := runnerSecurity.ServerCredentials(runner_transport.GatewayURI)
+	creds, err := runnerSecurity.ServerCredentials(environment_runtime_transport.GatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer(grpc.Creds(creds))
 	runner := &observedRunner{bootID: "test-runner-boot"}
-	runnerservicepb.RegisterRunnerServer(server, runner)
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runner)
 	executorpb.RegisterExecutorServer(server, &echoForwardExecutor{})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
@@ -128,7 +128,7 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 			connection, _ = g.connections.holder(string(f.sandbox.UID))
 		}
 	}
-	if _, err := connection.runner.GetStatus(t.Context(), &runnerpb.GetStatusRequest{}); err != nil {
+	if _, err := connection.runner.GetStatus(t.Context(), &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	if runner.calls.Load() != 1 {
@@ -189,11 +189,11 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 		t.Fatalf("existing-session unary call during quiescing = %v, %v", started, err)
 	}
 	stopExec()
-	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+sandboxlease.RunnerLeaseSuffix, metav1.GetOptions{})
+	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+sandboxlease.EnvironmentRuntimeLeaseSuffix, metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lease.Annotations[sandboxlease.RunnerBootIDAnnotation] != runner.bootID || lease.Annotations[sandboxlease.PodUIDAnnotation] != string(f.pod.UID) {
+	if lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] != runner.bootID || lease.Annotations[sandboxlease.PodUIDAnnotation] != string(f.pod.UID) {
 		t.Fatalf("Runner connection did not publish its identities: %v", lease.Annotations)
 	}
 	other := f.newGateway(t, "test-other-gateway", "192.0.2.31")
@@ -389,7 +389,7 @@ type echoForwardExecutor struct {
 
 func (*echoForwardExecutor) OpenSession(_ *executorpb.OpenSessionRequest, stream grpc.ServerStreamingServer[executorpb.OpenSessionResponse]) error {
 	md, _ := metadata.FromIncomingContext(stream.Context())
-	if len(md.Get("agentplane-runner-boot-id")) != 1 || len(md.Get("agentplane-sandbox-uid")) != 1 ||
+	if len(md.Get("agentplane-environment-runtime-boot-id")) != 1 || len(md.Get("agentplane-sandbox-uid")) != 1 ||
 		len(md.Get("agentplane-incarnation-uid")) != 1 || len(md.Get("agentplane-connection-epoch")) != 1 {
 		return status.Error(codes.PermissionDenied, "missing executor fence")
 	}
@@ -406,7 +406,7 @@ func (*echoForwardExecutor) OpenSession(_ *executorpb.OpenSessionRequest, stream
 
 func (*echoForwardExecutor) StartProcess(ctx context.Context, request *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
-	if len(md.Get("agentplane-runner-boot-id")) != 1 || len(md.Get("agentplane-sandbox-uid")) != 1 ||
+	if len(md.Get("agentplane-environment-runtime-boot-id")) != 1 || len(md.Get("agentplane-sandbox-uid")) != 1 ||
 		len(md.Get("agentplane-incarnation-uid")) != 1 || len(md.Get("agentplane-connection-epoch")) != 1 {
 		return nil, status.Error(codes.PermissionDenied, "missing executor fence")
 	}
@@ -427,14 +427,14 @@ func TestRunnerCertificateCannotFollowReplacementCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	pod := f.pod.DeepCopy()
-	pod.Labels[sandboxapi.RunnerCredentialLabel] = "test-replacement-credential"
+	pod.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel] = "test-replacement-credential"
 	if _, err := api.Clientset.CoreV1().Pods(f.namespace).Update(t.Context(), pod, metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := g.validateRunnerDestination(t.Context(), destination); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("old certificate followed replacement: %v", err)
 	}
-	newURI, err := runner_transport.RunnerURI(f.namespace, string(f.sandbox.UID), "test-replacement-credential")
+	newURI, err := environment_runtime_transport.EnvironmentRuntimeURI(f.namespace, string(f.sandbox.UID), "test-replacement-credential")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -446,17 +446,17 @@ func TestRunnerCertificateCannotFollowReplacementCredentials(t *testing.T) {
 
 // reconnectingRunner replaces its boot after the first observation ends without changing Pod identity.
 type reconnectingRunner struct {
-	runnerservicepb.UnimplementedRunnerServer
+	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	observations atomic.Int32
 	disconnect   chan struct{}
 }
 
-func (r *reconnectingRunner) WatchState(request *runnerservicepb.WatchStateRequest, stream grpc.ServerStreamingServer[runnerservicepb.WatchStateResponse]) error {
+func (r *reconnectingRunner) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
 	observation := r.observations.Add(1)
-	if err := stream.Send(&runnerservicepb.WatchStateResponse{
+	if err := stream.Send(&environmentruntimepb.WatchStateResponse{
 		SandboxUid: request.SandboxUid, IncarnationUid: request.IncarnationUid,
-		ConnectionEpoch: request.ConnectionEpoch, RunnerBootId: fmt.Sprintf("boot-%d", observation),
-		Facts: &runnerstatepb.RunnerFacts{},
+		ConnectionEpoch: request.ConnectionEpoch, EnvironmentRuntimeBootId: fmt.Sprintf("boot-%d", observation),
+		Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{},
 	}); err != nil {
 		return err
 	}
@@ -472,12 +472,12 @@ func (r *reconnectingRunner) WatchState(request *runnerservicepb.WatchStateReque
 	return stream.Context().Err()
 }
 
-func (r *reconnectingRunner) GetStatus(ctx context.Context, _ *runnerpb.GetStatusRequest) (*runnerpb.RunnerStatus, error) {
+func (r *reconnectingRunner) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
-	if got := md.Get("agentplane-runner-boot-id"); len(got) != 1 || got[0] != fmt.Sprintf("boot-%d", r.observations.Load()) {
+	if got := md.Get("agentplane-environment-runtime-boot-id"); len(got) != 1 || got[0] != fmt.Sprintf("boot-%d", r.observations.Load()) {
 		return nil, status.Error(codes.Unavailable, "stale runner boot")
 	}
-	return &runnerpb.RunnerStatus{}, nil
+	return &sessionpb.EnvironmentRuntimeStatus{}, nil
 }
 
 func TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.T) {
@@ -488,7 +488,7 @@ func TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.
 		t.Fatal(err)
 	}
 	g := f.newGateway(t, "test-reconnecting-gateway", "192.0.2.30")
-	g.config.RunnerSecurity = runner_transport.Security{Mode: runner_transport.Insecure}
+	g.config.RunnerSecurity = environment_runtime_transport.Security{Mode: environment_runtime_transport.Insecure}
 	// The Sandbox's only event: transport loss must trigger its own retry.
 	g.RunnerDiscoveryHandler().OnAdd(f.sandbox, true)
 	listener, err := net.Listen("tcp", "127.0.0.1:9090")
@@ -497,7 +497,7 @@ func TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.
 	}
 	server := grpc.NewServer()
 	runner := &reconnectingRunner{disconnect: make(chan struct{})}
-	runnerservicepb.RegisterRunnerServer(server, runner)
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runner)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -531,11 +531,11 @@ func TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.
 		t.Fatalf("reconnect changed incarnation or failed to advance epoch: first=%+v second=%+v", first, second)
 	}
 	g.connections.remove(first, errSupersededConnection)
-	if _, err := second.runner.GetStatus(ctx, &runnerpb.GetStatusRequest{}); err != nil {
+	if _, err := second.runner.GetStatus(ctx, &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("replacement Runner did not serve calls: %v", err)
 	}
 	stale := &fencedRunnerConn{conn: second.direct.conn, identity: first.direct.identity, connection: first}
-	if _, err := runnerservicepb.NewRunnerClient(stale).GetStatus(ctx, &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+	if _, err := environmentruntimepb.NewEnvironmentRuntimeClient(stale).GetStatus(ctx, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("old boot remained usable after reconnect: %v", err)
 	}
 }
@@ -561,17 +561,17 @@ func TestRunnerDiscoveryEnqueuesTheSandboxAnEventConcerns(t *testing.T) {
 
 // heartbeatingRunner reports its state every few milliseconds, far faster than any production runner.
 type heartbeatingRunner struct {
-	runnerservicepb.UnimplementedRunnerServer
+	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	heartbeats atomic.Int32
 }
 
-func (r *heartbeatingRunner) WatchState(request *runnerservicepb.WatchStateRequest, stream grpc.ServerStreamingServer[runnerservicepb.WatchStateResponse]) error {
+func (r *heartbeatingRunner) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
 	ticker := time.NewTicker(5 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		if err := stream.Send(&runnerservicepb.WatchStateResponse{
+		if err := stream.Send(&environmentruntimepb.WatchStateResponse{
 			SandboxUid: request.SandboxUid, IncarnationUid: request.IncarnationUid, ConnectionEpoch: request.ConnectionEpoch,
-			RunnerBootId: "test-heartbeating-boot", Facts: &runnerstatepb.RunnerFacts{},
+			EnvironmentRuntimeBootId: "test-heartbeating-boot", Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{},
 		}); err != nil {
 			return err
 		}
@@ -619,7 +619,7 @@ func TestRunnerHeartbeatsReadNoSandboxOrPodFromTheAPIServer(t *testing.T) {
 	}
 	health := watchhealth.New()
 	g := f.newGatewayReading(t, inventory, health, "test-cached-gateway", "192.0.2.32")
-	g.config.RunnerSecurity = runner_transport.Security{Mode: runner_transport.Insecure}
+	g.config.RunnerSecurity = environment_runtime_transport.Security{Mode: environment_runtime_transport.Insecure}
 	for _, watched := range []client.Object{&sandboxapi.Sandbox{}, &corev1.Pod{}} {
 		informer, err := inventory.GetInformer(t.Context(), watched)
 		if err != nil {
@@ -637,13 +637,13 @@ func TestRunnerHeartbeatsReadNoSandboxOrPodFromTheAPIServer(t *testing.T) {
 		t.Fatal("cache did not sync")
 	}
 	health.MarkSynced()
-	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(sandboxapi.RunnerServicePort)))
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(sandboxapi.EnvironmentRuntimeServicePort)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
 	runner := &heartbeatingRunner{}
-	runnerservicepb.RegisterRunnerServer(server, runner)
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runner)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	finished := make(chan error, 1)
@@ -692,12 +692,12 @@ func TestCallOnEndedConnectionReportsTheEnd(t *testing.T) {
 	}
 	connection := &runnerConnection{ended: make(chan struct{})}
 	connection.direct = &fencedRunnerConn{conn: conn, identity: metadata.MD{}, connection: connection}
-	connection.runner = runnerservicepb.NewRunnerClient(connection.direct)
+	connection.runner = environmentruntimepb.NewEnvironmentRuntimeClient(connection.direct)
 	connection.end(errSupersededConnection)
 	if err := conn.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := connection.runner.GetStatus(t.Context(), &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Aborted {
+	if _, err := connection.runner.GetStatus(t.Context(), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Aborted {
 		t.Fatalf("call on an ended connection = %v, want the connection's end (Aborted)", err)
 	}
 }

@@ -12,7 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/ingress"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"google.golang.org/grpc"
 )
 
@@ -50,7 +50,7 @@ func (r *Runner) Run(ctx context.Context, endpoint configuration.Endpoint) error
 		}
 		return handler(ctx, request)
 	}))
-	runnerservicepb.RegisterRunnerServer(server, r)
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, r)
 	defer server.Stop()
 	servingCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()

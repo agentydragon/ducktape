@@ -11,7 +11,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -151,7 +151,7 @@ func (r *Reader) summaries(ctx context.Context, sessionIDs []uuid.UUID) ([]*hist
 			summary.LastTurnStatus = &turnStatus.V
 		}
 		if attached != nil {
-			summary.Attached = &runnerpb.Attached{}
+			summary.Attached = &sessionpb.Attached{}
 			if err := protojson.Unmarshal(attached, summary.Attached); err != nil {
 				return nil, fmt.Errorf("attachment of Session %s: %w", sessionID, err)
 			}

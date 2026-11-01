@@ -143,7 +143,7 @@ Queue on, **chosen by the operator, 2026-10-20 07:34 UTC:** the owner of a Sandb
 its runner connection.
 
 - `<sandbox>-runner` stays. It names the holder, carries the connection epoch (its `leaseTransitions`,
-  `gateway/records.go:134`) and the runner's facts, and the controller reads it for `RunnerConnected`.
+  `gateway/records.go:134`) and the runner's facts, and the controller reads it for `EnvironmentRuntimeConnected`.
 - `dispatcher-<uid>` goes. Its 30 s expiry exists to pick one live replica, and the runner's stream already does:
   the replica that accepts the connection holds it, and a newer epoch supersedes a stale holder.
 - The Postgres `sandbox_ownership` fence stays and advances with the connection epoch, so a replica that lost the

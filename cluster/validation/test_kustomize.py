@@ -68,7 +68,7 @@ def test_runner_image_pin_reaches_every_sandbox_template_container(tmp_path: Pat
     image_pins = get_required_path("_main/cluster/k8s/agentplane-staging/image-pins")
     shutil.copytree(image_pins, tmp_path / "image-pins")
     pins = yaml.safe_load((tmp_path / "image-pins/kustomization.yaml").read_text())
-    runner_image = "git.allegedly.works/ducktape-ci/runner-ducktape"
+    runner_image = "git.allegedly.works/ducktape-ci/environment-tools"
     runner_pin = next(image for image in pins["images"] if image["name"] == runner_image)
     (tmp_path / "kustomization.yaml").write_text(
         "apiVersion: kustomize.config.k8s.io/v1beta1\n"
@@ -80,7 +80,7 @@ def test_runner_image_pin_reaches_every_sandbox_template_container(tmp_path: Pat
         "apiVersion: agentplane.allegedly.works/v1alpha1\n"
         "kind: SandboxTemplate\n"
         "metadata:\n"
-        "  name: runner-ducktape\n"
+        "  name: environment-tools\n"
         "spec:\n"
         "  pod:\n"
         "    spec:\n"

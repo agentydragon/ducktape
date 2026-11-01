@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -27,7 +27,7 @@ func TestFreshSessionAdmissionInvalidatesIdleToken(t *testing.T) {
 	if _, err := client.runner.OpenSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.Quiesce(context.Background(), &runnerpb.QuiesceRequest{IfIdleSince: before.IdleSince}); status.Code(err) != codes.Aborted {
+	if _, err := r.Quiesce(context.Background(), &sessionpb.QuiesceRequest{IfIdleSince: before.IdleSince}); status.Code(err) != codes.Aborted {
 		t.Fatalf("stale idle conditional=%v", err)
 	}
 	waitRuntime(t, r, func() bool { facts, err := r.facts(); return err == nil && facts.IdleSince != nil }, "admitted Session idle")
@@ -35,7 +35,7 @@ func TestFreshSessionAdmissionInvalidatesIdleToken(t *testing.T) {
 	if err != nil || after.GetIdleSince() == nil || proto.Equal(before.IdleSince, after.IdleSince) {
 		t.Fatalf("admission did not invalidate idle token: before=%v after=%v error=%v", before, after, err)
 	}
-	if _, err := r.Quiesce(context.Background(), &runnerpb.QuiesceRequest{IfIdleSince: after.IdleSince}); err != nil {
+	if _, err := r.Quiesce(context.Background(), &sessionpb.QuiesceRequest{IfIdleSince: after.IdleSince}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -49,7 +49,7 @@ func TestRepeatedQuiesceKeepsCurrentLifecycleGeneration(t *testing.T) {
 	if err != nil || facts.GetIdleSince() == nil {
 		t.Fatalf("initial idle facts=%v, %v", facts, err)
 	}
-	request := &runnerpb.QuiesceRequest{IfIdleSince: facts.IdleSince}
+	request := &sessionpb.QuiesceRequest{IfIdleSince: facts.IdleSince}
 	if _, err := r.Quiesce(client.ctx, request); err != nil {
 		t.Fatal(err)
 	}
@@ -129,13 +129,13 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 	if _, err := successor.runner.OpenSession(successor.callCtx, request); err != nil {
 		t.Fatal(err)
 	}
-	sessions, err := successor.runner.ListSessions(successor.callCtx, &runnerpb.ListSessionsRequest{})
-	if err != nil || len(sessions.GetSessions()) != 1 || sessions.Sessions[0].SetupState != runnerpb.SetupState_SETUP_STATE_SUCCEEDED {
+	sessions, err := successor.runner.ListSessions(successor.callCtx, &sessionpb.ListSessionsRequest{})
+	if err != nil || len(sessions.GetSessions()) != 1 || sessions.Sessions[0].SetupState != sessionpb.SetupState_SETUP_STATE_SUCCEEDED {
 		t.Fatalf("recovered setup=%v, %v", sessions, err)
 	}
 	waitRuntime(t, restarted, func() bool {
 		facts, err := restarted.facts()
-		return err == nil && facts.Bootstrap == runnerstatepb.RunnerFacts_BOOTSTRAP_SUCCEEDED
+		return err == nil && facts.Bootstrap == environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_SUCCEEDED
 	}, "durable bootstrap result")
 	for path, want := range map[string]string{bootstrapCount: "b", setupCount: "s"} {
 		data, err := os.ReadFile(path)

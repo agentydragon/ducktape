@@ -9,8 +9,8 @@ Runner configuration requires `control.listen_address` and `control.security.mod
 requires the matching `runner_security.mode`. Each explicitly selects `mtls` or `insecure`. `mtls`
 requires a `tls` block with absolute `cert_file`, `key_file` and `ca_file` paths. `insecure` rejects a
 TLS block. Missing/unknown modes and partial or contradictory configuration fail startup.
-The service definitions are `runner/runner_service.proto` and `env/execution/executor.proto`;
-`proto/runner_state.proto` defines the facts published by `Runner.WatchState`.
+The service definitions are `runner/environment_runtime.proto` and `env/execution/executor.proto`;
+`proto/environment_runtime_state.proto` defines the facts published by `Runner.WatchState`.
 
 ## State observation and fencing
 
@@ -46,7 +46,7 @@ runner journal; a repeated ID with a different operation or payload fails `ALREA
 
 ## Runner proxy
 
-The gateway replica holding a Sandbox's connection also serves `agentplane.runner.Runner`
+The gateway replica holding a Sandbox's connection also serves `agentplane.env.runtime.control.EnvironmentRuntime`
 on its public gRPC port, which the Sandbox's `<sandbox>-control` Service reaches. The proxy forwards
 unary calls over the runner gRPC connection and returns the runner's status and response.
 
@@ -83,8 +83,8 @@ Service, which makes a historyless client unlike any other and couples live deli
 database.
 
 ```protobuf
-// agentplane/history_service/runner_ingress.proto
-service RunnerIngress {
+// agentplane/history_service/session_ingress.proto
+service SessionJournalIngress {
   rpc Push(stream PushFrame) returns (stream Acknowledgement);
 }
 
@@ -103,7 +103,7 @@ message Acknowledgement {
 }
 ```
 
-The ingress is its own service, `agentplane.history_service.RunnerIngress`, apart from `HistoryService`: another server implements
+The ingress is its own service, `agentplane.history_service.SessionJournalIngress`, apart from `HistoryService`: another server implements
 it, under its own token audience, and a historyless client needs only it.
 
 1. **One call per Session.** The runner opens a `Push` call for every Session in its state
@@ -198,11 +198,11 @@ The Sandbox Controller owns the headless, selector-less control Service. All rec
 the exact Sandbox API, kind, name and UID, with no other owners, and must not be deleting. Foreign
 records, including those of a deleted Sandbox whose name was reused, block connection acceptance.
 
-The Lease's `holderIdentity` is the Gateway Pod name, `leaseTransitions` the transition count within
-that Lease object's lifetime, `renewTime` the last authenticated state snapshot and
-`leaseDurationSeconds` 30. Its
-`agentplane.allegedly.works/pod-uid` and `agentplane.allegedly.works/runner-boot-id` annotations bind
-the workload incarnation and runner process. Runner facts replace the corresponding Lease annotations.
+The Lease's `holderIdentity` is the Gateway Pod name, `leaseTransitions` the monotonically increasing
+epoch, `renewTime` the last authenticated state snapshot and `leaseDurationSeconds` 30. Its
+`agentplane.allegedly.works/pod-uid` and
+`agentplane.allegedly.works/environment-runtime-boot-id` annotations bind the workload incarnation
+and Environment Runtime process. Environment Runtime facts replace the corresponding Lease annotations.
 Readers trust them only while the Lease is live and names the current incarnation.
 
 Claiming the Lease uses resource-version conflict retries and refuses takeover of another live
@@ -279,7 +279,7 @@ The Sandbox Controller always provisions credentials; k3s keeps real cert-manage
 mTLS in every stack. Bad mTLS credentials never trigger an insecure retry.
 
 The Gateway's certificate has URI SAN `spiffe://agentplane/runner-gateway`. Each runner certificate
-has exactly one URI SAN, `spiffe://agentplane/runner/<namespace>/<sandbox-uid>/<credential-id>`.
+has exactly one URI SAN, `spiffe://agentplane/env/e2e/<namespace>/<sandbox-uid>/<credential-id>`.
 Certificates must chain to the configured trust roots and permit the peer's client/server EKU.
 A CA-valid certificate with the wrong URI is rejected.
 
@@ -309,7 +309,7 @@ Old runner binaries do not serve the private mTLS listener. Before updating the 
 quiesce and suspend existing runners through the old Gateway and wait for their retained journal
 state to flush. Preserve Sandbox objects and state PVCs. Provision the Issuer, Gateway Certificate,
 trust bundle and network policy, then deploy the matching services and templates. Resume the Sandboxes after certificates become Ready. Verify
-`RunnerConnected`, bootstrap readiness, journal/history continuity and a new admitted command for
+`EnvironmentRuntimeConnected`, bootstrap readiness, journal/history continuity and a new admitted command for
 Pod and VM runners. A ready Pod alone does not establish control connectivity.
 
 Rollback also requires matching binaries and configuration: quiesce through the working Gateway,

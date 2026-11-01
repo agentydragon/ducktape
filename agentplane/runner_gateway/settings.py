@@ -12,7 +12,7 @@ from typing import Annotated, ClassVar
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, field_validator
 from pydantic_settings import SettingsConfigDict
 
-from agentplane.runner_transport.configuration import Security
+from agentplane.environment_runtime_transport.config import Security
 from util.yaml_file_settings import YamlFileSettings
 
 type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]+$")]

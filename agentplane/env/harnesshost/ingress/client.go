@@ -11,8 +11,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/stream"
-	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -27,20 +27,20 @@ const (
 // Source is the durable history a runner can publish for one Session.
 type Source struct {
 	ID       string
-	Announce func() *runnerpb.Attached
+	Announce func() *sessionpb.Attached
 	Journal  *journal.Journal
 }
 
 // Client publishes journal prefixes to the History Service.
 type Client struct {
-	rpc   ingresspb.RunnerIngressClient
+	rpc   ingresspb.SessionJournalIngressClient
 	store *retained.Store
 	onAck func(string, retained.Acknowledgement) error
 }
 
 // NewClient binds the RPC client to durable acknowledgement storage and its
 // observation owner. Deliver receives the outgoing-authenticated context.
-func NewClient(rpc ingresspb.RunnerIngressClient, store *retained.Store, onAck func(string, retained.Acknowledgement) error) *Client {
+func NewClient(rpc ingresspb.SessionJournalIngressClient, store *retained.Store, onAck func(string, retained.Acknowledgement) error) *Client {
 	return &Client{rpc: rpc, store: store, onAck: onAck}
 }
 
@@ -173,7 +173,7 @@ func (c *Client) pushOnce(ctx context.Context, source Source) (bool, error) {
 			}
 			if seal := source.Journal.SealState(); seal != nil && sent == seal.Cursor {
 				uid := seal.IncarnationUID
-				if err := stream.Send(&ingresspb.PushFrame{Frame: &ingresspb.PushFrame_Sealed{Sealed: &runnerpb.Sealed{Cursor: seal.Cursor, IncarnationUid: &uid}}}); err != nil {
+				if err := stream.Send(&ingresspb.PushFrame{Frame: &ingresspb.PushFrame_Sealed{Sealed: &sessionpb.Sealed{Cursor: seal.Cursor, IncarnationUid: &uid}}}); err != nil {
 					return progressed, err
 				}
 				sealedSent = true

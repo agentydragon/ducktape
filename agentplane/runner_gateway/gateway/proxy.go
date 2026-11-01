@@ -3,9 +3,9 @@ package gateway
 import (
 	"context"
 
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -18,14 +18,14 @@ var identityMetadataKeys = []string{
 	sandboxapi.RunnerProxySandboxOwnerNameMetadataKey,
 }
 
-type runnerProxy struct {
-	runnerservicepb.UnimplementedRunnerServer
+type environmentRuntimeProxy struct {
+	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	gateway *Gateway
 }
 
 // connection is the elected connection to the runner of the Sandbox the call's metadata names. Gateway.Methods
 // admitted the caller.
-func (p *runnerProxy) connection(ctx context.Context, allowSuspending bool) (*runnerConnection, error) {
+func (p *environmentRuntimeProxy) connection(ctx context.Context, allowSuspending bool) (*runnerConnection, error) {
 	g := p.gateway
 	metadata, _ := metadata.FromIncomingContext(ctx)
 	names := metadata.Get(sandboxapi.RunnerProxySandboxMetadataKey)
@@ -61,7 +61,7 @@ func (p *runnerProxy) connection(ctx context.Context, allowSuspending bool) (*ru
 	return connection, nil
 }
 
-func (p *runnerProxy) ListSessions(ctx context.Context, request *runnerpb.ListSessionsRequest) (*runnerpb.ListSessionsResponse, error) {
+func (p *environmentRuntimeProxy) ListSessions(ctx context.Context, request *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
 	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
@@ -69,7 +69,7 @@ func (p *runnerProxy) ListSessions(ctx context.Context, request *runnerpb.ListSe
 	return connection.runner.ListSessions(ctx, request)
 }
 
-func (p *runnerProxy) GetStatus(ctx context.Context, request *runnerpb.GetStatusRequest) (*runnerpb.RunnerStatus, error) {
+func (p *environmentRuntimeProxy) GetStatus(ctx context.Context, request *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
@@ -77,7 +77,7 @@ func (p *runnerProxy) GetStatus(ctx context.Context, request *runnerpb.GetStatus
 	return connection.runner.GetStatus(ctx, request)
 }
 
-func (p *runnerProxy) OpenSession(ctx context.Context, request *runnerservicepb.OpenSessionRequest) (*runnerservicepb.OpenSessionResponse, error) {
+func (p *environmentRuntimeProxy) OpenSession(ctx context.Context, request *environmentruntimepb.OpenSessionRequest) (*environmentruntimepb.OpenSessionResponse, error) {
 	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
@@ -85,7 +85,7 @@ func (p *runnerProxy) OpenSession(ctx context.Context, request *runnerservicepb.
 	return connection.runner.OpenSession(ctx, request)
 }
 
-func (p *runnerProxy) Quiesce(ctx context.Context, request *runnerpb.QuiesceRequest) (*runnerpb.QuiesceResponse, error) {
+func (p *environmentRuntimeProxy) Quiesce(ctx context.Context, request *sessionpb.QuiesceRequest) (*sessionpb.QuiesceResponse, error) {
 	// The controller may have published Quiescing while this Gateway still caches the preceding
 	// SuspendPending phase. Only this controller-authorized control call can use that phase.
 	connection, err := p.connection(ctx, true)
@@ -95,7 +95,7 @@ func (p *runnerProxy) Quiesce(ctx context.Context, request *runnerpb.QuiesceRequ
 	return connection.runner.Quiesce(ctx, request)
 }
 
-func (p *runnerProxy) SubmitInput(ctx context.Context, request *runnerservicepb.SubmitInputRequest) (*runnerservicepb.SubmitInputResponse, error) {
+func (p *environmentRuntimeProxy) SubmitInput(ctx context.Context, request *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
 	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
@@ -103,7 +103,7 @@ func (p *runnerProxy) SubmitInput(ctx context.Context, request *runnerservicepb.
 	return connection.runner.SubmitInput(ctx, request)
 }
 
-func (p *runnerProxy) ChangeModel(ctx context.Context, request *runnerservicepb.ChangeModelRequest) (*runnerservicepb.ChangeModelResponse, error) {
+func (p *environmentRuntimeProxy) ChangeModel(ctx context.Context, request *environmentruntimepb.ChangeModelRequest) (*environmentruntimepb.ChangeModelResponse, error) {
 	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
@@ -111,7 +111,7 @@ func (p *runnerProxy) ChangeModel(ctx context.Context, request *runnerservicepb.
 	return connection.runner.ChangeModel(ctx, request)
 }
 
-func (p *runnerProxy) ChangeReasoningEffort(ctx context.Context, request *runnerservicepb.ChangeReasoningEffortRequest) (*runnerservicepb.ChangeReasoningEffortResponse, error) {
+func (p *environmentRuntimeProxy) ChangeReasoningEffort(ctx context.Context, request *environmentruntimepb.ChangeReasoningEffortRequest) (*environmentruntimepb.ChangeReasoningEffortResponse, error) {
 	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
@@ -119,7 +119,7 @@ func (p *runnerProxy) ChangeReasoningEffort(ctx context.Context, request *runner
 	return connection.runner.ChangeReasoningEffort(ctx, request)
 }
 
-func (p *runnerProxy) InterruptTurn(ctx context.Context, request *runnerservicepb.InterruptTurnRequest) (*runnerservicepb.InterruptTurnResponse, error) {
+func (p *environmentRuntimeProxy) InterruptTurn(ctx context.Context, request *environmentruntimepb.InterruptTurnRequest) (*environmentruntimepb.InterruptTurnResponse, error) {
 	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
@@ -127,4 +127,4 @@ func (p *runnerProxy) InterruptTurn(ctx context.Context, request *runnerservicep
 	return connection.runner.InterruptTurn(ctx, request)
 }
 
-var _ runnerservicepb.RunnerServer = (*runnerProxy)(nil)
+var _ environmentruntimepb.EnvironmentRuntimeServer = (*environmentRuntimeProxy)(nil)

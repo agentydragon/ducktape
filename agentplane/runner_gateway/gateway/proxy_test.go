@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/runner_transport"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -29,13 +29,13 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	credentials, err := f.runnerTLS.ServerCredentials(runner_transport.GatewayURI)
+	credentials, err := f.runnerTLS.ServerCredentials(environment_runtime_transport.GatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
 	runnerServer := grpc.NewServer(grpc.Creds(credentials))
 	runner := &observedRunner{bootID: "proxy-test-boot"}
-	runnerservicepb.RegisterRunnerServer(runnerServer, runner)
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(runnerServer, runner)
 	go func() { _ = runnerServer.Serve(runnerListener) }()
 	t.Cleanup(runnerServer.Stop)
 	destination.target = runnerListener.Addr().String()
@@ -74,14 +74,14 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = proxy.Close() })
-	client := runnerservicepb.NewRunnerClient(proxy)
-	if _, err := client.GetStatus(f.callerContext(f.appToken), &runnerpb.GetStatusRequest{}); err != nil {
+	client := environmentruntimepb.NewEnvironmentRuntimeClient(proxy)
+	if _, err := client.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("authorized app call did not reach Runner: %v", err)
 	}
 	if runner.calls.Load() != 1 {
 		t.Fatal("authorized app call did not reach the direct Runner server")
 	}
-	if _, err := client.GetStatus(f.callerContext(f.executorToken), &runnerpb.GetStatusRequest{}); status.Code(err) != codes.PermissionDenied {
+	if _, err := client.GetStatus(f.callerContext(f.executorToken), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("caller outside the Runner proxy allowlist was accepted: %v", err)
 	}
 
@@ -92,7 +92,7 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, f.namespace,
 		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, testSandbox,
 	))
-	if _, err := client.GetStatus(staleContext, &runnerpb.GetStatusRequest{}); status.Code(err) != codes.NotFound {
+	if _, err := client.GetStatus(staleContext, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.NotFound {
 		t.Fatalf("proxy accepted a stale Sandbox UID: %v", err)
 	}
 
@@ -103,26 +103,26 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	if err := f.objects.Status().Update(t.Context(), f.sandbox); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.GetStatus(f.callerContext(f.appToken), &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+	if _, err := client.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("GetStatus in held suspend = %v, want Unavailable", err)
 	}
-	if _, err := client.SubmitInput(f.callerContext(f.appToken), &runnerservicepb.SubmitInputRequest{}); status.Code(err) != codes.Unavailable {
+	if _, err := client.SubmitInput(f.callerContext(f.appToken), &environmentruntimepb.SubmitInputRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("SubmitInput in held suspend = %v, want Unavailable", err)
 	}
-	if _, err := client.Quiesce(f.callerContext(f.controllerToken), &runnerpb.QuiesceRequest{}); err != nil {
+	if _, err := client.Quiesce(f.callerContext(f.controllerToken), &sessionpb.QuiesceRequest{}); err != nil {
 		t.Fatalf("controller Quiesce in held suspend did not reach Runner: %v", err)
 	}
 	if got := runner.quiesceCalls.Load(); got != 1 {
 		t.Fatalf("Runner received %d Quiesce calls, want 1", got)
 	}
-	if _, err := client.Quiesce(f.callerContext(f.appToken), &runnerpb.QuiesceRequest{}); status.Code(err) != codes.PermissionDenied {
+	if _, err := client.Quiesce(f.callerContext(f.appToken), &sessionpb.QuiesceRequest{}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("app Quiesce in held suspend = %v, want PermissionDenied", err)
 	}
 	f.sandbox.Status.Incarnation.UID = "replaced-runner-uid"
 	if err := f.objects.Status().Update(t.Context(), f.sandbox); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Quiesce(f.callerContext(f.controllerToken), &runnerpb.QuiesceRequest{}); status.Code(err) != codes.Unavailable {
+	if _, err := client.Quiesce(f.callerContext(f.controllerToken), &sessionpb.QuiesceRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("Quiesce for a replaced Runner = %v, want Unavailable", err)
 	}
 	f.sandbox.Status.Incarnation.UID = string(f.pod.UID)
@@ -133,7 +133,7 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	if err := f.objects.Status().Update(t.Context(), f.pod); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Quiesce(f.callerContext(f.controllerToken), &runnerpb.QuiesceRequest{}); status.Code(err) != codes.Unavailable {
+	if _, err := client.Quiesce(f.callerContext(f.controllerToken), &sessionpb.QuiesceRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("Quiesce with an unready Pod = %v, want Unavailable", err)
 	}
 	if got := runner.quiesceCalls.Load(); got != 1 {

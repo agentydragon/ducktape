@@ -11,10 +11,10 @@ Slice=agentplane.slice
 RuntimeDirectory=agentplane-harness-host-lifetime
 RuntimeDirectoryMode=0755
 RuntimeDirectoryPreserve=no
-EnvironmentFile=/run/agentplane/config/runner.env
+EnvironmentFile=/run/agentplane/config/environment-runtime.env
 Environment=ANTHROPIC_AUTH_TOKEN=agentplane-credential-agentplane-workload
 Environment=OPENAI_API_KEY=agentplane-credential-agentplane-workload
-ExecStart=/run/agentplane/runner/bin/agentplane-harness-host --config /run/agentplane/config/runner.json --launch-file /run/agentplane/sandbox/launch.json --runtime-socket /state/runtime/lifecycle.sock --listen-socket /state/harness-host/control.sock --execution-socket /state/execution/execution.sock --supervision systemd
+ExecStart=/run/agentplane/environment/bin/agentplane-harness-host --config /run/agentplane/config/environment-runtime.json --launch-file /run/agentplane/sandbox/launch.json --runtime-socket /state/runtime/lifecycle.sock --listen-socket /state/harness-host/control.sock --execution-socket /state/execution/execution.sock --supervision systemd
 UMask=0007
 Restart=no
 TimeoutStopSec=120s

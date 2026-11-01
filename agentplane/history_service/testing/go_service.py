@@ -19,9 +19,9 @@ from uuid import UUID
 import grpc
 
 from agentplane.grpc.calls import ServiceError
-from agentplane.history_service import history_service_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc
+from agentplane.history_service import history_service_pb2, session_ingress_pb2, session_ingress_pb2_grpc
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.go_process import GoProcess, go_process
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
@@ -98,7 +98,7 @@ class GoHistoryService:
         entries: Sequence[event_log_pb2.EventEntry],
         *,
         writer: ServiceAccountRef = WRITER,
-        attached: runner_pb2.Attached | None = None,
+        attached: session_pb2.Attached | None = None,
     ) -> int:
         """Push `entries` of the Session's journal as `writer`'s runner does, returning the cursor committed through.
 
@@ -106,25 +106,25 @@ class GoHistoryService:
         Session's feed state as it was. Without `entries` the call only binds the Session to `writer` and announces
         `attached`.
         """
-        announce = runner_pb2.Attached(last_cursor=_UNCOVERED_CURSOR)
+        announce = session_pb2.Attached(last_cursor=_UNCOVERED_CURSOR)
         if attached is not None:
             announce.CopyFrom(attached)
         announce.session_id = str(session_id)
         async with asyncio.timeout(_PROGRESS_BOUND_SECONDS), grpc.aio.insecure_channel(self.ingress_target) as channel:
-            call = runner_ingress_pb2_grpc.RunnerIngressStub(channel).Push(
+            call = session_ingress_pb2_grpc.SessionJournalIngressStub(channel).Push(
                 metadata=(("authorization", f"Bearer {await self.writer_token(writer)}"),)
             )
 
             async def acknowledged_cursor() -> int:
                 acknowledgement = await call.read()
-                assert isinstance(acknowledgement, runner_ingress_pb2.Acknowledgement), (
+                assert isinstance(acknowledgement, session_ingress_pb2.Acknowledgement), (
                     "the ingress closed the call before acknowledging"
                 )
                 return acknowledgement.cursor
 
-            await call.write(runner_ingress_pb2.PushFrame(announce=announce))
+            await call.write(session_ingress_pb2.PushFrame(announce=announce))
             for entry in entries:
-                await call.write(runner_ingress_pb2.PushFrame(entry=entry))
+                await call.write(session_ingress_pb2.PushFrame(entry=entry))
             # Closing the call commits what arrived without acknowledging it, so wait for the acknowledgement first.
             committed = await acknowledged_cursor()
             while committed < max((entry.cursor for entry in entries), default=0):

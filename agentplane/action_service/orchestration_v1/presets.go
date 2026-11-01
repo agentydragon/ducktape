@@ -10,7 +10,7 @@ import (
 	"slices"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
 
 // Preset is one reviewed launch preset, as the launch_sandbox and open_session fields it stands for.
@@ -55,7 +55,7 @@ func parsePresets(document json.RawMessage) (map[string]Preset, error) {
 	for _, name := range slices.Sorted(maps.Keys(presets)) {
 		preset := presets[name]
 		spec := preset.OpenSession.Spec
-		if _, known := runnerpb.Harness_value[string(spec.Harness)]; !known || spec.Harness == contract.Harness(runnerpb.Harness_HARNESS_UNSPECIFIED.String()) {
+		if _, known := sessionpb.Harness_value[string(spec.Harness)]; !known || spec.Harness == contract.Harness(sessionpb.Harness_HARNESS_UNSPECIFIED.String()) {
 			return nil, fmt.Errorf("preset %s: open_session.spec.harness must name a harness", name)
 		}
 		if preset.Title == "" || preset.Launch.Template == "" || spec.Model == "" || spec.Cwd == "" {

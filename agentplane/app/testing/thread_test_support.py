@@ -8,10 +8,10 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.models import ThreadMetadata
-from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
+from agentplane.proto import event_log_pb2, event_pb2, session_pb2
 
-SPEC = runner_pb2.SessionSpec(
-    harness=runner_pb2.HARNESS_CLAUDE, cwd="/state/work", model="test-model", reasoning_effort="low"
+SPEC = session_pb2.SessionSpec(
+    harness=session_pb2.HARNESS_CLAUDE, cwd="/state/work", model="test-model", reasoning_effort="low"
 )
 
 

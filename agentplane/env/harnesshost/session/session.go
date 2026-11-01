@@ -16,7 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/state"
 	"go.uber.org/zap"
 )
@@ -40,14 +40,14 @@ type Session struct {
 	process                                                *supervision.ManagedProcess
 	adapter                                                harness.Adapter
 	processID                                              string
-	processState                                           runnerpb.ProcessState
+	processState                                           sessionpb.ProcessState
 	nativeStop                                             stopReason
 	preparation, dispatching, inspection, halting, sealing *oneoff.Operation
 	controlDispatches                                      map[string]chan struct{}
 	reconciliations                                        []*pendingReconciliation
 	activeTurn                                             string
-	setup                                                  runnerpb.SetupState
-	launch                                                 runnerpb.LaunchOutcome
+	setup                                                  sessionpb.SetupState
+	launch                                                 sessionpb.LaunchOutcome
 	failure                                                *uint64
 	setupJob, stopping                                     *oneoff.Operation
 	connection                                             *nativeConnection
@@ -79,7 +79,7 @@ type sessionDependencies struct {
 	environmentState   func() Environment
 	ensureWorkspace    func(context.Context, string) (string, error)
 	launchProcess      func(context.Context, string, supervision.ProcessConfig) (*supervision.ManagedProcess, error)
-	resolveModelConfig func(context.Context, runnerpb.Harness, string) (*int, error)
+	resolveModelConfig func(context.Context, sessionpb.Harness, string) (*int, error)
 	publish            func(*Session, bool)
 	publishOperation   func(string, string, bool) error
 	changed            func()
@@ -87,9 +87,9 @@ type sessionDependencies struct {
 }
 
 func newSession(deps sessionDependencies, id string, record *retained.Record, journal *journal.Journal) *Session {
-	s := &Session{deps: deps, id: id, record: record, journal: journal, pending: map[string]bool{}, dispatched: map[string]bool{}, controlDispatches: map[string]chan struct{}{}, interrupts: map[string]string{}, launch: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING, setup: runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED}
+	s := &Session{deps: deps, id: id, record: record, journal: journal, pending: map[string]bool{}, dispatched: map[string]bool{}, controlDispatches: map[string]chan struct{}{}, interrupts: map[string]string{}, launch: sessionpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING, setup: sessionpb.SetupState_SETUP_STATE_NOT_REQUIRED}
 	if record.HasSetupScript() {
-		s.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
+		s.setup = sessionpb.SetupState_SETUP_STATE_RUNNING
 	}
 	s.connection = &nativeConnection{deps: nativeConnectionDependencies{
 		ctx: deps.ctx, journal: journal,
@@ -138,7 +138,7 @@ func (s *Session) ensureReady(ctx context.Context) error {
 	if s.executionClosed() {
 		return errors.New("the session is sealed")
 	}
-	if setup == runnerpb.SetupState_SETUP_STATE_FAILED || setup == runnerpb.SetupState_SETUP_STATE_INTERRUPTED || setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
+	if setup == sessionpb.SetupState_SETUP_STATE_FAILED || setup == sessionpb.SetupState_SETUP_STATE_INTERRUPTED || setup == sessionpb.SetupState_SETUP_STATE_RUNNING {
 		return errors.New("session setup failed or was interrupted; create a new session")
 	}
 	if err := s.deps.waitBootstrap(ctx); err != nil {
@@ -161,7 +161,7 @@ func (s *Session) ensureReady(ctx context.Context) error {
 func (s *Session) load(ctx context.Context) error {
 	for cursor := uint64(0); ; {
 		s.mu.Lock()
-		needsPrefix := s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING || s.launch == runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING
+		needsPrefix := s.setup == sessionpb.SetupState_SETUP_STATE_RUNNING || s.launch == sessionpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING
 		s.mu.Unlock()
 		if !needsPrefix {
 			break
@@ -177,7 +177,7 @@ func (s *Session) load(ctx context.Context) error {
 			s.apply(entry, nil)
 			cursor = entry.Cursor
 			s.mu.Lock()
-			resolved := s.setup != runnerpb.SetupState_SETUP_STATE_RUNNING && s.launch != runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING
+			resolved := s.setup != sessionpb.SetupState_SETUP_STATE_RUNNING && s.launch != sessionpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING
 			s.mu.Unlock()
 			if resolved {
 				break
@@ -206,7 +206,7 @@ func (s *Session) recover(ctx context.Context) error {
 	s.mu.Lock()
 	setup := s.setup
 	s.mu.Unlock()
-	if setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
+	if setup == sessionpb.SetupState_SETUP_STATE_RUNNING {
 		if err := s.Emit(ctx, observation(&eventpb.SetupInterrupted{}), nil); err != nil {
 			return err
 		}
@@ -283,7 +283,7 @@ func (s *Session) halt(ctx context.Context, reason stopReason) {
 	s.admitMu.Lock()
 	s.mu.Lock()
 	s.nativeStop = reason
-	s.processState = runnerpb.ProcessState_PROCESS_STATE_STOPPING
+	s.processState = sessionpb.ProcessState_PROCESS_STATE_STOPPING
 	process := s.process
 	adapter := s.adapter
 	turn := s.activeTurn

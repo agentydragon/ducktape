@@ -1,4 +1,4 @@
-You are using the ducktape-specific `runner-ducktape` container, built with Nix (not NixOS).
+You are using the ducktape-specific `environment-tools` container, built with Nix (not NixOS).
 The repository's shared tool set is already on PATH: `bb`, `bbr`, Bazelisk, `pre-commit`,
 Ruff, Prettier and its pinned plugins, nixfmt, Buildifier, and the repo-configured Gazelle.
 Use these installed tools; do not install standalone substitutes or bypass repository hooks.

@@ -8,7 +8,7 @@ EMITTER_LABEL = "agentplane.io/otel-emitter"
 EMITTER_LABEL_VALUE = "true"
 EMITTER_LABELS = {EMITTER_LABEL: EMITTER_LABEL_VALUE}
 EMITTER_SERVICE_CLASS_LABELS = {**EMITTER_LABELS, "agentplane.io/otel-class": "service"}
-EMITTER_RUNNER_CLASS_LABELS = {**EMITTER_LABELS, "agentplane.io/otel-class": "runner"}
+EMITTER_ENVIRONMENT_RUNTIME_CLASS_LABELS = {**EMITTER_LABELS, "agentplane.io/otel-class": "environment-runtime"}
 
 ALLOY_NAMESPACE = "monitoring"
 ALLOY_NAME = "alloy"

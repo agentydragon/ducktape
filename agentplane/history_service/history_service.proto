@@ -5,7 +5,7 @@ package agentplane.history_service;
 
 import "agentplane/proto/event.proto";
 import "agentplane/proto/event_log.proto";
-import "agentplane/proto/runner.proto";
+import "agentplane/proto/session.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";

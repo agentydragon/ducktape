@@ -13,11 +13,10 @@ import (
 )
 
 const (
-	// RunnerContainer is the template container that gets the launch file. Must equal the runner
-	// container's name in cluster/cdk8s/agentplane/runner_sandbox.py.
-	RunnerContainer = "runner"
+	// EnvironmentRuntimeContainer is the template container that gets the launch file.
+	EnvironmentRuntimeContainer = "environment-runtime"
 	// LaunchMountPath is the directory the runner container finds LaunchFile in. Must equal the
-	// runner's --launch-file directory in cluster/cdk8s/agentplane/runner_sandbox.py.
+	// runner's --launch-file directory in cluster/cdk8s/agentplane/environment_sandbox.py.
 	LaunchMountPath = "/run/agentplane/sandbox"
 	// LaunchFile is the key of the Sandbox's launch ConfigMap that the Go runner reads.
 	// A VM guest finds the same file on the disk of serial
@@ -62,9 +61,9 @@ func (r *Reconciler) ensureLaunch(ctx context.Context, sandbox *sandboxapi.Sandb
 
 // withLaunch mounts the Sandbox's launch ConfigMap into the template's runner container.
 func withLaunch(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, spec *corev1.PodSpec) *unready {
-	i := slices.IndexFunc(spec.Containers, func(c corev1.Container) bool { return c.Name == RunnerContainer })
+	i := slices.IndexFunc(spec.Containers, func(c corev1.Container) bool { return c.Name == EnvironmentRuntimeContainer })
 	if i < 0 {
-		return &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s has no %s container", template.Name, RunnerContainer)}
+		return &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s has no %s container", template.Name, EnvironmentRuntimeContainer)}
 	}
 	if slices.ContainsFunc(spec.Volumes, func(v corev1.Volume) bool { return v.Name == launchVolume }) {
 		return &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the launch volume %s itself", template.Name, launchVolume)}

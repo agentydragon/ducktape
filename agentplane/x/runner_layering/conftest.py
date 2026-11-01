@@ -11,10 +11,10 @@ from agentplane.history_service.testing.fixtures import (
     service_history_db_url,
 )
 from agentplane.history_service.testing.go_service import GoHistoryService
-from agentplane.runner.testing.driver import RunnerDriver
-from agentplane.runner.testing.fixtures import endpoint, gateway, harness, model, runner_gateway, spec, workspace
-from agentplane.runner.testing.gateway import Gateway
-from agentplane.runner.testing.process_fixtures import start_runner
+from agentplane.env.e2e.testing.driver import RunnerDriver
+from agentplane.env.e2e.testing.fixtures import endpoint, gateway, harness, model, runner_gateway, spec, workspace
+from agentplane.env.e2e.testing.gateway import Gateway
+from agentplane.env.e2e.testing.process_fixtures import start_runner
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
 from util.testing.postgres_fixtures import (
     database_clones,

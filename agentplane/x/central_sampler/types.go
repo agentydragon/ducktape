@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
 )
@@ -169,7 +169,7 @@ type Session struct {
 	ActiveTurn        *string
 	ActiveCommand     *string
 	WorkspacePrepared bool
-	SetupState        runnerpb.SetupState
+	SetupState        sessionpb.SetupState
 	SetupStarted      bool
 	Blocked           bool
 	BlockedReason     *string

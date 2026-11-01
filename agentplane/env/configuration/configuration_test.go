@@ -15,7 +15,7 @@ import (
 func configurationFixture(t *testing.T) (map[string]any, string, string) {
 	t.Helper()
 	directory := t.TempDir()
-	configPath, launchPath := filepath.Join(directory, "runner.json"), filepath.Join(directory, "launch.json")
+	configPath, launchPath := filepath.Join(directory, "environment-runtime.json"), filepath.Join(directory, "launch.json")
 	writeJSONFixture(t, launchPath, map[string]any{"sandbox": map[string]string{"namespace": "test", "name": "sandbox", "uid": "sandbox-uid"}, "bootstrap": "echo initialized"})
 	value := map[string]any{
 		"environment": map[string]any{"kind": "pod", "supervision": "subprocess"},
@@ -25,7 +25,7 @@ func configurationFixture(t *testing.T) (map[string]any, string, string) {
 		}}},
 		"ingress":               map[string]string{"target": "history.test:8081", "bearer": "ingress-placeholder"},
 		"platform_instructions": "Test guidance.",
-		"runner_environment":    map[string]any{"values": map[string]string{"TOOL_ROUTE": "http://tools.test"}},
+		"environment_runtime_environment":    map[string]any{"values": map[string]string{"TOOL_ROUTE": "http://tools.test"}},
 		"harness_environment":   map[string]any{"inherit": []string{"PATH", "TOOL_ROUTE"}, "values": map[string]string{"HOME": directory}},
 		"codex":                 map[string]string{"binary": "/opt/tools/codex", "base_url": "http://models.test/v1", "token_env": "RUNNER_TEST_PROVIDER_TOKEN"},
 	}

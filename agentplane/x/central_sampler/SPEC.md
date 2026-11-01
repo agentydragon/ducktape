@@ -532,7 +532,7 @@ resident count may exceed `max_live_sessions`, which caps concurrent active-exec
 idle resident waits for a work wakeup or reconciliation without occupying a slot. All Sessions on
 a replica share its one lazy Codex host process.
 
-The exporter uses existing `RunnerIngress.Push` with an explicitly authorized sampler announcement,
+The exporter uses existing `SessionJournalIngress.Push` with an explicitly authorized sampler announcement,
 then replays original immutable entries. Any sampler replica can export any Session, independently
 of agent-loop ownership; any History replica can receive it. Concurrent copies of the same journal
 are valid. An acknowledgement covers the Session's durable History prefix, including entries another

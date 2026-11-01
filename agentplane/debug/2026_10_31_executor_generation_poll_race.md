@@ -1,7 +1,7 @@
 # Executor generation recovery test race
 
 BuildBuddy invocation `ba012287-726e-538e-9d0f-09f88b743e6f` failed
-`//agentplane/runner:test_executor_container` while waiting for the companion to
+`//agentplane/env/e2e:test_executor_container` while waiting for the companion to
 report an unowned executor generation after the detached process exited.
 
 The companion fences workload processes and publishes a fresh idle generation.

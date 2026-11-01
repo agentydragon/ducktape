@@ -1,0 +1,153 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    deps = ["//agentplane/sandboxes:launch"],
+)
+
+py_library(
+    name = "events",
+    srcs = ["events.py"],
+    deps = [
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "failure_journal",
+    srcs = ["failure_journal.py"],
+    deps = [
+        ":process",
+        "//util/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    deps = [
+        ":config",
+        ":driver",
+        ":failure_journal",
+        ":gateway",
+        ":launches",
+        ":process",
+        "//agentplane/env:config",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/native/claude/testing:messages",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/testing:claude_model",
+        "//agentplane/testing:codex_model",
+        "//agentplane/testing:scripted_model",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "launches",
+    srcs = ["launches.py"],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: native executable selected by the test launch
+        "@claude_code_cli_linux_x64//:claude",  # keep: native executable selected by the test launch
+    ],
+    deps = [
+        ":config",
+        "//agentplane/env:config",
+        "//agentplane/native/claude/testing:model",
+        "//agentplane/native/codex/testing:model",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/sandboxes:launch",
+        "//util/bazel:runfiles",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "driver",
+    srcs = ["driver.py"],
+    deps = [
+        ":config",
+        ":gateway",
+        ":process",
+        "//agentplane/env:config",
+        "//agentplane/env/runtime/control:environment_runtime_pb2",
+        "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
+        "//agentplane/grpc:calls",
+        "//agentplane/history_service:client",
+        "//agentplane/history_service:history_service_pb2",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/history_service/testing:unstored_ranges",
+        "//agentplane/proto:environment_runtime_state_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:session_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "gateway",
+    srcs = ["gateway.py"],
+    deps = [
+        "//agentplane/env:config",
+        "//agentplane/env/runtime/control:environment_runtime_pb2",
+        "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
+        "//agentplane/environment_runtime_transport:config",
+        "//agentplane/proto:environment_runtime_state_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "process_fixtures",
+    srcs = ["process_fixtures.py"],
+    deps = [
+        ":gateway",
+        ":launches",
+        "//agentplane/env:config",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/native/claude/testing:messages",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/proto:session_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "process",
+    srcs = ["process.py"],
+    data = [
+        "//agentplane/env/execution/cmd:agentplane-execution-service",  # keep: Runtime child
+        "//agentplane/env/harnesshost/cmd:agentplane-harness-host",  # keep: Runtime child
+        "//agentplane/env/runtime/cmd:agentplane-environment-runtime",  # keep: production Runtime subprocess
+    ],
+    deps = [
+        ":config",
+        ":gateway",
+        ":launches",
+        ":process_fixtures",
+        "//agentplane/env:config",
+        "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
+        "//agentplane/history_service:client",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:session_pb2",
+        "//util/testing:undeclared_outputs",
+        "@pypi//grpcio",  # keep: mypy follows the generated Runner control stub
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)

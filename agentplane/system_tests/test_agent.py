@@ -10,7 +10,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.app.testing.client import Client
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests import agent as agent_module
@@ -34,7 +34,7 @@ async def test_agent_open_retries_unavailable_without_creating_another_session()
         dispatcher,
         sandbox="test-sandbox",
         sandbox_uid=UUID("00000000-0000-4000-8000-000000000001"),
-        harness=runner_pb2.HARNESS_CODEX,
+        harness=session_pb2.HARNESS_CODEX,
         model="test-model",
     )
 
@@ -60,7 +60,7 @@ async def test_startup_refusals_and_other_server_failures_are_not_retried(status
             dispatcher,
             sandbox="test-sandbox",
             sandbox_uid=UUID("00000000-0000-4000-8000-000000000001"),
-            harness=runner_pb2.HARNESS_CODEX,
+            harness=session_pb2.HARNESS_CODEX,
             model="test-model",
         )
     assert caught.value.response is response

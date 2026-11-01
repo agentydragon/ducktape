@@ -12,7 +12,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
@@ -73,10 +73,10 @@ func TestGetSessionReadsTheLaunchedIncarnationsSession(t *testing.T) {
 	summary := summaryOf(f, session, launched, &testEpoch)
 	summary.FeedStatus = historypb.FeedStatus_FEED_STATUS_ACTIVE
 	summary.LastTurnStatus = new(eventpb.TurnStatus_TURN_STATUS_COMPLETED)
-	summary.Attached = &runnerpb.Attached{
-		SessionId: session, ActiveTurnId: "test-turn", HarnessState: runnerpb.HarnessState_HARNESS_STATE_RUNNING,
-		LaunchOutcome: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_STARTED,
-		Spec:          &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CODEX, Cwd: "/test", Instructions: "test"},
+	summary.Attached = &sessionpb.Attached{
+		SessionId: session, ActiveTurnId: "test-turn", HarnessState: sessionpb.HarnessState_HARNESS_STATE_RUNNING,
+		LaunchOutcome: sessionpb.LaunchOutcome_LAUNCH_OUTCOME_STARTED,
+		Spec:          &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CODEX, Cwd: "/test", Instructions: "test"},
 	}
 	f.history.hold(summary)
 	f.history.follow = func(_ *historypb.FollowSessionRequest, stream grpc.ServerStreamingServer[historypb.FollowSessionResponse]) error {

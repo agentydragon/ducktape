@@ -46,7 +46,7 @@ _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-history-service"
 # a Sandbox's runner uses its sidecar's platform route), and the credential it substitutes.
 EGRESS_POLICY = "runner-ingress"
 _CREDENTIAL = "agentplane-runner-ingress"
-_PUSH = "/agentplane.history_service.RunnerIngress/Push"
+_PUSH = "/agentplane.history_service.SessionJournalIngress/Push"
 
 
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)

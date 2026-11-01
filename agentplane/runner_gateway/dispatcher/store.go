@@ -14,7 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
 )
@@ -105,7 +105,7 @@ type Opening struct {
 	WakeCaller           *Account
 	WakeFromIncarnation  *string
 	WakeRequestedAt      *time.Time
-	Spec                 *runnerpb.SessionSpec
+	Spec                 *sessionpb.SessionSpec
 	SetupScript          *string
 	State, Reason        string
 	Traceparent          string
@@ -625,21 +625,21 @@ func scanOpening(row interface{ Scan(...any) error }) (*Opening, error) {
 	if reason.Valid {
 		o.Reason = reason.String
 	}
-	o.Spec = &runnerpb.SessionSpec{}
+	o.Spec = &sessionpb.SessionSpec{}
 	if err := (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(spec, o.Spec); err != nil {
 		return nil, err
 	}
 	return o, nil
 }
 
-func (s *Store) OpenSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *runnerpb.SessionSpec, setupScript *string, wakeCaller *Account) (*Opening, error) {
+func (s *Store) OpenSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account) (*Opening, error) {
 	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, wakeCaller, nil, nil, nil)
 }
 
 // OpenSessionWithIdentity stores the immutable target execution account and the distinct caller
 // that created the opening. A nil execution UID is permitted only for a privileged open-before-ready
 // request; the worker can bind it only after verifying the managed ServiceAccount's owner reference.
-func (s *Store) OpenSessionWithIdentity(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *runnerpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal, creator *ServiceAccountIdentity, attribution *AdmissionAttribution) (*Opening, error) {
+func (s *Store) OpenSessionWithIdentity(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal, creator *ServiceAccountIdentity, attribution *AdmissionAttribution) (*Opening, error) {
 	if executionPrincipal == nil || creator == nil || executionPrincipal.Account.Namespace == "" ||
 		executionPrincipal.Account.Name == "" || creator.Account.Namespace == "" || creator.Account.Name == "" || creator.UID == "" {
 		return nil, errors.New("execution principal and creator identity are required")
@@ -653,7 +653,7 @@ func (s *Store) OpenSessionWithIdentity(ctx context.Context, sessionID, sandboxN
 	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, wakeCaller, executionPrincipal, creator, attribution)
 }
 
-func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *runnerpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal, creator *ServiceAccountIdentity, attribution *AdmissionAttribution) (*Opening, error) {
+func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal, creator *ServiceAccountIdentity, attribution *AdmissionAttribution) (*Opening, error) {
 	if sessionID == "" || sandboxName == "" || spec == nil {
 		return nil, errors.New("session_id, sandbox and spec are required")
 	}

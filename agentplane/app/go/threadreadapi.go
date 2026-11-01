@@ -24,7 +24,7 @@ import (
 	threadmetadatapb "github.com/agentydragon/ducktape/agentplane/app/thread_metadata/threadmetadatapb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -60,8 +60,8 @@ type threadSandboxInventory interface {
 	Get(context.Context, string) (*sandboxespb.Sandbox, error)
 }
 
-type threadRunnerStatusReader interface {
-	RunnerStatus(context.Context, string) (*runnerpb.RunnerStatus, error)
+type threadEnvironmentRuntimeStatusReader interface {
+	EnvironmentRuntimeStatus(context.Context, string) (*sessionpb.EnvironmentRuntimeStatus, error)
 }
 
 type (
@@ -149,13 +149,13 @@ func (b *threadRenameBody) UnmarshalJSON(data []byte) error {
 
 // RegisterThreadReadRoutes adds the app-owned metadata gateway and the Thread read/mutation routes.
 // History-owned reads are served by the History gateway; content and stream routes remain separate.
-// The inventory and runner status reader are required for the archive guard.
+// The inventory and Environment Runtime status reader are required for the archive guard.
 func RegisterThreadReadRoutes(
 	server *HTTPServer,
 	store threadReadStore,
 	history threadReadHistory,
 	inventory threadSandboxInventory,
-	runner threadRunnerStatusReader,
+	runner threadEnvironmentRuntimeStatusReader,
 	updates auth.ChangeSource,
 	updatesConnected func() bool,
 ) error {
@@ -598,7 +598,7 @@ func makeThreadView(thread threads.Thread, summary historydata.FoldSummary) (thr
 		ID: thread.ID, Sandbox: summary.Sandbox, CreatedAt: thread.CreatedAt, Name: thread.Name, Archived: thread.Archived,
 		LastCursor: summary.FoldedThrough, LastEventAt: summary.LastEventAt,
 		LastModelActivityAt: summary.LastModelActivityAt, IdleSince: summary.IdleSince,
-		HarnessState: runnerpb.HarnessState_HARNESS_STATE_UNSPECIFIED.String(),
+		HarnessState: sessionpb.HarnessState_HARNESS_STATE_UNSPECIFIED.String(),
 	}
 	if summary.SandboxUID != "" {
 		sandboxUID, err := uuid.Parse(summary.SandboxUID)
@@ -618,9 +618,9 @@ func makeThreadView(thread threads.Thread, summary historydata.FoldSummary) (thr
 		return view, nil
 	}
 	attachment := summary.Feed.Attached
-	state := runnerpb.HarnessState_name[int32(attachment.GetHarnessState())]
-	setup := runnerpb.SetupState_name[int32(attachment.GetSetupState())]
-	outcome := runnerpb.LaunchOutcome_name[int32(attachment.GetLaunchOutcome())]
+	state := sessionpb.HarnessState_name[int32(attachment.GetHarnessState())]
+	setup := sessionpb.SetupState_name[int32(attachment.GetSetupState())]
+	outcome := sessionpb.LaunchOutcome_name[int32(attachment.GetLaunchOutcome())]
 	if state == "" || setup == "" || outcome == "" {
 		return threadView{}, errors.New("History Service returned an unknown Session lifecycle state")
 	}
@@ -630,7 +630,7 @@ func makeThreadView(thread threads.Thread, summary historydata.FoldSummary) (thr
 		view.ActiveTurnID = stringPointer(attachment.GetActiveTurnId())
 	}
 	if spec := attachment.GetSpec(); spec != nil {
-		harness := runnerpb.Harness_name[int32(spec.GetHarness())]
+		harness := sessionpb.Harness_name[int32(spec.GetHarness())]
 		if harness == "" || harness == "HARNESS_UNSPECIFIED" {
 			return threadView{}, errors.New("History Service returned an unknown Harness")
 		}
@@ -652,7 +652,7 @@ func makeThreadView(thread threads.Thread, summary historydata.FoldSummary) (thr
 
 func stringPointer(value string) *string { return &value }
 
-func ensureThreadArchivable(ctx context.Context, thread threads.Thread, summary historydata.FoldSummary, inventory threadSandboxInventory, runner threadRunnerStatusReader) error {
+func ensureThreadArchivable(ctx context.Context, thread threads.Thread, summary historydata.FoldSummary, inventory threadSandboxInventory, runner threadEnvironmentRuntimeStatusReader) error {
 	if inventory == nil {
 		return errors.New("Sandbox inventory is unavailable")
 	}
@@ -673,7 +673,7 @@ func ensureThreadArchivable(ctx context.Context, thread threads.Thread, summary 
 	if runner == nil {
 		return errors.New("Runner status is unavailable")
 	}
-	status, err := runner.RunnerStatus(ctx, summary.Sandbox)
+	status, err := runner.EnvironmentRuntimeStatus(ctx, summary.Sandbox)
 	if err != nil {
 		return err
 	}

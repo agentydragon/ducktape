@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/runnerclient"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 )
 
@@ -27,11 +27,11 @@ func (r *ProxyRunner) ListSessions(ctx context.Context, sandbox sandboxreader.Id
 		template = sandboxapi.ControlServiceTargetTemplate()
 	}
 	var sessions []string
-	err := runnerclient.WithClient(ctx, runnerclient.Config{
-		Target: runnerclient.ExpandTarget(template, sandbox.Name, sandbox.Namespace), TokenFile: r.TokenFile, Timeout: r.Timeout,
+	err := environmentruntimeclient.WithClient(ctx, environmentruntimeclient.Config{
+		Target: environmentruntimeclient.ExpandTarget(template, sandbox.Name, sandbox.Namespace), TokenFile: r.TokenFile, Timeout: r.Timeout,
 		SandboxName: sandbox.Name, SandboxUID: sandbox.UID, SandboxNamespace: sandbox.Namespace,
-	}, func(ctx context.Context, client runnerservicepb.RunnerClient) error {
-		response, err := client.ListSessions(ctx, &runnerpb.ListSessionsRequest{})
+	}, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
+		response, err := client.ListSessions(ctx, &sessionpb.ListSessionsRequest{})
 		for _, summary := range response.GetSessions() {
 			sessions = append(sessions, summary.GetSessionId())
 		}

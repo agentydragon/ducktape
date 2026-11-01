@@ -490,7 +490,7 @@ def _resolve_on_node(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> Non
 def _ci_image(rloc: Path) -> str:
     """The reference fixture workloads use for a Bazel-built image, named by its layout's `.rloc`."""
     name = rloc.stem.removesuffix("_layout")
-    repository = "runner" if name == "runner" else "agentplane-" + name.replace("_", "-")
+    repository = "environment-tools" if name == "environment_tools" else "agentplane-" + name.replace("_", "-")
     return f"git.allegedly.works/ducktape-ci/{repository}:unset"
 
 

@@ -9,9 +9,9 @@ import pytest
 import pytest_bazel
 from pydantic import SecretStr
 
+from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.native.testing.model_endpoint import SseEvent
 from agentplane.proto import event_pb2
-from agentplane.runner import runner_service_pb2
 from agentplane.x.central_sampler import sampler_pb2
 from agentplane.x.central_sampler.settings import (
     AnthropicCompactionConfig,
@@ -130,7 +130,7 @@ async def test_anthropic_missing_terminal_is_unknown_and_does_not_commit(
 
             if operation == "failed_compaction":
                 await stub.SubmitInput(
-                    runner_service_pb2.SubmitInputRequest(
+                    environment_runtime_pb2.SubmitInputRequest(
                         session_id=SESSION_ID, command_id="anthropic-seed", text="Save the pre-compaction context."
                     ),
                     metadata=METADATA,
@@ -185,7 +185,7 @@ async def test_anthropic_missing_terminal_is_unknown_and_does_not_commit(
                 assert (await store.get_session(SESSION_ID)).blocked
             else:
                 await stub.SubmitInput(
-                    runner_service_pb2.SubmitInputRequest(
+                    environment_runtime_pb2.SubmitInputRequest(
                         session_id=SESSION_ID, command_id=TURN_ID, text="Ask the eager JSON tool to run once."
                     ),
                     metadata=METADATA,

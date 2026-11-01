@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
+	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
@@ -32,13 +32,13 @@ import (
 )
 
 type fixtureHistory struct {
-	ingresspb.UnimplementedRunnerIngressServer
+	ingresspb.UnimplementedSessionJournalIngressServer
 	mu                  sync.Mutex
 	entries             map[uint64]*eventlogpb.EventEntry
 	cursor              uint64
 	loseAcknowledgement bool
 	onEntry             func() error
-	snapshots           []*runnerpb.Attached
+	snapshots           []*sessionpb.Attached
 	received            chan uint64
 }
 
@@ -65,7 +65,7 @@ func (h *fixtureHistory) Push(stream grpc.BidiStreamingServer[ingresspb.PushFram
 		frame, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
 			h.mu.Lock()
-			h.snapshots = append(h.snapshots, proto.Clone(announcement.Session).(*runnerpb.Attached))
+			h.snapshots = append(h.snapshots, proto.Clone(announcement.Session).(*sessionpb.Attached))
 			h.mu.Unlock()
 			return nil
 		}
@@ -125,7 +125,7 @@ func startFixtureHistory(t *testing.T, h *fixtureHistory) (string, string) {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	ingresspb.RegisterRunnerIngressServer(server, h)
+	ingresspb.RegisterSessionJournalIngressServer(server, h)
 	go server.Serve(listener)
 	t.Cleanup(func() { server.Stop(); listener.Close() })
 	tokenFile := filepath.Join(t.TempDir(), "history-token")
@@ -138,7 +138,7 @@ func startFixtureHistory(t *testing.T, h *fixtureHistory) (string, string) {
 func exportFixtureSession(t *testing.T, store *Store) *Session {
 	t.Helper()
 	session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
-		SessionId: uuid.NewString(), Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "test-model"},
+		SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "test-model"},
 		Executor: &sandboxpb.SandboxDestination{Owner: &sandboxpb.ServiceAccount{Namespace: "test", Name: "executor"}, Sandbox: "test-executor", SandboxUid: uuid.NewString()}, ExpectedIncarnationUid: uuid.NewString(),
 	}, "test-account-uid", protocol.APIStyleResponses)
 	if err != nil {

@@ -8,7 +8,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
-	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
+	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -38,7 +38,7 @@ func firstString(values []string) string {
 }
 
 type quiesceIngress struct {
-	ingresspb.UnimplementedRunnerIngressServer
+	ingresspb.UnimplementedSessionJournalIngressServer
 	sealCursor    uint64
 	underAckSent  chan struct{}
 	releaseSeal   chan struct{}
@@ -121,7 +121,7 @@ func TestIngressSupervisorPublishesSealedAcknowledgementToQuiesce(t *testing.T) 
 		result:        make(chan error, 1),
 	}
 	endpoint := loopbackGRPCServer(t, func(server *grpc.Server) {
-		ingresspb.RegisterRunnerIngressServer(server, service)
+		ingresspb.RegisterSessionJournalIngressServer(server, service)
 	})
 	loopDone := make(chan error, 1)
 	go func() {

@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from agentplane.app.testing.client import Client
 from agentplane.env.harnesshost.harness import Harness
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.system_tests.sandbox import VM_TEMPLATE, Sandboxes
 from agentplane.system_tests.session_setup import run_setup
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -21,7 +21,7 @@ AGENT_GID = 107
 async def fresh_vm_session_workspace_is_created_for_harness_identity(client: Client, sandbox: Sandboxes) -> None:
     """Check absence before opening, then use the ordinary Session setup and Git paths."""
     view = await sandbox(f"systest-vm-workspace-{uuid4().hex[:10]}", template=VM_TEMPLATE)
-    harness = runner_pb2.HARNESS_CODEX
+    harness = session_pb2.HARNESS_CODEX
     offered = (await client.models()).harnesses[Harness.CODEX]
     assert offered, "testing offers no Codex model for the model-free setup Session"
     model = offered[0]  # Session admission validates model configuration; the test sends no model turn.

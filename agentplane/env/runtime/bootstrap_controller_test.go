@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/bootstrap"
-	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
+	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 )
 
 func TestBootstrapIsActiveUntilAcceptedInputIsTerminal(t *testing.T) {
@@ -55,7 +55,7 @@ func TestCanceledBootstrapWaiterDoesNotCancelWorkAndCloseWaits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if facts.Bootstrap != runnerstatepb.RunnerFacts_BOOTSTRAP_RUNNING || !hasAutosuspendReason(facts.AutosuspendBlockers, "Bootstrap") || facts.IdleSince != nil {
+	if facts.Bootstrap != environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_RUNNING || !hasAutosuspendReason(facts.AutosuspendBlockers, "Bootstrap") || facts.IdleSince != nil {
 		t.Fatalf("running bootstrap facts = %+v, want Bootstrap blocker and no idle timestamp", facts)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -122,7 +122,7 @@ func TestBootstrapRuntimeFailureDoesNotLeaveLogDerivedBusyFact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if facts.Bootstrap != runnerstatepb.RunnerFacts_BOOTSTRAP_FAILED {
+	if facts.Bootstrap != environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_FAILED {
 		t.Fatalf("bootstrap fact = %v, want failed", facts.Bootstrap)
 	}
 	for _, blocker := range facts.AutosuspendBlockers {

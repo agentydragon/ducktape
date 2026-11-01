@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc"
@@ -21,21 +21,21 @@ import (
 
 // listingRunner is a Sandbox's runner as the control Service reaches it.
 type listingRunner struct {
-	runnerservicepb.UnimplementedRunnerServer
+	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	sessions []string
 	err      error
 	received chan metadata.MD
 }
 
-func (r *listingRunner) ListSessions(ctx context.Context, _ *runnerpb.ListSessionsRequest) (*runnerpb.ListSessionsResponse, error) {
+func (r *listingRunner) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
 	incoming, _ := metadata.FromIncomingContext(ctx)
 	r.received <- incoming
 	if r.err != nil {
 		return nil, r.err
 	}
-	response := &runnerpb.ListSessionsResponse{}
+	response := &sessionpb.ListSessionsResponse{}
 	for _, id := range r.sessions {
-		response.Sessions = append(response.Sessions, &runnerpb.SessionSummary{SessionId: id})
+		response.Sessions = append(response.Sessions, &sessionpb.SessionSummary{SessionId: id})
 	}
 	return response, nil
 }
@@ -49,7 +49,7 @@ func serveRunner(t *testing.T, runner *listingRunner) *ProxyRunner {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	runnerservicepb.RegisterRunnerServer(server, runner)
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runner)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	tokenFile := filepath.Join(t.TempDir(), "token")

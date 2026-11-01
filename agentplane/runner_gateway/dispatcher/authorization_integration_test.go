@@ -10,7 +10,7 @@ import (
 	"time"
 
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
@@ -199,7 +199,7 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	}, hub)
 
 	opened, err := client.OpenSession(authorityContext(t, "owner-account"), &dispatcherpb.OpenSessionRequest{
-		SessionId: "authority-owned-session", Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Spec: &runnerpb.SessionSpec{},
+		SessionId: "authority-owned-session", Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Spec: &sessionpb.SessionSpec{},
 	})
 	if err != nil {
 		t.Fatalf("owner OpenSession: %v", err)
@@ -232,7 +232,7 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 		t.Fatalf("foreign SubmitInput = %v, want PermissionDenied", err)
 	}
 
-	legacy, err := store.OpenSession(ctx, "authority-legacy-session", caller.Name, authoritySandboxUID, &runnerpb.SessionSpec{}, nil, nil)
+	legacy, err := store.OpenSession(ctx, "authority-legacy-session", caller.Name, authoritySandboxUID, &sessionpb.SessionSpec{}, nil, nil)
 	if err != nil || legacy.ExecutionPrincipal != nil {
 		t.Fatalf("seed legacy opening: %#v %v", legacy, err)
 	}
@@ -563,8 +563,18 @@ func TestPendingExecutionUIDBindsOnceAndReplacementStopsRunnerDelivery(t *testin
 	store := testStore(t, 3)
 	snapshot := SandboxSnapshot{Name: caller.Name, Namespace: caller.Namespace, UID: pendingSandboxUID}
 	pending := ServiceAccountIdentity{Account: Account(caller)}
-	opening, err := store.OpenSessionWithIdentity(ctx, "authority-pending-session", snapshot.Name, snapshot.UID,
-		&runnerpb.SessionSpec{}, nil, nil, &pending, &ServiceAccountIdentity{Account: Account(caller), UID: "creator-uid"}, nil)
+	opening, err := store.OpenSessionWithIdentity(
+		ctx,
+		"authority-pending-session",
+		snapshot.Name,
+		snapshot.UID,
+		&sessionpb.SessionSpec{},
+		nil,
+		nil,
+		&pending,
+		&ServiceAccountIdentity{Account: Account(caller), UID: "creator-uid"},
+		nil,
+	)
 	if err != nil || opening.ExecutionPrincipal == nil || opening.ExecutionPrincipal.UID != "" {
 		t.Fatalf("seed pending opening: %#v %v", opening, err)
 	}

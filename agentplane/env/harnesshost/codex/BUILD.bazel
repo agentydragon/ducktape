@@ -37,9 +37,9 @@ go_test(
     deps = [
         "//agentplane/env/harnesshost/codex/protocol",
         "//agentplane/env/harnesshost/harness",
+        "//agentplane/env/harnesshost/testing/adaptertest",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
-        "//agentplane/runner/testing/adaptertest",
     ],
 )

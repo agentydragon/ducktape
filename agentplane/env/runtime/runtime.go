@@ -22,10 +22,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
@@ -46,7 +46,7 @@ const (
 	ExecutionUnitName                               = "agentplane-execution-service.service"
 	HostLifetimeDir                                 = "/run/agentplane-harness-host-lifetime"
 	ExecutionLifetimeDir                            = "/run/agentplane-execution-lifetime"
-	RuntimeScopeID       supervision.SystemdScopeID = supervision.SystemdRunnerScopeID
+	RuntimeScopeID       supervision.SystemdScopeID = supervision.SystemdEnvironmentRuntimeScopeID
 	HostScopeID          supervision.SystemdScopeID = "harness-host"
 	ExecutionScopeID     supervision.SystemdScopeID = "execution-service"
 )
@@ -61,7 +61,7 @@ const (
 // paths. Runtime and Host read the same immutable config/launch inputs; Runtime writes only the
 // per-incarnation standalone Execution config under StateDir/runtime.
 type Config struct {
-	Control            configuration.RunnerControlConfiguration
+	Control            configuration.EnvironmentRuntimeControlConfiguration
 	StateDir           string
 	Launch             configuration.SandboxLaunch
 	Supervision        string
@@ -115,7 +115,7 @@ type hostLink struct {
 	bootID        string
 	controlSocket string
 	conn          *grpc.ClientConn
-	client        runnerservicepb.RunnerClient
+	client        environmentruntimepb.EnvironmentRuntimeClient
 	intent        *runtimepb.LifecycleIntent
 	report        *runtimepb.HostReport
 	intentChanged chan struct{}
@@ -126,7 +126,7 @@ type hostLink struct {
 // backend. Gateway epoch admission remains in env/runtime/control; every forwarded Host call carries the
 // exact Runtime/Host/generation binding.
 type Runtime struct {
-	runnerservicepb.UnimplementedRunnerServer
+	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	config Config
 	deps   runtimeDeps
 
@@ -966,16 +966,16 @@ func (r *Runtime) recoverFencedExecution(handle executionHandle, uid string) {
 	}
 }
 
-func (r *Runtime) facts() (*runnerstatepb.RunnerFacts, error) {
+func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, error) {
 	r.mu.Lock()
-	var facts *runnerstatepb.RunnerFacts
+	var facts *environmentruntimestatepb.EnvironmentRuntimeFacts
 	hostReady := false
 	intentPresent := r.host != nil && r.intent != nil && r.host.report != nil && proto.Equal(r.host.report.Binding, r.intent.Binding)
 	if intentPresent {
 		hostReady = r.host.report.Ready
 	}
 	if hostReady && r.host.report.Facts != nil {
-		facts = proto.Clone(r.host.report.Facts).(*runnerstatepb.RunnerFacts)
+		facts = proto.Clone(r.host.report.Facts).(*environmentruntimestatepb.EnvironmentRuntimeFacts)
 	}
 	desired, closing := r.desired, r.closing
 	activeAdmissions := r.activeAdmissions
@@ -983,7 +983,7 @@ func (r *Runtime) facts() (*runnerstatepb.RunnerFacts, error) {
 	executionRecovering := r.executionRecovering
 	r.mu.Unlock()
 	if facts == nil {
-		facts = &runnerstatepb.RunnerFacts{}
+		facts = &environmentruntimestatepb.EnvironmentRuntimeFacts{}
 	}
 	bootstrapActive := false
 	if r.bootstrapHost != nil && r.bootstrapHost.Configured() {
@@ -999,23 +999,23 @@ func (r *Runtime) facts() (*runnerstatepb.RunnerFacts, error) {
 		if bootstrapActive {
 			// A requested input is busy even before the lifecycle controller has
 			// published Running. Do not expose its idle Host facts in that gap.
-			facts.Bootstrap = runnerstatepb.RunnerFacts_BOOTSTRAP_RUNNING
+			facts.Bootstrap = environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_RUNNING
 			if !hasAutosuspendReason(facts.AutosuspendBlockers, "Bootstrap") {
 				facts.AutosuspendBlockers = append(facts.AutosuspendBlockers, &sandboxpb.AutosuspendBlocker{Reason: "Bootstrap"})
 			}
 		} else if runtimeFound {
 			switch bootstrapState.Phase {
 			case bootstrap.Succeeded:
-				facts.Bootstrap = runnerstatepb.RunnerFacts_BOOTSTRAP_SUCCEEDED
+				facts.Bootstrap = environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_SUCCEEDED
 			case bootstrap.Failed:
-				facts.Bootstrap = runnerstatepb.RunnerFacts_BOOTSTRAP_FAILED
+				facts.Bootstrap = environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_FAILED
 			case bootstrap.Interrupted:
-				facts.Bootstrap = runnerstatepb.RunnerFacts_BOOTSTRAP_INTERRUPTED
+				facts.Bootstrap = environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_INTERRUPTED
 			}
 		}
 	}
 	if (closing || desired.Mode == lifecycle.Closing || desired.Mode == lifecycle.Quiescing) && !hostReady {
-		facts.QuiesceStage = runnerstatepb.RunnerFacts_QUIESCE_STAGE_DRAINING
+		facts.QuiesceStage = environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_DRAINING
 	}
 	if activeAdmissions > 0 && !hasAutosuspendReason(facts.AutosuspendBlockers, "Admission") {
 		facts.AutosuspendBlockers = append(facts.AutosuspendBlockers, &sandboxpb.AutosuspendBlocker{Reason: "Admission"})
@@ -1054,7 +1054,7 @@ func bootstrapIsActive(input bootstrap.Input, inputFound bool, state bootstrap.R
 	return (stateFound && state.Phase == bootstrap.Running) || (inputFound && input.Requested && !terminal)
 }
 
-func (r *Runtime) Quiesce(ctx context.Context, request *runnerpb.QuiesceRequest) (*runnerpb.QuiesceResponse, error) {
+func (r *Runtime) Quiesce(ctx context.Context, request *sessionpb.QuiesceRequest) (*sessionpb.QuiesceResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, status.FromContextError(err).Err()
 	}
@@ -1098,7 +1098,7 @@ func (r *Runtime) Quiesce(ctx context.Context, request *runnerpb.QuiesceRequest)
 		// invalidates its native-stop and Execution-fence acknowledgements.
 		retry := false
 		if currentReport {
-			hostStatus, statusErr := host.client.GetStatus(r.hostContext(ctx, binding), &runnerpb.GetStatusRequest{})
+			hostStatus, statusErr := host.client.GetStatus(r.hostContext(ctx, binding), &sessionpb.GetStatusRequest{})
 			if statusErr != nil {
 				return nil, status.Errorf(codes.Unavailable, "read Harness Host quiesce status: %v", statusErr)
 			}
@@ -1109,7 +1109,7 @@ func (r *Runtime) Quiesce(ctx context.Context, request *runnerpb.QuiesceRequest)
 			if err != nil {
 				return nil, err
 			}
-			return &runnerpb.QuiesceResponse{Stage: runnerpb.QuiesceStage(facts.QuiesceStage)}, nil
+			return &sessionpb.QuiesceResponse{Stage: sessionpb.QuiesceStage(facts.QuiesceStage)}, nil
 		}
 		r.mu.Lock()
 		if r.closing {
@@ -1123,7 +1123,7 @@ func (r *Runtime) Quiesce(ctx context.Context, request *runnerpb.QuiesceRequest)
 			if err != nil {
 				return nil, err
 			}
-			return &runnerpb.QuiesceResponse{Stage: runnerpb.QuiesceStage(facts.QuiesceStage)}, nil
+			return &sessionpb.QuiesceResponse{Stage: sessionpb.QuiesceStage(facts.QuiesceStage)}, nil
 		}
 	}
 	r.desired = lifecycle.Desired{Mode: lifecycle.Quiescing, SealUID: uid, Generation: r.desired.Generation + 1}
@@ -1137,7 +1137,7 @@ func (r *Runtime) Quiesce(ctx context.Context, request *runnerpb.QuiesceRequest)
 	if err != nil {
 		return nil, err
 	}
-	return &runnerpb.QuiesceResponse{Stage: runnerpb.QuiesceStage(facts.QuiesceStage)}, nil
+	return &sessionpb.QuiesceResponse{Stage: sessionpb.QuiesceStage(facts.QuiesceStage)}, nil
 }
 
 func (r *Runtime) isClosing() bool {
@@ -1203,6 +1203,6 @@ func startSupervisedChild(supervisor *supervision.Supervisor, config supervision
 }
 
 var (
-	_ runnerservicepb.RunnerServer       = (*Runtime)(nil)
+	_ environmentruntimepb.EnvironmentRuntimeServer       = (*Runtime)(nil)
 	_ runtimepb.EnvironmentRuntimeServer = (*Runtime)(nil)
 )

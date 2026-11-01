@@ -15,7 +15,7 @@ import (
 )
 
 // HelperMode is the private Runner CLI mode used to create a workspace directory.
-const HelperMode = "--agentplane-runner-workspace"
+const HelperMode = "--agentplane-harness-host-workspace"
 
 // Config contains the workspace root and the optional process capability used
 // when workspace creation needs an isolated helper.

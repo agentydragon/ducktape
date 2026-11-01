@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/invopop/jsonschema"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -38,7 +38,7 @@ type Harness string
 func (Harness) JSONSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{
 		Type: "string",
-		Enum: []any{runnerpb.Harness_HARNESS_CLAUDE.String(), runnerpb.Harness_HARNESS_CODEX.String(), runnerpb.Harness_HARNESS_CENTRAL_SAMPLER.String()},
+		Enum: []any{sessionpb.Harness_HARNESS_CLAUDE.String(), sessionpb.Harness_HARNESS_CODEX.String(), sessionpb.Harness_HARNESS_CENTRAL_SAMPLER.String()},
 	}
 }
 

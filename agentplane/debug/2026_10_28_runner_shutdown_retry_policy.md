@@ -45,7 +45,7 @@ selected seal but does not require ingress acknowledgement.
 
    ```bash
    bbr test //agentplane/env/harnesshost:harnesshost_test //agentplane/env/supervision:supervision_test
-   bbr test //agentplane/runner:test_restart
+   bbr test //agentplane/env/e2e:test_restart
    ```
 
 Proceed only if the first recoverable case has an explicit owner and a checkable success

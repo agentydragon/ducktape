@@ -4,10 +4,10 @@ import { type JSX, type ReactNode, useEffect, useState } from "react";
 import type { SandboxView, ThreadView } from "../schema";
 import { displayableError } from "../client";
 import {
-  getRunnerStatus,
-  type RunnerLifecycleBlockerView,
-  type RunnerLifecycleView,
-  type RunnerStatusView,
+  getEnvironmentRuntimeStatus,
+  type EnvironmentRuntimeLifecycleBlockerView,
+  type EnvironmentRuntimeLifecycleView,
+  type EnvironmentRuntimeStatusView,
 } from "./client";
 import { harnessLabel } from "../model_catalog";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
@@ -288,7 +288,7 @@ function SandboxDetails({
   );
 }
 
-function processStateLabel(state: RunnerStatusView["processes"][number]["state"]): string {
+function processStateLabel(state: EnvironmentRuntimeStatusView["processes"][number]["state"]): string {
   switch (state) {
     case "PROCESS_STATE_STARTING":
       return "Starting";
@@ -301,7 +301,7 @@ function processStateLabel(state: RunnerStatusView["processes"][number]["state"]
   }
 }
 
-function executionStateLabel(state: RunnerStatusView["sessions"][number]["execution_state"]): string {
+function executionStateLabel(state: EnvironmentRuntimeStatusView["sessions"][number]["execution_state"]): string {
   switch (state) {
     case "SESSION_EXECUTION_STATE_DORMANT":
       return "Dormant";
@@ -316,72 +316,72 @@ function executionStateLabel(state: RunnerStatusView["sessions"][number]["execut
   }
 }
 
-function lifecycleModeLabel(mode: RunnerLifecycleView["desired_mode"]): string {
+function lifecycleModeLabel(mode: EnvironmentRuntimeLifecycleView["desired_mode"]): string {
   switch (mode) {
-    case "RUNNER_LIFECYCLE_MODE_RUNNING":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_RUNNING":
       return "Running";
-    case "RUNNER_LIFECYCLE_MODE_QUIESCING":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING":
       return "Quiescing";
-    case "RUNNER_LIFECYCLE_MODE_CLOSING":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_CLOSING":
       return "Closing";
-    case "RUNNER_LIFECYCLE_MODE_UNSPECIFIED":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_UNSPECIFIED":
       return "Unknown";
   }
 }
 
-function lifecycleStageLabel(stage: RunnerLifecycleView["stage"]): string {
+function lifecycleStageLabel(stage: EnvironmentRuntimeLifecycleView["stage"]): string {
   switch (stage) {
-    case "RUNNER_LIFECYCLE_STAGE_RUNNING":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_RUNNING":
       return "Running";
-    case "RUNNER_LIFECYCLE_STAGE_DRAINING":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_DRAINING":
       return "Draining admissions";
-    case "RUNNER_LIFECYCLE_STAGE_HALTING":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_HALTING":
       return "Halting Sessions";
-    case "RUNNER_LIFECYCLE_STAGE_STOPPING":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_STOPPING":
       return "Stopping processes";
-    case "RUNNER_LIFECYCLE_STAGE_FENCING":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FENCING":
       return "Fencing processes";
-    case "RUNNER_LIFECYCLE_STAGE_SEALING":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_SEALING":
       return "Sealing journals";
-    case "RUNNER_LIFECYCLE_STAGE_FLUSHING":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING":
       return "Flushing history";
-    case "RUNNER_LIFECYCLE_STAGE_QUIESCED":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_QUIESCED":
       return "Quiesced";
-    case "RUNNER_LIFECYCLE_STAGE_CLOSED":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_CLOSED":
       return "Closed";
-    case "RUNNER_LIFECYCLE_STAGE_UNSPECIFIED":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_UNSPECIFIED":
       return "Unknown";
   }
 }
 
-function lifecycleBlockerLabel(kind: RunnerLifecycleBlockerView["kind"]): string {
+function lifecycleBlockerLabel(kind: EnvironmentRuntimeLifecycleBlockerView["kind"]): string {
   switch (kind) {
-    case "RUNNER_LIFECYCLE_BLOCKER_KIND_ADMISSIONS":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_ADMISSIONS":
       return "command admission";
-    case "RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_HALT":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_HALT":
       return "Session halt";
-    case "RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_PROCESS":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_PROCESS":
       return "Session process stop";
-    case "RUNNER_LIFECYCLE_BLOCKER_KIND_CODEX_APP_SERVER":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_CODEX_APP_SERVER":
       return "Codex app-server stop";
-    case "RUNNER_LIFECYCLE_BLOCKER_KIND_CODEX_EXEC_SERVER":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_CODEX_EXEC_SERVER":
       return "Codex exec-server fence";
-    case "RUNNER_LIFECYCLE_BLOCKER_KIND_BOOTSTRAP":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_BOOTSTRAP":
       return "Sandbox bootstrap";
-    case "RUNNER_LIFECYCLE_BLOCKER_KIND_PROCESS_CLEANUP":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_PROCESS_CLEANUP":
       return "native process cleanup";
-    case "RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_INSPECTION":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_INSPECTION":
       return "Session inspection";
-    case "RUNNER_LIFECYCLE_BLOCKER_KIND_JOURNAL_SEAL":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_JOURNAL_SEAL":
       return "Session journal seal";
-    case "RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT":
       return "History acknowledgement";
-    case "RUNNER_LIFECYCLE_BLOCKER_KIND_UNSPECIFIED":
+    case "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_UNSPECIFIED":
       return "unknown barrier";
   }
 }
 
-function RunnerLifecycleCard({ lifecycle }: { lifecycle: RunnerLifecycleView }): JSX.Element {
+function EnvironmentRuntimeLifecycleCard({ lifecycle }: { lifecycle: EnvironmentRuntimeLifecycleView }): JSX.Element {
   const blocker = lifecycle.blocker;
   const stage = lifecycleStageLabel(lifecycle.stage);
   const progress = !lifecycle.progress_available
@@ -426,25 +426,25 @@ function RunnerLifecycleCard({ lifecycle }: { lifecycle: RunnerLifecycleView }):
                 Resource error · {blocker.error}
               </Text>
             )}
-            {blocker.kind === "RUNNER_LIFECYCLE_BLOCKER_KIND_ADMISSIONS" && (
+            {blocker.kind === "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_ADMISSIONS" && (
               <Text size="xs" c="dimmed">
                 In-flight admissions · {blocker.admissions}
               </Text>
             )}
-            {blocker.kind === "RUNNER_LIFECYCLE_BLOCKER_KIND_JOURNAL_SEAL" && (
+            {blocker.kind === "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_JOURNAL_SEAL" && (
               <Text size="xs" c="dimmed">
                 Journal seal · {blocker.journal_seal_present ? blocker.journal_seal_uid || "present" : "not present"}
                 {blocker.expected_journal_seal_uid && ` · expected ${blocker.expected_journal_seal_uid}`}
               </Text>
             )}
-            {blocker.kind === "RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT" && (
+            {blocker.kind === "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT" && (
               <Text size="xs" c="dimmed">
                 {blocker.acknowledgement_present
                   ? `Acknowledged cursor · ${blocker.acknowledgement_cursor} of ${blocker.journal_seal_cursor} · sealed ${blocker.acknowledgement_sealed ? "yes" : "no"}`
                   : `No acknowledgement · final cursor ${blocker.journal_seal_cursor}`}
               </Text>
             )}
-            {blocker.kind === "RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT" &&
+            {blocker.kind === "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT" &&
               blocker.expected_journal_seal_uid &&
               blocker.journal_seal_uid !== blocker.expected_journal_seal_uid && (
                 <Text size="xs" c="dimmed">
@@ -471,7 +471,7 @@ function RunnerLifecycleCard({ lifecycle }: { lifecycle: RunnerLifecycleView }):
 
 type RunnerDiagnosticsState =
   | { kind: "loading" }
-  | { kind: "available"; value: RunnerStatusView; observedAt: string }
+  | { kind: "available"; value: EnvironmentRuntimeStatusView; observedAt: string }
   | { kind: "unavailable"; reason: string }
   | { kind: "suspended" };
 
@@ -494,7 +494,7 @@ function RunnerDiagnostics({
     }
     let current = true;
     setState({ kind: "loading" });
-    void getRunnerStatus(sandbox.name).then(
+    void getEnvironmentRuntimeStatus(sandbox.name).then(
       (value) => {
         if (current) setState({ kind: "available", value, observedAt: new Date().toISOString() });
       },
@@ -546,9 +546,9 @@ function RunnerDiagnostics({
           <Text size="xs" c="dimmed">
             Snapshot read <TimeAgo value={state.observedAt} />
           </Text>
-          <Text size="sm">Runner boot ID · {state.value.runner_boot_id}</Text>
+          <Text size="sm">Runner boot ID · {state.value.environment_runtime_boot_id}</Text>
           {state.value.lifecycle ? (
-            <RunnerLifecycleCard lifecycle={state.value.lifecycle} />
+            <EnvironmentRuntimeLifecycleCard lifecycle={state.value.lifecycle} />
           ) : (
             <Text size="sm" c="dimmed">
               Lifecycle progress is not reported by this runner.

@@ -18,7 +18,7 @@ from kubernetes_asyncio import client as k8s, watch as k8s_watch
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc.calls import dial
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
@@ -508,8 +508,8 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                 sandbox=sandbox,
                 sandbox_uid=uid,
                 session_id=session,
-                spec=runner_pb2.SessionSpec(
-                    harness=runner_pb2.HARNESS_CODEX,
+                spec=session_pb2.SessionSpec(
+                    harness=session_pb2.HARNESS_CODEX,
                     model="chatgpt-sub/oai-responses/gpt-6-luna",
                     cwd="/state/work",
                     reasoning_effort="low",
@@ -737,8 +737,8 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                             sandbox=sandbox,
                             sandbox_uid=uid,
                             session_id=session,
-                            spec=runner_pb2.SessionSpec(
-                                harness=runner_pb2.HARNESS_CODEX,
+                            spec=session_pb2.SessionSpec(
+                                harness=session_pb2.HARNESS_CODEX,
                                 model="chatgpt-sub/oai-responses/gpt-6-luna",
                                 cwd="/state/work",
                                 reasoning_effort="low",

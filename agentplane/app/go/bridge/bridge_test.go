@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
@@ -54,31 +54,31 @@ func (f *fakeDispatcher) GetSessionOpening(_ context.Context, _ *dispatcherpb.Ge
 }
 
 type fakeRunner struct {
-	list   *runnerpb.ListSessionsResponse
-	status *runnerpb.RunnerStatus
+	list   *sessionpb.ListSessionsResponse
+	status *sessionpb.EnvironmentRuntimeStatus
 	err    error
 	got    *sandboxespb.Sandbox
 }
 
-func (f *fakeRunner) ListSessions(_ context.Context, sandbox *sandboxespb.Sandbox) (*runnerpb.ListSessionsResponse, error) {
+func (f *fakeRunner) ListSessions(_ context.Context, sandbox *sandboxespb.Sandbox) (*sessionpb.ListSessionsResponse, error) {
 	f.got = sandbox
 	return f.list, f.err
 }
 
-func (f *fakeRunner) RunnerStatus(_ context.Context, sandbox *sandboxespb.Sandbox) (*runnerpb.RunnerStatus, error) {
+func (f *fakeRunner) EnvironmentRuntimeStatus(_ context.Context, sandbox *sandboxespb.Sandbox) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	f.got = sandbox
 	return f.status, f.err
 }
 
 func TestParseSessionSpecOverlaysDefaultsAndRejectsUnknownFields(t *testing.T) {
-	defaults := &runnerpb.SessionSpec{
-		Harness: runnerpb.Harness_HARNESS_CODEX, Cwd: "/workspace/{session_id}", Model: "default-model",
+	defaults := &sessionpb.SessionSpec{
+		Harness: sessionpb.Harness_HARNESS_CODEX, Cwd: "/workspace/{session_id}", Model: "default-model",
 	}
 	parsed, err := ParseSessionSpec(defaults, map[string]any{"model": "", "instructions": "follow this"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if parsed.GetHarness() != runnerpb.Harness_HARNESS_CODEX || parsed.GetCwd() != defaults.GetCwd() || parsed.GetModel() != "" || parsed.GetInstructions() != "follow this" {
+	if parsed.GetHarness() != sessionpb.Harness_HARNESS_CODEX || parsed.GetCwd() != defaults.GetCwd() || parsed.GetModel() != "" || parsed.GetInstructions() != "follow this" {
 		t.Fatalf("parsed spec = %v", parsed)
 	}
 	if _, err := ParseSessionSpec(defaults, map[string]any{"not_a_field": true}); err == nil {
@@ -93,7 +93,7 @@ func TestParseSessionSpecOverlaysDefaultsAndRejectsUnknownFields(t *testing.T) {
 
 func TestOpenSessionPreservesIdentitySpecAndOptionalSetupScript(t *testing.T) {
 	sessionID := uuid.MustParse("0a27b278-a057-48c5-8c46-10765b069e39")
-	spec := &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CODEX, Cwd: "/workspace", Model: "model"}
+	spec := &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CODEX, Cwd: "/workspace", Model: "model"}
 	setup := ""
 	dispatcher := &fakeDispatcher{opening: &dispatcherpb.SessionOpening{
 		SessionId: sessionID.String(), Sandbox: "operator-sandbox", SandboxUid: "sandbox-uid",
@@ -145,7 +145,7 @@ func TestOpenSessionForwardsNilUUIDLikePythonRoute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opening, err := bridge.OpenSession(context.Background(), "operator-sandbox", "sandbox-uid", uuid.Nil, &runnerpb.SessionSpec{}, nil)
+	opening, err := bridge.OpenSession(context.Background(), "operator-sandbox", "sandbox-uid", uuid.Nil, &sessionpb.SessionSpec{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestOpenSessionTimeoutCarriesStableIdempotencyKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = bridge.OpenSession(context.Background(), "operator-sandbox", "sandbox-uid", sessionID, &runnerpb.SessionSpec{}, nil)
+	_, err = bridge.OpenSession(context.Background(), "operator-sandbox", "sandbox-uid", sessionID, &sessionpb.SessionSpec{}, nil)
 	var timeout *DispatcherRequestTimeoutError
 	if !errors.As(err, &timeout) || timeout.SessionID != sessionID || !strings.Contains(err.Error(), sessionID.String()) {
 		t.Fatalf("timeout = %#v, error = %v", timeout, err)
@@ -193,8 +193,8 @@ func TestSessionOpeningHidesWrongSandboxAndSession(t *testing.T) {
 
 func TestRunnerRoutesUseCurrentSandboxIdentityAndReturnProxiedValues(t *testing.T) {
 	sandbox := &sandboxespb.Sandbox{Name: "operator-sandbox", Uid: "sandbox-uid", Namespace: "operators"}
-	list := &runnerpb.ListSessionsResponse{Sessions: []*runnerpb.SessionSummary{{SessionId: uuid.NewString()}}}
-	status := &runnerpb.RunnerStatus{RunnerBootId: "boot-1"}
+	list := &sessionpb.ListSessionsResponse{Sessions: []*sessionpb.SessionSummary{{SessionId: uuid.NewString()}}}
+	status := &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: "boot-1"}
 	runner := &fakeRunner{list: list, status: status}
 	getter := &fakeSandboxGetter{sandbox: sandbox}
 	bridge, err := New(getter, runner, &fakeDispatcher{})
@@ -202,15 +202,15 @@ func TestRunnerRoutesUseCurrentSandboxIdentityAndReturnProxiedValues(t *testing.
 		t.Fatal(err)
 	}
 	sessions, err := bridge.ListSessions(context.Background(), sandbox.GetName())
-	if err != nil || !proto.Equal(&runnerpb.ListSessionsResponse{Sessions: sessions}, list) {
+	if err != nil || !proto.Equal(&sessionpb.ListSessionsResponse{Sessions: sessions}, list) {
 		t.Fatalf("ListSessions = %v, %v", sessions, err)
 	}
 	if getter.name != sandbox.GetName() || runner.got != sandbox {
 		t.Fatalf("sandbox lookup/proxy identity = %q / %p, want %q / %p", getter.name, runner.got, sandbox.GetName(), sandbox)
 	}
-	gotStatus, err := bridge.RunnerStatus(context.Background(), sandbox.GetName())
+	gotStatus, err := bridge.EnvironmentRuntimeStatus(context.Background(), sandbox.GetName())
 	if err != nil || !proto.Equal(gotStatus, status) {
-		t.Fatalf("RunnerStatus = %v, %v", gotStatus, err)
+		t.Fatalf("EnvironmentRuntimeStatus = %v, %v", gotStatus, err)
 	}
 	getter.sandbox = &sandboxespb.Sandbox{Name: sandbox.GetName(), Namespace: sandbox.GetNamespace()}
 	if _, err := bridge.ListSessions(context.Background(), sandbox.GetName()); err == nil {
@@ -218,23 +218,23 @@ func TestRunnerRoutesUseCurrentSandboxIdentityAndReturnProxiedValues(t *testing.
 	}
 }
 
-type identityRunnerServer struct {
-	runnerservicepb.UnimplementedRunnerServer
+type identityEnvironmentRuntimeServer struct {
+	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	t    *testing.T
 	seen map[string]string
 }
 
-func (s *identityRunnerServer) ListSessions(ctx context.Context, _ *runnerpb.ListSessionsRequest) (*runnerpb.ListSessionsResponse, error) {
+func (s *identityEnvironmentRuntimeServer) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
 	s.capture(ctx)
-	return &runnerpb.ListSessionsResponse{Sessions: []*runnerpb.SessionSummary{{SessionId: "durable-session"}}}, nil
+	return &sessionpb.ListSessionsResponse{Sessions: []*sessionpb.SessionSummary{{SessionId: "durable-session"}}}, nil
 }
 
-func (s *identityRunnerServer) GetStatus(ctx context.Context, _ *runnerpb.GetStatusRequest) (*runnerpb.RunnerStatus, error) {
+func (s *identityEnvironmentRuntimeServer) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	s.capture(ctx)
-	return &runnerpb.RunnerStatus{RunnerBootId: "live-boot"}, nil
+	return &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: "live-boot"}, nil
 }
 
-func (s *identityRunnerServer) capture(ctx context.Context) {
+func (s *identityEnvironmentRuntimeServer) capture(ctx context.Context) {
 	s.t.Helper()
 	values, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
@@ -259,8 +259,8 @@ func TestGatewayRunnerProxyBindsCurrentSandboxMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	service := &identityRunnerServer{t: t, seen: make(map[string]string)}
-	runnerservicepb.RegisterRunnerServer(server, service)
+	service := &identityEnvironmentRuntimeServer{t: t, seen: make(map[string]string)}
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 
@@ -280,9 +280,9 @@ func TestGatewayRunnerProxyBindsCurrentSandboxMetadata(t *testing.T) {
 	if err != nil || listed.GetSessions()[0].GetSessionId() != "durable-session" {
 		t.Fatalf("ListSessions = %v, %v", listed, err)
 	}
-	runnerStatus, err := proxy.RunnerStatus(context.Background(), sandbox)
-	if err != nil || runnerStatus.GetRunnerBootId() != "live-boot" {
-		t.Fatalf("RunnerStatus = %v, %v", runnerStatus, err)
+	runnerStatus, err := proxy.EnvironmentRuntimeStatus(context.Background(), sandbox)
+	if err != nil || runnerStatus.GetEnvironmentRuntimeBootId() != "live-boot" {
+		t.Fatalf("EnvironmentRuntimeStatus = %v, %v", runnerStatus, err)
 	}
 	want := map[string]string{
 		"authorization":                                        "Bearer rotated-runner-token",

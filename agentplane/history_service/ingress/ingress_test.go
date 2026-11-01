@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	runneringresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
+	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -61,7 +61,7 @@ var testTiming = Timing{IdleAck: 100 * time.Millisecond, SilenceLimit: time.Seco
 
 type testIngress struct {
 	history *storage.Store
-	client  runneringresspb.RunnerIngressClient
+	client  session_ingresspb.SessionJournalIngressClient
 }
 
 // newIngress serves a fresh ingress over the shared database, as a restarted process would.
@@ -80,7 +80,7 @@ func serveIngress(t *testing.T, service *Service) testIngress {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	runneringresspb.RegisterRunnerIngressServer(server, service)
+	session_ingresspb.RegisterSessionJournalIngressServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -88,7 +88,7 @@ func serveIngress(t *testing.T, service *Service) testIngress {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { connection.Close() })
-	return testIngress{history: service.History, client: runneringresspb.NewRunnerIngressClient(connection)}
+	return testIngress{history: service.History, client: session_ingresspb.NewSessionJournalIngressClient(connection)}
 }
 
 func newService(t *testing.T, timing Timing) (*Service, *sql.DB) {
@@ -108,7 +108,7 @@ func newService(t *testing.T, timing Timing) (*Service, *sql.DB) {
 // call is a runner's Push call: frames go out as the test sends them, and acknowledgements are read back.
 type call struct {
 	t      *testing.T
-	stream grpc.BidiStreamingClient[runneringresspb.PushFrame, runneringresspb.Acknowledgement]
+	stream grpc.BidiStreamingClient[session_ingresspb.PushFrame, session_ingresspb.Acknowledgement]
 	cancel context.CancelFunc
 }
 
@@ -123,14 +123,14 @@ func (i testIngress) open(t *testing.T, token string) *call {
 	return &call{t: t, stream: stream, cancel: cancel}
 }
 
-func (i testIngress) push(t *testing.T, frames ...*runneringresspb.PushFrame) *call {
+func (i testIngress) push(t *testing.T, frames ...*session_ingresspb.PushFrame) *call {
 	t.Helper()
 	c := i.open(t, writerToken)
 	c.send(frames...)
 	return c
 }
 
-func (c *call) send(frames ...*runneringresspb.PushFrame) {
+func (c *call) send(frames ...*session_ingresspb.PushFrame) {
 	c.t.Helper()
 	for _, frame := range frames {
 		if err := c.stream.Send(frame); err == io.EOF {
@@ -218,40 +218,40 @@ func testEntry(cursor uint64, text string) *eventlogpb.EventEntry {
 	}
 }
 
-func announce(sessionID uuid.UUID, lastCursor uint64, incarnationUID string) *runneringresspb.PushFrame {
-	attached := &runnerpb.Attached{SessionId: sessionID.String(), LastCursor: lastCursor}
+func announce(sessionID uuid.UUID, lastCursor uint64, incarnationUID string) *session_ingresspb.PushFrame {
+	attached := &sessionpb.Attached{SessionId: sessionID.String(), LastCursor: lastCursor}
 	if incarnationUID != "" {
 		attached.IncarnationUid = &incarnationUID
 	}
-	return &runneringresspb.PushFrame{Frame: &runneringresspb.PushFrame_Announce{Announce: attached}}
+	return &session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_Announce{Announce: attached}}
 }
 
-func entries(cursors ...uint64) []*runneringresspb.PushFrame {
-	frames := make([]*runneringresspb.PushFrame, len(cursors))
+func entries(cursors ...uint64) []*session_ingresspb.PushFrame {
+	frames := make([]*session_ingresspb.PushFrame, len(cursors))
 	for index, cursor := range cursors {
 		frames[index] = entryFrame(testEntry(cursor, "journal"))
 	}
 	return frames
 }
 
-func entryFrame(entry *eventlogpb.EventEntry) *runneringresspb.PushFrame {
-	return &runneringresspb.PushFrame{Frame: &runneringresspb.PushFrame_Entry{Entry: entry}}
+func entryFrame(entry *eventlogpb.EventEntry) *session_ingresspb.PushFrame {
+	return &session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_Entry{Entry: entry}}
 }
 
-func sealed(cursor uint64, incarnationUID string) *runneringresspb.PushFrame {
-	seal := &runnerpb.Sealed{Cursor: cursor}
+func sealed(cursor uint64, incarnationUID string) *session_ingresspb.PushFrame {
+	seal := &sessionpb.Sealed{Cursor: cursor}
 	if incarnationUID != "" {
 		seal.IncarnationUid = &incarnationUID
 	}
-	return &runneringresspb.PushFrame{Frame: &runneringresspb.PushFrame_Sealed{Sealed: seal}}
+	return &session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_Sealed{Sealed: seal}}
 }
 
-func heartbeat() *runneringresspb.PushFrame {
-	return &runneringresspb.PushFrame{Frame: &runneringresspb.PushFrame_Heartbeat{Heartbeat: &runneringresspb.Heartbeat{}}}
+func heartbeat() *session_ingresspb.PushFrame {
+	return &session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_Heartbeat{Heartbeat: &session_ingresspb.Heartbeat{}}}
 }
 
-func concat(groups ...[]*runneringresspb.PushFrame) []*runneringresspb.PushFrame {
-	var frames []*runneringresspb.PushFrame
+func concat(groups ...[]*session_ingresspb.PushFrame) []*session_ingresspb.PushFrame {
+	var frames []*session_ingresspb.PushFrame
 	for _, group := range groups {
 		frames = append(frames, group...)
 	}
@@ -304,7 +304,7 @@ func TestEntriesAreAcknowledgedAfterCommitAndTheSealEndsTheJournal(t *testing.T)
 func TestResumeReplaysExactDuplicatesAndContinuesAfterARestart(t *testing.T) {
 	sessionID := uuid.New()
 	first := newIngress(t)
-	c := first.push(t, concat([]*runneringresspb.PushFrame{announce(sessionID, 0, "")}, entries(1, 2))...)
+	c := first.push(t, concat([]*session_ingresspb.PushFrame{announce(sessionID, 0, "")}, entries(1, 2))...)
 	c.acknowledged(2, false)
 	c.cancel()
 	// A new ingress process, and a runner that recorded only the first acknowledgement.
@@ -326,7 +326,7 @@ func TestALaterIncarnationContinuesASealedJournal(t *testing.T) {
 	for name, sealingIncarnation := range map[string]string{"sealed-without-incarnation": "", "sealed-by-another-incarnation": "test-incarnation-1"} {
 		t.Run(name, func(t *testing.T) {
 			ingress, sessionID := newIngress(t), uuid.New()
-			c := ingress.push(t, concat([]*runneringresspb.PushFrame{announce(sessionID, 2, "")}, entries(1, 2), []*runneringresspb.PushFrame{sealed(2, sealingIncarnation)})...)
+			c := ingress.push(t, concat([]*session_ingresspb.PushFrame{announce(sessionID, 2, "")}, entries(1, 2), []*session_ingresspb.PushFrame{sealed(2, sealingIncarnation)})...)
 			c.acknowledged(2, true)
 			c = ingress.push(t, announce(sessionID, 3, "test-incarnation-2"))
 			c.acknowledged(2, false)
@@ -350,7 +350,7 @@ func TestALaterIncarnationContinuesASealedJournal(t *testing.T) {
 
 func TestALaterIncarnationAnnouncingAtTheSealCursorReplacesTheSnapshot(t *testing.T) {
 	ingress, sessionID := newIngress(t), uuid.New()
-	c := ingress.push(t, concat([]*runneringresspb.PushFrame{announce(sessionID, 2, "")}, entries(1, 2), []*runneringresspb.PushFrame{sealed(2, "test-incarnation-1")})...)
+	c := ingress.push(t, concat([]*session_ingresspb.PushFrame{announce(sessionID, 2, "")}, entries(1, 2), []*session_ingresspb.PushFrame{sealed(2, "test-incarnation-1")})...)
 	c.acknowledged(2, true)
 	// A resumed runner has appended nothing yet, so it announces the cursor the seal ended at.
 	c = ingress.push(t, announce(sessionID, 2, "test-incarnation-2"))
@@ -371,7 +371,7 @@ func TestALaterIncarnationAnnouncingAtTheSealCursorReplacesTheSnapshot(t *testin
 
 func TestTheIncarnationThatSealedAJournalGetsTheSealBack(t *testing.T) {
 	ingress, sessionID := newIngress(t), uuid.New()
-	c := ingress.push(t, concat([]*runneringresspb.PushFrame{announce(sessionID, 1, "")}, entries(1), []*runneringresspb.PushFrame{sealed(1, "test-incarnation-1")})...)
+	c := ingress.push(t, concat([]*session_ingresspb.PushFrame{announce(sessionID, 1, "")}, entries(1), []*session_ingresspb.PushFrame{sealed(1, "test-incarnation-1")})...)
 	c.acknowledged(1, true)
 	c = ingress.push(t, announce(sessionID, 1, "test-incarnation-1"))
 	c.acknowledged(1, true)
@@ -381,9 +381,9 @@ func TestTheIncarnationThatSealedAJournalGetsTheSealBack(t *testing.T) {
 func TestResumeAnnounceAtStoppedCursorAcceptsTheNextJournalEntry(t *testing.T) {
 	ingress, sessionID := newIngress(t), uuid.New()
 	stopped, resumed := announce(sessionID, 1, ""), announce(sessionID, 1, "")
-	stopped.GetAnnounce().HarnessState = runnerpb.HarnessState_HARNESS_STATE_STOPPED
-	resumed.GetAnnounce().HarnessState = runnerpb.HarnessState_HARNESS_STATE_RUNNING
-	c := ingress.push(t, append([]*runneringresspb.PushFrame{stopped}, entries(1)...)...)
+	stopped.GetAnnounce().HarnessState = sessionpb.HarnessState_HARNESS_STATE_STOPPED
+	resumed.GetAnnounce().HarnessState = sessionpb.HarnessState_HARNESS_STATE_RUNNING
+	c := ingress.push(t, append([]*session_ingresspb.PushFrame{stopped}, entries(1)...)...)
 	c.acknowledged(1, false)
 	c.cancel()
 	c = ingress.push(t, resumed)
@@ -409,20 +409,20 @@ func TestResumeAnnounceAtStoppedCursorAcceptsTheNextJournalEntry(t *testing.T) {
 
 func TestOutOfOrderAndConflictingPushesAreRefused(t *testing.T) {
 	for name, refusal := range map[string]struct {
-		frames []*runneringresspb.PushFrame
+		frames []*session_ingresspb.PushFrame
 		code   codes.Code
 	}{
 		"first-entry-leaves-a-gap": {entries(3), codes.InvalidArgument},
 		"first-entry-is-cursor-0":  {entries(0), codes.InvalidArgument},
 		"entries-skip-a-cursor":    {entries(1, 3), codes.InvalidArgument},
 		"seal-past-the-last-entry": {append(entries(1), sealed(2, "")), codes.InvalidArgument},
-		"replay-differs":           {[]*runneringresspb.PushFrame{entryFrame(testEntry(1, "rewritten"))}, codes.FailedPrecondition},
-		"second-announcement":      {[]*runneringresspb.PushFrame{announce(uuid.New(), 0, "")}, codes.InvalidArgument},
-		"empty-frame":              {[]*runneringresspb.PushFrame{{}}, codes.InvalidArgument},
+		"replay-differs":           {[]*session_ingresspb.PushFrame{entryFrame(testEntry(1, "rewritten"))}, codes.FailedPrecondition},
+		"second-announcement":      {[]*session_ingresspb.PushFrame{announce(uuid.New(), 0, "")}, codes.InvalidArgument},
+		"empty-frame":              {[]*session_ingresspb.PushFrame{{}}, codes.InvalidArgument},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ingress, sessionID := newIngress(t), uuid.New()
-			first := ingress.push(t, append([]*runneringresspb.PushFrame{announce(sessionID, 0, "")}, entries(1)...)...)
+			first := ingress.push(t, append([]*session_ingresspb.PushFrame{announce(sessionID, 0, "")}, entries(1)...)...)
 			first.acknowledged(1, false)
 			first.cancel()
 			c := ingress.push(t, announce(sessionID, 0, ""))
@@ -454,10 +454,10 @@ func TestASessionTakesPushesOnlyFromItsFirstWriter(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ingress, sessionID := newIngress(t), uuid.New()
 			first := ingress.open(t, workloadToken(t, writer))
-			first.send(append([]*runneringresspb.PushFrame{announce(sessionID, 0, "")}, entries(1)...)...)
+			first.send(append([]*session_ingresspb.PushFrame{announce(sessionID, 0, "")}, entries(1)...)...)
 			first.acknowledged(1, false)
 			other := ingress.open(t, otherWriter(t))
-			other.send(append([]*runneringresspb.PushFrame{announce(sessionID, 0, "")}, entries(1, 2)...)...)
+			other.send(append([]*session_ingresspb.PushFrame{announce(sessionID, 0, "")}, entries(1, 2)...)...)
 			if got := other.refused(); got != codes.PermissionDenied {
 				t.Fatalf("refused with %v, want PermissionDenied", got)
 			}
@@ -481,7 +481,7 @@ func TestACallThatDoesNotOpenWithAnAnnouncementIsRefused(t *testing.T) {
 	upperCase.GetAnnounce().SessionId = "0A1B2C3D-4E5F-4A1B-8C2D-3E4F5A6B7C8D"
 	notAUUID := announce(uuid.New(), 0, "")
 	notAUUID.GetAnnounce().SessionId = "test-not-a-uuid"
-	for name, frame := range map[string]*runneringresspb.PushFrame{
+	for name, frame := range map[string]*session_ingresspb.PushFrame{
 		"entry-first":          entries(1)[0],
 		"heartbeat-first":      heartbeat(),
 		"not-a-uuid":           notAUUID,
@@ -512,7 +512,7 @@ func TestACallThatDoesNotOpenWithAnAnnouncementIsRefused(t *testing.T) {
 
 func TestAnIdleCallRepeatsItsAcknowledgementAndASilentOneEnds(t *testing.T) {
 	ingress, sessionID := newIngress(t), uuid.New()
-	c := ingress.push(t, append([]*runneringresspb.PushFrame{announce(sessionID, 0, "")}, entries(1)...)...)
+	c := ingress.push(t, append([]*session_ingresspb.PushFrame{announce(sessionID, 0, "")}, entries(1)...)...)
 	c.acknowledged(1, false)
 	// Heartbeats keep the call open past the silence limit, which is ten idle intervals; each idle interval
 	// repeats the acknowledgement.
@@ -527,7 +527,7 @@ func TestAnIdleCallRepeatsItsAcknowledgementAndASilentOneEnds(t *testing.T) {
 
 func TestACallSilentForTheLimitEndsAfterRepeatingItsAcknowledgementForEachIdleInterval(t *testing.T) {
 	ingress, sessionID := newIngress(t), uuid.New()
-	c := ingress.push(t, append([]*runneringresspb.PushFrame{announce(sessionID, 0, "")}, entries(1)...)...)
+	c := ingress.push(t, append([]*session_ingresspb.PushFrame{announce(sessionID, 0, "")}, entries(1)...)...)
 	c.acknowledged(1, false)
 	idleIntervals := int(testTiming.SilenceLimit / testTiming.IdleAck)
 	if repeats, code := c.acknowledgementsUntilRefused(); code != codes.Unavailable || repeats != idleIntervals-1 {
@@ -537,7 +537,7 @@ func TestACallSilentForTheLimitEndsAfterRepeatingItsAcknowledgementForEachIdleIn
 
 func TestEntriesAreAcknowledgedWithoutWaitingForAnIdleInterval(t *testing.T) {
 	ingress, sessionID := newIngressPacedBy(t, Timing{IdleAck: time.Hour, SilenceLimit: 3 * time.Hour}), uuid.New()
-	c := ingress.push(t, append([]*runneringresspb.PushFrame{announce(sessionID, 0, "")}, entries(1)...)...)
+	c := ingress.push(t, append([]*session_ingresspb.PushFrame{announce(sessionID, 0, "")}, entries(1)...)...)
 	c.acknowledged(1, false)
 	c.send(heartbeat())
 	c.send(entries(2)...)
@@ -546,7 +546,7 @@ func TestEntriesAreAcknowledgedWithoutWaitingForAnIdleInterval(t *testing.T) {
 
 func TestTheRunnerClosingItsSideKeepsWhatArrived(t *testing.T) {
 	ingress, sessionID := newIngress(t), uuid.New()
-	c := ingress.push(t, concat([]*runneringresspb.PushFrame{announce(sessionID, 0, "")}, entries(1, 2))...)
+	c := ingress.push(t, concat([]*session_ingresspb.PushFrame{announce(sessionID, 0, "")}, entries(1, 2))...)
 	if err := c.stream.CloseSend(); err != nil {
 		t.Fatal(err)
 	}
@@ -591,9 +591,9 @@ func TestCentralSamplerWriterAndExecutorAreSeparate(t *testing.T) {
 	token := workloadToken(t, account)
 	sessionID := uuid.NewString()
 	executorUID := uuid.NewString()
-	announcement := &runneringresspb.SamplerAnnouncement{
-		Session: &runnerpb.Attached{SessionId: sessionID, Spec: &runnerpb.SessionSpec{
-			Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test-workspace",
+	announcement := &session_ingresspb.SamplerAnnouncement{
+		Session: &sessionpb.Attached{SessionId: sessionID, Spec: &sessionpb.SessionSpec{
+			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test-workspace",
 		}},
 		Executor: &sandboxespb.SandboxDestination{
 			Sandbox: "test-execution-sandbox", SandboxUid: executorUID,
@@ -601,7 +601,7 @@ func TestCentralSamplerWriterAndExecutorAreSeparate(t *testing.T) {
 		},
 	}
 	c := ingress.open(t, token)
-	c.send(&runneringresspb.PushFrame{Frame: &runneringresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: announcement}})
+	c.send(&session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: announcement}})
 	c.acknowledged(0, false)
 	var writerName, sandboxName, sandboxUID string
 	if err := db.QueryRowContext(t.Context(), "SELECT writer_name,sandbox_name,sandbox_uid::text FROM session_history WHERE id=$1", sessionID).
@@ -612,20 +612,20 @@ func TestCentralSamplerWriterAndExecutorAreSeparate(t *testing.T) {
 		t.Fatalf("binding writer=%s executor=%s uid=%s", writerName, sandboxName, sandboxUID)
 	}
 	c.cancel()
-	changed := proto.Clone(announcement).(*runneringresspb.SamplerAnnouncement)
+	changed := proto.Clone(announcement).(*session_ingresspb.SamplerAnnouncement)
 	changed.Executor.SandboxUid = uuid.NewString()
 	next := ingress.open(t, token)
-	next.send(&runneringresspb.PushFrame{Frame: &runneringresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: changed}})
+	next.send(&session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: changed}})
 	if _, err := next.stream.Recv(); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("changed executor: %v", err)
 	}
 	unauthorized := ingress.open(t, writerToken)
-	unauthorized.send(&runneringresspb.PushFrame{Frame: &runneringresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: announcement}})
+	unauthorized.send(&session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: announcement}})
 	if _, err := unauthorized.stream.Recv(); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("unauthorized producer: %v", err)
 	}
 	disguised := ingress.open(t, writerToken)
-	disguised.send(&runneringresspb.PushFrame{Frame: &runneringresspb.PushFrame_Announce{Announce: announcement.Session}})
+	disguised.send(&session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_Announce{Announce: announcement.Session}})
 	if _, err := disguised.stream.Recv(); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("disguised central producer: %v", err)
 	}

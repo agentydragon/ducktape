@@ -2,7 +2,7 @@ package session
 
 import (
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"google.golang.org/protobuf/proto"
 )
@@ -14,17 +14,17 @@ const AutosuspendSetup = "Setup"
 // transaction across those independently owned authorities.
 type Observation struct {
 	id                 string
-	spec               *runnerpb.SessionSpec
+	spec               *sessionpb.SessionSpec
 	cursor             uint64
 	activeTurn         string
 	nativeActiveTurn   bool
-	setup              runnerpb.SetupState
-	launch             runnerpb.LaunchOutcome
+	setup              sessionpb.SetupState
+	launch             sessionpb.LaunchOutcome
 	incarnation        *string
 	nativeSession      *string
 	failure            *uint64
 	processID          string
-	processState       runnerpb.ProcessState
+	processState       sessionpb.ProcessState
 	executionPrincipal *delegationpb.ServiceAccountIdentity
 	pid                *int64
 	shared             bool
@@ -69,12 +69,12 @@ func (s *Session) Observe() Observation {
 	return result
 }
 
-func (o Observation) Attached() *runnerpb.Attached {
-	harness := runnerpb.HarnessState_HARNESS_STATE_STOPPED
+func (o Observation) Attached() *sessionpb.Attached {
+	harness := sessionpb.HarnessState_HARNESS_STATE_STOPPED
 	if o.pid != nil {
-		harness = runnerpb.HarnessState_HARNESS_STATE_RUNNING
+		harness = sessionpb.HarnessState_HARNESS_STATE_RUNNING
 	}
-	return &runnerpb.Attached{SessionId: o.id, Spec: proto.Clone(o.spec).(*runnerpb.SessionSpec), LastCursor: o.cursor, HarnessState: harness, ActiveTurnId: o.activeTurn, SetupState: o.setup, LaunchOutcome: o.launch, IncarnationUid: copied(o.incarnation), ExecutionPrincipal: o.executionPrincipal}
+	return &sessionpb.Attached{SessionId: o.id, Spec: proto.Clone(o.spec).(*sessionpb.SessionSpec), LastCursor: o.cursor, HarnessState: harness, ActiveTurnId: o.activeTurn, SetupState: o.setup, LaunchOutcome: o.launch, IncarnationUid: copied(o.incarnation), ExecutionPrincipal: o.executionPrincipal}
 }
 
 func (o Observation) AutosuspendBlockers() []*sandboxpb.AutosuspendBlocker {
@@ -92,24 +92,24 @@ func (o Observation) AutosuspendBlockers() []*sandboxpb.AutosuspendBlocker {
 	if o.preparing {
 		add(autosuspendActivation)
 	}
-	if o.setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
+	if o.setup == sessionpb.SetupState_SETUP_STATE_RUNNING {
 		add(AutosuspendSetup)
 	}
 	return blockers
 }
 
-func (o Observation) Status() (*runnerpb.SessionStatus, *runnerpb.HarnessProcessStatus) {
-	execution := runnerpb.SessionExecutionState_SESSION_EXECUTION_STATE_DORMANT
+func (o Observation) Status() (*sessionpb.SessionStatus, *sessionpb.HarnessProcessStatus) {
+	execution := sessionpb.SessionExecutionState_SESSION_EXECUTION_STATE_DORMANT
 	if o.ready {
-		execution = runnerpb.SessionExecutionState_SESSION_EXECUTION_STATE_READY
+		execution = sessionpb.SessionExecutionState_SESSION_EXECUTION_STATE_READY
 	}
-	if !o.ready && (o.preparing || o.processID != "" || o.pending) || o.setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
-		execution = runnerpb.SessionExecutionState_SESSION_EXECUTION_STATE_PREPARING
+	if !o.ready && (o.preparing || o.processID != "" || o.pending) || o.setup == sessionpb.SetupState_SETUP_STATE_RUNNING {
+		execution = sessionpb.SessionExecutionState_SESSION_EXECUTION_STATE_PREPARING
 	}
 	if o.failure != nil {
-		execution = runnerpb.SessionExecutionState_SESSION_EXECUTION_STATE_FAILED
+		execution = sessionpb.SessionExecutionState_SESSION_EXECUTION_STATE_FAILED
 	}
-	row := &runnerpb.SessionStatus{SessionId: o.id, ExecutionState: execution, NativeSessionId: copied(o.nativeSession), FailureCursor: copied(o.failure), Busy: len(o.AutosuspendBlockers()) > 0}
+	row := &sessionpb.SessionStatus{SessionId: o.id, ExecutionState: execution, NativeSessionId: copied(o.nativeSession), FailureCursor: copied(o.failure), Busy: len(o.AutosuspendBlockers()) > 0}
 	if o.activeTurn != "" {
 		row.ActiveTurnId = copied(&o.activeTurn)
 	}
@@ -119,15 +119,15 @@ func (o Observation) Status() (*runnerpb.SessionStatus, *runnerpb.HarnessProcess
 	if o.processID == "" || o.shared {
 		return row, nil
 	}
-	return row, &runnerpb.HarnessProcessStatus{ProcessId: o.processID, Harness: o.spec.Harness, State: o.processState, AssignedSessionIds: []string{o.id}, Pid: copied(o.pid)}
+	return row, &sessionpb.HarnessProcessStatus{ProcessId: o.processID, Harness: o.spec.Harness, State: o.processState, AssignedSessionIds: []string{o.id}, Pid: copied(o.pid)}
 }
 
-func (s *Session) Attached() *runnerpb.Attached { return s.Observe().Attached() }
+func (s *Session) Attached() *sessionpb.Attached { return s.Observe().Attached() }
 func (s *Session) AutosuspendBlockers() []*sandboxpb.AutosuspendBlocker {
 	return s.Observe().AutosuspendBlockers()
 }
 
-func (s *Session) Status() (*runnerpb.SessionStatus, *runnerpb.HarnessProcessStatus) {
+func (s *Session) Status() (*sessionpb.SessionStatus, *sessionpb.HarnessProcessStatus) {
 	return s.Observe().Status()
 }
 
@@ -136,7 +136,7 @@ func (s *Session) Status() (*runnerpb.SessionStatus, *runnerpb.HarnessProcessSta
 type blockerNotification struct {
 	active  bool
 	pending bool
-	setup   runnerpb.SetupState
+	setup   sessionpb.SetupState
 }
 
 func (s *Session) notifyBlockers() {

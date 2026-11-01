@@ -1,7 +1,7 @@
 """The Pod shape every agentplane box shares: the egress sidecar that relays a box's
 traffic to the central proxy, the tokens only it mounts, the interception CA over the system bundle
 and as Java's trust store, a kubeconfig that reaches the API server through the proxy, and the proxy
-environment that points a workload at the sidecar. The runner SandboxTemplates (runner_sandbox.py) and
+environment that points a workload at the sidecar. The runner SandboxTemplates (environment_sandbox.py) and
 the sandbox Actions' box templates (command_sandbox.py) are both built from it, so both kinds of box sit
 behind the same egress path; only the command box also gets the system bazelrc that points Bazel at
 the trust store.
@@ -23,8 +23,8 @@ from constructs import Construct
 from agentplane.egress import sidecar_config
 from agentplane.egress.platform_routes import PlatformRoute
 from agentplane.egress.resources import placeholder_of
+from agentplane.env.config import CA_BUNDLE, JAVA_TRUST_STORE, KUBECONFIG
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
-from agentplane.runner.configuration import CA_BUNDLE, JAVA_TRUST_STORE, KUBECONFIG
 from agentplane.sandboxes.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s.agentplane import egress, notifications, session_dispatcher, telemetry

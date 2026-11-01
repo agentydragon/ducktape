@@ -41,13 +41,13 @@ def test_process_spans_are_exported_with_identity_and_parentage(tmp_path: Path) 
             ResourceSpans(
                 resource=Resource(
                     attributes=[
-                        KeyValue(key="service.name", value=AnyValue(string_value="agentplane-runner")),
+                        KeyValue(key="service.name", value=AnyValue(string_value="agentplane-environment-runtime")),
                         KeyValue(key="sandbox.uid", value=AnyValue(string_value="test-sandbox-uid")),
                     ]
                 ),
                 scope_spans=[
                     ScopeSpans(
-                        scope=InstrumentationScope(name="runner"),
+                        scope=InstrumentationScope(name="environment-runtime"),
                         spans=[
                             Span(
                                 trace_id=bytes.fromhex("01" * 16),
@@ -64,11 +64,11 @@ def test_process_spans_are_exported_with_identity_and_parentage(tmp_path: Path) 
                                 ],
                                 events=[
                                     Span.Event(
-                                        name="agentplane.runner.quiesce_stage",
+                                        name="agentplane.environment_runtime.quiesce_stage",
                                         time_unix_nano=150,
                                         attributes=[
                                             KeyValue(
-                                                key="agentplane.runner.quiesce.stage",
+                                                key="agentplane.environment_runtime.quiesce.stage",
                                                 value=AnyValue(string_value="flushing"),
                                             ),
                                             KeyValue(key="authorization", value=AnyValue(string_value="secret")),
@@ -79,17 +79,17 @@ def test_process_spans_are_exported_with_identity_and_parentage(tmp_path: Path) 
                                         time_unix_nano=175,
                                         attributes=[
                                             KeyValue(
-                                                key="agentplane.runner.quiesce.stage",
+                                                key="agentplane.environment_runtime.quiesce.stage",
                                                 value=AnyValue(string_value="quiesced"),
                                             )
                                         ],
                                     ),
                                     Span.Event(
-                                        name="agentplane.runner.quiesce_stage",
+                                        name="agentplane.environment_runtime.quiesce_stage",
                                         time_unix_nano=180,
                                         attributes=[
                                             KeyValue(
-                                                key="agentplane.runner.quiesce.stage",
+                                                key="agentplane.environment_runtime.quiesce.stage",
                                                 value=AnyValue(string_value="private-state"),
                                             )
                                         ],
@@ -119,7 +119,7 @@ def test_process_spans_are_exported_with_identity_and_parentage(tmp_path: Path) 
     spans = [json.loads(line) for line in path.read_text().splitlines()]
     assert {span["trace_id"] for span in spans} == {"01" * 16}
     assert {span["parent_span_id"] for span in spans} == {"03" * 8}
-    assert {span["service"] for span in spans} == {"agentplane-runner"}
+    assert {span["service"] for span in spans} == {"agentplane-environment-runtime"}
     assert {span["resource"]["sandbox.uid"] for span in spans} == {"test-sandbox-uid"}
     assert {span["attributes"]["session.id"] for span in spans} == {"s1"}
     assert {span["attributes"]["agentplane.codex.generation"] for span in spans} == {3}
@@ -129,9 +129,9 @@ def test_process_spans_are_exported_with_identity_and_parentage(tmp_path: Path) 
         span["events"]
         == [
             {
-                "name": "agentplane.runner.quiesce_stage",
+                "name": "agentplane.environment_runtime.quiesce_stage",
                 "time_unix_nano": 150,
-                "attributes": {"agentplane.runner.quiesce.stage": "flushing"},
+                "attributes": {"agentplane.environment_runtime.quiesce.stage": "flushing"},
             }
         ]
         for span in spans

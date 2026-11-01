@@ -20,9 +20,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/session"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
@@ -179,9 +179,9 @@ func waitClose(t *testing.T, done <-chan error) error {
 	}
 }
 
-func runnerLifecycleSnapshot(t *testing.T, r *Runner) *runnerpb.RunnerLifecycleStatus {
+func runnerLifecycleSnapshot(t *testing.T, r *Runner) *sessionpb.EnvironmentRuntimeLifecycleStatus {
 	t.Helper()
-	response, err := r.GetStatus(context.Background(), &runnerpb.GetStatusRequest{})
+	response, err := r.GetStatus(context.Background(), &sessionpb.GetStatusRequest{})
 	if err != nil {
 		t.Fatalf("GetStatus: %v", err)
 	}
@@ -191,7 +191,7 @@ func runnerLifecycleSnapshot(t *testing.T, r *Runner) *runnerpb.RunnerLifecycleS
 	return response.Lifecycle
 }
 
-func TestRunnerLifecycleStatusOmitsStaleBlockerAndError(t *testing.T) {
+func TestEnvironmentRuntimeLifecycleStatusOmitsStaleBlockerAndError(t *testing.T) {
 	resourceError := "resource failure"
 	current := runnerLifecycleStatus(
 		runnerlifecycle.Desired{Mode: runnerlifecycle.Quiescing, Generation: 8}, true,
@@ -223,7 +223,7 @@ func TestRunnerLifecycleStatusOmitsStaleBlockerAndError(t *testing.T) {
 	if status.ProgressCurrent || status.Error != "" || status.Blocker != nil {
 		t.Fatalf("stale progress exposed as current: %+v", status)
 	}
-	if status.ProgressGeneration != 8 || status.Stage != runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_FLUSHING {
+	if status.ProgressGeneration != 8 || status.Stage != sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING {
 		t.Fatalf("stale progress snapshot = %+v, want last stage and generation", status)
 	}
 }
@@ -305,8 +305,8 @@ func TestClosingIntentPreservesSealAndWaitsForSetup(t *testing.T) {
 		return current.Stage == runnerlifecycle.Halting && current.Blocker.Kind == runnerlifecycle.SessionHaltPending && sessionStopping(r, s)
 	}, "quiesce halt to wait at setup barrier")
 	blocked := runnerLifecycleSnapshot(t, r)
-	if !blocked.ProgressCurrent || blocked.Stage != runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_HALTING ||
-		blocked.Blocker == nil || blocked.Blocker.Kind != runnerpb.RunnerLifecycleBlockerKind_RUNNER_LIFECYCLE_BLOCKER_KIND_SESSION_HALT ||
+	if !blocked.ProgressCurrent || blocked.Stage != sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_HALTING ||
+		blocked.Blocker == nil || blocked.Blocker.Kind != sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_HALT ||
 		blocked.Blocker.ResourceId != s.ID() || blocked.Blocker.ResourceType != session.RuntimeType || !blocked.Blocker.ResourcePresent {
 		t.Fatalf("GetStatus while setup blocks halt = %+v", blocked)
 	}
@@ -361,8 +361,8 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 			current.Blocker.AcknowledgementPresent && current.Blocker.AcknowledgementCursor == seal.Cursor-1
 	}, "publish the under-cursor acknowledgement blocker")
 	blocked := runnerLifecycleSnapshot(t, r)
-	if !blocked.ProgressCurrent || blocked.Stage != runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_FLUSHING ||
-		blocked.Blocker == nil || blocked.Blocker.Kind != runnerpb.RunnerLifecycleBlockerKind_RUNNER_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT ||
+	if !blocked.ProgressCurrent || blocked.Stage != sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING ||
+		blocked.Blocker == nil || blocked.Blocker.Kind != sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT ||
 		blocked.Blocker.ResourceId != s.ID() || blocked.Blocker.ResourceType != ingressAckType ||
 		!blocked.Blocker.ResourcePresent || !blocked.Blocker.AcknowledgementPresent || !blocked.Blocker.AcknowledgementSealed ||
 		blocked.Blocker.AcknowledgementCursor != seal.Cursor-1 || blocked.Blocker.JournalSealCursor != seal.Cursor ||
@@ -373,7 +373,7 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if facts.QuiesceStage != runnerstatepb.RunnerFacts_QUIESCE_STAGE_FLUSHING {
+	if facts.QuiesceStage != environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_FLUSHING {
 		t.Fatalf("facts after under-cursor acknowledgement = %s, want FLUSHING", facts.QuiesceStage)
 	}
 	if current := r.lifecycle.status(); current.Stage != runnerlifecycle.Flushing {
@@ -385,14 +385,14 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	}
 	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == runnerlifecycle.Quiesced }, "exact sealed cursor acknowledgement")
 	quiesced := runnerLifecycleSnapshot(t, r)
-	if quiesced.Stage != runnerpb.RunnerLifecycleStage_RUNNER_LIFECYCLE_STAGE_QUIESCED || quiesced.Blocker != nil {
+	if quiesced.Stage != sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_QUIESCED || quiesced.Blocker != nil {
 		t.Fatalf("GetStatus after exact acknowledgement = %+v, want QUIESCED without a blocker", quiesced)
 	}
 	facts, err = r.facts()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if facts.QuiesceStage != runnerstatepb.RunnerFacts_QUIESCE_STAGE_QUIESCED {
+	if facts.QuiesceStage != environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED {
 		t.Fatalf("facts after exact sealed cursor acknowledgement = %s, want QUIESCED", facts.QuiesceStage)
 	}
 }
@@ -405,7 +405,7 @@ func TestCloseWaitsForAdmission(t *testing.T) {
 	releaseBatch := holdJournalBatch(t, ctx, s)
 	inputDone := make(chan error, 1)
 	go func() {
-		_, err := r.SubmitInput(hostContext(r, ctx), &runnerservicepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "close-race", Text: "input"})
+		_, err := r.SubmitInput(hostContext(r, ctx), &environmentruntimepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "close-race", Text: "input"})
 		inputDone <- err
 	}()
 	if err := watchLifecycle(ctx, r.lifecycle, "runner", func(input runnerInputSpec) (bool, error) {
@@ -434,7 +434,7 @@ func TestCloseWaitsForAdmission(t *testing.T) {
 		t.Fatalf("wait for Close to drain admission: %v", err)
 	}
 	cursor := s.EventJournal().LastCursor()
-	if _, err := r.SubmitInput(hostContext(r, ctx), &runnerservicepb.SubmitInputRequest{
+	if _, err := r.SubmitInput(hostContext(r, ctx), &environmentruntimepb.SubmitInputRequest{
 		SessionId: s.ID(), CommandId: "close-after-barrier", Text: "late input",
 	}); status.Code(err) != codes.Unavailable {
 		releaseBatch()
@@ -469,7 +469,7 @@ func TestAdmissionDoesNotObserveAggregateStatusFailure(t *testing.T) {
 	statusReadErr := errors.New("injected aggregate-status read failure")
 	store.failNextStatusRead(r.ctx, statusReadErr)
 	before := s.EventJournal().LastCursor()
-	response, err := r.SubmitInput(hostContext(r, context.Background()), &runnerservicepb.SubmitInputRequest{
+	response, err := r.SubmitInput(hostContext(r, context.Background()), &environmentruntimepb.SubmitInputRequest{
 		SessionId: s.ID(), CommandId: "admission-with-status-read-failure", Text: "input",
 	})
 	if err != nil || response == nil || response.Admission == nil || response.Admission.Cursor <= before {
@@ -484,7 +484,7 @@ func TestAdmissionDoesNotObserveAggregateStatusFailure(t *testing.T) {
 	statusContext, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	store.failNextStatusRead(statusContext, statusReadErr)
-	if _, err := r.GetStatus(statusContext, &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+	if _, err := r.GetStatus(statusContext, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("GetStatus after aggregate-status read failure = %v, want Unavailable", err)
 	}
 }
@@ -535,7 +535,7 @@ func TestClosePublicationFailureKeepsAdmissionClosed(t *testing.T) {
 	}
 
 	cursor := s.EventJournal().LastCursor()
-	if _, err := r.SubmitInput(hostContext(r, context.Background()), &runnerservicepb.SubmitInputRequest{
+	if _, err := r.SubmitInput(hostContext(r, context.Background()), &environmentruntimepb.SubmitInputRequest{
 		SessionId: s.ID(), CommandId: "after-failed-close-publication", Text: "late input",
 	}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("command after failed Close publication = %v, want Unavailable", err)
@@ -556,7 +556,7 @@ func TestMissingAdmissionStateRejectsDurableWork(t *testing.T) {
 		t.Fatalf("missing accounting returned facts: %v", facts)
 	}
 	cursor := s.EventJournal().LastCursor()
-	if _, err := r.SubmitInput(hostContext(r, r.ctx), &runnerservicepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "missing-accounting", Text: "input"}); status.Code(err) != codes.Unavailable {
+	if _, err := r.SubmitInput(hostContext(r, r.ctx), &environmentruntimepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "missing-accounting", Text: "input"}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("command with missing accounting = %v, want Unavailable", err)
 	}
 	if after := s.EventJournal().LastCursor(); after != cursor {
@@ -578,7 +578,7 @@ func TestAdmissionCompletionStateFailureIsReported(t *testing.T) {
 	releaseBatch := holdJournalBatch(t, ctx, s)
 	inputDone := make(chan error, 1)
 	go func() {
-		_, err := r.SubmitInput(hostContext(r, ctx), &runnerservicepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "completion-accounting", Text: "input"})
+		_, err := r.SubmitInput(hostContext(r, ctx), &environmentruntimepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "completion-accounting", Text: "input"})
 		inputDone <- err
 	}()
 	if err := watchLifecycle(ctx, r.lifecycle, "runner", func(input runnerInputSpec) (bool, error) {

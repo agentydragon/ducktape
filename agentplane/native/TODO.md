@@ -37,7 +37,7 @@ summarisation request must then be recognised and answered by the script.
 
 - Frames appear: `docs/hooks.md:36-37`, `native/claude/scenarios.py:162-163` (the `hooks` launch
   "has the harness report each firing as `hook_started`/`hook_response`"), and
-  `runner/SPEC.md:210-211` ("Hook events need `--include-hook-events`"); all 2.1.252.
+  `env/harnesshost/docs/session_protocol.md` ("Hook events need `--include-hook-events`"); all 2.1.252.
 - None appear: `docs/hooks.md:45-47` (live capture, 2.1.252) and
   `haku/cli_protocol/protocol.md:267-271` (2.1.233, the compaction run passed the flag), for hooks
   registered at `initialize`.
