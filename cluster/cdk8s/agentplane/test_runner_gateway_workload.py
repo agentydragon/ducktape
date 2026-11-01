@@ -204,9 +204,7 @@ def test_session_delegation_is_a_dispatcher_caller_without_wake_authority(scratc
     )
     chart = runner_gateway_workload.serving_chart(scratch_app, env=env)
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    settings = yaml.safe_load(
-        _resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
-    )
+    settings = yaml.safe_load(_resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
     assert set(settings["dispatcher_callers"]) == {
         f"{env.namespace}/{app.NAME}",
         f"{env.namespace}/{notifications.NAME}",

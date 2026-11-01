@@ -12,17 +12,17 @@ select the caller. An absent caller UID fails closed.
 Action group/action names remain the approved contract names. MCP Edge exposes each configured
 direct tool as `<group>__<action>`:
 
-| Action | Direct MCP tool | Current executor |
-| --- | --- | --- |
-| `environments/list` | `environments__list` | Offered |
-| `environments/get` | `environments__get` | Offered |
-| `sessions/open` | `sessions__open` | Offered |
-| `sessions/submit_input` | `sessions__submit_input` | Offered |
-| `sessions/observe_input` | `sessions__observe_input` | Offered |
-| `sessions/get` | `sessions__get` | Reserved for the retained snapshot projection |
-| `sessions/read_turns` | `sessions__read_turns` | Reserved for the retained turn projection |
-| `sessions/cancel_input` | `sessions__cancel_input` | Offered |
-| `sessions/interrupt_turn` | `sessions__interrupt_turn` | Offered |
+| Action                    | Direct MCP tool            | Current executor                              |
+| ------------------------- | -------------------------- | --------------------------------------------- |
+| `environments/list`       | `environments__list`       | Offered                                       |
+| `environments/get`        | `environments__get`        | Offered                                       |
+| `sessions/open`           | `sessions__open`           | Offered                                       |
+| `sessions/submit_input`   | `sessions__submit_input`   | Offered                                       |
+| `sessions/observe_input`  | `sessions__observe_input`  | Offered                                       |
+| `sessions/get`            | `sessions__get`            | Reserved for the retained snapshot projection |
+| `sessions/read_turns`     | `sessions__read_turns`     | Reserved for the retained turn projection     |
+| `sessions/cancel_input`   | `sessions__cancel_input`   | Offered                                       |
+| `sessions/interrupt_turn` | `sessions__interrupt_turn` | Offered                                       |
 
 The schemas are defined by the typed Go input records in `contract/inputs.go`; unknown fields are
 rejected. Target references include namespace, name and immutable UID. Session and command IDs are

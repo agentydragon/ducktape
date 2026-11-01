@@ -18,8 +18,8 @@ go_library(
     srcs = ["executor.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/session_delegation",
     deps = [
-        "//agentplane/action_service/session_delegation/contract:contract",
         "//agentplane/action_service/catalog",
+        "//agentplane/action_service/session_delegation/contract",
         "//agentplane/action_service/store",
         "//agentplane/action_service/worker",
         "//agentplane/history_service:history_service_go_proto",

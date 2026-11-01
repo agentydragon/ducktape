@@ -122,9 +122,7 @@ def test_session_delegation_offers_only_implemented_direct_tools(scratch_app: Ap
     action_component.add_platform_resources()
     documents = Cdk8sTesting.synth(chart)
     config = one(
-        doc
-        for doc in documents
-        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == f"{actions.NAME}-settings"
+        doc for doc in documents if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == f"{actions.NAME}-settings"
     )
     settings = yaml.safe_load(config["data"]["settings.yaml"])
     groups = settings["action_groups"]
@@ -168,8 +166,7 @@ def test_session_delegation_offers_only_implemented_direct_tools(scratch_app: Ap
 
 def test_session_delegation_network_caller_requires_the_group() -> None:
     env_without_actions = replace(
-        staging.ENV,
-        actions=replace(staging.ENV.actions, orchestration_v1=None, session_delegation=None),
+        staging.ENV, actions=replace(staging.ENV.actions, orchestration_v1=None, session_delegation=None)
     )
     assert actions.session_delegation_callers(env_without_actions) == {}
 

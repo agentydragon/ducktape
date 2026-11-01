@@ -37,7 +37,6 @@ func TestInputsUseApprovedActionNamesAndSchemas(t *testing.T) {
 		[]string{"command_id", "session_id"}, []string{"command_id", "session_id"})
 	assertProperties(t, inputs.InterruptTurn.Definition().InputSchema,
 		[]string{"command_id", "session_id", "target", "turn_id"}, []string{"command_id", "session_id", "target", "turn_id"})
-
 }
 
 func TestMutationActionsDoNotAdvertiseUnimplementedComposites(t *testing.T) {
