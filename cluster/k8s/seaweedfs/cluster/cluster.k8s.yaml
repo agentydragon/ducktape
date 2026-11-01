@@ -423,7 +423,6 @@ spec:
               - monitoring
               - nix-cache
               - ntfy
-              - oci-cache
               - plaid-mcp
               - public-coder-agent
               - session-backup
@@ -455,7 +454,6 @@ spec:
               - monitoring
               - nix-cache
               - ntfy
-              - oci-cache
               - plaid-mcp
               - public-coder-agent
               - session-backup
@@ -487,7 +485,6 @@ spec:
               - monitoring
               - nix-cache
               - ntfy
-              - oci-cache
               - plaid-mcp
               - public-coder-agent
               - session-backup
