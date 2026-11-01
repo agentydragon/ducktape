@@ -49,8 +49,8 @@ provide the intended harness-versus-command resource boundary in either environm
 
 In VMs, the shared Codex app-server runs under `agentplane-workloads.slice`. Each Claude harness
 also has its own transient service there, with its Bash descendants. The workload slice's aggregate
-budget is shared across those services. Runtime, Harness Host and Execution Service have separate
-service cgroups. In Pods, the runner container also contains Claude and its direct tool processes,
+budget is shared across those services. Runtime, Harness Host and Execution Service share one
+management service cgroup. In Pods, the runner container also contains Claude and its direct tool processes,
 so their memory contributes to that container's limit.
 
 The workload/executor slice names describe the current placement and budgets. They do not establish

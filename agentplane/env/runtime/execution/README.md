@@ -9,8 +9,8 @@ admission and recovery guarantees.
 [Isolation and resources](ISOLATION.md) describes protection goals, the current shared Codex
 backend, process placement, collective resource limits and failure scope.
 
-Environment Runtime starts this service as a child in Pods and as a systemd unit in VMs. Harness
-Host calls its private Unix gRPC API; Runtime owns service startup, health, shutdown and fencing. In
+Environment Runtime runs this service in-process. Harness Host calls its private Unix gRPC API;
+Runtime owns service startup, health, shutdown and fencing. In
 Pods, the `companion` subcommand runs as PID 1 in the isolated Codex container and owns the native
 exec-server namespace. Gateway and the central sampler continue to use the unchanged `Executor` wire
 protocol. The independent service is exercised by
@@ -48,12 +48,11 @@ the Unix-domain socket path limit; omitting it preserves `state_dir/execution.so
 
 `backend: "pod"` requires PID 1 in a private container PID namespace, with resource limits enforced
 by the outer runtime. `backend: "systemd"` requires a `systemd` object containing `agent_uid`,
-`agent_gid`, `block_devices`, `aggregate_limits` and `process_limits` (the shared
-`supervision.ResourceLimits` shape). It runs under `agentplane-execution-service.service` with
-`RuntimeDirectory=agentplane-execution-lifetime`. The systemd owner, runtime directory and
-`execution-service` scope fences transient services independently from Harness Host's workload
-scope.
-`backend: "companion"` lets Runtime supervise the service as an ordinary child while a separate
+`agent_gid`, `block_devices`, `aggregate_limits`, `process_limits`, `owner_unit` and
+`lifetime_directory`. The configured systemd owner and `execution-service` scope fence transient
+services independently from Harness Host's workload scope. The embedding Runtime supplies its own
+unit and lifetime directory; standalone users must supply an appropriate systemd owner.
+`backend: "companion"` lets Runtime host the service while a separate
 container owns the native PID namespace. Set `container_socket` to the companion's absolute ownership
 socket, omit `binary`, `working_directory` and `systemd`, and keep the same `executor_url` on both
 sides. The environment owner starts the companion as PID 1 with:
@@ -69,9 +68,8 @@ waits for the namespace to contain only PID 1 before publishing a fresh idle gen
 companion stays available for the next claim. An unexpected executor exit triggers the same
 process-domain fence and closes the ownership lease so Runtime can recover the backend. If the
 in-container proof fails, the companion exits so the outer runtime can fence the whole namespace.
-Runtime launches `--config`, waits for standard gRPC Health on the private socket, and stops the
-service with SIGTERM, allowing its 90-second backend fence before checking process exit and outer
-containment. A nonzero exit is failed cleanup, never an execution success receipt.
+Runtime starts the API, waits for standard gRPC Health on the private socket, and joins its shutdown
+and 90-second backend fence before replacement. A failed cleanup is never an execution success receipt.
 
 All backends launch only `codex exec-server`; no harness configuration or provider credentials are
 required. The subprocess working directory is distinct from the private listener directory.
@@ -90,7 +88,7 @@ replays execution requests.
   cancellation, used by the standalone service.
 - `codexexecserver/`: native launch/probe/fence backends and the COSI lifecycle used by Execution Service.
 - `companion/`: Pod PID-1 ownership protocol and its client, shared reaper integration.
-- `service/`: standalone environment identity, state-directory ownership and serving lifetime.
+- `service/`: environment identity, state-directory ownership and serving lifetime.
 - `cmd/`: executable entrypoint; `testing/`: real container service acceptance.
 
 **Deviation:** the proto keeps the published `agentplane.executor` wire package while source and
@@ -99,11 +97,10 @@ message fields, so current Gateway, Harness Host and sampler versions still agre
 
 ## Cutover and rollback
 
-The cutover changes process entrypoints and adds private Runtime-to-Host and Runtime-to-Execution
-sockets. The public Gateway control listener and `Executor` RPC schema remain unchanged. Existing
-Session journals, state locks, workspaces, output cursors and native session identities stay in place.
-Reverting requires restoring the previous image pin and Pod command, then the old executable-bearing
-image; no persisted-data migration is involved.
+The cutover combines the management processes while keeping the public Gateway control listener and
+`Executor` RPC schema unchanged. Old Sandboxes must be stopped and deleted before the cutover;
+preserve authored files and Session history before deleting their storage. Rollback requires stopping
+the new Sandboxes before restoring the previous guest and runtime image pins, then recreating them.
 
 Runtime fences the previous Execution Service owner before starting a replacement. Its scope is
 distinct from Harness Host's process scope. Inventory retained sampler execution bindings and
@@ -149,7 +146,7 @@ extensions cover `appendSystemPrompt`, interrupt metadata, model/effort changes,
 raw tool inputs and explicit null reply fields. User tool results have their own
 wire type.
 
-The integration fixtures launch Runtime and its separate Host/Execution processes and drive its public control and ingress
+The integration fixtures launch Runtime with its embedded Host and Execution components and drive its public control and ingress
 protocols. `test_turns.py`, `test_subagents.py`, and `test_restart.py` exercise the real
 native harnesses; App, History, Gateway, and Notification integration tests use the
 same process topology.

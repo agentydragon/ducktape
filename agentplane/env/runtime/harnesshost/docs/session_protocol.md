@@ -158,9 +158,9 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   Host releases its lock only after native cleanup and journal close. Runtime releases the
   environment lock only after its child domains are fenced. Durable Session IDs and paths do not move.
 - Production Pods explicitly select PID1 supervision and reject Runtime startup outside container
-  PID 1. Runtime supervises the Host process; Host explicitly uses subprocess supervision for native
-  helpers. Normal Host `native_stopped` reports prove its native cleanup; abnormal Host process exit
-  alone does not prove that escaped process groups are gone.
+  PID 1. Embedded Host shares Runtime's PID1 supervisor for native helpers. Normal Host
+  `native_stopped` reports prove its native cleanup; abnormal Runtime exit alone does not prove that
+  escaped process groups are gone.
   One reaper owns direct-child exit statuses and adopted orphans; native leaders never compete
   with an `exec.Cmd.Wait` goroutine. Leader exit kills its remaining group; completion waits until
   the group disappears. Stop sends TERM, then KILL after its grace budget. Non-PID1 fixtures
@@ -171,7 +171,7 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   disappearance does not prove that outer fence. Replacement after node loss or force deletion
   requires a prior-container or external node/storage fence.
   [Supervision](../../supervision/docs/supervision.md#pid-1-and-the-outer-fence) describes these boundaries.
-- In VMs every native launch is a systemd transient `Type=exec` service, bound to their owning Runtime, Host or Execution unit,
+- In VMs every native launch is a systemd transient `Type=exec` service, bound to the Runtime unit,
   with `Restart=no` and five-second stop grace. A condition requires the owning service invocation's
   marker in its systemd-managed runtime directory; delayed requests from a previous invocation
   cannot execute after replacement. Systemd contains descendants across process-group changes.

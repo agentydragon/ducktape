@@ -60,7 +60,7 @@ The template owns the endpoint and socket paths used on both sides.
 The template's `vm_resources` value supplies `environment.resources` under `environment.kind: "vm"`.
 Its optional executor budget and `environment.executor` endpoint must be configured together.
 Execution Service applies that budget to `agentplane-executors.slice`; Harness Host uses the sibling
-`agentplane-workloads.slice`. Runtime and both service units live under the capped `agentplane.slice`.
+`agentplane-workloads.slice`. Runtime and the native slices live under the capped `agentplane.slice`.
 Runtime fences previous owned services before admitting an incarnation.
 The harness aggregate and executor aggregate have independent limits; their configured memory caps
 must fit together below the service's memory high watermark. The service's maximum leaves the
@@ -70,9 +70,9 @@ can be killed while the exec-server survives, but the kernel can also select the
 Native leader exit still fences the entire leaf; OOM policy does not weaken that cleanup.
 
 Execution Service starts `exec-server` as a systemd transient service with `Restart=no`, bound to the
-Execution Service unit. Runtime fences prior Host and Execution invocations before admitting an
-incarnation. During orderly shutdown Runtime drains Host, proves Execution fenced, and then stops
-both units; the units do not independently stop ahead of that lifecycle protocol. The guest supplies
+Runtime service unit. Runtime fences prior native scopes before admitting an incarnation. During
+orderly shutdown Runtime drains Host and proves Execution fenced before joining the components.
+The guest supplies
 systemd, agent UID/GID and block devices; templates supply resource limits.
 See [native supervision](../../supervision/docs/supervision.md) for the backend and ownership boundary.
 
@@ -136,8 +136,8 @@ and Sandbox-hosted app-server with isolated tools remain explicit transitional o
   endpoint to gate shared app-server readiness.
 - Startup fences previous executor work before opening Session stores. Quiesce fences the executor
   before journal seals; shutdown fences it before releasing state ownership. VM startup fences prior
-  owned systemd units before admitting work. Runtime coordinates Host and Execution unit shutdown so
-  Host native drain and the Execution fence complete before either unit is stopped. Pod ownership
+  owned systemd units before admitting work. Runtime coordinates component shutdown so Host native
+  drain and the Execution fence complete before Host stops. Pod ownership
   loss normally fences the companion's workload process domain and publishes a fresh idle generation
   while PID 1 stays alive; if that fence fails, the companion exits and the container runtime must
   fence the whole namespace. Failed cleanup prevents sealing and starting a successor. If a Pod

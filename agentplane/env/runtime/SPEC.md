@@ -49,10 +49,9 @@ itself make process cleanup fail.
 While bootstrap is running, Runtime reports the `Bootstrap` autosuspend blocker; it clears when the
 bootstrap reaches a terminal state.
 
-The VM Host unit, transient process units and resource slices do not receive implicit shutdown-target
-stop jobs. Runtime owns their stop order, draining Host and fencing Execution before stopping Host;
-each native transient process is bound to Runtime or Host. The
-Runtime unit holds state and workspace mounts until those stops finish. Its systemd stop timeout is
+The VM transient process units and resource slices do not receive implicit shutdown-target stop
+jobs. Runtime drains Host and fences Execution before stopping Host; all native transient processes
+are bound to its service lifetime. The Runtime unit holds state and workspace mounts until those stops finish. Its systemd stop timeout is
 unlimited because accepted bootstrap work is joined to durable settlement; the lifecycle fence itself
 has a 150-second deadline.
 
@@ -68,36 +67,29 @@ Each managed process receives a non-negative `StopGrace` in its launch configura
 uses that fixed value for the process lifetime. Systemd sets `TimeoutStopUSec` when it starts a
 transient process unit, while the subprocess helper receives the same duration over its private
 launch arguments and owns TERM-to-KILL escalation. PID1 applies the same launch-time deadline.
-Host native processes retain the 5-second policy and the Runtime-managed Host process uses 30 seconds.
+Host native processes retain the 5-second policy.
 The embedded Execution API allows 90 seconds to fence its native backend. Callers cannot change a process's stop grace
 after launch.
 
 ## Process topology and fence proof
 
-The executable names below are fixed package contracts. Their systemd definitions live in
-`../images/systemd/` for the VM service units.
-
 | Mode | Runtime and Host | Execution API | Fence evidence |
 | --- | --- | --- | --- |
-| Production Pod (`pid1`) | Runtime is container PID 1 and supervises Harness Host as a subprocess. | Runtime serves the API in-process and claims the Codex companion in a separate PID-1 Kubernetes container. | Replacement requires Host `native_stopped`, adapter shutdown and a fresh idle companion generation. A fenced backend loss can restart the API lifetime in the same Runtime process; unproven loss fails Runtime. An abnormal Host exit fails Runtime so the container runtime fences the whole Pod process cgroup. |
-| VM (`systemd`) | Runtime and Host are separate systemd units. Runtime starts Host over D-Bus and retains its exact invocation ID and cgroup path. | Runtime serves the API in-process and supervises Codex transient units in `agentplane-executors.slice`, bound to the Runtime unit lifetime. | Backend loss permits same-incarnation API recovery only after the native unit is stopped and its process domain is proven empty. Failed or uncertain fences fail Runtime. The Runtime's 150-second lifecycle fence deadline covers the API's 90-second backend fence. |
-| Explicit local/RBE (`subprocess`) | Runtime starts Host as a child process. It is a test/development mode and does not imply PID 1 containment. | Runtime serves the API in-process; companion topology remains externally configured. | The API joins its companion fence. This mode does not claim production Pod cgroup containment. |
+| Production Pod (`pid1`) | Runtime is PID 1; embedded Host shares its child reaper. | Embedded Execution claims the Codex companion in a separate PID-1 container. | Replacement requires Host `native_stopped`, adapter shutdown and a fresh idle companion generation. A fenced backend loss can restart the API lifetime; unproven loss fails Runtime. Abnormal Runtime exit requires the outer container fence. |
+| VM (`systemd`) | Runtime and Host share the Runtime service; Host native services use `agentplane-workloads.slice`. | Embedded Execution supervises Codex transient units in `agentplane-executors.slice`, bound to the Runtime service lifetime. | Backend loss permits same-incarnation API recovery only after the native unit is stopped and its process domain is proven empty. Failed or uncertain fences fail Runtime. The 150-second lifecycle fence deadline covers the API's 90-second backend fence. |
+| Explicit local/RBE (`subprocess`) | Host is embedded; native processes use subprocess supervision. | The API is embedded; companion topology remains externally configured. | The API joins its companion fence. This mode does not claim production Pod cgroup containment. |
 
-Runtime pins each systemd service unit over D-Bus before start and holds its manager reference,
-exact invocation ID and cgroup path until its process-domain fence is proven.
+Native supervision retains systemd manager references, exact invocation IDs and cgroup paths until
+the corresponding process-domain fences are proven.
 
-VM units are `agentplane-environment-runtime.service` and `agentplane-harness-host.service`.
-The Runtime keeps the legacy `agentplane-runner` scope identity during cutover; Host uses `harness-host`,
-and Codex transient units keep `execution-service` while binding to the Runtime unit lifetime.
-The Runtime and Host lifetime directories are `/run/agentplane-environment-runtime-lifetime` and
-`/run/agentplane-harness-host-lifetime`. Runtime does not enable or start the Codex companion unit;
+The VM management unit is `agentplane-environment-runtime.service`. Runtime keeps its legacy scope
+identity; Host uses `harness-host` and Codex transient units use `execution-service`. All bind to
+the Runtime unit and `/run/agentplane-environment-runtime-lifetime`. Runtime does not enable or start the Codex companion unit;
 Pod orchestration owns that separate container.
 
 The fixed VM service commands use the mounted configuration at
 `/run/agentplane/config/environment-runtime.json` and launch identity at
-`/run/agentplane/sandbox/launch.json`. Runtime also accepts optional
-`--harness-host-binary` for tests; production resolves that sibling binary from its mounted disk.
-`--vm-resource-properties <environment-runtime.json>` remains the
+`/run/agentplane/sandbox/launch.json`. `--vm-resource-properties <environment-runtime.json>` remains the
 systemd prestart interface for calculating the environment resource envelope.
 
 ## Configuration and startup
@@ -111,8 +103,8 @@ per-incarnation Execution API config in memory.
 For Pod and explicit subprocess modes, Runtime and Host use short private sockets directly under
 `StateDir` (`r.sock`, `h.sock`, `e.sock`) so test and deployment state paths remain within the
 Unix-domain socket path limit. Execution keeps its ownership lock under `StateDir/execution` and
-binds the configured `e.sock` path. VM mode retains the existing explicit `/state/runtime`,
-`/state/harness-host` and `/state/execution` socket locations used by its systemd unit arguments.
+binds the configured `e.sock` path. VM mode uses `/state/runtime`, `/state/harness-host` and
+`/state/execution` socket locations.
 
 On startup Runtime locks the legacy owner inode before opening the old Session directory, fences
 previous Host and Execution owners, binds its private lifecycle UDS with mode `0600`, starts Host,

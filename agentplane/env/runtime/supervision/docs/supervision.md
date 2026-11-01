@@ -2,7 +2,7 @@
 
 The reusable launchers, COSI process controller and process registry live in
 [`agentplane/env/runtime/supervision`](../). Environment Runtime, Harness Host and
-Execution Service each own their process lifetime and inject their own context, state, namespace,
+Execution Service each own their component lifetime and inject their own context, state, namespace,
 worker tracking and error callback. Native adapters and script workers publish
 `supervision.ProcessConfig` through `supervision.ManagedProcess`; owning controllers retain
 readiness, restart and journal decisions. A completed attempt never relaunches during reconciliation.
@@ -43,9 +43,7 @@ The NixOS guest and system-test guest share this hierarchy:
 
 ```text
 agentplane.slice                         overall CPU, memory, swap and PID envelope
-  agentplane-environment-runtime.service environment lifecycle and bootstrap
-  agentplane-harness-host.service        native Session and journal owner
-  agentplane-execution-service.service   execution API and native backend owner
+  agentplane-environment-runtime.service environment lifecycle, Host and Execution API
   agentplane-workloads.slice             aggregate harness/setup budget
     agentplane-native-<owner>-<UUID>.service
   agentplane-executors.slice             aggregate exec-server/tool budget
@@ -75,21 +73,16 @@ cleanup of that same identity. An uncertain launch never creates a second unit t
 Native effects remain subject to journal reconciliation.
 
 `PrepareForOwner` takes an explicit service unit, lifetime directory and scope ID. Runtime uses the
-legacy Runner scope ID so it can discover and fence pre-split units. Host uses `harness-host` and
-Execution uses `execution-service`; their scopes remain independent. Native units bind to their
-owning service and require that service invocation's lifetime marker:
-
-| Owner service                            | Lifetime directory                             |
-| ---------------------------------------- | ---------------------------------------------- |
-| `agentplane-environment-runtime.service` | `/run/agentplane-environment-runtime-lifetime` |
-| `agentplane-harness-host.service`        | `/run/agentplane-harness-host-lifetime`        |
-| `agentplane-execution-service.service`   | `/run/agentplane-execution-lifetime`           |
+legacy Runner scope ID. Host uses `harness-host` and Execution uses `execution-service`; their
+native scopes remain independent. All three bind their native units to
+`agentplane-environment-runtime.service` and require its invocation marker under
+`/run/agentplane-environment-runtime-lifetime`.
 
 Service death stops its native units. `KillMode=control-group` contains descendants even when they
 change process groups. Natural leader exit also stops the unit. `Wait` requires the unit to be
 inactive/failed and its execution domain empty. A disconnected manager leaves cleanup blocked;
-process exit alone does not authorize a successor or journal seal. Runtime separately verifies
-Host/Execution service invocation and cgroup fencing during coordinated shutdown/replacement.
+process exit alone does not authorize a successor or journal seal. Runtime joins Host and Execution
+cleanup and proves their respective native process domains empty during shutdown and replacement.
 
 Runtime and native supervision share typed unit snapshots, stop-job observation and process-domain
 fencing in `env/runtime/supervision`. A single D-Bus `GetAll` reads Unit and Service properties together;
@@ -122,9 +115,8 @@ including after the replacement's inventory scan. A skipped condition never coun
 
 `environment.supervision` explicitly selects `pid1` or `subprocess` for Runtime. Production Pods
 select `pid1`, invoke Environment Runtime directly and disable shared process namespaces. The PID1
-backend rejects a Runtime whose PID is not 1. Runtime starts Harness Host as a child with explicit
-`--supervision subprocess`; Host never inherits Runtime's PID1 role. The Execution API process is
-another Runtime-owned child. Its Pod companion runs separately as PID1 and owns the native
+backend rejects a Runtime whose PID is not 1. Runtime and its embedded Host share one PID1 reaper.
+The Execution API is also embedded; its Pod companion runs separately as PID1 and owns the native
 exec-server namespace. Non-PID1 integration fixtures select Runtime's `subprocess` backend. VM
 systemd supervision does not fall back to a Pod backend.
 
@@ -137,9 +129,8 @@ process group. `Wait` requires the group to disappear; a failed fence retains th
 
 Escaped groups require whole-container teardown. They can retain stdout/stderr pipes. Actual
 Runtime/Host graceful shutdown joins accepted script and protocol readers; an escaped writer can
-hold it until the outer runtime's termination grace expires and SIGKILL ends the container. A Host
-process exit alone does not prove its escaped native descendants are gone. Replacement after an
-abnormal exit therefore requires the outer containment fence.
+hold it until the outer runtime's termination grace expires and SIGKILL ends the container. Replacement
+after an abnormal Runtime exit requires the outer containment fence.
 
 The companion's PID1 reaper has no environment state-owner descriptor. Its live ownership
 connection owns the native executor. It closes stdin after launch and forwards stdout/stderr
@@ -180,8 +171,8 @@ neither Pod UID nor PVC access mode replaces runtime fencing.
 `//agentplane/env/e2e:test_pid1_container` runs both backend fixtures in real private PID namespaces.
 It closes the native's inherited owner descriptor and starts TERM-resistant same-group and escaped
 descendants. It checks lock exclusion, observes container exit and descendant death, then reacquires
-the lock before restarting the container. The production cases invoke Runtime plus Host/Execution
-binaries and cover clean TERM and abrupt bootstrap death. They do not claim graceful completion
+the lock before restarting the container. The production cases invoke the combined Runtime and cover
+clean TERM, Host-managed native processes and abrupt bootstrap death. They do not claim graceful completion
 with escaped pipe holders. JSON evidence and logs go to undeclared test outputs.
 
 `//agentplane/env/e2e:test_executor_container` exercises the separately packaged Execution companion,
