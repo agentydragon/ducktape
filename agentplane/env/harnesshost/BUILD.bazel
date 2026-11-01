@@ -4,11 +4,11 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "harness",
     srcs = ["harness.py"],
-    deps = ["//agentplane/proto:runner_pb2"],
     visibility = [
         "//agentplane:__subpackages__",
         "//cluster/cdk8s:__subpackages__",
     ],
+    deps = ["//agentplane/proto:runner_pb2"],
 )
 
 go_library(
