@@ -12,7 +12,7 @@ import (
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )

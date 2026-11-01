@@ -9,7 +9,7 @@ import (
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
 	"k8s.io/client-go/kubernetes"
 	coordinationclient "k8s.io/client-go/kubernetes/typed/coordination/v1"

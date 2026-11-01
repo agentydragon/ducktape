@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"

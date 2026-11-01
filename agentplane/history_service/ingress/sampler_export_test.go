@@ -17,7 +17,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	centralsampler "github.com/agentydragon/ducktape/agentplane/x/central_sampler"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"

@@ -28,7 +28,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/migrate"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/util/netlistener"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"

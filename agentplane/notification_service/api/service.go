@@ -21,7 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 )

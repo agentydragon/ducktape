@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	uniqueauth "github.com/modelcontextprotocol/go-sdk/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

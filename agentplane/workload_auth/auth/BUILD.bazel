@@ -7,7 +7,7 @@ go_library(
         "delegation.go",
         "methods.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth",
+    importpath = "github.com/agentydragon/ducktape/agentplane/workload_auth/auth",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/proto:delegation_go_proto",

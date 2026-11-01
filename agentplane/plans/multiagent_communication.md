@@ -390,7 +390,7 @@ already divide by the service that enforces them:
 
 Today History checks only that the caller is one of its configured `reader_accounts` (staging: the
 app, Notifications and the `orchestration_v1` executor), then serves any Session by ID; there is no per-Session or per-Sandbox check,
-and a workload ServiceAccount is refused (`api/service.go`, `workload_auth/go/auth`). Writes are
+and a workload ServiceAccount is refused (`api/service.go`, `workload_auth/auth`). Writes are
 fenced separately: the ingress binds a Session to its first pushing ServiceAccount (namespace, name,
 UID) and refuses any other (`ingress/ingress.go`). The archive therefore already holds an identity of its
 own for every history bound to a writer, which is what the split would build on.

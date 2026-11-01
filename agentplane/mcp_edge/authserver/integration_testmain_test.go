@@ -32,7 +32,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/migrations"
 	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
-	workloadauth "github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth" // its name, auth, is go-sdk's
+	workloadauth "github.com/agentydragon/ducktape/agentplane/workload_auth/auth" // its name, auth, is go-sdk's
 )
 
 var integrationDatabase *postgres.Database

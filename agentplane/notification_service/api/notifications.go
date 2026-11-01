@@ -10,7 +10,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 )
 
 // Notifications is the workloads' API: subscriptions that deliver events from a source into a Session's inbox,

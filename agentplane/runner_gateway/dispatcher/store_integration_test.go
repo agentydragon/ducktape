@@ -15,7 +15,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

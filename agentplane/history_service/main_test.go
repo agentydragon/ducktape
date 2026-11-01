@@ -25,7 +25,7 @@ import (
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/grpc"

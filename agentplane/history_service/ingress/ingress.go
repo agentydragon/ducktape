@@ -18,7 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

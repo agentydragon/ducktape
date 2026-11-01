@@ -783,7 +783,7 @@ separate host decision evaluates those broader ergonomics.
   [`History ingress`](../history_service/ingress/ingress.go),
   [`History storage`](../history_service/storage/store.go),
   [`History API admission`](../history_service/api/service.go),
-  [`workload auth`](../workload_auth/go/auth/auth.go),
+  [`workload auth`](../workload_auth/auth/auth.go),
   [`MCP core client`](../mcp_edge/core_client.go),
   [`Sandbox identity controller`](../sandbox_controller/identity.go).
 - Agent bootstrap/tools: [`resolved.go`](../runner/configuration/resolved.go),

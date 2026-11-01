@@ -30,7 +30,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"

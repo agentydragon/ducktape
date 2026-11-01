@@ -7,7 +7,7 @@ go_library(
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = [
         "//agentplane/egress/decision",
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
     ],
 )
 
@@ -18,7 +18,7 @@ go_test(
     deps = [
         "//agentplane/egress/decision",
         "//agentplane/testing/kubeapiserver",
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
         "@io_k8s_api//core/v1:core",
     ],
 )

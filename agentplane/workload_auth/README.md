@@ -1,6 +1,6 @@
 # Workload authentication
 
-[`go/auth`](go/auth/auth.go) provides the TokenReview resolver used by Agentplane services. Each
+[`auth`](auth/auth.go) provides the TokenReview resolver used by Agentplane services. Each
 service constructs a `Resolver` with its accepted audience and allowed namespaces. Its namespace
 allowlist is checked for every request.
 
@@ -15,7 +15,7 @@ belongs to the account alone. It requires a ServiceAccount UID and accepts eithe
 claims or one complete Pod name and UID pair. Partial or repeated claims are rejected. The Action
 Service uses this path. Other callers use Pod-bound `Principal` values.
 
-[`methods.go`](go/auth/methods.go) admits a gRPC server's calls in one interceptor: `Methods` maps
+[`methods.go`](auth/methods.go) admits a gRPC server's calls in one interceptor: `Methods` maps
 each full method name to the `Rule` admitting its callers and refuses any method it does not list
 ([gRPC services](../docs/grpc_services.md#authentication)).
 

@@ -13,7 +13,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	sharedconfig "github.com/agentydragon/ducktape/agentplane/settings"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"

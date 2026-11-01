@@ -14,7 +14,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerpbservice "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"

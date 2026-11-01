@@ -56,7 +56,7 @@ follows it; code that differs converges on it.
 - Direct callers send `authorization: Bearer <token>` metadata, reading the projected token file for every
   call: projected tokens rotate.
 - A Go server admits callers in one interceptor, `auth.Methods.ServerOptions`
-  (`agentplane/workload_auth/go/auth`): `auth.Methods` maps every served method's full name to a
+  (`agentplane/workload_auth/auth`): `auth.Methods` maps every served method's full name to a
   `Rule` (`Accounts` for an allowlist, `AnyAccount` for any account the `Resolver` serves, `Public`
   only for the health service via `auth.HealthMethods`). A method it does not list is refused before
   its bearer is read, so a new RPC is closed until its Rule is written. The package owning a servicer

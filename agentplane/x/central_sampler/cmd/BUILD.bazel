@@ -16,7 +16,7 @@ go_library(
         "//agentplane/postgres/go:postgres",
         "//agentplane/postgres/go/migrate",
         "//agentplane/postgres/go/wakeups",
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
         "//agentplane/x/central_sampler",
         "//agentplane/x/central_sampler:sampler_go_proto",
         "//util/netlistener",

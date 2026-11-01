@@ -24,7 +24,7 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 )
 
 // CallerLabel, set to "true" on a ServiceAccount of a caller namespace, admits its workloads as callers. It grants no

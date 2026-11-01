@@ -114,7 +114,7 @@ exploration (#10990, closed after this section absorbed it).
   (`cluster/cdk8s/agentplane/sandbox_pod.py`), 3600 s in service Deployments. Destination services
   use the Go resolver, which reuses accepted TokenReviews for up to 30 s
   ([workload authentication](../docs/workload_authentication.md)). Pod-bound resolution checks the
-  bound Pod's existence and UID through TokenReview (`workload_auth/go/auth`); Action Service also
+  bound Pod's existence and UID through TokenReview (`workload_auth/auth`); Action Service also
   supports account-only resolution. A VM guest holds no token; the relay in its launcher Pod does. A
   second apiserver holds no Pods, so it cannot do the bound-Pod check: callers keep reviewing
   against the primary.

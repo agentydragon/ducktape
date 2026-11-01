@@ -15,7 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

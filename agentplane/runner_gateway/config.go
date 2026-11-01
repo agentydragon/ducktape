@@ -10,7 +10,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
