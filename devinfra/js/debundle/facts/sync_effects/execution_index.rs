@@ -4,6 +4,7 @@ mod callback_arguments;
 mod prototype_properties;
 
 use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
+use super::noninvoking_initialization::OriginalInitializer;
 use super::value_model::{
     ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts, FromEntriesMappedProof,
     MemberKey, NamespaceValueFacts, OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr,
@@ -5708,6 +5709,7 @@ struct ExecutionIndex {
     fresh_instance_field_writes: BTreeSet<SourceUnitOrdinal>,
     top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
+    noninvoking_initializers: BTreeMap<SourceUnitOrdinal, OriginalInitializer>,
     top_definite_initializers: Vec<BTreeSet<Id>>,
     const_call_owners: BTreeSet<SourceUnitOrdinal>,
     top_member_value_writes: Vec<Vec<MemberValueWrite>>,
@@ -5885,6 +5887,7 @@ impl Default for ExecutionIndex {
             fresh_instance_field_writes: BTreeSet::new(),
             top_dynamic_property_receivers: Vec::new(),
             top_assignments: Vec::new(),
+            noninvoking_initializers: BTreeMap::new(),
             top_definite_initializers: Vec::new(),
             const_call_owners: BTreeSet::new(),
             top_member_value_writes: Vec::new(),
@@ -8407,6 +8410,13 @@ impl ExecutionIndex {
             }
         }
         for (ordinal, item) in body.iter().enumerate() {
+            if let Some(initializer) =
+                OriginalInitializer::collect(item, SourceUnitOrdinal(ordinal))
+            {
+                index
+                    .noninvoking_initializers
+                    .insert(SourceUnitOrdinal(ordinal), initializer);
+            }
             fresh_steps.push(fresh_value_step(item.as_module_item()));
             if index.global_guards_requested {
                 index.deferred_global_candidates[ordinal] =

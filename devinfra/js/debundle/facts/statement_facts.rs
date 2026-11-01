@@ -203,6 +203,10 @@ pub struct CallbackFactoryWriteWitness {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct SynchronousCalls {
+    /// Whole-original-owner coverage, sealed after its checked root evaluation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) completed_initialization:
+        Option<super::sync_effects::noninvoking_initialization::CompletedInitialization>,
     /// Report-only, source-site may-accesses; never a legacy graph input.
     pub(crate) evaluation_effects: super::evaluation_effects::EvaluationEffects,
     #[serde(default, skip_serializing_if = "Option::is_none")]

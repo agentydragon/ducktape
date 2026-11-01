@@ -511,6 +511,65 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
             > 0,
         "{report:#}"
     );
+
+    // The output call is uncovered. Only a checked whole initializer may
+    // remove the other statement's unknown domains, even for dead values.
+    for (initializer, covered) in [
+        ("1", true),
+        ("null", true),
+        ("true", true),
+        ("1n", true),
+        ("'text'", true),
+        ("(1)", true),
+        ("function (parameter) { throw parameter; }", true),
+        ("parameter => globalThis.marker = parameter", true),
+        ("(globalThis.marker = 1, 1)", false),
+        ("(globalThis.marker = 1, () => 0)", false),
+        ("`text`", false),
+        ("({value: 1})", false),
+        ("[1]", false),
+        ("/pattern/", false),
+        ("class {}", false),
+        ("function (parameter = 1) { return parameter; }", false),
+        ("async () => 0", false),
+    ] {
+        let source = format!("const value = {initializer};\nconsole.log('control');\n");
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module("all", &[Member::new("value")])],
+        ));
+        assert_preserved_entry_output(&fixture, "control\n");
+        let report = fixture.effect_translation_validation();
+        for domain in ["global_properties", "general_heap", "host_effects"] {
+            assert_eq!(
+                report["coverage"]["unknown_coverage"][domain],
+                if covered { 1 } else { 2 },
+                "{initializer}: {report:#}"
+            );
+        }
+    }
+    for (declaration, members, unknown) in [
+        (
+            "const value = 1, sibling = 2;",
+            vec![Member::new("value"), Member::new("sibling")],
+            3,
+        ),
+        ("export const value = 1;", vec![Member::new("value")], 2),
+    ] {
+        let source = format!("{declaration}\nconsole.log('control');\n");
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module("all", &members)],
+        ));
+        assert_preserved_entry_output(&fixture, "control\n");
+        let report = fixture.effect_translation_validation();
+        for domain in ["global_properties", "general_heap", "host_effects"] {
+            assert_eq!(
+                report["coverage"]["unknown_coverage"][domain], unknown,
+                "{declaration}: {report:#}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -522,7 +581,9 @@ fn default_report_bounds_examples_without_losing_exact_counts() {
     ];
     let mut source = String::new();
     for (index, name) in names.iter().enumerate() {
-        source.push_str(&format!("const {name} = {index};\n"));
+        // Keep an erased sequence operand: this control exercises bounded
+        // opaque diagnostics even after literal-only owners gain coverage.
+        source.push_str(&format!("const {name} = (0, {index});\n"));
     }
     source.push_str(&format!(
         "const tail = {};\nconsole.log(tail);\n",

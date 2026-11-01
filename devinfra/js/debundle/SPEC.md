@@ -310,10 +310,25 @@ may-accesses into these reports, retaining lexical source-operation sites,
 proof dependencies and conservative callback assumptions. They do not alter
 legacy global cells or graph edges. Indexed, conditional and prejoined lanes
 remain may-access evidence and cannot establish observed contradictions or
-domain completeness. Every existing unknown-coverage/Havoc obligation remains.
+domain completeness. Unchecked owners retain their unknown-coverage obligations.
 Default examples retain twenty source operations per cell access, with exact
 counts and explicit truncation; full JSONL borrows and streams all retained
 operation provenance.
+
+An original, standalone, non-exported variable declaration with one simple,
+unannotated binding may close global-property, general-heap and host-effect
+coverage when its initializer is a primitive literal or checked ordinary
+function/arrow creation. The canonical source collector checks the whole
+original unit before expression erasure. A dedicated interpreter request must
+produce its expected primitive or closure value, and owner finalization must
+complete the binding initialization without fallback or precision loss before
+sealing the coverage certificate. Bodies remain lazy; this certifies no call.
+Sequences, assignments, templates, split comma declarations, exports, classes,
+objects/arrays, binding reads, decorated/type-annotated functions and unsupported
+parameters remain uncovered. Parentheses alone preserve admissibility.
+The owner certificate survives staged analysis; generic child results and
+invocation memos never propagate it. Binding/allocation cells, other opacity
+flags, purity and the authoritative legacy gates retain their existing rules.
 
 A command that combines a saved graph with current spec or source checks the
 recorded baseline before reading claims or writing edits. It refuses changed,

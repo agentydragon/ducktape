@@ -137,11 +137,18 @@ impl StatementFacts {
             effects.opaque_heap = false;
             return effects;
         }
-        effects.unknown_coverage.extend([
-            UnknownEffectCoverage::GlobalProperties,
-            UnknownEffectCoverage::GeneralHeap,
-            UnknownEffectCoverage::HostEffects,
-        ]);
+        if !self.synchronous_calls.as_ref().is_some_and(|calls| {
+            calls
+                .completed_initialization
+                .as_ref()
+                .is_some_and(|proof| proof.covers(self.ordinal))
+        }) {
+            effects.unknown_coverage.extend([
+                UnknownEffectCoverage::GlobalProperties,
+                UnknownEffectCoverage::GeneralHeap,
+                UnknownEffectCoverage::HostEffects,
+            ]);
+        }
         for binding in &self.reads.eager {
             record(
                 &mut effects.reads,

@@ -2,6 +2,7 @@
 //! preceding prefix's settled state and never changes that earlier state.
 
 use super::super::allocation_transfer::AllocationJudgment;
+use super::super::noninvoking_initialization::{EvaluatedInitializer, OriginalInitializer};
 use super::super::property_inference::OwnPropertyProof;
 use super::super::value_model::{CapturedContext, Context, ValueExpr, Values};
 use super::Call;
@@ -67,6 +68,12 @@ pub(super) enum RuntimeOperation {
         environment: Context,
         captures: Context,
     },
+    EvaluateInitializer {
+        source: OriginalInitializer,
+        expression: ValueExpr,
+        environment: Context,
+        captures: Context,
+    },
     Invoke {
         callable: u32,
         arguments: Vec<Values>,
@@ -86,6 +93,10 @@ pub(super) enum RuntimeOperation {
 pub(super) enum RuntimeValue {
     Heap(HeapResult),
     Values(Values),
+    Initializer {
+        values: Values,
+        evaluated: Option<EvaluatedInitializer>,
+    },
     Outcome(Box<Outcome>),
     Callbacks(CallbackResult),
     Model(ModelResult),
@@ -258,7 +269,9 @@ impl RuntimeQueries<'_, '_> {
     ) -> RuntimeResult {
         let kind = match &operation {
             RuntimeOperation::Heap(_) => NativeProgramPointKind::Heap,
-            RuntimeOperation::Evaluate { .. } => NativeProgramPointKind::Evaluate,
+            RuntimeOperation::Evaluate { .. } | RuntimeOperation::EvaluateInitializer { .. } => {
+                NativeProgramPointKind::Evaluate
+            }
             RuntimeOperation::Invoke { .. } => NativeProgramPointKind::Invoke,
             RuntimeOperation::Call { .. } => NativeProgramPointKind::Call,
             RuntimeOperation::Callbacks(_) => NativeProgramPointKind::Callbacks,
@@ -447,7 +460,10 @@ impl RuntimeRules<'_, '_> {
             context: RefCell::new(context),
         };
         let mut executor = Executor::new(inputs, state, queries);
-        if !matches!(&operation, RuntimeOperation::Evaluate { .. }) {
+        if !matches!(
+            &operation,
+            RuntimeOperation::Evaluate { .. } | RuntimeOperation::EvaluateInitializer { .. }
+        ) {
             executor.mark_allocation_opaque();
         }
         let value = match operation {
@@ -463,6 +479,16 @@ impl RuntimeRules<'_, '_> {
                 &environment,
                 &captures,
             )),
+            RuntimeOperation::EvaluateInitializer {
+                source,
+                expression,
+                environment,
+                captures,
+            } => {
+                let values = executor.evaluate_transfer(&expression, &environment, &captures);
+                let evaluated = source.evaluated(&expression, &values);
+                RuntimeValue::Initializer { values, evaluated }
+            }
             RuntimeOperation::Invoke {
                 callable,
                 arguments,
