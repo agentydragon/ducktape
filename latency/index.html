@@ -3,7 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Ducktape CI latency · 31 October 2026</title>
+    <title>
+      Ducktape CI latency · workspace boot evidence, 1 November 2026
+    </title>
     <style>
       :root {
         color-scheme: light;
@@ -309,25 +311,34 @@
   </head>
   <body>
     <header>
-      <div class="eyebrow">Ducktape · CI latency · 31 October 2026</div>
+      <div class="eyebrow">
+        Ducktape · CI latency · boot follow-up, 1 November 2026
+      </div>
       <h1>VM work dominates the integration feedback path.</h1>
       <p class="lead">
-        The latest inspected integration run spends
+        The retained integration run spends
         <strong
           >491 seconds of its 524-second critical path in the VM suite</strong
         >. Browser shards consume more aggregate test CPU but finish six minutes
-        earlier. Follow-up profiles now narrow the VM investigation to boot
-        device discovery and startup time outside sampled userspace CPU. Keep
-        those latency and compute objectives separate.
+        earlier. New guest-console evidence shows the workspace disk registered
+        in the kernel at 6.6 seconds, with its processed udev event observed at
+        26.3 seconds. The remaining boot question is the ordering, coldplug and
+        udev interval. Native startup outside sampled userspace CPU remains
+        open.
       </p>
       <p class="scope">
         Run arrivals: 31 October 2026, 08:30–12:30 UTC. Collected
-        12:34:13–12:36:42 UTC. Inspected devel
+        12:34:13–12:36:42 UTC. Cohort source
         <a
           href="https://github.com/agentydragon/ducktape/commit/61d18e604e37757ebc9838404a292fec6348181f"
           ><code>61d18e604e37</code></a
-        >. This four-hour, mixed-source cohort is a new snapshot; differences
-        from the prior window are not measured treatment effects.
+        >. These cohort measurements are retained unchanged. The targeted boot
+        follow-up below was observed on 1 November; it is not a new PR census or
+        a measured treatment effect.
+      </p>
+      <p class="scope">
+        Follow-up source inspection: devel <code>4e01c8387b20</code>. Each boot
+        probe below identifies its own tested source, guest and verdict.
       </p>
       <div class="metrics">
         <div class="metric">
@@ -351,7 +362,9 @@
         </div>
       </div>
       <nav aria-label="Report sections">
-        <a href="#decisions">Next work</a><a href="#feedback">PR feedback</a
+        <a href="#decisions">Next work</a
+        ><a href="#guest-boot">Workspace boot</a
+        ><a href="#feedback">PR feedback</a
         ><a href="#execution">Execution cost</a
         ><a href="#timelines">Linked timelines</a><a href="#retries">Retries</a
         ><a href="#shipped">Shipped changes</a
@@ -372,11 +385,18 @@
             samples identify no dominant individual CPU hotspot.
           </li>
           <li>
-            <strong>Guest boot: explain device discovery.</strong> The retained
-            systemd chain reaches the workspace device at 15.3 seconds, then
-            spends 2.4 seconds creating its filesystem and 1.1 seconds mounting
-            it. Attribute the earlier kernel/device interval; these activation
-            timings are not CPU time. The guest is test-only Debian/EROFS.
+            <strong
+              >Guest boot: registration and readiness are now separated.</strong
+            >
+            In the new probe, the kernel registers the workspace disk at 6.6
+            seconds; the monitor receives its processed udev event at 26.3
+            seconds and systemd activates the device at 26.7 seconds.
+            <a href="#guest-boot">The retained timeline</a> narrows the gap to
+            startup ordering, coldplug and udev. Its CPU, queueing and rule-cost
+            split remains unmeasured. Automatic collection is in
+            <a href="https://github.com/agentydragon/ducktape/pull/13413"
+              >#13413</a
+            >.
           </li>
           <li>
             <strong>Guest span coverage is now checked.</strong> Merged resource
@@ -403,8 +423,10 @@
           <strong>Decision boundary.</strong> The VM suite finishes 158.6
           seconds after Pod in the inspected run. That is conditional
           finishing-order headroom with other clocks held fixed, not promised CI
-          savings. Browser compute work has no demonstrated effect on this
-          feedback tail.
+          savings. This fixed-graph comparison is not a ceiling on architectural
+          changes or combinations of interventions. The new boot observations
+          establish neither removable time nor a whole-PR speedup. Browser
+          compute work has no demonstrated effect on this feedback tail.
         </div>
         <p class="small">
           Subsequent investigation pointers:
@@ -438,6 +460,360 @@
           are outside the measurement cohort; current PR checks are linked
           separately from the recorded experimental results.
         </p>
+      </section>
+      <section id="guest-boot">
+        <div class="eyebrow">
+          New evidence · one selected guest · 1 November UTC
+        </div>
+        <h2>Workspace boot delay continues after kernel registration.</h2>
+        <p>
+          The OOM guest's kernel registers a 10 GiB virtio block disk as
+          <code>/dev/vde</code> at <strong>6.610 seconds</strong>. The matching
+          processed udev event, received at <strong>26.286 seconds</strong>,
+          carries <code>ID_SERIAL=workspace</code> and the stable
+          <code>/dev/disk/by-id/virtio-workspace</code> link. The disk is
+          already registered when systemd starts waiting for that link at 11.923
+          seconds.
+        </p>
+        <p class="small">
+          Source:
+          <a
+            href="https://app.buildbuddy.io/invocation/347b6930-c685-4637-9850-17eb82d9c18e"
+            >BuildBuddy probe 347b6930</a
+          >, <code>//agentplane/system_tests/suites:test_vm</code>, run 1 /
+          shard 1 / attempt 1; source <code>9d882959ac11</code> plus the initial
+          collector patch. All six scenarios passed; test action 387.854
+          seconds. Selected OOM launcher UID
+          <code>9c9311e0-9c18-473e-a5d2-8f9ffbceea0c</code>. This is one Debian
+          13 / BusyBox / EROFS guest under QEMU TCG on RBE.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <caption class="small">
+              One guest, one invocation. Times are guest boot-relative
+              observations; clock sources are identified below.
+            </caption>
+            <thead>
+              <tr>
+                <th>Guest time, s</th>
+                <th>Observed boundary</th>
+                <th>Evidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Guest time, s" class="numbers">6.610</td>
+                <td data-label="Observed boundary">
+                  Kernel registers the workspace disk
+                </td>
+                <td data-label="Evidence">
+                  Printk: <code>virtio10</code>, <code>vde</code>, 10 GiB;
+                  launcher attaches serial <code>workspace</code>.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Guest time, s" class="numbers">11.923</td>
+                <td data-label="Observed boundary">
+                  Systemd starts waiting for the workspace link
+                </td>
+                <td data-label="Evidence">
+                  Console: expecting
+                  <code>dev-disk-by\x2did-virtio\x2dworkspace.device</code>.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Guest time, s" class="numbers">14.793</td>
+                <td data-label="Observed boundary">
+                  Block-event monitor is ready
+                </td>
+                <td data-label="Evidence">
+                  Manager <code>ActiveEnterTimestampMonotonic</code>; unit
+                  orders readiness before coldplug.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Guest time, s" class="numbers">16.052</td>
+                <td data-label="Observed boundary">Coldplug starts</td>
+                <td data-label="Evidence">
+                  Systemd starts <code>systemd-udev-trigger.service</code>.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Guest time, s" class="numbers">
+                  20.032–23.314
+                </td>
+                <td data-label="Observed boundary">
+                  Udev daemon starts and becomes ready
+                </td>
+                <td data-label="Evidence">
+                  Guest console and short-monotonic journal.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Guest time, s" class="numbers">23.792</td>
+                <td data-label="Observed boundary">
+                  Monitor receives the workspace coldplug event
+                </td>
+                <td data-label="Evidence">
+                  <code>KERNEL add …/virtio10/block/vde</code>; this is the
+                  replay observed by the monitor.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Guest time, s" class="numbers">24.358</td>
+                <td data-label="Observed boundary">
+                  Coldplug trigger completes
+                </td>
+                <td data-label="Evidence">Guest short-monotonic journal.</td>
+              </tr>
+              <tr>
+                <td data-label="Guest time, s" class="numbers">26.286</td>
+                <td data-label="Observed boundary">
+                  Monitor receives the processed workspace event
+                </td>
+                <td data-label="Evidence">
+                  <code>UDEV add</code>, serial <code>workspace</code>; the
+                  by-id link exists by this observation.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Guest time, s" class="numbers">26.723</td>
+                <td data-label="Observed boundary">
+                  Systemd activates the workspace device
+                </td>
+                <td data-label="Evidence">
+                  Device <code>ActiveEnterTimestampMonotonic</code>.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Guest time, s" class="numbers">
+                  27.359–30.088
+                </td>
+                <td data-label="Observed boundary">
+                  Workspace filesystem creation
+                </td>
+                <td data-label="Evidence">
+                  Makefs start, format completion and unit completion in the
+                  journal.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Guest time, s" class="numbers">31.088</td>
+                <td data-label="Observed boundary">
+                  Workspace mount completes
+                </td>
+                <td data-label="Evidence">
+                  <code>/state/workspaces</code> mounted, short-monotonic
+                  journal.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout caution">
+          <strong>What this establishes.</strong> Kernel registration precedes
+          the observed wait for device-link readiness. The roughly 20-second
+          registration-to-processed-event interval includes boot ordering,
+          coldplug, event delivery and udev work. It is not an isolated rule
+          execution time or an estimate of removable CI time. The old hardware
+          database rebuild is already skipped after
+          <a href="https://github.com/agentydragon/ducktape/pull/13011"
+            >#13011</a
+          >.
+        </div>
+        <h3>Collection and interpretation</h3>
+        <p>
+          <a href="https://github.com/agentydragon/ducktape/pull/13413"
+            >PR #13413</a
+          >
+          adds default OOM-guest collection to the ordinary VM suite: a standard
+          <code>udevadm monitor</code> subscription before coldplug, a bounded
+          report of device identity, manager clock origins, unit activation and
+          execution timestamps, and the guest journal. Existing per-incarnation
+          console retention preserves the records through teardown. Successful
+          teardown requires monitor-ready and complete-report receipts,
+          including across rotated console files. The monitor records events; it
+          does not replace udev's device setup.
+        </p>
+        <p>
+          The initial probe's report was <strong>partial</strong>: several
+          utility paths were absent from the minimal guest, and its original
+          reporter held the boot target open while requesting timing summaries.
+          The PR uses explicit BusyBox applets, direct serial receipts and a
+          separate <code>Type=exec</code> reporter capped at 35 seconds, with
+          two-second command bounds. Final-source CI validation is recorded
+          separately in the evidence; a passing scenario run alone does not
+          establish complete diagnostics.
+        </p>
+        <details>
+          <summary>
+            Complete diagnostic packet from CI; teardown selector failure
+          </summary>
+          <p>
+            The subsequent
+            <a
+              href="https://app.buildbuddy.io/invocation/e15d7eb9-1828-5a36-ba23-6b67e8646887"
+              >CI invocation e15d7eb9</a
+            >
+            tested PR head <code>90c5cf010050</code> through synthetic merge
+            <code>1e46dcb63034</code> with base <code>12b78b2c1bc5</code>. The
+            VM scenarios passed, but the suite failed during diagnostic
+            validation: a substring selector also matched the feature flag in
+            five other guests' skipped-condition messages. The selected OOM
+            guest did retain all four required report sections, a raw
+            monitor-ready receipt and <code>status=complete</code>, with all 25
+            required commands returning zero. The optional critical-chain and
+            blame commands timed out. This is usable diagnostic evidence from a
+            failed suite, not a green CI result.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <caption class="small">
+                Separate CI guest: OOM launcher UID
+                81fa77f5-01f8-474a-82ab-85ac9d80756a. These clocks do not
+                replace the first probe's values.
+              </caption>
+              <thead>
+                <tr>
+                  <th>CI guest observation</th>
+                  <th>Guest time, s</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td data-label="CI guest observation">
+                    Kernel registers workspace <code>vde</code>
+                  </td>
+                  <td data-label="Guest time, s" class="numbers">7.280684</td>
+                </tr>
+                <tr>
+                  <td data-label="CI guest observation">
+                    Manager userspace clock origin
+                  </td>
+                  <td data-label="Guest time, s" class="numbers">8.629435</td>
+                </tr>
+                <tr>
+                  <td data-label="CI guest observation">
+                    Monitor active before coldplug
+                  </td>
+                  <td data-label="Guest time, s" class="numbers">14.279040</td>
+                </tr>
+                <tr>
+                  <td data-label="CI guest observation">
+                    Coldplug main-process start / exit
+                  </td>
+                  <td data-label="Guest time, s" class="numbers">
+                    15.464834 / 22.663335
+                  </td>
+                </tr>
+                <tr>
+                  <td data-label="CI guest observation">
+                    Udevd main-process start / active
+                  </td>
+                  <td data-label="Guest time, s" class="numbers">
+                    18.523670 / 21.407349
+                  </td>
+                </tr>
+                <tr>
+                  <td data-label="CI guest observation">
+                    Workspace KERNEL / processed UDEV event observed
+                  </td>
+                  <td data-label="Guest time, s" class="numbers">
+                    21.993292 / 25.087906
+                  </td>
+                </tr>
+                <tr>
+                  <td data-label="CI guest observation">
+                    Workspace device active
+                  </td>
+                  <td data-label="Guest time, s" class="numbers">26.211320</td>
+                </tr>
+                <tr>
+                  <td data-label="CI guest observation">
+                    Makefs main-process start / exit
+                  </td>
+                  <td data-label="Guest time, s" class="numbers">
+                    26.399422 / 28.319788
+                  </td>
+                </tr>
+                <tr>
+                  <td data-label="CI guest observation">
+                    Workspace mount active
+                  </td>
+                  <td data-label="Guest time, s" class="numbers">29.334848</td>
+                </tr>
+                <tr>
+                  <td data-label="CI guest observation">Manager boot finish</td>
+                  <td data-label="Guest time, s" class="numbers">36.199546</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            Raw artifact:
+            <code
+              >test.outputs/vm-artifacts/consoles/systest_virt-launcher-systest-vm-codex-oom-vkm22_81fa77f5-01f8-474a-82ab-85ac9d80756a/0.log-1158307.cri.log</code
+            >, run 1 / shard 1 / attempt 1. The packet supplies the clock-origin
+            and process fields missing from the first probe. Different source
+            and uncontrolled worker/cache conditions prevent a latency or
+            collector overhead comparison. The selector correction in
+            <a href="https://github.com/agentydragon/ducktape/pull/13413"
+              >#13413</a
+            >
+            uses the exact standalone report receipt; its validation is tracked
+            separately from this failed attempt.
+          </p>
+        </details>
+        <details>
+          <summary>Clocks, artifacts, production parity and open work</summary>
+          <p>
+            Printk brackets are guest kernel timestamps. Udev monitor event
+            times, journal <code>short-monotonic</code> and systemd
+            <code>*TimestampMonotonic</code> are guest monotonic sources;
+            monitor times include reception and scheduling delay.
+            <code>/proc/uptime</code> uses <code>CLOCK_BOOTTIME</code>,
+            including suspend; this OOM guest did not suspend. Outer CRI
+            prefixes are host receipt times and can be buffered. The historical
+            critical-chain <code>@15.319s</code> came from
+            <a
+              href="https://app.buildbuddy.io/invocation/a394fe63-0e05-4287-8748-08edfbc2228a"
+              >a different probe</a
+            >; do not compare it directly with this run's 6.610-second
+            registration.
+          </p>
+          <p>
+            Raw selected console:
+            <code
+              >test.outputs/vm-artifacts/consoles/systest_virt-launcher-systest-vm-codex-oom-8mk5t_9c9311e0-9c18-473e-a5d2-8f9ffbceea0c/0.log-646826.cri.log</code
+            >. The matching launcher log records the virtio block attachment.
+            <a
+              href="https://github.com/agentydragon/ducktape/blob/90c5cf010050c3bcec337287529cf8e626f237cc/agentplane/debug/2026_10_31_vm_boot_critical_chain.md"
+              >Source-pinned investigation note</a
+            >.
+          </p>
+          <p>
+            Both checked-in test and production/staging VM configurations
+            declare a virtio block workspace with ext4. The
+            <a
+              href="https://github.com/agentydragon/ducktape/blob/90c5cf010050c3bcec337287529cf8e626f237cc/agentplane/system_tests/TODO.md"
+              >new TODO</a
+            >
+            compares backing storage and guest boot, format and mount behavior,
+            and calls for equivalent-workload benchmarks before deciding which
+            remaining differences to align. Production uses a NixOS guest; these
+            test-guest timings do not measure production performance.
+          </p>
+          <p>
+            Still open: what dominates the pre-coldplug ordering, enumeration
+            and event-processing intervals, and how much lies on the complete
+            VM/PR critical path. A future optimization needs matched source,
+            image, worker and workload evidence. Distributing test work,
+            changing environment lifetimes and resource placement remain
+            architectural options to evaluate; this one-guest observation is not
+            a comparison of those designs or evidence for a 2× feedback
+            improvement.
+          </p>
+        </details>
       </section>
       <section id="feedback">
         <h2>Exact-head feedback, with unsuccessful heads retained.</h2>
@@ -1740,7 +2116,7 @@
                 <td data-label="Remaining limit or decision">
                   Different workers/source/cache states prevent a whole-CI
                   saving or CPU non-regression claim. Current work profiles
-                  actual guest boot/native startup; the resulting
+                  actual guest boot/native startup; the historical
                   <a href="https://github.com/agentydragon/ducktape/pull/13359"
                     >boot probe</a
                   >
@@ -1748,7 +2124,14 @@
                   <a href="https://github.com/agentydragon/ducktape/pull/13364"
                     >native profiles</a
                   >
-                  now retain evidence for the next attribution step.
+                  retain evidence for attribution. The new
+                  <a href="#guest-boot">device-event timeline</a> separates
+                  kernel registration from link readiness, and
+                  <a href="https://github.com/agentydragon/ducktape/pull/13413"
+                    >#13413</a
+                  >
+                  adds automatic boot evidence. No matched speedup is
+                  established.
                 </td>
               </tr>
               <tr>
@@ -1868,8 +2251,10 @@
                 <td data-label="Disposition in this snapshot">
                   All 13 cases passed, but duplicated cold setup used1,444.6
                   CPU-s; different worker warmth and small gate headroom
-                  defeated a ready recommendation. Keep shared suites and real
-                  assertions.
+                  defeated a ready recommendation for that specific split. This
+                  did not test distributed VM cases or retained-environment
+                  architectures. Preserve real assertions when evaluating a
+                  different execution arrangement.
                 </td>
               </tr>
               <tr>
@@ -2013,7 +2398,7 @@
           interchangeable verdicts.
         </p>
         <p>
-          Current devel rules still require
+          The original snapshot's inspected devel rules require
           <code>Build artifacts + imports check</code>,
           <code>Pre-commit checks</code> and
           <code>bazel-ci / Test &amp; Build</code>, with zero ordinary approvals
@@ -2052,9 +2437,9 @@ bbapi tool-log cat f0c59d85-d192-5dfd-8140-ef12fb71cb16 "critical path"</pre>
       <a href="../visual-reliability/">Visual reliability</a> ·
       <a href="../">All reports</a>
       <p>
-        Latest-only snapshot on gh-pages; earlier snapshots remain
-        commit-pinned in Git. GitHub Pages updates after the report PR merges.
-        No matched fleet-wide saving is claimed.
+        Latest-only snapshot on gh-pages; earlier snapshots remain commit-pinned
+        in Git. GitHub Pages updates after the report PR merges. No matched
+        fleet-wide saving is claimed.
       </p>
     </footer>
   </body>

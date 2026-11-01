@@ -1,5 +1,5 @@
 {
-  "source_devel_commit": "61d18e604e37757ebc9838404a292fec6348181f",
+  "source_devel_commit": "4e01c8387b206e213f3c4cc11d22e484cf27ce2b",
   "window_utc": {
     "start": "2026-10-31T08:30:00Z",
     "end": "2026-10-31T12:30:00Z"
@@ -147,7 +147,9 @@
     "rows": [
       {
         "sha": "03e7d7eda96ff27d3772cb3fbb3660c64701ab45",
-        "prs": [13296],
+        "prs": [
+          13296
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T09:27:52Z",
         "outcome": "cancelled/superseded",
@@ -181,7 +183,9 @@
       },
       {
         "sha": "0c5aa3e3b4a2745573f5eb4bb793a974be97f528",
-        "prs": [13327],
+        "prs": [
+          13327
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:20:00Z",
         "outcome": "cancelled/superseded",
@@ -215,7 +219,9 @@
       },
       {
         "sha": "0c72f764f7c7bfb09f5c288a66e10328a87835e3",
-        "prs": [13339],
+        "prs": [
+          13339
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T11:53:05Z",
         "outcome": "cancelled/superseded",
@@ -249,7 +255,9 @@
       },
       {
         "sha": "0df2089506e98ab539844738324cfc5a3129580a",
-        "prs": [13302],
+        "prs": [
+          13302
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T09:40:47Z",
         "outcome": "green",
@@ -283,7 +291,9 @@
       },
       {
         "sha": "158c12265dd6225e3d61ed62e818692760cf6ab9",
-        "prs": [13331],
+        "prs": [
+          13331
+        ],
         "class": "docs-only",
         "start_utc": "2026-10-31T10:47:19Z",
         "outcome": "green",
@@ -317,7 +327,9 @@
       },
       {
         "sha": "17f70b6f5fc7e8f0b394c3c3ae34c9371da5cde0",
-        "prs": [13323],
+        "prs": [
+          13323
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T10:11:15Z",
         "outcome": "green",
@@ -351,7 +363,9 @@
       },
       {
         "sha": "19f2cea9f2dec0fce30eb03da98bb516d418b1ba",
-        "prs": [13317],
+        "prs": [
+          13317
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:00:14Z",
         "outcome": "failed",
@@ -385,7 +399,9 @@
       },
       {
         "sha": "1af5d6c01f519c567125a0067d84d5724e8cbf30",
-        "prs": [13292],
+        "prs": [
+          13292
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T09:09:09Z",
         "outcome": "green",
@@ -419,7 +435,9 @@
       },
       {
         "sha": "1b3e51ff5d4f8acb5f7514a72e83fc0d7365dfc5",
-        "prs": [13207],
+        "prs": [
+          13207
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T09:54:08Z",
         "outcome": "failed",
@@ -453,7 +471,9 @@
       },
       {
         "sha": "1b41d4816a06ed2b9fd0e01aafa38b9a16cd8ec6",
-        "prs": [13301],
+        "prs": [
+          13301
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T09:28:52Z",
         "outcome": "failed",
@@ -487,7 +507,9 @@
       },
       {
         "sha": "1bfb539e0447bed60a989829c9db1cc81f61fdf7",
-        "prs": [13305],
+        "prs": [
+          13305
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T09:44:12Z",
         "outcome": "green",
@@ -521,7 +543,9 @@
       },
       {
         "sha": "1d3a7da9d2f06a60e40a187f32d9791865d39403",
-        "prs": [13304],
+        "prs": [
+          13304
+        ],
         "class": "system/runtime",
         "start_utc": "2026-10-31T09:40:26Z",
         "outcome": "green",
@@ -555,7 +579,9 @@
       },
       {
         "sha": "1e27f3b52d373e019a0c4d32ab71318402ab102d",
-        "prs": [13182],
+        "prs": [
+          13182
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T09:45:00Z",
         "outcome": "failed",
@@ -589,7 +615,9 @@
       },
       {
         "sha": "1e401669300215bb157080c36c2cb3df126a5895",
-        "prs": [13306],
+        "prs": [
+          13306
+        ],
         "class": "docs-only",
         "start_utc": "2026-10-31T09:46:29Z",
         "outcome": "green",
@@ -623,7 +651,9 @@
       },
       {
         "sha": "22ca65e17ef569bae3eb3378389335e2207fbbfa",
-        "prs": [13328],
+        "prs": [
+          13328
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:22:45Z",
         "outcome": "cancelled/superseded",
@@ -657,7 +687,9 @@
       },
       {
         "sha": "25df2ca725513ab0ab318ed91a55d4ca6df86829",
-        "prs": [13335],
+        "prs": [
+          13335
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T11:40:23Z",
         "outcome": "cancelled/superseded",
@@ -691,7 +723,9 @@
       },
       {
         "sha": "2bf17146791f5c3f98621f9228b0a9838e3d2ef1",
-        "prs": [13315],
+        "prs": [
+          13315
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T09:59:44Z",
         "outcome": "green",
@@ -725,7 +759,9 @@
       },
       {
         "sha": "2f13255eeb8977ff86f23f9674cafe4e63c419d1",
-        "prs": [13302],
+        "prs": [
+          13302
+        ],
         "class": "frontend",
         "start_utc": "2026-10-31T09:47:19Z",
         "outcome": "green",
@@ -759,7 +795,9 @@
       },
       {
         "sha": "2f61d8f212317142f346b5e3d1fb10ca0c29f3af",
-        "prs": [13296],
+        "prs": [
+          13296
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T09:29:11Z",
         "outcome": "green",
@@ -793,7 +831,9 @@
       },
       {
         "sha": "30c58e42e0b256c7b55138f56b2c1158b54f74e6",
-        "prs": [13207],
+        "prs": [
+          13207
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T11:11:09Z",
         "outcome": "green",
@@ -827,7 +867,9 @@
       },
       {
         "sha": "32c3dec01ff1d026ad7a596f2bc215d0ae7c4f8a",
-        "prs": [13328],
+        "prs": [
+          13328
+        ],
         "class": "system/runtime",
         "start_utc": "2026-10-31T10:29:45Z",
         "outcome": "green",
@@ -861,7 +903,9 @@
       },
       {
         "sha": "3651a795607e87fdccecfaf7a1f852ff330738e9",
-        "prs": [13303],
+        "prs": [
+          13303
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T09:45:14Z",
         "outcome": "cancelled/superseded",
@@ -895,7 +939,9 @@
       },
       {
         "sha": "37e7cb3da19a594878a13d14b88ec830fe5551be",
-        "prs": [13321],
+        "prs": [
+          13321
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:47:47Z",
         "outcome": "cancelled/superseded",
@@ -963,7 +1009,9 @@
       },
       {
         "sha": "38d79303ba17038127fea5718e81d4b66dac661a",
-        "prs": [13346],
+        "prs": [
+          13346
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T12:17:35Z",
         "outcome": "failed",
@@ -997,7 +1045,9 @@
       },
       {
         "sha": "3b1a31b3ef10367154e33cd8e7b973566d99eb05",
-        "prs": [13314],
+        "prs": [
+          13314
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T09:59:37Z",
         "outcome": "green",
@@ -1031,7 +1081,9 @@
       },
       {
         "sha": "3b94a8f4e67bfce8555712458a4507d16abdf51b",
-        "prs": [13337],
+        "prs": [
+          13337
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T11:20:33Z",
         "outcome": "cancelled/superseded",
@@ -1065,7 +1117,9 @@
       },
       {
         "sha": "3bd865a1b18db0f66fe74bd8f0bcd61c12ba4239",
-        "prs": [13338],
+        "prs": [
+          13338
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T11:21:32Z",
         "outcome": "cancelled/superseded",
@@ -1099,7 +1153,9 @@
       },
       {
         "sha": "3d585780d7522ae1c639360e98a384f3b0e1957f",
-        "prs": [13217],
+        "prs": [
+          13217
+        ],
         "class": "Agentplane backend",
         "start_utc": "2026-10-31T12:10:52Z",
         "outcome": "green",
@@ -1133,7 +1189,9 @@
       },
       {
         "sha": "3e7ea10b9058aa6e188d0d6def4163b05ba5ee73",
-        "prs": [13312],
+        "prs": [
+          13312
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T09:59:16Z",
         "outcome": "green",
@@ -1167,7 +1225,9 @@
       },
       {
         "sha": "3fef546a824da980c91ac5058fff5118eb9bf48b",
-        "prs": [13319],
+        "prs": [
+          13319
+        ],
         "class": "system/runtime",
         "start_utc": "2026-10-31T10:08:03Z",
         "outcome": "green",
@@ -1201,7 +1261,9 @@
       },
       {
         "sha": "46b7627acc956804a1f1e6637a599894837b2ff7",
-        "prs": [13340],
+        "prs": [
+          13340
+        ],
         "class": "docs-only",
         "start_utc": "2026-10-31T11:39:52Z",
         "outcome": "green",
@@ -1235,7 +1297,9 @@
       },
       {
         "sha": "488020156531ce1404f6b5413c2d447ea1ed0b07",
-        "prs": [13342],
+        "prs": [
+          13342
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T11:43:49Z",
         "outcome": "green",
@@ -1269,7 +1333,9 @@
       },
       {
         "sha": "48ffa2354a30a9bd528c74aaa4904b8c63918458",
-        "prs": [13300],
+        "prs": [
+          13300
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T09:28:46Z",
         "outcome": "cancelled/superseded",
@@ -1303,7 +1369,9 @@
       },
       {
         "sha": "495082c4db815cff67fc2b7453cf8d49ef94a779",
-        "prs": [13301],
+        "prs": [
+          13301
+        ],
         "class": "other code/config",
         "start_utc": "2026-10-31T09:37:41Z",
         "outcome": "green",
@@ -1337,7 +1405,9 @@
       },
       {
         "sha": "495a69e4818fb8d9e38050cd5d522c0c6310de11",
-        "prs": [13207],
+        "prs": [
+          13207
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:04:24Z",
         "outcome": "green",
@@ -1371,7 +1441,9 @@
       },
       {
         "sha": "4ba6471800ebe363d284ac30f0e06c94ec6d23f0",
-        "prs": [13207],
+        "prs": [
+          13207
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:41:36Z",
         "outcome": "green",
@@ -1405,7 +1477,9 @@
       },
       {
         "sha": "4f9ed8df449c0d14dc451868d775c48a67ab6458",
-        "prs": [13281],
+        "prs": [
+          13281
+        ],
         "class": "other code/config",
         "start_utc": "2026-10-31T08:57:36Z",
         "outcome": "green",
@@ -1439,7 +1513,9 @@
       },
       {
         "sha": "4fd72b9ef7d7777c716854cd00acff47177d6a59",
-        "prs": [13287],
+        "prs": [
+          13287
+        ],
         "class": "build/CI/tooling",
         "start_utc": "2026-10-31T09:16:46Z",
         "outcome": "green",
@@ -1473,7 +1549,9 @@
       },
       {
         "sha": "4fe48e571c3b9d67b252d4cd954aedf1282f5b30",
-        "prs": [13321],
+        "prs": [
+          13321
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:13:11Z",
         "outcome": "green",
@@ -1507,7 +1585,9 @@
       },
       {
         "sha": "52671d1e2b4f6a493b76126fa632c49ca8a77204",
-        "prs": [13283],
+        "prs": [
+          13283
+        ],
         "class": "Agentplane backend",
         "start_utc": "2026-10-31T08:31:00Z",
         "outcome": "green",
@@ -1541,7 +1621,9 @@
       },
       {
         "sha": "535da16ac6ad984ff2464fb40f7c4112c7abbb58",
-        "prs": [13313],
+        "prs": [
+          13313
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T09:59:32Z",
         "outcome": "green",
@@ -1575,7 +1657,9 @@
       },
       {
         "sha": "5a43729d46152b17f70d9d89d39f9bcabb051372",
-        "prs": [13345],
+        "prs": [
+          13345
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T11:59:38Z",
         "outcome": "failed",
@@ -1609,7 +1693,9 @@
       },
       {
         "sha": "5dae35f81d40bfb34babdfde7925af2b1a8a5861",
-        "prs": [13329],
+        "prs": [
+          13329
+        ],
         "class": "docs-only",
         "start_utc": "2026-10-31T10:30:04Z",
         "outcome": "green",
@@ -1643,7 +1729,9 @@
       },
       {
         "sha": "5e572e01c4d9093d02104f50e337779100526584",
-        "prs": [13291],
+        "prs": [
+          13291
+        ],
         "class": "frontend",
         "start_utc": "2026-10-31T09:09:01Z",
         "outcome": "green",
@@ -1677,7 +1765,9 @@
       },
       {
         "sha": "5f2a768bdfdc154e2643edf523c1317f42920ebd",
-        "prs": [13321],
+        "prs": [
+          13321
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T10:54:25Z",
         "outcome": "green",
@@ -1711,7 +1801,9 @@
       },
       {
         "sha": "61d64972fb6a9b3d57f56f594e13b3964471585f",
-        "prs": [13289],
+        "prs": [
+          13289
+        ],
         "class": "system/runtime",
         "start_utc": "2026-10-31T09:02:43Z",
         "outcome": "green",
@@ -1745,7 +1837,9 @@
       },
       {
         "sha": "62e29f24af0e0aa98ee1ae76a021cd60fae958c0",
-        "prs": [13332],
+        "prs": [
+          13332
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T11:15:13Z",
         "outcome": "green",
@@ -1779,7 +1873,9 @@
       },
       {
         "sha": "63ba4c1e95dd828e7aef7b222178bb4c492aa797",
-        "prs": [13207],
+        "prs": [
+          13207
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T11:38:50Z",
         "outcome": "green",
@@ -1813,7 +1909,9 @@
       },
       {
         "sha": "63fb178a720ab9e312058d516a382d8a086bace8",
-        "prs": [13326],
+        "prs": [
+          13326
+        ],
         "class": "other code/config",
         "start_utc": "2026-10-31T10:20:45Z",
         "outcome": "green",
@@ -1847,7 +1945,9 @@
       },
       {
         "sha": "69cb736b524d4d472238815f92dba757f5f58965",
-        "prs": [13207],
+        "prs": [
+          13207
+        ],
         "class": "other code/config",
         "start_utc": "2026-10-31T11:54:31Z",
         "outcome": "green",
@@ -1881,7 +1981,9 @@
       },
       {
         "sha": "6b783c8b8bb5de46b59b6a8114a840b8ff1dd737",
-        "prs": [13339],
+        "prs": [
+          13339
+        ],
         "class": "Agentplane backend",
         "start_utc": "2026-10-31T11:59:57Z",
         "outcome": "green",
@@ -1915,7 +2017,9 @@
       },
       {
         "sha": "6fa1e25b987ac82f4c0ed6a218240b6a75613652",
-        "prs": [13333],
+        "prs": [
+          13333
+        ],
         "class": "docs-only",
         "start_utc": "2026-10-31T11:11:10Z",
         "outcome": "green",
@@ -1949,7 +2053,9 @@
       },
       {
         "sha": "70ef0086178401f972fa7a1a7ed73cb8dccbc65e",
-        "prs": [13319],
+        "prs": [
+          13319
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:01:54Z",
         "outcome": "cancelled/superseded",
@@ -1983,7 +2089,9 @@
       },
       {
         "sha": "765255f6ae5095f0df6b74edebea8da9eecd1a89",
-        "prs": [13309],
+        "prs": [
+          13309
+        ],
         "class": "system/runtime",
         "start_utc": "2026-10-31T09:49:33Z",
         "outcome": "green",
@@ -2017,7 +2125,9 @@
       },
       {
         "sha": "792e7c561ebc8268a401ef66df122899d52a700d",
-        "prs": [13243],
+        "prs": [
+          13243
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T08:32:03Z",
         "outcome": "failed",
@@ -2051,7 +2161,9 @@
       },
       {
         "sha": "7d25f269687573154e9e573bdcf901d015d7c983",
-        "prs": [13182],
+        "prs": [
+          13182
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:13:19Z",
         "outcome": "failed",
@@ -2085,7 +2197,9 @@
       },
       {
         "sha": "8011d5005758cde2b7cee7bfe5b903c7e071d034",
-        "prs": [13319],
+        "prs": [
+          13319
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:05:54Z",
         "outcome": "cancelled/superseded",
@@ -2119,7 +2233,9 @@
       },
       {
         "sha": "80224ccd8b0fa094455b65c8674e22610cb226e5",
-        "prs": [13284],
+        "prs": [
+          13284
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T08:31:13Z",
         "outcome": "green",
@@ -2153,7 +2269,9 @@
       },
       {
         "sha": "81851d7360904abb2d1a78ca16494e61f19a083f",
-        "prs": [13207],
+        "prs": [
+          13207
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T11:24:17Z",
         "outcome": "green",
@@ -2187,7 +2305,9 @@
       },
       {
         "sha": "82466b447042115341c2c82e6e8fb3919371e443",
-        "prs": [13299],
+        "prs": [
+          13299
+        ],
         "class": "docs-only",
         "start_utc": "2026-10-31T09:30:17Z",
         "outcome": "green",
@@ -2221,7 +2341,9 @@
       },
       {
         "sha": "841b449fb87a36efeba97a3257633468a84befef",
-        "prs": [13336],
+        "prs": [
+          13336
+        ],
         "class": "build/CI/tooling",
         "start_utc": "2026-10-31T11:19:37Z",
         "outcome": "green",
@@ -2255,7 +2377,9 @@
       },
       {
         "sha": "848b137f87f2ff9850681134ae70d0e0a32c3a9e",
-        "prs": [13325],
+        "prs": [
+          13325
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:13:36Z",
         "outcome": "green",
@@ -2289,7 +2413,9 @@
       },
       {
         "sha": "84e0124dda3c28dd7ed880ce17b622f9379515b5",
-        "prs": [13310],
+        "prs": [
+          13310
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T10:56:20Z",
         "outcome": "green",
@@ -2323,7 +2449,9 @@
       },
       {
         "sha": "85042c8b7332e45b1c4e01338de2da748b2b21bc",
-        "prs": [13300],
+        "prs": [
+          13300
+        ],
         "class": "system/runtime",
         "start_utc": "2026-10-31T09:32:12Z",
         "outcome": "green",
@@ -2357,7 +2485,9 @@
       },
       {
         "sha": "873893dde01e782cfb41e5dda4554271607a8534",
-        "prs": [13288],
+        "prs": [
+          13288
+        ],
         "class": "build/CI/tooling",
         "start_utc": "2026-10-31T09:02:09Z",
         "outcome": "green",
@@ -2391,7 +2521,9 @@
       },
       {
         "sha": "89fbf0674754be42b9525f4a5db6eb6d466fabd0",
-        "prs": [13182],
+        "prs": [
+          13182
+        ],
         "class": "Agentplane backend",
         "start_utc": "2026-10-31T10:45:46Z",
         "outcome": "green",
@@ -2425,7 +2557,9 @@
       },
       {
         "sha": "8c544e49ee102abd20d571de736e6a8e68a13b41",
-        "prs": [13327],
+        "prs": [
+          13327
+        ],
         "class": "Agentplane backend",
         "start_utc": "2026-10-31T10:24:13Z",
         "outcome": "green",
@@ -2459,7 +2593,9 @@
       },
       {
         "sha": "8ee3def617d6026a5485b8c53bae24f68275c892",
-        "prs": [13303],
+        "prs": [
+          13303
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T09:40:05Z",
         "outcome": "failed",
@@ -2493,7 +2629,9 @@
       },
       {
         "sha": "9366f999a241606181ef51628ea9e1f5d284166b",
-        "prs": [13207],
+        "prs": [
+          13207
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T08:33:15Z",
         "outcome": "green",
@@ -2527,7 +2665,9 @@
       },
       {
         "sha": "936ddb807de2402d84ef3605df2e93da6384d112",
-        "prs": [13182],
+        "prs": [
+          13182
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:33:24Z",
         "outcome": "cancelled/superseded",
@@ -2561,7 +2701,9 @@
       },
       {
         "sha": "940e06d56c1c316ed57000491d93daee50110c5e",
-        "prs": [13297],
+        "prs": [
+          13297
+        ],
         "class": "docs-only",
         "start_utc": "2026-10-31T09:15:59Z",
         "outcome": "green",
@@ -2595,7 +2737,9 @@
       },
       {
         "sha": "98d605d8f3c69c569dd175cacdf916032b12bacd",
-        "prs": [13321],
+        "prs": [
+          13321
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:05:38Z",
         "outcome": "green",
@@ -2629,7 +2773,9 @@
       },
       {
         "sha": "99fffc24c06986003d01cb8f2e5ce20b85f1b7c9",
-        "prs": [13315],
+        "prs": [
+          13315
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T11:08:08Z",
         "outcome": "green",
@@ -2663,7 +2809,9 @@
       },
       {
         "sha": "9ac4b6501a5161ab081777ebeed45a66002d2ed4",
-        "prs": [13326],
+        "prs": [
+          13326
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:17:54Z",
         "outcome": "failed",
@@ -2697,7 +2845,9 @@
       },
       {
         "sha": "9c022dc71b6c24ecb4600c1f164ab59e92453b62",
-        "prs": [13339],
+        "prs": [
+          13339
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T11:26:53Z",
         "outcome": "green",
@@ -2731,7 +2881,9 @@
       },
       {
         "sha": "9de3abaa28c662f1d72be1933bb4994f365af037",
-        "prs": [13321],
+        "prs": [
+          13321
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:32:31Z",
         "outcome": "green",
@@ -2765,7 +2917,9 @@
       },
       {
         "sha": "9ec812cd7d7af31b7d2537631e36b5c7aab8114d",
-        "prs": [13207],
+        "prs": [
+          13207
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:40:51Z",
         "outcome": "cancelled/superseded",
@@ -2799,7 +2953,9 @@
       },
       {
         "sha": "a00c2536deeef3f1b783820528dca966095354d6",
-        "prs": [13290],
+        "prs": [
+          13290
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T10:47:45Z",
         "outcome": "green",
@@ -2833,7 +2989,9 @@
       },
       {
         "sha": "a2cc66c1a6aec1559b9fd55e1ba36d8506b1a99e",
-        "prs": [13243],
+        "prs": [
+          13243
+        ],
         "class": "system/runtime",
         "start_utc": "2026-10-31T08:33:26Z",
         "outcome": "green",
@@ -2867,7 +3025,9 @@
       },
       {
         "sha": "a5bb20192531d2586a2d84aa947c56db1dc66842",
-        "prs": [13317],
+        "prs": [
+          13317
+        ],
         "class": "other code/config",
         "start_utc": "2026-10-31T10:06:44Z",
         "outcome": "green",
@@ -2901,7 +3061,9 @@
       },
       {
         "sha": "a8663bcdd2af7bd8f9463a3dd653e975adfee583",
-        "prs": [13286],
+        "prs": [
+          13286
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T08:54:52Z",
         "outcome": "green",
@@ -2935,7 +3097,9 @@
       },
       {
         "sha": "ac56d36ef10c6aeebc344af167d040a6c886b709",
-        "prs": [13307],
+        "prs": [
+          13307
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T09:47:05Z",
         "outcome": "green",
@@ -2969,7 +3133,9 @@
       },
       {
         "sha": "aece84cb356fc69582b06e9f55cb606de9e1d3df",
-        "prs": [13182],
+        "prs": [
+          13182
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:15:06Z",
         "outcome": "failed",
@@ -3003,7 +3169,9 @@
       },
       {
         "sha": "b0033de7a81f4ffbeab14f498681c9435fe4ffa8",
-        "prs": [13334],
+        "prs": [
+          13334
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T11:17:31Z",
         "outcome": "green",
@@ -3037,7 +3205,9 @@
       },
       {
         "sha": "b15f58f91cf060fbf06f3c6821537ce4832bc9b2",
-        "prs": [13332],
+        "prs": [
+          13332
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T11:03:07Z",
         "outcome": "green",
@@ -3071,7 +3241,9 @@
       },
       {
         "sha": "b6b0d0d114b9f2df4b0b2132a40b884c135d1b65",
-        "prs": [13287],
+        "prs": [
+          13287
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T09:01:27Z",
         "outcome": "green",
@@ -3105,7 +3277,9 @@
       },
       {
         "sha": "b92011c3b0a33f2d5b7868e0a51924c38eefd832",
-        "prs": [13335],
+        "prs": [
+          13335
+        ],
         "class": "system/runtime",
         "start_utc": "2026-10-31T11:46:55Z",
         "outcome": "green",
@@ -3139,7 +3313,9 @@
       },
       {
         "sha": "b964964d8b60b414bcff3d0cfc3575722d02867e",
-        "prs": [13344],
+        "prs": [
+          13344
+        ],
         "class": "Agentplane backend",
         "start_utc": "2026-10-31T11:55:59Z",
         "outcome": "green",
@@ -3173,7 +3349,9 @@
       },
       {
         "sha": "bc59d787f10b9cafeba8d721aaae0c5e62c56e0b",
-        "prs": [13207],
+        "prs": [
+          13207
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T11:29:09Z",
         "outcome": "green",
@@ -3207,7 +3385,9 @@
       },
       {
         "sha": "bd4cab8ee0306e82e62dc82da7d647ed3beaa87b",
-        "prs": [13303],
+        "prs": [
+          13303
+        ],
         "class": "system/runtime",
         "start_utc": "2026-10-31T09:51:44Z",
         "outcome": "green",
@@ -3241,7 +3421,9 @@
       },
       {
         "sha": "bef982cd9ce4e8a71051bfa6a8411b59692d141f",
-        "prs": [13290],
+        "prs": [
+          13290
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:13:11Z",
         "outcome": "green",
@@ -3275,7 +3457,9 @@
       },
       {
         "sha": "c356950950208bc1389262fd3d6feba7f4508116",
-        "prs": [13332],
+        "prs": [
+          13332
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T11:30:52Z",
         "outcome": "green",
@@ -3309,7 +3493,9 @@
       },
       {
         "sha": "c474bdf761c6094b0afe3bc9b5c2d9e70d7f12c5",
-        "prs": [13316],
+        "prs": [
+          13316
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T09:59:46Z",
         "outcome": "green",
@@ -3343,7 +3529,9 @@
       },
       {
         "sha": "c4f6bd1deed912b30ebcb03ff90a7869917411dd",
-        "prs": [13298],
+        "prs": [
+          13298
+        ],
         "class": "system/runtime",
         "start_utc": "2026-10-31T09:19:35Z",
         "outcome": "green",
@@ -3377,7 +3565,9 @@
       },
       {
         "sha": "c739e52b6e523006a8769f2e2534831bbffd0642",
-        "prs": [13302],
+        "prs": [
+          13302
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T09:32:21Z",
         "outcome": "cancelled/superseded",
@@ -3445,7 +3635,9 @@
       },
       {
         "sha": "c755ac134a6581c53e029d18b8acb93c1f212722",
-        "prs": [13293],
+        "prs": [
+          13293
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T09:59:37Z",
         "outcome": "green",
@@ -3479,7 +3671,9 @@
       },
       {
         "sha": "ca115da8303236a8c80255e6998730230d9e98e7",
-        "prs": [13285],
+        "prs": [
+          13285
+        ],
         "class": "docs-only",
         "start_utc": "2026-10-31T08:50:38Z",
         "outcome": "green",
@@ -3513,7 +3707,9 @@
       },
       {
         "sha": "cc0be6630712d3728445f6569a4a8c58df67c92e",
-        "prs": [13302],
+        "prs": [
+          13302
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T09:33:21Z",
         "outcome": "failed",
@@ -3547,7 +3743,9 @@
       },
       {
         "sha": "cfea77d416c7d3e6eac18bb8ba2e92e18656fc85",
-        "prs": [13327],
+        "prs": [
+          13327
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:18:11Z",
         "outcome": "cancelled/superseded",
@@ -3581,7 +3779,9 @@
       },
       {
         "sha": "d1972226d3cb8821fe9ba35fcbbcca23eb08e5cc",
-        "prs": [13207],
+        "prs": [
+          13207
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T09:59:06Z",
         "outcome": "green",
@@ -3615,7 +3815,9 @@
       },
       {
         "sha": "d1d4436f6c34e7384f37d26813a98405629adf82",
-        "prs": [13328],
+        "prs": [
+          13328
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:19:59Z",
         "outcome": "cancelled/superseded",
@@ -3649,7 +3851,9 @@
       },
       {
         "sha": "d28a93976d526c34ff864e4cc21162fd01b38103",
-        "prs": [13324],
+        "prs": [
+          13324
+        ],
         "class": "docs-only",
         "start_utc": "2026-10-31T10:12:05Z",
         "outcome": "green",
@@ -3683,7 +3887,9 @@
       },
       {
         "sha": "d317a1db17cffb47a01c0c961cf248c1e04c793a",
-        "prs": [13295],
+        "prs": [
+          13295
+        ],
         "class": "docs-only",
         "start_utc": "2026-10-31T09:11:55Z",
         "outcome": "green",
@@ -3717,7 +3923,9 @@
       },
       {
         "sha": "db730bd448162adcaf1bb52ac33bd0bb9a60f948",
-        "prs": [13325],
+        "prs": [
+          13325
+        ],
         "class": "other code/config",
         "start_utc": "2026-10-31T10:23:23Z",
         "outcome": "green",
@@ -3751,7 +3959,9 @@
       },
       {
         "sha": "dc2b703c077170b3ef36418517af6fcfee6af1d6",
-        "prs": [13347],
+        "prs": [
+          13347
+        ],
         "class": "docs-only",
         "start_utc": "2026-10-31T12:28:25Z",
         "outcome": "green",
@@ -3785,7 +3995,9 @@
       },
       {
         "sha": "de9acaa7813943ce45b0811b6bf679dabe568586",
-        "prs": [13310],
+        "prs": [
+          13310
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T10:52:15Z",
         "outcome": "green",
@@ -3819,7 +4031,9 @@
       },
       {
         "sha": "e191c281c0971ba69c865ac65ec87523dcd906e9",
-        "prs": [13343],
+        "prs": [
+          13343
+        ],
         "class": "build/CI/tooling",
         "start_utc": "2026-10-31T11:49:49Z",
         "outcome": "green",
@@ -3853,7 +4067,9 @@
       },
       {
         "sha": "e2cce3d98bbb19fd85cc6c8f3c3c07f36464627a",
-        "prs": [13307],
+        "prs": [
+          13307
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T09:46:33Z",
         "outcome": "cancelled/superseded",
@@ -3921,7 +4137,9 @@
       },
       {
         "sha": "e71a4c6f67b4bcf7b7c6462587aad8504c8d550a",
-        "prs": [13332],
+        "prs": [
+          13332
+        ],
         "class": "system/runtime",
         "start_utc": "2026-10-31T11:33:50Z",
         "outcome": "green",
@@ -3955,7 +4173,9 @@
       },
       {
         "sha": "f09479ac38774565b9c4c5d2ce974100368638bd",
-        "prs": [13337],
+        "prs": [
+          13337
+        ],
         "class": "docs-only",
         "start_utc": "2026-10-31T11:23:13Z",
         "outcome": "green",
@@ -3989,7 +4209,9 @@
       },
       {
         "sha": "f2b9b153174f0a4ce7fbf231d43704568b789d68",
-        "prs": [13341],
+        "prs": [
+          13341
+        ],
         "class": "debundle",
         "start_utc": "2026-10-31T11:41:08Z",
         "outcome": "failed",
@@ -4023,7 +4245,9 @@
       },
       {
         "sha": "f65113b34e269f1456756a5230868ab08b88922b",
-        "prs": [13246],
+        "prs": [
+          13246
+        ],
         "class": "system/runtime",
         "start_utc": "2026-10-31T09:24:52Z",
         "outcome": "failed",
@@ -4057,7 +4281,9 @@
       },
       {
         "sha": "f654bfc163d74d89025d22b418e7af3e077022a0",
-        "prs": [13302],
+        "prs": [
+          13302
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T09:30:03Z",
         "outcome": "cancelled/superseded",
@@ -4091,7 +4317,9 @@
       },
       {
         "sha": "f6ff17ae9b20252622266109e404ca93231372cf",
-        "prs": [13302],
+        "prs": [
+          13302
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T09:46:29Z",
         "outcome": "cancelled/superseded",
@@ -4125,7 +4353,9 @@
       },
       {
         "sha": "f73050eafc4dca5838c02a57fc8f2f6d3b9db106",
-        "prs": [13305],
+        "prs": [
+          13305
+        ],
         "class": "system/runtime",
         "start_utc": "2026-10-31T09:48:05Z",
         "outcome": "green",
@@ -4159,7 +4389,9 @@
       },
       {
         "sha": "f785adb41658b0695e36a7e2601ef3e810cee1f1",
-        "prs": [13333],
+        "prs": [
+          13333
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T11:05:41Z",
         "outcome": "green",
@@ -4193,7 +4425,9 @@
       },
       {
         "sha": "fdcc6e7e209c7330fac93f2392bb987485538f54",
-        "prs": [13338],
+        "prs": [
+          13338
+        ],
         "class": "system/runtime",
         "start_utc": "2026-10-31T11:22:35Z",
         "outcome": "green",
@@ -4227,7 +4461,9 @@
       },
       {
         "sha": "feba21a611a4382f9559bf56b3223d6d0554530b",
-        "prs": [13333],
+        "prs": [
+          13333
+        ],
         "class": "unknown",
         "start_utc": "2026-10-31T11:08:41Z",
         "outcome": "cancelled/superseded",
@@ -4419,7 +4655,9 @@
   "representatives": [
     {
       "sha": "1e401669300215bb157080c36c2cb3df126a5895",
-      "prs": [13306],
+      "prs": [
+        13306
+      ],
       "class": "docs-only",
       "start_utc": "2026-10-31T09:46:29Z",
       "outcome": "green",
@@ -4454,7 +4692,9 @@
     },
     {
       "sha": "535da16ac6ad984ff2464fb40f7c4112c7abbb58",
-      "prs": [13313],
+      "prs": [
+        13313
+      ],
       "class": "debundle",
       "start_utc": "2026-10-31T09:59:32Z",
       "outcome": "green",
@@ -4489,7 +4729,9 @@
     },
     {
       "sha": "3fef546a824da980c91ac5058fff5118eb9bf48b",
-      "prs": [13319],
+      "prs": [
+        13319
+      ],
       "class": "system/runtime",
       "start_utc": "2026-10-31T10:08:03Z",
       "outcome": "green",
@@ -4524,7 +4766,9 @@
     },
     {
       "sha": "6b783c8b8bb5de46b59b6a8114a840b8ff1dd737",
-      "prs": [13339],
+      "prs": [
+        13339
+      ],
       "class": "Agentplane backend",
       "start_utc": "2026-10-31T11:59:57Z",
       "outcome": "green",
@@ -4559,7 +4803,9 @@
     },
     {
       "sha": "873893dde01e782cfb41e5dda4554271607a8534",
-      "prs": [13288],
+      "prs": [
+        13288
+      ],
       "class": "build/CI/tooling",
       "start_utc": "2026-10-31T09:02:09Z",
       "outcome": "green",
@@ -4635,7 +4881,9 @@
   },
   "timelines": [
     {
-      "pr_numbers": [13306],
+      "pr_numbers": [
+        13306
+      ],
       "head_sha": "1e401669300215bb157080c36c2cb3df126a5895",
       "class": "docs-only",
       "head_proxy_s": 108.0,
@@ -4656,7 +4904,9 @@
       "mechanism": "Zero affected targets; runner log explicitly skips test/build. Selection/setup still occupies the Bazel job."
     },
     {
-      "pr_numbers": [13313],
+      "pr_numbers": [
+        13313
+      ],
       "head_sha": "535da16ac6ad984ff2464fb40f7c4112c7abbb58",
       "class": "debundle",
       "head_proxy_s": 322.0,
@@ -4677,7 +4927,9 @@
       "mechanism": "155.39s dependency chain: Rust metadata/link/compile work plus31.58s isolated-edit test; not a VM-tail workload."
     },
     {
-      "pr_numbers": [13319],
+      "pr_numbers": [
+        13319
+      ],
       "head_sha": "3fef546a824da980c91ac5058fff5118eb9bf48b",
       "class": "system/runtime",
       "head_proxy_s": 652.0,
@@ -4698,7 +4950,9 @@
       "mechanism": "VM-target dependency path543.06s; following artifact build3.147s. This older tested tree is a separate source."
     },
     {
-      "pr_numbers": [13339],
+      "pr_numbers": [
+        13339
+      ],
       "head_sha": "6b783c8b8bb5de46b59b6a8114a840b8ff1dd737",
       "class": "Agentplane backend",
       "head_proxy_s": 647.0,
@@ -4719,7 +4973,9 @@
       "mechanism": "VM-critical affected-target integration run; following artifact build5.047s with0.04s path."
     },
     {
-      "pr_numbers": [13288],
+      "pr_numbers": [
+        13288
+      ],
       "head_sha": "873893dde01e782cfb41e5dda4554271607a8534",
       "class": "build/CI/tooling",
       "head_proxy_s": 149.0,
@@ -4769,7 +5025,11 @@
           "require_last_push_approval": false,
           "required_review_thread_resolution": false,
           "require_extra_approval_for_unattributed_changes": true,
-          "allowed_merge_methods": ["merge", "squash", "rebase"]
+          "allowed_merge_methods": [
+            "merge",
+            "squash",
+            "rebase"
+          ]
         },
         "ruleset_source_type": "Repository",
         "ruleset_source": "agentydragon/ducktape",
@@ -5179,9 +5439,20 @@
   },
   "retry_diagnosis": {
     "workflow_runs": 4,
-    "timeout_runs": [41184917810, 41194638696],
-    "execute_unavailable_runs": [41196601793, 41196890323],
-    "failed_job_end_to_retry_create_s": [512, 1107, 457, 445],
+    "timeout_runs": [
+      41184917810,
+      41194638696
+    ],
+    "execute_unavailable_runs": [
+      41196601793,
+      41196890323
+    ],
+    "failed_job_end_to_retry_create_s": [
+      512,
+      1107,
+      457,
+      445
+    ],
     "vm_oom_first_command_timeout": {
       "run": 41194638696,
       "ready_s": 71.993,
@@ -9484,15 +9755,347 @@
       "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
     }
   },
-  "report_validation": {
+  "post_snapshot_investigations": {
+    "checked_at_utc": "2026-10-31T14:36:13.860000+00:00",
+    "scope": "Subsequent selected investigations; original arrival cohort and computed distributions unchanged.",
+    "pull_requests": [
+      {
+        "lane": 5,
+        "number": 13351,
+        "state": "MERGED",
+        "url": "https://github.com/agentydragon/ducktape/pull/13351",
+        "head": "57ac8eb055de089f06e2838c0f225d425b15afd2"
+      },
+      {
+        "lane": 3,
+        "number": 13352,
+        "state": "MERGED",
+        "url": "https://github.com/agentydragon/ducktape/pull/13352",
+        "head": "da0e9e60f2173e934652b6e4d0ff05d464e9e807",
+        "proof_invocation": "fc63eef9-0d6c-42e2-9756-6cb1c7bd1461",
+        "runner_resource_uid_spans": 249,
+        "runner_spans": 249,
+        "ready_guest_identities": 6
+      },
+      {
+        "lane": 2,
+        "number": 13359,
+        "state": "MERGED",
+        "url": "https://github.com/agentydragon/ducktape/pull/13359",
+        "head": "d4f8162f9c9f33ac290803fe146fbdceb5031664",
+        "proof_invocation": "a394fe63-0e05-4287-8748-08edfbc2228a"
+      },
+      {
+        "lane": 1,
+        "number": 13364,
+        "state": "OPEN",
+        "url": "https://github.com/agentydragon/ducktape/pull/13364",
+        "experimental_proofs_precede_integration": true
+      }
+    ],
+    "native_profile": {
+      "invocation": "44d682a7-5b89-4544-ae8e-259557148aa6",
+      "state": "PASSED",
+      "source_base": "61d18e604e37757ebc9838404a292fec6348181f",
+      "source_patch": "98771aff4fd8e6feeac6c9a4318ee4659d6ba7b70da724cc638e250347f00cec",
+      "raw_bytes": 3687840,
+      "raw_sha256": "3c6fde75c61be22a8f5b79fb7be8d0f0834f88c532d570deda9f4c9df024d75a",
+      "samples": 1054,
+      "lost": 0,
+      "guest_tgid": 400,
+      "oom_session": "c93426ee-8f4b-40c8-a7a6-555cec7c5c91",
+      "app_server_start_seconds": 20.072459,
+      "guest_unix_minus_uptime_nominal": 1793456112.8,
+      "clock_uncertainty_seconds": 1,
+      "nominal_cold_guest_samples": 315,
+      "nominal_cold_tgid_samples": 108,
+      "cold_tgid_samples_at_minus_plus_one_second_shift": [
+        96,
+        120
+      ],
+      "sampled_user_cpu_seconds_approx": 2.204081632653061,
+      "separate_initialize_span_retained": false,
+      "limits": "User-only samples within selected guest, not host CPU. Kernel CPU, scheduling, TCG and waits unresolved. Guest clock fields used; CRI host receipt time is not the guest clock."
+    },
+    "native_control": {
+      "invocation": "83f4fdd3-3722-4987-8f57-b68f8ee421c3",
+      "state": "PASSED",
+      "source_commit": "c544fff5391b2b422e8026ec29daf190373fe706",
+      "target_seconds": 284,
+      "app_server_start_seconds": 19.097984,
+      "profile_artifact_present": false,
+      "log_follow_error": "ResourceExhausted: Log index limit exceeded"
+    },
+    "comparison_limits": "Different source snapshots and uncontrolled worker/cache conditions. Same image labels do not establish identical image bytes. No causal savings or overhead estimate."
+  },
+  "cohort_source_devel_commit": "61d18e604e37757ebc9838404a292fec6348181f",
+  "report_update": {
+    "kind": "targeted workspace-device boot follow-up",
+    "observed_at_utc": "2026-11-01T02:31:19.304744+00:00",
+    "previous_report_commit": "bef8766ed5b7a42ba5c63526f63a7f6e58063564",
+    "inspected_devel_commit": "4e01c8387b206e213f3c4cc11d22e484cf27ce2b",
+    "scope": "Original cohort window, populations, distributions and experimental findings retained without recomputation; two subsequent selected guests are separate diagnostic observations, not a matched comparison."
+  },
+  "boot_device_discovery": {
+    "checked_at_utc": "2026-11-01T02:31:19.304744+00:00",
+    "scope": "Same-guest chronology within each invocation; separate sources, clock definitions and suite/report verdicts.",
+    "finding": "Kernel workspace registration precedes systemd waiting for its stable link and the monitor receiving the processed udev event. Startup ordering, coldplug enumeration, scheduling, delivery and rule-cost attribution remain open.",
+    "limits": [
+      "Monitor timestamps record receipt/handling, not exact original event emission or first alias creation.",
+      "Printk is guest kernel time; journal, udev monitor and systemd properties are guest monotonic sources. CLOCK_BOOTTIME includes suspend; neither selected OOM guest suspended during boot. CRI UTC is buffered host receipt time.",
+      "The earlier @15.319s critical-chain value belongs to a394fe63, a different invocation whose manager offset was not retained.",
+      "No matched optimization, collector overhead, production performance, removable interval or whole-PR speedup is established.",
+      "The prebuilt hwdb fix #13011 is already shipped and the rebuild was skipped in this boot."
+    ],
+    "initial_probe": {
+      "invocation": "347b6930-c685-4637-9850-17eb82d9c18e",
+      "url": "https://app.buildbuddy.io/invocation/347b6930-c685-4637-9850-17eb82d9c18e",
+      "target": "//agentplane/system_tests/suites:test_vm",
+      "run": 1,
+      "shard": 1,
+      "attempt": 1,
+      "source_base": "9d882959ac11b70c39456a2045d0a802f4b084b9",
+      "source_patch": "Initial pre-review working-tree collector patch; not final source PR.",
+      "suite_verdict": "PASSED",
+      "scenarios": 6,
+      "test_duration_seconds": 387.854,
+      "report_verdict": "PARTIAL",
+      "required_command_failures": 7,
+      "report_failure_mechanism": "Missing absolute coreutils paths in minimal guest; original oneshot also held boot target open during optional timing queries.",
+      "launcher_uid": "9c9311e0-9c18-473e-a5d2-8f9ffbceea0c",
+      "console": {
+        "name": "test.outputs/vm-artifacts/consoles/systest_virt-launcher-systest-vm-codex-oom-8mk5t_9c9311e0-9c18-473e-a5d2-8f9ffbceea0c/0.log-646826.cri.log",
+        "sha256": "bad759f52adf1daa98cc6a70b92fc45dd354c56fba8b5f421de581a8b949492e",
+        "bytes": 317390
+      },
+      "observations_seconds": {
+        "kernel_registration_printk": 6.610076,
+        "systemd_waiting_printk": 11.922581,
+        "monitor_active_monotonic": 14.793295,
+        "coldplug_start_printk": 16.051942,
+        "udevd_start_printk": 20.031736,
+        "udevd_active_monotonic": 23.314177,
+        "kernel_coldplug_monitor_receipt": 23.791831,
+        "coldplug_complete_journal": 24.357773,
+        "udev_processed_monitor_receipt": 26.285611,
+        "workspace_device_active_monotonic": 26.723165,
+        "makefs_start_journal": 27.359116,
+        "makefs_complete_journal": 30.087952,
+        "workspace_mount_active_monotonic": 31.087504
+      }
+    },
+    "ci_diagnostic_packet": {
+      "invocation": "e15d7eb9-1828-5a36-ba23-6b67e8646887",
+      "url": "https://app.buildbuddy.io/invocation/e15d7eb9-1828-5a36-ba23-6b67e8646887",
+      "target": "//agentplane/system_tests/suites:test_vm",
+      "run": 1,
+      "shard": 1,
+      "attempt": 1,
+      "pr": 13413,
+      "head": "90c5cf010050c3bcec337287529cf8e626f237cc",
+      "tested_synthetic_merge": "1e46dcb6303460274d53a1d6a5f170b962e4613f",
+      "merge_base_parent": "12b78b2c1bc53598fb56ef9624c0804d94e9e2ef",
+      "source_identity": "Synthetic merge parents verified against PR metadata: exact PR head plus current base.",
+      "suite_verdict": "FAILED_TEARDOWN_SELECTOR",
+      "scenario_verdict": "PASSED",
+      "test_duration_seconds": 316.17,
+      "failure_mechanism": "Substring selector matched feature flag in five unselected guests skipped-condition messages; only OOM had the actual kernel argument.",
+      "report_verdict": "COMPLETE",
+      "raw_monitor_ready": true,
+      "required_sections_complete": [
+        "GUEST",
+        "DEVICE",
+        "ACTIVATION",
+        "JOURNAL"
+      ],
+      "required_command_count": 25,
+      "required_commands": [
+        {
+          "command": "/usr/bin/busybox uname -a",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/busybox cat /proc/cmdline",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/busybox cat /proc/uptime",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/busybox cat /proc/sys/kernel/random/boot_id",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/busybox cat /sys/class/dmi/id/product_uuid",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/udevadm --version",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/systemctl --version",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/busybox ls -l /dev/disk/by-id/virtio-workspace",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/busybox readlink -f /dev/disk/by-id/virtio-workspace",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/udevadm info --query=property --name=/dev/disk/by-id/virtio-workspace",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/lsblk --nodeps --output NAME,MAJ:MIN,TYPE,SIZE,MODEL,SERIAL",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/busybox cat /etc/fstab",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/systemctl --no-pager show --property=FirmwareTimestampMonotonic,LoaderTimestampMonotonic,KernelTimestampMonotonic,InitRDTimestampMonotonic,UserspaceTimestampMonotonic,FinishTimestampMonotonic",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/systemctl --no-pager show --property=Id,ActiveState,SubState,Result,ActiveEnterTimestampMonotonic,InactiveEnterTimestampMonotonic,ActiveExitTimestampMonotonic,InactiveExitTimestampMonotonic,StateChangeTimestampMonotonic,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic,ExecMainCode,ExecMainStatus,Type,TimeoutStartUSec,TimeoutStopUSec,NotifyAccess,Before,After,Conflicts,Requires,Wants dev-disk-by\\x2did-virtio\\x2dworkspace.device",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/systemctl --no-pager show --property=Id,ActiveState,SubState,Result,ActiveEnterTimestampMonotonic,InactiveEnterTimestampMonotonic,ActiveExitTimestampMonotonic,InactiveExitTimestampMonotonic,StateChangeTimestampMonotonic,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic,ExecMainCode,ExecMainStatus,Type,TimeoutStartUSec,TimeoutStopUSec,NotifyAccess,Before,After,Conflicts,Requires,Wants systemd-udevd.service",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/systemctl --no-pager show --property=Id,ActiveState,SubState,Result,ActiveEnterTimestampMonotonic,InactiveEnterTimestampMonotonic,ActiveExitTimestampMonotonic,InactiveExitTimestampMonotonic,StateChangeTimestampMonotonic,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic,ExecMainCode,ExecMainStatus,Type,TimeoutStartUSec,TimeoutStopUSec,NotifyAccess,Before,After,Conflicts,Requires,Wants systemd-udev-trigger.service",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/systemctl --no-pager show --property=Id,ActiveState,SubState,Result,ActiveEnterTimestampMonotonic,InactiveEnterTimestampMonotonic,ActiveExitTimestampMonotonic,InactiveExitTimestampMonotonic,StateChangeTimestampMonotonic,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic,ExecMainCode,ExecMainStatus,Type,TimeoutStartUSec,TimeoutStopUSec,NotifyAccess,Before,After,Conflicts,Requires,Wants systemd-makefs@dev-disk-by\\x2did-virtio\\x2dworkspace.service",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/systemctl --no-pager show --property=Id,ActiveState,SubState,Result,ActiveEnterTimestampMonotonic,InactiveEnterTimestampMonotonic,ActiveExitTimestampMonotonic,InactiveExitTimestampMonotonic,StateChangeTimestampMonotonic,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic,ExecMainCode,ExecMainStatus,Type,TimeoutStartUSec,TimeoutStopUSec,NotifyAccess,Before,After,Conflicts,Requires,Wants state-workspaces.mount",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/systemctl --no-pager show --property=Id,ActiveState,SubState,Result,ActiveEnterTimestampMonotonic,InactiveEnterTimestampMonotonic,ActiveExitTimestampMonotonic,InactiveExitTimestampMonotonic,StateChangeTimestampMonotonic,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic,ExecMainCode,ExecMainStatus,Type,TimeoutStartUSec,TimeoutStopUSec,NotifyAccess,Before,After,Conflicts,Requires,Wants agentplane-environment-runtime.service",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/systemctl --no-pager show --property=Id,ActiveState,SubState,Result,ActiveEnterTimestampMonotonic,InactiveEnterTimestampMonotonic,ActiveExitTimestampMonotonic,InactiveExitTimestampMonotonic,StateChangeTimestampMonotonic,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic,ExecMainCode,ExecMainStatus,Type,TimeoutStartUSec,TimeoutStopUSec,NotifyAccess,Before,After,Conflicts,Requires,Wants agentplane-boot-device-monitor.service",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/systemctl --no-pager cat systemd-udevd.service",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/systemctl --no-pager cat systemd-udev-trigger.service agentplane-boot-device-monitor.service",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/systemctl --no-pager cat systemd-makefs@dev-disk-by\\x2did-virtio\\x2dworkspace.service",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/systemctl --no-pager cat state-workspaces.mount",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/journalctl --no-pager --boot=0 --output=short-monotonic --lines=100 --unit=systemd-udevd.service --unit=systemd-udev-trigger.service --unit=systemd-makefs@dev-disk-by\\x2did-virtio\\x2dworkspace.service --unit=state-workspaces.mount",
+          "status": 0
+        }
+      ],
+      "optional_commands": [
+        {
+          "command": "/usr/bin/systemd-analyze --no-pager time",
+          "status": 0
+        },
+        {
+          "command": "/usr/bin/systemd-analyze --no-pager critical-chain agentplane-environment-runtime.service",
+          "status": 143
+        },
+        {
+          "command": "/usr/bin/systemd-analyze --no-pager blame",
+          "status": 143
+        }
+      ],
+      "launcher_uid": "81fa77f5-01f8-474a-82ab-85ac9d80756a",
+      "console": {
+        "name": "test.outputs/vm-artifacts/consoles/systest_virt-launcher-systest-vm-codex-oom-vkm22_81fa77f5-01f8-474a-82ab-85ac9d80756a/0.log-1158307.cri.log",
+        "sha256": "b833d71938ad69ac6dc4fde0aaac8c5abe67bcf5c6a8ab5db78b4af719ca232b",
+        "bytes": 245409
+      },
+      "manager_origins_microseconds": {
+        "FirmwareTimestampMonotonic": 0,
+        "LoaderTimestampMonotonic": 0,
+        "KernelTimestampMonotonic": 0,
+        "InitRDTimestampMonotonic": 0,
+        "UserspaceTimestampMonotonic": 8629435,
+        "FinishTimestampMonotonic": 36199546
+      },
+      "observations_seconds": {
+        "kernel_registration_printk": 7.280684,
+        "monitor_exec_start_monotonic": 12.037478,
+        "monitor_active_monotonic": 14.27904,
+        "coldplug_exec_start_monotonic": 15.464834,
+        "coldplug_exec_exit_monotonic": 22.663335,
+        "udevd_exec_start_monotonic": 18.52367,
+        "udevd_active_monotonic": 21.407349,
+        "kernel_coldplug_monitor_receipt": 21.993292,
+        "udev_processed_monitor_receipt": 25.087906,
+        "workspace_device_active_monotonic": 26.21132,
+        "makefs_exec_start_monotonic": 26.399422,
+        "makefs_exec_exit_monotonic": 28.319788,
+        "workspace_mount_active_monotonic": 29.334848,
+        "environment_runtime_exec_start_monotonic": 35.502165,
+        "environment_runtime_active_monotonic": 35.806093,
+        "manager_finish_monotonic": 36.199546
+      }
+    },
+    "harness_followup": {
+      "pr": 13413,
+      "url": "https://github.com/agentydragon/ducktape/pull/13413",
+      "head": "4cd6a7301ffbdf32fb538ec8f7a106b8daa7a64e",
+      "scope": "Default OOM-only block monitor and bounded report; existing per-incarnation console retention; raw serial receipts checked across rotation.",
+      "reader_correction": "Select exact standalone AGENTPLANE_BOOT_EVIDENCE_BEGIN; preserve original scenario failures while reporting missing/partial evidence on otherwise successful teardown.",
+      "focused_check": {
+        "target": "//agentplane/system_tests/k3s:test_guest_logs",
+        "invocation": "dcfefc49-0e30-43f1-a591-c16e4ff4001a",
+        "result": "PASSED"
+      },
+      "ci_state_at_observation": "IN_PROGRESS",
+      "ci_run": 41265356563,
+      "ci_invocation": "11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2",
+      "tested_synthetic_merge": "ad7264cf171fc4e60c6bfb725831e3bba3d4c513"
+    },
+    "production_parity_todo": {
+      "path": "agentplane/system_tests/TODO.md",
+      "source_head": "90c5cf010050c3bcec337287529cf8e626f237cc",
+      "finding": "Both checked-in VM configurations already declare virtio block workspace disks and ext4.",
+      "work": "Compare backing storage and guest boot/format/mount behavior; benchmark equivalent workloads before aligning remaining differences."
+    }
+  },
+  "baseline_report_validation": {
     "html_sha256": "c203dccd3f4a7c6cc345fd2268a6bea57db5eb50d870d409890b01c54d884a86",
     "invocation_id": "28668f58-3de4-43de-90f2-0adc4293fbbc",
     "target": "//devinfra/ci/reports/x/followup_preview:test_report",
     "result": "PASSED",
     "browser_cases": 2,
     "viewports_css_px": [
-      [1280, 900],
-      [390, 844]
+      [
+        1280,
+        900
+      ],
+      [
+        390,
+        844
+      ]
     ],
     "checks": [
       "all twelve images visually reviewed, two overview captures byte-identical to prior reviewed images",
@@ -9555,74 +10158,91 @@
     "scope": "Temporary source-worktree preview supplies authored report to normal RBE visual harness. No source implementation or sibling report namespace is changed.",
     "review_notes": "Reviewed all twelve final captures. Ten match the reviewed preceding b3a736ef preview byte-for-byte; the two updated shipped-work captures were reviewed separately."
   },
-  "post_snapshot_investigations": {
-    "checked_at_utc": "2026-10-31T14:36:13.860000+00:00",
-    "scope": "Subsequent selected investigations; original arrival cohort and computed distributions unchanged.",
-    "pull_requests": [
+  "report_validation": {
+    "html_sha256": "73b216a3224cc6b3150214a85c7c12c9d68797a1a4a12371b3918f28abb66410",
+    "invocation_id": "2fbf8adb-d426-48f2-a14e-0224b3bc89e6",
+    "target": "//devinfra/ci/reports/x/device_boot_preview:test_report",
+    "result": "PASSED",
+    "browser_cases": 2,
+    "viewports_css_px": [
+      [
+        1280,
+        900
+      ],
+      [
+        390,
+        844
+      ]
+    ],
+    "checks": [
+      "All ten screenshots visually reviewed at original resolution",
+      "Internal anchors resolve",
+      "Document has no horizontal overflow with disclosures open",
+      "Responsive tables and long artifact paths readable on mobile",
+      "Shared deterministic render and network health checks"
+    ],
+    "screenshots": [
       {
-        "lane": 5,
-        "number": 13351,
-        "state": "MERGED",
-        "url": "https://github.com/agentydragon/ducktape/pull/13351",
-        "head": "57ac8eb055de089f06e2838c0f225d425b15afd2"
+        "name": "boot-1280.png",
+        "sha256": "518780e6167ed1b8727769a9ea203861c195a7759bff0071c571a1c6e643cb27",
+        "width": 1064,
+        "height": 1535
       },
       {
-        "lane": 3,
-        "number": 13352,
-        "state": "MERGED",
-        "url": "https://github.com/agentydragon/ducktape/pull/13352",
-        "head": "da0e9e60f2173e934652b6e4d0ff05d464e9e807",
-        "proof_invocation": "fc63eef9-0d6c-42e2-9756-6cb1c7bd1461",
-        "runner_resource_uid_spans": 249,
-        "runner_spans": 249,
-        "ready_guest_identities": 6
+        "name": "boot-390.png",
+        "sha256": "a1bb42836047ac1b0bb24a1a9e0e7c6ad36360f2efeb5b52102588abf83ae0de",
+        "width": 358,
+        "height": 4497
       },
       {
-        "lane": 2,
-        "number": 13359,
-        "state": "MERGED",
-        "url": "https://github.com/agentydragon/ducktape/pull/13359",
-        "head": "d4f8162f9c9f33ac290803fe146fbdceb5031664",
-        "proof_invocation": "a394fe63-0e05-4287-8748-08edfbc2228a"
+        "name": "boot-ci-proof-1280.png",
+        "sha256": "d824a6ea26d2c8d8504cd5f11662334786c8bd96286a6a7e5c355f1a55ffbba6",
+        "width": 1006,
+        "height": 884
       },
       {
-        "lane": 1,
-        "number": 13364,
-        "state": "OPEN",
-        "url": "https://github.com/agentydragon/ducktape/pull/13364",
-        "experimental_proofs_precede_integration": true
+        "name": "boot-ci-proof-390.png",
+        "sha256": "8a581fbab0dfa47b5e4d4f64a2f4b49c9bd0184738fe047164b208830fd66c17",
+        "width": 324,
+        "height": 2460
+      },
+      {
+        "name": "boot-details-1280.png",
+        "sha256": "93b3187d65d8806db5a166aeb90822519fe1c5114ef25ecd40a45bd93f852b45",
+        "width": 1006,
+        "height": 473
+      },
+      {
+        "name": "boot-details-390.png",
+        "sha256": "ca31c180b7c989d398530754249df1d5a375987e40c0a202eb4e1fad1a400ae8",
+        "width": 324,
+        "height": 1240
+      },
+      {
+        "name": "decisions-1280.png",
+        "sha256": "4d1af4e73a8552531396ae73055f49ac59e1bfa4a176295210421b0868efb58e",
+        "width": 1064,
+        "height": 882
+      },
+      {
+        "name": "decisions-390.png",
+        "sha256": "ba44d7b17bd0f8eeeb7aebfc2ed889934e6865df692d7d3e764c34da5f217edc",
+        "width": 358,
+        "height": 2116
+      },
+      {
+        "name": "overview-1280.png",
+        "sha256": "18708129131a7b3ae6a1b1689f51319174370365df6f9f644cd9fa45822dabfd",
+        "width": 1120,
+        "height": 768
+      },
+      {
+        "name": "overview-390.png",
+        "sha256": "fae942bf038ac3073f761db2416d5dc9ca9ff9bcea0747e8915965a2dfbb2ab0",
+        "width": 390,
+        "height": 1324
       }
     ],
-    "native_profile": {
-      "invocation": "44d682a7-5b89-4544-ae8e-259557148aa6",
-      "state": "PASSED",
-      "source_base": "61d18e604e37757ebc9838404a292fec6348181f",
-      "source_patch": "98771aff4fd8e6feeac6c9a4318ee4659d6ba7b70da724cc638e250347f00cec",
-      "raw_bytes": 3687840,
-      "raw_sha256": "3c6fde75c61be22a8f5b79fb7be8d0f0834f88c532d570deda9f4c9df024d75a",
-      "samples": 1054,
-      "lost": 0,
-      "guest_tgid": 400,
-      "oom_session": "c93426ee-8f4b-40c8-a7a6-555cec7c5c91",
-      "app_server_start_seconds": 20.072459,
-      "guest_unix_minus_uptime_nominal": 1793456112.8,
-      "clock_uncertainty_seconds": 1,
-      "nominal_cold_guest_samples": 315,
-      "nominal_cold_tgid_samples": 108,
-      "cold_tgid_samples_at_minus_plus_one_second_shift": [96, 120],
-      "sampled_user_cpu_seconds_approx": 2.204081632653061,
-      "separate_initialize_span_retained": false,
-      "limits": "User-only samples within selected guest, not host CPU. Kernel CPU, scheduling, TCG and waits unresolved. Guest clock fields used; CRI host receipt time is not the guest clock."
-    },
-    "native_control": {
-      "invocation": "83f4fdd3-3722-4987-8f57-b68f8ee421c3",
-      "state": "PASSED",
-      "source_commit": "c544fff5391b2b422e8026ec29daf190373fe706",
-      "target_seconds": 284,
-      "app_server_start_seconds": 19.097984,
-      "profile_artifact_present": false,
-      "log_follow_error": "ResourceExhausted: Log index limit exceeded"
-    },
-    "comparison_limits": "Different source snapshots and uncontrolled worker/cache conditions. Same image labels do not establish identical image bytes. No causal savings or overhead estimate."
+    "scope": "Temporary RBE preview of exact authored standalone HTML; preview harness is not published as source code."
   }
 }
