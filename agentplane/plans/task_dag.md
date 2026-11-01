@@ -34,7 +34,9 @@ authorized work; the priority list does not dispatch the other tracks.
 
 **Component boundaries:** the [Environment Runtime](../env/runtime/SPEC.md),
 [Harness Host](../env/harnesshost/SPEC.md) and [Execution service](../env/execution/SPEC.md)
-have distinct lifecycle responsibilities. Preserve those owners in the selected work. Session and
+have distinct lifecycle responsibilities. Preserve those logical owners in the selected work;
+their executable packaging and process grouping remain subject to
+`ENV_MANAGEMENT_PROCESS_CONSOLIDATION_DESIGN` and explicit operator review. Session and
 Environment dispatch remain distinct roles whose binary grouping is for later; the broader
 runtime-model decision does not gate these reliability or delegation slices.
 
@@ -170,6 +172,21 @@ activation remains a separate deployment hold. After the lifecycle policy is sel
 implementation takes the next P0 slot; tools integration and scheduled-wake implementation feed
 the daily CI capstone. Small `SESSION_LAUNCH_FRICTION` proposals remain alongside work as capacity
 permits. This is a scheduling preference, not additional dependency edges.
+
+**Systemd reliability batch dispatched, 2026-11-01 06:18 UTC.** The operator selected
+`SYSTEMD_UNIT_CLEANUP` (`/root/systemd_cleanup_contract`, Sol `high`) and
+`SYSTEMD_NATIVE_SHUTDOWN` (`/root/systemd_native_stop`, Luna `xhigh`) as parallel P0 work.
+The first lane owns the shared typed cleanup contract and stopped-unit recovery; the second lets
+systemd own native TERM/deadline/KILL while retaining exit evidence. Agree the shared helper
+interface during implementation; file conflicts are not dependencies. `/root` reviews integration,
+successor admission, uncertain launches and the distinction between process cleanup and graceful
+application completion. Focused regressions retain the session's existing test authorization;
+broad disruption exercises remain deferred.
+
+Draft [#13442](https://github.com/agentydragon/ducktape/pull/13442), which reconstructs a cleared
+cgroup path, remains held while these changes replace that approach. Its original native-cleanup
+timeout trigger remains unproven and must not be marked resolved by eliminating the later startup
+failure. Eventual process consolidation requires a separate operator decision and gates neither lane.
 
 Small launch-UX work can proceed alongside these tracks. Fresh-VM latency and VM-based Bazel are
 next and are independent of each other; image/layering work becomes a prerequisite only when the
@@ -1417,6 +1434,8 @@ flowchart TD
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
     EXEC_ENVIRONMENT_RECOVERY[Selected P0: structured failures and stale-route recovery]
+    SYSTEMD_UNIT_CLEANUP[In flight P0: shared systemd cleanup contract]
+    SYSTEMD_NATIVE_SHUTDOWN[In flight P0: systemd-owned native shutdown]
     SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN[Selected P0 decision: caller-authorized resume and message wake]
     EXEC_SUSPENDED_RESUME[Selected P0: recover exec on a suspended Sandbox]
     SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN --> EXEC_SUSPENDED_RESUME
@@ -1730,6 +1749,41 @@ differently.
 
 Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-coverage).
 
+### `SYSTEMD_UNIT_CLEANUP` — one typed systemd stop and cleanup contract
+
+**In flight, `/root/systemd_cleanup_contract`; operator dispatch, 2026-11-01 06:18 UTC; selected P0.**
+Deduplicate Runtime and native-supervision unit inspection, stop-job observation and process cleanup
+proof under one shared owner. Decode D-Bus maps at the boundary into typed evidence. Recover from
+an already stopped, loaded unit with retained `InvocationID` and cleared `ControlGroup`, using
+the pinned systemd's actual lifecycle semantics rather than guessing a packaged cgroup path.
+Systemd may retain processes after a failed stop; neither an accepted stop RPC nor `inactive`/`failed`
+alone proves an empty domain. Preserve exact invocation identity, uncertain-start ordering and
+successor admission barriers. Missing or malformed evidence is not proof of cleanup.
+
+**Exit:** both callers use the shared contract; obsolete implementations are removed; focused
+regressions cover manager-released cgroups, populated failed domains, changed invocations and
+uncertain starts. Report which conditions were exercised against actual systemd versus a fake.
+Keep application shutdown outcome separate from proof that processes stopped, and account for
+native transient units outside their manager's cgroup. Update owning contracts and document rollback.
+No process consolidation, lifecycle dependency-graph redesign or automatic mutation replay is selected.
+
+### `SYSTEMD_NATIVE_SHUTDOWN` — let systemd perform native termination
+
+**In flight, `/root/systemd_native_stop`; operator dispatch, 2026-11-01 06:18 UTC; selected P0.**
+Replace native supervision's manual TERM/timer/KILL sequence with systemd stop jobs and its
+configured `KillMode`, stop timeout and final signal. Preserve process exit evidence despite unit
+collection, explicit signal operations, concurrent stop/wait, descendant cleanup and observation
+loss. Use the shared cleanup contract agreed with `SYSTEMD_UNIT_CLEANUP`; neither worker waits
+for the other's PR to merge. Keep admission, drain, journal settlement and History acknowledgements
+with Agentplane. A lost D-Bus connection does not authorize a successor or replay.
+
+**Exit:** native shutdown uses systemd's escalation and reports the observed outcome; duplicate
+timers/signals and obsolete retention workarounds are removed where replaced by supported manager
+mechanisms. Focused regressions cover stop completion, exit-result retention and stop/reap races;
+retain existing descendant and owner-loss coverage. State any remaining initial-cleanup timeout
+uncertainty. Preserve current process topology, resource budgets and graceful shutdown ordering;
+update the owning contract and rollback instructions.
+
 ### `EXEC_ENVIRONMENT_RECOVERY` — actionable execution failures and stale-route recovery
 
 **In flight, `/root/exec_environment_recovery`, operator dispatch 2026-11-01 UTC; selected P0.** A central sampler
@@ -1915,7 +1969,32 @@ flowchart TD
     RUNNER_IMAGES_RENAME[Unscheduled: tools images stop being called runner]
     HISTORY_SERVICE_RENAME[Decision, unscheduled: History as a transcript service]
     SERVICE_SETTINGS_RETHINK[Decision, unscheduled: how Agentplane services are configured]
+    ENV_MANAGEMENT_PROCESS_CONSOLIDATION_DESIGN[Decision, later: environment management process grouping]
 ```
+
+### `ENV_MANAGEMENT_PROCESS_CONSOLIDATION_DESIGN` — review eventual environment process consolidation
+
+**Decision, later; operator, 2026-11-01 UTC: pending explicit operator review before implementation.**
+Review consolidation of Environment Runtime, Harness Host management and the Go Execution API.
+Distinguish one executable with separate runnable roles from one OS process with a shared heap,
+crash boundary and restart lifetime. Compare the current separate processes, Runtime plus Harness
+Host management in one process, and all three Go components in one process. Keep native Claude,
+Codex app-server and Codex exec-server processes distinct from their Go management components.
+
+Recommendation for review: retain clear logical modules, independently runnable Execution and an
+optional resident harness; evaluate a combined default after supervision cleanup clarifies actual
+failure and lifetime requirements. Preserve execution-only environments and central Sessions
+attached to zero or more environments. Compare reduced private RPC/ownership coordination with
+adapter-failure containment, updates without interrupting unrelated work, resource/privilege
+boundaries and restart/adoption semantics. The current split's incomplete independent recovery
+does not settle that tradeoff; separate cgroups do not imply survival when native units are bound
+to their manager's lifetime.
+
+**Exit:** the operator reviews packaging and process topology separately, including concrete
+graceful-stop/crash/restart examples and a data-preserving transition if selected. Only then add
+implementation nodes and their real prerequisites. This decision does not gate
+`SYSTEMD_UNIT_CLEANUP`, `SYSTEMD_NATIVE_SHUTDOWN`, or the broader runtime-model design;
+no executable/process consolidation is dispatched now.
 
 ### `RUNNER_RENAME` — remaining Runner protocol and resource names
 
