@@ -28,6 +28,7 @@ type Executor struct {
 	owner                Owner
 	client               executorClient
 	connection           *grpc.ClientConn
+	scopeMu              sync.RWMutex
 	scope                *executorpb.ExecutionScope
 	cwd                  string
 	codexPath            string
@@ -53,6 +54,17 @@ type Executor struct {
 	sessionGeneration    uint64
 	sessionError         error
 	closing              bool
+}
+
+// rejectedProcessReadEvidence preserves the existing projection for a known exec-server
+// read rejection while keeping the values typed until JSON serialization.
+type rejectedProcessReadEvidence struct {
+	Error              string        `json:"error"`
+	ExecutorIntentID   string        `json:"executor_intent_id"`
+	ProcessID          string        `json:"process_id"`
+	ExecutionSessionID string        `json:"execution_session_id"`
+	RemoteOutcome      NestedOutcome `json:"remote_outcome"`
+	AutomaticReplay    bool          `json:"automatic_replay"`
 }
 
 // NewExecutor restores local executor state without contacting the execution environment.
@@ -156,7 +168,7 @@ func (e *Executor) prepareWorkspace(ctx context.Context) error {
 	if observation.exitCode == nil || *observation.exitCode != 0 {
 		return &toolError{fmt.Sprintf("workspace preparation did not complete successfully (process session_id %d): %s; the requested operation was not dispatched", sessionID, lossyUTF8(observation.output.withOmissionMarker()))}
 	}
-	if err := e.store.PreparedWorkspace(ctx, e.owner, e.scope.GetSessionId()); err != nil {
+	if err := e.store.PreparedWorkspace(ctx, e.owner, e.scopeSnapshot().GetSessionId()); err != nil {
 		return err
 	}
 	e.workspacePrepared = true
@@ -282,10 +294,10 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 			message := rejected.Error() + "; the process handle was abandoned with unknown outcome and was not replayed"
 			return &toolOutcomeError{
 				toolError: &toolError{message},
-				evidence: map[string]any{
-					"error": message, "executor_intent_id": rejected.intentID,
-					"process_id": rejected.processID, "execution_session_id": rejected.executionSessionID,
-					"remote_outcome": NestedUnknown, "automatic_replay": false,
+				evidence: rejectedProcessReadEvidence{
+					Error: message, ExecutorIntentID: rejected.intentID,
+					ProcessID: rejected.processID, ExecutionSessionID: rejected.executionSessionID,
+					RemoteOutcome: NestedUnknown, AutomaticReplay: false,
 				},
 			}
 		}
@@ -332,6 +344,7 @@ func (e *Executor) execCommand(ctx context.Context, arguments json.RawMessage) (
 	if err != nil {
 		return nil, err
 	}
+	ctx = withExpectedIncarnationUID(ctx, args.ExpectedIncarnationUID)
 	e.rpcMu.Lock()
 	shell := e.shell
 	e.rpcMu.Unlock()
@@ -424,7 +437,9 @@ func (e *Executor) startProcess(ctx context.Context, argv []string, cwd string, 
 	_, err := executorRPC[executorStarted](ctx, e, executorMethodProcessStart, executorStart{ProcessID: processID, Argv: argv, Cwd: fileURI(cwd), EnvPolicy: e.envPolicy(), Env: environment, TTY: tty})
 	if err != nil {
 		var rejected *executorRejectedError
-		if errors.As(err, &rejected) && rejected.method == executorMethodProcessStart {
+		var fence *executorIncarnationFenceError
+		if errors.As(err, &rejected) && rejected.method == executorMethodProcessStart ||
+			errors.As(err, &fence) && fence.method == executorMethodProcessStart && fence.remoteOutcome == NestedNotDispatched {
 			// No process exists; release its session number.
 			if settleErr := e.store.ProcessResult(ctx, e.owner, processID, nil, protocol.ProcessExited, nil, true); settleErr != nil {
 				lock.Unlock()
@@ -630,6 +645,10 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 			if errors.As(rpcErr, &environment) && environment.method == executorMethodProcessRead {
 				environment.afterSequence, environment.output = after, output
 			}
+			var fence *executorIncarnationFenceError
+			if errors.As(rpcErr, &fence) && fence.method == executorMethodProcessRead {
+				fence.afterSequence, fence.output = after, output
+			}
 			return nil, rpcErr
 		}
 		for _, chunk := range result.Chunks {
@@ -699,6 +718,18 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 		result, rpcErr := executorRPC[executorReadResult](pageCtx, e, executorMethodProcessRead, executorRead{ProcessID: row.ID, AfterSeq: row.AfterSequence, MaxBytes: 65536, ObservedOutput: readOutput})
 		cancel()
 		if rpcErr != nil {
+			var fence *executorIncarnationFenceError
+			if errors.As(rpcErr, &fence) && fence.method == executorMethodProcessRead {
+				handled := e.outcomeToolError(ctx, rpcErr)
+				var toolFailure *toolError
+				if !errors.As(handled, &toolFailure) {
+					lock.Unlock()
+					return progressed, handled
+				}
+				progressed = true
+				lock.Unlock()
+				continue
+			}
 			var rejected *executorRejectedError
 			if errors.As(rpcErr, &rejected) && rejected.method == executorMethodProcessRead {
 				handled := e.outcomeToolError(ctx, rpcErr)

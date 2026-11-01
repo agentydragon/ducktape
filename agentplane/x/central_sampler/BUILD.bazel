@@ -354,6 +354,7 @@ go_library(
         "codemode_protocol.go",
         "environment_context.go",
         "evidence.go",
+        "exec_incarnation_fence.go",
         "executor.go",
         "executor_failure.go",
         "executor_operations.go",

@@ -163,20 +163,20 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 	if err == nil {
 		return nil
 	}
-	var transport *executorTransportError
-	if !errors.As(err, &transport) || status.Code(transport.cause) != codes.FailedPrecondition {
-		return err
-	}
-	for _, detail := range status.Convert(transport.cause).Details() {
-		changed, ok := detail.(*executorpb.SandboxIncarnationChanged)
-		if !ok || changed.GetSandboxUid() == "" || changed.GetSandboxUid() != e.scope.GetDestination().GetSandboxUid() ||
-			changed.GetIncarnationUid() == "" || changed.GetIncarnationUid() == e.scope.GetExpectedIncarnationUid() {
-			continue
+	var fence *executorIncarnationFenceError
+	if errors.As(err, &fence) {
+		if !fence.recorded {
+			return fence
 		}
-		if err := e.store.RebindExecutorIncarnation(ctx, e.owner, changed.SandboxUid, e.scope.ExpectedIncarnationUid, changed.IncarnationUid, ""); err != nil {
+		if _, explicitlyFenced := expectedIncarnationUIDFromContext(ctx); explicitlyFenced {
+			return fence
+		}
+		scope := e.scopeSnapshot()
+		if err := e.store.RebindExecutorIncarnation(ctx, e.owner, scope.GetDestination().GetSandboxUid(), scope.GetExpectedIncarnationUid(), fence.currentIncarnationUID, ""); err != nil {
 			return fmt.Errorf("record execution Sandbox incarnation change: %w", err)
 		}
-		e.scope.ExpectedIncarnationUid = changed.IncarnationUid
+		scope.ExpectedIncarnationUid = fence.currentIncarnationUID
+		e.setScope(scope)
 		e.sessionID, e.shell = "", nil
 		e.workspacePrepared = false
 		e.lostSessionConfirmed = false
@@ -190,14 +190,24 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 }
 
 func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error {
+	scope := executionScopeFromContext(ctx, e.scopeSnapshot())
 	handshakeCtx, cancelHandshake := context.WithTimeout(ctx, e.initializeTimeout)
 	defer cancelHandshake()
-	intent, err := e.store.RecordNested(ctx, e.owner, IntentExecutor, map[string]any{"method": executorMethodInitialize, "resume_session_id": resume})
+	intentRequest := map[string]any{"method": executorMethodInitialize, "resume_session_id": resume}
+	if scope.GetDestination().GetSandboxUid() != "" {
+		intentRequest["execution_scope"] = map[string]any{
+			"sandbox_uid": scope.GetDestination().GetSandboxUid(), "expected_incarnation_uid": scope.GetExpectedIncarnationUid(),
+		}
+	}
+	if rebind, ok := incarnationRebindFromContext(ctx); ok {
+		intentRequest["incarnation_rebind_from"] = rebind.previousUID
+	}
+	intent, err := e.store.RecordNested(ctx, e.owner, IntentExecutor, intentRequest)
 	if err != nil {
 		return err
 	}
 	streamCtx, cancel := context.WithCancel(e.lifetime)
-	stream, err := e.client.OpenSession(streamCtx, &executorpb.OpenSessionRequest{Scope: e.scope, RequestId: intent, ResumeSessionId: resume})
+	stream, err := e.client.OpenSession(streamCtx, &executorpb.OpenSessionRequest{Scope: scope, RequestId: intent, ResumeSessionId: resume})
 	if err != nil {
 		cancel()
 		if environmentFailure := e.newEnvironmentFailure(executorMethodInitialize, intent, "", "", nil, nil, err); environmentFailure != nil {
@@ -205,6 +215,13 @@ func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error
 				return fmt.Errorf("record known OpenSession refusal after %v: %w", environmentFailure, finishErr)
 			}
 			return environmentFailure
+		}
+		if fence := e.incarnationFenceError(err, scope, executorMethodInitialize, intent, "", "", nil, nil, NestedNotDispatched); fence != nil {
+			if finishErr := e.store.FinishNested(ctx, e.owner, intent, fence.intentEvidence()); finishErr != nil {
+				return errors.Join(fence, fmt.Errorf("record stale OpenSession fence: %w", finishErr))
+			}
+			fence.recorded = true
+			return fence
 		}
 		transport := &executorTransportError{method: executorMethodInitialize, phase: "open", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: err}
 		if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
@@ -244,6 +261,13 @@ func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error
 			}
 			return environmentFailure
 		}
+		if fence := e.incarnationFenceError(err, scope, executorMethodInitialize, intent, "", "", nil, nil, NestedNotDispatched); fence != nil {
+			if finishErr := e.store.FinishNested(ctx, e.owner, intent, fence.intentEvidence()); finishErr != nil {
+				return errors.Join(fence, fmt.Errorf("record stale OpenSession fence: %w", finishErr))
+			}
+			fence.recorded = true
+			return fence
+		}
 		transport := &executorTransportError{method: executorMethodInitialize, phase: "receive", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: err}
 		if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
 			return fmt.Errorf("record OpenSession receive outcome after %v: %w", transport, finishErr)
@@ -273,17 +297,14 @@ func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error
 		return transport
 	}
 	var shellName *string
+	var shell *execShell
 	if opened.Shell != nil {
-		e.shell = &execShell{Name: opened.Shell.Name, Path: opened.Shell.Path}
+		shell = &execShell{Name: opened.Shell.Name, Path: opened.Shell.Path}
 		shellName = &opened.Shell.Name
 	}
 	var environmentInfo any
 	if opened.Shell != nil {
 		environmentInfo = map[string]any{"shell": map[string]any{"name": opened.Shell.Name, "path": opened.Shell.Path}}
-	}
-	if err := e.store.SetExecutorSession(ctx, e.owner, opened.ExecutionSessionId, shellName); err != nil {
-		cancel()
-		return err
 	}
 	if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{
 		"outcome": NestedCompleted, "request_id": intent, "execution_session_id": opened.ExecutionSessionId,
@@ -296,8 +317,27 @@ func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error
 		cancel()
 		return fmt.Errorf("record OpenSession native evidence: %w", frameErr)
 	}
+	if rebind, ok := incarnationRebindFromContext(ctx); ok {
+		e.setReconnectRequired(true)
+		if err := e.stopCurrentSessionStream(ctx); err != nil {
+			cancel()
+			return fmt.Errorf("stop old execution session after verified incarnation change: %w", err)
+		}
+		if err := e.store.RebindExecutorIncarnationWithSession(ctx, e.owner,
+			scope.GetDestination().GetSandboxUid(), rebind.previousUID, scope.GetExpectedIncarnationUid(),
+			opened.ExecutionSessionId, shellName); err != nil {
+			cancel()
+			return fmt.Errorf("record verified execution Sandbox incarnation change: %w", err)
+		}
+		e.setScope(scope)
+		e.workspacePrepared = false
+		e.lostSessionConfirmed = false
+	} else if err := e.store.SetExecutorSession(ctx, e.owner, opened.ExecutionSessionId, shellName); err != nil {
+		cancel()
+		return err
+	}
 	done := make(chan struct{})
-	e.sessionID, e.sessionStream, e.sessionCancel, e.sessionDone = opened.ExecutionSessionId, stream, cancel, done
+	e.sessionID, e.sessionStream, e.sessionCancel, e.sessionDone, e.shell = opened.ExecutionSessionId, stream, cancel, done, shell
 	e.sessionStateMu.Lock()
 	e.sessionGeneration++
 	generation := e.sessionGeneration
@@ -424,6 +464,22 @@ func (e *Executor) ensureSessionLocked(ctx context.Context, method executionMeth
 	if sessionError != nil {
 		return fmt.Errorf("execution session evidence journal failed; refusing further dispatch: %w", sessionError)
 	}
+	if expectedUID, explicit := expectedIncarnationUIDFromContext(ctx); explicit {
+		currentScope := e.scopeSnapshot()
+		if expectedUID != currentScope.GetExpectedIncarnationUid() {
+			if currentScope.GetExpectedIncarnationUid() == "" || currentScope.GetDestination().GetSandboxUid() == "" {
+				return &toolError{"cannot fence execution because the retained scope has no incarnation or Sandbox UID"}
+			}
+			candidateScope := proto.Clone(currentScope).(*executorpb.ExecutionScope)
+			candidateScope.ExpectedIncarnationUid = expectedUID
+			candidateCtx := withExecutionScope(ctx, candidateScope)
+			candidateCtx = withIncarnationRebind(candidateCtx, currentScope.GetExpectedIncarnationUid())
+			if err := e.openSessionAtScope(candidateCtx, nil); err != nil {
+				return err
+			}
+			return nil
+		}
+	}
 	var err error
 	if e.sessionID == "" {
 		err = e.openSession(ctx, nil)
@@ -470,13 +526,33 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 	if err != nil {
 		return nil, err
 	}
-	request, err := e.typedRequest(method, params, intent)
+	request, err := e.typedRequest(ctx, method, params, intent)
 	if err != nil {
 		finishErr := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedNotDispatched, "request_id": intent, "method": method, "reason": err.Error()})
 		return nil, errors.Join(err, finishErr)
 	}
 	response, err := e.call(ctx, method, request)
 	readRetried := false
+	if err != nil {
+		remoteOutcome := NestedNotDispatched
+		if method == executorMethodProcessRead {
+			// The read did not reach the current execution incarnation, but the process
+			// may still be running from an earlier successful StartProcess.
+			remoteOutcome = NestedUnknown
+		}
+		scope := executionScopeFromContext(ctx, e.scopeSnapshot())
+		if fence := e.incarnationFenceError(err, scope, method, intent, executorProcessID(params), e.sessionID, nil, nil, remoteOutcome); fence != nil {
+			if read, ok := params.(executorRead); ok && method == executorMethodProcessRead {
+				fence.afterSequence, fence.output = read.AfterSeq, read.ObservedOutput
+			}
+			e.setReconnectRequired(true)
+			if finishErr := e.finishUnknownIntent(ctx, intent, fence.intentEvidence()); finishErr != nil {
+				return nil, fmt.Errorf("record stale execution incarnation for %s after %v: %w", method, fence, finishErr)
+			}
+			fence.recorded = true
+			return nil, fence
+		}
+	}
 	var transport *executorTransportError
 	if err != nil && errors.As(err, &transport) {
 		e.setReconnectRequired(true)
@@ -911,8 +987,10 @@ func (e *Executor) finishUnknownIntent(ctx context.Context, intent string, evide
 	return e.store.FinishNested(ctx, e.owner, intent, evidence)
 }
 
-func (e *Executor) typedRequest(method executionMethod, params any, id string) (proto.Message, error) {
-	base := func() (*executorpb.ExecutionScope, string, string) { return e.scope, e.sessionID, id }
+func (e *Executor) typedRequest(ctx context.Context, method executionMethod, params any, id string) (proto.Message, error) {
+	base := func() (*executorpb.ExecutionScope, string, string) {
+		return executionScopeFromContext(ctx, e.scopeSnapshot()), e.sessionID, id
+	}
 	scope, sid, rid := base()
 	switch method {
 	case executorMethodProcessStart:

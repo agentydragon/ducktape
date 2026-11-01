@@ -30,6 +30,27 @@ func TestPlanExecCommandClampsYield(t *testing.T) {
 	}
 }
 
+func TestExecCommandExpectedIncarnationArgument(t *testing.T) {
+	for _, input := range []string{
+		`{"cmd":"true","expected_incarnation_uid":""}`,
+		`{"cmd":"true","expected_incarnation_uid":" padded"}`,
+		`{"cmd":"true","expected_incarnation_uid":"padded "}`,
+		`{"cmd":"true","expected_incarnation_uid":"` + strings.Repeat("x", 257) + `"}`,
+	} {
+		if _, err := parseExecCommand(json.RawMessage(input)); err == nil {
+			t.Errorf("accepted invalid expected incarnation argument %s", input)
+		}
+	}
+	args, err := parseExecCommand(json.RawMessage(`{"cmd":"true","expected_incarnation_uid":"incarnation-uid"}`))
+	if err != nil || args.ExpectedIncarnationUID == nil || *args.ExpectedIncarnationUID != "incarnation-uid" {
+		t.Fatalf("parsed expected incarnation UID=%v error=%v", args.ExpectedIncarnationUID, err)
+	}
+	property, ok := execCommandToolDefinition().InputSchema.Properties["expected_incarnation_uid"]
+	if !ok || property.Type != "string" || property.Description == "" {
+		t.Fatalf("expected incarnation tool schema property=%+v, found=%v", property, ok)
+	}
+}
+
 func TestPlanExecCommandResolvesShellAndWorkdir(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
