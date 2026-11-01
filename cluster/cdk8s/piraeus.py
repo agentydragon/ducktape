@@ -677,6 +677,26 @@ def cluster_chart(app: App) -> Chart:
                         "DrbdOptions/auto-diskful-allow-cleanup": "true",
                     },
                 },
+                {
+                    # Auto-diskful moves a replica to the consumer after it stays on an HDD node.
+                    "name": "piraeus-hdd-2",
+                    "reclaimPolicy": "Retain",
+                    "volumeBindingMode": "WaitForFirstConsumer",
+                    "allowVolumeExpansion": True,
+                    "parameters": {
+                        "linstor.csi.linbit.com/storagePool": "hdd",
+                        "linstor.csi.linbit.com/placementCount": "2",
+                        "linstor.csi.linbit.com/replicasOnSame": (
+                            f"{node_scheduling.ZONE_LABEL}={node_scheduling.HIL_OVH_ZONE}"
+                        ),
+                        "linstor.csi.linbit.com/allowRemoteVolumeAccess": (
+                            f"- fromSame:\n  - {node_scheduling.ZONE_LABEL}\n"
+                        ),
+                        "DrbdOptions/auto-quorum": "suspend-io",
+                        "DrbdOptions/auto-diskful": "1",
+                        "DrbdOptions/auto-diskful-allow-cleanup": "true",
+                    },
+                },
             ],
         },
         post_renderers=[
