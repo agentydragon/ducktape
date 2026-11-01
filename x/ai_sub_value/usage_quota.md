@@ -59,6 +59,9 @@ without increasing the regular subscription allowance. Source panels share a
 Y scale within each provider; sources stay separate because cross-system request
 overlap may be unresolved. OpenAI has no Claude Code Web path.
 
+External estimate comparisons and notes on the All Done Sites Claude Usage
+Tracker are in [external-comparisons.md](external-comparisons.md).
+
 Calibration retains monotonic poll spans below saturation, with consistent
 reset metadata, gaps of at most 15 minutes, companion-gauge coverage and stable
 paid counters. Only a crossing span is discarded at a detected break. Undetected
