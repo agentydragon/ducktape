@@ -36,12 +36,7 @@ async def pod_cases(
         pod_runners.pool(cluster, base_url, token, limit=CASE_LIMIT) as borrow,
     ):
         resources = Resources(
-            cluster=cluster,
-            base_url=base_url,
-            token=token,
-            scripted=upstream,
-            dispatcher=dispatcher,
-            borrow=borrow,
+            cluster=cluster, base_url=base_url, token=token, scripted=upstream, dispatcher=dispatcher, borrow=borrow
         )
         selected_cases: dict[str, Case] = {}
         for item in request.session.items:

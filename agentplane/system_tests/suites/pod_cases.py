@@ -96,7 +96,13 @@ async def the_model_call_itself_goes_through_the_proxy(resources: Resources) -> 
         await run_harness_pair(
             client,
             lambda harness, model: egress.the_model_call_itself_goes_through_the_proxy(
-                resources.cluster, client, resources.dispatcher, runners.for_harness(harness), harness, model, resources.scripted
+                resources.cluster,
+                client,
+                resources.dispatcher,
+                runners.for_harness(harness),
+                harness,
+                model,
+                resources.scripted,
             ),
         )
 
