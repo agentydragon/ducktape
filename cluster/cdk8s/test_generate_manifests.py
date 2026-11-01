@@ -234,7 +234,7 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
     assert rugged_pool["lvmThinPool"] == ssd_satellite["storagePools"][0]["lvmThinPool"]
     assert rugged_satellite["podTemplate"] == wyrm2_satellite["podTemplate"]
 
-    ssd_class, hdd_class, replicated_ssd_class = values["storageClasses"]
+    ssd_class, hdd_class, replicated_ssd_class, replicated_hdd_class = values["storageClasses"]
     assert ssd_class == {
         "name": "piraeus-ssd-local",
         "reclaimPolicy": "Retain",
@@ -260,6 +260,19 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
     assert yaml.safe_load(replicated_parameters["linstor.csi.linbit.com/allowRemoteVolumeAccess"]) == [
         {"fromSame": ["topology.kubernetes.io/zone"]}
     ]
+
+    assert replicated_hdd_class["name"] == "piraeus-hdd-2"
+    hdd_replicated_parameters = replicated_hdd_class["parameters"]
+    assert hdd_replicated_parameters["linstor.csi.linbit.com/storagePool"] == "hdd"
+    assert hdd_replicated_parameters["linstor.csi.linbit.com/placementCount"] == "2"
+    assert hdd_replicated_parameters["linstor.csi.linbit.com/replicasOnSame"] == replicated_parameters[
+        "linstor.csi.linbit.com/replicasOnSame"
+    ]
+    assert hdd_replicated_parameters["linstor.csi.linbit.com/allowRemoteVolumeAccess"] == replicated_parameters[
+        "linstor.csi.linbit.com/allowRemoteVolumeAccess"
+    ]
+    assert hdd_replicated_parameters["DrbdOptions/auto-quorum"] == "suspend-io"
+    assert "DrbdOptions/auto-diskful" not in hdd_replicated_parameters
 
     operator_flux = next(
         doc

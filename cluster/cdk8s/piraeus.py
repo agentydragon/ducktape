@@ -677,6 +677,25 @@ def cluster_chart(app: App) -> Chart:
                         "DrbdOptions/auto-diskful-allow-cleanup": "true",
                     },
                 },
+                {
+                    # Large volumes keep their existing copies instead of automatically moving a
+                    # diskful replica when a workload schedules onto another HDD node.
+                    "name": "piraeus-hdd-2",
+                    "reclaimPolicy": "Retain",
+                    "volumeBindingMode": "WaitForFirstConsumer",
+                    "allowVolumeExpansion": True,
+                    "parameters": {
+                        "linstor.csi.linbit.com/storagePool": "hdd",
+                        "linstor.csi.linbit.com/placementCount": "2",
+                        "linstor.csi.linbit.com/replicasOnSame": (
+                            f"{node_scheduling.ZONE_LABEL}={node_scheduling.HIL_OVH_ZONE}"
+                        ),
+                        "linstor.csi.linbit.com/allowRemoteVolumeAccess": (
+                            f"- fromSame:\n  - {node_scheduling.ZONE_LABEL}\n"
+                        ),
+                        "DrbdOptions/auto-quorum": "suspend-io",
+                    },
+                },
             ],
         },
         post_renderers=[
