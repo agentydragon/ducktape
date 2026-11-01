@@ -319,7 +319,7 @@ export async function threadNativeFrames(
     frames: response.frames.map((frame) => ({
       source_sequence: frame.sourceSequence.toString(),
       availability: frame.entry ? "present" : "unavailable",
-      entry: frame.entry ? (toJson(EventEntrySchema, frame.entry) as Record<string, unknown>) : {},
+      entry: frame.entry ? toJson(EventEntrySchema, frame.entry) : {},
     })),
     next_after_sequence: response.nextAfterSequence?.toString() ?? null,
   };
