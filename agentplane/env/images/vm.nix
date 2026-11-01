@@ -96,7 +96,7 @@ in
 {
   imports = [ ./../../../nix/nixos/modules/vm-hardware.nix ];
 
-  networking.hostName = "agentplane-runner-vm";
+  networking.hostName = "agentplane-environment-vm";
   # The Runner Gateway initiates mTLS gRPC connections to the guest's runner listener.
   networking.firewall.allowedTCPPorts = [ 9090 ];
   services.openssh.enable = lib.mkForce false;
