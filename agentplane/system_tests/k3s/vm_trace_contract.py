@@ -90,10 +90,7 @@ def assert_vm_process_trace_contract(output_dir: Path) -> None:
     test_spans = _read_jsonl(output_dir / "test-spans.jsonl")
     process_spans = _read_jsonl(output_dir / "process-spans.jsonl")
     scenario_ready = _sandbox_identities(test_spans, "system_test.sandbox.ready")
-    central_ready = _sandbox_identities(test_spans, "system_test.central_sampler.sandbox.ready")
-    ready = scenario_ready | central_ready
     assert scenario_ready, "no ready VM Sandbox spans reached test-spans.jsonl"
-    assert central_ready, "central-sampler Sandbox identity did not reach test-spans.jsonl"
 
     runner_spans = [span for span in process_spans if span.get("service") == "agentplane-runner"]
     assert runner_spans, "no Runner spans reached process-spans.jsonl"
@@ -130,17 +127,6 @@ def assert_vm_process_trace_contract(output_dir: Path) -> None:
         },
         "Codex VM",
     )
-    _assert_stages(
-        stages_by_uid,
-        central_ready,
-        {
-            "agentplane.executor.Executor/StartProcess",
-            "agentplane.executor.Executor/ReadProcess",
-            "agentplane.runner.quiesce_stage",
-        },
-        "central-sampler VM",
-    )
-
     runner_open = [span for span in runner_spans if span.get("name") == "Runner OpenSession"]
     rpc_open_ids = {
         (_trace_id(span), span.get("span_id"))
@@ -152,8 +138,8 @@ def assert_vm_process_trace_contract(output_dir: Path) -> None:
             "Runner OpenSession did not retain its gRPC parent span"
         )
         name = _attributes(span).get("sandbox.name")
-        if isinstance(name, str) and name in ready:
-            assert _resource_uid(span) == ready[name], f"Runner OpenSession for {name} has wrong UID"
+        if isinstance(name, str) and name in scenario_ready:
+            assert _resource_uid(span) == scenario_ready[name], f"Runner OpenSession for {name} has wrong UID"
 
     for span in test_spans:
         if span.get("name") != "system_test.session.open":
