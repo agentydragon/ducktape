@@ -104,12 +104,11 @@ impl PreparedPurity {
         // A disagreement is possible only for a previously pure owner.
         // Preserve that exact diagnostic projection only on this rare path.
         let prepared = self.is_pure().then(|| self.0.clone().project());
-        let mut dependencies = self.proof_dependencies();
-        dependencies.extend(&certificate.dependencies);
-        let completed = self
+        let effects = self
             .0
-            .discharge_call(certificate.call_span, &certificate.dependencies)
-            .project();
+            .discharge_call(certificate.call_span, &certificate.dependencies);
+        let dependencies = effects.proof_dependencies();
+        let completed = effects.project();
         let disagreement = prepared.filter(|_| !completed.is_pure()).map(|prepared| {
             crate::reports::schema::PurityCompletionDisagreement {
                 prepared,
