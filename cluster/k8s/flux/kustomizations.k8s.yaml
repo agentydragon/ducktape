@@ -3010,11 +3010,9 @@ spec:
       name: sops-age-cluster-secrets
   deletionPolicy: Orphan
   dependsOn:
-    - name: valkey
-      namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
-    - name: seaweedfs-operator
+    - name: piraeus-cluster
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/oci-cache

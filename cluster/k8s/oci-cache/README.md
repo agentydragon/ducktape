@@ -11,7 +11,6 @@ allowlisting every registry CDN.
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Registry            | Zot (`ghcr.io/project-zot/zot-linux-amd64`, full image — needs the `sync` extension)                                                                                                                                                                                                                                                                                                                                        |
 | Content and indexes | `zot-cache` PVC on `piraeus-hdd-2` (100 GiB, two replicas); Zot uses local BoltDB and filesystem hard links for deduplication. `Recreate` keeps a single writer; Zot runs in `hil-ovh`, where the class permits access to its replicas.                                                                                                                                                                                     |
-| Previous backend    | The SeaweedFS `registry-cache` bucket and dedicated `oci-cache-valkey` remain temporarily for rollback; the new filesystem starts with independent empty indexes.                                                                                                                                                                                                                                                           |
 | Metrics             | Zot Prometheus metrics at `/metrics`, scraped by Alloy into Mimir through the namespace-local `ServiceMonitor`                                                                                                                                                                                                                                                                                                              |
 | Internal exposure   | ClusterIP, plain HTTP on `oci-cache.oci-cache.svc:80` (→ Zot container 5000), no auth. This is intentional: dockerd's Docker Hub `--registry-mirror` probe does not attach Docker-config credentials for the mirror host. (Port 80 is for conventional addressing; a port-restricted egress policy must still allow the **backend** port 5000 — Cilium enforces egress on the translated targetPort, not the Service port.) |
 | Public exposure     | `https://oci-cache.allegedly.works` routes to the nginx `public-auth-proxy` sidecar on Service port 8080. The sidecar enforces the `puller-credential` htpasswd and then proxies to the unauthenticated in-pod Zot listener.                                                                                                                                                                                                |
@@ -120,22 +119,6 @@ Root-mirror validation for haku-ci's dockerd path:
 ```bash
 kubectl -n haku-ci exec deploy/haku-runner -c dind -- \
   docker -H tcp://127.0.0.1:2375 pull --platform=linux/amd64 catthehacker/ubuntu:act-latest
-```
-
-Valkey storage cutovers are destructive but rebuildable. The `RedisReplication` owns the
-StatefulSet, while the StatefulSet-created PVCs are standalone objects. If the
-`volumeClaimTemplate` storage class changes, Flux updates the `RedisReplication`, but the
-existing StatefulSet/PVCs keep their original storage class. Roll it by deleting the
-operator-owned StatefulSet, deleting the old PVCs, waiting for the PVC deletion to finish,
-and then letting the operator recreate the StatefulSet. If the operator recreates the
-StatefulSet before the old PVCs finish terminating, it can reattach those old PVC names;
-delete the StatefulSet again so the pending PVC deletion completes and the next creation
-gets fresh claims from the updated template. Afterward verify:
-
-```bash
-kubectl -n oci-cache get sts,pod,pvc -l app=oci-cache-valkey -o wide
-kubectl -n oci-cache exec oci-cache-valkey-0 -c oci-cache-valkey -- \
-  redis-cli -p 6379 INFO replication
 ```
 
 This path was last checked with haku-state's push-triggered `validate-state` workflow after

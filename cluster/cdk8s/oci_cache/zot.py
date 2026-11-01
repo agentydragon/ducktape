@@ -1,6 +1,5 @@
-"""The Zot OCI pull-through cache: its Namespace, the `registry-cache` SeaweedFS `PrivateBucket`
-holding its content, the Deployment (Zot plus the nginx basic-auth sidecar for the public
-endpoint), Service, HTTPRoute, ServiceMonitor and dedupe-cache `RedisReplication`.
+"""The Zot OCI pull-through cache: its Namespace, persistent volume, Deployment
+(Zot plus the nginx basic-auth sidecar), Service, HTTPRoute and ServiceMonitor.
 
 Hand-written beside the generated output (cluster/k8s/oci-cache): `kustomization.yaml`
 (its configMapGenerator renders `config.json` and `public-auth-proxy.conf`) and
@@ -11,8 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart, JsonPatch, Size
-from cdk8s_plus_34 import Cpu, k8s
+from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import k8s
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import namespaces
@@ -21,9 +20,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
-from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/oci-cache"
 _NAMESPACE = "oci-cache"
@@ -33,7 +30,6 @@ _PODS = Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),))
 HTTP = ServiceRef(name=_NAMESPACE, port=Port(name="http", number=80), pods=_PODS, target_port=5000)
 # The nginx sidecar's authenticated port on the same Service.
 _PUBLIC_AUTH = ServiceRef(name=_NAMESPACE, port=Port(name="public-auth", number=8080), pods=_PODS)
-_VALKEY = "oci-cache-valkey"
 
 
 def _tcp_probe(port: str, *, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
@@ -42,24 +38,6 @@ def _tcp_probe(port: str, *, initial_delay_seconds: int, period_seconds: int) ->
         initial_delay_seconds=initial_delay_seconds,
         period_seconds=period_seconds,
     )
-
-
-def _storage(chart: Chart) -> s3.PrivateBucket:
-    storage = s3.PrivateBucket(
-        chart,
-        "storage",
-        name="registry-cache",
-        tenant=_NAMESPACE,
-        # The existing cache bucket was handed to the tenant-local CR.
-        adopt_existing=True,
-        description="Zot's OCI pull-through cache: manifests and blobs.",
-        key_fields=None,
-    )
-    # This bucket and its identity held only the disposable S3 cache. Stage
-    # operator-owned deletion policies before removing these CRs in a follow-up.
-    for resource in (storage.bucket, storage.credentials, storage.identity):
-        resource.add_json_patch(JsonPatch.replace("/spec/reclaimPolicy", "Delete"))
-    return storage
 
 
 def _deployment(chart: Chart) -> None:
@@ -204,8 +182,6 @@ def _deployment(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAMESPACE, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO)
-    # Retain the previous backend until the filesystem cutover has been verified.
-    _storage(chart)
     _deployment(chart)
     k8s.KubeService(
         chart,
@@ -262,21 +238,6 @@ def chart(app: App) -> Chart:
         ),
         selector=ServiceMonitorSpecSelector(match_labels=HTTP.labels),
         endpoints=[Endpoint.plain(port=HTTP.port.name, scrape_timeout="10s")],
-    )
-    valkey_instance(
-        chart,
-        name=_VALKEY,
-        namespace=_NAMESPACE,
-        description=(
-            "Former S3-backed Zot dedupe/metadata cache, retained temporarily during the filesystem cutover."
-            " The new filesystem uses independent local indexes and does not connect to this instance."
-        ),
-        memory_request=Size.mebibytes(64),
-        cpu_limit=Cpu.millis(200),
-        memory_limit=Size.mebibytes(256),
-        max_memory_percent_of_limit=80,
-        storage_class="piraeus-hdd-local",
-        storage_size=Size.gibibytes(2),
     )
     return chart
 
