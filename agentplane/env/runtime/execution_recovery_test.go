@@ -271,6 +271,7 @@ func TestSystemdHealthLossFencesInvocationBeforeReplacement(t *testing.T) {
 	go old.monitorHealth(healthCtx, 5*time.Millisecond, 100*time.Millisecond, 1)
 
 	var starts atomic.Int32
+	var replacementHandle *supervisedExecutionHandle
 	r := &Runtime{
 		config:         Config{CodexExecServer: &codexexecserver.Config{URL: "ws://executor.invalid"}},
 		executionOwner: old, executionConn: oldConn, executionUID: "test-incarnation",
@@ -288,8 +289,9 @@ func TestSystemdHealthLossFencesInvocationBeforeReplacement(t *testing.T) {
 				_ = conn.Close()
 				return nil, err
 			}
+			replacementHandle = &supervisedExecutionHandle{conn: conn, exited: make(chan childExit, 1)}
 			events <- "replacement-ready"
-			return &supervisedExecutionHandle{conn: conn, exited: make(chan childExit, 1)}, nil
+			return replacementHandle, nil
 		}},
 	}
 	go r.watchExecutionProcess(old, "test-incarnation", old)
@@ -327,6 +329,25 @@ func TestSystemdHealthLossFencesInvocationBeforeReplacement(t *testing.T) {
 	}
 	if got := starts.Load(); got != 1 {
 		t.Fatalf("replacement count = %d, want one", got)
+	}
+	installCtx, cancelInstall := context.WithTimeout(t.Context(), time.Second)
+	defer cancelInstall()
+	for {
+		r.mu.Lock()
+		newOwner := r.executionOwner
+		changed := r.changes
+		r.mu.Unlock()
+		if newOwner == replacementHandle {
+			break
+		}
+		if newOwner != nil && newOwner != old {
+			t.Fatalf("Runtime installed an unexpected execution handle %T", newOwner)
+		}
+		select {
+		case <-changed:
+		case <-installCtx.Done():
+			t.Fatal("Runtime did not install the healthy replacement handle")
+		}
 	}
 	r.mu.Lock()
 	newOwner := r.executionOwner
