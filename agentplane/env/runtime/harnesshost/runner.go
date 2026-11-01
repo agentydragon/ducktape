@@ -53,24 +53,12 @@ type Runner struct {
 	runtimeBridge       RuntimeBridge
 }
 
-func New(config Config) (*Runner, error) {
-	return newRunner(config, nil)
-}
-
 // NewEmbedded registers Host controllers in the Runtime-owned engine and store.
 // Runtime retains responsibility for stopping and joining that engine.
-func NewEmbedded(config Config, store state.State, engine *cosiruntime.Runtime, engineDone <-chan struct{}) (*Runner, error) {
-	if store == nil || engine == nil || engineDone == nil {
+func NewEmbedded(config Config, lifecycleState state.State, engine *cosiruntime.Runtime, engineDone <-chan struct{}) (*Runner, error) {
+	if lifecycleState == nil || engine == nil || engineDone == nil {
 		return nil, errors.New("embedded Host requires Runtime state, engine and completion signal")
 	}
-	return newRunnerWithEngine(config, store, engine, engineDone)
-}
-
-func newRunner(config Config, lifecycleState state.State) (*Runner, error) {
-	return newRunnerWithEngine(config, lifecycleState, nil, nil)
-}
-
-func newRunnerWithEngine(config Config, lifecycleState state.State, engine *cosiruntime.Runtime, engineDone <-chan struct{}) (*Runner, error) {
 	if err := config.resolveSessionReconcileConcurrency(); err != nil {
 		return nil, err
 	}
@@ -115,7 +103,7 @@ func newRunnerWithEngine(config Config, lifecycleState state.State, engine *cosi
 		_ = owner.Close()
 		return nil, err
 	}
-	l, err := newLifecycleWithEngine(r, lifecycleState, engine, engineDone)
+	l, err := newLifecycle(r, lifecycleState, engine, engineDone)
 	if err != nil {
 		cancel()
 		_ = owner.Close()
@@ -132,11 +120,7 @@ func newRunnerWithEngine(config Config, lifecycleState state.State, engine *cosi
 		_ = owner.Close()
 		return nil, err
 	}
-	if l.ownedEngine {
-		go l.run()
-	} else {
-		go l.observeSharedEngine()
-	}
+	go l.observeSharedEngine()
 	return r, nil
 }
 

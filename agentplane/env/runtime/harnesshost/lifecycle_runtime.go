@@ -3,7 +3,6 @@ package harnesshost
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
@@ -14,48 +13,30 @@ import (
 	// Avoid the collision with the runner runtime state.
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/state"
-	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
-	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
-	"go.uber.org/zap"
 )
 
 type lifecycle struct {
-	runner      *Runner
-	state       state.State
-	engine      *cosiruntime.Runtime
-	ownedEngine bool
-	engineDone  <-chan struct{}
-	done        context.Context
-	finish      context.CancelCauseFunc
-	publishMu   sync.Mutex
-	workers     sync.WaitGroup
-	processes   *supervision.Host
+	runner     *Runner
+	state      state.State
+	engine     *cosiruntime.Runtime
+	engineDone <-chan struct{}
+	done       context.Context
+	finish     context.CancelCauseFunc
+	publishMu  sync.Mutex
+	workers    sync.WaitGroup
+	processes  *supervision.Host
 }
 
-func newLifecycle(r *Runner, store state.State) (*lifecycle, error) {
-	return newLifecycleWithEngine(r, store, nil, nil)
-}
-
-func newLifecycleWithEngine(r *Runner, store state.State, engine *cosiruntime.Runtime, engineDone <-chan struct{}) (*lifecycle, error) {
+func newLifecycle(r *Runner, store state.State, engine *cosiruntime.Runtime, engineDone <-chan struct{}) (*lifecycle, error) {
 	if err := r.config.resolveSessionReconcileConcurrency(); err != nil {
 		return nil, err
 	}
-	if store == nil {
-		store = state.WrapCore(namespaced.NewState(inmem.Build))
-	}
-	ownedEngine := engine == nil
-	if ownedEngine {
-		var err error
-		engine, err = cosiruntime.NewRuntime(store, zap.L().Named("lifecycle"))
-		if err != nil {
-			return nil, err
-		}
-	} else if engineDone == nil {
+	if store == nil || engine == nil || engineDone == nil {
 		return nil, errors.New("embedded Host requires the Runtime engine completion signal")
 	}
 	// Completion is separate from Runner cancellation: workers are joined only after the engine exits.
 	done, finish := context.WithCancelCause(context.WithoutCancel(r.ctx))
-	l := &lifecycle{runner: r, state: store, engine: engine, ownedEngine: ownedEngine, engineDone: engineDone, done: done, finish: finish}
+	l := &lifecycle{runner: r, state: store, engine: engine, engineDone: engineDone, done: done, finish: finish}
 	l.processes = supervision.NewHost(r.ctx, l.state, runnerlifecycle.Namespace, &l.workers, r.fail)
 	if r.config.Codex != nil {
 		appServer, err := codexappserver.NewHost(*r.config.Codex, codexappserver.Dependencies{
@@ -110,21 +91,6 @@ func (l *lifecycle) registerControllers() error {
 func (r *Runner) launchProcess(ctx context.Context, owner string, supervisor *supervision.Supervisor, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
 	generation := r.lifecycle.desiredState().Generation
 	return r.lifecycle.processes.Launch(ctx, owner, generation, supervisor, config)
-}
-
-func (l *lifecycle) run() {
-	err := l.engine.Run(l.runner.ctx)
-	switch {
-	case err != nil && !errors.Is(err, context.Canceled):
-		err = fmt.Errorf("Runner lifecycle engine stopped: %w", err)
-	case l.runner.ctx.Err() != nil:
-		l.finish(context.Cause(l.runner.ctx))
-		return
-	default:
-		err = errors.New("Runner lifecycle engine stopped unexpectedly")
-	}
-	l.finish(err)
-	l.runner.fail(err)
 }
 
 func (l *lifecycle) desiredState() runnerlifecycle.Desired {

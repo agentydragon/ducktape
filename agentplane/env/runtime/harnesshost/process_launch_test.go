@@ -175,7 +175,7 @@ func TestManagedProcessBlocksCloseUntilFence(t *testing.T) {
 
 func newManagedProcessTestRunner(t *testing.T) *Runner {
 	t.Helper()
-	r, err := New(Config{StateDir: t.TempDir()})
+	r, err := newTestRunner(Config{StateDir: t.TempDir()}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

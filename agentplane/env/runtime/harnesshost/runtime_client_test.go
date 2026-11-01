@@ -23,7 +23,7 @@ func boundaryHost(t *testing.T) (*Runner, context.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 	root := t.TempDir()
-	r, err := New(Config{StateDir: root, Launch: configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{UID: "sandbox"}}})
+	r, err := newTestRunner(Config{StateDir: root, Launch: configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{UID: "sandbox"}}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
