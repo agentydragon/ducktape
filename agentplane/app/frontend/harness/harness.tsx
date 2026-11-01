@@ -51,14 +51,7 @@ import type { Connection } from "../connections/models";
 import { dispatchFromJson } from "../threads/client";
 import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { McpLinkageView } from "../mcp_linkage_client";
-import type {
-  GitHubSubject,
-  InboxNoticeState,
-  InboxStatus,
-  SandboxNotificationStatus,
-  SessionNoticeStates,
-  SubscriptionStatus,
-} from "../notification_types";
+import type { GitHubSubject, InboxStatus, SandboxNotificationStatus, SubscriptionStatus } from "../notification_types";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
 import { CommandSchema } from "../../../proto/command_pb";
 import { EventEntrySchema } from "../../../proto/event_log_pb";
@@ -3527,8 +3520,18 @@ function liveEvents(url: URL): ServerSentEvent[] {
     const snapshot: SandboxesSnapshot = { sandboxes: SANDBOXES, watch: watch() };
     return [{ event: "snapshot", data: snapshot }];
   }
-  if (url.pathname === "/threads/notices/stream") {
-    const states: Record<string, Partial<InboxNoticeState>> = {
+  if (url.pathname === "/upstream/notifications/v1/operator/notices:watch") {
+    const states: Record<
+      string,
+      {
+        queued?: number;
+        unacknowledged?: number;
+        notice?: string;
+        noticeWaitReason?: string;
+        eligibleAt?: string;
+        error?: string;
+      }
+    > = {
       [THREE_UNPROCESSED_THREAD]: {
         queued: 2,
         unacknowledged: 1,
@@ -3540,17 +3543,16 @@ function liveEvents(url: URL): ServerSentEvent[] {
       [DELIVERY_FAILED_THREAD]: { queued: 1, notice: "NOTICE_PROGRESS_ATTEMPTED", error: "runner unreachable" },
     };
     const inboxes = url.searchParams
-      .getAll("thread_id")
+      .getAll("sessionIds")
       .filter((session) => session in states)
-      .map((session): InboxNoticeState => ({
+      .map((session) => ({
         inboxId: `inbox-${session}`,
         sessionId: session,
         queued: 0,
         unacknowledged: 0,
         ...states[session],
       }));
-    const snapshot: SessionNoticeStates = { observedAt: ago(0), inboxes };
-    return [{ event: "snapshot", data: snapshot }];
+    return [{ event: "snapshot", data: { snapshot: { observedAt: ago(0), inboxes } } }];
   }
   const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
   const notification = url.pathname.match(/^\/sandboxes\/([^/]+)\/notifications\/stream$/);
@@ -3590,7 +3592,8 @@ function liveEvents(url: URL): ServerSentEvent[] {
 
 /** Whether the stream at `url` drops once it has sent its events. */
 function drops(url: URL): boolean {
-  if (url.pathname === "/threads/notices/stream") return flags.has("threadStreamDropped");
+  if (url.pathname === "/live/threads" || url.pathname === "/upstream/notifications/v1/operator/notices:watch")
+    return flags.has("threadStreamDropped");
   if (url.pathname === "/live/sandboxes") return flags.has("inventoryStreamDropped");
   if (/^\/sandboxes\/[^/]+\/notifications\/stream$/.test(url.pathname))
     return flags.has("notificationStatusUnavailable");
@@ -3603,7 +3606,7 @@ const droppedStreams = new Set<string>();
 
 routes.unshift([
   "GET",
-  /^\/(live\/.+|threads\/notices\/stream|sandboxes\/[^/]+\/(notifications|console)\/stream)$/,
+  /^\/(live\/.+|upstream\/notifications\/v1\/operator\/notices:watch|sandboxes\/[^/]+\/(notifications|console)\/stream)$/,
   (match, query, signal) => {
     const url = new URL(`${match[0]}?${query.toString()}`, "http://harness");
     const key = `${url.pathname}${url.search}`;
@@ -3611,6 +3614,10 @@ routes.unshift([
     if (!drop) droppedStreams.delete(key);
     else if (droppedStreams.has(key)) return UNANSWERED;
     else droppedStreams.add(key);
+    if (url.pathname === "/upstream/notifications/v1/operator/notices:watch") {
+      const results = (): unknown[] => liveEvents(url).map(({ data }) => data);
+      return liveNdjsonWatch(url.pathname, results(), results, signal, drop);
+    }
     return liveEventStream(url.pathname, () => liveEvents(url), signal, drop);
   },
 ]);

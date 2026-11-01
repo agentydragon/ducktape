@@ -6,11 +6,18 @@
  * Every snapshot is the Notification Service's current state, so a reconnect needs no resume.
  */
 import { Badge, Tooltip } from "@mantine/core";
-import type { JSX } from "react";
+import { fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
+import { TimestampSchema } from "@bufbuild/protobuf/wkt";
+import { useEffect, useState, type JSX } from "react";
 
 import { clockTime } from "../format_time";
-import { useSnapshotStream } from "../live_stream";
-import type { InboxNoticeState, SessionNoticeStates } from "../notification_types";
+import { type StreamConnection } from "../stream_reader";
+import { followWatch } from "../watch_stream";
+import {
+  NoticeProgress,
+  WatchSessionNoticesResponseSchema,
+  type SessionNoticeStates,
+} from "../../../notification_service/notifications_operator_pb";
 
 /** The route's own bound, as many threads as one listing page carries. */
 const MAX_THREADS = 200;
@@ -18,25 +25,64 @@ const MAX_THREADS = 200;
 export interface ThreadNotices {
   /** By Session ID, which is the thread's ID; a thread with no live inbox has no entry. Null until
    * the first snapshot. */
-  bySession: Map<string, InboxNoticeState[]> | null;
+  bySession: Map<string, ThreadNoticeState[]> | null;
   live: boolean;
 }
 
+export type ThreadNoticeState = {
+  sessionId: string;
+  queued: number;
+  unacknowledged: number;
+  notice?: NoticeProgress;
+  eligibleAt?: string;
+  error?: string;
+};
+
 export function threadNoticesUrl(threadIds: readonly string[]): string {
   const query = new URLSearchParams();
-  for (const id of threadIds.slice(0, MAX_THREADS)) query.append("thread_id", id);
-  return `/threads/notices/stream?${query}`;
+  for (const id of threadIds.slice(0, MAX_THREADS)) query.append("sessionIds", id);
+  return `/upstream/notifications/v1/operator/notices:watch?${query}`;
 }
 
 /** Follows the notification state of `threadIds`, newest first; past the route's bound the oldest
  * go without. */
 export function useThreadNotices(threadIds: readonly string[]): ThreadNotices {
   const url = threadIds.length === 0 ? null : threadNoticesUrl(threadIds);
-  const { snapshot, connection } = useSnapshotStream<SessionNoticeStates>(url);
+  const [snapshot, setSnapshot] = useState<SessionNoticeStates | null>(null);
+  const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
+  useEffect(() => {
+    if (url === null) {
+      setSnapshot(null);
+      return;
+    }
+    let firstOpen = true;
+    return followWatch(url, {
+      initialFrameTimeoutMs: 5_000,
+      onOpen: () => {
+        if (firstOpen) setSnapshot(null);
+        firstOpen = false;
+      },
+      onFrame: (json) => {
+        const response = fromJson(WatchSessionNoticesResponseSchema, json as JsonValue);
+        if (response.frame.case === "snapshot") setSnapshot(response.frame.value);
+        else if (response.frame.case !== "reconnectRequired") throw new Error("Notification watch returned no frame");
+      },
+      onConnection: setConnection,
+    });
+  }, [url]);
   if (url === null || snapshot === null) return { bySession: null, live: false };
-  const bySession = new Map<string, InboxNoticeState[]>();
-  for (const inbox of snapshot.inboxes)
-    bySession.set(inbox.sessionId, [...(bySession.get(inbox.sessionId) ?? []), inbox]);
+  const bySession = new Map<string, ThreadNoticeState[]>();
+  for (const inbox of snapshot.inboxes) {
+    const state: ThreadNoticeState = {
+      sessionId: inbox.sessionId,
+      queued: inbox.queued,
+      unacknowledged: inbox.unacknowledged,
+      notice: inbox.notice,
+      error: inbox.error,
+      eligibleAt: inbox.eligibleAt ? (toJson(TimestampSchema, inbox.eligibleAt) as string) : undefined,
+    };
+    bySession.set(inbox.sessionId, [...(bySession.get(inbox.sessionId) ?? []), state]);
+  }
   return { bySession, live: connection.phase === "live" };
 }
 
@@ -51,14 +97,14 @@ export function ThreadNoticeBadge({
   inboxes,
   live,
 }: {
-  inboxes: readonly InboxNoticeState[];
+  inboxes: readonly ThreadNoticeState[];
   live: boolean;
 }): JSX.Element | null {
   const queued = inboxes.reduce((sum, inbox) => sum + inbox.queued, 0);
   const unacknowledged = inboxes.reduce((sum, inbox) => sum + inbox.unacknowledged, 0);
   const error = inboxes.find((inbox) => inbox.error !== undefined)?.error;
   if (error === undefined && queued === 0 && unacknowledged === 0) return null;
-  const sending = inboxes.some((inbox) => inbox.unacknowledged > 0 && inbox.notice !== "NOTICE_PROGRESS_CONFIRMED");
+  const sending = inboxes.some((inbox) => inbox.unacknowledged > 0 && inbox.notice !== NoticeProgress.CONFIRMED);
   const eligible = inboxes
     .map((inbox) => inbox.eligibleAt)
     .filter((at): at is string => at !== undefined)

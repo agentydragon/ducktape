@@ -22,6 +22,8 @@ from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 
 # gazelle:include_dep @pypi//protobuf
 
+NOTICES_WATCH = "/upstream/notifications/v1/operator/notices:watch"
+
 
 @dataclass
 class Peer:
@@ -89,11 +91,13 @@ async def test_thread_watch_filters_session_ids_and_relays_protojson(http: httpx
     peer.service.session_script.put_nowait(
         notifications_operator_pb2.WatchSessionNoticesResponse(reconnect_required=Empty())
     )
-    response = await http.get("/threads/notices/stream", params=[("thread_id", value) for value in ids])
+    response = await http.get(NOTICES_WATCH, params=[("sessionIds", value) for value in ids])
     assert response.status_code == 200, response.text
-    data = json.loads(next(line[6:] for line in response.text.splitlines() if line.startswith("data: ")))
+    frames = [json.loads(line)["result"] for line in response.text.splitlines()]
+    data = frames[0]["snapshot"]
     assert data["inboxes"][0]["sessionId"] == ids[1]
     assert data["inboxes"][0]["unacknowledged"] == 3
+    assert "reconnectRequired" in frames[1]
     assert [list(request.session_ids) for request in peer.service.session_requests] == [ids]
 
 
@@ -106,12 +110,10 @@ async def test_notification_stream_closes_and_cancels_upstream(
             snapshot=notifications_operator_pb2.SessionNoticeStates()
         )
     )
-    async with http.stream("GET", "/threads/notices/stream", params={"thread_id": str(uuid4())}) as response:
+    async with http.stream("GET", NOTICES_WATCH, params={"sessionIds": str(uuid4())}) as response:
         assert response.status_code == 200
         lines = response.aiter_lines()
-        assert await anext(lines) == "event: snapshot"
-        assert json.loads((await anext(lines)).removeprefix("data: ")) == {"inboxes": []}
-        assert await anext(lines) == ""
+        assert json.loads(await anext(lines))["result"]["snapshot"].get("inboxes", []) == []
         if ending == "failure":
             peer.service.session_script.put_nowait(grpc.StatusCode.UNAVAILABLE)
         elif ending == "eof":
@@ -122,16 +124,25 @@ async def test_notification_stream_closes_and_cancels_upstream(
             assert (await http.post("/auth/logout")).status_code == 303
         if ending != "disconnect":
             async with asyncio.timeout(5):
-                assert [line async for line in lines] == []
+                remaining = [json.loads(line) async for line in lines]
+            if ending == "failure":
+                assert len(remaining) == 1
+                assert remaining[0]["error"]["code"] == grpc.StatusCode.UNAVAILABLE.value[0]
+                assert remaining[0]["error"]["message"] == "scripted failure"
+            elif ending in {"sigterm", "logout"}:
+                assert len(remaining) == 1
+                assert remaining[0]["error"]["code"] == grpc.StatusCode.CANCELLED.value[0]
+                assert remaining[0]["error"]["message"] == "context canceled"
+            else:
+                assert remaining == []
     if ending in {"disconnect", "sigterm", "logout"}:
         async with asyncio.timeout(5):
             await peer.service.hung_up.wait()
-    assert ("Notification stream interrupted" in app.stderr.read_text()) == (ending == "failure")
 
 
 async def test_notification_watch_requires_browser_login(app: AppProcess, agent_auth: dict[str, str]) -> None:
     async with httpx.AsyncClient(base_url=app.url, headers=agent_auth) as workload:
-        response = await workload.get("/threads/notices/stream", params={"thread_id": str(uuid4())})
+        response = await workload.get(NOTICES_WATCH, params={"sessionIds": str(uuid4())})
     assert response.status_code == 403
 
 

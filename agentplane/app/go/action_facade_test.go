@@ -18,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	connectionpb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
+	notificationpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -56,6 +57,61 @@ type generatedDispatcherService struct {
 
 type generatedMetadataDispatcherService struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
+}
+
+type generatedNotificationService struct {
+	notificationpb.UnimplementedNotificationsOperatorServer
+	sessionIDs    []string
+	authorization []string
+}
+
+func (s *generatedNotificationService) WatchSessionNotices(request *notificationpb.WatchSessionNoticesRequest, stream grpc.ServerStreamingServer[notificationpb.WatchSessionNoticesResponse]) error {
+	s.sessionIDs = request.GetSessionIds()
+	md, _ := metadata.FromIncomingContext(stream.Context())
+	s.authorization = md.Get("authorization")
+	return stream.Send(&notificationpb.WatchSessionNoticesResponse{Frame: &notificationpb.WatchSessionNoticesResponse_Snapshot{Snapshot: &notificationpb.SessionNoticeStates{}}})
+}
+
+func TestGeneratedNotificationWatchBindsRepeatedSessionIDsAndServiceToken(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &generatedNotificationService{}
+	server := grpc.NewServer()
+	notificationpb.RegisterNotificationsOperatorServer(server, service)
+	serveDone := make(chan struct{})
+	go func() {
+		defer close(serveDone)
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+		<-serveDone
+	})
+	handler, err := facade.NewHandler(t.Context(), listener.Addr().String(), 10*time.Second, notificationpb.RegisterNotificationsOperatorHandlerFromEndpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokenFile := filepath.Join(t.TempDir(), "notification-token")
+	if err := os.WriteFile(tokenFile, []byte("service-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/upstream/notifications/v1/operator/notices:watch?sessionIds=a&sessionIds=b", nil)
+	response := httptest.NewRecorder()
+	if err := proxy.NewHandlerUpstream(handler, tokenFile).ForwardHTTP(response, request, request.Context(), "v1/operator/notices:watch", ""); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"snapshot"`) {
+		t.Fatalf("notification watch status=%d body=%s", response.Code, response.Body.String())
+	}
+	if len(service.sessionIDs) != 2 || service.sessionIDs[0] != "a" || service.sessionIDs[1] != "b" {
+		t.Fatalf("bound session IDs = %v", service.sessionIDs)
+	}
+	if len(service.authorization) != 1 || service.authorization[0] != "Bearer service-token" {
+		t.Fatalf("notification authorization = %v", service.authorization)
+	}
 }
 
 func (s *generatedDispatcherService) GetDispatch(ctx context.Context, request *dispatcherpb.GetDispatchRequest) (*dispatcherpb.GetDispatchResponse, error) {

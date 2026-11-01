@@ -33,7 +33,6 @@ import { resumeSandbox } from "../sandboxes/client";
 import { historyRows, rowKey } from "./history_rows";
 import { SandboxesLiveProvider } from "../sandboxes/live";
 import { ThreadsLiveProvider, useRequiredThreadsLive } from "./live";
-import type { InboxNoticeState } from "../notification_types";
 import { LocalCommands } from "./local_commands";
 import { STREAMING_CURSOR } from "../../../../util/frontend/markdown";
 import { ThreadPage } from "./page";
@@ -140,7 +139,7 @@ let langfuseSearchSettings: LangfuseSearchSettings | null = LANGFUSE_SEARCH_SETT
 // The Dispatcher watches the page opened, which a test answers itself.
 let dispatchWatches: ServedWatch[] = [];
 let threadRows: ThreadView[] | null = null;
-let noticeInboxes: InboxNoticeState[] = [];
+let noticeInboxes: Array<{ inboxId: string; sessionId: string; queued: number; unacknowledged: number }> = [];
 
 beforeEach(() => {
   document.title = "Agentplane";
@@ -174,26 +173,30 @@ beforeEach(() => {
   for (const operation of [submitInput, changeModel, changeReasoningEffort, interruptTurn]) {
     vi.mocked(operation).mockReturnValue(new Promise(() => {}));
   }
-  const served = serveEventStreams((stream) => {
-    const { pathname, search } = stream.url;
-    eventStreamUrls.push(`${pathname}${search}`);
-    if (pathname === "/threads/notices/stream") {
-      stream.event("snapshot", JSON.stringify({ observedAt: "2026-01-01T12:00:00Z", inboxes: noticeInboxes }));
-      return;
-    }
-    if (sandboxes === null || reconnected(served, stream)) return;
-    stream.event(
-      "snapshot",
-      JSON.stringify({
-        sandboxes,
-        watch: {
-          healthy: inventoryFresh,
-          failing: inventoryFresh ? {} : { sandboxes: { error: "test-failure", since: "2026-10-30T12:00:00Z" } },
-        },
-      })
-    );
-    if (inventoryDrops) stream.drop();
-  });
+  const served = serveEventStreams(
+    (stream) => {
+      const { pathname, search } = stream.url;
+      eventStreamUrls.push(`${pathname}${search}`);
+      if (pathname === "/upstream/notifications/v1/operator/notices:watch") {
+        stream.send({ snapshot: { observedAt: "2026-01-01T12:00:00Z", inboxes: noticeInboxes } });
+        return;
+      }
+      if (sandboxes === null || reconnected(served, stream)) return;
+      stream.event(
+        "snapshot",
+        JSON.stringify({
+          sandboxes,
+          watch: {
+            healthy: inventoryFresh,
+            failing: inventoryFresh ? {} : { sandboxes: { error: "test-failure", since: "2026-10-30T12:00:00Z" } },
+          },
+        })
+      );
+      if (inventoryDrops) stream.drop();
+    },
+    undefined,
+    new Set(["/upstream/notifications/v1/operator/notices:watch"])
+  );
   const sandboxFetch = globalThis.fetch;
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
     if (new Headers(init?.headers).get("Accept") === "application/x-ndjson") {

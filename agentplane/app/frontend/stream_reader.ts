@@ -36,6 +36,8 @@ export interface ReaderHandlers<F> {
   frames: (body: ReadableStream<string>) => ReadableStream<F>;
   /** A response was accepted: the frames that follow start from the server's current state. */
   onOpen?: () => void;
+  /** Abort and retry if no first frame arrives within this many milliseconds. */
+  initialFrameTimeoutMs?: number;
   /** One frame, which makes the stream live. Throwing ends the connection. */
   onFrame: (frame: F) => void;
   /** Called with the opening `connecting` at once, then on every change. */
@@ -45,7 +47,7 @@ export interface ReaderHandlers<F> {
 /** Follows `url` until the returned function is called. */
 export function followResponse<F>(
   url: string,
-  { accept, frames, onOpen, onFrame, onConnection }: ReaderHandlers<F>
+  { accept, frames, onOpen, initialFrameTimeoutMs, onFrame, onConnection }: ReaderHandlers<F>
 ): () => void {
   let connection: StreamConnection = { phase: "connecting", since: Date.now() };
   let retries = 0;
@@ -59,20 +61,32 @@ export function followResponse<F>(
     onConnection(next);
   }
 
-  async function read(signal: AbortSignal): Promise<void> {
-    const response = await fetchWithLogin(url, { signal, headers: { Accept: accept } });
-    if (!response.ok) throw new HttpError(response, await response.text());
-    if (response.body === null) throw new Error("the response has no body");
-    onOpen?.();
-    const reader = frames(response.body.pipeThrough(new TextDecoderStream())).getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) return;
-      if (connection.phase !== "live") {
-        retries = 0;
-        report({ phase: "live", since: Date.now() });
+  async function read(attempt: AbortController): Promise<void> {
+    const timeout =
+      initialFrameTimeoutMs === undefined
+        ? undefined
+        : window.setTimeout(
+            () => attempt.abort(new Error("stream did not send an initial frame")),
+            initialFrameTimeoutMs
+          );
+    try {
+      const response = await fetchWithLogin(url, { signal: attempt.signal, headers: { Accept: accept } });
+      if (!response.ok) throw new HttpError(response, await response.text());
+      if (response.body === null) throw new Error("the response has no body");
+      onOpen?.();
+      const reader = frames(response.body.pipeThrough(new TextDecoderStream())).getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return;
+        window.clearTimeout(timeout);
+        if (connection.phase !== "live") {
+          retries = 0;
+          report({ phase: "live", since: Date.now() });
+        }
+        onFrame(value);
       }
-      onFrame(value);
+    } finally {
+      window.clearTimeout(timeout);
     }
   }
 
@@ -81,7 +95,7 @@ export function followResponse<F>(
     const attempt = (current = new AbortController());
     let lastError: string | null = null;
     try {
-      await read(attempt.signal);
+      await read(attempt);
     } catch (reason) {
       lastError = displayableError(reason);
     } finally {

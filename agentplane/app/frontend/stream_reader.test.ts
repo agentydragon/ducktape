@@ -73,6 +73,29 @@ it("reports when the stream stopped being live and how often it has failed since
   expect(frames).toEqual(["frame"]);
 });
 
+it("reconnects when a watch never sends its first frame, then leaves a live watch open", async () => {
+  stop = followResponse("/test/stream", {
+    accept: "text/plain",
+    frames: (body) => body,
+    initialFrameTimeoutMs: 5_000,
+    onFrame: (frame) => frames.push(frame),
+    onConnection: (connection) => connections.push(connection),
+  });
+  await settle();
+  await vi.advanceTimersByTimeAsync(5_000);
+  expect(served(0).signal?.aborted).toBe(true);
+  expect(connections.at(-1)).toMatchObject({
+    phase: "reconnecting",
+    lastError: "stream did not send an initial frame",
+  });
+  await vi.advanceTimersByTimeAsync(1_000);
+  served(1).write("snapshot");
+  await settle();
+  await vi.advanceTimersByTimeAsync(5_000);
+  expect(served(1).signal?.aborted).toBe(false);
+  expect(frames).toEqual(["snapshot"]);
+});
+
 it("sends the browser to log in when the login has expired, and connects no more", async () => {
   const replace = vi.fn();
   vi.stubGlobal("location", { pathname: "/", hash: "#/actions", replace });
