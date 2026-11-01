@@ -83,7 +83,6 @@ type executionHandle interface {
 type hostLink struct {
 	bootID    string
 	client    *harnesshost.Runner
-	report    *runtimepb.HostReport
 	peer      hostLifecyclePeer
 	connected bool
 }
@@ -292,6 +291,9 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	}
 	r.closeCoordinator = &runtimeCloseController{r: r, transition: runtimeTransitionSequence{r: r}}
 	if err := engine.RegisterController(r.closeCoordinator); err != nil {
+		return err
+	}
+	if err := engine.RegisterController(&hostReportController{runtime: r}); err != nil {
 		return err
 	}
 	if err := engine.RegisterController(&hostIntentController{runtime: r}); err != nil {
@@ -526,7 +528,8 @@ func (r *Runtime) waitForHostNativeStopped(ctx context.Context, binding *runtime
 			r.mu.Unlock()
 			return errors.New("Harness Host lifecycle connection was lost before native-stop acknowledgement")
 		}
-		if host.report != nil && host.report.Ready && host.report.NativeStopped && proto.Equal(host.report.Binding, binding) {
+		report := r.hostReportLocked()
+		if report != nil && report.Ready && report.NativeStopped && proto.Equal(report.Binding, binding) {
 			r.mu.Unlock()
 			return nil
 		}
@@ -609,12 +612,13 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 	r.mu.Lock()
 	var facts *environmentruntimestatepb.EnvironmentRuntimeFacts
 	hostReady := false
-	intentPresent := r.host != nil && r.intent != nil && r.host.report != nil && proto.Equal(r.host.report.Binding, r.intent.Binding)
+	report := r.hostReportLocked()
+	intentPresent := r.host != nil && r.intent != nil && report != nil && proto.Equal(report.Binding, r.intent.Binding)
 	if intentPresent {
-		hostReady = r.host.report.Ready
+		hostReady = report.Ready
 	}
-	if hostReady && r.host.report.Facts != nil {
-		facts = proto.Clone(r.host.report.Facts).(*environmentruntimestatepb.EnvironmentRuntimeFacts)
+	if hostReady && report.Facts != nil {
+		facts = proto.Clone(report.Facts).(*environmentruntimestatepb.EnvironmentRuntimeFacts)
 	}
 	desired, closing := r.desired, r.closing
 	activeAdmissions := r.activeAdmissions

@@ -14,6 +14,7 @@ go_library(
         "execution_service.go",
         "forward.go",
         "host_intent.go",
+        "host_report.go",
         "protocol.go",
         "runtime.go",
         "serve.go",
