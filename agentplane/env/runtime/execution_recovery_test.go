@@ -323,6 +323,11 @@ func TestFencedExecutionLossRestartsAPIForSameIncarnation(t *testing.T) {
 		t.Fatalf("Runtime replayed the prior Session request after recovery: %q", session)
 	default:
 	}
+	waitRuntime(t, r, func() bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.executionOwner == replacement && r.executionServer != nil && !r.executionRecovering
+	}, "replacement Execution API readiness")
 
 	newStream, err := client.open(client.callCtx, "session-after-loss", "open-after-loss")
 	if err != nil {
