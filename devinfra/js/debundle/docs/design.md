@@ -1193,6 +1193,15 @@ fails, the executor publishes reachable frame capabilities, widens native
 effects and uses the existing synchronous fallback closure for the remaining
 body. Earlier operations are not replayed. This local execution proof does not
 provide an owner-completion or foreign-provider certificate.
+The strict provider consumer uses that same ordered-operation executor with
+scoped symbolic parameters and an isolated literal heap. Its binding adapter
+admits only parameters and locals instantiated by the shared executor; external
+captures remain unproved. Every reached child judgment composes, including
+discarded sequence values. The consumer projects retention through the returned
+graph only after the complete operation sequence has an allocation-only
+judgment. Throws, TDZ/const errors and unproved writes refuse certification
+without retrying the legacy source evaluator. Application execution continues
+to supply its ordinary effect/provenance, publication and fallback adapters.
 The adjacent fresh-value proof also identifies a top-level write to an
 initialized own data field of a constructorless local class instance. That
 write cannot invoke an inherited setter, even after an earlier unknown call.

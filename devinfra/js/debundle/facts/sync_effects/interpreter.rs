@@ -1,10 +1,10 @@
 //! Call-site execution effects distinguish function values from function bodies: returning a closure never executes it.
 
-use super::super::local_operations::{LocalBinding, LocalBody, LocalExpression, LocalOperation};
+use super::super::local_operations::LocalBody;
+use super::super::local_transfer::{self, LocalContext, LocalFrame};
 use super::super::value_model::{
     AbstractValue, ArrayIteration, CallSite, Captured, CapturedContext, Context, DenseArray,
-    FrozenNamespaceProof, MemberKey, OwnPropertyDescriptorSyntax, RetainedResultKind, ValueExpr,
-    Values,
+    FrozenNamespaceProof, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr, Values,
 };
 use super::runtime_callbacks::{CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
@@ -826,68 +826,65 @@ impl super::super::allocation_transfer::AllocationContext
     }
 }
 
-struct LocalFrame {
-    environment: Context,
-    inputs: Values,
-    borrowed_records: BTreeSet<u32>,
-    fresh_records: BTreeSet<u32>,
-    outcome: Outcome,
-}
-
-struct LocalAllocationContext<'a, 'source, 'rule> {
+struct LocalExecutionContext<'a, 'source, 'rule> {
     executor: &'a mut Executor<'source, 'rule>,
-    frame: &'a mut LocalFrame,
+    outcome: &'a mut Outcome,
     owner: SourceUnitOrdinal,
 }
 
-impl super::super::allocation_transfer::AllocationContext for LocalAllocationContext<'_, '_, '_> {
-    fn source_covered(&self) -> bool {
-        true
-    }
-
-    fn binding(
+impl LocalContext for LocalExecutionContext<'_, '_, '_> {
+    fn read_binding(
         &mut self,
         binding: &Id,
+        frame: &mut LocalFrame,
     ) -> Option<super::super::allocation_transfer::AllocationValue> {
         if self.executor.inputs.top_bindings.contains(binding) {
-            self.executor.promote_top_effects(
-                vec![binding],
-                Vec::new(),
-                self.owner,
-                &mut self.frame.outcome,
-            );
+            self.executor
+                .promote_top_effects(vec![binding], Vec::new(), self.owner, self.outcome);
         }
-        // A read's timing is known here, but its value is not a closed
-        // symbolic input or an allocation-only proof for another owner.
-        let values = self
-            .executor
-            .evaluate_binding(binding, &self.frame.environment);
+        let values = self.executor.evaluate_binding(binding, &frame.environment);
         if self.executor.inputs.top_bindings.contains(binding) {
-            self.frame
+            frame
                 .borrowed_records
                 .extend(self.executor.reachable_objects(&values));
         }
+        // Timing is covered; the read alone cannot certify a closed input.
         Some(super::super::allocation_transfer::AllocationValue::opaque(
             values,
         ))
     }
-
-    fn child(
-        &mut self,
-        expression: &ValueExpr,
-    ) -> Option<super::super::allocation_transfer::AllocationValue> {
-        Some(
-            self.executor
-                .evaluate_local_value(expression, self.frame, self.owner),
-        )
-    }
-
     fn literal_layout(&self, allocation: u32) -> super::super::allocation_transfer::LiteralLayout {
         self.executor.inputs.index.allocation_layout(allocation)
     }
-
+    fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
+        self.executor.inputs.index.ordinary_record_shape(allocation)
+    }
+    fn object_properties_are_settled(&self, allocation: u32) -> bool {
+        self.executor
+            .state
+            .object_properties_are_settled(&allocation)
+    }
     fn heap(&mut self) -> super::super::allocation_transfer::LiteralHeap<'_> {
         self.executor.literal_heap()
+    }
+    fn unproved_field_write(
+        &mut self,
+        frame: &mut LocalFrame,
+        receivers: &Values,
+        values: &Values,
+        span: Span,
+    ) {
+        self.executor.local_field_write_fallback(
+            frame,
+            receivers,
+            values,
+            self.owner,
+            span,
+            self.outcome,
+        );
+    }
+    fn publish_throw(&mut self, values: &Values) {
+        self.executor.publish_values(values);
     }
 }
 
@@ -7536,102 +7533,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    /// LocalBody's covered value nodes and their covered children only. No
-    /// owner-completion or imported-provider certificate follows from this.
-    fn evaluate_local_value(
-        &mut self,
-        expression: &ValueExpr,
-        frame: &mut LocalFrame,
-        owner: SourceUnitOrdinal,
-    ) -> super::super::allocation_transfer::AllocationValue {
-        // A site already in the heap may also denote a different record from
-        // an earlier invocation. The current domain cannot distinguish those
-        // generations, so it cannot certify that receiver as newly created.
-        let new_record = match expression {
-            ValueExpr::ObjectLiteral(object, _) => {
-                !self.state.prefix_object_properties.contains_key(object)
-                    && !frame.borrowed_records.contains(object)
-            }
-            _ => false,
-        };
-        let value = super::super::allocation_transfer::transfer(
-            &mut LocalAllocationContext {
-                executor: self,
-                frame,
-                owner,
-            },
-            expression,
-        )
-        .expect("covered unconditional local values use the shared allocation transfers");
-        // Register allocations executed in this frame, rather than treating a
-        // record received through a binding as fresh. Arrays share the lowered
-        // ObjectLiteral node, so require the canonical ordinary-object shape.
-        if let ValueExpr::ObjectLiteral(object, _) = expression
-            && new_record
-            && self.inputs.index.own_descriptor_shapes.contains_key(object)
-            && !self.inputs.index.array_elements.contains_key(object)
-            && value
-                .values
-                .contains(&AbstractValue::Value(Value::Alloc(Kind::Object, *object)))
-        {
-            frame.fresh_records.insert(*object);
-        }
-        value
-    }
-
-    /// Keep completing paths in the frame; abrupt paths never execute its
-    /// later operations. Unavailable also carries explicit source throws.
-    fn local_completing_values(mut values: Values, outcome: &mut Outcome) -> Values {
-        if values.remove(&AbstractValue::Value(Value::Unavailable)) {
-            outcome
-                .returns
-                .insert(AbstractValue::Value(Value::Unavailable));
-        }
-        values
-    }
-
-    fn local_own_data_field(
-        &self,
-        receivers: &Values,
-        property: &str,
-        frame: &LocalFrame,
-    ) -> Option<u32> {
-        if receivers.len() != 1 {
-            return None;
-        }
-        let AbstractValue::Value(Value::Alloc(Kind::Object, object)) = receivers.first()? else {
-            return None;
-        };
-        (frame.fresh_records.contains(object)
-            && !frame.borrowed_records.contains(object)
-            && self.state.object_properties_are_settled(object)
-            && matches!(
-                self.inputs
-                    .index
-                    .own_descriptor_shapes
-                    .get(object)?
-                    .properties
-                    .get(property),
-                Some(OwnPropertyDescriptorSyntax::Data)
-            )
-            && self
-                .state
-                .prefix_object_properties
-                .get(object)
-                .is_some_and(|properties| properties.contains_key(&Some(property.to_owned()))))
-        .then_some(*object)
-    }
-
     /// Stop the frame without replaying its earlier operations. An unproved
     /// store may call a setter and publish any capability the remainder can
     /// reach, including objects whose local binding has since been replaced.
     fn local_field_write_fallback(
         &mut self,
-        frame: &mut LocalFrame,
+        frame: &LocalFrame,
         receivers: &Values,
         values: &Values,
         owner: SourceUnitOrdinal,
         span: Span,
+        outcome: &mut Outcome,
     ) {
         let mut reached = frame.inputs.clone();
         reached.extend(frame.environment.values().flatten().cloned());
@@ -7656,98 +7568,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             },
             span,
         );
-        frame
-            .outcome
-            .absorb_binding_effects(&mut fallback.effects, self.state.assumption.as_ref());
-        frame
-            .outcome
-            .executed_owners
-            .extend(fallback.executed_owners);
-        frame.outcome.unknown_call |= fallback.unknown_call;
-        frame
-            .outcome
-            .inherit_completeness(fallback.complete, fallback.effects.precision_losses);
-        frame.outcome.returns.extend(fallback.returns);
-        frame
-            .outcome
+        outcome.absorb_binding_effects(&mut fallback.effects, self.state.assumption.as_ref());
+        outcome.executed_owners.extend(fallback.executed_owners);
+        outcome.unknown_call |= fallback.unknown_call;
+        outcome.inherit_completeness(fallback.complete, fallback.effects.precision_losses);
+        outcome.returns.extend(fallback.returns);
+        outcome
             .returns
             .insert(AbstractValue::Value(Value::Unavailable));
-    }
-
-    fn evaluate_local_expression(
-        &mut self,
-        expression: &LocalExpression,
-        body: &LocalBody,
-        frame: &mut LocalFrame,
-        owner: SourceUnitOrdinal,
-    ) -> Values {
-        match expression {
-            LocalExpression::Value(expression) => {
-                let value = self.evaluate_local_value(expression, frame, owner);
-                Self::local_completing_values(value.values, &mut frame.outcome)
-            }
-            LocalExpression::Sequence(expressions) => {
-                let mut values = Values::from([AbstractValue::UNDEFINED]);
-                for expression in expressions.iter() {
-                    values = self.evaluate_local_expression(expression, body, frame, owner);
-                    if values.is_empty() {
-                        break;
-                    }
-                }
-                values
-            }
-            LocalExpression::Assign(binding, expression) => {
-                let values = self.evaluate_local_expression(expression, body, frame, owner);
-                if values.is_empty() {
-                    return values;
-                }
-                if body.bindings[binding] == LocalBinding::Const
-                    || (body.bindings[binding] == LocalBinding::Let
-                        && frame
-                            .environment
-                            .get(binding)
-                            .expect("instantiated local binding")
-                            .contains(&AbstractValue::Value(Value::Unavailable)))
-                {
-                    frame
-                        .outcome
-                        .returns
-                        .insert(AbstractValue::Value(Value::Unavailable));
-                    return Values::new();
-                }
-                frame.environment.insert(binding.clone(), values.clone());
-                values
-            }
-            LocalExpression::AssignField {
-                receiver,
-                property,
-                value,
-                span,
-            } => {
-                // Assignment evaluates the receiver reference before its RHS.
-                // The RHS can replace that local, so never look it up again.
-                let receivers = self
-                    .evaluate_local_value(&ValueExpr::Binding(receiver.clone()), frame, owner)
-                    .values;
-                let receivers = Self::local_completing_values(receivers, &mut frame.outcome);
-                if receivers.is_empty() {
-                    return Values::new();
-                }
-                let values = self.evaluate_local_expression(value, body, frame, owner);
-                if values.is_empty() {
-                    return values;
-                }
-                let Some(object) = self.local_own_data_field(&receivers, property, frame) else {
-                    self.local_field_write_fallback(frame, &receivers, &values, owner, *span);
-                    // The fallback has summarized the rest of the body and
-                    // installed its returns. Empty stops all enclosing nodes.
-                    return Values::new();
-                };
-                self.literal_heap()
-                    .write_property(object, Some(property.clone()), &values);
-                values
-            }
-        }
     }
 
     fn execute_local_body(
@@ -7756,95 +7584,35 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         environment: Context,
         owner: SourceUnitOrdinal,
     ) -> Outcome {
-        let inputs = environment.values().flatten().cloned().collect();
-        let mut frame = LocalFrame {
-            borrowed_records: self.reachable_objects(&inputs),
-            inputs,
-            environment,
-            fresh_records: BTreeSet::new(),
-            outcome: Outcome {
-                complete: true,
-                ..Outcome::default()
-            },
+        let mut frame = LocalFrame::new(environment);
+        frame.borrowed_records = self.reachable_objects(&frame.inputs);
+        let mut outcome = Outcome {
+            complete: true,
+            ..Outcome::default()
         };
-        frame.outcome.executed_owners.insert(owner);
-        for (binding, kind) in &body.bindings {
-            match kind {
-                LocalBinding::Parameter => {}
-                LocalBinding::Var => {
-                    frame
-                        .environment
-                        .entry(binding.clone())
-                        .or_insert_with(|| Values::from([AbstractValue::UNDEFINED]));
-                }
-                LocalBinding::Let | LocalBinding::Const => {
-                    frame.environment.insert(
-                        binding.clone(),
-                        Values::from([AbstractValue::Value(Value::Unavailable)]),
-                    );
-                }
+        outcome.executed_owners.insert(owner);
+        // The source-covered application consumer supplies access effects and
+        // conservative fallback. The shared kernel controls operation order.
+        let coverage = local_transfer::execute(
+            &mut LocalExecutionContext {
+                executor: self,
+                outcome: &mut outcome,
+                owner,
+            },
+            body,
+            &mut frame,
+        );
+        assert!(
+            coverage.is_some() || !outcome.complete,
+            "covered local values use shared transfers or an explicit conservative fallback"
+        );
+        for value in &frame.returns {
+            if let AbstractValue::OwnDescriptorMap(site) = value {
+                self.invalidate_own_descriptor_map(*site);
             }
         }
-        for operation in body.operations.iter() {
-            match operation {
-                LocalOperation::Initialize(binding, expression) => {
-                    let values = match expression {
-                        Some(expression) => {
-                            self.evaluate_local_expression(expression, body, &mut frame, owner)
-                        }
-                        None if matches!(
-                            body.bindings[binding],
-                            LocalBinding::Var | LocalBinding::Parameter
-                        ) =>
-                        {
-                            continue;
-                        }
-                        None => Values::from([AbstractValue::UNDEFINED]),
-                    };
-                    if values.is_empty() {
-                        return frame.outcome;
-                    }
-                    frame.environment.insert(binding.clone(), values);
-                }
-                LocalOperation::Evaluate(expression) => {
-                    if self
-                        .evaluate_local_expression(expression, body, &mut frame, owner)
-                        .is_empty()
-                    {
-                        return frame.outcome;
-                    }
-                }
-                LocalOperation::Return(expression) => {
-                    let values = match expression {
-                        Some(expression) => {
-                            self.evaluate_local_expression(expression, body, &mut frame, owner)
-                        }
-                        None => Values::from([AbstractValue::UNDEFINED]),
-                    };
-                    for value in &values {
-                        if let AbstractValue::OwnDescriptorMap(site) = value {
-                            self.invalidate_own_descriptor_map(*site);
-                        }
-                    }
-                    frame.outcome.returns.extend(values);
-                    return frame.outcome;
-                }
-                LocalOperation::Throw(expression) => {
-                    let values =
-                        self.evaluate_local_expression(expression, body, &mut frame, owner);
-                    // The catcher may be opaque code. Retain thrown callback
-                    // and object capabilities through ordinary publication.
-                    self.publish_values(&values);
-                    frame
-                        .outcome
-                        .returns
-                        .insert(AbstractValue::Value(Value::Unavailable));
-                    return frame.outcome;
-                }
-            }
-        }
-        frame.outcome.returns.insert(AbstractValue::UNDEFINED);
-        frame.outcome
+        outcome.returns.extend(frame.returns);
+        outcome
     }
 
     fn invoke(

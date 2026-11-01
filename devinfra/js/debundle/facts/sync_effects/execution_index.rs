@@ -6094,6 +6094,13 @@ impl BundleGlobalContext<'_> {
 }
 
 impl ExecutionIndex {
+    pub(super) fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
+        if self.array_elements.contains_key(&allocation) {
+            return None;
+        }
+        self.own_descriptor_shapes.get(&allocation)
+    }
+
     pub(super) fn allocation_layout(
         &self,
         allocation: u32,
@@ -13091,9 +13098,10 @@ fn infer_foreign_calls<'f>(
             ) && index
                 .callables
                 .get(&declaration_start)
-                .is_some_and(|callable| callable.allocation_return.is_some())
-            {
-                // This migrated slice consumes the central value transfers.
+                .is_some_and(|callable| {
+                    callable.allocation_return.is_some() || callable.local_body.is_some()
+                }) {
+                // This migrated slice consumes the central value/operation transfers.
                 // A failed access/coverage judgment must not retry the AST evaluator.
                 strict_provider::derive(index, declaration_start)?
             } else {
