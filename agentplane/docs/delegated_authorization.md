@@ -1,7 +1,7 @@
 # Delegated authorization
 
-Status: **approved design; shared protocol primitives are in implementation review. Action Service and
-SessionDispatcher integrations remain separate work.**
+Status: **approved contract; shared protocol primitives and durable Action caller-UID retention are
+implemented. Caller-delegating Action adapters and receiving service integrations remain separate work.**
 Use this contract when an Agentplane service invokes another service on behalf of a ServiceAccount.
 The first consumer is routine caller-privilege Actions. Direct callers continue using the
 [workload authentication](workload_authentication.md) contract.
@@ -125,9 +125,8 @@ new authorization decisions reapply the corresponding checks; provenance never f
 
 ## Actions, persistence and recovery
 
-Actions currently obtains the verified caller UID at authentication but retains only namespace/name
-in its request/worker caller. Before a caller-delegating adapter executes, retain the verified UID
-at admission and carry it through Decision, execution and worker payloads. An old request without
+Actions retains the verified caller UID at admission and carries it through Decision, execution and
+worker payloads. A caller-delegating adapter uses that durable identity. An old request without
 that identity cannot silently acquire the UID of whichever account now has the same name.
 Stored schema changes use new migrations and the normal service startup lifecycle.
 
