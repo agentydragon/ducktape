@@ -52,17 +52,18 @@ overtaken by a logout, answers 401 and creates nothing. Logout deletes the entir
 then fails on every replica. Deleting a row also invalidates that session administratively.
 Expired rows are rejected immediately and deleted on access; successful logins additionally clean
 up expired rows. There is no background retention scheduler. Backups may retain expired credentials:
-restrict DB/backup access accordingly. SQLAlchemy parameter logging is disabled for the app engine.
-The database and its backups now contain credentials; use the existing encrypted storage and
-restricted app DB role, not a read-only analytics role. No new encryption-key service is introduced.
+restrict DB/backup access accordingly. The database and its backups now contain credentials; use the
+existing encrypted storage and restricted app DB role, not a read-only analytics role. No new
+encryption-key service is introduced.
 
 Cookies remain HttpOnly, SameSite=Lax, and Secure with the `__Host-` name on HTTPS. Unsafe
 session-authenticated requests, including logout, require an **exact** same-origin `Origin` header;
 missing, trailing-slash, and foreign origins fail. Kubernetes-token callers keep their separate
 non-ambient authentication and never enter the operator Action path. Responses are `no-store`,
 except where a route states its own `Cache-Control`: Electric shapes are `private, no-cache`, stored
-but served only after a request the app authorizes. The app disables Uvicorn access logs to keep OAuth callback codes out of
-request URLs in logs; callback failures use fixed messages without provider/query text.
+but served only after a request the app authorizes. The Go app uses structured JSON `slog` and does
+not install HTTP request access logging. Callback failure metadata uses a sanitized Action Service
+URL with user information, query, and fragment removed.
 Already-admitted requests are not retrospectively cancelled by logout; revocation gates the next
 request. An Action facade watch under `/upstream/actions/v1/` is bound to the operator session row:
 deleting the row notifies every replica, and the stream ends at its own row's deletion or expiry.

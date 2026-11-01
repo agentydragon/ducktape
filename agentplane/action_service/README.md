@@ -194,16 +194,16 @@ settings. See the edge's [Go OAuth configuration](../mcp_edge/config.go), the
 [authorization server](../mcp_edge/authserver/authserver.go), and the
 [ConnectionService contract](../mcp_edge/connection_service.proto).
 
-| Tool                         | Use                                                                                                                                                                               |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_actions`               | Compact `{group, name, available}` entries; optional group filter, `limit` (default 30, max 100), keyset `after`/`next_after`.                                                    |
-| `get_action_policy`          | The effective policy of a `target`: `"self"` (default) or a named Sandbox or ServiceAccount; its bindings, the sets that resolved, and the auto-approval list (`policy_view.py`). |
-| `get_action`                 | One definition by group/name. `include_fields` on either catalog read accepts only `input_schema` and `description`; omitted/empty excludes both.                                 |
-| `request_action`             | The request envelope under `request`, validated as on HTTP; a used key is refused. Answers like `get_action_result`, or `respond_with: receipt`.                                  |
-| `get_action_request`         | One own-caller receipt by exactly one of `request_id` or `idempotency_key`; the key lookup recovers a submission whose response was lost.                                         |
-| `get_action_result`          | The outcome as the tool that ran answered, named and waited on like `get_action_request`; see below.                                                                              |
-| `cancel_action_request`      | Own-caller pre-claim cancellation by request ID, without a version; returns canonical outcome and receipt.                                                                        |
-| `list_action_request_events` | One own-caller event page; `after_sequence`, `limit`, optional `next_after_sequence`.                                                                                             |
+| Tool                         | Use                                                                                                                                                            |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_actions`               | Compact `{group, name, available}` entries; optional group filter, `limit` (default 30, max 100), keyset `after`/`next_after`.                                 |
+| `get_action_policy`          | The effective policy of a `target`: `"self"` (default) or a named Sandbox or ServiceAccount; its bindings, the sets that resolved, and the auto-approval list. |
+| `get_action`                 | One definition by group/name. `include_fields` on either catalog read accepts only `input_schema` and `description`; omitted/empty excludes both.              |
+| `request_action`             | The request envelope under `request`, validated as on HTTP; a used key is refused. Answers like `get_action_result`, or `respond_with: receipt`.               |
+| `get_action_request`         | One own-caller receipt by exactly one of `request_id` or `idempotency_key`; the key lookup recovers a submission whose response was lost.                      |
+| `get_action_result`          | The outcome as the tool that ran answered, named and waited on like `get_action_request`; see below.                                                           |
+| `cancel_action_request`      | Own-caller pre-claim cancellation by request ID, without a version; returns canonical outcome and receipt.                                                     |
+| `list_action_request_events` | One own-caller event page; `after_sequence`, `limit`, optional `next_after_sequence`.                                                                          |
 
 Every tool that returns a wide model takes `include_fields` as a **pure allowlist over every
 top-level field of that model** (top-level only, never a dotted path into a nested one), defaulting
@@ -432,12 +432,13 @@ a matching allow records `PolicyEvidence`, including the matched rule and any re
 repository. A set has no deny form: no match leaves the request for a human. The Go
 [`api.SubmitActionRequest`](api/submit.go) validates arguments and decides before persistence.
 
-The integration app reads PolicySet inventory from Kubernetes with the Python `policies/resources`
-parser, which exposes each set's generation and whether its Action rules were refused. Its action-policy
-view uses the Go Action Service response: Python defines the Pydantic wire shapes the app uses to render
-the resolved policy kinds. Policy resolution and admission remain in the Go informer and provider; the
-Python reader does not resolve bindings or make approval decisions. Staging's network policy admits
-`api.github.com:443` for the Go provider's public-repository lookup.
+The Go integration app reads PolicySet inventory from Kubernetes through its
+[`policyaccess` package](../app/go/policyaccess/policyaccess.go). Its effective action-policy view comes
+from the Action Service's `GetActionPolicy` response and is projected by the app in Go. The Python
+`policies/resources` parser remains in cdk8s policy authoring and Python test support; Python Pydantic
+models are used by test clients, not by the app runtime. Policy resolution and admission remain in the
+Go informer and provider. Staging's network policy admits `api.github.com:443` for the Go provider's
+public-repository lookup.
 
 The end-to-end proof is `//agentplane/system_tests/suites:test_mcp`, which creates the set and binding
 for the Sandbox it launches through the Kubernetes API (see [the system tests README](../system_tests/README.md))
