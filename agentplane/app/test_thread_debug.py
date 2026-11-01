@@ -163,8 +163,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         assert entries[1]["event"]["harnessStderr"]["text"] == stderr
         assert entries[2]["event"]["debugCheckpoint"]["name"] == "unlinked checkpoint"
         absent = await client.get(f"{path}/events", params={"after_cursor": "99998", "limit": "1"}, headers=agent_auth)
-        assert absent.status_code == 200
-        assert not absent.json().get("entries")
+        assert absent.status_code == 400, absent.text
 
         for command_id in ("failed-debug", "noop-debug"):
             source.append(
