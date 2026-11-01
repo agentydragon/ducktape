@@ -166,6 +166,7 @@ async def test_thread_metadata_watch_follows_replica_commits(
             # A Thread of a Sandbox without a Pod archives without asking a runner.
             thread_id = await event_logs.seed("shelved", "test-global-thread")
             assert (await anext(stream))["changed"] == {}
+            await store.wait(thread_id)
             page = (await http.get("/upstream/app/v1/threads", params={"include_archived": "true"})).json()
             assert [thread["threadId"] for thread in page["threads"]] == [str(thread_id)]
             await store.rename(thread_id, "Renamed in another app replica")
