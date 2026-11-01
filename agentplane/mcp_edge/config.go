@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
-	sharedconfig "github.com/agentydragon/ducktape/agentplane/settings/go"
+	sharedconfig "github.com/agentydragon/ducktape/agentplane/settings"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
