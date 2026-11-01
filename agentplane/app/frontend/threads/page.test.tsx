@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { create } from "@bufbuild/protobuf";
+import { create, toJson } from "@bufbuild/protobuf";
 import type { LangfuseSearchSettings, SandboxView, ThreadView, TraceSearchSettings } from "../schema";
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
 import { MantineProvider } from "@mantine/core";
@@ -13,6 +13,7 @@ import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import type * as ThreadClientModule from "./client";
+import type { CommandSubmission, CommandTarget } from "./client";
 import type * as ModelCatalogModule from "../model_catalog";
 import type * as SandboxClientModule from "../sandboxes/client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
@@ -417,19 +418,19 @@ function buttonIn(row: Element | null | undefined, text: string): HTMLButtonElem
 
 function sentOperations(): unknown[] {
   const sent = [
-    ...vi.mocked(submitInput).mock.calls.map(([, , text], index) => ({
+    ...vi.mocked(submitInput).mock.calls.map(([, , , text], index) => ({
       order: vi.mocked(submitInput).mock.invocationCallOrder[index],
       operation: { case: "submitInput", value: { text } },
     })),
-    ...vi.mocked(changeModel).mock.calls.map(([, , model], index) => ({
+    ...vi.mocked(changeModel).mock.calls.map(([, , , model], index) => ({
       order: vi.mocked(changeModel).mock.invocationCallOrder[index],
       operation: { case: "changeModel", value: { model } },
     })),
-    ...vi.mocked(changeReasoningEffort).mock.calls.map(([, , effort], index) => ({
+    ...vi.mocked(changeReasoningEffort).mock.calls.map(([, , , effort], index) => ({
       order: vi.mocked(changeReasoningEffort).mock.invocationCallOrder[index],
       operation: { case: "changeReasoningEffort", value: { effort } },
     })),
-    ...vi.mocked(interruptTurn).mock.calls.map(([, , turnId], index) => ({
+    ...vi.mocked(interruptTurn).mock.calls.map(([, , , turnId], index) => ({
       order: vi.mocked(interruptTurn).mock.invocationCallOrder[index],
       operation: { case: "interruptTurn", value: { turnId } },
     })),
@@ -1212,8 +1213,30 @@ function admission(value: Command): EventEntry {
   });
 }
 
+async function admit(
+  _threadId: string,
+  _target: CommandTarget,
+  commandId: string,
+  text: string
+): Promise<CommandSubmission> {
+  const command = create(CommandSchema, {
+    commandId,
+    operation: { case: "submitInput", value: { text } },
+  });
+  return {
+    kind: "dispatch",
+    dispatch: dispatchFromJson({
+      commandId,
+      sessionId: THREAD.id,
+      ...COMMAND_TARGET,
+      state: "DELIVERY_STATE_RUNNER_ADMITTED",
+      admission: toJson(EventEntrySchema, admission(command)),
+    }),
+  };
+}
+
 function sentIds(): string[] {
-  return vi.mocked(submitInput).mock.calls.map(([, commandId]) => commandId);
+  return vi.mocked(submitInput).mock.calls.map(([, , commandId]) => commandId);
 }
 
 function pendingRow(container: Element, commandId: string): HTMLElement {
