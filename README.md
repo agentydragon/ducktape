@@ -1,6 +1,8 @@
-# CI reports
+# GitHub Pages
 
-This dedicated branch holds independent, latest-only CI report snapshots:
+`gh-pages` is the publication branch for
+<https://agentydragon.github.io/ducktape/>. It holds independent, latest-only CI
+report snapshots:
 
 - **Latency:** [standalone HTML](latency/index.html), [evidence](latency/evidence.json),
   [source and observation window](latency/manifest.json).
@@ -11,7 +13,7 @@ This dedicated branch holds independent, latest-only CI report snapshots:
   [source and observation window](visual-reliability/manifest.json).
 
 Each refresh replaces only its own directory's `index.html`, `evidence.json`,
-`manifest.json`, and optional `attribution.json`, through a PR against `ci-reports`.
+`manifest.json`, and optional `attribution.json`, through a PR against `gh-pages`.
 Preserve the other report directories and this navigation. Remove stale optional
 attribution only within the report being refreshed. Use Git history for earlier
 measurements; do not accumulate dated run directories. This branch continues the
