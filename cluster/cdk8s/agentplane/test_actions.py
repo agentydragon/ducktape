@@ -163,6 +163,25 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
     assert tokens["history"]["audience"] == history_service.TOKEN_AUDIENCE
 
 
+def test_staging_offers_only_the_implemented_session_delegation_tools(staging_manifests: list[dict[str, Any]]) -> None:
+    config = one(
+        doc
+        for doc in staging_manifests
+        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == f"{actions.NAME}-settings"
+    )
+    groups = yaml.safe_load(config["data"]["settings.yaml"])["action_groups"]
+    assert groups["environments"]["executor"]["kind"] == "session_delegation"
+    assert set(groups["environments"]["direct_tools"]) == {"get", "list"}
+    assert groups["sessions"]["executor"]["kind"] == "session_delegation"
+    assert set(groups["sessions"]["direct_tools"]) == {
+        "cancel_input",
+        "interrupt_turn",
+        "observe_input",
+        "open",
+        "submit_input",
+    }
+
+
 def test_session_delegation_network_caller_requires_the_group() -> None:
     env_without_actions = replace(
         staging.ENV, actions=replace(staging.ENV.actions, orchestration_v1=None, session_delegation=None)

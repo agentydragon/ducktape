@@ -88,6 +88,7 @@ from cluster.cdk8s.agentplane.environment import (
     McpEdgeProps,
     OrchestrationProps,
     ReplicaProfile,
+    SessionDelegationProps,
     WebPushProps,
 )
 from cluster.cdk8s.agentplane.environment_sandbox import KeyFile
@@ -605,6 +606,12 @@ ENV = Environment(
                     "wait_for_turn",
                 }
             )
+        ),
+        session_delegation=SessionDelegationProps(
+            direct_tools_by_group={
+                "environments": frozenset({"list", "get"}),
+                "sessions": frozenset({"open", "submit_input", "observe_input", "cancel_input", "interrupt_turn"}),
+            }
         ),
     ),
     mcp_edge=McpEdgeProps(
