@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/agentydragon/ducktape/agentplane/runner/jsonrpc"
+	"github.com/agentydragon/ducktape/agentplane/env/jsonrpc"
 )
 
 // executorRejectedError is an exec-server JSON-RPC error reply: the request had no effect.

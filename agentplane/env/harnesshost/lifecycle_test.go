@@ -18,10 +18,10 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/session"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"

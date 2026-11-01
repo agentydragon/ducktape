@@ -5,8 +5,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/session"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"go.uber.org/zap"

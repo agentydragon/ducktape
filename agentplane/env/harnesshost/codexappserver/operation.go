@@ -3,8 +3,8 @@ package codexappserver
 import (
 	"context"
 
+	"github.com/agentydragon/ducktape/agentplane/env/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
-	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 )

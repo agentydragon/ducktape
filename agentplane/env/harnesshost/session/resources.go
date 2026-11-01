@@ -4,9 +4,9 @@ package session
 import (
 	"context"
 
+	"github.com/agentydragon/ducktape/agentplane/env/cosi"
+	"github.com/agentydragon/ducktape/agentplane/env/lifecycle"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	"github.com/agentydragon/ducktape/agentplane/runner/cosi"
-	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"

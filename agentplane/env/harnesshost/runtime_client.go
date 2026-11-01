@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/session"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"

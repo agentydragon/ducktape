@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )

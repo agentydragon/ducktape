@@ -20,8 +20,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 
+	"github.com/agentydragon/ducktape/agentplane/env/lifecycle"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/state"
 	"go.opentelemetry.io/otel/attribute"

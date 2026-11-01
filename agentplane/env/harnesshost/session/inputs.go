@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"

@@ -20,7 +20,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/env/supervision",
     deps = [
-        "//agentplane/runner/cosi",
+        "//agentplane/env/cosi",
         "@com_github_coreos_go_systemd_v22//dbus",
         "@com_github_cosi_project_runtime//pkg/controller",
         "@com_github_cosi_project_runtime//pkg/resource",
