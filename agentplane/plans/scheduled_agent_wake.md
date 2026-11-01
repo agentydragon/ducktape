@@ -31,7 +31,7 @@ Illustrative values, not an activation request:
 | -------------------- | -------------------------------------------------------------------------------------------- |
 | Cadence              | `0 9 * * *`, `timeZone: Etc/UTC`                                                             |
 | Destination          | One existing central Session UUID and exact Sandbox namespace/name/UID                       |
-| Identity             | That Session's existing SA; no manufactured grants or broad scheduler principal              |
+| Identity             | That Session's existing SA and Session authority; Job lookup permission is reviewed below    |
 | Schedule identity    | An explicit stable schedule UUID retained across ordinary configuration updates              |
 | Evaluation interval  | `[scheduled_for - 24h, scheduled_for)`, expressed as UTC instants                            |
 | Late-start window    | Six hours; older missed slots are skipped rather than backfilled indefinitely                |
@@ -91,9 +91,14 @@ command ID through their current surfaces, without the Kubernetes adapter.
 
 For the Kubernetes adapter, obtain the Job's intended timestamp from
 `batch.kubernetes.io/cronjob-scheduled-timestamp`. It is a Job annotation, not automatically a Pod
-Downward API field. The adapter needs a bounded read of its actual Job; scope any Kubernetes read
-grant to schedule metadata and never infer Session authority from Job labels or annotations. If
-the intended timestamp is unavailable, fail visibly instead of using wall-clock time as a new ID.
+Downward API field. The adapter reads its actual Job. Propose namespace-scoped `get` on `jobs`,
+without list, watch or write. This reads complete Job objects: native
+[RBAC resource/name rules](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
+cannot restrict that grant to one annotation or a schedule label, and future Job names are not
+a static `resourceNames` list. This additional read permission needs operator selection; it is
+not inherited from Session access. If that scope is unacceptable, choose a scheduler backend
+that supplies the slot directly. Never infer Session authority from Job metadata. If the intended
+timestamp is unavailable, fail visibly instead of using wall-clock time as a new ID.
 
 On delivery failure, reconcile with `GetDispatch` and reuse the identical command ID/payload for
 supported enqueue retries. A transient missing read or lost reply does not authorize generating a
@@ -158,6 +163,6 @@ The daily CI capstone separately proves a useful agent run and natural tool usab
 admission coverage does not establish either one.
 
 Review outcome needed: choose CronJob-first versus Notification-owned scheduling, accept or change
-the six-hour missed-run window and ordinary-input overlap, and select the real cadence/timezone
-before activation. Strict no-overlap/coalescing or agent-managed schedules require replanning the
+the six-hour missed-run window, ordinary-input overlap and Job-read permission, and select the real
+cadence/timezone before activation. Strict no-overlap/coalescing or agent-managed schedules require replanning the
 backend slice rather than silently expanding this proposal.
