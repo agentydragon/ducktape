@@ -54,8 +54,8 @@ use graph_provenance::GraphProvenance;
 use js_ast::{ParsedJsModule, format_comment_block_lines, source_unit_ordinal_for_statement};
 use output_layout::{
     ATOMIC_GROUP_CONFLICTS_REPORT, COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, CYCLES_REPORT,
-    DEPENDENCY_GRAPH_REPORT, EXPORT_REENTRY_REPORT, GATE_REJECTED_MARKER,
-    SELECTOR_DIAGNOSTICS_REPORT, TRANSLATION_VALIDATION_REPORT,
+    DEPENDENCY_GRAPH_REPORT, EFFECT_TRANSLATION_VALIDATION_REPORT, EXPORT_REENTRY_REPORT,
+    GATE_REJECTED_MARKER, SELECTOR_DIAGNOSTICS_REPORT, TRANSLATION_VALIDATION_REPORT,
 };
 use reconstruction::{ChunkGateRejection, GateVerdict};
 use spec::{ChunkRenames, InitializerPurity, LogicalModule, MemberPurity, UnassignedMode};
@@ -666,6 +666,7 @@ pub(super) fn finish_logical_chunk(
         gate_rejection_policy,
         program_graph,
         &assignment_analysis,
+        &analysis.facts,
         &export_reentry_reports[&chunk_id_interned],
     )?;
 
@@ -1499,6 +1500,7 @@ fn validate_and_emit_reports<'a>(
     policy: GateRejectionPolicy,
     program_graph: &ProgramGraphOutput<'_>,
     assignment_analysis: &'a AssignmentAnalysis,
+    facts: &[analysis::facts::StatementFacts],
     export_reentry_report: &ExportReentryReport,
 ) -> Result<GateOutcome<'a>> {
     let validation = assignment_analysis.validate_for_emission();
@@ -1518,6 +1520,14 @@ fn validate_and_emit_reports<'a>(
         report_emission.full_dir()
     };
     if let Some(report_out_dir) = report_out_dir {
+        let effects =
+            assignment_analysis.effect_translation_validation(facts, &translation_validation);
+        write_chunk_report_json(
+            report_out_dir,
+            chunk_id,
+            EFFECT_TRANSLATION_VALIDATION_REPORT,
+            &effects,
+        )?;
         write_chunk_report_json(
             report_out_dir,
             chunk_id,

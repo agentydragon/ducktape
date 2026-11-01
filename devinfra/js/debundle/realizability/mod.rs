@@ -48,10 +48,14 @@ use analysis::reports::SccCore;
 mod condensation_order;
 #[cfg(test)]
 mod condensation_order_proptest;
+mod effect_translation_validation;
 mod esm_simulator;
 mod incremental_quotient;
 mod translation_validation;
 
+pub use effect_translation_validation::{
+    EffectTranslationValidationReport, effect_translation_validate,
+};
 use esm_simulator::EsmEvaluationSimulator;
 use incremental_quotient::{IncrementalQuotient, QuotientOverlay};
 pub use incremental_quotient::{LadderDecision, ModuleAssignmentDelta};

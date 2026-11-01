@@ -15,7 +15,10 @@ use analysis::{
 
 use crate::AssignmentInputs;
 use crate::esm_import_order::EsmImportOrder;
-use crate::realizability::{TranslationValidationReport, translation_validate};
+use crate::realizability::{
+    EffectTranslationValidationReport, TranslationValidationReport, effect_translation_validate,
+    translation_validate,
+};
 use crate::validation::{AssignmentReport, validate_assignment};
 
 #[derive(Debug, Error)]
@@ -282,6 +285,26 @@ impl AssignmentAnalysis {
             self.inputs.chunk_id(),
         );
         wire
+    }
+
+    /// Facts-backed diagnostics only; never part of acceptance or TV1's oracle.
+    pub fn effect_translation_validation(
+        &self,
+        facts: &[analysis::facts::StatementFacts],
+        legacy: &TranslationValidationReport,
+    ) -> EffectTranslationValidationReport {
+        effect_translation_validate(
+            self.inputs.dependency_graph(),
+            &self.assignment,
+            &emitted_modules(
+                self.inputs.planned_modules().len(),
+                self.assignment.entry_destination().module_id(),
+            ),
+            &self.import_order,
+            facts,
+            legacy,
+            &|id| self.module_path(id),
+        )
     }
 
     pub fn validate_for_emission(&self) -> Result<ValidatedAssignment<'_>, RejectedAssignment<'_>> {

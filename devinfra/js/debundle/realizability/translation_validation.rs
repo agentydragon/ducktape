@@ -75,20 +75,14 @@ pub fn translation_validate(
     emitted_modules: &BTreeSet<ModuleId>,
     import_order: &EsmImportOrder,
 ) -> TranslationValidation {
-    let canonical = chunk_constraining_module_edges(dependency_graph, assignment);
-    let post_order = simulate_esm_post_order(
-        assignment.entry_destination().module_id(),
-        &canonical.i_successors,
-        emitted_modules,
-        import_order,
-    );
-    let module_position = |unit: SourceUnitId| {
-        let module = assignment.of(unit);
-        *post_order
-            .get(&module)
-            .unwrap_or_else(|| panic!("the entry imports every emitted module, {module:?} too"))
-    };
-    let ordinal = |unit: SourceUnitId| {
+    let emitted =
+        emitted_statement_order(dependency_graph, assignment, emitted_modules, import_order);
+    let positions: BTreeMap<_, _> = emitted
+        .iter()
+        .map(|&(position, _, unit)| (unit, position))
+        .collect();
+    let module_position = |unit| positions[&unit];
+    let ordinal = |unit| {
         dependency_graph
             .node(unit)
             .expect("edges name graph nodes")
@@ -138,11 +132,6 @@ pub fn translation_validate(
         }
     }
 
-    let mut emitted: Vec<(usize, SourceUnitOrdinal, SourceUnitId)> = dependency_graph
-        .iter_nodes()
-        .map(|node| (module_position(node.id), node.statement_ordinal, node.id))
-        .collect();
-    emitted.sort_unstable();
     verdict.swapped_pairs = count_inversions(emitted.iter().map(|(_, ordinal, _)| *ordinal));
     verdict.conflicts = sweep(emitted.iter().map(|&(_, ordinal, unit)| {
         (
@@ -208,6 +197,35 @@ fn sweep<'a>(
         }
     }
     conflicts
+}
+
+/// Exact emitter order shared by both report-only translation validators.
+pub(super) fn emitted_statement_order(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+    emitted_modules: &BTreeSet<ModuleId>,
+    import_order: &EsmImportOrder,
+) -> Vec<(usize, SourceUnitOrdinal, SourceUnitId)> {
+    let canonical = chunk_constraining_module_edges(dependency_graph, assignment);
+    let post_order = simulate_esm_post_order(
+        assignment.entry_destination().module_id(),
+        &canonical.i_successors,
+        emitted_modules,
+        import_order,
+    );
+    let module_position = |unit: SourceUnitId| {
+        let module = assignment.of(unit);
+        *post_order
+            .get(&module)
+            .unwrap_or_else(|| panic!("the entry imports every emitted module, {module:?} too"))
+    };
+
+    let mut emitted: Vec<(usize, SourceUnitOrdinal, SourceUnitId)> = dependency_graph
+        .iter_nodes()
+        .map(|node| (module_position(node.id), node.statement_ordinal, node.id))
+        .collect();
+    emitted.sort_unstable();
+    emitted
 }
 
 /// Pairs `i < j` with `ordinals[i] > ordinals[j]`, by a Fenwick tree over

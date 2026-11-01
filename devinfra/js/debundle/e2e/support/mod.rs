@@ -106,6 +106,15 @@ impl Fixture {
         )
     }
 
+    pub fn effect_translation_validation(&self) -> Value {
+        read_json(
+            &self
+                .report_root
+                .join(&self.chunk_id)
+                .join("effect_translation_validation.json"),
+        )
+    }
+
     pub fn program_graph(&self) -> ProgramGraphReport {
         read_program_graph(
             &self
@@ -154,6 +163,10 @@ impl RejectedFixture {
     /// `translation_validation.json`: translation validation beside the gate's verdict.
     pub fn translation_validation(&self) -> Value {
         self.read_report("translation_validation.json")
+    }
+
+    pub fn effect_translation_validation(&self) -> Value {
+        self.read_report("effect_translation_validation.json")
     }
 
     /// `atomic_group_conflicts.json`: one entry per atomic group the spec splits, with its
