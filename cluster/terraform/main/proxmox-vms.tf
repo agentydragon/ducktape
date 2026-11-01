@@ -52,7 +52,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
   # 02:00.0. The DISPLAY GPU must be guest 01:00.0 because DXVK renders on the
   # first-PCI device and the two 5090s are identical (no per-app selector) — so
   # the monitor's card has to be hostpci0 to avoid a cross-PCIe copy per frame.
-  # See nix/debug/wyrm2/direct_display_bringup/README.md.
+  # See nix/docs/wyrm2_display.md.
   #
   # Display 5090 (host 01:00, IOMMU group 14; DP cable to the FV43U): pass the
   # WHOLE device (no function suffix) so the guest gets both the GPU (01:00.0)
@@ -99,7 +99,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
   # pass hubs themselves): grabbed only while the monitor's KVM routes its hub
   # to USB-B; on the USB-C/KVM side the path is empty and atlas keeps the
   # keyboard. Feeds wyrm2's local logind seat0 (direct-display gaming) — see
-  # nix/debug/wyrm2/direct_display_bringup/README.md. Update the path if the cable
+  # nix/docs/wyrm2_display.md. Update the path if the cable
   # moves to another rear port.
   usb {
     host = "3-2.1"
@@ -162,7 +162,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
   # guest's /dev/vdX letters shift when slots are added or skipped.
   # Repurposed from the decommissioned Longhorn disk (was 100GB, /var/mnt/longhorn).
   # NOTE: the actual grow was applied imperatively via `qm` on atlas (see
-  # nix/debug/wyrm2/direct_display_bringup/README.md); this keeps the TF source in sync.
+  # nix/docs/wyrm2_display.md); this keeps the TF source in sync.
   # backup/replicate off — games are re-downloadable, not worth snapshotting.
   disk {
     datastore_id = var.storage

@@ -20,10 +20,9 @@ let
   # $XDG_DATA_HOME/gnome-remote-desktop/grd.conf
   # (= /var/lib/gnome-remote-desktop/.local/share/gnome-remote-desktop/grd.conf) under
   # the [RDP] group (keys rdp-enabled / rdp-server-cert-path / rdp-server-key-path).
-  # Declaring RDP enabled here is what makes the daemon bind 3389 at startup — and it
-  # sidesteps `grdctl --system rdp enable`, whose built-in systemd-enable step can't
-  # write to read-only /etc on NixOS. Symlinked into place by tmpfiles (below); the
-  # TLS pair is a SOPS secret.
+  # Symlinked into place by tmpfiles; the TLS pair is a SOPS secret.
+  # This configuration alone did not establish a listener in the July investigation.
+  # GRD readiness and desktop acceptance remain open: nix/docs/wyrm2_display.md.
   grdConf = pkgs.writeText "grd-system-rdp.conf" ''
     [RDP]
     rdp-enabled=true
@@ -198,18 +197,9 @@ in
   # Podman
   virtualisation.podman.enable = true;
 
-  # Display manager: GDM (inherited from gui.nix; no host override needed).
-  #
-  # SINGLE-SEAT0 + REMOTE model (2026-07-17, supersedes the old multi-seat design).
-  # The physical monitor and a remote console are never needed at the same time, so
-  # we do NOT run a second logind seat. The display 5090 (01:00.0) is seat0's sole
-  # graphical output — a normal, fully-supported GDM seat0 login, so the physical
-  # seat "just works" — and remote access is a *session, not a seat*
-  # (gnome-remote-desktop, below; reach it over an SSH-key tunnel on nebula). This
-  # retires the whole multi-seat-DM problem: GDM cannot complete a *non*-seat0 user
-  # login (gdm!291 unmerged, blocked on systemd#42247), which is exactly the wall
-  # the old `seatphysical` seat hit. Full analysis + the retracted multi-seat
-  # decision: nix/debug/wyrm2/direct_display_bringup/README.md (full multiseat saga archived under archive/).
+  # The display 5090 (01:00.0) is the sole local graphical output on seat0.
+  # Remote-access candidates and historical multiseat constraints are documented
+  # in nix/docs/wyrm2_display.md; no remote desktop is currently accepted.
 
   # seat0 defaults to GNOME. mutter is what honours `mutter-device-ignore` (see the
   # udev rules below), so the single-display isolation only works under
@@ -224,31 +214,17 @@ in
   # verbose logging on through the GRD bring-up (the nixpkgs#504490 handover fix is
   # already in gsd 50.1, but the NVIDIA-headless GRD path is untested here).
   # Recovery for the leaked-session zombie this can expose:
-  # nix/debug/wyrm2/direct_display_bringup/login_zombie_recovery.md.
+  # nix/docs/wyrm2_login_recovery.md.
   services.displayManager.gdm.debug = true;
 
-  # Remote access = a *session, not a seat*: gnome-remote-desktop "Remote Login"
-  # (system RDP with GDM handover) starts a fresh headless GNOME session on connect
-  # — no prior local login needed, and its virtual monitor resizes to the client.
-  # Reach it over an SSH-key tunnel on nebula (`ssh -L 3389:localhost:3389
-  # <wyrm2-nebula>`, then RDP to localhost:3389): RDP is NOT firewalled open, so the
-  # only path in is the key-only SSH already configured — nebula cert + SSH key are
-  # the gates, the RDP password is just the login step. RDP is enabled declaratively:
-  # the TLS pair is a SOPS secret (below) and grd.conf (grdConf above) is symlinked
-  # into place by tmpfiles — no grdctl, no runtime bootstrap. See the GRD bring-up
-  # notes in nix/debug/wyrm2/direct_display_bringup/README.md.
+  # GNOME Remote Desktop remains configured but lacks current desktop acceptance.
+  # TLS/config is declarative; xrdp below is the configured alternative.
+  # Diagnostics and acceptance boundary: nix/docs/wyrm2_display.md.
   services.gnome.gnome-remote-desktop.enable = true;
 
-  # ACTUAL remote desktop: xrdp + Xfce. gnome-remote-desktop system "Remote Login"
-  # above is the GNOME-native headless path but is BLOCKED on NixOS (`grdctl enable`
-  # self-systemd-enables into read-only /etc → EROFS; GDM handover broken — nixpkgs
-  # #504490/#535360; see nix/debug/wyrm2/remote_desktop_wyrm2.md), so it never listens and
-  # stays dormant. xrdp spawns its own X session on connect (PAM auth with your system
-  # password — no stored creds), which works pre-login WITHOUT auto-login. Tunnel-only:
-  # services.xrdp.openFirewall defaults false, so 3389 is not exposed on nebula — reach
-  # it via `ssh -L 3390:localhost:3389 wyrm2` + an RDP client (freerdp3 on rugged).
-  # Separate X11 Xfce session, not the GPU/Wayland seat (use Sunshine for that, when
-  # logged in).
+  # xrdp starts a separate X11 Xfce session with PAM authentication.
+  # k8s-worker.nix trusts nebula1/cilium_host/lxc+ despite openFirewall=false,
+  # so mesh peers can reach 3389 directly; no SSH tunnel is required.
   services.xrdp = {
     enable = true;
     defaultWindowManager = "${rdpSession}";
@@ -283,7 +259,7 @@ in
   # keep the DP output awake so the FV43U KVM would not revert to USB-C before the
   # seatphysical keyboard could wake it. Re-establish that no-blank guarantee for
   # the GDM greeter if the KVM reverts again — see
-  # nix/debug/wyrm2/direct_display_bringup/README.md.
+  # nix/docs/wyrm2_display.md.
 
   # Sway kept as an OPTIONAL seat0 session (NOT the default — GNOME is, because only
   # mutter honours the mutter-device-ignore isolation). A real WM to game/debug from,
@@ -313,13 +289,9 @@ in
   # sway seat0 session above; harmless for the default GNOME/mutter session.
   environment.sessionVariables.WLR_NO_HARDWARE_CURSORS = "1";
 
-  # Steam — games run on the RTX 5090s (direct display via seatphysical, or
-  # streamed to atlas via Sunshine/Moonlight).
-  # Games run directly in the sway session on seatphysical (the display GPU is
-  # 01:00.0 = the same GPU DXVK renders on, so no gamescope GPU-pinning is
-  # needed — see nix/debug/wyrm2/direct_display_bringup/README.md). No gamescope kiosk
-  # session: on this 2-identical-5090 box gamescope can't disambiguate the
-  # GPUs and its greeter session crashed opening the wrong (seat0-owned) card.
+  # Steam uses the local seat0 display GPU; Sunshine requires an existing session.
+  # Keep the monitor on 01:00.0: gamescope's vendor:device selector did not
+  # distinguish the identical 5090s during bring-up. See nix/docs/wyrm2_display.md.
   programs.steam.enable = true;
   # Attempt at the native Steam Linux Runtime `libselinux.so.1` failure (Stellaris
   # dies: "mkdir: libselinux.so.1: cannot open shared object file"). Adds it to
@@ -417,7 +389,7 @@ in
   # virtio1: 500GB SSD (local-zfs) — Steam library for the gaming seat.
   # Repurposed from the decommissioned Longhorn disk. Games + Proton prefixes must be
   # on SSD: the small-file prefix I/O crawls on the tank-hdd virtiofs share
-  # (/mnt/tankshare). See nix/debug/wyrm2/direct_display_bringup/README.md.
+  # (/mnt/tankshare). See nix/docs/wyrm2_display.md.
   fileSystems."/games" = {
     device = "/dev/disk/by-path/virtio-pci-0000:06:0b.0"; # virtio1
     fsType = "ext4";
