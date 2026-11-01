@@ -69,12 +69,14 @@ func (r *Runtime) requestTransition(ctx context.Context, kind lifecycle.RuntimeT
 	sequence := r.activeTransitionSequence
 	r.activeTransitionCtx = opCtx
 	r.activeTransitionCancel = cancel
-	r.activeQuiesceIdleSince = idleSince
-	err := lifecycle.PublishRuntimeTransitionRequest(context.Background(), r.lifecycleState, lifecycle.RuntimeTransitionRequest{
-		Sequence: sequence, Kind: kind, UID: uid,
-	})
+	transition := lifecycle.RuntimeTransitionRequest{Sequence: sequence, Kind: kind, UID: uid}
+	if idleSince != nil {
+		transition.HasIdleSince = true
+		transition.IdleSinceMicros = idleSince.AsTime().UnixMicro()
+	}
+	err := lifecycle.PublishRuntimeTransitionRequest(context.Background(), r.lifecycleState, transition)
 	if err != nil {
-		r.activeTransitionCtx, r.activeTransitionCancel, r.activeQuiesceIdleSince = nil, nil, nil
+		r.activeTransitionCtx, r.activeTransitionCancel = nil, nil
 		r.mu.Unlock()
 		return fmt.Errorf("publish Runtime transition: %w", err)
 	}
@@ -82,7 +84,7 @@ func (r *Runtime) requestTransition(ctx context.Context, kind lifecycle.RuntimeT
 	defer func() {
 		r.mu.Lock()
 		if r.activeTransitionSequence == sequence {
-			r.activeTransitionCtx, r.activeTransitionCancel, r.activeQuiesceIdleSince = nil, nil, nil
+			r.activeTransitionCtx, r.activeTransitionCancel = nil, nil
 		}
 		r.mu.Unlock()
 	}()

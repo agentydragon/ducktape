@@ -173,9 +173,11 @@ const (
 )
 
 type RuntimeTransitionRequest struct {
-	Sequence uint64
-	Kind     RuntimeTransitionKind
-	UID      string
+	Sequence        uint64
+	Kind            RuntimeTransitionKind
+	UID             string
+	HasIdleSince    bool
+	IdleSinceMicros int64
 }
 
 func (value RuntimeTransitionRequest) DeepCopy() RuntimeTransitionRequest { return value }

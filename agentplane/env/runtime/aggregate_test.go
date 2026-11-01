@@ -469,6 +469,10 @@ func TestFreshSessionAdmissionInvalidatesIdleToken(t *testing.T) {
 	if _, err := r.Quiesce(context.Background(), &sessionpb.QuiesceRequest{IfIdleSince: after.IdleSince}); err != nil {
 		t.Fatal(err)
 	}
+	request, found, err := lifecycle.ReadRuntimeTransitionRequest(context.Background(), r.lifecycleState)
+	if err != nil || !found || !request.HasIdleSince || request.IdleSinceMicros != after.IdleSince.AsTime().UnixMicro() {
+		t.Fatalf("conditional transition request = %+v, found=%v, err=%v", request, found, err)
+	}
 }
 
 func TestEmbeddedHostLifecycleLossStillFencesExecution(t *testing.T) {

@@ -70,7 +70,7 @@ func (c *runtimeTransitionSequence) reconcile(ctx context.Context, engine contro
 				}
 				return err
 			case lifecycle.RuntimeQuiesce:
-				steps, err := c.planQuiesce(ctx)
+				steps, err := c.planQuiesce(ctx, request)
 				if err == nil {
 					c.steps = steps
 				}
@@ -356,7 +356,7 @@ func (c *runtimeTransitionSequence) planAdoption(ctx context.Context, uid string
 	return steps, nil
 }
 
-func (c *runtimeTransitionSequence) planQuiesce(ctx context.Context) ([]runtimeTransitionStep, error) {
+func (c *runtimeTransitionSequence) planQuiesce(ctx context.Context, request lifecycle.RuntimeTransitionRequest) ([]runtimeTransitionStep, error) {
 	r := c.r
 	facts, err := r.facts()
 	if err != nil {
@@ -374,13 +374,13 @@ func (c *runtimeTransitionSequence) planQuiesce(ctx context.Context) ([]runtimeT
 		if r.closing {
 			return errors.New("environment Runtime is closing")
 		}
-		if !r.state.Lameduck() && r.activeQuiesceIdleSince != nil &&
-			(facts.IdleSince == nil || facts.IdleSince.AsTime().UnixMicro() != r.activeQuiesceIdleSince.AsTime().UnixMicro() ||
+		if !r.state.Lameduck() && request.HasIdleSince &&
+			(facts.IdleSince == nil || facts.IdleSince.AsTime().UnixMicro() != request.IdleSinceMicros ||
 				r.activeAdmissions != 0 || r.activeExecutionCalls != 0 || r.executionRecovering ||
 				r.host == nil || r.host.report == nil || !r.host.report.Ready || r.intent == nil ||
 				!proto.Equal(r.host.report.Binding, r.intent.Binding) || r.host.report.Facts == nil ||
 				r.host.report.Facts.IdleSince == nil ||
-				r.host.report.Facts.IdleSince.AsTime().UnixMicro() != r.activeQuiesceIdleSince.AsTime().UnixMicro()) {
+				r.host.report.Facts.IdleSince.AsTime().UnixMicro() != request.IdleSinceMicros) {
 			return status.Error(codes.Aborted, "the Sandbox is busy or its idle_since differs")
 		}
 		if r.host == nil || !r.host.connected {
