@@ -33,14 +33,13 @@ func SupervisorMain(args []string) int {
 	parentFD := flags.Int("parent-liveness-fd", parentLivenessFDDefault, "")
 	reportFD := flags.Int("native-pid-fd", nativePIDFDDefault, "")
 	stateFD := flags.Int("state-owner-fd", -1, "")
-	stopGraceText := flags.String("stop-grace", stopGrace.String(), "")
+	configuredStopGrace := flags.Duration("stop-grace", stopGrace, "")
 	if err := flags.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "harness supervisor: invalid options: %v\n", err)
 		return 64
 	}
-	configuredStopGrace, err := time.ParseDuration(*stopGraceText)
-	if err != nil || configuredStopGrace < 0 {
-		fmt.Fprintf(os.Stderr, "harness supervisor: invalid stop grace %q\n", *stopGraceText)
+	if *configuredStopGrace < 0 {
+		fmt.Fprintf(os.Stderr, "harness supervisor: invalid stop grace %s\n", *configuredStopGrace)
 		return 64
 	}
 	command := flags.Args()
@@ -96,7 +95,7 @@ func SupervisorMain(args []string) int {
 	}
 	_ = report.Close()
 
-	code, err := waitForNative(child, parentGone, signals, configuredStopGrace)
+	code, err := waitForNative(child, parentGone, signals, *configuredStopGrace)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "harness supervisor: wait for native harness: %v\n", err)
 		return 125

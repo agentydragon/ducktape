@@ -83,7 +83,7 @@ func TestSupervisorFencesSameGroupChildAfterNativeLeaderExits(t *testing.T) {
 }
 
 func TestSubprocessStopUsesLaunchGrace(t *testing.T) {
-	grace := 100 * time.Millisecond
+	grace := 250 * time.Millisecond
 	process, err := NewSubprocessSupervisor(nil).NewProcess(ProcessConfig{
 		Command:   []string{"/bin/sh", "-c", `trap '' TERM; echo ready; exec /bin/sleep 60`},
 		StopGrace: grace,
@@ -103,8 +103,8 @@ func TestSubprocessStopUsesLaunchGrace(t *testing.T) {
 	if err := process.Stop(ctx); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
-	if elapsed := time.Since(started); elapsed > 3*time.Second {
-		t.Fatalf("Stop took %s with %s launch grace; helper did not honor launch policy", elapsed, grace)
+	if elapsed := time.Since(started); elapsed < grace || elapsed > 3*time.Second {
+		t.Fatalf("Stop took %s with %s launch grace; want graceful wait through deadline before escalation", elapsed, grace)
 	}
 	if code, err := process.Wait(ctx); err != nil || code != 128+int(syscall.SIGKILL) {
 		t.Fatalf("Wait after escalated stop = (%d, %v), want SIGKILL exit", code, err)

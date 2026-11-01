@@ -63,6 +63,14 @@ and stop-job completion alone do not authorize replacement. Missing/malformed pr
 invocations, failed required completion evidence and uncertain starts keep admission closed. Each
 owner must still fence its native transient units separately before lifecycle acknowledgement.
 
+Each managed process receives a non-negative `StopGrace` in its launch configuration; `Stop(ctx)`
+uses that fixed value for the process lifetime. Systemd sets `TimeoutStopUSec` when it starts a
+transient process unit, while the subprocess helper receives the same duration over its private
+launch arguments and owns TERM-to-KILL escalation. PID1 applies the same launch-time deadline.
+Host native processes retain the 5-second policy, the Runtime-managed Host process uses 30 seconds,
+and the standalone Execution service uses 110 seconds. Callers cannot change a process's stop grace
+after launch.
+
 ## Process topology and fence proof
 
 The executable names below are fixed package contracts. Their systemd definitions live in
