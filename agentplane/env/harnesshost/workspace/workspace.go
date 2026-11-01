@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"golang.org/x/sys/unix"
@@ -102,9 +103,10 @@ func Ensure(ctx context.Context, cwd string, config Config) (string, error) {
 	}
 	command := append([]string{executable, HelperMode, root}, parts...)
 	process, err := config.LaunchHelper(ctx, supervision.ProcessConfig{
-		Command: command,
-		Dir:     root,
-		Env:     map[string]string{},
+		Command:   command,
+		Dir:       root,
+		Env:       map[string]string{},
+		StopGrace: 5 * time.Second,
 	})
 	if err != nil {
 		return "", fmt.Errorf("start workspace helper: %w", err)

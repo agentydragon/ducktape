@@ -196,7 +196,7 @@ func (p *localHostProcess) Wait(ctx context.Context) (int, error) {
 	}
 }
 
-func (p *localHostProcess) Stop(ctx context.Context, _ time.Duration) error {
+func (p *localHostProcess) Stop(ctx context.Context) error {
 	p.cancel()
 	_, err := p.Wait(ctx)
 	return err

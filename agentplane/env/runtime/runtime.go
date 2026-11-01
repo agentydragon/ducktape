@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/env/execution/codexexecserver"
@@ -84,7 +83,7 @@ type Config struct {
 type childProcess interface {
 	Start(context.Context) error
 	Wait(context.Context) (int, error)
-	Stop(context.Context, time.Duration) error
+	Stop(context.Context) error
 	Stdout() io.Reader
 	Stderr() io.Reader
 }
@@ -535,7 +534,7 @@ func (r *Runtime) stopHost(ctx context.Context) error {
 	if process == nil {
 		return nil
 	}
-	stopErr := process.Stop(ctx, 30*time.Second)
+	stopErr := process.Stop(ctx)
 	code, waitErr := process.Wait(ctx)
 	if code != 0 {
 		waitErr = errors.Join(waitErr, fmt.Errorf("Harness Host exited with status %d", code))

@@ -1,6 +1,7 @@
 package supervision
 
 import (
+	"bufio"
 	"context"
 	"os"
 	"path/filepath"
@@ -27,7 +28,8 @@ func TestSupervisorFencesSameGroupChildAfterNativeLeaderExits(t *testing.T) {
 	childScript := "trap '' TERM; echo $$ > " + quoteShellArg(pidFile) + "; exec /bin/sleep 60"
 	leaderScript := "/bin/sh -c " + quoteShellArg(childScript) + " & wait"
 	process, err := NewSubprocessSupervisor(owner).NewProcess(ProcessConfig{
-		Command: []string{"/bin/sh", "-c", leaderScript},
+		Command:   []string{"/bin/sh", "-c", leaderScript},
+		StopGrace: stopGrace,
 	})
 	if err != nil {
 		_ = owner.Close()
@@ -78,6 +80,35 @@ func TestSupervisorFencesSameGroupChildAfterNativeLeaderExits(t *testing.T) {
 	}
 	_ = unix.Kill(childPID, unix.SIGKILL)
 	t.Fatalf("same-group tool %d kept state ownership after its native leader exited", childPID)
+}
+
+func TestSubprocessStopUsesLaunchGrace(t *testing.T) {
+	grace := 100 * time.Millisecond
+	process, err := NewSubprocessSupervisor(nil).NewProcess(ProcessConfig{
+		Command:   []string{"/bin/sh", "-c", `trap '' TERM; echo ready; exec /bin/sleep 60`},
+		StopGrace: grace,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := process.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if line, err := bufio.NewReader(process.Stdout()).ReadString('\n'); err != nil || line != "ready\n" {
+		t.Fatalf("native readiness = %q, %v", line, err)
+	}
+	started := time.Now()
+	if err := process.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("Stop took %s with %s launch grace; helper did not honor launch policy", elapsed, grace)
+	}
+	if code, err := process.Wait(ctx); err != nil || code != 128+int(syscall.SIGKILL) {
+		t.Fatalf("Wait after escalated stop = (%d, %v), want SIGKILL exit", code, err)
+	}
 }
 
 func quoteShellArg(value string) string {

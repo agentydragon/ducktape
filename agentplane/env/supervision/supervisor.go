@@ -33,8 +33,14 @@ func SupervisorMain(args []string) int {
 	parentFD := flags.Int("parent-liveness-fd", parentLivenessFDDefault, "")
 	reportFD := flags.Int("native-pid-fd", nativePIDFDDefault, "")
 	stateFD := flags.Int("state-owner-fd", -1, "")
+	stopGraceText := flags.String("stop-grace", stopGrace.String(), "")
 	if err := flags.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "harness supervisor: invalid options: %v\n", err)
+		return 64
+	}
+	configuredStopGrace, err := time.ParseDuration(*stopGraceText)
+	if err != nil || configuredStopGrace < 0 {
+		fmt.Fprintf(os.Stderr, "harness supervisor: invalid stop grace %q\n", *stopGraceText)
 		return 64
 	}
 	command := flags.Args()
@@ -90,7 +96,7 @@ func SupervisorMain(args []string) int {
 	}
 	_ = report.Close()
 
-	code, err := waitForNative(child, parentGone, signals)
+	code, err := waitForNative(child, parentGone, signals, configuredStopGrace)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "harness supervisor: wait for native harness: %v\n", err)
 		return 125
@@ -126,7 +132,7 @@ func writePIDReport(report *os.File, pid int) error {
 	return nil
 }
 
-func waitForNative(child *exec.Cmd, parentGone <-chan struct{}, signals <-chan os.Signal) (int, error) {
+func waitForNative(child *exec.Cmd, parentGone <-chan struct{}, signals <-chan os.Signal, stopGrace time.Duration) (int, error) {
 	done := make(chan error, 1)
 	go func() { done <- child.Wait() }()
 	for {
@@ -137,14 +143,14 @@ func waitForNative(child *exec.Cmd, parentGone <-chan struct{}, signals <-chan o
 			}
 			return processExitCode(child.ProcessState), expectedWaitError(err)
 		case <-parentGone:
-			return stopNative(child, done)
+			return stopNative(child, done, stopGrace)
 		case <-signals:
-			return stopNative(child, done)
+			return stopNative(child, done, stopGrace)
 		}
 	}
 }
 
-func stopNative(child *exec.Cmd, done <-chan error) (int, error) {
+func stopNative(child *exec.Cmd, done <-chan error, stopGrace time.Duration) (int, error) {
 	_ = signalProcessGroup(child.Process.Pid, syscall.SIGTERM)
 	timer := time.NewTimer(stopGrace)
 	defer timer.Stop()

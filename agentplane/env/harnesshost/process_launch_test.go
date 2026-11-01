@@ -19,8 +19,9 @@ func TestManagedProcessWaitCleansUpAfterNaturalExit(t *testing.T) {
 	defer cancel()
 
 	process, err := r.launchProcess(ctx, "managed-process-test", r.supervisor, supervision.ProcessConfig{
-		Command: []string{"/bin/sh", "-c", "IFS= read -r _; printf stdout; printf stderr >&2; exit 7"},
-		Dir:     t.TempDir(),
+		Command:   []string{"/bin/sh", "-c", "IFS= read -r _; printf stdout; printf stderr >&2; exit 7"},
+		Dir:       t.TempDir(),
+		StopGrace: 5 * time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -62,8 +63,9 @@ func TestManagedProcessCanceledWaitRetainsOwnershipUntilStop(t *testing.T) {
 	defer cancel()
 
 	process, err := r.launchProcess(ctx, "managed-process-test", r.supervisor, supervision.ProcessConfig{
-		Command: []string{"/bin/sleep", "60"},
-		Dir:     t.TempDir(),
+		Command:   []string{"/bin/sleep", "60"},
+		Dir:       t.TempDir(),
+		StopGrace: 5 * time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -118,8 +120,9 @@ func TestManagedProcessBlocksCloseUntilFence(t *testing.T) {
 	defer cancel()
 
 	process, err := r.launchProcess(ctx, "managed-process-test", r.supervisor, supervision.ProcessConfig{
-		Command: []string{"/bin/sleep", "60"},
-		Dir:     t.TempDir(),
+		Command:   []string{"/bin/sleep", "60"},
+		Dir:       t.TempDir(),
+		StopGrace: 5 * time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)

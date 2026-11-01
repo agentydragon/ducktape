@@ -65,7 +65,7 @@ func (h *supervisedExecutionHandle) StopAndFence(ctx context.Context) error {
 	} else if h.process == nil {
 		err = errors.New("execution service has no supervised process")
 	} else {
-		stopErr := h.process.Stop(ctx, executionStopGrace)
+		stopErr := h.process.Stop(ctx)
 		code, waitErr := h.process.Wait(ctx)
 		if code != 0 {
 			description := ""
@@ -218,13 +218,13 @@ func (r *Runtime) startExecutionService(ctx context.Context, config Config, inca
 			binary = filepath.Join(filepath.Dir(current), "agentplane-execution-service")
 		}
 		process, err := r.deps.startChild(r.supervisor, supervision.ProcessConfig{
-			Command: []string{binary, "--config", configPath}, Env: inheritedEnvironment(),
+			Command: []string{binary, "--config", configPath}, Env: inheritedEnvironment(), StopGrace: executionStopGrace,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("start standalone execution service: %w", err)
 		}
 		if err := process.Start(ctx); err != nil {
-			return nil, errors.Join(err, process.Stop(context.Background(), executionStopGrace))
+			return nil, errors.Join(err, process.Stop(context.Background()))
 		}
 		// Drain child output into Runtime's log stream. Besides avoiding blocked
 		// pipes, this preserves the Execution service's native fence diagnostics.

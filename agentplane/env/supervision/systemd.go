@@ -32,15 +32,12 @@ type systemdBackend struct {
 	updates      chan *systemd.PropertiesUpdate
 	updateErrors chan error
 
-	stopMu                  sync.Mutex
-	stopRequests            map[*systemd.Conn]*nativeSystemdStopJob
-	requestedStopTimeout    uint64
-	hasRequestedStopTimeout bool
-	setStopTimeout          func(context.Context, *systemd.Conn, string, uint64) error
-	stopUnit                func(context.Context, *systemd.Conn, string) (<-chan string, error)
-	referenceMu             sync.Mutex
-	unitReferences          []systemdUnitReference
-	referenceUnit           func(context.Context, string) (systemdUnitReference, error)
+	stopMu         sync.Mutex
+	stopRequests   map[*systemd.Conn]*nativeSystemdStopJob
+	stopUnit       func(context.Context, *systemd.Conn, string) (<-chan string, error)
+	referenceMu    sync.Mutex
+	unitReferences []systemdUnitReference
+	referenceUnit  func(context.Context, string) (systemdUnitReference, error)
 }
 
 type nativeSystemdStopJob struct {
@@ -169,7 +166,7 @@ func (b *systemdBackend) start(ctx context.Context, p *Process) error {
 		property("ExecStartEx", []systemdExec{{executable, command, []string{"no-env-expand"}}}), property("Environment", environment(b.config.Env)), property("WorkingDirectory", b.config.Dir),
 		property("StandardInputFileDescriptor", dbus.UnixFD(stdinReader.Fd())), property("StandardOutputFileDescriptor", dbus.UnixFD(stdoutWriter.Fd())), property("StandardErrorFileDescriptor", dbus.UnixFD(stderrWriter.Fd())),
 		property("PrivateTmp", false), property("ProtectSystem", "strict"), property("ReadWritePaths", []string{"/state", "/tmp"}), property("UMask", uint32(7)), property("LockPersonality", true), property("ProtectKernelModules", true), property("ProtectKernelLogs", true),
-		property("KillMode", "control-group"), property("KillSignal", int32(15)), property("SendSIGKILL", true), property("TimeoutStopUSec", uint64(stopGrace/time.Microsecond)), property("OOMPolicy", "continue"),
+		property("KillMode", "control-group"), property("KillSignal", int32(15)), property("SendSIGKILL", true), property("TimeoutStopUSec", systemdStopTimeout(b.config.StopGrace)), property("OOMPolicy", "continue"),
 	)
 	p.attachStreams(stdinWriter, stdoutReader, stderrReader)
 	// Caller cancellation cannot let an accepted launch escape cleanup. A subsequent
@@ -273,7 +270,7 @@ func (b *systemdBackend) fenceUntilCertain() error {
 		cancelConnection()
 	}()
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), stopGrace+5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), b.config.StopGrace+5*time.Second)
 		// Only the original live connection supplies FIFO ordering behind an
 		// uncertain start. Replacement absence alone must never release admission.
 		ordered := b.accepted || (conn == b.conn && conn.Connected())
@@ -310,7 +307,7 @@ func (m nativeSystemdUnitManager) snapshot(ctx context.Context, name string) (Sy
 }
 
 func (m nativeSystemdUnitManager) stop(ctx context.Context, _ string) (<-chan string, error) {
-	return m.backend.requestStop(ctx, m.conn, nil)
+	return m.backend.requestStop(ctx, m.conn)
 }
 
 // retainUnitReference acquires a reference on a replacement API-bus peer before
@@ -367,7 +364,7 @@ func (b *systemdBackend) retainUnitReference(manager *systemd.Conn) error {
 	return nil
 }
 
-func (b *systemdBackend) requestStop(ctx context.Context, conn *systemd.Conn, grace *time.Duration) (<-chan string, error) {
+func (b *systemdBackend) requestStop(ctx context.Context, conn *systemd.Conn) (<-chan string, error) {
 	b.stopMu.Lock()
 	defer b.stopMu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -378,23 +375,6 @@ func (b *systemdBackend) requestStop(ctx context.Context, conn *systemd.Conn, gr
 	}
 	if job, ok := b.stopRequests[conn]; ok {
 		return job.completion(), nil
-	}
-	if grace != nil {
-		b.requestedStopTimeout = systemdStopTimeout(*grace)
-		b.hasRequestedStopTimeout = true
-	}
-	if b.hasRequestedStopTimeout {
-		// TimeoutStopUSec is systemd's escalation deadline. Apply the caller's
-		// grace before StopUnit so systemd owns both TERM and KILL timing.
-		setTimeout := b.setStopTimeout
-		if setTimeout == nil {
-			setTimeout = func(ctx context.Context, conn *systemd.Conn, name string, usec uint64) error {
-				return conn.SetUnitPropertiesContext(ctx, name, true, property("TimeoutStopUSec", usec))
-			}
-		}
-		if err := setTimeout(ctx, conn, b.name, b.requestedStopTimeout); err != nil {
-			return nil, fmt.Errorf("set native systemd stop timeout: %w", err)
-		}
 	}
 	stopUnit := b.stopUnit
 	if stopUnit == nil {
@@ -527,9 +507,9 @@ func nativeExitStatus(unit SystemdUnitSnapshot, invocationID string) (int, bool,
 	return code, true, nil
 }
 
-func (b *systemdBackend) stop(ctx context.Context, p *Process, grace time.Duration) error {
+func (b *systemdBackend) stop(ctx context.Context, p *Process) error {
 	_ = p.CloseStdin()
-	_, err := b.requestStop(ctx, b.conn, &grace)
+	_, err := b.requestStop(ctx, b.conn)
 	if err != nil {
 		if errors.Is(err, dbus.ErrClosed) {
 			// Reaper reconnection and its process-domain fence are the completion

@@ -3,7 +3,6 @@ package supervision
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
@@ -34,7 +33,7 @@ func TestNativeExitStatusRequiresRetainedInvocationEvidence(t *testing.T) {
 	}
 }
 
-func TestSystemdStopTimeoutUsesCallerGrace(t *testing.T) {
+func TestSystemdStopTimeoutUsesConfiguredGrace(t *testing.T) {
 	for _, test := range []struct {
 		grace time.Duration
 		want  uint64
@@ -51,26 +50,21 @@ func TestSystemdStopTimeoutUsesCallerGrace(t *testing.T) {
 	}
 }
 
-func TestNativeSystemdStopRequestSetsGraceAndReusesJob(t *testing.T) {
+func TestNativeSystemdStopRequestReusesJob(t *testing.T) {
 	job := make(chan string, 1)
 	var operations []string
 	backend := &systemdBackend{
 		name: "native-test.service",
-		setStopTimeout: func(_ context.Context, _ *systemd.Conn, name string, usec uint64) error {
-			operations = append(operations, fmt.Sprintf("timeout:%s:%d", name, usec))
-			return nil
-		},
 		stopUnit: func(_ context.Context, _ *systemd.Conn, name string) (<-chan string, error) {
 			operations = append(operations, "stop:"+name)
 			return job, nil
 		},
 	}
-	grace := 50 * time.Millisecond
-	first, err := backend.requestStop(context.Background(), nil, &grace)
+	first, err := backend.requestStop(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := backend.requestStop(context.Background(), nil, nil)
+	second, err := backend.requestStop(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +77,7 @@ func TestNativeSystemdStopRequestSetsGraceAndReusesJob(t *testing.T) {
 	if err := WaitSystemdJob(ctx, "native-test.service", "stop", first); err != nil {
 		t.Fatalf("first WaitSystemdJob() = %v, want shared successful result", err)
 	}
-	third, err := backend.requestStop(context.Background(), nil, nil)
+	third, err := backend.requestStop(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +89,7 @@ func TestNativeSystemdStopRequestSetsGraceAndReusesJob(t *testing.T) {
 			t.Fatalf("WaitSystemdJob() = %v, want shared successful result", err)
 		}
 	}
-	want := []string{"timeout:native-test.service:50000", "stop:native-test.service"}
+	want := []string{"stop:native-test.service"}
 	if len(operations) != len(want) {
 		t.Fatalf("operations=%v, want %v", operations, want)
 	}

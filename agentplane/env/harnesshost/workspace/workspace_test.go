@@ -173,8 +173,8 @@ func TestEnsurePassesExplicitHelperLaunchConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantCommand := []string{executable, HelperMode, root, "new", "session"}
-	if !reflect.DeepEqual(launched.Command, wantCommand) || launched.Dir != root || len(launched.Env) != 0 {
-		t.Fatalf("helper launch config = %+v, want command %q, dir %q and empty environment", launched, wantCommand, root)
+	if !reflect.DeepEqual(launched.Command, wantCommand) || launched.Dir != root || len(launched.Env) != 0 || launched.StopGrace != 5*time.Second {
+		t.Fatalf("helper launch config = %+v, want command %q, dir %q, empty environment and 5s stop grace", launched, wantCommand, root)
 	}
 }
 
@@ -208,7 +208,7 @@ func runWorkspaceCommand(t *testing.T, command []string, cwd string, environment
 	if supervisor == nil {
 		supervisor = supervision.NewSubprocessSupervisor(nil)
 	}
-	process, err := supervisor.NewProcess(supervision.ProcessConfig{Command: command, Dir: cwd, Env: environment})
+	process, err := supervisor.NewProcess(supervision.ProcessConfig{Command: command, Dir: cwd, Env: environment, StopGrace: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,12 +218,12 @@ func runWorkspaceCommand(t *testing.T, command []string, cwd string, environment
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := process.CloseStdin(); err != nil {
-		_ = process.Stop(context.Background(), time.Second)
+		_ = process.Stop(context.Background())
 		t.Fatal(err)
 	}
 	code, err := process.Wait(ctx)
 	if err != nil {
-		_ = process.Stop(context.Background(), time.Second)
+		_ = process.Stop(context.Background())
 		t.Fatal(err)
 	}
 	stdout, stdoutErr := io.ReadAll(process.Stdout())

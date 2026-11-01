@@ -3,16 +3,20 @@ package supervision
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"time"
 )
 
 // ProcessConfig describes one native launch. Environment values are passed
-// explicitly to the process.
+// explicitly to the process, and StopGrace is fixed for that process lifetime.
 type ProcessConfig struct {
 	Command []string
 	Dir     string
 	Env     map[string]string
+	// StopGrace is how long graceful shutdown can run before the backend forces
+	// termination. A zero grace requests immediate escalation.
+	StopGrace time.Duration
 }
 
 // A backend owns all platform-specific process state. Process supplies the
@@ -20,7 +24,7 @@ type ProcessConfig struct {
 type processBackend interface {
 	validate() error
 	start(context.Context, *Process) error
-	stop(context.Context, *Process, time.Duration) error
+	stop(context.Context, *Process) error
 	description(*Process) string
 }
 
@@ -52,6 +56,9 @@ func newSubprocessSupervisor(stateOwnerFD *os.File, executable string) *Supervis
 func (s *Supervisor) NewProcess(config ProcessConfig) (*Process, error) {
 	if len(config.Command) == 0 || config.Command[0] == "" {
 		return nil, errCommandRequired
+	}
+	if config.StopGrace < 0 {
+		return nil, fmt.Errorf("native process stop grace must not be negative: %s", config.StopGrace)
 	}
 	if s == nil || s.makeBackend == nil {
 		return nil, errSupervisorUnconfigured

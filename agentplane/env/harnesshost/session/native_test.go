@@ -386,7 +386,7 @@ func frameTestSessionWithControllerGate(t *testing.T, command []string, withCont
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := host.Launch(ctx, ControllerName+"/"+s.id, 0, supervision.NewSubprocessSupervisor(nil), supervision.ProcessConfig{Command: command, Dir: root, Env: map[string]string{}})
+	p, err := host.Launch(ctx, ControllerName+"/"+s.id, 0, supervision.NewSubprocessSupervisor(nil), supervision.ProcessConfig{Command: command, Dir: root, Env: map[string]string{}, StopGrace: 5 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}

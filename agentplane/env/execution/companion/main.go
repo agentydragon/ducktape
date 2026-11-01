@@ -178,8 +178,9 @@ func serveControl(
 					return
 				}
 				process, err := supervisor.NewProcess(supervision.ProcessConfig{
-					Command: []string{binary, "exec-server", "--listen", listen},
-					Env:     request.Environment,
+					Command:   []string{binary, "exec-server", "--listen", listen},
+					Env:       request.Environment,
+					StopGrace: 5 * time.Second,
 				})
 				if err != nil {
 					refused := state.status
@@ -304,7 +305,7 @@ func (s *companionOwnership) fenceLoop(
 			s.mu.Unlock()
 
 			fenceCtx, finish := context.WithTimeout(lifetime, 30*time.Second)
-			err := process.Stop(fenceCtx, 5*time.Second)
+			err := process.Stop(fenceCtx)
 			if err == nil {
 				err = supervisor.FenceNamespace(fenceCtx)
 			}

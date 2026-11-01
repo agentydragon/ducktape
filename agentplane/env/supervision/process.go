@@ -164,7 +164,9 @@ func (p *Process) Wait(ctx context.Context) (int, error) {
 }
 
 // Stop closes stdin, requests graceful shutdown, then fences the execution domain.
-func (p *Process) Stop(ctx context.Context, grace time.Duration) error {
+// The grace period is fixed by ProcessConfig at launch so all backends use the
+// same stop contract and systemd can apply its deadline when the unit is created.
+func (p *Process) Stop(ctx context.Context) error {
 	if !p.Running() {
 		_, err := p.Wait(ctx)
 		return err
@@ -172,7 +174,7 @@ func (p *Process) Stop(ctx context.Context, grace time.Duration) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return p.backend.stop(ctx, p, grace)
+	return p.backend.stop(ctx, p)
 }
 
 // ExitDescription reports native status and the captured stderr tail.

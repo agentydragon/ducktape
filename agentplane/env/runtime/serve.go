@@ -140,12 +140,12 @@ func (r *Runtime) startHost(ctx context.Context) error {
 	if r.config.CodexExecServer != nil {
 		command = append(command, "--execution-socket", r.config.ExecutionSocket)
 	}
-	process, err := r.deps.startChild(r.supervisor, supervision.ProcessConfig{Command: command, Dir: r.config.StateDir, Env: inheritedEnvironment()})
+	process, err := r.deps.startChild(r.supervisor, supervision.ProcessConfig{Command: command, Dir: r.config.StateDir, Env: inheritedEnvironment(), StopGrace: 30 * time.Second})
 	if err != nil {
 		return err
 	}
 	if err := process.Start(ctx); err != nil {
-		return errors.Join(err, process.Stop(context.Background(), 30*time.Second))
+		return errors.Join(err, process.Stop(context.Background()))
 	}
 	r.mu.Lock()
 	r.hostProcess = process

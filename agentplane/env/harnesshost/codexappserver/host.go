@@ -350,7 +350,7 @@ func (c *Host) initialize(ctx context.Context, owner *Attachment, generation uin
 		return err
 	}
 	launchCtx, launchSpan := observability.Start(startup, "agentplane.codex.app_server.launch")
-	process, err := c.deps.Processes.Launch(launchCtx, ControllerName, generation, c.deps.Supervisor, supervision.ProcessConfig{Command: command, Dir: c.store, Env: env})
+	process, err := c.deps.Processes.Launch(launchCtx, ControllerName, generation, c.deps.Supervisor, supervision.ProcessConfig{Command: command, Dir: c.store, Env: env, StopGrace: 5 * time.Second})
 	observability.End(launchSpan, err)
 	if err != nil {
 		return err
