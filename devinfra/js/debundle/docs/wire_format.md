@@ -164,6 +164,25 @@ only after the stream flushes. Gate-rejected chunks can have complete exports
 even though the command exits nonzero.
 These reports are not substitute semantic inputs for staged facts.
 
+Global-cell access evidence can additionally contain `global_may_accesses`:
+each entry has a `site` (lexical source-unit ordinal, chunk-relative SWC span
+endpoints, read/write kind and static property) and `evidence` (typed proof
+dependencies and conservative callback assumptions). The enclosing chunk
+supplies the file scope. Physical operation identities join across repeated
+value evaluation and invocation memo replay. These entries always describe
+may-accesses. A cell with no independent observed evidence has
+`kind: indexed_may_access` and cannot create an observed premise contradiction.
+Existing observed/fallback cell evidence can retain these additional may-sites.
+
+`global_may_access_count` is exact. Default samples retain at most
+`global_access_example_limit` (twenty) entries per access and set
+`global_may_accesses_truncated` when more were omitted. JSONL retains every
+entry and serializes borrowed evidence without cloning a full provenance list
+for each pair. Empty provenance/count and false truncation fields are omitted.
+Static callee-global recording closes no coverage domain; dynamic keys,
+ordinary heap, host effects, throws and reordered execution remain covered by
+the existing conservative gaps.
+
 `translation_validation.json`, beside `dependency_graph.json.gz`, is the bounded
 report-only edge-TV verdict;
 the gate remains authoritative. `gate_accepts`, `accepts` and `swapped_pairs`

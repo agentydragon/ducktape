@@ -103,7 +103,7 @@ fn contained_roots(
                 }
             }
         }
-        ValueExpr::Member(base, property, _) => {
+        ValueExpr::Member(base, property, _, _) => {
             roots.extend(contained_roots(base, aliases, index, declared));
             if property.as_deref().is_some_and(identity_property) {
                 roots.insert(NativeIntrinsic::Object);
@@ -334,7 +334,7 @@ impl ExecutionIndex {
             // Prototype/constructor paths on otherwise untracked receivers
             // can recover a native without naming a builtin. Retain the read
             // even inside a deferred closure or an unindexed accessor body.
-            if let ValueExpr::Member(base, Some(property), _) = &call.callee
+            if let ValueExpr::Member(base, Some(property), _, _) = &call.callee
                 && identity_property(property)
                 && prototype_intrinsic_roots(base, aliases, self, declared).is_empty()
             {
@@ -347,7 +347,7 @@ impl ExecutionIndex {
                 continue;
             }
             let member = match &call.callee {
-                ValueExpr::Member(_, property, _) => Some(property),
+                ValueExpr::Member(_, property, _, _) => Some(property),
                 _ => None,
             };
             if member.is_some_and(|property| property.as_deref().is_none_or(descriptor_method)) {

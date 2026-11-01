@@ -566,7 +566,7 @@ fn fresh_value_writes(
             Some(FreshValueStep::Factory { binding, callee }) => {
                 let is_factory = match callee {
                     ValueExpr::Binding(callee) => factory_imports.contains(callee),
-                    ValueExpr::Member(object, Some(property), MemberKey::Static) => {
+                    ValueExpr::Member(object, Some(property), MemberKey::Static, _) => {
                         matches!(object.as_ref(), ValueExpr::Binding(namespace)
                             if factory_members.get(namespace)
                                 .is_some_and(|members| members.contains(property)))
@@ -810,6 +810,7 @@ fn collect_pattern_assignments(
                                     Box::new(value.clone()),
                                     Some(name),
                                     MemberKey::Computed(None),
+                                    swc_common::DUMMY_SP.into(),
                                 )
                             },
                         );
@@ -820,6 +821,7 @@ fn collect_pattern_assignments(
                             Box::new(value.clone()),
                             Some(property.key.id.sym.to_string()),
                             MemberKey::Computed(None),
+                            swc_common::DUMMY_SP.into(),
                         );
                         let projected =
                             property
@@ -868,6 +870,7 @@ fn collect_assign_target_assignments(
                                     Box::new(value.clone()),
                                     Some(name),
                                     MemberKey::Computed(None),
+                                    swc_common::DUMMY_SP.into(),
                                 )
                             },
                         );
@@ -878,6 +881,7 @@ fn collect_assign_target_assignments(
                             Box::new(value.clone()),
                             Some(property.key.id.sym.to_string()),
                             MemberKey::Computed(None),
+                            swc_common::DUMMY_SP.into(),
                         );
                         let projected =
                             property
@@ -1103,24 +1107,26 @@ fn native_call_identity_key(
     };
     let (binding, receiver, member, global_this_qualified) = match callee {
         ValueExpr::Binding(binding) => (binding, binding.0.as_ref(), None, false),
-        ValueExpr::Member(receiver, Some(member), MemberKey::Static) => match receiver.as_ref() {
-            ValueExpr::Binding(binding) if binding.0.as_ref() == "globalThis" => {
-                (binding, member.as_str(), None, true)
-            }
-            ValueExpr::Binding(binding) => {
-                (binding, binding.0.as_ref(), Some(member.as_str()), false)
-            }
-            ValueExpr::Member(global, Some(receiver), MemberKey::Static) => {
-                let ValueExpr::Binding(binding) = global.as_ref() else {
-                    return None;
-                };
-                if binding.0.as_ref() != "globalThis" {
-                    return None;
+        ValueExpr::Member(receiver, Some(member), MemberKey::Static, _) => {
+            match receiver.as_ref() {
+                ValueExpr::Binding(binding) if binding.0.as_ref() == "globalThis" => {
+                    (binding, member.as_str(), None, true)
                 }
-                (binding, receiver.as_str(), Some(member.as_str()), true)
+                ValueExpr::Binding(binding) => {
+                    (binding, binding.0.as_ref(), Some(member.as_str()), false)
+                }
+                ValueExpr::Member(global, Some(receiver), MemberKey::Static, _) => {
+                    let ValueExpr::Binding(binding) = global.as_ref() else {
+                        return None;
+                    };
+                    if binding.0.as_ref() != "globalThis" {
+                        return None;
+                    }
+                    (binding, receiver.as_str(), Some(member.as_str()), true)
+                }
+                _ => return None,
             }
-            _ => return None,
-        },
+        }
         _ => return None,
     };
     // A callee outside the census has no identity premise to prove.
@@ -1146,7 +1152,7 @@ fn selected_symbol_binding(callee: &ValueExpr, operation: NativeInputKind) -> Op
         ) => Some(binding),
         (
             NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor),
-            ValueExpr::Member(receiver, Some(property), MemberKey::Static),
+            ValueExpr::Member(receiver, Some(property), MemberKey::Static, _),
         ) if property == "for" => {
             let ValueExpr::Binding(binding) = receiver.as_ref() else {
                 return None;
@@ -1248,6 +1254,15 @@ struct CallbackResultWrite {
 }
 
 #[derive(Debug, Clone)]
+struct MemberValueWrite {
+    receiver: Id,
+    property: Option<String>,
+    value: ValueExpr,
+    site: CallSite,
+    owner: SourceUnitOrdinal,
+}
+
+#[derive(Debug, Clone)]
 struct Callable {
     owner: SourceUnitOrdinal,
     created_after_parent_await: bool,
@@ -1269,7 +1284,7 @@ struct Callable {
     escaped_bindings: BTreeSet<Id>,
     namespace_escape_values: Vec<ValueExpr>,
     member_writes: Vec<(Id, String)>,
-    member_value_writes: Vec<(Id, Option<String>, ValueExpr)>,
+    member_value_writes: Vec<MemberValueWrite>,
     callback_result_writes: Vec<CallbackResultWrite>,
     dynamic_property_effect: bool,
     dynamic_property_receivers: Vec<ValueExpr>,
@@ -2080,7 +2095,7 @@ pub(super) fn object_own_data_read_property(
     value: &ValueExpr,
     is_declared: impl Fn(&Id) -> bool,
 ) -> Option<&'static str> {
-    let ValueExpr::Member(receiver, Some(property), MemberKey::Static) = value else {
+    let ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) = value else {
         return None;
     };
     let ValueExpr::Binding(object) = receiver.as_ref() else {
@@ -2135,7 +2150,7 @@ fn receiver_global_property(
         {
             Some(id.0.to_string())
         }
-        ValueExpr::Member(base, property, _) => match base.as_ref() {
+        ValueExpr::Member(base, property, _, _) => match base.as_ref() {
             ValueExpr::Binding(id) if global_object(id) => property.clone(),
             base => receiver_global_property(base, aliases, globals, declared),
         },
@@ -2325,7 +2340,7 @@ fn intrinsic_roots(
             }
             combined
         }
-        ValueExpr::Member(base, property, key) => {
+        ValueExpr::Member(base, property, key, _) => {
             let base_roots = intrinsic_roots(
                 base,
                 roots,
@@ -2437,7 +2452,7 @@ fn intrinsic_roots(
                 input_roots.extend(value_roots);
             }
             let object_get_prototype_of = match callee.as_ref() {
-                ValueExpr::Member(receiver, Some(property), MemberKey::Static)
+                ValueExpr::Member(receiver, Some(property), MemberKey::Static, _)
                     if property == "getPrototypeOf" =>
                 {
                     intrinsic_roots(
@@ -2653,6 +2668,7 @@ mod iterative_alias_closure_tests {
                     Box::new(ValueExpr::Binding(holder.clone())),
                     Some("member".to_owned()),
                     MemberKey::Static,
+                    swc_common::DUMMY_SP.into(),
                 ),
             ),
             (
@@ -2746,6 +2762,7 @@ mod iterative_alias_closure_tests {
                     Box::new(ValueExpr::Binding(holder.clone())),
                     Some("member".to_owned()),
                     MemberKey::Static,
+                    swc_common::DUMMY_SP.into(),
                 ),
             ),
             (
@@ -2998,7 +3015,7 @@ fn evaluate_receiver_value(
             result.fact.safe = true;
             result.fact.complete = true;
         }
-        ValueExpr::Member(base, property, _) => {
+        ValueExpr::Member(base, property, _, _) => {
             let base = evaluate_receiver_value(base, context, rules);
             result.pending = base.pending;
             // A primitive or fresh-container receiver does not prove that its
@@ -5071,7 +5088,7 @@ fn is_global_receiver(expression: &Expr, names: &BTreeSet<&str>) -> bool {
 fn exposes_global_receiver(value: &ValueExpr, names: &BTreeSet<&str>) -> bool {
     match value {
         ValueExpr::Binding(id) => names.contains(id.0.as_ref()),
-        ValueExpr::Member(receiver, property, _) => {
+        ValueExpr::Member(receiver, property, _, _) => {
             // A direct global property read is not publication of the global
             // receiver. Projection through any other value can carry one:
             // `({root: globalThis}).root` must stay an escape.
@@ -5107,7 +5124,7 @@ fn exposes_global_receiver(value: &ValueExpr, names: &BTreeSet<&str>) -> bool {
 }
 
 fn call_mutates_global_slot(call: &Call, names: &BTreeSet<&str>) -> bool {
-    matches!(&call.callee, ValueExpr::Member(receiver, Some(property), _)
+    matches!(&call.callee, ValueExpr::Member(receiver, Some(property), _, _)
         if matches!(property.as_str(), "__defineSetter__" | "__defineGetter__")
             && exposes_global_receiver(receiver, names))
 }
@@ -5190,7 +5207,7 @@ fn close_prepublication_derived_bindings(
 
 fn same_property_or_fresh(value: &ValueExpr, alias: &Id, property: &str) -> bool {
     match value {
-        ValueExpr::Member(receiver, Some(read), _)
+        ValueExpr::Member(receiver, Some(read), _, _)
             if read == property
                 && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == alias) =>
         {
@@ -5278,7 +5295,7 @@ fn confined_prepublication_alias(
         if call.kind == CallKind::New
             && uses_any_binding(&call.callee, &derived)
             && !matches!(&call.callee,
-                ValueExpr::Member(receiver, Some(property), _)
+                ValueExpr::Member(receiver, Some(property), _, _)
                     if property == "Error"
                         && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == alias)
                         && call.args.is_empty())
@@ -5491,7 +5508,7 @@ struct GlobalMembershipProbe {
 fn global_receiver_path(value: &ValueExpr, names: &BTreeSet<&str>) -> bool {
     match value {
         ValueExpr::Binding(id) => names.contains(id.0.as_ref()),
-        ValueExpr::Member(receiver, _, _) => global_receiver_path(receiver, names),
+        ValueExpr::Member(receiver, _, _, _) => global_receiver_path(receiver, names),
         _ => false,
     }
 }
@@ -5519,7 +5536,7 @@ fn global_mutation_path(
             "Window" | "EventTarget" | "Object" | "Document" | "HTMLDocument" => Prototype,
             _ => Unrelated,
         },
-        ValueExpr::Member(receiver, property, _) => {
+        ValueExpr::Member(receiver, property, _, _) => {
             match global_mutation_path(receiver, names, bindings) {
                 Unrelated => Unrelated,
                 Prototype => Prototype,
@@ -5559,7 +5576,7 @@ fn stored_global_alias(
             ValueExpr::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| stored_global_alias(value, names, bindings, include_prototypes)),
-            ValueExpr::Member(receiver, _, _) => {
+            ValueExpr::Member(receiver, _, _, _) => {
                 stored_global_alias(receiver, names, bindings, include_prototypes)
             }
             ValueExpr::Call(_, args, _) | ValueExpr::New(_, args, _) => args
@@ -5571,6 +5588,7 @@ fn stored_global_alias(
 }
 
 struct ExecutionIndex {
+    member_owners: BTreeMap<CallSite, SourceUnitOrdinal>,
     retained_record_factories: BTreeSet<String>,
     owner: SourceUnitOrdinal,
     current: Option<u32>,
@@ -5690,7 +5708,7 @@ struct ExecutionIndex {
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
     top_definite_initializers: Vec<BTreeSet<Id>>,
     const_call_owners: BTreeSet<SourceUnitOrdinal>,
-    top_member_value_writes: Vec<Vec<(Id, Option<String>, ValueExpr)>>,
+    top_member_value_writes: Vec<Vec<MemberValueWrite>>,
     top_callback_result_writes: Vec<Vec<CallbackResultWrite>>,
     top_exported_values: Vec<Vec<ValueExpr>>,
     top_metadata_decorations: Vec<Option<MetadataDecorateCall>>,
@@ -5764,6 +5782,7 @@ struct ExecutionIndex {
 impl Default for ExecutionIndex {
     fn default() -> Self {
         Self {
+            member_owners: BTreeMap::new(),
             retained_record_factories: BTreeSet::new(),
             owner: SourceUnitOrdinal(0),
             current: None,
@@ -6221,7 +6240,7 @@ impl ExecutionIndex {
         reads: &mut BTreeSet<String>,
     ) {
         match expr {
-            ValueExpr::Member(base, property, _) => {
+            ValueExpr::Member(base, property, _, _) => {
                 if let Some(name) = property
                     && !reads.contains(name)
                     && !is_predefined_global(name, self.census_globals.predefined)
@@ -6427,7 +6446,7 @@ impl ExecutionIndex {
                     .any(|method| key_domain_may_name(&domain, method))
             };
             for call in &self.prototype_calls {
-                let ValueExpr::Member(base, property, key) = &call.callee else {
+                let ValueExpr::Member(base, property, key, _) = &call.callee else {
                     continue;
                 };
                 if call.kind != CallKind::Call
@@ -7769,7 +7788,7 @@ impl ExecutionIndex {
                     .then_some("selected an unsupported native Symbol call row")
             }
             NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => {
-                let ValueExpr::Member(receiver, Some(member), MemberKey::Static) = callee else {
+                let ValueExpr::Member(receiver, Some(member), MemberKey::Static, _) = callee else {
                     return Some("must select a direct uncomputed Promise.resolve() call");
                 };
                 let ValueExpr::Binding(promise) = receiver.as_ref() else {
@@ -7951,7 +7970,7 @@ impl ExecutionIndex {
         {
             return None;
         }
-        let ValueExpr::Member(receiver, Some(member), MemberKey::Static) = &call.callee else {
+        let ValueExpr::Member(receiver, Some(member), MemberKey::Static, _) = &call.callee else {
             return None;
         };
         let ValueExpr::Binding(object) = receiver.as_ref() else {
@@ -9220,8 +9239,10 @@ impl ExecutionIndex {
                     || callable.namespace_escape_values.iter().any(|value| {
                         value.may_publish_namespace(id, &aliases, &namespace_value_facts)
                     })
-                    || callable.member_value_writes.iter().any(|(_, _, value)| {
-                        value.may_publish_namespace(id, &aliases, &namespace_value_facts)
+                    || callable.member_value_writes.iter().any(|write| {
+                        write
+                            .value
+                            .may_publish_namespace(id, &aliases, &namespace_value_facts)
                     })
                     || callable.callback_result_writes.iter().any(|write| {
                         (is_mutation_receiver(&write.receiver)
@@ -9245,14 +9266,11 @@ impl ExecutionIndex {
                         })
                     })
             });
-            let top_member_value =
-                index
-                    .top_member_value_writes
-                    .iter()
-                    .flatten()
-                    .any(|(_, _, value)| {
-                        value.may_publish_namespace(id, &aliases, &namespace_value_facts)
-                    });
+            let top_member_value = index.top_member_value_writes.iter().flatten().any(|write| {
+                write
+                    .value
+                    .may_publish_namespace(id, &aliases, &namespace_value_facts)
+            });
             let top_call_argument = index.top_calls.iter().flatten().any(|call| {
                 call.args
                     .iter()
@@ -10034,6 +10052,7 @@ impl ExecutionIndex {
                 Box::new(ValueExpr::from_expr(&member.obj)),
                 static_prop(&member.prop),
                 MemberKey::of(&member.prop),
+                member.span.into(),
             ),
             args: Vec::new(),
             span: member.span,
@@ -11221,6 +11240,7 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_member_expr(&mut self, member: &MemberExpr) {
+        self.member_owners.insert(member.span.into(), self.owner);
         if self.global_guards_requested
             && is_global_receiver(&member.obj, &self.global_object_names)
         {
@@ -11264,6 +11284,7 @@ impl Visit for ExecutionIndex {
                     Box::new(ValueExpr::from_expr(&member.obj)),
                     static_prop(&member.prop),
                     MemberKey::of(&member.prop),
+                    member.span.into(),
                 ),
                 args: Vec::new(),
                 span: member.span,
@@ -11641,6 +11662,7 @@ impl Visit for ExecutionIndex {
                             Box::new(ValueExpr::from_expr(&member.obj)),
                             static_prop(&member.prop),
                             MemberKey::of(&member.prop),
+                            member.span.into(),
                         ),
                         right,
                     ])
@@ -11686,6 +11708,7 @@ impl Visit for ExecutionIndex {
                     Box::new(ValueExpr::from_expr(&member.obj)),
                     static_prop(&member.prop),
                     MemberKey::of(&member.prop),
+                    member.span.into(),
                 ),
                 _ => ValueExpr::Unknown,
             };
@@ -11734,11 +11757,13 @@ impl Visit for ExecutionIndex {
             if let Expr::Ident(receiver) = member.obj.unwrap_parens()
                 && let Some(key) = static_prop(&member.prop)
             {
-                let write = (
-                    receiver.to_id(),
-                    Some(key),
-                    ValueExpr::from_expr(&assignment.right),
-                );
+                let write = MemberValueWrite {
+                    receiver: receiver.to_id(),
+                    property: Some(key),
+                    value: ValueExpr::from_expr(&assignment.right),
+                    site: assignment.span.into(),
+                    owner: self.owner,
+                };
                 if let Some(callable) = self.current {
                     self.callables
                         .get_mut(&callable)
@@ -11749,11 +11774,13 @@ impl Visit for ExecutionIndex {
                     self.top_member_value_writes[self.owner.0].push(write);
                 }
             } else if let Expr::Ident(receiver) = member.obj.unwrap_parens() {
-                let write = (
-                    receiver.to_id(),
-                    None,
-                    ValueExpr::from_expr(&assignment.right),
-                );
+                let write = MemberValueWrite {
+                    receiver: receiver.to_id(),
+                    property: None,
+                    value: ValueExpr::from_expr(&assignment.right),
+                    site: assignment.span.into(),
+                    owner: self.owner,
+                };
                 if let Some(callable) = self.current {
                     self.callables
                         .get_mut(&callable)
@@ -12461,7 +12488,7 @@ fn deferred_callback_closure(index: &ExecutionIndex, outer: u32, closure: &Range
                 (CallKind::Call, ValueExpr::Binding(id)) => id == callback && !call.has_spread,
                 (
                     CallKind::LocalMemberRead,
-                    ValueExpr::Member(receiver, Some(property), MemberKey::Static),
+                    ValueExpr::Member(receiver, Some(property), MemberKey::Static, _),
                 ) => {
                     match receiver.as_ref() {
                         ValueExpr::Binding(id) if local_receivers.contains(id) => {

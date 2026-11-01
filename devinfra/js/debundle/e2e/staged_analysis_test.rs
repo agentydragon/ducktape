@@ -233,6 +233,14 @@ fn gate_rejected_split_matches_a_direct_run() {
     assert_staged_run_matches(rejected_split(), &["--emit-on-rejection"]);
 }
 
+#[test]
+fn composed_global_sites_and_dependencies_round_trip() {
+    assert_staged_run_matches(
+        composed_global_access_fixture(),
+        &["--effect-conflicts-jsonl", "--emit-on-rejection"],
+    );
+}
+
 /// Renaming a logical module is an assignment edit: the projection keeps its
 /// bytes and the artifact computed before the edit serves the edited spec.
 #[test]

@@ -9,8 +9,8 @@ use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_inference::{ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue};
 use super::{
     Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, LocalConstructor,
-    NativeIntrinsic, NativePointEffects, Parameter, RetainedCallbackCall, native_call_identity_key,
-    object_own_data_read_property,
+    MemberValueWrite, NativeIntrinsic, NativePointEffects, Parameter, RetainedCallbackCall,
+    native_call_identity_key, object_own_data_read_property,
 };
 use crate::analysis_inputs::{AnalysisInputs, NativeInputKind, ProofDependencies};
 use crate::facts::ExportReentryPolicy;
@@ -23,6 +23,7 @@ use crate::facts::abstract_domain::heap::Mutation;
 use crate::facts::abstract_domain::integrity::{Integrity, IntrinsicSlot};
 use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
 use crate::facts::callable_inference::CallableInferenceInputs;
+use crate::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
 use crate::facts::item_views::TopLevelItemView;
 use crate::facts::local_effect_targets::MetadataDecorateCall;
 use crate::facts::semantic_inference::{
@@ -631,6 +632,9 @@ impl ExecutionInputs<'_> {
 
 #[derive(Default)]
 pub(super) struct ExecutionState {
+    /// Conservative accumulated conditions of prefix values, retained across
+    /// owner boundaries for report-only operation provenance.
+    ledger_dependencies: ProofDependencies,
     native_integrity_checks: RefCell<BTreeSet<NativeIntegrityCheck>>,
     native_prototype_property_checks: RefCell<BTreeMap<String, NativePrototypePropertyCheck>>,
     native_prefix_observations: RefCell<Vec<NativePrefixObservation>>,
@@ -741,6 +745,7 @@ pub(super) struct Executor<'source, 'rule> {
     state: ExecutionStateSlot,
     queries: RuntimeQueries<'source, 'rule>,
     allocation_judgment: super::super::allocation_transfer::AllocationJudgment,
+    evaluation_effects: EvaluationEffects,
 }
 
 /// A suspended transfer has handed its state to its child. Keep the remaining
@@ -831,18 +836,26 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             queries,
             // Creating an executor establishes no whole-source coverage.
             allocation_judgment: super::super::allocation_transfer::AllocationJudgment::Opaque,
+            evaluation_effects: EvaluationEffects::default(),
         }
     }
 
     pub(super) fn into_transfer(
-        self,
+        mut self,
     ) -> (
         Box<ExecutionState>,
         super::super::allocation_transfer::AllocationJudgment,
+        EvaluationEffects,
     ) {
+        self.state
+            .ledger_dependencies
+            .extend(&self.queries.dependencies());
+        self.evaluation_effects
+            .depend_on(&self.state.ledger_dependencies);
         (
             self.state.0.expect("the completed transfer owns its state"),
             self.allocation_judgment,
+            self.evaluation_effects,
         )
     }
 
@@ -861,15 +874,32 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         RuntimeValue,
         super::super::allocation_transfer::AllocationJudgment,
     ) {
+        self.request_transfer(operation, self.state.assumption.clone())
+    }
+
+    fn request_transfer(
+        &mut self,
+        operation: RuntimeOperation,
+        assumption: Option<AssumedEffectReason>,
+    ) -> (
+        RuntimeValue,
+        super::super::allocation_transfer::AllocationJudgment,
+    ) {
+        self.state
+            .ledger_dependencies
+            .extend(&self.queries.dependencies());
         let state = self
             .state
             .0
             .take()
             .expect("the requesting transfer owns its state");
-        let result = self.queries.request(state, operation);
+        let mut result = self.queries.request(state, operation);
         self.state.0 = Some(result.state);
         self.allocation_judgment
             .compose(&result.allocation_judgment);
+        // Transport effects before exposing any payload, including Values.
+        result.evaluation_effects.assume(assumption.as_ref());
+        self.evaluation_effects.extend(&result.evaluation_effects);
         (result.value, result.allocation_judgment)
     }
 
@@ -896,7 +926,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn remember_invocation(&mut self, signature: InvocationSignature, outcome: &Outcome) {
-        let point = self.queries.publish_invocation_memo(outcome);
+        // This executor owns only this invocation's child ledger. A memo
+        // must never capture the caller's accumulated effects.
+        let mut memo = outcome.clone();
+        memo.effects
+            .evaluation_effects
+            .extend(&self.evaluation_effects);
+        memo.effects
+            .evaluation_effects
+            .depend_on(&self.state.ledger_dependencies);
+        memo.effects
+            .evaluation_effects
+            .depend_on(&self.queries.dependencies());
+        let point = self.queries.publish_invocation_memo(&memo);
         if let Some(previous) = self.state.invocation_memos.insert(signature, point.clone())
             && previous != point
         {
@@ -946,7 +988,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn closed_enum_member_read(&self, value: &ValueExpr) -> bool {
-        let ValueExpr::Member(receiver, Some(property), _) = value else {
+        let ValueExpr::Member(receiver, Some(property), _, _) = value else {
             return false;
         };
         self.closed_enum_member_parts(receiver, property).is_some()
@@ -1438,7 +1480,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn native_member_lookup_is_data(&self, callee: &ValueExpr, site: Option<u32>) -> bool {
-        let ValueExpr::Member(receiver, Some(property), MemberKey::Static) = callee else {
+        let ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) = callee else {
             return false;
         };
         let ValueExpr::Binding(binding) = receiver.as_ref() else {
@@ -1490,7 +1532,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if self.native_member_lookup_is_data(&lookup.callee, None) {
             return true;
         }
-        if let ValueExpr::Member(receiver, Some(property), MemberKey::Static) = &lookup.callee
+        if let ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) = &lookup.callee
             && let ValueExpr::Binding(namespace) = receiver.as_ref()
             && self
                 .inputs
@@ -1724,7 +1766,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             {
                 spec::ReentryFreeOperation::AsyncLocalStorageConstruct
             }
-            (CallKind::Call, ValueExpr::Member(receiver, Some(member), MemberKey::Static))
+            (CallKind::Call, ValueExpr::Member(receiver, Some(member), MemberKey::Static, _))
                 if call.no_reentry_candidate && member == "resolve" =>
             {
                 let ValueExpr::Binding(binding) = receiver.as_ref() else {
@@ -1979,7 +2021,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         env: &Context,
         captures: &Context,
     ) -> bool {
-        let ValueExpr::Member(receiver, Some(method), MemberKey::Static) = callee else {
+        let ValueExpr::Member(receiver, Some(method), MemberKey::Static, _) = callee else {
             return false;
         };
         if method != "push"
@@ -2858,7 +2900,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return None;
         }
-        let ValueExpr::Member(freeze_receiver, Some(freeze_method), MemberKey::Static) =
+        let ValueExpr::Member(freeze_receiver, Some(freeze_method), MemberKey::Static, _) =
             freeze_callee.as_ref()
         else {
             return None;
@@ -2877,7 +2919,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return None;
         };
         if !matches!(define_callee.as_ref(),
-            ValueExpr::Member(receiver, Some(method), MemberKey::Static)
+            ValueExpr::Member(receiver, Some(method), MemberKey::Static, _)
                 if method == "defineProperty"
                     && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == object_intrinsic))
         {
@@ -2885,7 +2927,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         let [
             ValueExpr::ObjectLiteral(object, fields),
-            ValueExpr::Member(symbol_receiver, Some(tag), MemberKey::Static),
+            ValueExpr::Member(symbol_receiver, Some(tag), MemberKey::Static, _),
             ValueExpr::ObjectLiteral(descriptor, descriptor_fields),
         ] = define_args.as_slice()
         else {
@@ -2960,12 +3002,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         || CallSite::from(call.span) == *define_site)
                     || call.kind == CallKind::AccessorCalleeLookup
                         && matches!(&call.callee,
-                            ValueExpr::Member(receiver, Some(property), MemberKey::Static)
+                            ValueExpr::Member(receiver, Some(property), MemberKey::Static, _)
                                 if matches!(property.as_str(), "freeze" | "defineProperty")
                                     && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == object_intrinsic))
                     || call.kind == CallKind::LocalMemberRead
                         && matches!(&call.callee,
-                            ValueExpr::Member(receiver, Some(property), MemberKey::Static)
+                            ValueExpr::Member(receiver, Some(property), MemberKey::Static, _)
                                 if property == "toStringTag"
                                     && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == symbol)))
         }) {
@@ -3210,7 +3252,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || callable
                 .member_value_writes
                 .iter()
-                .any(|(id, property, _)| id != &proof.local || property.is_none())
+                .any(|write| write.receiver != proof.local || write.property.is_none())
             || callable
                 .member_writes
                 .iter()
@@ -4069,7 +4111,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // tracking. A local or derived Top may instead hide a private graph
         // lost by skipped execution and must retain the broader fallback.
         let external_root = matches!(&call.callee,
-            ValueExpr::Member(receiver, _, _) if matches!(receiver.as_ref(),
+            ValueExpr::Member(receiver, _, _, _) if matches!(receiver.as_ref(),
                 ValueExpr::Binding(binding)
                     if self.external_binding_root(binding)))
             && self.inputs.index.dynamic_scope_owners.is_empty()
@@ -4130,7 +4172,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return false;
         }
-        let ValueExpr::Member(object, Some(property), _) = &call.callee else {
+        let ValueExpr::Member(object, Some(property), _, _) = &call.callee else {
             return false;
         };
         matches!(object.as_ref(), ValueExpr::Binding(object_id)
@@ -4593,7 +4635,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .collect();
             let mutating_receiver = |expression: &ValueExpr| {
                 let mut root = expression;
-                while let ValueExpr::Member(receiver, _, _) = root {
+                while let ValueExpr::Member(receiver, _, _, _) = root {
                     root = receiver;
                 }
                 matches!(root, ValueExpr::Binding(binding) if self.inputs.flow.values_of_binding(binding).iter()
@@ -4762,7 +4804,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn apply_member_value_writes(
         &mut self,
-        writes: &[(Id, Option<String>, ValueExpr)],
+        writes: &[MemberValueWrite],
         env: &Context,
         captures: &Context,
         certified_data_receivers: &BTreeSet<u32>,
@@ -4786,18 +4828,34 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     pub(super) fn apply_member_value_writes_transfer(
         &mut self,
-        writes: &[(Id, Option<String>, ValueExpr)],
+        writes: &[MemberValueWrite],
         env: &Context,
         captures: &Context,
         certified_data_receivers: &BTreeSet<u32>,
         deferred_global_write: bool,
     ) {
-        for (receiver, property, expression) in writes {
+        for write in writes {
+            let MemberValueWrite {
+                receiver,
+                property,
+                value: expression,
+                ..
+            } = write;
             let receivers = self.evaluate(&ValueExpr::Binding(receiver.clone()), env, captures);
             let values = self.evaluate(expression, env, captures);
             for receiver in receivers {
                 match receiver {
                     AbstractValue::GlobalObject | AbstractValue::ArrayIntrinsic => {
+                        if receiver == AbstractValue::GlobalObject
+                            && let Some(property) = property
+                        {
+                            self.evaluation_effects.record(
+                                write.owner,
+                                write.site.source_span(),
+                                GlobalAccessKind::Write,
+                                property,
+                            );
+                        }
                         if deferred_global_write && receiver == AbstractValue::GlobalObject {
                             continue;
                         }
@@ -4889,7 +4947,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.taint_objects(&uncertified);
             let mut callbacks = self.callback_values(&receivers);
             let mut root = &write.receiver;
-            while let ValueExpr::Member(receiver, _, _) = root {
+            while let ValueExpr::Member(receiver, _, _, _) = root {
                 root = receiver;
             }
             let root_values = self.evaluate(root, env, captures);
@@ -6920,7 +6978,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             ValueExpr::Undefined | ValueExpr::NonCallable(_) => {
                 unreachable!("the shared transfer evaluates primitive values")
             }
-            ValueExpr::Member(object, property, is_static_identifier) => {
+            ValueExpr::Member(object, property, is_static_identifier, site) => {
                 if let Some(values) = property
                     .as_deref()
                     .and_then(|property| self.closed_enum_member_parts(object, property))
@@ -6962,6 +7020,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             values.insert(AbstractValue::ArrayIntrinsic);
                         }
                         AbstractValue::GlobalObject => {
+                            if let (Some(property), Some(owner)) =
+                                (property, self.inputs.index.member_owners.get(site))
+                            {
+                                self.evaluation_effects.record(
+                                    *owner,
+                                    site.source_span(),
+                                    GlobalAccessKind::Read,
+                                    property,
+                                );
+                            }
                             values.extend(self.state.global_escaped_callbacks.iter().cloned());
                             values.insert(AbstractValue::Value(Value::Top));
                         }
@@ -7431,12 +7499,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // The invocation's outcome (and its memo) records provenance relative
         // to the invocation; the caller's merge applies its own assumption.
         let assumption = self.state.assumption.take();
-        let result = self.request(RuntimeOperation::Invoke {
-            callable: key,
-            arguments: args,
-            captured,
-            fresh_checked_constructor,
-        });
+        let result = self
+            .request_transfer(
+                RuntimeOperation::Invoke {
+                    callable: key,
+                    arguments: args,
+                    captured,
+                    fresh_checked_constructor,
+                },
+                assumption.clone(),
+            )
+            .0;
         self.state.assumption = assumption;
         let RuntimeValue::Outcome(outcome) = result else {
             unreachable!("invocation transfers produce outcomes");
@@ -7497,7 +7570,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if self.state.array_iteration_depth == 0
             && let Some(point) = self.state.invocation_memos.get(&signature)
         {
-            return self.queries.invocation_memo(point);
+            let outcome = self.queries.invocation_memo(point);
+            self.evaluation_effects
+                .extend(&outcome.effects.evaluation_effects);
+            return outcome;
         }
         let active_invocation = ActiveInvocation {
             callable: key,
@@ -7879,7 +7955,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return;
         }
         if call.kind == CallKind::AccessorCalleeLookup {
-            let ValueExpr::Member(receiver, property, _) = &call.callee else {
+            let ValueExpr::Member(receiver, property, _, _) = &call.callee else {
                 unreachable!("accessor callee lookup always records a member");
             };
             let values = self.evaluate(receiver, env, captures);
@@ -8015,7 +8091,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 outcome.unknown_call = true;
                 return;
             }
-            let ValueExpr::Member(receiver, property, _) = &call.callee else {
+            let ValueExpr::Member(receiver, property, _, _) = &call.callee else {
                 unreachable!()
             };
             let values = self.evaluate(receiver, env, captures);
@@ -8358,7 +8434,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Both use the same member identity and lookup guards. The provider
         // may have private effects; this only suppresses callback reentry.
         if call.kind == CallKind::Call
-            && let ValueExpr::Member(receiver, Some(property), MemberKey::Static) = &call.callee
+            && let ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) = &call.callee
             && let ValueExpr::Binding(namespace) = receiver.as_ref()
             && ((call.no_reentry_candidate
                 && self
@@ -8412,7 +8488,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Its effects are not resolved by invoke, so it can mutate any retained
         // array reachable from the receiver before a later intrinsic iteration.
         if call.kind == CallKind::Call
-            && let ValueExpr::Member(receiver, _, _) = &call.callee
+            && let ValueExpr::Member(receiver, _, _, _) = &call.callee
         {
             let unused_receiver = self.inputs.index.dynamic_scope_owners.is_empty()
                 && !targets.is_empty()
@@ -8446,7 +8522,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
         }
         let mut opaque_args = args.clone();
-        if let ValueExpr::Member(receiver, _, _) = &call.callee {
+        if let ValueExpr::Member(receiver, _, _, _) = &call.callee {
             let receiver_values = self.evaluate(receiver, env, captures);
             // The receiver is an input capability too: an opaque method can
             // invoke its stored callbacks through `this`, including callbacks
@@ -8481,7 +8557,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // construction proofs (including changes to an entry's own data
             // properties or an array's iterator/species surface).
             let mut possible_objects: Values = args.iter().flatten().cloned().collect();
-            if let ValueExpr::Member(receiver, _, _) = &call.callee {
+            if let ValueExpr::Member(receiver, _, _, _) = &call.callee {
                 possible_objects.extend(self.evaluate(receiver, env, captures));
             }
             self.expose_class_capabilities(&possible_objects);
@@ -8704,7 +8780,7 @@ fn unknown_callee_owners(
     let names_local_callables = |callee: &ValueExpr| match callee {
         ValueExpr::Alloc(Kind::Function | Kind::Class, _) => true,
         ValueExpr::Binding(binding) => local_callables(flow.values_of_binding(binding)),
-        ValueExpr::Member(receiver, Some(property), _) => {
+        ValueExpr::Member(receiver, Some(property), _, _) => {
             let ValueExpr::Binding(receiver) = receiver.as_ref() else {
                 return false;
             };
@@ -8724,7 +8800,7 @@ fn unknown_callee_owners(
                 let values = flow.values_of_binding(binding);
                 values.is_empty() || values.iter().any(|value| value == Value::Top)
             }
-            ValueExpr::Member(receiver, _, _) => unknown_root(receiver, flow),
+            ValueExpr::Member(receiver, _, _, _) => unknown_root(receiver, flow),
             _ => false,
         }
     }
@@ -9275,7 +9351,9 @@ pub(crate) fn annotate_synchronous_calls(
     }
     let mut member_write_receivers = BTreeMap::<Value, BTreeSet<Id>>::new();
     for writes in &index.top_member_value_writes {
-        for (receiver, _, expression) in writes {
+        for write in writes {
+            let receiver = &write.receiver;
+            let expression = &write.value;
             if index.global_object_names.contains(receiver.0.as_ref()) {
                 // Global-object writes are potential callback escape roots at
                 // every later opaque call, even when the receiver alias is
@@ -9474,6 +9552,7 @@ pub(crate) fn annotate_synchronous_calls(
         reaches_unknown_callee: std::sync::OnceLock::new(),
     };
     let state = ExecutionState {
+        ledger_dependencies: ProofDependencies::default(),
         native_integrity_checks: RefCell::default(),
         native_prototype_property_checks: RefCell::default(),
         native_prefix_observations: RefCell::default(),
@@ -10169,6 +10248,18 @@ impl Executor<'_, '_> {
         *self.state.record_factory_prototype_premises.borrow_mut() = Default::default();
         self.state.checking_record_factory_contract = false;
         self.state.current_top_owner = None;
+        outcome
+            .effects
+            .evaluation_effects
+            .extend(&self.evaluation_effects);
+        outcome
+            .effects
+            .evaluation_effects
+            .depend_on(&self.state.ledger_dependencies);
+        outcome
+            .effects
+            .evaluation_effects
+            .depend_on(&self.queries.dependencies());
         outcome.effects
     }
 }

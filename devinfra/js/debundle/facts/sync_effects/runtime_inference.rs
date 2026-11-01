@@ -11,6 +11,7 @@ use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_models::{self, ModelOperation, ModelResult};
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::SettledPurity;
+use crate::facts::evaluation_effects::EvaluationEffects;
 use crate::facts::statement_facts::SynchronousCalls;
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::Effects;
@@ -98,6 +99,7 @@ pub(super) struct RuntimeResult {
     pub(super) state: Box<ExecutionState>,
     pub(super) value: RuntimeValue,
     pub(super) allocation_judgment: AllocationJudgment,
+    pub(super) evaluation_effects: EvaluationEffects,
 }
 
 /// Transfers consume settled inputs and cannot send information back to their
@@ -109,6 +111,7 @@ pub(super) struct RuntimeQueries<'source, 'query> {
     inputs: &'query ExecutionInputs<'source>,
     point: ProgramPoint,
     next_child: Cell<usize>,
+    dependencies: RefCell<ProofDependencies>,
     context: RefCell<&'query mut dyn FactContext<RuntimeKey, RuntimeFact>>,
 }
 
@@ -158,13 +161,23 @@ impl RuntimeQueries<'_, '_> {
             .borrow_mut()
             .read_final(RuntimeKey::Purity(owner))
         {
-            Some(RuntimeFact::Purity(effects)) => effects.is_pure(),
+            Some(RuntimeFact::Purity(effects)) => {
+                self.dependencies
+                    .borrow_mut()
+                    .extend(&effects.proof_dependencies());
+                effects.is_pure()
+            }
             _ => unreachable!("purity is published at each statement's program point"),
         }
     }
 
     pub(super) fn assume(&self, dependencies: &ProofDependencies) {
+        self.dependencies.borrow_mut().extend(dependencies);
         self.context.borrow_mut().assume(dependencies);
+    }
+
+    pub(super) fn dependencies(&self) -> ProofDependencies {
+        self.dependencies.borrow().clone()
     }
 
     fn child_point(&self, kind: NativeProgramPointKind) -> ProgramPoint {
@@ -188,6 +201,9 @@ impl RuntimeQueries<'_, '_> {
         else {
             unreachable!("a settled property query produces a terminal optional proof");
         };
+        if let Some(proof) = &proof {
+            self.dependencies.borrow_mut().extend(&proof.dependencies);
+        }
         proof.map(|proof| *proof)
     }
 
@@ -347,12 +363,13 @@ impl RuntimeRules<'_, '_> {
                 path: Vec::new(),
             },
             next_child: Cell::new(0),
+            dependencies: RefCell::default(),
             context: RefCell::new(context),
         };
         let mut executor = Executor::new(self.inputs, state, queries);
         let effects = executor.execute_owner(owner);
         executor.mark_allocation_opaque();
-        let (state, _) = executor.into_transfer();
+        let (state, _, _) = executor.into_transfer();
         context.propose(
             RuntimeKey::Effects(owner),
             RuntimeFact::Effects(Box::new(effects)),
@@ -378,6 +395,7 @@ impl RuntimeRules<'_, '_> {
             inputs,
             point: point.clone(),
             next_child: Cell::new(0),
+            dependencies: RefCell::default(),
             context: RefCell::new(context),
         };
         let mut executor = Executor::new(inputs, state, queries);
@@ -424,7 +442,7 @@ impl RuntimeRules<'_, '_> {
                 RuntimeValue::Callbacks(runtime_callbacks::dispatch(&mut executor, operation))
             }
         };
-        let (state, allocation_judgment) = executor.into_transfer();
+        let (state, allocation_judgment, evaluation_effects) = executor.into_transfer();
         if let AllocationJudgment::CoveredAllocationOnly(dependencies) = &allocation_judgment {
             context.assume(dependencies);
         }
@@ -434,6 +452,7 @@ impl RuntimeRules<'_, '_> {
                 state,
                 value,
                 allocation_judgment,
+                evaluation_effects,
             })),
         );
     }
