@@ -90,7 +90,7 @@ visible in the account afterwards. Treat any live run as account-visible.
 Remote Control is not a transport we can borrow: the peer is fixed to Anthropic's bridge. It is
 evidence that the seam's protocol carries a remote attachment unchanged — a cloud-attachable
 agentplane session means serving these same frames over our own socket, which
-[Harness Host](../env/harnesshost/docs/session_protocol.md) already does over stdio.
+[Harness Host](../env/runtime/harnesshost/docs/session_protocol.md) already does over stdio.
 
 Untested: whether `--remote-control` does anything under `-p --input-format stream-json`. It is
 accepted without error there, and no bridge connection was observed, but none was checked for.

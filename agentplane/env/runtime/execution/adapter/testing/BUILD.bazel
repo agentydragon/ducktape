@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+go_binary(
+    name = "adapter_bin",
+    srcs = ["main.go"],
+    race = "off",
+    deps = [
+        "//agentplane/env/execution:executor_go_proto",
+        "//agentplane/env/runtime/execution/adapter:execution",
+        "@org_golang_google_grpc//:grpc",
+    ],
+)

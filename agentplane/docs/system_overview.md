@@ -166,7 +166,7 @@ mode. See [executor isolation](../runner/docs/codex_executor.md).
 
 ## Standalone execution service
 
-The separately runnable [`agentplane-execution-service`](../env/execution/README.md) owns the same
+The separately runnable [`agentplane-execution-service`](../env/runtime/execution/README.md) owns the same
 Executor adapter and native backend without a Runner or native agent harness. Its real container
 acceptance client uses the private Unix socket. Production Gateway routing still reaches the
 Runner's embedded adapter; deploying the separate process and changing that route are separate work.

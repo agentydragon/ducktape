@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from agentplane.env.harnesshost.harness import Harness
+from agentplane.env.runtime.harnesshost.harness import Harness
 
 
 class ModelOption(BaseModel):

@@ -39,7 +39,7 @@ from agentplane.env.config import (
     Harness,
     PodEnvironment,
 )
-from agentplane.env.harnesshost.platform_instructions import render_platform_instructions
+from agentplane.env.runtime.harnesshost.platform_instructions import render_platform_instructions
 from agentplane.environment_runtime_transport.config import MTLS, TLS
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import (

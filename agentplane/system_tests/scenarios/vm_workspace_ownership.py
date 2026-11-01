@@ -7,7 +7,7 @@ import shlex
 from uuid import uuid4
 
 from agentplane.app.testing.client import Client
-from agentplane.env.harnesshost.harness import Harness
+from agentplane.env.runtime.harnesshost.harness import Harness
 from agentplane.proto import session_pb2
 from agentplane.system_tests.sandbox import VM_TEMPLATE, Sandboxes
 from agentplane.system_tests.session_setup import run_setup

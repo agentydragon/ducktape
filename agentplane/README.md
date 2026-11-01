@@ -19,7 +19,7 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
   integration app and the Notification service.
 - [Environment Runtime](env/README.md) and [native drivers](native/README.md): manage the Sandbox
   environment and run Claude Code or Codex through Harness Host, which journals Session activity.
-- [Environment execution service](env/execution/README.md): standalone typed process/filesystem API
+- [Environment execution service](env/runtime/execution/README.md): standalone typed process/filesystem API
   managed by Environment Runtime and used by Harness Host.
 - [Egress proxy](egress/README.md): authenticates sandbox workloads and substitutes credentials.
 - [Policy Controller](policy_controller/README.md): expires `PolicyBinding`s and keeps the

@@ -1,0 +1,56 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = [
+    "//agentplane/env:__subpackages__",
+])
+
+go_library(
+    name = "codexexecserver",
+    srcs = [
+        "controller.go",
+        "host.go",
+        "resources.go",
+        "server.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver",
+    deps = [
+        "//agentplane/env/cosi",
+        "//agentplane/env/runtime/lifecycle",
+        "//agentplane/env/oneoff",
+        "//agentplane/env/runtime/execution/companion/control",
+        "//agentplane/env/runtime/supervision",
+        "//agentplane/observability",
+        "@com_github_coder_websocket//:websocket",
+        "@com_github_cosi_project_runtime//pkg/controller",
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/resource/meta/spec",
+        "@com_github_cosi_project_runtime//pkg/resource/typed",
+        "@com_github_cosi_project_runtime//pkg/safe",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_sethvargo_go_retry//:go-retry",
+        "@com_github_siderolabs_gen//optional",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
+go_test(
+    name = "codexexecserver_test",
+    srcs = [
+        "controller_test.go",
+        "server_test.go",
+    ],
+    embed = [":codexexecserver"],
+    race = "on",
+    deps = [
+        "//agentplane/env/runtime/lifecycle",
+        "//agentplane/env/runtime/supervision",
+        "@com_github_coder_websocket//:websocket",
+        "@com_github_cosi_project_runtime//pkg/controller/runtime",
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/resource/typed",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
+        "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
+        "@org_uber_go_zap//:zap",
+    ],
+)

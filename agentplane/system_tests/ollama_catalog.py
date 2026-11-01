@@ -1,7 +1,7 @@
 """Select live-smoke cases from the model catalog offered by Agentplane."""
 
 from agentplane.app.model_catalog import ModelCatalog
-from agentplane.env.harnesshost.harness import Harness
+from agentplane.env.runtime.harnesshost.harness import Harness
 from agentplane.proto import session_pb2
 
 # gazelle:include_dep @pypi//protobuf

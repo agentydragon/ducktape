@@ -570,7 +570,7 @@ persistent state volume; a failure refuses the session open. The selected Sandbo
 the complete default `SessionSpec` even though the Sandbox stores only its preset label. An explicit
 request can override those defaults, including with empty strings. The app composes the Session's preset and task instructions. The Runner composes those with the
 deployment-wide platform instructions before starting the harness, including for direct
-`SessionSpec` API launches ([Harness Host session protocol](../env/harnesshost/docs/session_protocol.md)). The shared block teaches agents
+`SessionSpec` API launches ([Harness Host session protocol](../env/runtime/harnesshost/docs/session_protocol.md)). The shared block teaches agents
 the platform's egress and Actions Service protocol and how to query their effective Kubernetes
 permissions; a preset and the per-turn task remain the place for workload-specific constraints and
 the requested outcome.

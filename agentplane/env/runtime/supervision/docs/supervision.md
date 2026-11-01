@@ -27,7 +27,7 @@ intents before acknowledging cleanup; a reader observing leader exit cannot hide
 Runtime coordinates the process owners over private sockets. Host reports native stop against the
 exact Runtime/Host boot IDs and lifecycle generation. Runtime fences Execution before authorizing
 Host sealing and waits for the matching seal/History ACK before completing quiesce. The
-[Host protocol](../../../harnesshost/SPEC.md) and [environment lifecycle](../../docs/lifecycle.md) define those
+[Host protocol](../../harnesshost/SPEC.md) and [environment lifecycle](../../docs/lifecycle.md) define those
 barriers. Transport loss closes admission and drains native work without inventing a seal.
 
 ## VM services

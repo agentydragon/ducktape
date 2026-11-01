@@ -104,7 +104,7 @@ block successors. See [supervision](../supervision/docs/supervision.md).
 
 ## Host COSI state
 
-Host wiring and native aggregate state live in `env/harnesshost/lifecycle_*.go` and
+Host wiring and native aggregate state live in `env/runtime/harnesshost/lifecycle_*.go` and
 `runtime_controller.go`. Component controllers exclusively write their own runtime/status resources.
 Resources contain comparable values, never process handles, streams, environments, cancellations or
 journal connections. The host registry owns native handles and publishes observations.

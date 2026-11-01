@@ -30,8 +30,10 @@ from util.bazel.runfiles import get_required_path
 CLAUDE_BINARY = "claude_code_cli_linux_x64/claude"
 CODEX_BINARY = "agentplane_codex_cli_linux_x64/bin/codex"
 RUNTIME_BINARY = "_main/agentplane/env/runtime/cmd/agentplane-environment-runtime_/agentplane-environment-runtime"
-HOST_BINARY = "_main/agentplane/env/harnesshost/cmd/agentplane-harness-host_/agentplane-harness-host"
-EXECUTION_BINARY = "_main/agentplane/env/execution/cmd/agentplane-execution-service_/agentplane-execution-service"
+HOST_BINARY = "_main/agentplane/env/runtime/harnesshost/cmd/agentplane-harness-host_/agentplane-harness-host"
+EXECUTION_BINARY = (
+    "_main/agentplane/env/runtime/execution/cmd/agentplane-execution-service_/agentplane-execution-service"
+)
 TOKEN = "test-key"
 PLATFORM_INSTRUCTIONS = "Test platform guidance."
 SANDBOX = SandboxIdentity(namespace="test-sandboxes", name="test-sandbox", uid="test-sandbox-uid")

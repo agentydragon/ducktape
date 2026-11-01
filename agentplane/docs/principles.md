@@ -92,7 +92,7 @@ happened rather than a summary of it.
 The boundary where this matters most is **harness ↔ runner**. Claude Code and Codex are
 third-party binaries we do not control, so when one misbehaves the exact frames it sent and
 received are the evidence. The runner journals those frames verbatim in both directions, and
-derived events cite the native frames they came from ([Harness Host session protocol](../env/harnesshost/docs/session_protocol.md)). A weird
+derived events cite the native frames they came from ([Harness Host session protocol](../env/runtime/harnesshost/docs/session_protocol.md)). A weird
 bug's frames can then be pulled straight out of the log and turned into a harness ↔ runner
 behavior test ([scripted harness tests](../native/README.md)). Any change that trims or
 reshapes payloads must keep this boundary verbatim.

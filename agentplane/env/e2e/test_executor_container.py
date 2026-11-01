@@ -22,7 +22,7 @@ from agentplane.env.e2e.testing.driver import RunnerDriver, SessionFollow, Sessi
 from agentplane.env.e2e.testing.fixtures import ModelEndpoint
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.env.e2e.testing.process_fixtures import wait_for_exit
-from agentplane.env.execution.testing.codex_exec_server_container import (
+from agentplane.env.runtime.execution.testing.codex_exec_server_container import (
     CodexExecServerContainer,
     CodexExecServerContainerStatus,
     inspect_codex_exec_server_container,

@@ -120,7 +120,7 @@ func marshalEnd(end map[string]string) (json.RawMessage, error) {
 func projectAttached(attached *sessionpb.Attached, entry *eventlogpb.EventEntry) {
 	attached.LastCursor = entry.GetCursor()
 	event := entry.GetEvent()
-	// The runner's own rule (env/harnesshost/session/events.go): the first outcome settles the launch. An announcement from a
+	// The runner's own rule (env/runtime/harnesshost/session/events.go): the first outcome settles the launch. An announcement from a
 	// runner that predates the field leaves it unspecified until then.
 	undecided := attached.GetLaunchOutcome() == sessionpb.LaunchOutcome_LAUNCH_OUTCOME_UNSPECIFIED ||
 		attached.GetLaunchOutcome() == sessionpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING

@@ -71,7 +71,7 @@ py_library(
     ],
     deps = [
         ":sandbox_models",
-        "//agentplane/env/harnesshost:harness",
+        "//agentplane/env/runtime/harnesshost:harness",
         "@pypi//pydantic",
     ],
 )
@@ -535,7 +535,7 @@ py_library(
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
-        "//agentplane/env/harnesshost:harness",
+        "//agentplane/env/runtime/harnesshost:harness",
         "@pypi//pydantic",
     ],
 )
@@ -633,7 +633,7 @@ py_test(
         ":conftest",
         ":model_catalog",
         "//:conftest",
-        "//agentplane/env/harnesshost:harness",
+        "//agentplane/env/runtime/harnesshost:harness",
         "@pypi//pytest_bazel",
     ],
 )

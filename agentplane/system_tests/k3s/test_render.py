@@ -20,7 +20,7 @@ from agentplane.central_sampler.settings import (
     MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
     Settings as CentralSamplerSettings,
 )
-from agentplane.env.harnesshost.harness import Harness
+from agentplane.env.runtime.harnesshost.harness import Harness
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from agentplane.mcp_edge.settings import Settings as McpEdgeSettings
 from agentplane.runner_gateway.settings import Settings

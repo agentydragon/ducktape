@@ -2,7 +2,7 @@
 
 import pytest_bazel
 
-from agentplane.env.harnesshost.harness import Harness
+from agentplane.env.runtime.harnesshost.harness import Harness
 from cluster.cdk8s.agentplane.app_settings import model_catalog
 from cluster.cdk8s.agentplane.model_selections import (
     RUNNER_CONTEXT_OVERRIDES,

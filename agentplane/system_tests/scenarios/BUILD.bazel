@@ -126,7 +126,7 @@ py_library(
     deps = [
         "//agentplane:sandbox_resource",
         "//agentplane/app/testing:client",
-        "//agentplane/env/harnesshost:harness",
+        "//agentplane/env/runtime/harnesshost:harness",
         "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "//agentplane/runner_gateway/dispatcher:testing_client",
@@ -231,7 +231,7 @@ py_library(
         "//agentplane:sandbox_resource",
         "//agentplane/app/testing:client",
         "//agentplane/app/testing:models",
-        "//agentplane/env/harnesshost:harness",
+        "//agentplane/env/runtime/harnesshost:harness",
         "//agentplane/native/codex/testing:responses_sse",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:session_pb2",
@@ -306,7 +306,7 @@ py_library(
     srcs = ["vm_workspace_ownership.py"],
     deps = [
         "//agentplane/app/testing:client",
-        "//agentplane/env/harnesshost:harness",
+        "//agentplane/env/runtime/harnesshost:harness",
         "//agentplane/proto:session_pb2",
         "//agentplane/system_tests:sandbox",
         "//agentplane/system_tests:session_setup",

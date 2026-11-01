@@ -177,7 +177,7 @@ using an optional role preset combines its concrete role text and child briefing
 that client uses a preset or the integration app.
 A child does not implicitly inherit the parent's role, private instructions or transcript.
 
-Today the [native Harness Host](../env/harnesshost/admission.go) already prepends configured platform guidance
+Today the [native Harness Host](../env/runtime/harnesshost/admission.go) already prepends configured platform guidance
 and the Session's destination using [its composer](../env/configuration/resolved.go), then
 stores the combined instructions. Its [configuration](../env/configuration/configuration.go)
 requires nonempty platform instructions. Preset text is a separate caller-supplied layer.

@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
-	"github.com/agentydragon/ducktape/agentplane/env/harnesshost"
-	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/harness"
-	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/workspace"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/harness"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/workspace"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"

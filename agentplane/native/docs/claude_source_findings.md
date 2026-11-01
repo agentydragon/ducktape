@@ -38,7 +38,7 @@ unchanged, retains valid concurrently appended rows, and validates the resulting
 before publishing it.
 
 The runner contract relies only on the distinction between append acceptance and a persistence
-fence ([Harness Host session protocol](../../env/harnesshost/docs/session_protocol.md#what-the-harnesses-do-not-promise)). The
+fence ([Harness Host session protocol](../../env/runtime/harnesshost/docs/session_protocol.md#what-the-harnesses-do-not-promise)). The
 recovery and compaction internals above are static findings, not tested guarantees.
 
 ## Auto-compaction frames (live capture of 2.1.233)
