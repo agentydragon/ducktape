@@ -293,6 +293,8 @@ pub struct MaterializeLogicalModulesOptions {
     /// See `pipeline::TransformRunOptions::list_template_identifiers`.
     pub list_template_identifiers: bool,
     pub report_emission: ReportEmission,
+    pub effect_conflicts_jsonl: bool,
+    pub effect_conflicts_chunks: BTreeSet<String>,
     pub gate_rejection: GateRejectionPolicy,
     pub analysis: AnalysisMode,
 }
@@ -479,6 +481,8 @@ pub fn materialize_logical_modules(
                                 keep_going: options.keep_going,
                                 list_template_identifiers: options.list_template_identifiers,
                                 report_emission: &options.report_emission,
+                                effect_conflicts_jsonl: options.effect_conflicts_jsonl,
+                                effect_conflicts_chunks: &options.effect_conflicts_chunks,
                                 gate_rejection: options.gate_rejection,
                                 export_reentry_reports: &export_reentry_reports,
                                 vendor_import_oracle: vendor_import_oracle.as_ref(),

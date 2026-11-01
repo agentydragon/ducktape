@@ -86,6 +86,10 @@ pub struct TransformRunOptions {
     /// chunk's selector report, and write the report even when every
     /// selector resolved. For `debundle spec validate`.
     pub list_template_identifiers: bool,
+    /// Stream complete effect-conflict JSONL beside each emitted summary.
+    pub effect_conflicts_jsonl: bool,
+    /// Emission-only JSONL selection; empty exports all materialized chunks.
+    pub effect_conflicts_chunks: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -463,6 +467,8 @@ fn audit_options() -> TransformRunOptions {
         keep_going: false,
         report_dir_override: None,
         list_template_identifiers: false,
+        effect_conflicts_jsonl: false,
+        effect_conflicts_chunks: BTreeSet::new(),
     }
 }
 
@@ -572,6 +578,32 @@ fn run_prepared_transform(
     } = source;
     let materialise_chunk_ids: Vec<String> = spec.materialize_chunk_ids().into_iter().collect();
     let dry_run = options.output == RunOutput::DryRun;
+    if !options.effect_conflicts_chunks.is_empty() {
+        if !options.effect_conflicts_jsonl {
+            bail!("--effect-conflicts-chunk requires --effect-conflicts-jsonl");
+        }
+        let materialized: BTreeSet<_> = materialise_chunk_ids
+            .iter()
+            .map(|chunk| artifact::paths::normalize_module_path(chunk))
+            .collect::<Result<_>>()?;
+        for chunk in &options.effect_conflicts_chunks {
+            if !materialized.contains(chunk) {
+                bail!(
+                    "unknown --effect-conflicts-chunk {chunk:?}: expected a configured materialized chunk"
+                );
+            }
+        }
+    }
+    if options.effect_conflicts_jsonl
+        && (suppress_reports
+            || options
+                .report_dir_override
+                .as_ref()
+                .or(spec.materialize_logical_modules.report_out_dir.as_ref())
+                .is_none())
+    {
+        bail!("--effect-conflicts-jsonl requires a configured report output directory");
+    }
     let swap_cfg = &spec.swap_vendor_chunks;
     let mut vendor_report = VendorSwapsReport::default();
     let write_vendor_outputs = swap_cfg.write && !dry_run;
@@ -623,6 +655,8 @@ fn run_prepared_transform(
                 chunk_ids: materialise_chunk_ids,
                 keep_going: options.keep_going,
                 list_template_identifiers: options.list_template_identifiers,
+                effect_conflicts_jsonl: options.effect_conflicts_jsonl,
+                effect_conflicts_chunks: options.effect_conflicts_chunks.clone(),
                 // Dry-run keeps the no-output contract on the
                 // accept path but still materializes rejection
                 // evidence (dependency graph + cycles/conflicts) at the
@@ -933,6 +967,12 @@ fn canonical_generation_command(
     if !options.keep_going {
         argv.push("--fail-fast".to_string());
     }
+    if options.effect_conflicts_jsonl {
+        argv.push("--effect-conflicts-jsonl".to_string());
+    }
+    for chunk in &options.effect_conflicts_chunks {
+        argv.extend(["--effect-conflicts-chunk".to_string(), chunk.clone()]);
+    }
     Ok(argv)
 }
 
@@ -1100,6 +1140,8 @@ mod tests {
         keep_going: true,
         report_dir_override: None,
         list_template_identifiers: false,
+        effect_conflicts_jsonl: false,
+        effect_conflicts_chunks: BTreeSet::new(),
     };
 
     // This real-pipeline boundary test changes files between preparation and
@@ -1453,6 +1495,8 @@ mod tests {
                     keep_going: false,
                     report_dir_override: None,
                     list_template_identifiers: false,
+                    effect_conflicts_jsonl: false,
+                    effect_conflicts_chunks: BTreeSet::new(),
                 },
             )?;
 

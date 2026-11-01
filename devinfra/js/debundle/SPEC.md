@@ -232,8 +232,18 @@ coverage remains conservative Havoc independently of purity or synchronous
 completeness. Counts include every conflicting swapped pair and existing
 pair-premise disposition; observed contradictions are diagnostics only.
 Twenty deterministic examples bound default output, with explicit truncation
-and coverage limitations. Full-detail CLI export and full semantic precision
-remain incomplete; see <docs/wire_format.md#translation-validation>.
+and coverage limitations. `run --effect-conflicts-jsonl` additionally streams
+every pair, cell, access provenance, premise disposition and endpoint opacity
+to `effect_conflicts.jsonl` in each chunk's report directory, using the same
+enumeration. Write and flush errors fail the run. Missing report roots and
+accepted dry runs that suppress reports refuse an explicit export request;
+rejected dry runs retain their existing report policy and can export.
+Repeatable `--effect-conflicts-chunk` requires the export flag and validates
+names against configured materialized chunks. It filters only S4 JSONL sinks:
+source inputs, analysis/census selection, graphs and bounded summaries are
+unchanged. With no filter every materialized chunk can export.
+Full semantic precision remains incomplete; see
+<docs/wire_format.md#translation-validation>.
 
 A command that combines a saved graph with current spec or source checks the
 recorded baseline before reading claims or writing edits. It refuses changed,

@@ -15,7 +15,7 @@ use analysis::graph::EffectCellReport;
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
 use analysis::{DependencyGraph, EffectCell, SourceUnitId};
-use serde::Serialize;
+use serde::{Serialize, Serializer, ser::SerializeSeq};
 use source_identity::SourceUnitOrdinal;
 use spec::ModulePath;
 
@@ -98,6 +98,95 @@ pub struct EffectConflictCell {
     pub observed_conflict: bool,
 }
 
+/// Borrowed full-detail view of one conflict. Cells serialize one at a time;
+/// the sweep never constructs a full-detail row or global pair vector.
+#[derive(Serialize)]
+pub struct EffectConflictRow<'a> {
+    pub runs_first: StatementReport,
+    pub runs_later: StatementReport,
+    cells: EffectConflictCells<'a>,
+    pub cell_count: usize,
+    pub havoc: bool,
+    pub disposition: EffectConflictDisposition,
+    pub premise_locations: Vec<String>,
+    pub legacy_edge_conflict: bool,
+    pub first_opacity: EffectOpacity<'a>,
+    pub later_opacity: EffectOpacity<'a>,
+}
+
+#[derive(Serialize)]
+pub struct EffectOpacity<'a> {
+    pub unknown_coverage: &'a BTreeSet<UnknownEffectCoverage>,
+    pub dataflow_opacity: &'a BTreeSet<analysis::DataflowOpacityCause>,
+    pub incomplete_execution: bool,
+    pub execution_losses: &'a [analysis::reports::schema::ExecutionPrecisionLoss],
+    pub opaque_heap: bool,
+}
+
+impl<'a> From<&'a InitializationEffects> for EffectOpacity<'a> {
+    fn from(effects: &'a InitializationEffects) -> Self {
+        Self {
+            unknown_coverage: &effects.unknown_coverage,
+            dataflow_opacity: &effects.dataflow_opacity,
+            incomplete_execution: effects.incomplete_execution,
+            execution_losses: &effects.execution_losses,
+            opaque_heap: effects.opaque_heap,
+        }
+    }
+}
+
+struct EffectConflictCells<'a> {
+    cells: &'a BTreeMap<EffectCell, bool>,
+    first: &'a InitializationEffects,
+    later: &'a InitializationEffects,
+}
+
+impl EffectConflictCells<'_> {
+    fn iter(&self) -> impl Iterator<Item = EffectConflictCell> + '_ {
+        self.cells
+            .iter()
+            .map(|(cell, observed)| EffectConflictCell {
+                cell: EffectCellReport::from(cell),
+                first_read: self.first.reads.get(cell).cloned(),
+                first_write: self.first.writes.get(cell).cloned(),
+                later_read: self.later.reads.get(cell).cloned(),
+                later_write: self.later.writes.get(cell).cloned(),
+                allocation_involved: self.first.allocates.contains(cell)
+                    || self.later.allocates.contains(cell),
+                observed_conflict: *observed,
+            })
+    }
+}
+
+impl EffectConflictRow<'_> {
+    pub fn cells(&self) -> impl Iterator<Item = EffectConflictCell> + '_ {
+        self.cells.iter()
+    }
+
+    fn bounded_example(&self) -> EffectConflictExample {
+        EffectConflictExample {
+            runs_first: self.runs_first.clone(),
+            runs_later: self.runs_later.clone(),
+            cells: self.cells().take(EXAMPLE_LIMIT).collect(),
+            cell_count: self.cell_count,
+            cells_truncated: self.cell_count > EXAMPLE_LIMIT,
+            havoc: self.havoc,
+            disposition: self.disposition,
+            premise_locations: self.premise_locations.clone(),
+        }
+    }
+}
+
+impl Serialize for EffectConflictCells<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut sequence = serializer.serialize_seq(Some(self.cells.len()))?;
+        for cell in self.iter() {
+            sequence.serialize_element(&cell)?;
+        }
+        sequence.end()
+    }
+}
+
 #[derive(Default)]
 struct CellParticipants {
     readers: BTreeMap<SourceUnitOrdinal, SourceUnitId>,
@@ -111,7 +200,7 @@ struct PairConflict {
 }
 
 /// Only reports; neither the legacy gate nor its oracle consumes this result.
-pub fn effect_translation_validate(
+pub fn effect_translation_validate<E>(
     graph: &DependencyGraph,
     assignment: &ModuleAssignment,
     emitted_modules: &BTreeSet<ModuleId>,
@@ -119,7 +208,8 @@ pub fn effect_translation_validate(
     facts: &[StatementFacts],
     legacy: &TranslationValidationReport,
     module_path: &dyn Fn(ModuleId) -> ModulePath,
-) -> EffectTranslationValidationReport {
+    mut visitor: Option<&mut impl FnMut(&EffectConflictRow<'_>) -> Result<(), E>>,
+) -> Result<EffectTranslationValidationReport, E> {
     let effects: BTreeMap<_, _> = facts
         .iter()
         .map(|fact| {
@@ -169,11 +259,11 @@ pub fn effect_translation_validate(
         example_limit: EXAMPLE_LIMIT,
         cell_example_limit: EXAMPLE_LIMIT,
         examples_truncated: false,
-        full_detail_export_available: false,
+        full_detail_export_available: true,
         limitations: vec![
             "Unknown global/property/host coverage remains global Havoc, independently of purity or execution completeness.",
             "Composed heap accesses lack per-access provenance; allocation sites do not prove heap locality.",
-            "Counts cover every conflicting swapped pair; examples are bounded and deterministic. Full-detail CLI export is not implemented.",
+            "Counts cover every conflicting swapped pair; examples are bounded and deterministic. Request --effect-conflicts-jsonl for full rows.",
             "Legacy edge comparison excludes its separate forward-edge and placement diagnostics; this report never changes acceptance.",
         ],
     };
@@ -244,7 +334,7 @@ pub fn effect_translation_validate(
                 wildcard_partners.range((Excluded(ordinal), Unbounded)),
             );
         }
-        let mut emit_pair = |partner: SourceUnitId, conflict: PairConflict| {
+        let mut emit_pair = |partner: SourceUnitId, conflict: PairConflict| -> Result<(), E> {
             let pair_premises = premises.get(&(partner.min(unit), partner.max(unit)));
             let known = conflict.cells.values().any(|known| *known);
             let disposition = if pair_premises.is_some() && known {
@@ -260,12 +350,15 @@ pub fn effect_translation_validate(
             report.counts.pairs += 1;
             report.counts.cell_incidences += conflict.cells.len() as u64;
             report.counts.havoc_pairs += u64::from(conflict.havoc);
-            if legacy_pairs.remove(&(partner, unit)) {
+            let legacy_edge_conflict = legacy_pairs.remove(&(partner, unit));
+            if legacy_edge_conflict {
                 report.counts.both_pairs += 1;
             } else {
                 report.counts.effect_only_pairs += 1;
             }
-            if report.examples.len() < EXAMPLE_LIMIT {
+            // Most default pairs need counts only. Materialize module paths
+            // and row metadata only for an example or an active full sink.
+            if report.examples.len() < EXAMPLE_LIMIT || visitor.is_some() {
                 let statement = |id| StatementReport {
                     unit: graph
                         .node(id)
@@ -274,9 +367,15 @@ pub fn effect_translation_validate(
                     module: module_path(assignment.of(id)),
                 };
                 let first = &effects[&partner];
-                report.examples.push(EffectConflictExample {
+                let row = EffectConflictRow {
                     runs_first: statement(partner),
                     runs_later: statement(unit),
+                    cells: EffectConflictCells {
+                        cells: &conflict.cells,
+                        first,
+                        later: current,
+                    },
+                    cell_count: conflict.cells.len(),
                     havoc: conflict.havoc,
                     disposition,
                     premise_locations: pair_premises
@@ -287,25 +386,18 @@ pub fn effect_translation_validate(
                                 .collect()
                         })
                         .unwrap_or_default(),
-                    cell_count: conflict.cells.len(),
-                    cells_truncated: conflict.cells.len() > EXAMPLE_LIMIT,
-                    cells: conflict
-                        .cells
-                        .iter()
-                        .take(EXAMPLE_LIMIT)
-                        .map(|(cell, observed)| EffectConflictCell {
-                            cell: EffectCellReport::from(cell),
-                            first_read: first.reads.get(cell).cloned(),
-                            first_write: first.writes.get(cell).cloned(),
-                            later_read: current.reads.get(cell).cloned(),
-                            later_write: current.writes.get(cell).cloned(),
-                            allocation_involved: first.allocates.contains(cell)
-                                || current.allocates.contains(cell),
-                            observed_conflict: *observed,
-                        })
-                        .collect(),
-                });
+                    legacy_edge_conflict,
+                    first_opacity: first.into(),
+                    later_opacity: current.into(),
+                };
+                if report.examples.len() < EXAMPLE_LIMIT {
+                    report.examples.push(row.bounded_example());
+                }
+                if let Some(visitor) = &mut visitor {
+                    visitor(&row)?;
+                }
             }
+            Ok(())
         };
         let mut active: Option<(SourceUnitId, PairConflict)> = None;
         while let Some(Reverse((_, partner, cursor))) = pending.pop() {
@@ -314,7 +406,7 @@ pub fn effect_translation_validate(
                 .is_some_and(|(previous, _)| *previous != partner)
             {
                 let (previous, conflict) = active.take().expect("an active pair");
-                emit_pair(previous, conflict);
+                emit_pair(previous, conflict)?;
             }
             let (_, conflict) = active.get_or_insert_with(|| (partner, PairConflict::default()));
             if let Some(cell) = ranges[cursor].0 {
@@ -332,7 +424,7 @@ pub fn effect_translation_validate(
             }
         }
         if let Some((partner, conflict)) = active {
-            emit_pair(partner, conflict);
+            emit_pair(partner, conflict)?;
         }
         drop(ranges);
         // All queries precede insertion, so a statement never conflicts with
@@ -360,7 +452,7 @@ pub fn effect_translation_validate(
     }
     report.counts.legacy_edge_only_pairs = legacy_pairs.len() as u64;
     report.examples_truncated = report.counts.pairs > report.examples.len() as u64;
-    report
+    Ok(report)
 }
 
 fn observed_conflict(

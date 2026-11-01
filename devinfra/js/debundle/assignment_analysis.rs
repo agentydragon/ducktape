@@ -16,8 +16,8 @@ use analysis::{
 use crate::AssignmentInputs;
 use crate::esm_import_order::EsmImportOrder;
 use crate::realizability::{
-    EffectTranslationValidationReport, TranslationValidationReport, effect_translation_validate,
-    translation_validate,
+    EffectConflictRow, EffectTranslationValidationReport, TranslationValidationReport,
+    effect_translation_validate, translation_validate,
 };
 use crate::validation::{AssignmentReport, validate_assignment};
 
@@ -288,11 +288,12 @@ impl AssignmentAnalysis {
     }
 
     /// Facts-backed diagnostics only; never part of acceptance or TV1's oracle.
-    pub fn effect_translation_validation(
+    pub fn effect_translation_validation<E>(
         &self,
         facts: &[analysis::facts::StatementFacts],
         legacy: &TranslationValidationReport,
-    ) -> EffectTranslationValidationReport {
+        visitor: Option<&mut impl FnMut(&EffectConflictRow<'_>) -> Result<(), E>>,
+    ) -> Result<EffectTranslationValidationReport, E> {
         effect_translation_validate(
             self.inputs.dependency_graph(),
             &self.assignment,
@@ -304,6 +305,7 @@ impl AssignmentAnalysis {
             facts,
             legacy,
             &|id| self.module_path(id),
+            visitor,
         )
     }
 
