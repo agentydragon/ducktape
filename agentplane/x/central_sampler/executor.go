@@ -197,38 +197,38 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 		// ensureSessionLocked rejected this operation before recording or sending its
 		// request. Without an associated process there is no prior process effect to
 		// reconcile; an existing process keeps its prior unknown/running status.
-		outcome := "not_dispatched"
+		outcome := NestedNotDispatched
 		if notDispatched.processID != "" {
 			process, processErr := e.store.Process(ctx, e.owner, notDispatched.processID)
 			if processErr != nil {
 				return fmt.Errorf("inspect process %s after failed executor reconnect: %w", notDispatched.processID, processErr)
 			}
-			outcome = "unknown"
+			outcome = NestedUnknown
 			if process.Status == protocol.ProcessStarting {
-				outcome = "not_dispatched"
+				outcome = NestedNotDispatched
 			}
 			afterSequence := notDispatched.afterSequence
 			if afterSequence == nil {
 				afterSequence = process.AfterSequence
 			}
-			if outcome == "not_dispatched" {
+			if outcome == NestedNotDispatched {
 				if settleErr := e.store.ProcessResult(ctx, e.owner, notDispatched.processID, afterSequence, protocol.ProcessExited, nil, true); settleErr != nil {
 					return fmt.Errorf("settle not-dispatched process %s after failed executor reconnect: %w", notDispatched.processID, settleErr)
 				}
-			} else if abandonErr := e.store.AbandonProcess(ctx, e.owner, notDispatched.processID, afterSequence, notDispatched.output, outcome, notDispatched.retainedSession); abandonErr != nil {
+			} else if abandonErr := e.store.AbandonProcess(ctx, e.owner, notDispatched.processID, afterSequence, notDispatched.output, string(outcome), notDispatched.retainedSession); abandonErr != nil {
 				return fmt.Errorf("record process %s after failed executor reconnect: %w", notDispatched.processID, abandonErr)
 			}
 		}
 		message, encodeErr := formatObservedProcessFailure(observedProcessFailure{
 			Message: notDispatched.Error(), Method: notDispatched.method, Phase: "connection",
 			ProcessID: notDispatched.processID, AfterSeq: notDispatched.afterSequence,
-			ExecutionSessionID: notDispatched.retainedSession, RemoteOutcome: outcome, RequestOutcome: string(NestedNotDispatched), AutomaticReplay: false,
+			ExecutionSessionID: notDispatched.retainedSession, RemoteOutcome: string(outcome), RequestOutcome: string(NestedNotDispatched), AutomaticReplay: false,
 			EnvironmentState: executionEnvironmentStateFromError(notDispatched.cause),
 		}, notDispatched.output)
 		if encodeErr != nil {
 			return fmt.Errorf("encode observed process connection failure: %w", encodeErr)
 		}
-		return &toolOutcomeError{toolError: &toolError{message}, evidence: notDispatched.evidence(outcome)}
+		return &toolOutcomeError{toolError: &toolError{message}, evidence: notDispatched.evidence(string(outcome))}
 	}
 	var failureEvidence executionFailureEvidence
 	if errors.As(err, &failureEvidence) {
