@@ -5,11 +5,12 @@ from collections.abc import AsyncIterator
 from unittest.mock import create_autospec
 from uuid import UUID, uuid4
 
-import httpx
+import grpc
 import pytest
 import pytest_bazel
 
 from agentplane.app.testing.client import Client
+from agentplane.grpc.calls import ServiceError
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
@@ -20,41 +21,110 @@ from agentplane.testing.scripted_model import ScriptedModel
 # gazelle:include_dep @pypi//protobuf
 
 
-async def test_agent_open_retries_unavailable_without_creating_another_session() -> None:
-    request = httpx.Request("POST", "https://app.test.invalid/sandboxes/test-sandbox/sessions")
-    unavailable = httpx.HTTPStatusError(
-        "runner is not listening", request=request, response=httpx.Response(503, request=request)
-    )
+async def test_agent_open_uses_native_dispatcher_with_explicit_spec_and_separate_projection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = UUID("00000000-0000-4000-8000-000000000010")
+    sandbox_uid = UUID("00000000-0000-4000-8000-000000000001")
+    monkeypatch.setattr(agent_module, "uuid4", lambda: session_id)
     client = create_autospec(Client, instance=True)
     dispatcher = create_autospec(SessionDispatcherClient, instance=True)
-    client.create_session.side_effect = [unavailable, None]
+    opening = session_dispatcher_pb2.SessionOpening(
+        session_id=str(session_id),
+        sandbox="test-sandbox",
+        sandbox_uid=str(sandbox_uid),
+        state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+    )
+    admitted = session_dispatcher_pb2.SessionOpening(
+        session_id=str(session_id),
+        sandbox="test-sandbox",
+        sandbox_uid=str(sandbox_uid),
+        state=session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED,
+    )
+    dispatcher.open_session.return_value = opening
+    dispatcher.wait_for_opening.return_value = admitted
+
+    agent = await Agent.open(
+        client,
+        dispatcher,
+        sandbox="test-sandbox",
+        sandbox_uid=sandbox_uid,
+        harness=session_pb2.HARNESS_CODEX,
+        model="test-model",
+        cwd="/state/test",
+        instructions="session instructions",
+        reasoning_effort="low",
+        setup_script="setup command",
+    )
+
+    dispatcher.open_session.assert_awaited_once_with(
+        str(session_id),
+        "test-sandbox",
+        str(sandbox_uid),
+        session_pb2.SessionSpec(
+            harness=session_pb2.HARNESS_CODEX,
+            model="test-model",
+            cwd="/state/test",
+            reasoning_effort="low",
+            instructions="session instructions",
+        ),
+        setup_script="setup command",
+    )
+    dispatcher.wait_for_opening.assert_awaited_once_with(opening, timeout_s=RUNNER_ANSWERS_SECONDS)
+    assert agent.thread_id == session_id
+    assert agent._target == ("test-sandbox", str(sandbox_uid))
+    dispatcher.get_session_opening.assert_not_awaited()
+    client.create_session.assert_not_awaited()
+    client.wait_for_thread_projection.assert_not_awaited()
+
+
+async def test_agent_open_reconciles_unknown_write_by_same_id_without_reopening(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = UUID("00000000-0000-4000-8000-000000000011")
+    sandbox_uid = UUID("00000000-0000-4000-8000-000000000001")
+    monkeypatch.setattr(agent_module, "uuid4", lambda: session_id)
+    client = create_autospec(Client, instance=True)
+    dispatcher = create_autospec(SessionDispatcherClient, instance=True)
+    unknown = ServiceError(grpc.StatusCode.UNAVAILABLE, "open reply lost")
+    dispatcher.open_session.side_effect = unknown
+    opening = session_dispatcher_pb2.SessionOpening(
+        session_id=str(session_id),
+        sandbox="test-sandbox",
+        sandbox_uid=str(sandbox_uid),
+        state=session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED,
+    )
+    dispatcher.get_session_opening.return_value = opening
+    dispatcher.wait_for_opening.return_value = opening
 
     await Agent.open(
         client,
         dispatcher,
         sandbox="test-sandbox",
-        sandbox_uid=UUID("00000000-0000-4000-8000-000000000001"),
+        sandbox_uid=sandbox_uid,
         harness=session_pb2.HARNESS_CODEX,
         model="test-model",
     )
 
-    first, retry = client.create_session.call_args_list
-    assert first == retry
-    assert first.args[0] == "test-sandbox"
-    assert first.kwargs["sandbox_uid"] == UUID("00000000-0000-4000-8000-000000000001")
-    assert isinstance(first.args[1], UUID)
-    assert first.kwargs["overrides"]["model"] == "test-model"
-    client.wait_for_thread_projection.assert_awaited_once_with(first.args[1], timeout_s=RUNNER_ANSWERS_SECONDS)
+    dispatcher.open_session.assert_awaited_once()
+    dispatcher.get_session_opening.assert_awaited_once_with(str(session_id))
+    dispatcher.wait_for_opening.assert_awaited_once_with(opening, timeout_s=RUNNER_ANSWERS_SECONDS)
+    client.create_session.assert_not_awaited()
+    client.wait_for_thread_projection.assert_not_awaited()
 
 
-@pytest.mark.parametrize("status", [409, 500, 502])
-async def test_startup_refusals_and_other_server_failures_are_not_retried(status: int) -> None:
-    request = httpx.Request("POST", "https://app.test.invalid/sandboxes/test-sandbox/sessions")
-    response = httpx.Response(status, request=request)
+async def test_agent_open_keeps_session_id_when_reconciliation_cannot_find_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = UUID("00000000-0000-4000-8000-000000000012")
+    monkeypatch.setattr(agent_module, "uuid4", lambda: session_id)
     client = create_autospec(Client, instance=True)
     dispatcher = create_autospec(SessionDispatcherClient, instance=True)
-    client.create_session.side_effect = httpx.HTTPStatusError("open refused", request=request, response=response)
-    with pytest.raises(httpx.HTTPStatusError) as caught:
+    unknown = ServiceError(grpc.StatusCode.UNAVAILABLE, "open reply lost")
+    dispatcher.open_session.side_effect = unknown
+    dispatcher.get_session_opening.side_effect = ServiceError(grpc.StatusCode.NOT_FOUND, "opening not found")
+
+    with pytest.raises(RuntimeError, match=str(session_id)) as caught:
         await Agent.open(
             client,
             dispatcher,
@@ -63,9 +133,34 @@ async def test_startup_refusals_and_other_server_failures_are_not_retried(status
             harness=session_pb2.HARNESS_CODEX,
             model="test-model",
         )
-    assert caught.value.response is response
-    client.create_session.assert_awaited_once()
-    client.thread.assert_not_awaited()
+
+    assert "outcome remains unknown" in str(caught.value)
+    assert caught.value.__cause__ is unknown
+    dispatcher.open_session.assert_awaited_once()
+    dispatcher.get_session_opening.assert_awaited_once_with(str(session_id))
+    dispatcher.wait_for_opening.assert_not_awaited()
+    client.create_session.assert_not_awaited()
+
+
+async def test_agent_open_does_not_reconcile_a_definitive_refusal() -> None:
+    client = create_autospec(Client, instance=True)
+    dispatcher = create_autospec(SessionDispatcherClient, instance=True)
+    refused = ServiceError(grpc.StatusCode.FAILED_PRECONDITION, "sandbox identity changed")
+    dispatcher.open_session.side_effect = refused
+
+    with pytest.raises(ServiceError) as caught:
+        await Agent.open(
+            client,
+            dispatcher,
+            sandbox="test-sandbox",
+            sandbox_uid=UUID("00000000-0000-4000-8000-000000000001"),
+            harness=session_pb2.HARNESS_CODEX,
+            model="test-model",
+        )
+
+    assert caught.value is refused
+    dispatcher.open_session.assert_awaited_once()
+    dispatcher.get_session_opening.assert_not_awaited()
 
 
 async def test_run_deadline_closes_a_stream_kept_open_without_terminal_events(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -281,6 +376,7 @@ async def test_run_returns_successful_turn_outputs() -> None:
     assert turn.tool_outputs == ["test tool output"]
     assert turn.answer == "test answer"
     assert turn.native == ['{"test": "result"}']
+    client.wait_for_thread_projection.assert_awaited_once_with(thread_id, timeout_s=RUNNER_ANSWERS_SECONDS)
     dispatcher.submit_input.assert_awaited_once()
     assert dispatcher.submit_input.call_args.args[0] == str(thread_id)
     assert dispatcher.submit_input.call_args.args[2:4] == ("box", "box-uid")

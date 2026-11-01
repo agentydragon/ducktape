@@ -186,10 +186,12 @@ py_library(
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/grpc:calls",
+        "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
         "@pypi//grpcio",
         "@pypi//protobuf",
+        "@pypi//tenacity",
     ],
 )
 
@@ -249,6 +251,7 @@ py_test(
         "//:conftest",
         "//agentplane/grpc:calls",
         "//agentplane/grpc:serving",
+        "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway:conftest",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
