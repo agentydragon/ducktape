@@ -126,8 +126,8 @@ between them. The same immutable config files are passed to Host; Runtime constr
 per-incarnation Execution API config in memory.
 
 Runtime and Host call each other directly in all supervision modes. Runtime checks its embedded
-Execution owner, backend lifetime and serving state for Host readiness; the Execution health socket remains an
-Execution-local startup check. The Pod execution companion retains its separate external socket.
+Execution owner, backend lifetime and serving state for Host readiness. Native protocol probing
+establishes Execution readiness. The Pod execution companion retains its separate external socket.
 
 On startup Runtime locks its environment owner inode before opening the Session directory, starts
 Host, and waits for an exact-binding initial `INACTIVE`, `ready`, `native_stopped` report before

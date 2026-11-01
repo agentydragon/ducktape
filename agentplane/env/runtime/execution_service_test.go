@@ -37,8 +37,8 @@ func TestRuntimeExecutionReadyTimeoutPreservesConfiguredWindow(t *testing.T) {
 		probeWindow time.Duration
 		want        time.Duration
 	}{
-		{name: "default window plus setup and health", probeWindow: 20 * time.Second, want: 145 * time.Second},
-		{name: "override above former fixed cap", probeWindow: 45 * time.Second, want: 170 * time.Second},
+		{name: "default window plus setup", probeWindow: 20 * time.Second, want: 140 * time.Second},
+		{name: "override above former fixed cap", probeWindow: 45 * time.Second, want: 165 * time.Second},
 		{name: "saturates instead of overflowing", probeWindow: time.Duration(1<<63 - 1), want: time.Duration(1<<63 - 1)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
