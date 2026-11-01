@@ -160,10 +160,9 @@ def _database(scope: Construct) -> None:
         ref=DATABASE,
         image_name=None,
         profile=cnpg.OVH_PIRAEUS_SSD,
-        # Existing replicas keep their local-path PVCs and sizes; CNPG applies this Piraeus class and
-        # the 8Gi template only when it creates another claim.
-        size="8Gi",
-        resize_in_use_volumes=False,
+        # Leave room for the old and replacement cache databases to coexist during migration.
+        size="16Gi",
+        resize_in_use_volumes=True,
         instances=3,
         initdb=cnpg.same_owner_initdb("attic"),
         wal_archive=True,
