@@ -685,6 +685,10 @@ pub(super) struct ExecutionState {
     array_iteration_unsupported: bool,
     array_intrinsic_mutated: bool,
     tainted_objects: BTreeSet<u32>,
+    /// Objects code the interpreter did not run may have reached and mutated.
+    /// This records possible mutation or escape, not an observed escape to
+    /// unknown code. Only settled element state consults it.
+    unsettled_objects: BTreeSet<u32>,
     tainted_native_sets: BTreeSet<u32>,
     tainted_functions: BTreeSet<u32>,
     tainted_classes: BTreeSet<u32>,
@@ -4711,6 +4715,41 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         AbstractValue::DeferredCallbacks(self.intern_callback_set(values))
     }
 
+    /// Code the interpreter did not run may have reached `values`: every
+    /// object they reach, through stored references or through what a
+    /// reachable body reads, may since hold anything.
+    fn unsettle(&mut self, values: &Values) {
+        let mut pending: Vec<_> = values.iter().cloned().collect();
+        let mut visited = BTreeSet::new();
+        while let Some(value) = pending.pop() {
+            if !visited.insert(value.clone()) {
+                continue;
+            }
+            match &value {
+                AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                    self.state.unsettled_objects.insert(*object);
+                }
+                AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                | AbstractValue::Closure(key, _) => {
+                    if let Some(callable) = self.inputs.index.callables.get(key) {
+                        pending.extend(
+                            callable
+                                .reads
+                                .iter()
+                                .filter_map(|binding| self.state.prefix_values.get(binding))
+                                .flatten()
+                                .cloned(),
+                        );
+                    }
+                }
+                _ => {}
+            }
+            self.visit_stored_references(&value, true, |reference| {
+                pending.push(reference.clone());
+            });
+        }
+    }
+
     fn taint_objects(&mut self, values: &Values) {
         let mut pending: Vec<_> = values.iter().cloned().collect();
         let mut visited = BTreeSet::new();
@@ -5849,7 +5888,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // return value as well. This includes a descriptor getter that
             // returns another callable; stopping at the getter loses the
             // returned callable's importer reads. Prefix coverage preserves
-            // the ordinary boundary at an unconditional await.
+            // the ordinary boundary at an unconditional await. Whatever the
+            // member returns reaches that code too.
+            self.taint_objects(&nested.returns);
             self.promote_returned_callbacks(&nested.returns);
             self.apply_rebind_effects(&nested.effects.rebinds);
             outcome.absorb_binding_effects(&mut nested.effects, self.state.assumption.as_ref());
@@ -5934,6 +5975,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if callbacks.contains(&AbstractValue::ForeignDeferredRecord) {
             self.promote_foreign_record(&mut outcome);
         }
+        // The summarized bodies run on these inputs without the interpreter
+        // following what they do to them.
+        let mut reached: Values = args.iter().flatten().cloned().collect();
+        reached.extend(callbacks.iter().cloned());
+        self.unsettle(&reached);
         let mut roots = BTreeSet::new();
         for callback in &callbacks {
             let key = match callback {
@@ -7732,6 +7778,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if call.kind == CallKind::New
             && self.is_proven_map_entry_array(&call.callee, &call.args, env, captures, call.owner)
         {
+            // The Map retains its entries, and the interpreter does not track
+            // what it holds: whoever reaches the Map reaches them.
+            let entries = args.iter().flatten().cloned().collect();
+            self.taint_objects(&entries);
             return;
         }
         if call.kind == CallKind::Call
@@ -8831,6 +8881,7 @@ pub(crate) fn annotate_synchronous_calls(
         array_iteration_unsupported: false,
         array_intrinsic_mutated: false,
         tainted_objects: BTreeSet::new(),
+        unsettled_objects: BTreeSet::new(),
         tainted_native_sets: BTreeSet::new(),
         tainted_functions: BTreeSet::new(),
         tainted_classes: BTreeSet::new(),
@@ -8954,7 +9005,10 @@ impl Executor<'_, '_> {
             let arrays = values.iter().all(|value| match value {
                 AbstractValue::Value(Value::Alloc(Kind::Object, array)) => {
                     match self.state.dense_arrays.get(array) {
-                        Some(dense) if !self.state.tainted_objects.contains(array) => {
+                        Some(dense)
+                            if !self.state.tainted_objects.contains(array)
+                                && !self.state.unsettled_objects.contains(array) =>
+                        {
                             elements.extend(dense.slots.iter().flatten().cloned());
                             true
                         }
@@ -8981,6 +9035,7 @@ impl Executor<'_, '_> {
                     };
                     if !inputs.index.plain_data_objects.contains(object)
                         || self.state.tainted_objects.contains(object)
+                        || self.state.unsettled_objects.contains(object)
                         || self.state.applied_accessors.contains_key(object)
                         || self.state.dense_arrays.contains_key(object)
                         || others.contains(element)
@@ -9013,10 +9068,10 @@ impl Executor<'_, '_> {
         settled
     }
 
-    /// An execution that could not complete may have run any code its reads
-    /// reach: every value of a binding the statement or its summarized
-    /// callees read becomes tainted (design § Heap taint).
-    fn taint_incomplete_reach(&mut self, fact: &StatementFacts, effects: &SynchronousCalls) {
+    /// An execution that could not complete may have run code the interpreter
+    /// did not follow on any value the statement or its summarized callees
+    /// read (purity_soundness § Settled heap taint).
+    fn unsettle_incomplete_reach(&mut self, fact: &StatementFacts, effects: &SynchronousCalls) {
         let values: Values = fact
             .reads
             .eager
@@ -9027,7 +9082,7 @@ impl Executor<'_, '_> {
             .flatten()
             .cloned()
             .collect();
-        self.taint_objects(&values);
+        self.unsettle(&values);
     }
 
     /// The top-level bindings `fact` reads eagerly that may hold the global
@@ -9313,7 +9368,7 @@ impl Executor<'_, '_> {
         outcome.effects.complete = outcome.complete;
         outcome.effects.settled_array_elements = settled_array_elements;
         if !outcome.complete {
-            self.taint_incomplete_reach(fact, &outcome.effects);
+            self.unsettle_incomplete_reach(fact, &outcome.effects);
         }
         outcome.effects.global_object_aliases = global_object_aliases;
         // A failed runtime path forfeits the prevalidated private-result proof.

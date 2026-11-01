@@ -70,6 +70,23 @@ fn an_element_reaching_other_code_before_the_statement_is_not_settled() {
 }
 
 #[test]
+fn an_element_reached_by_code_the_interpreter_skips_is_not_settled() {
+    for prefix in [
+        // An incomplete statement: the spread call is not followed.
+        "function rename(t) { t.name = later; }\nrename(...[tools[0]]);\n",
+        "function tag(_, t) { t.name = later; }\ntag`${tools[0]}`;\n",
+        // A bounded fallback summarizes the recursive body.
+        "function rec(t, n) { if (n > 0) rec(t, n - 1); t.name = later; }\nrec(tools[0], 3);\n",
+    ] {
+        assert_eq!(
+            settled(&format!("const registry = {{}};\n{prefix}"), READER),
+            None,
+            "{prefix}"
+        );
+    }
+}
+
+#[test]
 fn another_binding_the_statement_reads_holding_an_element_is_not_settled() {
     assert_eq!(
         settled(
