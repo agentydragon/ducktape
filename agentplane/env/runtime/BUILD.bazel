@@ -18,6 +18,7 @@ go_library(
         "protocol.go",
         "runtime.go",
         "serve.go",
+        "transition_adoption.go",
         "transition_api.go",
         "transition_sequence.go",
     ],
