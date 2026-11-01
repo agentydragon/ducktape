@@ -6,8 +6,9 @@ Codex exec-server; running a native agent harness or app-server is not required.
 
 ## Ownership and admission
 
-One standalone service owns one immutable Sandbox UID and incarnation and one native backend
-lifetime. Access to its private Unix socket grants that environment's execution authority. Every
+One Execution API lifetime owns one immutable Sandbox UID and incarnation and one native backend
+lifetime. In the normal topology it runs inside Environment Runtime; a standalone binary remains
+available for isolated use. Access to its private Unix socket grants that environment's execution authority. Every
 call carries the destination, incarnation and attributing Session; a foreign destination or stale
 incarnation is rejected before native dispatch. The service cannot adopt another environment or
 advance a Runner watch epoch. Harness Host supplies the current Session and incarnation context over
@@ -32,9 +33,9 @@ fences every remaining process in that namespace, and publishes a new idle gener
 the process table contains no workload process. It keeps PID 1 alive for the next owner. If
 exec-server exits unexpectedly, the companion performs the same process-domain fence and closes the
 ownership lease so Runtime can recover the backend. If the in-container fence fails, the companion
-exits and the outer runtime's whole-namespace cleanup supplies the stronger fence. VM ownership is
-a systemd unit, its lifetime marker and explicit scope, with startup fencing and stop proof from the
-shared supervisor. No second owner may start native work while the prior owner remains live. A
+exits and the outer runtime's whole-namespace cleanup supplies the stronger fence. VM ownership is the Runtime systemd unit, its lifetime marker and the explicit `execution-service`
+scope in `agentplane-executors.slice`, with startup fencing and stop proof from the shared supervisor.
+Standalone systemd use requires an explicit owner unit and lifetime directory. No second owner may start native work while the prior owner remains live. A
 failed fence is not permission to launch a successor. Before taking the lock, the service opens its
 state directory without following symlinks and enforces mode `0700`; this restores private access
 when a persistent-volume remount adds `fsGroup` permissions.
@@ -65,12 +66,12 @@ retries starts, writes, signals or other mutations. The adapter has no durable m
 
 ## Shutdown
 
-The standalone service closes admission and held connections, drains gRPC and stops its native
+The Execution API closes admission and held connections, drains gRPC and stops its native
 backend before releasing ownership. Pod cleanup fences all remaining processes in the companion's
 private namespace, including descendants that escaped a process group; if that proof fails, Pod
 exit invokes the runtime's whole-namespace fence. VM cleanup proves its execution cgroup empty;
-service death also removes its lifetime marker and stops bound transient units. A backend exit ends
-the service, without starting a replacement inside the same service lifetime.
+Runtime death also removes its lifetime marker and stops bound transient units. A backend exit ends
+the API lifetime; Runtime may create a replacement only after the old lifetime returns fenced proof.
 
 Authored workspace files survive service shutdown. This contract promises no persistence for the
 native backend's in-memory session registry; its loss must not be reported as successful execution

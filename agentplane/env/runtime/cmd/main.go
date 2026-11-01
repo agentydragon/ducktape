@@ -89,7 +89,6 @@ func runService(ctx context.Context, args []string) error {
 	configPath := flags.String("config", "", "Versioned environment configuration JSON")
 	launchPath := flags.String("launch-file", "", "Sandbox identity and bootstrap JSON")
 	hostBinary := flags.String("harness-host-binary", "", "Harness Host executable (defaults to a sibling binary)")
-	executionBinary := flags.String("execution-service-binary", "", "Execution service executable (defaults to a sibling binary)")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -119,7 +118,7 @@ func runService(ctx context.Context, args []string) error {
 		Supervision: settings.Supervision, PodPID1: settings.PodPID1, VMProcessLauncher: settings.VMProcessLauncher,
 		CodexExecServer: settings.CodexExecServer, CodexBinary: codexBinary,
 		HarnessEnvironment: settings.HarnessEnvironment, InitializationCwd: settings.InitializationCwd,
-		ConfigPath: *configPath, LaunchPath: *launchPath, HostBinary: *hostBinary, ExecutionBinary: *executionBinary,
+		ConfigPath: *configPath, LaunchPath: *launchPath, HostBinary: *hostBinary,
 	})
 	if err != nil {
 		return err

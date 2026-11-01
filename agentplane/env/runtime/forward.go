@@ -168,7 +168,7 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 			return err
 		}
 		if r.executionConn == nil || r.executionUID != scope.ExpectedIncarnationUid {
-			return status.Error(codes.Unavailable, "standalone Execution service is not ready for this incarnation")
+			return status.Error(codes.Unavailable, "Execution API is not ready for this incarnation")
 		}
 		client = executorpb.NewExecutorClient(r.executionConn)
 		outgoing, cancel = context.WithCancel(ctx)
@@ -250,7 +250,7 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 				unconfigured = true
 				return nil
 			}
-			return status.Error(codes.Unavailable, "standalone Execution service is not ready for this incarnation")
+			return status.Error(codes.Unavailable, "Execution API is not ready for this incarnation")
 		}
 		if r.host != nil && r.host.report != nil && r.host.report.NativeStopped && proto.Equal(r.host.report.Binding, r.intent.Binding) {
 			return status.Error(codes.FailedPrecondition, "environment native work has stopped")

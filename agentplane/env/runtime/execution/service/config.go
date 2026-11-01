@@ -32,11 +32,13 @@ type Config struct {
 }
 
 type SystemdConfig struct {
-	AgentUID        uint32                     `json:"agent_uid"`
-	AgentGID        uint32                     `json:"agent_gid"`
-	BlockDevices    []string                   `json:"block_devices"`
-	AggregateLimits supervision.ResourceLimits `json:"aggregate_limits"`
-	ProcessLimits   supervision.ResourceLimits `json:"process_limits"`
+	AgentUID          uint32                     `json:"agent_uid"`
+	AgentGID          uint32                     `json:"agent_gid"`
+	BlockDevices      []string                   `json:"block_devices"`
+	AggregateLimits   supervision.ResourceLimits `json:"aggregate_limits"`
+	ProcessLimits     supervision.ResourceLimits `json:"process_limits"`
+	OwnerUnit         string                     `json:"owner_unit,omitempty"`
+	LifetimeDirectory string                     `json:"lifetime_directory,omitempty"`
 }
 
 func Load(path string) (Config, error) {
@@ -87,6 +89,12 @@ func (c Config) Validate() error {
 	case "systemd":
 		if c.Systemd == nil {
 			return errors.New("systemd execution requires explicit resource limits")
+		}
+		if c.Systemd.OwnerUnit == "" || c.Systemd.LifetimeDirectory == "" {
+			return errors.New("systemd execution requires an explicit owner unit and lifetime directory")
+		}
+		if !filepath.IsAbs(c.Systemd.LifetimeDirectory) {
+			return errors.New("systemd execution owner lifetime directory must be absolute")
 		}
 	default:
 		return fmt.Errorf("unknown execution backend %q", c.Backend)

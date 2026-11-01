@@ -41,14 +41,11 @@ import (
 )
 
 const (
-	RuntimeUnitName                                 = "agentplane-environment-runtime.service"
-	HostUnitName                                    = "agentplane-harness-host.service"
-	ExecutionUnitName                               = "agentplane-execution-service.service"
-	HostLifetimeDir                                 = "/run/agentplane-harness-host-lifetime"
-	ExecutionLifetimeDir                            = "/run/agentplane-execution-lifetime"
-	RuntimeScopeID       supervision.SystemdScopeID = supervision.SystemdEnvironmentRuntimeScopeID
-	HostScopeID          supervision.SystemdScopeID = "harness-host"
-	ExecutionScopeID     supervision.SystemdScopeID = "execution-service"
+	RuntimeUnitName                            = "agentplane-environment-runtime.service"
+	HostUnitName                               = "agentplane-harness-host.service"
+	HostLifetimeDir                            = "/run/agentplane-harness-host-lifetime"
+	RuntimeScopeID  supervision.SystemdScopeID = supervision.SystemdEnvironmentRuntimeScopeID
+	HostScopeID     supervision.SystemdScopeID = "harness-host"
 )
 
 const (
@@ -58,8 +55,8 @@ const (
 )
 
 // Config contains the resolved environment configuration and the two existing configuration-file
-// paths. Runtime and Host read the same immutable config/launch inputs; Runtime writes only the
-// per-incarnation standalone Execution config under StateDir/runtime.
+// paths. Runtime and Host read the same immutable config/launch inputs; Runtime
+// constructs each embedded Execution API lifetime from those inputs.
 type Config struct {
 	Control            configuration.EnvironmentRuntimeControlConfiguration
 	StateDir           string
@@ -74,7 +71,6 @@ type Config struct {
 	ConfigPath         string
 	LaunchPath         string
 	HostBinary         string
-	ExecutionBinary    string
 	RuntimeSocket      string
 	HostSocket         string
 	ExecutionSocket    string
@@ -162,7 +158,6 @@ type Runtime struct {
 	execCalls            map[uint64]context.CancelFunc
 	execCallID           uint64
 	execution            childProcess
-	executionUnit        unitInvocation
 	hostUnit             unitInvocation
 	executionFence       bool
 	fenceInFlight        *runtimepb.Binding
@@ -423,7 +418,7 @@ func (r *Runtime) finishClose() error {
 		incarnationUID = sealUID
 	}
 	connected := r.host != nil && r.host.connected
-	executionExists := r.executionOwner != nil || r.executionUnit.ID != "" || r.executionUnit.reference != nil
+	executionExists := r.executionOwner != nil
 	hostProcessExists := r.hostProcess != nil
 	hostUnitExists := r.hostUnit.ID != "" || r.hostUnit.reference != nil
 	var binding *runtimepb.Binding
@@ -453,7 +448,7 @@ func (r *Runtime) finishClose() error {
 		}
 		r.maybeFenceExecution(binding)
 		if err := r.waitForExecutionFenced(fenceCtx, binding); err != nil {
-			return fmt.Errorf("standalone Execution service did not prove its process fence: %w", err)
+			return fmt.Errorf("embedded Execution API did not prove its backend fence: %w", err)
 		}
 		if sealUID != "" {
 			if err := r.waitForHostQuiesced(fenceCtx, binding); err != nil {
@@ -760,7 +755,7 @@ func (r *Runtime) startExecutionForUIDLocked(ctx context.Context, uid string) er
 	r.mu.Unlock()
 	if current != nil && currentUID == uid {
 		if recovering {
-			return status.Error(codes.Unavailable, "standalone Execution service is recovering after a fenced backend loss")
+			return status.Error(codes.Unavailable, "Execution API is recovering after a fenced backend loss")
 		}
 		return nil
 	}
@@ -840,22 +835,14 @@ func (r *Runtime) stopExecution(ctx context.Context) error {
 
 func (r *Runtime) stopExecutionLocked(ctx context.Context) error {
 	r.mu.Lock()
-	handle, invocation := r.executionOwner, r.executionUnit
+	handle := r.executionOwner
 	r.mu.Unlock()
 	if handle == nil {
-		if invocation.ID == "" && invocation.reference == nil {
-			return nil
-		}
-		if err := r.deps.fenceUnit(ctx, ExecutionUnitName, invocation); err != nil {
-			return err
-		}
-		r.clearExecutionUnit(invocation)
 		return nil
 	}
 	if err := handle.StopAndFence(ctx); err != nil {
 		return err
 	}
-	r.clearExecutionUnit(invocation)
 	if err := handle.Close(); err != nil {
 		return err
 	}
@@ -867,15 +854,6 @@ func (r *Runtime) stopExecutionLocked(ctx context.Context) error {
 	}
 	r.mu.Unlock()
 	return nil
-}
-
-func (r *Runtime) clearExecutionUnit(invocation unitInvocation) {
-	r.mu.Lock()
-	if r.executionUnit.reference == invocation.reference && r.executionUnit.ID == invocation.ID &&
-		r.executionUnit.ControlGroup == invocation.ControlGroup {
-		r.executionUnit = unitInvocation{}
-	}
-	r.mu.Unlock()
 }
 
 func (r *Runtime) watchExecutionProcess(handle executionHandle, uid string, monitor interface {
@@ -895,7 +873,7 @@ func (r *Runtime) watchExecutionProcess(handle executionHandle, uid string, moni
 	}
 	if !exit.healthFailure && (exit.code != 0 || exit.err != nil) {
 		r.mu.Unlock()
-		r.fail(fmt.Errorf("standalone Execution service exited without a successful backend fence (status=%d): %v", exit.code, exit.err))
+		r.fail(fmt.Errorf("embedded Execution API exited without a successful backend fence (status=%d): %v", exit.code, exit.err))
 		return
 	}
 	// A clean child exit (or a systemd health loss) still needs an exact fence

@@ -32,8 +32,8 @@ var ErrFencedBackendLoss = errors.New("execution backend loss was fenced")
 
 // Run owns the backend from startup fencing until shutdown. The caller must be
 // PID 1 for the direct pod backend: returning lets the container runtime fence escaped descendants.
-// Systemd callers run in agentplane-execution-service.service with its private
-// RuntimeDirectory=agentplane-execution-lifetime, so death fences transient units.
+// Systemd callers supply an owner unit and lifetime directory; death of that
+// owner fences its bound transient native units.
 func Run(ctx context.Context, config Config) (result error) {
 	if err := config.Validate(); err != nil {
 		return err
@@ -52,6 +52,7 @@ func Run(ctx context.Context, config Config) (result error) {
 		err = codexexecserver.FenceContainer(fence, config.ContainerSocket, "")
 		finish()
 	case "systemd":
+		ownerUnit, lifetimeDirectory := config.Systemd.OwnerUnit, config.Systemd.LifetimeDirectory
 		launcher := &supervision.SystemdLauncher{
 			Slice:    supervision.ExecutorSlice,
 			AgentUID: config.Systemd.AgentUID, AgentGID: config.Systemd.AgentGID,
@@ -60,7 +61,7 @@ func Run(ctx context.Context, config Config) (result error) {
 		}
 		supervisor, err = launcher.PrepareForOwner(config.StateDir, config.SandboxUID, supervision.SystemdOwner{
 			ScopeID: supervision.SystemdScopeID("execution-service"),
-			Unit:    "agentplane-execution-service.service", LifetimeDirectory: "/run/agentplane-execution-lifetime",
+			Unit:    ownerUnit, LifetimeDirectory: lifetimeDirectory,
 		})
 	}
 	if err != nil {

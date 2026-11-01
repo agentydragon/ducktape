@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/env/execution/service"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -20,7 +22,7 @@ func TestSupervisedExecutionFenceProofSurvivesCleanupRetry(t *testing.T) {
 
 	managerOpen := true
 	fenceCalls := 0
-	handle := &supervisedExecutionHandle{
+	handle := &executionServiceHandle{
 		conn: conn,
 		fence: func(context.Context) error {
 			fenceCalls++
@@ -45,10 +47,54 @@ func TestSupervisedExecutionFenceProofSurvivesCleanupRetry(t *testing.T) {
 	}
 }
 
+func TestEmbeddedExecutionBackendLossRequiresFencedResult(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		err  error
+		code int
+	}{
+		{name: "fenced backend loss", err: service.ErrFencedBackendLoss, code: 0},
+		{name: "unproven backend loss", err: errors.New("native fence failed"), code: 1},
+		{name: "unrequested clean exit", code: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			handle := newExecutionServiceHandle(service.Config{}, func(context.Context, service.Config) error { return test.err })
+			exit := <-handle.ProcessExit()
+			if exit.code != test.code {
+				t.Fatalf("exit code = %d, want %d (error: %v)", exit.code, test.code, exit.err)
+			}
+			if exit.code == 0 && exit.err != nil {
+				t.Fatalf("fenced exit returned error: %v", exit.err)
+			}
+			if exit.code != 0 && exit.err == nil {
+				t.Fatal("unproven exit returned no error")
+			}
+		})
+	}
+}
+
+func TestEmbeddedExecutionStopJoinsServiceBeforeFenceProof(t *testing.T) {
+	allowFence := make(chan struct{})
+	handle := newExecutionServiceHandle(service.Config{}, func(ctx context.Context, _ service.Config) error {
+		<-ctx.Done()
+		<-allowFence
+		return nil
+	})
+	probe, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := handle.StopAndFence(probe); !errors.Is(err, context.Canceled) {
+		t.Fatalf("unfinished service wait = %v, want cancellation", err)
+	}
+	close(allowFence)
+	if err := handle.StopAndFence(context.Background()); err != nil {
+		t.Fatalf("joined service fence = %v, want clean fence", err)
+	}
+}
+
 func TestSupervisedExecutionFenceRetriesAfterUnprovenAttempt(t *testing.T) {
 	fenceErr := errors.New("unit process domain remains populated")
 	fenceCalls := 0
-	handle := &supervisedExecutionHandle{fence: func(context.Context) error {
+	handle := &executionServiceHandle{fence: func(context.Context) error {
 		fenceCalls++
 		if fenceCalls == 1 {
 			return fenceErr
