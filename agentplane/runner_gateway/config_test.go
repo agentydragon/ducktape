@@ -13,7 +13,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/discovery"
 	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -27,6 +31,23 @@ const requiredFile = `dispatcher_callers: [agentplane/app, agentplane/notificati
 gateway_callers: [agentplane/runner-gateway]
 runner_security: {mode: mtls, tls: {cert_file: /tmp/test-cert, key_file: /tmp/test-key, ca_file: /tmp/test-ca}}
 `
+
+type configTestTokenReviews struct{}
+
+func (configTestTokenReviews) Create(
+	_ context.Context,
+	request *authenticationv1.TokenReview,
+	_ metav1.CreateOptions,
+) (*authenticationv1.TokenReview, error) {
+	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
+		Authenticated: true,
+		Audiences:     request.Spec.Audiences,
+		User: authenticationv1.UserInfo{
+			Username: "system:serviceaccount:agentplane:workspace",
+			UID:      "execution-account-uid",
+		},
+	}}, nil
+}
 
 // required is the environment of a deployment that sets every setting without a default.
 func required(t *testing.T, extra ...string) []string {
@@ -64,7 +85,7 @@ func writeSettings(t *testing.T, contents string) string {
 }
 
 func TestCallerListsComeFromTheFileAndKeepAuthAndWakePoliciesSeparate(t *testing.T) {
-	path := writeSettings(t, requiredFile+"wake_callers: [agentplane/app]\ndelegation:\n  actor: agentplane/actions\n  caller_namespaces: [agentplane]\n  methods: [/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput]\n")
+	path := writeSettings(t, requiredFile+"wake_callers: [agentplane/app]\ndelegation:\n  actor: agentplane/actions\n  caller_namespaces: [agentplane]\n  methods:\n    - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput\n    - /agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments\n    - /agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment\n")
 	c, err := loadTestConfig(t, required(t,
 		settingPrefix+"CONFIG_FILE="+path, settingPrefix+"SANDBOX_CONTROLLER_ACCOUNT=agentplane/sandbox-controller"))
 	if err != nil {
@@ -76,7 +97,11 @@ func TestCallerListsComeFromTheFileAndKeepAuthAndWakePoliciesSeparate(t *testing
 		c.DispatcherAudience == c.GatewayAudience || c.ControllerAccount.Name != "sandbox-controller" || c.Delegation == nil ||
 		c.Delegation.Actor != (auth.Account{Namespace: "agentplane", Name: "actions"}) ||
 		!slices.Equal(c.Delegation.CallerNamespaces, []string{"agentplane"}) ||
-		!slices.Equal(c.Delegation.Methods, []string{"/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput"}) {
+		!slices.Equal(c.Delegation.Methods, []string{
+			"/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
+			"/agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments",
+			"/agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment",
+		}) {
 		t.Fatalf("policy boundaries were merged: %+v", c)
 	}
 }
@@ -130,10 +155,16 @@ runtime_catalog:
 	if err != nil {
 		t.Fatal(err)
 	}
-	caller := auth.ReviewedCaller{ServiceAccount: auth.ServiceAccountPrincipal{
-		Account: auth.Account{Namespace: "agentplane", Name: "workspace"}, ServiceAccountUID: "execution-account-uid",
-	}}
-	response, err := service.ListEnvironments(auth.WithReviewedCaller(context.Background(), caller), &discoverypb.ListEnvironmentsRequest{Limit: 10})
+	resolver, err := auth.NewResolver(configTestTokenReviews{}, config.DispatcherAudience, []string{"agentplane"}, auth.WithVerdictTTL(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection := grpcmethods.Serve(t, discovery.Methods(resolver), func(server *grpc.Server) {
+		discoverypb.RegisterEnvironmentDiscoveryServer(server, service)
+	})
+	client := discoverypb.NewEnvironmentDiscoveryClient(connection)
+	ctx := metadata.AppendToOutgoingContext(t.Context(), "authorization", "Bearer test-token")
+	response, err := client.ListEnvironments(ctx, &discoverypb.ListEnvironmentsRequest{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}

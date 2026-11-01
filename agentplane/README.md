@@ -13,7 +13,8 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
   upstream MCP execution and the gRPC/HTTP APIs used by the MCP edge.
 - [MCP edge](mcp_edge/README.md): external Connection/OAuth authority and `/mcp`; forwards authenticated Actions calls over gRPC.
 - [Runner Gateway](runner_gateway/README.md): one process providing runner state observation,
-  authorized live Runner proxy and [Session Dispatcher](runner_gateway/dispatcher/README.md) durable queue.
+  authorized live Runner proxy, [Session Dispatcher](runner_gateway/dispatcher/README.md) durable queue,
+  and read-only EnvironmentDiscovery.
   New serving Pods run the queue migration before starting ([deployment](runner_gateway/README.md#deployment)).
 - [History Service](history_service/README.md): retained Session history, read by the
   integration app and the Notification service.
@@ -67,7 +68,7 @@ flowchart LR
     app[Integration API]
     subgraph services[Agentplane services]
         direction TB
-        gw[Runner Gateway: Dispatcher, proxy and observation]
+        gw[Runner Gateway: Dispatcher, EnvironmentDiscovery, proxy and observation]
         sandboxctl[Sandbox Controller]
         policy[Policy Controller]
         hs[History Service]
@@ -140,6 +141,7 @@ flowchart LR
     edge -->|authenticated ActionService gRPC| actions
     notif -->|Action history: gRPC| actions
     actions -->|orchestration_v1 Session commands: Dispatcher gRPC| gw
+    actions -->|caller-delegated EnvironmentDiscovery list/get: gRPC| gw
     actions -->|orchestration_v1 Session reads: gRPC| hs
     app -->|gRPC| egress
     app --> electric

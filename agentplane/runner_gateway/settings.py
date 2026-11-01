@@ -32,7 +32,7 @@ class DelegationSettings(BaseModel):
         min_length=1, description="Namespaces whose caller identity Actions may assert."
     )
     methods: tuple[str, ...] = Field(
-        min_length=1, description="Full SessionDispatcher RPC method names that admit delegation."
+        min_length=1, description="Exact full RPC method names served by the Runner Gateway that admit delegation."
     )
 
 

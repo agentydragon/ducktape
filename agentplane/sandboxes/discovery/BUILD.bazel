@@ -34,6 +34,8 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery",
     deps = [
         ":environment_discovery_go_proto",
+        "//agentplane/proto:delegation_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/runtimeconfig",
         "//agentplane/sandboxes/sandboxreader",

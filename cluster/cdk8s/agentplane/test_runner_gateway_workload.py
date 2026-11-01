@@ -169,6 +169,8 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/WatchDispatches",
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches",
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
+        "/agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments",
+        "/agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment",
     ]
     history_delegation = history["delegation"]
     assert history_delegation["actor"] == actions_account

@@ -209,12 +209,16 @@ go_test(
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/discovery",
         "//agentplane/sandboxes/discovery:environment_discovery_go_proto",
+        "//agentplane/testing/grpcmethods",
         "//agentplane/workload_auth/auth",
+        "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/types",
         "@io_k8s_sigs_controller_runtime//pkg/client/fake",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 

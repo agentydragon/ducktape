@@ -8,12 +8,16 @@ request. It does not create environments, attach Sessions, control lifecycle, or
 
 ## Caller and object authorization
 
-- Unary methods admit a TokenReview-verified ServiceAccount using the Runner Gateway's existing
-  Dispatcher audience and served namespace set.
-- The handler requires a complete reviewed ServiceAccount identity, including its UID.
+- Unary methods admit a direct TokenReview-verified ServiceAccount or an explicitly configured
+  Actions delegation using the Runner Gateway's existing Dispatcher audience and served namespace
+  set. Only `ListEnvironments` and `GetEnvironment` may be added to the Gateway's exact delegated
+  method list; the grant does not extend to Dispatcher writes or Gateway proxy methods.
+- The handler obtains the admitted effective caller from shared workload authentication and requires
+  a complete ServiceAccount identity, including its UID. Direct calls retain their existing
+  reviewed-account path.
 - For each candidate, `sandboxreader.Reader.ExecutionAccount` rereads the exact live Sandbox UID and
   confirms its non-deleting ServiceAccount has the Sandbox's exact controlling owner reference.
-- A result is returned only if namespace, account name, and account UID all match the reviewed caller.
+- A result is returned only if namespace, account name, and account UID all match the effective caller.
 - Get requires the complete Sandbox namespace/name/UID handle. Missing, replaced, deleting, or
   foreign targets are hidden as `NOT_FOUND`.
 - The page request/response remains compatible with bounded pagination. Current Sandbox-owned
@@ -21,8 +25,10 @@ request. It does not create environments, attach Sessions, control lifecycle, or
   It rejects nonempty unknown cursors and never forwards a namespace-wide Kubernetes token that
   can expose a filtered Sandbox key.
 
-The dispatcher still rechecks identity at Session admission. Discovery is not an authorization
-lease and is not a substitute for mutation-time checks.
+Delegated calls keep the Actions actor separate from the effective caller. They receive the same
+live Sandbox-owned ServiceAccount UID checks as direct calls. The dispatcher still rechecks
+identity at Session admission. Discovery is not an authorization lease and is not a substitute for
+mutation-time checks.
 
 ## Returned facts
 

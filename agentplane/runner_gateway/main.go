@@ -305,6 +305,10 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
 	dispatcherMethods := dispatcher.Methods(dispatchAuth)
+	methods := auth.HealthMethods()
+	maps.Copy(methods, dispatcherMethods)
+	maps.Copy(methods, discovery.Methods(dispatchAuth))
+	maps.Copy(methods, g.Methods())
 	if c.Delegation != nil {
 		delegator := auth.Delegator{Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces}
 		uidReader := auth.ServiceAccountUIDReaderFunc(func(ctx context.Context, account auth.Account) (string, bool, error) {
@@ -317,17 +321,11 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 			}
 			return string(serviceAccount.UID), true, nil
 		})
-		dispatcherMethods, err = dispatcher.MethodsWithDelegation(
-			dispatchAuth, delegator, uidReader, c.Delegation.Methods,
-		)
+		methods, err = methods.WithDelegation(c.Delegation.Methods, []auth.Delegator{delegator}, uidReader)
 		if err != nil {
-			return fmt.Errorf("configure Dispatcher delegation: %w", err)
+			return fmt.Errorf("configure Runner Gateway delegation: %w", err)
 		}
 	}
-	methods := auth.HealthMethods()
-	maps.Copy(methods, dispatcherMethods)
-	maps.Copy(methods, discovery.Methods(dispatchAuth))
-	maps.Copy(methods, g.Methods())
 	server := grpc.NewServer(append(
 		methods.ServerOptions(0),
 		observability.GRPCServerOption(),

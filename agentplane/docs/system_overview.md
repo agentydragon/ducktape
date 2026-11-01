@@ -14,8 +14,10 @@ ingress; selected Anthropic API models use a dedicated mounted key and a host-pi
 ```mermaid
 flowchart LR
     app[Integration app]
+    actions[Action Service]
     subgraph unified[Runner Gateway]
-        dispatcher[Dispatcher API, durable delivery and EnvironmentDiscovery]
+        dispatcher[Dispatcher API and durable delivery]
+        discovery[EnvironmentDiscovery API]
         gateway[Runner proxy and state observation]
     end
     pod[Managed Pod agent process and CLI]
@@ -28,6 +30,8 @@ flowchart LR
     k8s[Kubernetes API]
     app -->|session opens + commands| dispatcher
     app -->|Dispatch watch for the browser: gRPC| dispatcher
+    app -->|EnvironmentDiscovery list/get: gRPC| discovery
+    actions -->|caller-delegated EnvironmentDiscovery list/get: gRPC| discovery
     app -->|per-Sandbox Runner Proxy: live inventory + diagnostics| gateway
     dispatcher -->|wrapped Codex and Claude opens + commands| gateway
     dispatcher -->|central opens + commands: Sampler gRPC| central
@@ -45,6 +49,10 @@ Managed Pod and VM callers receive only the inert `AGENTPLANE_SESSIONS_CREDENTIA
 or VM launcher relay holds the short-lived `session-dispatcher` audience token; the central proxy substitutes
 it on the allowlisted SessionDispatcher and EnvironmentDiscovery RPC paths. Backend checks of the Sandbox
 identity and object UID remain authoritative; network reachability grants no Session authority.
+The Action Service uses the same Dispatcher audience and a pod-bound Actions token on the explicitly
+opted-in discovery methods. The receiver applies the caller identity from the shared delegation
+envelope, then performs the same live Sandbox and execution-ServiceAccount UID checks as a direct
+caller. This read path does not grant Session writes, wake, or provisioning authority.
 
 ## Central code-mode sampling (opt in)
 

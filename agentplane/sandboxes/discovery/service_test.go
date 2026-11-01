@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
+	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
@@ -31,13 +33,17 @@ import (
 const (
 	discoveryNamespace = "test-envs"
 	foreignNamespace   = "other-envs"
-	discoveryAudience  = "environment-discovery"
+	dispatcherAudience = "session-dispatcher-test"
+	actionsToken       = "trusted-actions"
+	untrustedToken     = "untrusted-actions"
 	sandboxName        = "workspace"
 	sandboxUID         = "sandbox-uid-current"
 	executionUID       = "service-account-uid-current"
 	matchingToken      = "matching-account"
 	recreatedToken     = "same-name-recreated-account"
 	foreignToken       = "foreign-account"
+	actionRequestID    = "00000000-0000-4000-8000-000000000001"
+	actionExecutionID  = "00000000-0000-4000-8000-000000000002"
 )
 
 type tokenReviewStub map[string]authenticationv1.UserInfo
@@ -59,20 +65,58 @@ func testTokenReviews() tokenReviewStub {
 		matchingToken:  {Username: "system:serviceaccount:" + discoveryNamespace + ":" + sandboxName, UID: executionUID},
 		recreatedToken: {Username: "system:serviceaccount:" + discoveryNamespace + ":" + sandboxName, UID: "service-account-uid-recreated"},
 		foreignToken:   {Username: "system:serviceaccount:" + foreignNamespace + ":" + sandboxName, UID: executionUID},
+		actionsToken: {
+			Username: "system:serviceaccount:" + discoveryNamespace + ":actions", UID: "actions-uid",
+			Extra: map[string]authenticationv1.ExtraValue{
+				"authentication.kubernetes.io/pod-name": {"actions-pod"},
+				"authentication.kubernetes.io/pod-uid":  {"actions-pod-uid"},
+			},
+		},
+		untrustedToken: {
+			Username: "system:serviceaccount:" + foreignNamespace + ":actions", UID: "other-actions-uid",
+			Extra: map[string]authenticationv1.ExtraValue{
+				"authentication.kubernetes.io/pod-name": {"other-actions-pod"},
+				"authentication.kubernetes.io/pod-uid":  {"other-actions-pod-uid"},
+			},
+		},
 	}
 }
 
 func serveDiscovery(t *testing.T, objects client.Reader, catalog runtimeconfig.Catalog) discoverypb.EnvironmentDiscoveryClient {
 	t.Helper()
+	return serveDiscoveryWithDelegation(t, objects, catalog, nil)
+}
+
+func serveDiscoveryWithDelegation(
+	t *testing.T,
+	objects client.Reader,
+	catalog runtimeconfig.Catalog,
+	delegatedMethods []string,
+) discoverypb.EnvironmentDiscoveryClient {
+	t.Helper()
 	service, err := New(discoveryNamespace, objects, catalog, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolver, err := auth.NewResolver(testTokenReviews(), discoveryAudience, []string{discoveryNamespace, foreignNamespace}, auth.WithVerdictTTL(0))
+	resolver, err := auth.NewResolver(testTokenReviews(), dispatcherAudience, []string{discoveryNamespace, foreignNamespace}, auth.WithVerdictTTL(0))
 	if err != nil {
 		t.Fatal(err)
 	}
 	methods := Methods(resolver)
+	if delegatedMethods != nil {
+		methods, err = methods.WithDelegation(delegatedMethods, []auth.Delegator{{
+			Account:          auth.Account{Namespace: discoveryNamespace, Name: "actions"},
+			CallerNamespaces: []string{discoveryNamespace},
+		}}, auth.ServiceAccountUIDReaderFunc(func(_ context.Context, account auth.Account) (string, bool, error) {
+			if account != (auth.Account{Namespace: discoveryNamespace, Name: sandboxName}) {
+				return "", false, nil
+			}
+			return executionUID, true, nil
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	register := func(server *grpc.Server) {
 		discoverypb.RegisterEnvironmentDiscoveryServer(server, service)
 	}
@@ -124,6 +168,24 @@ func bearing(t *testing.T, token string) context.Context {
 	return metadata.AppendToOutgoingContext(t.Context(), "authorization", "Bearer "+token)
 }
 
+func delegatedBearing(t *testing.T, token string, account auth.Account, uid string) context.Context {
+	t.Helper()
+	envelope := &delegationpb.Delegation{
+		Caller: &delegationpb.ServiceAccountIdentity{
+			Account: &sandboxpb.ServiceAccount{Namespace: account.Namespace, Name: account.Name}, Uid: uid,
+		},
+		ActionRequestId: actionRequestID, ActionExecutionId: actionExecutionID,
+	}
+	encoded, err := auth.MarshalDelegation(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return metadata.NewOutgoingContext(t.Context(), metadata.Pairs(
+		"authorization", "Agentplane-Delegated "+token,
+		auth.DelegationMetadataKey, string(encoded),
+	))
+}
+
 func TestListAndGetReturnTheExactExecutionAccountIdentity(t *testing.T) {
 	rpc := serveDiscovery(t, baseReader(t), runtimeconfig.Catalog{})
 	listed, err := rpc.ListEnvironments(bearing(t, matchingToken), &discoverypb.ListEnvironmentsRequest{Limit: 10})
@@ -146,6 +208,138 @@ func TestListAndGetReturnTheExactExecutionAccountIdentity(t *testing.T) {
 	}
 	if got.GetTarget().GetUid() != sandboxUID || got.GetExecutionAccount().GetUid() != executionUID {
 		t.Fatalf("GetEnvironment returned target/account %+v / %+v", got.GetTarget(), got.GetExecutionAccount())
+	}
+}
+
+func TestDelegatedActionsUseTheEffectiveCallerAndKeepTargetUIDFences(t *testing.T) {
+	rpc := serveDiscoveryWithDelegation(t, baseReader(t), runtimeconfig.Catalog{}, []string{
+		discoverypb.EnvironmentDiscovery_ListEnvironments_FullMethodName,
+		discoverypb.EnvironmentDiscovery_GetEnvironment_FullMethodName,
+	})
+	effective := auth.Account{Namespace: discoveryNamespace, Name: sandboxName}
+	ctx := delegatedBearing(t, actionsToken, effective, executionUID)
+
+	listed, err := rpc.ListEnvironments(ctx, &discoverypb.ListEnvironmentsRequest{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Items) != 1 || listed.Items[0].Target.GetUid() != sandboxUID {
+		t.Fatalf("delegated ListEnvironments returned %+v, want the effective caller's current Sandbox", listed.Items)
+	}
+	got, err := rpc.GetEnvironment(ctx, &discoverypb.GetEnvironmentRequest{Target: listed.Items[0].Target})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetExecutionAccount().GetUid() != executionUID {
+		t.Fatalf("delegated GetEnvironment execution account = %+v", got.GetExecutionAccount())
+	}
+
+	for _, target := range []*discoverypb.TargetHandle{
+		{Namespace: foreignNamespace, Name: sandboxName, Uid: sandboxUID},
+		{Namespace: discoveryNamespace, Name: sandboxName, Uid: "replaced-sandbox-uid"},
+	} {
+		if _, err := rpc.GetEnvironment(ctx, &discoverypb.GetEnvironmentRequest{Target: target}); status.Code(err) != codes.NotFound {
+			t.Errorf("delegated GetEnvironment target %+v error = %v, want NotFound", target, err)
+		}
+	}
+
+	// Existing projected ServiceAccount callers keep the direct mode on the same RPC methods.
+	direct, err := rpc.GetEnvironment(bearing(t, matchingToken), &discoverypb.GetEnvironmentRequest{
+		Target: &discoverypb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+	})
+	if err != nil || direct.GetTarget().GetUid() != sandboxUID {
+		t.Fatalf("direct GetEnvironment = %+v, %v", direct, err)
+	}
+}
+
+func TestDelegatedDiscoveryRejectsUntrustedActorAndReplacedCallerUID(t *testing.T) {
+	rpc := serveDiscoveryWithDelegation(t, baseReader(t), runtimeconfig.Catalog{}, []string{
+		discoverypb.EnvironmentDiscovery_ListEnvironments_FullMethodName,
+		discoverypb.EnvironmentDiscovery_GetEnvironment_FullMethodName,
+	})
+	target := &discoverypb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
+	for _, test := range []struct {
+		name string
+		ctx  context.Context
+		code codes.Code
+	}{
+		{
+			name: "untrusted actor",
+			ctx:  delegatedBearing(t, untrustedToken, auth.Account{Namespace: discoveryNamespace, Name: sandboxName}, executionUID),
+			code: codes.PermissionDenied,
+		},
+		{
+			name: "replaced effective ServiceAccount UID",
+			ctx:  delegatedBearing(t, actionsToken, auth.Account{Namespace: discoveryNamespace, Name: sandboxName}, "old-service-account-uid"),
+			code: codes.PermissionDenied,
+		},
+		{
+			name: "caller namespace outside delegator scope",
+			ctx:  delegatedBearing(t, actionsToken, auth.Account{Namespace: foreignNamespace, Name: sandboxName}, executionUID),
+			code: codes.PermissionDenied,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := rpc.GetEnvironment(test.ctx, &discoverypb.GetEnvironmentRequest{Target: target}); status.Code(err) != test.code {
+				t.Fatalf("GetEnvironment error = %v, want %s", err, test.code)
+			}
+		})
+	}
+}
+
+func TestDelegatedDiscoveryRequiresOneValidEnvelopeAndAnOptedInMethod(t *testing.T) {
+	methods := []string{
+		discoverypb.EnvironmentDiscovery_ListEnvironments_FullMethodName,
+		discoverypb.EnvironmentDiscovery_GetEnvironment_FullMethodName,
+	}
+	rpc := serveDiscoveryWithDelegation(t, baseReader(t), runtimeconfig.Catalog{}, methods)
+	target := &discoverypb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
+	valid := delegatedBearing(t, actionsToken, auth.Account{Namespace: discoveryNamespace, Name: sandboxName}, executionUID)
+	validMetadata, _ := metadata.FromOutgoingContext(valid)
+	encodedEnvelope := validMetadata.Get(auth.DelegationMetadataKey)[0]
+	for _, test := range []struct {
+		name string
+		ctx  context.Context
+	}{
+		{
+			name: "missing envelope",
+			ctx:  metadata.NewOutgoingContext(t.Context(), metadata.Pairs("authorization", "Agentplane-Delegated "+actionsToken)),
+		},
+		{
+			name: "malformed envelope",
+			ctx: metadata.NewOutgoingContext(t.Context(), metadata.Pairs(
+				"authorization", "Agentplane-Delegated "+actionsToken,
+				auth.DelegationMetadataKey, "\x00",
+			)),
+		},
+		{
+			name: "repeated envelope",
+			ctx: metadata.NewOutgoingContext(t.Context(), metadata.Pairs(
+				"authorization", "Agentplane-Delegated "+actionsToken,
+				auth.DelegationMetadataKey, encodedEnvelope,
+				auth.DelegationMetadataKey, encodedEnvelope,
+			)),
+		},
+		{
+			name: "bearer mode with envelope",
+			ctx: metadata.NewOutgoingContext(t.Context(), metadata.Pairs(
+				"authorization", "Bearer "+matchingToken,
+				auth.DelegationMetadataKey, encodedEnvelope,
+			)),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := rpc.GetEnvironment(test.ctx, &discoverypb.GetEnvironmentRequest{Target: target}); status.Code(err) != codes.Unauthenticated {
+				t.Fatalf("GetEnvironment error = %v, want Unauthenticated", err)
+			}
+		})
+	}
+
+	listOnly := serveDiscoveryWithDelegation(t, baseReader(t), runtimeconfig.Catalog{}, []string{
+		discoverypb.EnvironmentDiscovery_ListEnvironments_FullMethodName,
+	})
+	if _, err := listOnly.GetEnvironment(valid, &discoverypb.GetEnvironmentRequest{Target: target}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("delegated GetEnvironment without method opt-in error = %v, want Unauthenticated", err)
 	}
 }
 
@@ -367,7 +561,7 @@ func TestKubernetesReadFailuresReturnUnavailable(t *testing.T) {
 func TestEveryGeneratedRPCRequiresReviewedServiceAccountAdmission(t *testing.T) {
 	methods := func(t *testing.T) auth.Methods {
 		t.Helper()
-		resolver, err := auth.NewResolver(testTokenReviews(), discoveryAudience, []string{discoveryNamespace, foreignNamespace}, auth.WithVerdictTTL(0))
+		resolver, err := auth.NewResolver(testTokenReviews(), dispatcherAudience, []string{discoveryNamespace, foreignNamespace}, auth.WithVerdictTTL(0))
 		if err != nil {
 			t.Fatal(err)
 		}

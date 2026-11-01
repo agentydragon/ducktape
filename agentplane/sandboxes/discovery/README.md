@@ -7,14 +7,16 @@ listener. Its method paths are:
 - `/agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments`
 - `/agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment`
 
-Both methods require a TokenReview-verified ServiceAccount credential. The handler reads the
-reviewed namespace, name, and immutable ServiceAccount UID, then returns only Sandboxes whose live,
-controller-owned execution ServiceAccount has that exact identity. A Sandbox's namespace/name or
-labels alone do not establish access. A target handle is the Sandbox namespace, name, and UID; get
-returns `NOT_FOUND` for an absent, replaced, deleting, or foreign target.
+Both methods accept direct TokenReview-verified ServiceAccount credentials and the explicitly
+configured Actions delegation. Delegated calls use the existing Dispatcher audience and are opted
+into by exact full RPC method name. The handler checks the admitted effective caller's namespace,
+name, and immutable ServiceAccount UID, then returns only Sandboxes whose live, controller-owned
+execution ServiceAccount has that exact identity. A Sandbox's namespace/name or labels alone do
+not establish access. A target handle is the Sandbox namespace, name, and UID; get returns
+`NOT_FOUND` for an absent, replaced, deleting, or foreign target.
 
 List requires a limit from 1..100 and retains the paged request/response shape. The current
-Sandbox-owned account mapping resolves the reviewed account's same-name candidate directly, so it
+Sandbox-owned account mapping resolves the effective caller's same-name candidate directly, so it
 returns no continuation token. The service never sends a namespace-wide Kubernetes continuation
 token to a caller, because such a token can reveal the name of a filtered Sandbox.
 
