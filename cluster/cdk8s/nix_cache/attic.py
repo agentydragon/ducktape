@@ -14,15 +14,18 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ClusterRole, ClusterRolePolicyRule, ServiceAccount, k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
+from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecCluster, DatabaseSpecDatabaseReclaimPolicy
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
+    ExternalSecretSpecTargetTemplateEngineVersion,
 )
 
 from cluster.cdk8s import api_resource, cnpg, cnpg_backup, external_creds, namespaces, node_scheduling
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.gateway import https_route
@@ -30,7 +33,8 @@ from cluster.cdk8s.github_secrets_sync import workspace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.nix_cache import ci_token
-from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.providers.cnpg.database import Database
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -59,6 +63,11 @@ _ROTATOR = "attic-jwt-rotator"
 _ROTATOR_IMAGE = "git.allegedly.works/ducktape-ci/attic-jwt-rotation:unset"
 _ROTATORS_CONFIG_MAP = "attic-rotators-config"
 _SERVER_CONFIG_MAP = "attic-config"
+_NEXT = "attic-next"
+_NEXT_CONFIG_MAP = "attic-local-config"
+_NEXT_DATABASE_SECRET = "attic-local-database"
+_NEXT_STORAGE = "attic-local-storage"
+_NEXT_LABELS = {"app.kubernetes.io/name": _NEXT}
 
 ROTATOR_CONFIG = Config(
     tokens=[
@@ -134,6 +143,7 @@ ROTATOR_CONFIG = Config(
 )
 
 SERVER_CONFIG_MAP = ConfigMapArgs(name=_SERVER_CONFIG_MAP, namespace=NAMESPACE, files=["server.toml"])
+NEXT_CONFIG_MAP = ConfigMapArgs(name=_NEXT_CONFIG_MAP, namespace=NAMESPACE, files=["server.toml=server-local.toml"])
 
 
 ROTATORS_CONFIG_MAP = ConfigMapArgs(
@@ -269,6 +279,215 @@ def _server(scope: Construct, *, storage: s3.PrivateBucket) -> None:
         backend=SERVICE,
         hsts=False,
         listener=None,
+    )
+
+
+def _candidate(scope: Construct) -> None:
+    # Keep the existing database and S3-backed service untouched until the new cache is checked.
+    # CNPG backs up the entire cluster, including this separately owned database.
+    Database(
+        scope,
+        "local-database",
+        metadata=ApiObjectMetadata(name=_NEXT_DATABASE_SECRET, namespace=NAMESPACE),
+        cluster=DatabaseSpecCluster(name=DATABASE.name),
+        name="attic_local",
+        owner="attic",
+        database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
+    )
+    reader = k8s.KubeServiceAccount(
+        scope, "local-db-reader", metadata=k8s.ObjectMeta(name="attic-local-db-reader", namespace=NAMESPACE)
+    )
+    k8s.KubeRole(
+        scope,
+        "local-db-reader-role",
+        metadata=k8s.ObjectMeta(name="attic-local-db-reader", namespace=NAMESPACE),
+        rules=[
+            k8s.PolicyRule(
+                api_groups=[""], resources=["secrets"], resource_names=[DATABASE.app_secret.name], verbs=["get"]
+            )
+        ],
+    )
+    k8s.KubeRoleBinding(
+        scope,
+        "local-db-reader-binding",
+        metadata=k8s.ObjectMeta(name="attic-local-db-reader", namespace=NAMESPACE),
+        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name="attic-local-db-reader"),
+        subjects=[k8s.Subject(kind="ServiceAccount", name="attic-local-db-reader", namespace=NAMESPACE)],
+    )
+    secret_store(
+        scope,
+        "local-db-store",
+        metadata=ApiObjectMetadata(name=_NEXT_DATABASE_SECRET, namespace=NAMESPACE),
+        reader=reader,
+    )
+    ExternalSecret(
+        scope,
+        "local-db-secret",
+        metadata=ApiObjectMetadata(name=_NEXT_DATABASE_SECRET, namespace=NAMESPACE),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.namespaced(_NEXT_DATABASE_SECRET),
+        data=[remote_data(DATABASE.app_secret.name, "uri")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        template=ExternalSecretSpecTargetTemplate(
+            engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
+            data={
+                "uri": '{{ if hasSuffix "/attic" .uri }}{{ trimSuffix "/attic" .uri }}/attic_local{{ else }}{{ fail "unexpected Attic database URI" }}{{ end }}'
+            },
+        ),
+    )
+    k8s.KubePersistentVolumeClaim(
+        scope,
+        "local-storage",
+        metadata=k8s.ObjectMeta(name=_NEXT_STORAGE, namespace=NAMESPACE),
+        spec=k8s.PersistentVolumeClaimSpec(
+            access_modes=["ReadWriteOnce"],
+            storage_class_name="piraeus-hdd-2",
+            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("100Gi")}),
+        ),
+    )
+    k8s.KubeDeployment(
+        scope,
+        "candidate-deployment",
+        metadata=k8s.ObjectMeta(name=_NEXT, namespace=NAMESPACE),
+        spec=k8s.DeploymentSpec(
+            replicas=1,
+            strategy=k8s.DeploymentStrategy(type="Recreate"),
+            selector=k8s.LabelSelector(match_labels=_NEXT_LABELS),
+            template=k8s.PodTemplateSpec(
+                metadata=k8s.ObjectMeta(labels=_NEXT_LABELS),
+                spec=k8s.PodSpec(
+                    automount_service_account_token=False,
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
+                    security_context=k8s.PodSecurityContext(fs_group=1000),
+                    containers=[
+                        k8s.Container(
+                            name=NAME,
+                            # Match the running server, so testing the new backend does not upgrade Attic.
+                            image="ghcr.io/zhaofengli/attic@sha256:18574aba70fc89d2b695273fbe2e7b2f8ad7e8e786b4cc535124fbe14bada1d0",
+                            security_context=k8s.SecurityContext(
+                                run_as_user=1000,
+                                run_as_group=1000,
+                                run_as_non_root=True,
+                                allow_privilege_escalation=False,
+                                capabilities=k8s.Capabilities(drop=["ALL"]),
+                                seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
+                            ),
+                            env=[
+                                SecretRef(namespace=NAMESPACE, name=_NEXT_DATABASE_SECRET)
+                                .key("uri")
+                                .env_var("ATTIC_SERVER_DATABASE_URL"),
+                                SecretRef(namespace=NAMESPACE, name="attic-jwt-token")
+                                .key("jwt-token")
+                                .env_var("ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64"),
+                            ],
+                            args=["-f", "/config/server.toml", "--mode", "monolithic"],
+                            ports=[SERVICE.port.k8s_container_port()],
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "cpu": k8s.Quantity.from_string("50m"),
+                                    "memory": k8s.Quantity.from_string("1280Mi"),
+                                },
+                                limits={"memory": k8s.Quantity.from_string("4Gi")},
+                            ),
+                            volume_mounts=[
+                                k8s.VolumeMount(name="config", mount_path="/config", read_only=True),
+                                k8s.VolumeMount(name="tmp", mount_path="/tmp"),
+                                k8s.VolumeMount(name="storage", mount_path="/data"),
+                            ],
+                            liveness_probe=k8s.Probe(
+                                http_get=k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_string("http")),
+                                initial_delay_seconds=10,
+                                period_seconds=30,
+                                timeout_seconds=5,
+                            ),
+                            readiness_probe=k8s.Probe(
+                                http_get=k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_string("http")),
+                                initial_delay_seconds=5,
+                                period_seconds=10,
+                                timeout_seconds=3,
+                            ),
+                        )
+                    ],
+                    volumes=[
+                        k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=_NEXT_CONFIG_MAP)),
+                        k8s.Volume(name="tmp", empty_dir=k8s.EmptyDirVolumeSource()),
+                        k8s.Volume(
+                            name="storage",
+                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_NEXT_STORAGE),
+                        ),
+                    ],
+                ),
+            ),
+        ),
+    )
+    k8s.KubeService(
+        scope,
+        "candidate-service",
+        metadata=k8s.ObjectMeta(name=_NEXT, namespace=NAMESPACE),
+        spec=k8s.ServiceSpec(type="ClusterIP", ports=[SERVICE.port.k8s_service_port()], selector=_NEXT_LABELS),
+    )
+    k8s.KubeJob(
+        scope,
+        "candidate-bootstrap",
+        metadata=k8s.ObjectMeta(
+            name="attic-next-bootstrap",
+            namespace=NAMESPACE,
+            annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"},
+        ),
+        spec=k8s.JobSpec(
+            backoff_limit=20,
+            template=k8s.PodTemplateSpec(
+                spec=k8s.PodSpec(
+                    service_account_name=_ROTATOR,
+                    automount_service_account_token=True,
+                    image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
+                    restart_policy="OnFailure",
+                    security_context=k8s.PodSecurityContext(
+                        run_as_non_root=True,
+                        run_as_user=65534,
+                        seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
+                    ),
+                    containers=[
+                        k8s.Container(
+                            name="bootstrap",
+                            image=_ROTATOR_IMAGE,
+                            args=[
+                                "bootstrap-caches",
+                                "--server=http://attic-next.nix-cache.svc.cluster.local:8080",
+                                "--attic-deployment=deploy/attic-next",
+                                "--cache=main",
+                                "--cache=gaffer",
+                                "--public-cache=public",
+                                "--keypair-dir=/secrets/cache-keys",
+                            ],
+                            security_context=k8s.SecurityContext(
+                                allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
+                            ),
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "cpu": k8s.Quantity.from_string("100m"),
+                                    "memory": k8s.Quantity.from_string("128Mi"),
+                                },
+                                limits={"memory": k8s.Quantity.from_string("256Mi")},
+                            ),
+                            volume_mounts=[
+                                k8s.VolumeMount(name="cache-keys", mount_path="/secrets/cache-keys", read_only=True)
+                            ],
+                        )
+                    ],
+                    volumes=[
+                        k8s.Volume(
+                            name="cache-keys",
+                            secret=k8s.SecretVolumeSource(
+                                secret_name="attic-cache-keys",
+                                items=[k8s.KeyToPath(key=name, path=name) for name in ("main", "gaffer", "public")],
+                            ),
+                        )
+                    ],
+                )
+            ),
+        ),
     )
 
 
@@ -526,4 +745,5 @@ def chart(app: App) -> Chart:
     _database(chart)
     _server(chart, storage=_storage(chart))
     _rotation(chart)
+    _candidate(chart)
     return chart
