@@ -2,7 +2,7 @@
 
 Worker `/root/central_codex_spike`, 2026-10-27. This is the first experimental slice of running
 upstream Codex outside its executor, prompted by [incident #12203](https://github.com/agentydragon/ducktape/issues/12203).
-The runnable fixture is [central_codex](../runner/x/central_codex/README.md).
+The temporary fixture source has been retired; this note preserves its observed behavior and limitations.
 
 The repository pin `rust-v0.162.1` runs both app-server and exec-server. The app-server has its own
 `CODEX_HOME` and native frame journal; the executor has a separate workspace and minimal environment.
