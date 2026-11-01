@@ -43,45 +43,6 @@ type systemdBackend struct {
 	referenceUnit           func(context.Context, string) (systemdUnitReference, error)
 }
 
-type systemdUnitReference interface {
-	Connected() bool
-	Close() error
-}
-
-type systemdReferenceBus interface {
-	systemdUnitReference
-	refUnit(context.Context, string) error
-}
-
-type dbusSystemdReferenceBus struct{ conn *dbus.Conn }
-
-func (b dbusSystemdReferenceBus) Connected() bool { return b.conn.Connected() }
-
-func (b dbusSystemdReferenceBus) Close() error { return b.conn.Close() }
-
-func (b dbusSystemdReferenceBus) refUnit(ctx context.Context, name string) error {
-	return b.conn.Object("org.freedesktop.systemd1", "/org/freedesktop/systemd1").CallWithContext(
-		ctx, "org.freedesktop.systemd1.Manager.RefUnit", 0, name,
-	).Err
-}
-
-type retainedSystemdUnitReference struct {
-	bus       systemdReferenceBus
-	cancel    context.CancelFunc
-	closeOnce sync.Once
-	closeErr  error
-}
-
-func (r *retainedSystemdUnitReference) Connected() bool { return r.bus.Connected() }
-
-func (r *retainedSystemdUnitReference) Close() error {
-	r.closeOnce.Do(func() {
-		r.cancel()
-		r.closeErr = r.bus.Close()
-	})
-	return r.closeErr
-}
-
 type nativeSystemdStopJob struct {
 	done     chan struct{}
 	cancel   context.CancelFunc
@@ -404,33 +365,6 @@ func (b *systemdBackend) retainUnitReference(manager *systemd.Conn) error {
 	}
 	b.referenceMu.Unlock()
 	return nil
-}
-
-func referenceSystemdUnit(ctx context.Context, name string) (systemdUnitReference, error) {
-	// godbus.WithContext controls the connection lifetime, so keep it separate
-	// from ctx, which bounds only the RefUnit RPC.
-	return referenceSystemdUnitWith(ctx, name, func(lifetime context.Context) (systemdReferenceBus, error) {
-		conn, err := dbus.ConnectSystemBus(dbus.WithContext(lifetime))
-		if err != nil {
-			return nil, err
-		}
-		return dbusSystemdReferenceBus{conn: conn}, nil
-	})
-}
-
-func referenceSystemdUnitWith(ctx context.Context, name string, dial func(context.Context) (systemdReferenceBus, error)) (systemdUnitReference, error) {
-	lifetime, cancel := context.WithCancel(context.Background())
-	bus, err := dial(lifetime)
-	if err != nil {
-		cancel()
-		return nil, err
-	}
-	reference := &retainedSystemdUnitReference{bus: bus, cancel: cancel}
-	if err := bus.refUnit(ctx, name); err != nil {
-		_ = reference.Close()
-		return nil, err
-	}
-	return reference, nil
 }
 
 func (b *systemdBackend) requestStop(ctx context.Context, conn *systemd.Conn, grace *time.Duration) (<-chan string, error) {
