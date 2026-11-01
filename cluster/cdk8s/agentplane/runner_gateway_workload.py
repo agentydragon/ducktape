@@ -392,7 +392,9 @@ def serving_chart(app: App, *, env: Environment) -> Chart:
         database_url=dispatcher_database_url,
         dispatcher_callers=callers | orchestration,
         delegation_actor=(
-            ServiceAccountRef(namespace=env.namespace, name=actions.NAME) if env.actions.orchestration_v1 is not None else None
+            ServiceAccountRef(namespace=env.namespace, name=actions.NAME)
+            if env.actions.orchestration_v1 is not None
+            else None
         ),
         gateway_callers=callers,
         # The orchestration_v1 group sends input that wakes a Sandbox launched with wakeOnSend.
