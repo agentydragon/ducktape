@@ -95,7 +95,7 @@ pub(super) fn ordinary_callback_arguments(
     if assigned != cache || !index.plain_data_objects.contains(module) {
         return None;
     }
-    let [(Some(field), ValueExpr::ObjectLiteral(value, contents))] = fields.as_slice() else {
+    let [(Some(field), ValueExpr::ObjectLiteral(value, contents))] = fields.as_ref() else {
         return None;
     };
     if !contents.is_empty() || !index.plain_data_objects.contains(value) {
