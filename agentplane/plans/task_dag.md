@@ -388,7 +388,7 @@ flowchart TD
     SESSION_TARGET_DISCOVERY[In review: existing target discovery]
     SESSION_DELEGATION_TOOLS[Remaining MCP and result tools]
     SESSION_DELEGATION_TRANSPORT[In review: workload proxy route for Session calls]
-    DELEGATED_AUTHORIZATION[In flight: shared delegated authorization]
+    DELEGATED_AUTHORIZATION[In review: shared delegated authorization]
     ACTION_CALLER_UID[In flight: retain Action caller UID]
     ENVIRONMENT_SHARED_ACCOUNT[Deferred: shared-SA environment identity]
     ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN[Later decision: catalogue ownership and location]
@@ -584,6 +584,13 @@ opaque cursors and lost-reply recovery IDs. Action adapters may provide the firs
 new owning RPC would add substantial work; record that exact RPC/CLI TODO. Update agent-facing
 instructions/tool descriptions and executable workflows rather than depending on private handles.
 
+The delegated sender/receiver integration remains explicit follow-up: Action Service sends the
+caller UID and Action request/execution IDs through the shared envelope; SessionDispatcher opts in
+per owning method and authorizes against its immutable execution principal. Both the shared
+`DELEGATED_AUTHORIZATION` primitives and `ACTION_CALLER_UID` persistence must be available before
+exposing that Action path. This does not add a backend lookup to Actions or make an Action ID an
+authorization capability.
+
 ### `SESSION_DELEGATION_TRANSPORT` — workload Session calls through the existing proxy
 
 **In review, [#13391](https://github.com/agentydragon/ducktape/pull/13391),
@@ -623,21 +630,25 @@ activation; activation is follow-up work after this planning review.
 
 ### `DELEGATED_AUTHORIZATION` — shared actor/caller authorization protocol
 
-**In flight, `/root/delegation_proxy_wiring`, operator dispatch 2026-11-01 UTC; separate PR following
-its proxy repair.** Review the shared API, explicit trust configuration and
-first consuming backend before broad implementation. Implement the
-[shared contract](../docs/delegated_authorization.md) in the gRPC auth/client packages: distinct
-delegated authentication mode, typed caller/provenance envelope, per-method trusted actors and
-caller namespace scope, live UID checks, and separate actor/effective-caller contexts. Delegated
-calls always use normal caller authorization even if the actor has a privileged backend role.
-Older receivers must reject the scheme and clients must never downgrade. Preserve provenance in
-durable admissions and existing no-replay recovery. Acceptance covers the design's denial,
-replacement, revocation and mixed-version cases without requiring the app or a backend-to-Actions
-lookup. Shared implementation may proceed independently of caller UID persistence; caller-delegating
-Action exposure needs both. Direct CLI/MCP caller-authenticated work does not wait for either.
-Stage these primitives for the named next consumers: routine Session Action adapters and the
-Dispatcher receiver. Their explicit trust configuration, handler integration and exposure remain
-in `SESSION_DELEGATION_TOOLS`; landing a shared library alone does not enable delegated RPCs.
+**Shared primitives in review, [#13397](https://github.com/agentydragon/ducktape/pull/13397),
+`/root/delegation_proxy_wiring`, 2026-11-01 UTC.** Implement the
+[shared contract](../docs/delegated_authorization.md) in the workload-auth client/server packages:
+distinct authentication mode, typed caller/provenance envelope, per-method trusted actors and caller
+namespace scope, live UID checks, and separate actor/effective-caller contexts. Delegated calls always
+use normal caller authorization even if the actor has a privileged backend role. Older receivers must
+reject the scheme and clients must never downgrade. Preserve provenance in durable admissions and
+existing no-replay recovery. Acceptance covers denial, replacement, revocation and mixed-version
+cases without requiring the app or a backend-to-Actions lookup. Shared implementation may proceed
+independently of caller UID persistence; caller-delegating Action exposure needs both this work and
+`ACTION_CALLER_UID`.
+
+The first sender is the routine Session Action adapter in `agentplane/action_service`, which will use
+the admitted/persisted caller UID and the real Action execution ID. The first receiver is
+`agentplane/runner_gateway/dispatcher`: its owning handler opts in only on selected methods and applies
+the effective caller's normal Session-principal checks. Their explicit trust configuration, handler
+integration and exposure remain in `SESSION_DELEGATION_TOOLS`; this primitives PR does not select a
+receiver actor/namespace trust policy or make delegated RPCs operational. Direct CLI/MCP
+caller-authenticated work does not wait for either integration.
 
 ### `ACTION_CALLER_UID` — retain the caller identity through approval and execution
 

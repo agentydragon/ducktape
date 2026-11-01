@@ -1,6 +1,7 @@
 # Delegated authorization
 
-Status: **approved design, 2026-10-31; shared protocol and Action adapters not yet implemented.**
+Status: **approved design; shared protocol primitives are in implementation review. Action Service and
+SessionDispatcher integrations remain separate work.**
 Use this contract when an Agentplane service invokes another service on behalf of a ServiceAccount.
 The first consumer is routine caller-privilege Actions. Direct callers continue using the
 [workload authentication](workload_authentication.md) contract.

@@ -7,6 +7,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -22,9 +23,10 @@ const (
 
 // Rule is who may call one gRPC method.
 type Rule struct {
-	kind     ruleKind
-	resolver *Resolver
-	accounts map[Account]struct{}
+	kind       ruleKind
+	resolver   *Resolver
+	accounts   map[Account]struct{}
+	delegation *delegationPolicy
 }
 
 // Public admits a call without reading its bearer. Only the standard health service is public: Kubernetes
@@ -108,6 +110,10 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 	rule := m[method]
 	switch rule.kind {
 	case rulePublic:
+		md, _ := metadata.FromIncomingContext(ctx)
+		if len(md.Get(DelegationMetadataKey)) > 0 || delegatedAttempt(md.Get("authorization")) {
+			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
+		}
 		return ctx, nil
 	case ruleAnyAccount, ruleAccounts:
 	default:
@@ -119,6 +125,15 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 		reviewContext, cancel = context.WithTimeout(ctx, admissionTimeout)
 		defer cancel()
 	}
+	md, _ := metadata.FromIncomingContext(ctx)
+	authorization := md.Get("authorization")
+	delegations := md.Get(DelegationMetadataKey)
+	if len(delegations) > 0 || delegatedAttempt(authorization) {
+		if rule.delegation == nil {
+			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
+		}
+		return rule.delegation.admit(ctx, reviewContext, authorization, delegations)
+	}
 	var principal Principal
 	var err error
 	if rule.kind == ruleAccounts {
@@ -129,7 +144,9 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 	if err != nil {
 		return nil, err
 	}
-	return WithCaller(ctx, principal), nil
+	caller := ServiceAccountPrincipal{Account: principal.Account, ServiceAccountUID: principal.ServiceAccountUID}
+	callerContext := withAdmission(ctx, DirectAdmission{Caller: caller, Pod: &principal})
+	return WithCaller(callerContext, principal), nil
 }
 
 // admittedStream is a stream whose context carries the admitted principal.
