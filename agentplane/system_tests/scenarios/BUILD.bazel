@@ -6,7 +6,7 @@ package(
     default_testonly = True,
     default_visibility = [
         "//agentplane/system_tests:__pkg__",
-        "//agentplane/system_tests/suites:__pkg__",
+        "//agentplane/system_tests/suites:__subpackages__",
     ],
 )
 
