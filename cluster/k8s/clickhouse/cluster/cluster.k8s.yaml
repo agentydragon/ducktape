@@ -400,10 +400,10 @@ spec:
               key: cluster-secret
         layout:
           shardsCount: 1
-          replicasCount: 2
+          replicasCount: 3
           shards:
             - name: "0"
-              replicasCount: 2
+              replicasCount: 3
               replicas:
                 - name: "0"
                   templates:
@@ -412,6 +412,10 @@ spec:
                 - name: "1"
                   templates:
                     podTemplate: clickhouse-piraeus-103656
+                    dataVolumeClaimTemplate: data-piraeus-hdd
+                - name: 0-3
+                  templates:
+                    podTemplate: clickhouse-piraeus-102453
                     dataVolumeClaimTemplate: data-piraeus-hdd
   templates:
     podTemplates:
@@ -551,6 +555,54 @@ spec:
                   type: RuntimeDefault
           nodeSelector:
             kubernetes.io/hostname: ovh-ns103656
+            storage.allegedly.works/tier: hdd
+            topology.kubernetes.io/zone: hil-ovh
+          securityContext:
+            fsGroup: 101
+            seccompProfile:
+              type: RuntimeDefault
+          terminationGracePeriodSeconds: 120
+      - name: clickhouse-piraeus-102453
+        metadata:
+          labels:
+            app.kubernetes.io/instance: clickhouse
+            app.kubernetes.io/name: clickhouse
+        spec:
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/instance: clickhouse
+                      app.kubernetes.io/name: clickhouse
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - image: clickhouse/clickhouse-server:26.8.3.105@sha256:d73903d1b61dfe825fc3810542f252966f33d3fd8efb3b3edcbbafb46b524b04
+              imagePullPolicy: IfNotPresent
+              name: clickhouse
+              ports:
+                - containerPort: 9363
+                  name: metrics
+                  protocol: TCP
+              resources:
+                limits:
+                  cpu: "4"
+                  memory: 8Gi
+                requests:
+                  cpu: 500m
+                  memory: 2Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                runAsGroup: 101
+                runAsNonRoot: true
+                runAsUser: 101
+                seccompProfile:
+                  type: RuntimeDefault
+          nodeSelector:
+            kubernetes.io/hostname: ovh-ns102453
             storage.allegedly.works/tier: hdd
             topology.kubernetes.io/zone: hil-ovh
           securityContext:

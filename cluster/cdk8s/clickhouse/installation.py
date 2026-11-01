@@ -1,4 +1,4 @@
-"""The central ClickHouse: the ClickHouseInstallation (one shard, two replicas), its
+"""The central ClickHouse: the ClickHouseInstallation (one shard, three replicas), its
 three-member Keeper quorum, the client Service, ingress NetworkPolicies, the PodMonitor, and
 the secret-free diagnostics grant for Haku and public-coder.
 
@@ -85,6 +85,7 @@ _PIRAEUS_HDD_STORAGE_CLASS = "piraeus-hdd-local"
 _PIRAEUS_SSD_STORAGE_CLASS = "piraeus-ssd-local"
 _CLICKHOUSE_PIRAEUS_103711_POD_TEMPLATE = "clickhouse-piraeus-103711"
 _CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE = "clickhouse-piraeus-103656"
+_CLICKHOUSE_PIRAEUS_102453_POD_TEMPLATE = "clickhouse-piraeus-102453"
 _CLICKHOUSE_PIRAEUS_HDD_CLAIM = "data-piraeus-hdd"
 # During the HDD-pool incident, keep shared client traffic on the healthy existing replica.
 # Remove the pin only after the replacement has passed independent catch-up and query checks.
@@ -361,11 +362,11 @@ def clickhouse_chart(app: App) -> Chart:
                         ),
                         layout=ClickHouseInstallationSpecConfigurationClustersLayout(
                             shards_count=1,
-                            replicas_count=2,
+                            replicas_count=3,
                             shards=[
                                 ClickHouseInstallationSpecConfigurationClustersLayoutShards(
                                     name="0",
-                                    replicas_count=2,
+                                    replicas_count=3,
                                     replicas=[
                                         ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas(
                                             name="0",
@@ -381,6 +382,16 @@ def clickhouse_chart(app: App) -> Chart:
                                             templates=(
                                                 ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates(
                                                     pod_template=_CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE,
+                                                    data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
+                                                )
+                                            ),
+                                        ),
+                                        # Keep the interrupted replica 0-2's retained PVC and Keeper identity intact.
+                                        ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas(
+                                            name="0-3",
+                                            templates=(
+                                                ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates(
+                                                    pod_template=_CLICKHOUSE_PIRAEUS_102453_POD_TEMPLATE,
                                                     data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
                                                 )
                                             ),
@@ -422,6 +433,10 @@ def clickhouse_chart(app: App) -> Chart:
                     _clickhouse_pod_template(
                         _CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE,
                         {**_HDD_NODE_SELECTOR, "kubernetes.io/hostname": "ovh-ns103656"},
+                    ),
+                    _clickhouse_pod_template(
+                        _CLICKHOUSE_PIRAEUS_102453_POD_TEMPLATE,
+                        {**_HDD_NODE_SELECTOR, "kubernetes.io/hostname": "ovh-ns102453"},
                     ),
                 ],
                 volume_claim_templates=[
