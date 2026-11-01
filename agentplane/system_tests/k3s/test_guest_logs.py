@@ -20,7 +20,8 @@ from agentplane.system_tests.k3s.guest_logs import (
 )
 
 MARKER = "2026-10-27T21:41:13.112914838Z stdout F " + SHUTDOWN_COMPLETE.decode() + "\n"
-BOOT_EVIDENCE = """2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_BEGIN /bin/cat /proc/cmdline
+BOOT_EVIDENCE = """2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_BEGIN
+2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_BEGIN /usr/bin/busybox cat /proc/cmdline
 2026-10-27T21:41:13Z stdout F root=/dev/ram console=ttyS0 agentplane.boot-evidence=1
 2026-10-27T21:41:13Z stdout F AGENTPLANE_UDEV_MONITOR_READY
 2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_GUEST_END
@@ -174,7 +175,11 @@ def test_successful_teardown_requires_complete_evidence_from_selected_guest(tmp_
     selected.write_text(BOOT_EVIDENCE + MARKER)
     other = logs / "systest_virt-launcher-test_uid-runner" / "guest-console-log" / "0.log"
     other.parent.mkdir(parents=True)
-    other.write_text(MARKER)
+    other.write_text(
+        "2026-10-27T21:41:13Z stdout F [   10.883319] systemd[1]: agentplane-boot-device-monitor.service "
+        "was skipped because of an unmet condition check "
+        "(ConditionKernelCommandLine=agentplane.boot-evidence=1).\n" + MARKER
+    )
 
     with capture(
         log_root=logs,
@@ -233,6 +238,7 @@ def test_successful_teardown_collects_evidence_split_across_rotated_guest_logs(t
     console = logs / "systest_virt-launcher-test_uid-oom" / "guest-console-log"
     console.mkdir(parents=True)
     (console / "0.log").write_text(
+        "2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_BEGIN\n"
         "2026-10-27T21:41:13Z stdout F root=/dev/ram console=ttyS0 agentplane.boot-evidence=1\n"
         "2026-10-27T21:41:13Z stdout F AGENTPLANE_UDEV_MONITOR_READY\n"
     )

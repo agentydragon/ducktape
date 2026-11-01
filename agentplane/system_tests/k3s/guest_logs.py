@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 SHUTDOWN_COMPLETE = b"AGENTPLANE_GUEST_SHUTDOWN_COMPLETE"
 SUPERVISION_FAILED = b"AGENTPLANE_GUEST_SUPERVISION_FAILED"
 SUPERVISION_PASSED = b'AGENTPLANE_GUEST_SUPERVISION_PASSED {"real_systemd_supervision":"passed"}'
-BOOT_EVIDENCE_ARGUMENT = b"agentplane.boot-evidence=1"
+BOOT_EVIDENCE_REPORT_BEGIN = b"AGENTPLANE_BOOT_EVIDENCE_BEGIN"
 BOOT_EVIDENCE_READY = b"AGENTPLANE_UDEV_MONITOR_READY"
 BOOT_EVIDENCE_COMPLETE = b"AGENTPLANE_BOOT_EVIDENCE_END status=complete"
 BOOT_EVIDENCE_PARTIAL = b"AGENTPLANE_BOOT_EVIDENCE_END status=partial"
@@ -46,21 +46,18 @@ def _has_payload(path: Path, payload: bytes) -> bool:
     )
 
 
-def _contains(path: Path, payload: bytes) -> bool:
-    with path.open("rb") as stream:
-        return any(payload in line for line in stream)
-
-
 def _require_boot_evidence(consoles: Path) -> None:
     selected: set[Path] = set()
     for path in consoles.glob("*/*.cri.log"):
-        if _contains(path, BOOT_EVIDENCE_ARGUMENT):
+        # Select only the guest whose reporter ran. Unselected guests still print the literal
+        # kernel argument in systemd's skipped ConditionKernelCommandLine diagnostic.
+        if _has_payload(path, BOOT_EVIDENCE_REPORT_BEGIN):
             selected.add(path.parent)
 
     if len(selected) != 1:
         names = sorted(path.name for path in selected)
         raise GuestBootEvidenceError(
-            "Expected exactly one retained guest with agentplane.boot-evidence=1; "
+            f"Expected exactly one retained guest with {BOOT_EVIDENCE_REPORT_BEGIN.decode()} receipt; "
             f"found {len(selected)}: {', '.join(names) or 'none'}"
         )
 
