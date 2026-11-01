@@ -528,19 +528,6 @@ py_library(
 )
 
 py_library(
-    name = "model_catalog",
-    srcs = ["model_catalog.py"],
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
-    deps = [
-        "//agentplane/env/runtime/harnesshost:harness",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "settings",
     srcs = ["settings.py"],
     visibility = [
@@ -549,10 +536,10 @@ py_library(
     ],
     deps = [
         ":action_federation_settings",
-        ":model_catalog",
         ":presets",
         ":sandbox_models",
         "//agentplane:log_levels",
+        "//agentplane/sandboxes/runtimeconfig:model_catalog",
         "//util:urls",
         "//util:yaml_file_settings",
         "@pypi//pydantic",
@@ -631,9 +618,9 @@ py_test(
     srcs = ["test_model_catalog.py"],
     deps = [
         ":conftest",
-        ":model_catalog",
         "//:conftest",
         "//agentplane/env/runtime/harnesshost:harness",
+        "//agentplane/sandboxes/runtimeconfig:model_catalog",
         "@pypi//pytest_bazel",
     ],
 )

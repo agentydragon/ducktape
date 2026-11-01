@@ -3,8 +3,8 @@
 import pytest
 import pytest_bazel
 
-from agentplane.app.model_catalog import ModelCatalog
 from agentplane.proto import session_pb2
+from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 from agentplane.system_tests.ollama_catalog import ollama_cases
 
 # gazelle:include_dep @pypi//protobuf

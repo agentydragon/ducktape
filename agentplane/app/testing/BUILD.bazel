@@ -191,10 +191,10 @@ py_library(
     ],
     deps = [
         ":models",
-        "//agentplane/app:model_catalog",
         "//agentplane/egress:decisions",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/sandboxes/runtimeconfig:model_catalog",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",

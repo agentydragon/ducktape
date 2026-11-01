@@ -41,6 +41,7 @@ from agentplane.env.config import (
 )
 from agentplane.env.runtime.harnesshost.platform_instructions import render_platform_instructions
 from agentplane.environment_runtime_transport.config import MTLS, TLS
+from agentplane.sandboxes.runtimeconfig.model_catalog import WORKSPACE_ROOT
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import (
     actions,
@@ -80,7 +81,7 @@ _ENVIRONMENT_RUNTIME_BINARY = f"{_ENVIRONMENT_DIR}/bin/agentplane-environment-ru
 _EXECUTION_SERVICE_BINARY = f"{_ENVIRONMENT_DIR}/bin/agentplane-execution-service"
 _STATE_DIR = "/state"
 _WORKSPACE_VOLUME_NAME = "workspace"
-_WORKSPACE_DIR = f"{_STATE_DIR}/workspaces"
+_WORKSPACE_DIR = WORKSPACE_ROOT
 _HOME_VOLUME_NAME = "home"
 _HOME_DIR = "/home/runner"
 _TMP_VOLUME_NAME = "tmp"

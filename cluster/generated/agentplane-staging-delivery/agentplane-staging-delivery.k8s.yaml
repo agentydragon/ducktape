@@ -24,6 +24,158 @@ data:
       token_file: /var/run/secrets/agentplane-runner-gateway/central-sampler
     executor_callers:
       - agentplane-staging/central-sampler
+    runtime_catalog:
+      models:
+        models:
+          - model: antigravity/ant-messages/claude-opus-4-6-thinking
+            display_name: Claude Opus 4.6 (Thinking) — Google Antigravity
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+          - model: antigravity/ant-messages/claude-sonnet-4-6
+            display_name: Claude Sonnet 4.6 (Thinking) — Google Antigravity
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+          - model: antigravity/ant-messages/gemini-3-flash
+            display_name: Gemini 3 Flash — Google Antigravity
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+          - model: antigravity/ant-messages/gemini-3.5-flash-lite
+            display_name: Gemini 3.5 Flash-Lite — Google Antigravity
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+          - model: antigravity/ant-messages/gemini-3.8-flash-high
+            display_name: Gemini 3.8 Flash (High) — Google Antigravity
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+          - model: chatgpt-sub/oai-responses/gpt-6-astra
+            display_name: GPT-6 Astra — ChatGPT
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+              - xhigh
+              - max
+          - model: chatgpt-sub/oai-responses/gpt-6-luna
+            display_name: GPT-6 Luna — ChatGPT
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+              - xhigh
+              - max
+          - model: chatgpt-sub/oai-responses/gpt-6.1-sol
+            display_name: GPT-6.1 Sol — ChatGPT
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+              - xhigh
+              - max
+          - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+            display_name: Qwen3.8 Flash Next IQ4_XS (256K) — cluster Ollama
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+          - model: ollama/oai-chat/gpt-oss-20b-128k
+            display_name: GPT-OSS 20B (128K) — cluster Ollama
+            reasoning_efforts: []
+          - model: ollama/oai-chat/gpt-oss-120b-128k
+            display_name: GPT-OSS 120B (128K) — cluster Ollama
+            reasoning_efforts: []
+          - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
+            display_name: Gemma 4 31B (128K) — cluster Ollama
+            reasoning_efforts: []
+          - model: anthropic-api/ant-messages/claude-opus-5-5
+            display_name: Opus 5.5 — Anthropic API
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+              - xhigh
+              - max
+          - model: anthropic-api/ant-messages/claude-sonnet-5-5
+            display_name: Sonnet 5.5 — Anthropic API
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+              - xhigh
+              - max
+          - model: anthropic-api/ant-messages/claude-haiku-5-5
+            display_name: Haiku 5.5 — Anthropic API
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+              - xhigh
+              - max
+          - model: anthropic-api/ant-messages/claude-fable-5-1
+            display_name: Fable 5.1 — Anthropic API
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+              - xhigh
+              - max
+        harnesses:
+          HARNESS_CLAUDE:
+            - antigravity/ant-messages/claude-opus-4-6-thinking
+            - antigravity/ant-messages/claude-sonnet-4-6
+            - antigravity/ant-messages/gemini-3-flash
+            - antigravity/ant-messages/gemini-3.5-flash-lite
+            - antigravity/ant-messages/gemini-3.8-flash-high
+          HARNESS_CODEX:
+            - chatgpt-sub/oai-responses/gpt-6-astra
+            - chatgpt-sub/oai-responses/gpt-6-luna
+            - chatgpt-sub/oai-responses/gpt-6.1-sol
+            - antigravity/ant-messages/claude-opus-4-6-thinking
+            - antigravity/ant-messages/claude-sonnet-4-6
+            - antigravity/ant-messages/gemini-3-flash
+            - antigravity/ant-messages/gemini-3.5-flash-lite
+            - antigravity/ant-messages/gemini-3.8-flash-high
+            - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+            - ollama/oai-chat/gpt-oss-20b-128k
+            - ollama/oai-chat/gpt-oss-120b-128k
+            - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+          HARNESS_CENTRAL_SAMPLER:
+            - chatgpt-sub/oai-responses/gpt-6-astra
+            - chatgpt-sub/oai-responses/gpt-6-luna
+            - chatgpt-sub/oai-responses/gpt-6.1-sol
+            - antigravity/ant-messages/claude-opus-4-6-thinking
+            - antigravity/ant-messages/claude-sonnet-4-6
+            - antigravity/ant-messages/gemini-3-flash
+            - antigravity/ant-messages/gemini-3.5-flash-lite
+            - antigravity/ant-messages/gemini-3.8-flash-high
+            - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+            - ollama/oai-chat/gpt-oss-20b-128k
+            - ollama/oai-chat/gpt-oss-120b-128k
+            - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+            - anthropic-api/ant-messages/claude-opus-5-5
+            - anthropic-api/ant-messages/claude-sonnet-5-5
+            - anthropic-api/ant-messages/claude-haiku-5-5
+            - anthropic-api/ant-messages/claude-fable-5-1
+      templates:
+        runner-ducktape:
+          workspace_root: /state/workspaces
+          workspace_provenance: DEPLOYMENT_CONFIG
+          workspace_root_enforced: false
+          creates_missing_cwd: true
+        runner-vm:
+          workspace_root: /state/workspaces
+          workspace_provenance: DEPLOYMENT_CONFIG
+          workspace_root_enforced: true
+          creates_missing_cwd: true
     wake_callers:
       - agentplane-staging/actions
       - agentplane-staging/app

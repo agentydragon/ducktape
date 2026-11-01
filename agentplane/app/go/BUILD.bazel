@@ -62,6 +62,7 @@ go_library(
         "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",
+        "//agentplane/sandboxes/runtimeconfig",
         "//agentplane/watchhealth",
         "//util/netlistener",
         "@com_github_danielgtaylor_huma_v2//:huma",
@@ -180,6 +181,7 @@ go_test(
     name = "config_test",
     srcs = ["config_test.go"],
     embed = [":main_lib"],
+    deps = ["//agentplane/sandboxes/runtimeconfig"],
 )
 
 go_test(

@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+go_library(
+    name = "runtimeconfig",
+    srcs = ["catalog.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig",
+)
+
+py_library(
+    name = "model_catalog",
+    srcs = ["model_catalog.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
+    deps = [
+        "//agentplane/env/harnesshost:harness",
+        "@pypi//pydantic",
+    ],
+)

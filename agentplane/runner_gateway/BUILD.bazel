@@ -160,6 +160,9 @@ go_library(
         "//agentplane/runner_gateway/gateway",
         "//agentplane/runner_gateway/migrations",
         "//agentplane/sandboxes/api",
+        "//agentplane/sandboxes/discovery",
+        "//agentplane/sandboxes/discovery:environment_discovery_go_proto",
+        "//agentplane/sandboxes/runtimeconfig",
         "//agentplane/watchhealth",
         "//agentplane/workload_auth/auth",
         "//util/netlistener",
@@ -213,6 +216,7 @@ py_library(
     ],
     deps = [
         "//agentplane/environment_runtime_transport:config",
+        "//agentplane/sandboxes/runtimeconfig:model_catalog",
         "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",

@@ -26,6 +26,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/gateway"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/migrations"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/discovery"
+	discoverypb "github.com/agentydragon/ducktape/agentplane/sandboxes/discovery/discoverypb"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/util/netlistener"
@@ -122,7 +124,8 @@ func reportUnexpected(ctx context.Context, failed chan<- error, role string, err
 // loopback to the gRPC server so the servicer authenticates it.
 func serveFacade(ctx context.Context, listener net.Listener, grpcListener net.Listener, failed chan<- error) (*http.Server, error) {
 	handler, err := facade.NewHandler(ctx, net.JoinHostPort("127.0.0.1", strconv.Itoa(grpcListener.Addr().(*net.TCPAddr).Port)), 0,
-		dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint)
+		dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint,
+		discoverypb.RegisterEnvironmentDiscoveryHandlerFromEndpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -219,6 +222,10 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	defer db.Close()
 	store := dispatcher.NewStore(db, c.QueueCap)
 	catalog, err := dispatcher.NewKubernetesSandboxes(inventory, objects, c.Namespace)
+	if err != nil {
+		return err
+	}
+	discoveryService, err := discovery.New(c.Namespace, objects, c.RuntimeCatalog, accountSet(c.WakeCallers))
 	if err != nil {
 		return err
 	}
@@ -319,6 +326,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	}
 	methods := auth.HealthMethods()
 	maps.Copy(methods, dispatcherMethods)
+	maps.Copy(methods, discovery.Methods(dispatchAuth))
 	maps.Copy(methods, g.Methods())
 	server := grpc.NewServer(append(
 		methods.ServerOptions(0),
@@ -329,6 +337,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		}),
 	)...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
+	discoverypb.RegisterEnvironmentDiscoveryServer(server, discoveryService)
 	defer server.Stop()
 	g.RegisterProxy(server)
 	if len(c.ExecutorCallers) > 0 {

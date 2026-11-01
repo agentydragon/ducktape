@@ -5,12 +5,14 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 )
 
 func validTestConfig() Config {
 	return Config{
-		Models: ModelCatalog{
-			Models: []ModelOption{{Model: "model-a", DisplayName: "Model A", ReasoningEfforts: []string{"low", "high"}}},
+		Models: runtimeconfig.ModelCatalog{
+			Models: []runtimeconfig.ModelOption{{Model: "model-a", DisplayName: "Model A", ReasoningEfforts: []string{"low", "high"}}},
 			Harnesses: map[string][]string{
 				"HARNESS_CLAUDE": {"model-a"},
 				"HARNESS_CODEX":  {"model-a"},

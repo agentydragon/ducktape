@@ -61,10 +61,12 @@ from cluster.cdk8s.agentplane import (
     notifications,
     policy_controller,
     policy_controller_rbac,
+    runner_vm,
     staging_config,
     staging_grants,
 )
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies, coinbase_egress_rules
+from cluster.cdk8s.agentplane.app_settings import runtime_catalog
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.database import DbProps
 from cluster.cdk8s.agentplane.egress_credentials import (
@@ -206,6 +208,12 @@ _CONNECTION_SERVICE = mcp_edge.service(STAGING_NAMESPACE)
 # staging's one Pod execution environment, and the ducktape tools image it runs; `image-pins/` selects
 # the published tag. Live Sandboxes and presets name this template, so it keeps the name it shipped with.
 POD_TEMPLATE = "environment-tools"
+_RUNTIME_CATALOG = runtime_catalog(
+    STAGING_APP_MODELS,
+    templates=(POD_TEMPLATE, environment_vm.NAME),
+    workspace_root_enforced_templates=(environment_vm.NAME,),
+    central_sampler_enabled=True,
+)
 _ENVIRONMENT_TOOLS_IMAGE = "git.allegedly.works/ducktape-ci/environment-tools"
 # The canonical BuildBuddy key, projected into the Environment Runtime workload containers for real `bbr` runs and
 # named there for the harnesses it spawns (agentplane/docs/buildbuddy_remote_auth.md's stopgap). ESO
@@ -413,10 +421,12 @@ ENV = Environment(
         namespace=STAGING_NAMESPACE,
         sandbox_template=POD_TEMPLATE,
         models=STAGING_APP_MODELS,
+        runtime=_RUNTIME_CATALOG,
         central_sampler_enabled=True,
         action_federation=_ACTION_FEDERATION,
         connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
     ),
+    runtime_catalog=_RUNTIME_CATALOG,
     central_sampler=CentralSamplerProps(
         models={
             route.id: (

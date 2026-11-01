@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints,
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.environment_runtime_transport.config import Security
+from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
 from util.yaml_file_settings import YamlFileSettings
 
 type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]+$")]
@@ -106,6 +107,10 @@ class Settings(YamlFileSettings):
     )
     executor_callers: Set[ServiceAccountName] = Field(
         default_factory=frozenset, description="ServiceAccounts allowed to open fixed exec-server streams."
+    )
+    runtime_catalog: Catalog | None = Field(
+        default=None,
+        description="Deployment-published runtime offers and template-scoped workspace guidance for discovery.",
     )
 
     @field_validator("kubernetes_client_qps")

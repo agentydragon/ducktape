@@ -192,6 +192,11 @@ class RunnerGateway(Construct):
                 mode="mtls", tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)
             ).model_dump(mode="json"),
             **central_sampler_settings,
+            **(
+                {"runtime_catalog": env.runtime_catalog.model_dump(mode="json", exclude_none=True)}
+                if env.runtime_catalog is not None
+                else {}
+            ),
             **({"wake_callers": wake_accounts} if wake_accounts else {}),
         }
         if delegation_actor is not None:
