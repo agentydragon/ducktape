@@ -48,7 +48,7 @@ type Dependencies struct {
 	State           state.State
 	Workers         *sync.WaitGroup
 	Scripts         *scripts.Runner
-	Admission       lifecycle.AdmissionGuard
+	Admission       lifecycle.EnvironmentAdmissionGuard
 	OnError         func(error)
 	OnRuntimeChange func()
 }
@@ -59,7 +59,7 @@ type Host struct {
 	state           state.State
 	workers         *sync.WaitGroup
 	scripts         *scripts.Runner
-	admission       lifecycle.AdmissionGuard
+	admission       lifecycle.EnvironmentAdmissionGuard
 	onError         func(error)
 	onRuntimeChange func()
 
@@ -121,7 +121,7 @@ func (h *Host) Request(ctx context.Context) error {
 		return nil
 	}
 
-	expected, found, err := lifecycle.ReadDesired(ctx, h.state)
+	expected, found, err := lifecycle.ReadEnvironmentDesired(ctx, h.state)
 	if err != nil {
 		return err
 	}
@@ -152,7 +152,7 @@ func (h *Host) Request(ctx context.Context) error {
 		return err
 	}
 
-	current, found, err := lifecycle.ReadDesired(ctx, h.state)
+	current, found, err := lifecycle.ReadEnvironmentDesired(ctx, h.state)
 	if err != nil {
 		return err
 	}
@@ -299,7 +299,7 @@ func (h *Host) publishOperation(op *oneoff.Operation, done bool) error {
 }
 
 func (h *Host) forgetOperation(ctx context.Context, op *oneoff.Operation) error {
-	err := h.state.Destroy(ctx, resource.NewMetadata(lifecycle.Namespace, OperationType, op.ID(), resource.VersionUndefined), state.WithDestroyOwner(HostOwner))
+	err := h.state.Destroy(ctx, resource.NewMetadata(lifecycle.EnvironmentNamespace, OperationType, op.ID(), resource.VersionUndefined), state.WithDestroyOwner(HostOwner))
 	if state.IsNotFoundError(err) {
 		return nil
 	}

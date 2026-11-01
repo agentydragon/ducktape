@@ -62,7 +62,7 @@ func TestControllerInitialOperationPublicationFailureBecomesTerminal(t *testing.
 	}
 	host, err := NewHost(Config{Script: &script, StateDir: t.TempDir()}, Dependencies{
 		Context: ctx, State: store, Workers: workers, Scripts: scriptRunner,
-		Admission: func(context.Context, lifecycle.Desired, func(context.Context) error) error { return nil },
+		Admission: func(context.Context, lifecycle.EnvironmentDesired, func(context.Context) error) error { return nil },
 		OnError:   func(err error) { reported <- err },
 	})
 	if err != nil {
@@ -154,7 +154,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func newHostTestRuntime(t *testing.T, script *string, stateDir string, admission lifecycle.AdmissionGuard) *hostTestRuntime {
+func newHostTestRuntime(t *testing.T, script *string, stateDir string, admission lifecycle.EnvironmentAdmissionGuard) *hostTestRuntime {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -170,7 +170,7 @@ func newHostTestRuntime(t *testing.T, script *string, stateDir string, admission
 		default:
 		}
 	}
-	processes := supervision.NewHost(ctx, store, lifecycle.Namespace, workers, reportError)
+	processes := supervision.NewHost(ctx, store, lifecycle.EnvironmentNamespace, workers, reportError)
 	supervisor := supervision.NewSubprocessSupervisor(nil)
 	scriptRunner, err := scripts.New(scripts.Config{
 		LaunchProcess: func(ctx context.Context, owner string, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
@@ -182,8 +182,8 @@ func newHostTestRuntime(t *testing.T, script *string, stateDir string, admission
 		t.Fatal(err)
 	}
 	if admission == nil {
-		admission = func(ctx context.Context, expected lifecycle.Desired, effect func(context.Context) error) error {
-			current, found, err := lifecycle.ReadDesired(ctx, store)
+		admission = func(ctx context.Context, expected lifecycle.EnvironmentDesired, effect func(context.Context) error) error {
+			current, found, err := lifecycle.ReadEnvironmentDesired(ctx, store)
 			if err != nil {
 				return err
 			}
@@ -201,7 +201,7 @@ func newHostTestRuntime(t *testing.T, script *string, stateDir string, admission
 		cancel()
 		t.Fatal(err)
 	}
-	if err := lifecycle.PublishDesired(ctx, store, lifecycle.Desired{Mode: lifecycle.Running, Generation: 1}); err != nil {
+	if err := lifecycle.PublishEnvironmentDesired(ctx, store, lifecycle.EnvironmentDesired{Mode: lifecycle.Running, Generation: 1}); err != nil {
 		cancel()
 		t.Fatal(err)
 	}
@@ -360,7 +360,7 @@ func TestInterruptedAttemptIsReconstructedWithoutRerunning(t *testing.T) {
 func TestRequestDetectsAdmissionGuardThatSkippedEffect(t *testing.T) {
 	stateDir := t.TempDir()
 	script := "true"
-	r := newHostTestRuntime(t, &script, stateDir, func(context.Context, lifecycle.Desired, func(context.Context) error) error {
+	r := newHostTestRuntime(t, &script, stateDir, func(context.Context, lifecycle.EnvironmentDesired, func(context.Context) error) error {
 		return nil
 	})
 	if err := r.host.Request(r.ctx); err == nil {
@@ -375,7 +375,7 @@ func TestRequestDetectsAdmissionGuardThatSkippedEffect(t *testing.T) {
 	if err := publish(r.ctx, r.state, ResourceID, Input{Requested: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := lifecycle.PublishDesired(r.ctx, r.state, lifecycle.Desired{Mode: lifecycle.Closing, Generation: 2}); err != nil {
+	if err := lifecycle.PublishEnvironmentDesired(r.ctx, r.state, lifecycle.EnvironmentDesired{Mode: lifecycle.Closing, Generation: 2}); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.host.Request(r.ctx); err != nil {

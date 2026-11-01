@@ -185,8 +185,8 @@ budget remains authoritative across all of its native services.
   ends only that wait. It never invents an Execution fence or a seal after losing Runtime control.
   Existing durable journal seals remain intact. Lifecycle-engine failure retains the Host lock until
   native cleanup is proven. Runtime keeps the environment lock until Host and Execution are fenced.
-- Host's in-memory COSI engine schedules native Session/setup, app-server and supervised process
-  controllers. Runtime owns bootstrap scheduling and cross-process lifecycle aggregation; Execution
+- Runtime's in-memory COSI engine schedules Host native Session/setup, app-server and supervised process
+  controllers alongside Runtime bootstrap and environment process controllers. Execution
   Service owns its backend lifecycle. Session records, journals and acknowledgements remain durable
   Host authority; the environment seal marker remains Runtime authority. There is no duplicated
   environment controller in Host. See [lifecycle ownership](docs/lifecycle.md).
