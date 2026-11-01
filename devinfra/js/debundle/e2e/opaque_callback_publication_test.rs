@@ -3,10 +3,14 @@
 use debundle_e2e_support::*;
 
 fn assert_later_callback_read(publication: &str) {
-    let peer = r#"export function publish(callback) { globalThis.saved = callback; }
-export function invoke() { return globalThis.saved(); }
-"#;
-    let peers = [("static/peer", peer)];
+    assert_published_read(publication, "globalThis.saved()");
+}
+
+fn assert_published_read(publication: &str, invocation: &str) {
+    let peer = format!(
+        "export function publish(callback) {{ globalThis.saved = callback; }}\nexport function invoke() {{ return {invocation}; }}\n"
+    );
+    let peers = [("static/peer", peer.as_str())];
     let source = format!(
         r#"import {{ publish, invoke }} from './peer.js';
 function read() {{ try {{ return later; }} catch (error) {{ return error.name; }} }}
@@ -44,4 +48,76 @@ fn source_explicit_global_store_stays_persistent() {
 #[test]
 fn invisible_provider_global_store_stays_persistent() {
     assert_later_callback_read("publish(read);");
+}
+
+#[test]
+fn later_property_inserted_into_published_object_stays_persistent() {
+    assert_published_read(
+        "const holder = {}; globalThis.holder = holder; holder.read = read;",
+        "globalThis.holder.read()",
+    );
+}
+
+#[test]
+fn later_element_inserted_into_published_array_stays_persistent() {
+    assert_published_read(
+        "const holder = []; globalThis.holder = holder; holder[0] = read;",
+        "globalThis.holder[0]()",
+    );
+}
+
+#[test]
+fn later_nested_container_insertion_stays_persistent() {
+    assert_published_read(
+        "const holder = {}; globalThis.holder = holder; const nested = []; holder.nested = nested; nested[0] = read;",
+        "globalThis.holder.nested[0]()",
+    );
+}
+
+#[test]
+fn later_member_chain_store_stays_persistent() {
+    assert_published_read(
+        "const nested = {}; const holder = { nested }; globalThis.holder = holder; holder.nested.read = read;",
+        "globalThis.holder.nested.read()",
+    );
+}
+
+#[test]
+fn untracked_member_chain_store_stays_persistent() {
+    assert_published_read(
+        "const holder = JSON.parse('{\"nested\":{}}'); globalThis.holder = holder; holder.nested.read = read;",
+        "globalThis.holder.nested.read()",
+    );
+}
+
+#[test]
+fn skipped_local_publication_keeps_later_container_insertions() {
+    assert_published_read(
+        "function expose(value) { globalThis.holder = value; } const holder = {}; expose(...[holder]); holder.read = read;",
+        "globalThis.holder.read()",
+    );
+}
+
+#[test]
+fn later_map_key_stays_persistent() {
+    assert_published_read(
+        "const holder = new Map(); globalThis.holder = holder; holder.set(read, 1);",
+        "[...globalThis.holder.keys()][0]()",
+    );
+}
+
+#[test]
+fn later_map_value_stays_persistent() {
+    assert_published_read(
+        "const holder = new Map(); globalThis.holder = holder; holder.set('read', read);",
+        "globalThis.holder.get('read')()",
+    );
+}
+
+#[test]
+fn later_set_member_stays_persistent() {
+    assert_published_read(
+        "const holder = new Set(); globalThis.holder = holder; holder.add(read);",
+        "[...globalThis.holder][0]()",
+    );
 }

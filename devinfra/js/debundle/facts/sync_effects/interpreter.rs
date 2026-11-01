@@ -4510,6 +4510,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         }
                     }
                     AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                        let may_be_published = self.state.tainted_objects.contains(&object)
+                            || self.state.unsettled_objects.contains(&object);
                         if !certified_data_receivers.contains(&object) {
                             self.state.tainted_objects.insert(object);
                         }
@@ -4523,6 +4525,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         values_for_property.extend(values.iter().cloned());
                         if values_for_property.len() != before {
                             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                        }
+                        if may_be_published {
+                            self.publish_values(&values);
                         }
                     }
                     AbstractValue::Instance(key, captured) => {
@@ -4661,12 +4666,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 )
             });
         let mut changed = false;
-        if global_root {
-            self.taint_objects(&values);
-            let callbacks = self.callback_values(&values);
-            let before = self.state.global_escaped_callbacks.len();
-            self.state.global_escaped_callbacks.extend(callbacks);
-            changed |= self.state.global_escaped_callbacks.len() != before;
+        if global_root
+            || receivers
+                .iter()
+                .chain(root_values)
+                .any(|receiver| match receiver {
+                    AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                        self.state.tainted_objects.contains(object)
+                            || self.state.unsettled_objects.contains(object)
+                    }
+                    AbstractValue::Value(Value::Top)
+                    | AbstractValue::ForeignDeferredRecord
+                    | AbstractValue::DeferredCallbacks(_)
+                    | AbstractValue::Instance(_, _) => true,
+                    _ => false,
+                })
+        {
+            self.publish_values(&values);
         }
         for receiver in receivers {
             if let AbstractValue::Value(Value::Alloc(Kind::Object, object)) = receiver {
@@ -4713,6 +4729,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn deferred_callbacks(&mut self, values: Values) -> AbstractValue {
         AbstractValue::DeferredCallbacks(self.intern_callback_set(values))
+    }
+
+    /// A later store through a possibly published receiver exposes the new
+    /// graph too. Taint its objects even if no callback exists yet: a later
+    /// insertion through an alias must publish that callback.
+    fn publish_values(&mut self, values: &Values) {
+        self.taint_objects(values);
+        let callbacks = self.callback_values(values);
+        let before = self.state.global_escaped_callbacks.len();
+        self.state.global_escaped_callbacks.extend(callbacks);
+        if self.state.global_escaped_callbacks.len() != before {
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+        }
     }
 
     /// Code the interpreter did not run may have reached `values`: every
