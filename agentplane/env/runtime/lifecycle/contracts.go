@@ -1,5 +1,5 @@
-// Package lifecycle defines only the Runner-wide desired and aggregate status resources shared by
-// independently owned lifecycle controllers.
+// Package lifecycle defines distinct Runtime and Host desired resources and
+// the Host aggregate status consumed by their coordinated lifecycle.
 package lifecycle
 
 import (
@@ -15,12 +15,16 @@ import (
 )
 
 const (
-	Namespace              = "runner"
-	DesiredStateType       = "RunnerDesiredStates.agentplane"
-	AggregateStatusType    = "RunnerRuntimes.agentplane"
-	RuntimeCloseStatusType = "EnvironmentRuntimeCloses.agentplane"
-	ResourceID             = "runner"
-	HostOwner              = "runner-host"
+	Namespace                   = "runner"
+	DesiredStateType            = "RunnerDesiredStates.agentplane"
+	AggregateStatusType         = "RunnerRuntimes.agentplane"
+	RuntimeCloseStatusType      = "EnvironmentRuntimeCloses.agentplane"
+	ResourceID                  = "runner"
+	HostOwner                   = "runner-host"
+	EnvironmentNamespace        = "environment-runtime"
+	EnvironmentDesiredStateType = "EnvironmentRuntimeDesiredStates.agentplane"
+	EnvironmentResourceID       = "environment-runtime"
+	EnvironmentOwner            = "environment-runtime"
 )
 
 type Mode uint8
@@ -49,6 +53,45 @@ type Desired struct {
 	Mode       Mode
 	SealUID    string
 	Generation uint64
+}
+
+// EnvironmentDesired is Runtime's bootstrap and process admission generation.
+// Host Desired is a separate resource with its own writer and lifecycle.
+type EnvironmentDesired struct {
+	Mode       Mode
+	SealUID    string
+	Generation uint64
+}
+
+func (value EnvironmentDesired) DeepCopy() EnvironmentDesired { return value }
+
+type EnvironmentAdmissionGuard func(ctx context.Context, expected EnvironmentDesired, effect func(context.Context) error) error
+
+type environmentDesiredExtension struct{}
+
+func (environmentDesiredExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
+	return spec.ResourceDefinitionSpec{Type: EnvironmentDesiredStateType, DefaultNamespace: EnvironmentNamespace}
+}
+
+func ReadEnvironmentDesired(ctx context.Context, reader controller.Reader) (EnvironmentDesired, bool, error) {
+	value, err := safe.ReaderGetByID[*typed.Resource[EnvironmentDesired, environmentDesiredExtension]](ctx, reader, EnvironmentResourceID)
+	if state.IsNotFoundError(err) {
+		return EnvironmentDesired{}, false, nil
+	}
+	if err != nil {
+		return EnvironmentDesired{}, false, err
+	}
+	return *value.TypedSpec(), true, nil
+}
+
+func PublishEnvironmentDesired(ctx context.Context, writer state.State, value EnvironmentDesired) error {
+	resource := typed.NewResource[EnvironmentDesired, environmentDesiredExtension](
+		resource.NewMetadata(EnvironmentNamespace, EnvironmentDesiredStateType, EnvironmentResourceID, resource.VersionUndefined), value,
+	)
+	return safe.StateModify(ctx, writer, resource, func(current *typed.Resource[EnvironmentDesired, environmentDesiredExtension]) error {
+		*current.TypedSpec() = value
+		return nil
+	}, state.WithUpdateOwner(EnvironmentOwner))
 }
 
 func (value Desired) DeepCopy() Desired { return value }
@@ -125,11 +168,11 @@ func (value RuntimeCloseStatus) DeepCopy() RuntimeCloseStatus { return value }
 type runtimeCloseStatusExtension struct{}
 
 func (runtimeCloseStatusExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
-	return spec.ResourceDefinitionSpec{Type: RuntimeCloseStatusType, DefaultNamespace: Namespace}
+	return spec.ResourceDefinitionSpec{Type: RuntimeCloseStatusType, DefaultNamespace: EnvironmentNamespace}
 }
 
 func ReadRuntimeCloseStatus(ctx context.Context, reader controller.Reader) (RuntimeCloseStatus, bool, error) {
-	value, err := safe.ReaderGetByID[*typed.Resource[RuntimeCloseStatus, runtimeCloseStatusExtension]](ctx, reader, ResourceID)
+	value, err := safe.ReaderGetByID[*typed.Resource[RuntimeCloseStatus, runtimeCloseStatusExtension]](ctx, reader, EnvironmentResourceID)
 	if state.IsNotFoundError(err) {
 		return RuntimeCloseStatus{}, false, nil
 	}
@@ -146,7 +189,7 @@ func WriteRuntimeCloseStatus(ctx context.Context, writer controller.ReaderWriter
 		return err
 	}
 	resource := typed.NewResource[RuntimeCloseStatus, runtimeCloseStatusExtension](
-		resource.NewMetadata(Namespace, RuntimeCloseStatusType, ResourceID, resource.VersionUndefined), value,
+		resource.NewMetadata(EnvironmentNamespace, RuntimeCloseStatusType, EnvironmentResourceID, resource.VersionUndefined), value,
 	)
 	return safe.WriterModify(ctx, writer, resource, func(current *typed.Resource[RuntimeCloseStatus, runtimeCloseStatusExtension]) error {
 		*current.TypedSpec() = value

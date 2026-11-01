@@ -46,7 +46,7 @@ type closeOperation struct {
 func (*runtimeCloseController) Name() string { return runtimeCloseControllerName }
 
 func (*runtimeCloseController) Inputs() []controller.Input {
-	return []controller.Input{{Namespace: lifecycle.Namespace, Type: lifecycle.DesiredStateType, Kind: controller.InputWeak}}
+	return []controller.Input{{Namespace: lifecycle.EnvironmentNamespace, Type: lifecycle.EnvironmentDesiredStateType, Kind: controller.InputWeak}}
 }
 
 func (*runtimeCloseController) Outputs() []controller.Output {
@@ -87,7 +87,7 @@ func (c *runtimeCloseController) Run(ctx context.Context, r controller.Runtime, 
 }
 
 func (c *runtimeCloseController) reconcile(ctx context.Context, r controller.Runtime) error {
-	desired, found, err := lifecycle.ReadDesired(ctx, r)
+	desired, found, err := lifecycle.ReadEnvironmentDesired(ctx, r)
 	if err != nil || !found || desired.Mode != lifecycle.Closing {
 		return err
 	}
@@ -162,8 +162,10 @@ func (c *runtimeCloseController) runStage(ctx context.Context, stage lifecycle.R
 			if err := host.Stop(p.fenceCtx); err != nil {
 				return fmt.Errorf("Runtime lost its Host lifecycle connection and native cleanup is unproved: %w", err)
 			}
-			_, hostRunErr := host.Wait(p.fenceCtx)
-			p.hostRunErr = errors.Join(errors.New("Harness Host lifecycle connection was lost"), hostRunErr)
+			if err := host.WaitClosed(p.fenceCtx); err != nil {
+				return fmt.Errorf("Runtime lost its Host lifecycle connection and native cleanup is unproved: %w", err)
+			}
+			p.hostRunErr = errors.New("Harness Host lifecycle connection was lost")
 			return nil
 		}
 		if p.executionMayExist {

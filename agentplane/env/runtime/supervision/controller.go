@@ -18,7 +18,7 @@ type Controller struct {
 	host *Host
 }
 
-func (*Controller) Name() string { return ControllerName }
+func (c *Controller) Name() string { return ControllerName + "-" + string(c.host.namespace) }
 
 func (c *Controller) Settings() controller.QSettings {
 	return controller.QSettings{
@@ -26,7 +26,8 @@ func (c *Controller) Settings() controller.QSettings {
 			{Namespace: c.host.namespace, Type: DesiredStateType, Kind: controller.InputQPrimary},
 			{Namespace: c.host.namespace, Type: inputType, Kind: controller.InputQMapped},
 		},
-		Outputs:     []controller.Output{{Type: StatusType, Kind: controller.OutputExclusive}},
+		// Process controllers own disjoint namespaces in the shared Runtime engine.
+		Outputs:     []controller.Output{{Type: StatusType, Kind: controller.OutputShared}},
 		Concurrency: optional.Some(uint(1)),
 	}
 }
@@ -82,7 +83,7 @@ func (c *Controller) Reconcile(ctx context.Context, _ *zap.Logger, r controller.
 		if !registered || !snapshot.fenced {
 			return fmt.Errorf("process %q has terminal status without a fenced host entry", id)
 		}
-		if desiredResource.Metadata().Finalizers().Has(ControllerName) {
+		if desiredResource.Metadata().Finalizers().Has(c.Name()) {
 			if err := c.removeFinalizer(ctx, r, id); err != nil {
 				return err
 			}
@@ -109,7 +110,7 @@ func (c *Controller) Reconcile(ctx context.Context, _ *zap.Logger, r controller.
 		if desiredResource.Metadata().Phase() == resource.PhaseTearingDown {
 			return c.reconcileTeardown(ctx, r, id, desiredResource, &current, snapshot, registered, host, write)
 		}
-		if !desiredResource.Metadata().Finalizers().Has(ControllerName) {
+		if !desiredResource.Metadata().Finalizers().Has(c.Name()) {
 			return errors.New("process finalizer disappeared before launch")
 		}
 		if current.Phase == Pending {
@@ -206,7 +207,7 @@ func (c *Controller) reconcileTeardown(
 	write func() error,
 ) error {
 	if !registered {
-		if desiredResource.Metadata().Finalizers().Has(ControllerName) {
+		if desiredResource.Metadata().Finalizers().Has(c.Name()) {
 			return fmt.Errorf("process %q has a finalizer but no host registry entry", id)
 		}
 		if current.Phase != Exited {
@@ -234,7 +235,7 @@ func (c *Controller) reconcileTeardown(
 		if err := write(); err != nil {
 			return err
 		}
-		if desiredResource.Metadata().Finalizers().Has(ControllerName) {
+		if desiredResource.Metadata().Finalizers().Has(c.Name()) {
 			return c.removeFinalizer(ctx, r, id)
 		}
 		return nil
@@ -273,11 +274,11 @@ func (c *Controller) cleanupDestroyed(ctx context.Context, r controller.QRuntime
 }
 
 func (c *Controller) ensureFinalizer(ctx context.Context, r controller.QRuntime, id string) error {
-	return r.AddFinalizer(ctx, resource.NewMetadata(c.host.namespace, DesiredStateType, id, resource.VersionUndefined), ControllerName)
+	return r.AddFinalizer(ctx, resource.NewMetadata(c.host.namespace, DesiredStateType, id, resource.VersionUndefined), c.Name())
 }
 
 func (c *Controller) removeFinalizer(ctx context.Context, r controller.QRuntime, id string) error {
-	err := r.RemoveFinalizer(ctx, resource.NewMetadata(c.host.namespace, DesiredStateType, id, resource.VersionUndefined), ControllerName)
+	err := r.RemoveFinalizer(ctx, resource.NewMetadata(c.host.namespace, DesiredStateType, id, resource.VersionUndefined), c.Name())
 	if state.IsNotFoundError(err) {
 		return nil
 	}

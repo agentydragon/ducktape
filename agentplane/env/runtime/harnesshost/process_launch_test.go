@@ -201,7 +201,7 @@ func assertManagedProcessFinalizer(t *testing.T, ctx context.Context, r *Runner,
 	if err != nil {
 		t.Fatalf("read process desired state: %v", err)
 	}
-	got := desired.Metadata().Finalizers().Has(supervision.ControllerName)
+	got := desired.Metadata().Finalizers().Has(r.lifecycle.processes.Controller().Name())
 	if got != want {
 		t.Fatalf("process finalizer present=%t, want %t", got, want)
 	}

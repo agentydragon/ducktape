@@ -61,7 +61,9 @@ type Config struct {
 
 type hostLifetime interface {
 	Stop(context.Context) error
+	WaitClosed(context.Context) error
 	Wait(context.Context) (int, error)
+	Cleanup(context.Context) error
 }
 
 type childExit struct {
@@ -70,9 +72,10 @@ type childExit struct {
 }
 
 type runtimeDeps struct {
-	prepareSupervisor func(Config, *os.File) (*supervision.Supervisor, error)
-	waitBootstrap     func(context.Context) error
-	startExecution    func(context.Context, Config, string) (executionHandle, error)
+	prepareSupervisor      func(Config, *os.File) (*supervision.Supervisor, error)
+	waitBootstrap          func(context.Context) error
+	startExecution         func(context.Context, Config, string) (executionHandle, error)
+	beforeHostConstruction func()
 }
 
 type executionHandle interface {
@@ -106,6 +109,10 @@ type Runtime struct {
 	lifecycleCancel      context.CancelFunc
 	lifecycleDone        chan struct{}
 	lifecycleRunErr      error
+	lifecycleStartOnce   sync.Once
+	lifecycleStartMu     sync.Mutex
+	lifecycleInitErr     error
+	lifecycleContext     context.Context
 	lifecycleWorkers     sync.WaitGroup
 	closeCoordinator     *runtimeCloseController
 	closeControllerErr   error
@@ -113,7 +120,7 @@ type Runtime struct {
 	scripts              *scripts.Runner
 	bootstrapHost        *bootstrap.Host
 	executionLifecycle   *executionLifecycle
-	desired              lifecycle.Desired
+	desired              lifecycle.EnvironmentDesired
 	bootID               string
 	supervisor           *supervision.Supervisor
 	host                 *hostLink
@@ -226,9 +233,9 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
 	r := &Runtime{
 		config: config, deps: deps, owner: owner, state: environmentState, supervisor: supervisor,
-		lifecycleState: lifecycleState, lifecycleCancel: cancelRuntime, lifecycleDone: make(chan struct{}),
+		lifecycleState: lifecycleState, lifecycleCancel: cancelRuntime, lifecycleDone: make(chan struct{}), lifecycleContext: runtimeCtx,
 		bootID: uuid.NewString(), changes: make(chan struct{}), fatal: make(chan error, 1), waitBootstrap: deps.waitBootstrap,
-		desired: lifecycle.Desired{Mode: lifecycle.Quiescing, Generation: 1}, closeDone: make(chan struct{}),
+		desired: lifecycle.EnvironmentDesired{Mode: lifecycle.Quiescing, Generation: 1}, closeDone: make(chan struct{}),
 		execStreams: make(map[uint64]context.CancelFunc), execCalls: make(map[uint64]context.CancelFunc),
 	}
 	if r.deps.startExecution == nil {
@@ -255,7 +262,7 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 		return err
 	}
 	r.lifecycleEngine = engine
-	r.processes = supervision.NewHost(ctx, r.lifecycleState, lifecycle.Namespace, &r.lifecycleWorkers, r.fail)
+	r.processes = supervision.NewHost(ctx, r.lifecycleState, lifecycle.EnvironmentNamespace, &r.lifecycleWorkers, r.fail)
 	r.scripts, err = scripts.New(scripts.Config{
 		HarnessEnvironment: r.config.HarnessEnvironment,
 		LaunchProcess: func(processCtx context.Context, owner string, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
@@ -287,7 +294,7 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := lifecycle.PublishDesired(ctx, r.lifecycleState, r.desired); err != nil {
+	if err := lifecycle.PublishEnvironmentDesired(ctx, r.lifecycleState, r.desired); err != nil {
 		return err
 	}
 	if err := engine.RegisterQController(r.processes.Controller()); err != nil {
@@ -305,24 +312,36 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 			return err
 		}
 	}
-	go func() {
-		defer close(r.lifecycleDone)
-		if err := engine.Run(ctx); ctx.Err() == nil {
-			if err == nil {
-				err = errors.New("engine returned without shutdown")
-			}
-			runErr := fmt.Errorf("environment Runtime lifecycle engine stopped: %w", err)
-			r.mu.Lock()
-			r.lifecycleRunErr = runErr
-			r.mu.Unlock()
-			r.fail(runErr)
-		}
-	}()
 	return nil
 }
 
+func (r *Runtime) startLifecycleEngine() {
+	r.lifecycleStartMu.Lock()
+	defer r.lifecycleStartMu.Unlock()
+	r.startLifecycleEngineLocked()
+}
+
+// Caller holds lifecycleStartMu, which excludes Host registration from Close.
+func (r *Runtime) startLifecycleEngineLocked() {
+	r.lifecycleStartOnce.Do(func() {
+		go func() {
+			defer close(r.lifecycleDone)
+			if err := r.lifecycleEngine.Run(r.lifecycleContext); r.lifecycleContext.Err() == nil {
+				if err == nil {
+					err = errors.New("engine returned without shutdown")
+				}
+				runErr := fmt.Errorf("environment Runtime lifecycle engine stopped: %w", err)
+				r.mu.Lock()
+				r.lifecycleRunErr = runErr
+				r.mu.Unlock()
+				r.fail(runErr)
+			}
+		}()
+	})
+}
+
 // admitLifecycleEffect serializes bootstrap admission with Runtime generation changes.
-func (r *Runtime) admitLifecycleEffect(ctx context.Context, expected lifecycle.Desired, effect func(context.Context) error) error {
+func (r *Runtime) admitLifecycleEffect(ctx context.Context, expected lifecycle.EnvironmentDesired, effect func(context.Context) error) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -346,7 +365,15 @@ func (r *Runtime) Close(ctx context.Context) error {
 	}
 	r.closeOnce.Do(func() {
 		go func() {
-			r.closeErr = r.finishClose()
+			r.lifecycleStartMu.Lock()
+			if r.lifecycleInitErr != nil {
+				r.closeErr = fmt.Errorf("Harness Host construction left lifecycle engine unsafe to run: %w", r.lifecycleInitErr)
+				r.lifecycleStartMu.Unlock()
+			} else {
+				r.startLifecycleEngineLocked()
+				r.lifecycleStartMu.Unlock()
+				r.closeErr = r.finishClose()
+			}
 			close(r.closeDone)
 		}()
 	})
@@ -360,8 +387,8 @@ func (r *Runtime) Close(ctx context.Context) error {
 
 func (r *Runtime) finishClose() error {
 	r.mu.Lock()
-	desired := lifecycle.Desired{Mode: lifecycle.Closing, Generation: r.desired.Generation + 1}
-	if err := lifecycle.PublishDesired(context.Background(), r.lifecycleState, desired); err != nil {
+	desired := lifecycle.EnvironmentDesired{Mode: lifecycle.Closing, Generation: r.desired.Generation + 1}
+	if err := lifecycle.PublishEnvironmentDesired(context.Background(), r.lifecycleState, desired); err != nil {
 		r.mu.Unlock()
 		return fmt.Errorf("publish Runtime closing state: %w", err)
 	}
@@ -411,13 +438,29 @@ func (r *Runtime) joinClose() error {
 	// terminal status means only that it is now safe to join that engine.
 	r.lifecycleCancel()
 	<-r.lifecycleDone
-	r.lifecycleWorkers.Wait()
 	r.mu.Lock()
 	lifecycleRunErr := r.lifecycleRunErr
 	r.mu.Unlock()
 	if lifecycleRunErr != nil {
 		return lifecycleRunErr
 	}
+	hostRunErr := r.closeCoordinator.plan.hostRunErr
+	r.mu.Lock()
+	host := r.hostLifetime
+	r.mu.Unlock()
+	if host != nil {
+		code, runErr := host.Wait(context.Background())
+		if code != 0 && runErr == nil {
+			runErr = fmt.Errorf("Harness Host exited with status %d", code)
+		}
+		// Host.Run also reports bridge loss. Native cleanup is a separate proof:
+		// retain Runtime's owner if Host.Close could not finish its joined work.
+		if cleanupErr := host.Cleanup(context.Background()); cleanupErr != nil {
+			return errors.Join(hostRunErr, runErr, fmt.Errorf("Harness Host cleanup unproved: %w", cleanupErr))
+		}
+		hostRunErr = errors.Join(hostRunErr, runErr)
+	}
+	r.lifecycleWorkers.Wait()
 	if r.config.Supervision == "pid1" {
 		if err := r.supervisor.FenceNamespace(context.Background()); err != nil {
 			return fmt.Errorf("fence Pod PID namespace: %w", err)
@@ -428,7 +471,7 @@ func (r *Runtime) joinClose() error {
 			return err
 		}
 	}
-	return errors.Join(r.closeCoordinator.plan.hostRunErr, r.owner.Close())
+	return errors.Join(hostRunErr, r.owner.Close())
 }
 
 func (r *Runtime) waitBootstrapSettled(ctx context.Context) error {
@@ -466,11 +509,10 @@ func (r *Runtime) stopHost(ctx context.Context) error {
 		return nil
 	}
 	stopErr := process.Stop(ctx)
-	code, waitErr := process.Wait(ctx)
-	if code != 0 {
-		waitErr = errors.Join(waitErr, fmt.Errorf("Harness Host exited with status %d", code))
+	if stopErr != nil {
+		return stopErr
 	}
-	return errors.Join(stopErr, waitErr)
+	return process.WaitClosed(ctx)
 }
 
 func (r *Runtime) changed() {
@@ -691,8 +733,8 @@ func (r *Runtime) publishIntent(ctx context.Context, desiredMode lifecycle.Mode,
 	if r.closing || r.host == nil || !r.host.connected {
 		return nil, status.Error(codes.Unavailable, "environment Runtime or Harness Host is closing")
 	}
-	desired := lifecycle.Desired{Mode: desiredMode, SealUID: sealUID, Generation: r.desired.Generation + 1}
-	if err := lifecycle.PublishDesired(ctx, r.lifecycleState, desired); err != nil {
+	desired := lifecycle.EnvironmentDesired{Mode: desiredMode, SealUID: sealUID, Generation: r.desired.Generation + 1}
+	if err := lifecycle.PublishEnvironmentDesired(ctx, r.lifecycleState, desired); err != nil {
 		return nil, status.Errorf(codes.Unavailable, "publish environment lifecycle generation: %v", err)
 	}
 	r.desired = desired
@@ -904,8 +946,8 @@ func (r *Runtime) Quiesce(ctx context.Context, request *sessionpb.QuiesceRequest
 			return &sessionpb.QuiesceResponse{Stage: sessionpb.QuiesceStage(facts.QuiesceStage)}, nil
 		}
 	}
-	r.desired = lifecycle.Desired{Mode: lifecycle.Quiescing, SealUID: uid, Generation: r.desired.Generation + 1}
-	if err := lifecycle.PublishDesired(context.Background(), r.lifecycleState, r.desired); err != nil {
+	r.desired = lifecycle.EnvironmentDesired{Mode: lifecycle.Quiescing, SealUID: uid, Generation: r.desired.Generation + 1}
+	if err := lifecycle.PublishEnvironmentDesired(context.Background(), r.lifecycleState, r.desired); err != nil {
 		r.mu.Unlock()
 		return nil, status.Errorf(codes.Unavailable, "publish environment quiesce: %v", err)
 	}

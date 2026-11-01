@@ -64,10 +64,11 @@ func newLifecycleRunner(t *testing.T, config runtimeTestConfig) *Runtime {
 	}
 	historyTarget := startAcknowledgingHistory(t)
 	config.host.StateDir = config.StateDir
-	host, err := harnesshost.New(config.host)
+	host, err := harnesshost.NewEmbedded(config.host, r.lifecycleState, r.lifecycleEngine, r.lifecycleDone)
 	if err != nil {
 		t.Fatal(err)
 	}
+	r.startLifecycleEngine()
 	ctx, cancel := context.WithCancel(context.Background())
 	child := &localHostLifetime{host: host, cancel: cancel, done: make(chan struct{})}
 	r.hostLifetime = child
@@ -178,10 +179,9 @@ func (p *localHostLifetime) Wait(ctx context.Context) (int, error) {
 
 func (p *localHostLifetime) Stop(ctx context.Context) error {
 	p.cancel()
-	select {
-	case <-p.done:
-		return p.host.Close(ctx)
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return ctx.Err()
 }
+
+func (p *localHostLifetime) WaitClosed(ctx context.Context) error { return p.host.WaitClosed(ctx) }
+
+func (p *localHostLifetime) Cleanup(ctx context.Context) error { return p.host.Close(ctx) }
