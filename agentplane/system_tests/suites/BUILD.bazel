@@ -21,6 +21,7 @@ k3s_suite(
         "//agentplane/system_tests:case_batch",
         "//agentplane/system_tests:cluster",
         "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests:dispatcher_transport",
         "//agentplane/system_tests:scripted_upstream",
         "//util:net",
         "@pypi//pytest",
@@ -164,6 +165,7 @@ py_library(
     deps = [
         ":pod_runners",
         "//agentplane/app/testing:client",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/system_tests:agent",
         "//agentplane/system_tests:cluster",
         "//agentplane/system_tests:executor",

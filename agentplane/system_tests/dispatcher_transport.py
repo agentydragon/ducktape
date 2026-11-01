@@ -9,7 +9,6 @@ from pathlib import Path
 
 from agentplane.grpc.calls import dial
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.tracing import tracer
 from util.net import pick_free_port
@@ -81,6 +80,6 @@ async def forward(cluster: Cluster, resource: str = f"service/{SERVICE}") -> Asy
 async def native_client(cluster: Cluster, token_file: Path) -> AsyncIterator[SessionDispatcherClient]:
     """Own a native channel using the existing backend-authorized test principal."""
     caller, _, _ = await bound_caller(cluster, "app")
-    token_file.write_text(caller.token)
+    await asyncio.to_thread(token_file.write_text, caller.token)
     async with forward(cluster) as target, dial(target) as channel:
         yield SessionDispatcherClient(channel, token_file=token_file, request_timeout_s=30)

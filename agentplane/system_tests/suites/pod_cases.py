@@ -155,7 +155,12 @@ async def codex_standing_instructions_after_suspend_and_compact(resources: Resou
 async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(resources: Resources) -> None:
     async with resources.open() as (client, sandboxes):
         await suspend_resume.two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
-            resources.cluster, client, resources.dispatcher, sandboxes, resources.scripted, Executor(template="runner", cwd="/state/work")
+            resources.cluster,
+            client,
+            resources.dispatcher,
+            sandboxes,
+            resources.scripted,
+            Executor(template="runner", cwd="/state/work"),
         )
 
 

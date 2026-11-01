@@ -45,7 +45,6 @@ py_library(
         ":scripted_upstream",
         ":tracing",
         "//agentplane/app/testing:client",
-        "//agentplane/grpc:calls",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner_gateway/dispatcher:testing_client",
         "//util:net",
@@ -64,6 +63,8 @@ py_library(
     deps = [
         ":cluster",
         ":tracing",
+        "//agentplane/grpc:calls",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//util:net",
     ],
 )
