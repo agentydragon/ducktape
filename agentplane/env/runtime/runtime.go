@@ -424,9 +424,9 @@ func (r *Runtime) finishClose() error {
 		incarnationUID = sealUID
 	}
 	connected := r.host != nil && r.host.connected
-	executionExists := r.executionOwner != nil
+	executionExists := r.executionOwner != nil || r.executionUnit.ID != "" || r.executionUnit.reference != nil
 	hostProcessExists := r.hostProcess != nil
-	hostUnitExists := r.hostUnit.ID != ""
+	hostUnitExists := r.hostUnit.ID != "" || r.hostUnit.reference != nil
 	var binding *runtimepb.Binding
 	var intentMode runtimepb.LifecycleIntent_Mode
 	if connected {
@@ -521,8 +521,16 @@ func (r *Runtime) stopHost(ctx context.Context) error {
 	r.mu.Lock()
 	process, invocation := r.hostProcess, r.hostUnit
 	r.mu.Unlock()
-	if invocation.ID != "" {
-		return r.deps.fenceUnit(ctx, HostUnitName, invocation)
+	if invocation.ID != "" || invocation.reference != nil {
+		if err := r.deps.fenceUnit(ctx, HostUnitName, invocation); err != nil {
+			return err
+		}
+		r.mu.Lock()
+		if r.hostUnit.reference == invocation.reference && r.hostUnit.ID == invocation.ID {
+			r.hostUnit = unitInvocation{}
+		}
+		r.mu.Unlock()
+		return nil
 	}
 	if process == nil {
 		return nil
@@ -833,14 +841,22 @@ func (r *Runtime) stopExecution(ctx context.Context) error {
 
 func (r *Runtime) stopExecutionLocked(ctx context.Context) error {
 	r.mu.Lock()
-	handle := r.executionOwner
+	handle, invocation := r.executionOwner, r.executionUnit
 	r.mu.Unlock()
 	if handle == nil {
+		if invocation.ID == "" && invocation.reference == nil {
+			return nil
+		}
+		if err := r.deps.fenceUnit(ctx, ExecutionUnitName, invocation); err != nil {
+			return err
+		}
+		r.clearExecutionUnit(invocation)
 		return nil
 	}
 	if err := handle.StopAndFence(ctx); err != nil {
 		return err
 	}
+	r.clearExecutionUnit(invocation)
 	if err := handle.Close(); err != nil {
 		return err
 	}
@@ -852,6 +868,15 @@ func (r *Runtime) stopExecutionLocked(ctx context.Context) error {
 	}
 	r.mu.Unlock()
 	return nil
+}
+
+func (r *Runtime) clearExecutionUnit(invocation unitInvocation) {
+	r.mu.Lock()
+	if r.executionUnit.reference == invocation.reference && r.executionUnit.ID == invocation.ID &&
+		r.executionUnit.ControlGroup == invocation.ControlGroup {
+		r.executionUnit = unitInvocation{}
+	}
+	r.mu.Unlock()
 }
 
 func (r *Runtime) watchExecutionProcess(handle executionHandle, uid string, monitor interface {

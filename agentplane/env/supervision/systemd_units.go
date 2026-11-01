@@ -175,19 +175,48 @@ func fenceSystemdUnit(ctx context.Context, manager systemdUnitManager, name stri
 	if expected.InvocationID == "" {
 		expected.InvocationID = current.InvocationID
 	}
-	group := expected.ControlGroup
+	// An ordered fence may begin without an invocation identity after an
+	// uncertain StartUnit result. Capture the first observed domain together
+	// with the identity it represents so later InvocationID loss can only be
+	// resolved against this exact cgroup.
+	if expected.ControlGroup == "" && current.InvocationID != "" && current.InvocationID == expected.InvocationID {
+		expected.ControlGroup = current.ControlGroup
+	}
+	// Keep the caller's original cgroup separately from the last observed path.
+	// If systemd has collected a stopped unit object, only this previously
+	// captured path can identify the old process domain whose cleanup we prove.
+	originalGroup := expected.ControlGroup
+	group := originalGroup
 	observe := func(s SystemdUnitSnapshot) (bool, error) {
 		if expected.InvocationID != "" && s.InvocationID != "" && s.InvocationID != expected.InvocationID {
 			return false, fmt.Errorf("systemd unit %s invocation changed from %s to %s", name, expected.InvocationID, s.InvocationID)
-		}
-		if s.LoadState != "not-found" && expected.InvocationID != "" && s.InvocationID == "" {
-			return false, fmt.Errorf("systemd unit %s lost invocation %s", name, expected.InvocationID)
 		}
 		if s.ControlGroup != "" {
 			if group != "" && group != s.ControlGroup {
 				return false, fmt.Errorf("systemd unit %s changed cgroup from %s to %s", name, group, s.ControlGroup)
 			}
 			group = s.ControlGroup
+		}
+		if expected.InvocationID != "" && s.InvocationID == "" {
+			// A normal stop retains InvocationID while its unit object remains
+			// loaded, but GC/reload can discard that evidence. For cleanup-only
+			// fences, the exact previously captured cgroup is still an independent
+			// proof of the old domain once both manager state and kernel state are
+			// quiescent. Never use a replacement object's cgroup for this proof.
+			if expected.RequireSuccess || !s.stopped() || s.MainPID != 0 || s.ControlPID != 0 || s.JobID != 0 {
+				return false, fmt.Errorf("systemd unit %s lost invocation %s before a stopped, job-free state", name, expected.InvocationID)
+			}
+			if originalGroup == "" {
+				return false, fmt.Errorf("systemd unit %s lost invocation %s without a captured cgroup", name, expected.InvocationID)
+			}
+			empty, err := groupEmpty(originalGroup)
+			if err != nil {
+				return false, fmt.Errorf("inspect captured cgroup %s for systemd unit %s: %w", originalGroup, name, err)
+			}
+			if !empty {
+				return false, fmt.Errorf("systemd unit %s lost invocation %s while captured cgroup %s remains populated", name, expected.InvocationID, originalGroup)
+			}
+			return true, nil
 		}
 		if !s.stopped() || s.MainPID != 0 || s.ControlPID != 0 || s.JobID != 0 {
 			return false, nil

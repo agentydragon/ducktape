@@ -13,48 +13,62 @@ type unitInvocation struct {
 	ID             string
 	ControlGroup   string
 	RequireSuccess bool
+	reference      *supervision.SystemdUnitReference
 }
 
 func startSystemdUnit(ctx context.Context, name string) (unitInvocation, error) {
-	conn, err := systemd.NewSystemdConnectionContext(context.Background())
+	reference, err := supervision.OpenSystemdUnitReference(ctx, name)
 	if err != nil {
 		return unitInvocation{}, fmt.Errorf("connect systemd to start %s: %w", name, err)
 	}
-	defer conn.Close()
+	conn := reference.Conn()
+	owner := unitInvocation{reference: reference}
+	retainIfUnfenced := func(cause error, expected unitInvocation) (unitInvocation, error) {
+		expected.reference = reference
+		fenceCtx, cancel := context.WithTimeout(context.Background(), executionFenceGrace)
+		fenceErr := fenceSystemdUnitOnConnection(fenceCtx, conn, name, expected)
+		cancel()
+		if fenceErr != nil {
+			// Preserve the RefUnit peer when a launch may have been accepted but
+			// cleanup remains unknown. Runtime shutdown can retry this exact fence.
+			return expected, errors.Join(cause, fenceErr)
+		}
+		return unitInvocation{}, errors.Join(cause, reference.Close())
+	}
 	// A unit left by a previous Runtime invocation must be fenced before the new
-	// invocation can be accepted. Runtime retains the exact new InvocationID below.
+	// invocation can be accepted. The reference was acquired first and the same
+	// manager connection orders this fence, the StartUnit request, and observation.
 	if err := fenceSystemdUnitOnConnection(ctx, conn, name, unitInvocation{}); err != nil {
-		return unitInvocation{}, fmt.Errorf("fence previous %s invocation: %w", name, err)
+		owner.reference = reference
+		return owner, fmt.Errorf("fence previous %s invocation: %w", name, err)
 	}
 	completed := make(chan string, 1)
 	if _, err := conn.StartUnitContext(ctx, name, "replace", completed); err != nil {
-		fenceErr := fenceSystemdUnitOnConnection(context.Background(), conn, name, unitInvocation{})
-		return unitInvocation{}, errors.Join(fmt.Errorf("start systemd unit %s: %w", name, err), fenceErr)
+		return retainIfUnfenced(fmt.Errorf("start systemd unit %s: %w", name, err), unitInvocation{})
 	}
 	if err := supervision.WaitSystemdJob(ctx, name, "start", completed); err != nil {
-		fenceErr := fenceSystemdUnitOnConnection(context.Background(), conn, name, unitInvocation{})
-		return unitInvocation{}, errors.Join(err, fenceErr)
+		return retainIfUnfenced(err, unitInvocation{})
 	}
 	invocation, state, pid, err := readSystemdInvocation(ctx, conn, name)
 	if err != nil {
-		fenceErr := fenceSystemdUnitOnConnection(context.Background(), conn, name, invocation)
-		return unitInvocation{}, errors.Join(err, fenceErr)
+		return retainIfUnfenced(err, invocation)
 	}
 	if state != "active" || pid == 0 || invocation.ID == "" || invocation.ControlGroup == "" {
-		fenceErr := fenceSystemdUnitOnConnection(context.Background(), conn, name, invocation)
-		return unitInvocation{}, errors.Join(fmt.Errorf("systemd unit %s did not enter a verifiable live invocation (state=%s, main_pid=%d, invocation=%q, cgroup=%q)", name, state, pid, invocation.ID, invocation.ControlGroup), fenceErr)
+		return retainIfUnfenced(fmt.Errorf("systemd unit %s did not enter a verifiable live invocation (state=%s, main_pid=%d, invocation=%q, cgroup=%q)", name, state, pid, invocation.ID, invocation.ControlGroup), invocation)
 	}
+	invocation.reference = reference
 	invocation.RequireSuccess = true
 	return invocation, nil
 }
 
 func fenceSystemdUnit(ctx context.Context, name string, expected unitInvocation) error {
-	conn, err := systemd.NewSystemdConnectionContext(ctx)
-	if err != nil {
-		return fmt.Errorf("connect systemd to fence %s: %w", name, err)
+	if expected.reference == nil {
+		return fmt.Errorf("fence systemd unit %s without its retained manager reference", name)
 	}
-	defer conn.Close()
-	return fenceSystemdUnitOnConnection(ctx, conn, name, expected)
+	if err := fenceSystemdUnitOnConnection(ctx, expected.reference.Conn(), name, expected); err != nil {
+		return err
+	}
+	return expected.reference.Close()
 }
 
 func fenceSystemdUnitOnConnection(ctx context.Context, conn *systemd.Conn, name string, expected unitInvocation) error {
