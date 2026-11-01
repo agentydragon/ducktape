@@ -111,8 +111,8 @@ fn all_parameters(count: usize) -> BTreeSet<usize> {
 }
 
 /// Summarize an unmigrated `body` or return `None` (the call stays unknown).
-/// The canonical index routes covered direct-return bodies to the central
-/// transfer consumer first, with no retry here after a failed strict query.
+/// The canonical index routes covered direct-return and ordered local bodies
+/// to the shared transfer consumer first, with no retry after a failed query.
 /// Literal expression operations remain needed by multi-statement/class bodies.
 /// The caller
 /// establishes stable binding identity and dynamic-scope absence;

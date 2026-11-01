@@ -2145,23 +2145,35 @@ native identity or coercion behavior. Any unsupported input access or transfer
 declines the summary. A failed migrated query does not retry a different
 evaluator. Other supported bodies retain their existing strict source proof.
 
+Covered straight-line bodies use the same ordered local-operation executor as
+application execution. This includes local declarations and assignments,
+sequences, returns, and checked writes to existing own data fields of fresh
+ordinary records, including aliases and self-links. A provider query starts
+with scoped opaque parameters and an empty private heap. Only its parameters
+and instantiated locals can supply binding values. Every reached value
+judgment composes, including discarded expressions; input mutation, external
+captures, unproved field writes and possible abrupt completion decline the
+summary. Argument retention is derived by traversing the returned graph,
+including cycles. The query uses no additional source parse or AST evaluator.
+
 Source coverage excludes async/generator functions, defaults/rest/destructuring,
-extra statements, assignments, sequence/template syntax, other operators,
-member reads, computed/spread/accessor/prototype fields, calls, throws and
-control-flow statements. Every operand, test and arm must retain source coverage
+template syntax, other operators,
+member reads, computed/spread/accessor/prototype fields, calls and
+unsupported control-flow statements. A source-covered throw still prevents the
+allocation-only certificate. Every operand, test and arm must retain source coverage
 and covered access evidence; an outer supported operation cannot hide an
 unsupported or effectful child. Possible abrupt completion prevents the
 certificate. Local-assignment pre-evaluation and a complete synchronous
 execution outcome do not establish this certificate. Child transfer judgments
 and proof dependencies compose; this premise-free consumer
 declines any unexpected nonempty dependency set rather than discarding it.
-This bounded expression transfer is not general source-order execution coverage.
+Expression and ordered-body coverage remain bounded to these supported forms.
 
 A directly imported, stable top-level function or class declaration of another
 analyzed chunk receives a summary when every operation its call performs runs
 no other code. The body may read only its parameters and its own `const`/`let`
-bindings (`var` included; a read before the first declaration has no
-summary). It may create primitives, closures, and object or array literals with
+bindings (`var` reads before initialization yield `undefined`; lexical TDZ
+reads have no summary). It may create primitives, closures, and object or array literals with
 literal keys other than `__proto__`. It may construct an argument-free
 `Map`/`Set`/`WeakMap`/`WeakSet` whose global slot is intact in every analyzed
 chunk's census. A class may also define instance fields and write its declared
