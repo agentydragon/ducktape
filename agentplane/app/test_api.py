@@ -104,7 +104,18 @@ async def test_go_app_exposes_configured_browser_views_over_http(http: httpx.Asy
 
     models = await http.get("/upstream/app-config/v1/models")
     assert models.status_code == 200, models.text
-    assert models.json() == {"models": [], "harnesses": []}
+    model_names = ["test-model-before", "test-model-after", "test-model", "test-claude-model", "test-codex-model"]
+    assert models.json() == {
+        "models": [
+            {
+                "model": name,
+                "displayName": "Test " + name.removeprefix("test-").replace("-", " ").title(),
+                "reasoningEfforts": ["low", "medium", "high"],
+            }
+            for name in model_names
+        ],
+        "harnesses": [{"harness": harness, "models": model_names} for harness in ("HARNESS_CLAUDE", "HARNESS_CODEX")],
+    }
 
     presets = await http.get("/upstream/app-config/v1/presets")
     assert presets.status_code == 200, presets.text

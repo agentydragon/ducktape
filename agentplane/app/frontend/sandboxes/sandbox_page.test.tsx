@@ -25,7 +25,7 @@ import type { RunnerStatusView } from "./client";
 import type { SandboxSnapshot } from "./live";
 
 const fetchMock = vi.hoisted(() => {
-  const fetch = vi.fn<(request: Request) => Promise<Response>>();
+  const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
   vi.stubGlobal("fetch", fetch);
   return fetch;
 });
@@ -133,6 +133,10 @@ afterEach(async () => {
 });
 afterAll(() => vi.unstubAllGlobals());
 
+function requestFromFetchInput(input: RequestInfo | URL, init?: RequestInit): Request {
+  return typeof input !== "string" && "url" in input ? (input as Request) : new Request(input, init);
+}
+
 function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id">): ThreadView {
   return {
     sandbox: "startup-test",
@@ -206,7 +210,8 @@ async function render(
 ): Promise<ReturnType<typeof vi.fn>> {
   // The Egress log panel stays mounted behind its tab and follows a stream that these tests never feed.
   serveEventStreams(() => undefined);
-  fetchMock.mockImplementation((request: Request) => {
+  fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    const request = requestFromFetchInput(input, init);
     const path = new URL(request.url).pathname;
     if (path === "/upstream/app-config/v1/models") {
       if (modelCatalogResponse) return modelCatalogResponse;
@@ -552,7 +557,10 @@ it("reports suspended runner diagnostics without a read or wake request", async 
   await vi.waitFor(() =>
     expect(container.textContent).toContain("Runner diagnostics are unavailable until it is running")
   );
-  const paths = fetchMock.mock.calls.map(([request]) => [request.method, new URL(request.url).pathname]);
+  const paths = fetchMock.mock.calls.map(([input, init]) => {
+    const request = requestFromFetchInput(input, init);
+    return [request.method, new URL(request.url).pathname];
+  });
   expect(paths).not.toContainEqual(["GET", "/sandboxes/startup-test/runner-status"]);
   expect(paths).not.toContainEqual(["POST", "/sandboxes/startup-test/resume"]);
 });
@@ -792,9 +800,9 @@ it("does not retry an Open the runner has not reported", async () => {
   expect(onOpenThread).not.toHaveBeenCalled();
   expect(container.textContent).toContain("No runner Thread or Dispatcher opening is visible yet");
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
-  expect(fetchMock.mock.calls.map(([request]) => new URL(request.url).pathname)).toContain(
-    `/threads/${first.session_id}`
-  );
+  expect(
+    fetchMock.mock.calls.map(([input, init]) => new URL(requestFromFetchInput(input, init).url).pathname)
+  ).toContain(`/threads/${first.session_id}`);
 });
 
 it("recovers a lost Open from its Thread without sending a second Open", async () => {
