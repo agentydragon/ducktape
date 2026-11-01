@@ -7,7 +7,7 @@ once at the fixture boundary and default to staging.
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Generator, Iterator
 from functools import partial
 from pathlib import Path
 from typing import cast
@@ -70,7 +70,9 @@ def pytest_runtest_call(item: pytest.Item) -> object:
 
 
 @pytest.hookimpl(wrapper=True)
-def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo) -> pytest.TestReport:
+def pytest_runtest_makereport(
+    item: pytest.Item, call: pytest.CallInfo
+) -> Generator[None, pytest.TestReport, pytest.TestReport]:
     report = yield
     if call.when == "call" and CASE_RESULT in item.stash:
         # Pytest waits for already-running tasks sequentially. Report the task's real
