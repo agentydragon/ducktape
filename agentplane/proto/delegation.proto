@@ -1,0 +1,19 @@
+// Identity and provenance carried by a delegated workload RPC.
+syntax = "proto3";
+
+package agentplane.proto;
+
+import "agentplane/proto/sandboxes.proto";
+
+// A ServiceAccount name pinned to the Kubernetes object incarnation that was authenticated.
+message ServiceAccountIdentity {
+  ServiceAccount account = 1;
+  string uid = 2;
+}
+
+// The initial Action-backed delegation profile. IDs are correlation data, not authority.
+message Delegation {
+  ServiceAccountIdentity caller = 1;
+  string action_request_id = 2;
+  string action_execution_id = 3;
+}

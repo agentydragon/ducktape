@@ -4,13 +4,17 @@ go_library(
     name = "auth",
     srcs = [
         "auth.go",
+        "delegation.go",
         "methods.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/proto:delegation_go_proto",
+        "@com_github_google_uuid//:uuid",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/util/validation",
         "@io_k8s_apiserver//pkg/authentication/authenticator",
         "@io_k8s_apiserver//pkg/authentication/token/cache",
         "@io_k8s_apiserver//pkg/authentication/user",
@@ -19,6 +23,7 @@ go_library(
         "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
