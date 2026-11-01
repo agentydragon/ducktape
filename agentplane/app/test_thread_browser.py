@@ -738,6 +738,15 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
     page, source = thread_browser.page, thread_browser.source
     requests: list[str] = []
     page.on("request", lambda request: requests.append(request.url))
+
+    def event_read_requested_after(cursor: int) -> bool:
+        return any(
+            (request := urlsplit(url)).path.endswith("/events")
+            and parse_qs(request.query).get("after_cursor") == [str(cursor - 1)]
+            and parse_qs(request.query).get("limit") == ["1"]
+            for url in requests
+        )
+
     for index in range(65):
         source.append(event_pb2.Event(native=event_pb2.Native(line=f"Unlinked packet {index}")))
     stderr = source.append(event_pb2.Event(harness_stderr=event_pb2.HarnessStderr(text="Debug stderr retained")))
@@ -759,7 +768,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
     # The listing carries identity only, no payloads: opening the drawer must not wait on transferring
     # and parsing a page of raw entries the reader did not ask to see.
     assert await dialog.locator("pre").count() == 0
-    assert not any(re.search(r"/observations/\d+", url) for url in requests)
+    assert not any(urlsplit(url).path.endswith("/events") for url in requests)
     for entry in (source.entries[-4], stderr, checkpoint, last):
         record = dialog.locator(f'[data-debug-observation="{entry.cursor}"]')
         await record.locator(".ui-disclosure-summary").click()
@@ -771,7 +780,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
         await record.scroll_into_view_if_needed()
         await expect(frame).to_be_visible()
         assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == entry
-        assert any(url.endswith(f"/observations/{entry.cursor}") for url in requests)
+        assert event_read_requested_after(entry.cursor)
     await _review_screenshot(page, f"thread-debug-{viewport_name}.png", f"Chronological debug on {viewport_name}")
     await dialog.get_by_role("button", name="Older observations", exact=True).click()
     await expect(observations).to_have_count(30)
