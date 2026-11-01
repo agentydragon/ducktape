@@ -28,7 +28,7 @@ type Config struct {
 	ExecutorURL      string                    `json:"executor_url"`
 	Environment      map[string]string         `json:"environment"`
 	Backend          string                    `json:"backend"`
-	Readiness        codexexecserver.Readiness `json:"readiness,omitempty"`
+	Readiness        codexexecserver.Readiness `json:"-"`
 	Systemd          *SystemdConfig            `json:"systemd,omitempty"`
 }
 

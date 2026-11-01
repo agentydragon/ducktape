@@ -13,9 +13,8 @@ import (
 )
 
 const (
-	executionFenceGrace              = 150 * time.Second
-	executionCompanionFenceAllowance = 90 * time.Second
-	executionNativeStartAllowance    = 30 * time.Second
+	executionFenceGrace            = 150 * time.Second
+	executionServiceSetupAllowance = 90*time.Second + 30*time.Second
 )
 
 // executionServiceHandle owns one in-process Go Execution API lifetime. The
@@ -198,15 +197,14 @@ func runtimeExecutionServiceConfig(config Config, incarnationUID string) (servic
 }
 
 // executionServiceReadyTimeout covers setup before the configured executor probe
-// window and the embedded Health.Check afterward. The setup allowance includes the
-// companion's 90s process-domain fence followed by up to 30s for ownership claim or
-// native service startup; systemd owner preparation and native start are bounded by
-// 30s each. An expired outer deadline still requires StopAndFence proof before return.
+// window and the embedded Health.Check afterward. Its 120s setup allowance covers
+// the companion's process-domain fence (up to 90s) plus owner preparation, claim or
+// native startup. This is one outer allowance rather than separate phase deadlines;
+// an expired deadline still requires StopAndFence proof before return.
 func executionServiceReadyTimeout(probeWindow time.Duration) time.Duration {
 	return addExecutionDurationsSaturating(
 		probeWindow,
-		executionCompanionFenceAllowance,
-		executionNativeStartAllowance,
+		executionServiceSetupAllowance,
 		service.EmbeddedHealthReadinessTimeout,
 	)
 }
