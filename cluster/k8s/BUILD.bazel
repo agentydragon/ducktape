@@ -32,7 +32,10 @@ exports_files(
 )
 
 exports_files(
-    ["clickhouse/cluster/public-coder-credentials.sops.yaml"],
+    [
+        "clickhouse/cluster/public-coder-credentials.sops.yaml",
+        "clickhouse/cluster/retired-volume-reclaim.yaml",
+    ],
     visibility = [
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/clickhouse:__pkg__",

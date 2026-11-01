@@ -19,6 +19,7 @@ package(
         "//agentplane/x/central_sampler:__pkg__",
         "//agentplane/x/runner_layering:__pkg__",
         "//cluster/cdk8s/agentplane:__pkg__",
+        "//cluster/cdk8s/clickhouse:__pkg__",
     ],
 )
 
