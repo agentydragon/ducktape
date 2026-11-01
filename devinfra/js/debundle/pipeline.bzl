@@ -140,6 +140,10 @@ def _debundle_pipeline_plan(ctx, out_root):
         run_flags.append("--fail-fast")
     if ctx.attr.emit_on_rejection:
         run_flags.append("--emit-on-rejection")
+    if ctx.attr.effect_conflicts_jsonl:
+        run_flags.append("--effect-conflicts-jsonl")
+    for chunk in ctx.attr.effect_conflicts_chunks:
+        run_flags.extend(["--effect-conflicts-chunk", shell.quote(chunk)])
     if has_flat:
         spec_args = ["--spec", _shell_source_path(ctx.file.spec.path)]
 
@@ -313,6 +317,14 @@ _DEBUNDLE_PIPELINE_ATTRS = {
     "fail_fast": attr.bool(
         default = False,
         doc = "Pass --fail-fast to debundle run for debugging; by default broad pipeline runs aggregate supported diagnostics.",
+    ),
+    "effect_conflicts_jsonl": attr.bool(
+        default = False,
+        doc = "Stream full effect-conflict JSONL into the existing reports tree; disabled by default.",
+    ),
+    "effect_conflicts_chunks": attr.string_list(
+        default = [],
+        doc = "Restrict JSONL sinks to these materialized chunk IDs; requires effect_conflicts_jsonl. Empty selects all chunks. The CLI validates IDs.",
     ),
 }
 
