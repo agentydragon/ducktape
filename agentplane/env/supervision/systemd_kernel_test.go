@@ -276,8 +276,12 @@ func TestSystemdKernelFixture(t *testing.T) {
 			t.Fatal(err)
 		}
 		stdout, stderr := readProofStreams(p)
+		stopStarted := time.Now()
 		if err := p.Stop(ctx, 50*time.Millisecond); err != nil {
 			t.Fatal(err)
+		}
+		if elapsed := time.Since(stopStarted); elapsed > 3*time.Second {
+			t.Fatalf("systemd stop ignored caller's 50ms grace: elapsed=%s", elapsed)
 		}
 		if code, err := p.Wait(ctx); err != nil || code != 137 {
 			t.Fatalf("forcedstop exit=%d error=%v want137", code, err)

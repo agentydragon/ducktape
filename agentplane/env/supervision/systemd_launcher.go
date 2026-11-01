@@ -114,7 +114,15 @@ func (p *SystemdLauncher) properties(limits ResourceLimits) ([]systemd.Property,
 func openSystemdConnection() (*systemd.Conn, context.CancelFunc, error) {
 	lifetime, cancel := context.WithCancel(context.Background())
 	timer := time.AfterFunc(30*time.Second, cancel)
-	conn, err := systemd.NewSystemdConnectionContext(lifetime)
+	// Native transient units use AddRef to retain exit status until the reaper
+	// has observed it. AddRef is tracked against the API-bus sender, so all
+	// manager traffic must use the system bus rather than systemd's private peer.
+	conn, err := systemd.NewConnection(func() (*dbus.Conn, error) {
+		return dbus.ConnectSystemBus(dbus.WithContext(lifetime))
+	})
+	if err == nil {
+		err = conn.Subscribe()
+	}
 	if !timer.Stop() {
 		cancel()
 	}
