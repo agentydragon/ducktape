@@ -56,7 +56,7 @@ class ScriptedUpstream:
 
     @asynccontextmanager
     async def case_scope(self) -> AsyncIterator[None]:
-        """Check and release only this case's model queues after its guests have stopped."""
+        """Check and release this case's queues before its Pod identity can be reused."""
         if self._case_pods.get() is not None:
             raise RuntimeError("scripted model case scopes cannot nest")
         pods: set[str] = set()

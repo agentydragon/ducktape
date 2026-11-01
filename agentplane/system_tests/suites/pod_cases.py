@@ -1,14 +1,15 @@
-"""Pod scenario bindings; each call owns clients, guests and model settlement."""
+"""Pod scenario bindings with fresh Sessions and explicit runner ownership."""
 
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 import httpx
 import pytest
 
 from agentplane.app.testing.client import Client
+from agentplane.system_tests import scenario
 from agentplane.system_tests.agent import TURN_SECONDS
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
@@ -25,6 +26,8 @@ from agentplane.system_tests.scenarios import (
     thread_stream,
 )
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.suites import pod_runners
+from agentplane.system_tests.tracing import tracer
 
 
 @dataclass(frozen=True)
@@ -33,7 +36,25 @@ class Resources:
     base_url: str
     token: str
     scripted: ScriptedUpstream
-    open: Callable[[], AbstractAsyncContextManager[tuple[Client, Sandboxes]]]
+    borrow: pod_runners.Borrow
+
+    @asynccontextmanager
+    async def open(self) -> AsyncIterator[tuple[Client, Sandboxes]]:
+        async with (
+            self.scripted.case_scope(),
+            scenario.open_resources(self.cluster, self.base_url, self.token, tracer, native_diagnostics=False) as owned,
+        ):
+            yield owned
+
+    @asynccontextmanager
+    async def shared(self) -> AsyncIterator[tuple[Client, pod_runners.Pair]]:
+        # Settle the model queues before returning this pair to another case.
+        async with (
+            self.borrow() as runners,
+            self.scripted.case_scope(),
+            Client(base_url=self.base_url, token=self.token) as client,
+        ):
+            yield client, runners
 
     @asynccontextmanager
     async def http(self) -> AsyncIterator[httpx.AsyncClient]:
@@ -69,11 +90,11 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(resources: 
 
 
 async def the_model_call_itself_goes_through_the_proxy(resources: Resources) -> None:
-    async with resources.open() as (client, sandboxes):
+    async with resources.shared() as (client, runners):
         await run_harness_pair(
             client,
             lambda harness, model: egress.the_model_call_itself_goes_through_the_proxy(
-                resources.cluster, client, sandboxes, harness, model, resources.scripted
+                resources.cluster, client, runners.for_harness(harness), harness, model, resources.scripted
             ),
         )
 
@@ -101,12 +122,12 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(resources: Res
 
 
 async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session(resources: Resources) -> None:
-    async with resources.open() as (client, sandboxes):
+    async with resources.shared() as (client, runners):
         await run_harness_pair(
             client,
             lambda harness, model: (
                 session_instructions.the_standing_instruction_reaches_the_model_and_only_in_its_own_session(
-                    client, sandboxes, harness, model, resources.scripted
+                    client, runners.for_harness(harness), harness, model, resources.scripted
                 )
             ),
         )
@@ -142,11 +163,11 @@ async def an_unknown_thread_is_not_found(resources: Resources) -> None:
 
 
 async def every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event(resources: Resources) -> None:
-    async with resources.open() as (client, sandboxes), resources.http() as http:
+    async with resources.shared() as (client, runners), resources.http() as http:
         await run_harness_pair(
             client,
             lambda harness, model: thread_stream.every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event(
-                client, http, sandboxes, harness, model, resources.scripted
+                client, http, runners.for_harness(harness), harness, model, resources.scripted
             ),
         )
 
@@ -154,12 +175,12 @@ async def every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event
 async def turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn(
     resources: Resources,
 ) -> None:
-    async with resources.open() as (client, sandboxes), resources.http() as http:
+    async with resources.shared() as (client, runners), resources.http() as http:
         await run_harness_pair(
             client,
             lambda harness, model: (
                 thread_stream.turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn(
-                    client, http, sandboxes, harness, model, resources.scripted
+                    client, http, runners.for_harness(harness), harness, model, resources.scripted
                 )
             ),
         )

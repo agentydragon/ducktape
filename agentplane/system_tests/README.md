@@ -34,7 +34,7 @@ The build supplies complete service and guest image lists. The pytest adapter re
 the rendered deployment once into `StackInputs`; stack startup does not discover image layouts by
 scanning runfiles. Kubernetes helpers take an explicit `Cluster` containing the kubeconfig, namespace,
 and kubectl command. Only the live-test fixture reads ambient deployment settings.
-Per-test fixtures create and clean up their own Sandboxes and resources. A host-side provisioner
+Lifecycle cases create and clean up their own Sandboxes and resources. A host-side provisioner
 allocates a fresh loop-backed volume for each VM workspace claim UID, retaining it until stack teardown.
 Suites do not declare volume counts; deleting and recreating a claim never reuses its workspace data.
 
@@ -47,8 +47,15 @@ Within each suite, independent Claude/Codex cases run together through
 [`run_harness_pair`](harness_pair.py), sharing the test's clients and scripted model server.
 Each harness still creates its own Sandboxes and runs every scenario assertion. Seven Pod pairs
 and four MCP pairs overlap; the messaging and launcher pairs each peak at four Sandbox Pods.
-The Pod suite also runs two independent cases concurrently on that same stack. Each case owns its
-clients, Sandboxes, HTTP streams and model-response checks. Storage runs alone first because it
+The Pod suite also runs two independent cases concurrently on that same stack. Model proxy,
+standing-instruction isolation, tab/reconnect and unwatched-turn cases lease at most two reusable
+Claude/Codex Pod pairs. Each call opens fresh Sessions, clients, HTTP streams and model queues;
+the lease outlives model-response settlement. Runner reuse verifies that the Sandbox and Pod UIDs
+have not changed. A failed or cancelled lease deletes its pair instead of returning it to the pool.
+The suite owns successful pairs until all selected cases finish, then deletes them before stopping
+the shared deployment. These cases issue no shell tools or policy mutations. Messaging, policy,
+presets, credentials, suspend/resume and storage cases retain fresh Sandbox ownership.
+Storage runs alone first, before the lazy runner pool creates any Pods, because it
 requires an empty Sandbox inventory and changes shared configuration. Only cases selected by
 pytest are started; all 13 retain separate parameter IDs, JUnit results and real execution
 durations from their OTel spans. For example, `--test_arg=-k=pod_mtls` selects only the Pod credential

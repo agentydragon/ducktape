@@ -16,13 +16,12 @@ k3s_suite(
     deps = [
         ":conftest",
         ":pod_cases",
+        ":pod_runners",
         "//:conftest",
         "//agentplane/system_tests:case_batch",
         "//agentplane/system_tests:cluster",
         "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests:scenario",
         "//agentplane/system_tests:scripted_upstream",
-        "//agentplane/system_tests:tracing",
         "//util:net",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -166,13 +165,16 @@ py_library(
     name = "pod_cases",
     srcs = ["pod_cases.py"],
     deps = [
+        ":pod_runners",
         "//agentplane/app/testing:client",
         "//agentplane/system_tests:agent",
         "//agentplane/system_tests:cluster",
         "//agentplane/system_tests:executor",
         "//agentplane/system_tests:harness_pair",
         "//agentplane/system_tests:sandbox",
+        "//agentplane/system_tests:scenario",
         "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/system_tests:tracing",
         "//agentplane/system_tests/scenarios:agent_messaging",
         "//agentplane/system_tests/scenarios:egress",
         "//agentplane/system_tests/scenarios:launch_presets",
@@ -183,5 +185,19 @@ py_library(
         "//agentplane/system_tests/scenarios:thread_stream",
         "@pypi//httpx",
         "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "pod_runners",
+    srcs = ["pod_runners.py"],
+    deps = [
+        "//agentplane/app/testing:client",
+        "//agentplane/app/testing:models",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:scenario",
+        "//agentplane/system_tests:tracing",
+        "@pypi//protobuf",
     ],
 )
