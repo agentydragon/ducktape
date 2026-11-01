@@ -355,6 +355,7 @@ go_library(
         "environment_context.go",
         "evidence.go",
         "executor.go",
+        "executor_failure.go",
         "executor_operations.go",
         "exporter.go",
         "head_tail_buffer.go",

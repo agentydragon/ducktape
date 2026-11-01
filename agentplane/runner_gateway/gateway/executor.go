@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
@@ -34,7 +35,7 @@ func (s *executorServer) executionConnection(
 	view, err := g.sandboxes.destination(resolveCtx, scope.GetDestination(), newSession, false)
 	cancel()
 	if err != nil {
-		return nil, nil, nil, unavailable(err)
+		return nil, nil, nil, executionEnvironmentStatus(err)
 	}
 	if view.incarnation == nil {
 		return nil, nil, nil, status.Error(codes.FailedPrecondition, "Sandbox incarnation changed")
@@ -48,10 +49,10 @@ func (s *executorServer) executionConnection(
 		return nil, nil, nil, status.Error(codes.FailedPrecondition, "Sandbox incarnation changed")
 	}
 	if connectionErr != nil {
-		return nil, nil, nil, connectionErr
+		return nil, nil, nil, executionEnvironmentStatus(environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE))
 	}
 	if connection.identity != view.identity || connection.podUID != scope.GetExpectedIncarnationUid() {
-		return nil, nil, nil, status.Error(codes.FailedPrecondition, "Sandbox incarnation changed")
+		return nil, nil, nil, executionEnvironmentStatus(environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE))
 	}
 	callCtx, stop := context.WithCancel(ctx)
 	go func() {
@@ -62,6 +63,21 @@ func (s *executorServer) executionConnection(
 		}
 	}()
 	return callCtx, connection, stop, nil
+}
+
+func executionEnvironmentStatus(err error) error {
+	var environmentError *executionEnvironmentUnavailableError
+	if !errors.As(err, &environmentError) {
+		return unavailable(err)
+	}
+	base := environmentError.GRPCStatus()
+	withDetail, detailErr := base.WithDetails(&executorpb.ExecutionEnvironmentFailure{
+		State: environmentError.state, Outcome: executorpb.ExecutionEnvironmentFailure_OUTCOME_NOT_DISPATCHED,
+	})
+	if detailErr != nil {
+		return detailErr
+	}
+	return withDetail.Err()
 }
 
 func incarnationChanged(sandboxUID, incarnationUID string) error {

@@ -19,6 +19,27 @@ message SandboxIncarnationChanged {
   string incarnation_uid = 2;
 }
 
+// A verified, scoped execution request was refused before native dispatch.
+// Gateway attaches route/lifecycle states after caller authorization and exact Sandbox UID
+// resolution; a scoped Runtime may attach a local readiness state before native dispatch. It
+// carries no replacement identity and does not authorize waking or provisioning an environment.
+message ExecutionEnvironmentFailure {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_SUSPENDED = 1;
+    STATE_STARTING = 2;
+    STATE_NOT_READY = 3;
+    STATE_QUIESCING = 4;
+    STATE_CONTROL_ROUTE_UNAVAILABLE = 5;
+  }
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    OUTCOME_NOT_DISPATCHED = 1;
+  }
+  State state = 1;
+  Outcome outcome = 2;
+}
+
 // Outcomes describe the observed local Codex reply, not process completion.
 // Transport loss can leave an effect unknown; request IDs do not provide deduplication.
 message ExecutionStatus {

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -46,10 +45,11 @@ type executorStart struct {
 	Arg0      *string            `json:"arg0,omitempty"`
 }
 type executorRead struct {
-	ProcessID string  `json:"processId"`
-	AfterSeq  *uint64 `json:"afterSeq"`
-	MaxBytes  int     `json:"maxBytes"`
-	WaitMS    int     `json:"waitMs"`
+	ProcessID      string          `json:"processId"`
+	AfterSeq       *uint64         `json:"afterSeq"`
+	MaxBytes       int             `json:"maxBytes"`
+	WaitMS         int             `json:"waitMs"`
+	ObservedOutput *headTailBuffer `json:"-"`
 }
 type executorChunk struct {
 	Seq    uint64 `json:"seq"`
@@ -192,7 +192,7 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error {
 	handshakeCtx, cancelHandshake := context.WithTimeout(ctx, e.initializeTimeout)
 	defer cancelHandshake()
-	intent, err := e.store.RecordNested(ctx, e.owner, IntentExecutor, map[string]any{"method": "initialize", "resume_session_id": resume})
+	intent, err := e.store.RecordNested(ctx, e.owner, IntentExecutor, map[string]any{"method": executorMethodInitialize, "resume_session_id": resume})
 	if err != nil {
 		return err
 	}
@@ -200,7 +200,13 @@ func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error
 	stream, err := e.client.OpenSession(streamCtx, &executorpb.OpenSessionRequest{Scope: e.scope, RequestId: intent, ResumeSessionId: resume})
 	if err != nil {
 		cancel()
-		transport := &executorTransportError{method: "initialize", phase: "open", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: err}
+		if environmentFailure := e.newEnvironmentFailure(executorMethodInitialize, intent, "", "", nil, nil, err); environmentFailure != nil {
+			if finishErr := e.store.FinishNested(ctx, e.owner, intent, environmentFailure.intentEvidence()); finishErr != nil {
+				return fmt.Errorf("record known OpenSession refusal after %v: %w", environmentFailure, finishErr)
+			}
+			return environmentFailure
+		}
+		transport := &executorTransportError{method: executorMethodInitialize, phase: "open", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: err}
 		if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
 			return fmt.Errorf("record OpenSession transport outcome after %v: %w", transport, finishErr)
 		}
@@ -232,7 +238,13 @@ func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error
 	}
 	if err != nil {
 		cancel()
-		transport := &executorTransportError{method: "initialize", phase: "receive", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: err}
+		if environmentFailure := e.newEnvironmentFailure(executorMethodInitialize, intent, "", "", nil, nil, err); environmentFailure != nil {
+			if finishErr := e.store.FinishNested(ctx, e.owner, intent, environmentFailure.intentEvidence()); finishErr != nil {
+				return fmt.Errorf("record known OpenSession refusal after %v: %w", environmentFailure, finishErr)
+			}
+			return environmentFailure
+		}
+		transport := &executorTransportError{method: executorMethodInitialize, phase: "receive", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: err}
 		if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
 			return fmt.Errorf("record OpenSession receive outcome after %v: %w", transport, finishErr)
 		}
@@ -240,20 +252,20 @@ func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error
 	}
 	if opened == nil {
 		cancel()
-		transport := &executorTransportError{method: "initialize", phase: "response", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: errors.New("executor OpenSession returned an empty response")}
+		transport := &executorTransportError{method: executorMethodInitialize, phase: "response", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: errors.New("executor OpenSession returned an empty response")}
 		if err := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession)); err != nil {
 			return fmt.Errorf("record empty OpenSession response: %w", err)
 		}
 		return transport
 	}
-	frameErr := e.recordNativeFrames(ctx, intent, opened.ExecutionSessionId, "initialize", opened.NativeFrames)
+	frameErr := e.recordNativeFrames(ctx, intent, opened.ExecutionSessionId, executorMethodInitialize, opened.NativeFrames)
 	if opened.Status == nil || opened.Status.Outcome != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		cancel()
 		return e.finishOpenFailure(ctx, intent, opened, frameErr)
 	}
 	if opened.ExecutionSessionId == "" || resume != nil && opened.ExecutionSessionId != *resume {
 		cancel()
-		transport := &executorTransportError{method: "initialize", phase: "response", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: errors.New("executor resumed a different or empty execution session")}
+		transport := &executorTransportError{method: executorMethodInitialize, phase: "response", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: errors.New("executor resumed a different or empty execution session")}
 		finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession))
 		if frameErr != nil || finishErr != nil {
 			return fmt.Errorf("record mismatched OpenSession response: %w", errors.Join(frameErr, finishErr))
@@ -304,7 +316,7 @@ func (e *Executor) finishOpenFailure(ctx context.Context, intent string, respons
 		if message == "" {
 			message = "session open rejected"
 		}
-		rejectedError := &executorRejectedError{method: "initialize", code: int(response.Status.GetUpstreamCode()), message: message}
+		rejectedError := &executorRejectedError{method: executorMethodInitialize, code: int(response.Status.GetUpstreamCode()), message: message}
 		rejected := map[string]any{"code": response.Status.UpstreamCode, "message": message}
 		if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedRejected, "request_id": intent, "rejected": rejected}); err != nil {
 			return fmt.Errorf("record rejected OpenSession result: %w", errors.Join(nativeEvidenceErr, err))
@@ -327,7 +339,7 @@ func (e *Executor) finishOpenFailure(ctx context.Context, intent string, respons
 	if nativeEvidenceErr != nil {
 		return fmt.Errorf("record unknown OpenSession native evidence: %w", nativeEvidenceErr)
 	}
-	return &executorTransportError{method: "initialize", phase: "response", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: errors.New(message)}
+	return &executorTransportError{method: executorMethodInitialize, phase: "response", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: errors.New(message)}
 }
 
 func (e *Executor) watchSession(streamCtx context.Context, stream executorSessionStream, operationID, sessionID string, generation uint64, cancel context.CancelFunc, done chan struct{}) {
@@ -345,7 +357,7 @@ func (e *Executor) watchSession(streamCtx context.Context, stream executorSessio
 		// Reconnect cancels streamCtx while this watcher may already be recording a
 		// received notification. Keep that evidence write alive for a bounded time.
 		journalCtx, cancelJournal := context.WithTimeout(context.WithoutCancel(streamCtx), 5*time.Second)
-		err = e.recordNativeFrames(journalCtx, operationID, sessionID, "session_notification", response.NativeFrames)
+		err = e.recordNativeFrames(journalCtx, operationID, sessionID, executorMethodSessionNotice, response.NativeFrames)
 		cancelJournal()
 		if err != nil {
 			e.sessionStateMu.Lock()
@@ -378,7 +390,7 @@ func (e *Executor) watchSession(streamCtx context.Context, stream executorSessio
 	}
 }
 
-func (e *Executor) recordNativeFrames(ctx context.Context, operationID, sessionID, method string, frames []*executorpb.ExecutionNativeFrame) error {
+func (e *Executor) recordNativeFrames(ctx context.Context, operationID, sessionID string, method executionMethod, frames []*executorpb.ExecutionNativeFrame) error {
 	if ctx.Err() != nil {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
@@ -389,7 +401,7 @@ func (e *Executor) recordNativeFrames(ctx context.Context, operationID, sessionI
 			continue
 		}
 		payload := map[string]any{"request_id": operationID, "execution_session_id": sessionID, "payload": frame.Payload}
-		if method == "fs/readBlock" {
+		if method == executorMethodFSReadBlock {
 			digest := sha256.Sum256(frame.Payload)
 			payload["payload_digest_sha256"] = hex.EncodeToString(digest[:])
 			payload["payload_bytes"] = len(frame.Payload)
@@ -405,7 +417,7 @@ func (e *Executor) recordNativeFrames(ctx context.Context, operationID, sessionI
 // ensureSessionLocked is called with rpcMu held before a typed operation is admitted. A
 // connection failure rejects that operation without poisoning the JavaScript session. Evidence
 // and ownership failures remain operational errors and must never masquerade as remote failures.
-func (e *Executor) ensureSessionLocked(ctx context.Context, method, processID string) error {
+func (e *Executor) ensureSessionLocked(ctx context.Context, method executionMethod, processID string) error {
 	e.sessionStateMu.Lock()
 	sessionError, reconnectRequired := e.sessionError, e.reconnectRequired
 	e.sessionStateMu.Unlock()
@@ -421,7 +433,7 @@ func (e *Executor) ensureSessionLocked(ctx context.Context, method, processID st
 	// Workspace preparation has no native handle or previously dispatched mutation. It can
 	// continue immediately after the durable incarnation notice and fresh session open.
 	var changed *executorIncarnationReplacedError
-	if errors.As(err, &changed) && method == "process/start" && processID == "" {
+	if errors.As(err, &changed) && method == executorMethodProcessStart && processID == "" {
 		return nil
 	}
 	if err == nil || !isExecutorConnectionFailure(err) {
@@ -432,13 +444,14 @@ func (e *Executor) ensureSessionLocked(ctx context.Context, method, processID st
 
 func isExecutorConnectionFailure(err error) bool {
 	var transport *executorTransportError
+	var environment *executorEnvironmentFailureError
 	var rejected *executorRejectedError
 	var replaced *executorSessionReplacedError
 	var changed *executorIncarnationReplacedError
-	return errors.As(err, &changed) || errors.As(err, &transport) || errors.As(err, &rejected) || errors.As(err, &replaced)
+	return errors.As(err, &changed) || errors.As(err, &transport) || errors.As(err, &environment) || errors.As(err, &rejected) || errors.As(err, &replaced)
 }
 
-func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvidence func(map[string]any) map[string]any) (json.RawMessage, error) {
+func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, resultEvidence func(map[string]any) map[string]any) (json.RawMessage, error) {
 	e.rpcMu.Lock()
 	defer e.rpcMu.Unlock()
 	if err := e.ensureSessionLocked(ctx, method, executorProcessID(params)); err != nil {
@@ -467,7 +480,7 @@ func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvi
 	var transport *executorTransportError
 	if err != nil && errors.As(err, &transport) {
 		e.setReconnectRequired(true)
-		if method == "process/read" && ctx.Err() == nil {
+		if method == executorMethodProcessRead && ctx.Err() == nil {
 			if reconnectErr := e.reconnectLocked(ctx, executorProcessID(params)); reconnectErr == nil {
 				readRetried = true
 				response, err = e.call(ctx, method, request)
@@ -480,6 +493,23 @@ func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvi
 		}
 	}
 	if err != nil {
+		var environment *executorEnvironmentFailureError
+		if errors.As(err, &environment) {
+			environment.intentID = intent
+			environment.processID = executorProcessID(params)
+			environment.executionSessionID = e.sessionID
+			if read, ok := params.(executorRead); ok {
+				environment.afterSequence = read.AfterSeq
+				environment.output = read.ObservedOutput
+				// A failed read cannot establish whether the already-started process exited.
+				environment.remoteOutcome = NestedUnknown
+			}
+			e.setReconnectRequired(true)
+			if finishErr := e.store.FinishNested(ctx, e.owner, intent, environment.intentEvidence()); finishErr != nil {
+				return nil, fmt.Errorf("record known typed execution %s refusal after %v: %w", method, environment, finishErr)
+			}
+			return nil, environment
+		}
 		if errors.As(err, &transport) {
 			transport.intentID, transport.processID = intent, executorProcessID(params)
 			transport.retainedSession = e.retainedSessionID(ctx)
@@ -503,7 +533,7 @@ func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvi
 		statusValue = &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_UNKNOWN, Message: "typed execution response omitted its status"}
 	}
 	if statusValue.Outcome == executorpb.ExecutionStatus_OUTCOME_UNKNOWN {
-		if method == "process/read" && !readRetried && ctx.Err() == nil && frameErr == nil {
+		if method == executorMethodProcessRead && !readRetried && ctx.Err() == nil && frameErr == nil {
 			e.setReconnectRequired(true)
 			if reconnectErr := e.reconnectLocked(ctx, executorProcessID(params)); reconnectErr == nil {
 				readRetried = true
@@ -687,10 +717,84 @@ func (e *Executor) setSessionError(err error) {
 }
 
 type executorTransportError struct {
-	method, phase, intentID, processID, retainedSession string
-	afterSequence                                       *uint64
-	output                                              *headTailBuffer
-	cause                                               error
+	method                                      executionMethod
+	phase, intentID, processID, retainedSession string
+	afterSequence                               *uint64
+	output                                      *headTailBuffer
+	cause                                       error
+}
+
+type executorEnvironmentFailureError struct {
+	method             executionMethod
+	intentID           string
+	processID          string
+	executionSessionID string
+	state              executorpb.ExecutionEnvironmentFailure_State
+	remoteOutcome      NestedOutcome
+	afterSequence      *uint64
+	output             *headTailBuffer
+	cause              error
+}
+
+func (e *executorEnvironmentFailureError) Error() string {
+	message := fmt.Sprintf("execution environment is %s; typed execution %s was not admitted", e.state.String(), e.method)
+	if e.remoteOutcome == NestedUnknown {
+		return message + "; the existing process outcome remains unknown and was not replayed"
+	}
+	return message + "; the request was not dispatched and was not retried"
+}
+
+func (e *executorEnvironmentFailureError) Unwrap() error { return e.cause }
+
+func (e *executorEnvironmentFailureError) executionFailureRecord() executionFailureRecord {
+	requestOutcome := NestedNotDispatched
+	return executionFailureRecord{
+		message: e.Error(), method: e.method, intentID: e.intentID, processID: e.processID,
+		executionSessionID: e.executionSessionID, afterSequence: e.afterSequence,
+		remoteOutcome: e.remoteOutcome, requestOutcome: &requestOutcome, automaticReplay: false,
+		environmentState: &e.state, transportError: e.cause.Error(), output: e.output,
+	}
+}
+
+func (e *executorEnvironmentFailureError) intentEvidence() executionFailureEvidence {
+	evidence := e.executionFailureRecord().intentEvidence()
+	// This RPC was refused before dispatch even when the existing process remains unknown.
+	evidence.RemoteOutcome = NestedNotDispatched
+	return evidence
+}
+
+func (e *Executor) newEnvironmentFailure(method executionMethod, intentID, processID, executionSessionID string, afterSequence *uint64, output *headTailBuffer, cause error) *executorEnvironmentFailureError {
+	detail, ok := executionEnvironmentFailureDetail(cause)
+	if !ok {
+		return nil
+	}
+	return &executorEnvironmentFailureError{
+		method: method, intentID: intentID, processID: processID, executionSessionID: executionSessionID,
+		state: detail.GetState(), remoteOutcome: NestedNotDispatched, afterSequence: afterSequence, output: output, cause: cause,
+	}
+}
+
+func executionEnvironmentFailureDetail(err error) (*executorpb.ExecutionEnvironmentFailure, bool) {
+	st, ok := status.FromError(err)
+	if !ok || st.Code() != codes.Unavailable && st.Code() != codes.FailedPrecondition {
+		return nil, false
+	}
+	for _, detail := range st.Details() {
+		failure, ok := detail.(*executorpb.ExecutionEnvironmentFailure)
+		if !ok || failure.GetOutcome() != executorpb.ExecutionEnvironmentFailure_OUTCOME_NOT_DISPATCHED ||
+			failure.GetState() == executorpb.ExecutionEnvironmentFailure_STATE_UNSPECIFIED {
+			continue
+		}
+		switch failure.GetState() {
+		case executorpb.ExecutionEnvironmentFailure_STATE_SUSPENDED,
+			executorpb.ExecutionEnvironmentFailure_STATE_STARTING,
+			executorpb.ExecutionEnvironmentFailure_STATE_NOT_READY,
+			executorpb.ExecutionEnvironmentFailure_STATE_QUIESCING,
+			executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE:
+			return failure, true
+		}
+	}
+	return nil, false
 }
 
 func (e *executorTransportError) Error() string {
@@ -701,56 +805,29 @@ func (e *executorTransportError) Error() string {
 	return fmt.Sprintf("typed execution %s %s failed%s: remote effect outcome is unknown; mutation was not replayed: %v", e.method, e.phase, operation, e.cause)
 }
 func (e *executorTransportError) Unwrap() error { return e.cause }
-func (e *executorTransportError) evidence(retainedSession string) map[string]any {
-	result := map[string]any{"status": IntentResultAbandoned, "remote_outcome": NestedUnknown, "automatic_replay": false, "method": e.method, "phase": e.phase, "intent_id": e.intentID, "transport_error": e.cause.Error()}
-	if e.processID != "" {
-		result["process_id"] = e.processID
-	}
-	if retainedSession != "" {
-		result["execution_session_id"] = retainedSession
-	}
-	retainProcessObservation(result, e.afterSequence, e.output)
-	return result
-}
-
-func retainProcessObservation(result map[string]any, afterSequence *uint64, output *headTailBuffer) {
-	if afterSequence != nil {
-		result["after_seq"] = *afterSequence
-	}
-	if output != nil {
-		buffered := output.retained()
-		result["buffered_output"] = lossyUTF8(buffered)
-		result["buffered_output_base64"] = base64.StdEncoding.EncodeToString(buffered)
-		result["buffered_bytes"] = len(buffered)
-		result["omitted_bytes"] = output.omitted
-	}
+func (e *executorTransportError) evidence(retainedSession string) executionFailureEvidence {
+	return (executionFailureRecord{
+		message: e.Error(), method: e.method, phase: e.phase, intentID: e.intentID,
+		processID: e.processID, executionSessionID: retainedSession, afterSequence: e.afterSequence,
+		remoteOutcome: NestedUnknown, automaticReplay: false, transportError: e.cause.Error(), output: e.output,
+	}).intentEvidence()
 }
 
 type executorNotDispatchedError struct {
-	method, processID, retainedSession string
-	afterSequence                      *uint64
-	output                             *headTailBuffer
-	cause                              error
+	method                     executionMethod
+	processID, retainedSession string
+	afterSequence              *uint64
+	output                     *headTailBuffer
+	cause                      error
 }
 
 func (e *executorNotDispatchedError) Error() string {
 	return fmt.Sprintf("typed execution %s was not dispatched%s because the executor connection could not be established: %v; previous remote outcomes remain unknown and no mutation was replayed", e.method, processDescription(e.processID), e.cause)
 }
 func (e *executorNotDispatchedError) Unwrap() error { return e.cause }
-func (e *executorNotDispatchedError) evidence() map[string]any {
-	result := map[string]any{"status": IntentResultAbandoned, "remote_outcome": "not_dispatched", "automatic_replay": false, "method": e.method, "transport_error": e.cause.Error()}
-	if e.processID != "" {
-		result["process_id"] = e.processID
-	}
-	if e.retainedSession != "" {
-		result["execution_session_id"] = e.retainedSession
-	}
-	retainProcessObservation(result, e.afterSequence, e.output)
-	return result
-}
 
 type executorRejectedError struct {
-	method             string
+	method             executionMethod
 	code               int
 	message            string
 	intentID           string
@@ -780,7 +857,7 @@ func (e *executorSessionReplacedError) Error() string {
 }
 
 func isDefinitiveLostExecutorSession(rejected *executorRejectedError, expectedSession string) bool {
-	if rejected == nil || !rejected.recorded || rejected.method != "initialize" || rejected.code != -32600 || expectedSession == "" {
+	if rejected == nil || !rejected.recorded || rejected.method != executorMethodInitialize || rejected.code != -32600 || expectedSession == "" {
 		return false
 	}
 	// Codex exec-server's session registry reports an absent retained session as exactly
@@ -825,7 +902,7 @@ func (e *Executor) retainedSessionID(ctx context.Context) string {
 	return *c.ExecutorSession
 }
 
-func (e *Executor) finishUnknownIntent(ctx context.Context, intent string, evidence map[string]any) error {
+func (e *Executor) finishUnknownIntent(ctx context.Context, intent string, evidence any) error {
 	if ctx.Err() != nil {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
@@ -834,11 +911,11 @@ func (e *Executor) finishUnknownIntent(ctx context.Context, intent string, evide
 	return e.store.FinishNested(ctx, e.owner, intent, evidence)
 }
 
-func (e *Executor) typedRequest(method string, params any, id string) (proto.Message, error) {
+func (e *Executor) typedRequest(method executionMethod, params any, id string) (proto.Message, error) {
 	base := func() (*executorpb.ExecutionScope, string, string) { return e.scope, e.sessionID, id }
 	scope, sid, rid := base()
 	switch method {
-	case "process/start":
+	case executorMethodProcessStart:
 		p := params.(executorStart)
 		policy := p.EnvPolicy
 		var env *executorpb.ExecutionEnvironmentPolicy
@@ -846,28 +923,28 @@ func (e *Executor) typedRequest(method string, params any, id string) (proto.Mes
 			env = &executorpb.ExecutionEnvironmentPolicy{Inherit: policy.Inherit, IgnoreDefaultExcludes: policy.IgnoreDefaultExcludes, Exclude: policy.Exclude, Set: policy.Set, IncludeOnly: policy.IncludeOnly}
 		}
 		return &executorpb.StartProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, ProcessId: p.ProcessID, Argv: p.Argv, Cwd: p.Cwd, EnvironmentPolicy: env, Environment: p.Env, Tty: p.TTY, PipeStdin: p.PipeStdin, Arg0: p.Arg0}, nil
-	case "process/read":
+	case executorMethodProcessRead:
 		p := params.(executorRead)
 		return &executorpb.ReadProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, ProcessId: p.ProcessID, AfterSeq: p.AfterSeq, MaxBytes: uint32(p.MaxBytes), WaitMs: uint32(p.WaitMS)}, nil
-	case "process/write":
+	case executorMethodProcessWrite:
 		p := params.(executorWrite)
 		return &executorpb.WriteProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, ProcessId: p.ProcessID, Data: p.Chunk, WriteId: p.WriteID}, nil
-	case "process/signal":
+	case executorMethodProcessSignal:
 		p := params.(executorSignal)
 		return &executorpb.SignalProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, ProcessId: p.ProcessID, Signal: p.Signal}, nil
-	case "process/terminate":
+	case executorMethodProcessTerminate:
 		p := params.(executorTerminate)
 		return &executorpb.TerminateProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, ProcessId: p.ProcessID}, nil
-	case "fs/getMetadata":
+	case executorMethodFSGetMetadata:
 		p := params.(executorFSGetMetadata)
 		return &executorpb.GetFileMetadataRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, Path: p.Path}, nil
-	case "fs/open":
+	case executorMethodFSOpen:
 		p := params.(executorFSOpen)
 		return &executorpb.OpenFileRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, HandleId: p.HandleID, Path: p.Path}, nil
-	case "fs/readBlock":
+	case executorMethodFSReadBlock:
 		p := params.(executorFSReadBlock)
 		return &executorpb.ReadFileRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, HandleId: p.HandleID, Offset: p.Offset, Length: uint32(p.Len)}, nil
-	case "fs/close":
+	case executorMethodFSClose:
 		p := params.(executorFSClose)
 		return &executorpb.CloseFileRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, HandleId: p.HandleID}, nil
 	default:
@@ -875,32 +952,35 @@ func (e *Executor) typedRequest(method string, params any, id string) (proto.Mes
 	}
 }
 
-func (e *Executor) call(ctx context.Context, method string, request proto.Message) (proto.Message, error) {
+func (e *Executor) call(ctx context.Context, method executionMethod, request proto.Message) (proto.Message, error) {
 	var response proto.Message
 	var err error
 	switch method {
-	case "process/start":
+	case executorMethodProcessStart:
 		response, err = e.client.StartProcess(ctx, request.(*executorpb.StartProcessRequest))
-	case "process/read":
+	case executorMethodProcessRead:
 		response, err = e.client.ReadProcess(ctx, request.(*executorpb.ReadProcessRequest))
-	case "process/write":
+	case executorMethodProcessWrite:
 		response, err = e.client.WriteProcess(ctx, request.(*executorpb.WriteProcessRequest))
-	case "process/signal":
+	case executorMethodProcessSignal:
 		response, err = e.client.SignalProcess(ctx, request.(*executorpb.SignalProcessRequest))
-	case "process/terminate":
+	case executorMethodProcessTerminate:
 		response, err = e.client.TerminateProcess(ctx, request.(*executorpb.TerminateProcessRequest))
-	case "fs/getMetadata":
+	case executorMethodFSGetMetadata:
 		response, err = e.client.GetFileMetadata(ctx, request.(*executorpb.GetFileMetadataRequest))
-	case "fs/open":
+	case executorMethodFSOpen:
 		response, err = e.client.OpenFile(ctx, request.(*executorpb.OpenFileRequest))
-	case "fs/readBlock":
+	case executorMethodFSReadBlock:
 		response, err = e.client.ReadFile(ctx, request.(*executorpb.ReadFileRequest))
-	case "fs/close":
+	case executorMethodFSClose:
 		response, err = e.client.CloseFile(ctx, request.(*executorpb.CloseFileRequest))
 	default:
 		return nil, fmt.Errorf("unsupported typed execution method %q", method)
 	}
 	if err != nil {
+		if environment := e.newEnvironmentFailure(method, "", "", "", nil, nil, err); environment != nil {
+			return nil, environment
+		}
 		return nil, &executorTransportError{method: method, phase: "grpc", cause: err}
 	}
 	if response == nil {
@@ -957,7 +1037,7 @@ func executionFrames(response proto.Message) []*executorpb.ExecutionNativeFrame 
 	return nil
 }
 
-func responseObject(method string, response proto.Message) (map[string]any, error) {
+func responseObject(method executionMethod, response proto.Message) (map[string]any, error) {
 	switch r := response.(type) {
 	case *executorpb.StartProcessResponse:
 		return map[string]any{"processId": r.ProcessId}, nil
@@ -1019,11 +1099,11 @@ func protocolObject(value any) (map[string]any, error) {
 	return object, nil
 }
 
-func executorRPC[R any, P any](ctx context.Context, e *Executor, method string, params P) (*R, error) {
+func executorRPC[R any, P any](ctx context.Context, e *Executor, method executionMethod, params P) (*R, error) {
 	return executorRPCWithEvidence[R](ctx, e, method, params, nil)
 }
 
-func executorRPCWithEvidence[R any, P any](ctx context.Context, e *Executor, method string, params P, resultEvidence func(map[string]any) map[string]any) (*R, error) {
+func executorRPCWithEvidence[R any, P any](ctx context.Context, e *Executor, method executionMethod, params P, resultEvidence func(map[string]any) map[string]any) (*R, error) {
 	raw, err := e.rpc(ctx, method, params, resultEvidence)
 	if err != nil {
 		return nil, err

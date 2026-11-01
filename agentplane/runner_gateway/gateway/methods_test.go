@@ -7,7 +7,9 @@ import (
 	"time"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -103,5 +105,39 @@ func TestEveryRPCAdmitsOnlyItsCallers(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestUnauthorizedExecutorCallerCannotReadEnvironmentFailureState(t *testing.T) {
+	f := newSandboxFixture(t)
+	sandbox := f.sandbox.DeepCopy()
+	sandbox.Status.OperatingMode = sandboxapi.OperatingModeSuspended
+	sandbox.Status.Incarnation = nil
+	if err := f.objects.Status().Update(t.Context(), sandbox); err != nil {
+		t.Fatal(err)
+	}
+	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
+	connection := grpcmethods.Serve(t, g.Methods(), func(server *grpc.Server) {
+		executorpb.RegisterExecutorServer(server, &executorServer{gateway: g})
+	})
+	stream, err := executorpb.NewExecutorClient(connection).OpenSession(bearing(t, ""), &executorpb.OpenSessionRequest{
+		Scope: &executorpb.ExecutionScope{
+			Destination: &sandboxespb.SandboxDestination{
+				Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
+				Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+			},
+			ExpectedIncarnationUid: string(f.pod.UID), SessionId: "sampler-session",
+		},
+	})
+	if err == nil {
+		_, err = stream.Recv()
+	}
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("unauthorized executor call error=%v, want Unauthenticated", err)
+	}
+	for _, detail := range status.Convert(err).Details() {
+		if _, ok := detail.(*executorpb.ExecutionEnvironmentFailure); ok {
+			t.Fatalf("unauthorized executor call disclosed the environment state: %v", detail)
+		}
 	}
 }

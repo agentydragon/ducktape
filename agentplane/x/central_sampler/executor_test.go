@@ -121,6 +121,290 @@ func TestExecutorInitializationTimeoutKeepsUnknownOutcome(t *testing.T) {
 	assertNoUnresolvedNestedIntents(t, store, owner)
 }
 
+func TestOpenSessionEnvironmentFailureIsCatchableAndNotDispatched(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	client := &fakeExecutionClient{}
+	opens, starts := 0, 0
+	client.open = func(context.Context, *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+		opens++
+		return nil, executionEnvironmentStatusError(t, executorpb.ExecutionEnvironmentFailure_STATE_SUSPENDED)
+	}
+	client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+		starts++
+		return &executorpb.StartProcessResponse{Status: completedExecutionStatus()}, nil
+	}
+	e := newFakeExecutor(t, store, owner, client)
+	e.shell = &execShell{Name: "bash", Path: "/bin/bash"}
+	e.sessionID = ""
+	e.environment = map[string]string{}
+
+	result, err := e.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"echo must not run"}`))
+	var outcome *toolOutcomeError
+	if result != nil || !errors.As(err, &outcome) {
+		t.Fatalf("exec_command result=%v error=%v, want a catchable tool outcome", result, err)
+	}
+	var message map[string]any
+	if err := json.Unmarshal([]byte(outcome.Error()), &message); err != nil {
+		t.Fatalf("environment failure is not structured JSON: %v: %s", err, outcome.Error())
+	}
+	if message["environment_state"] != "STATE_SUSPENDED" || message["remote_outcome"] != "not_dispatched" ||
+		message["request_outcome"] != "not_dispatched" || message["automatic_replay"] != false ||
+		message["method"] != "process/start" {
+		t.Fatalf("environment failure facts=%+v", message)
+	}
+	if opens != 1 || starts != 0 {
+		t.Fatalf("OpenSession attempts=%d StartProcess attempts=%d, want one open and no start", opens, starts)
+	}
+	var processes int
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT count(*) FROM sampler_process WHERE conversation_id=$1`, owner.ConversationID).Scan(&processes); err != nil {
+		t.Fatal(err)
+	}
+	if processes != 0 {
+		t.Fatalf("environment refusal before workspace setup registered %d processes, want none", processes)
+	}
+	if e.sessionError != nil {
+		t.Fatalf("catchable environment failure poisoned the executor Session: %v", e.sessionError)
+	}
+	assertNoUnresolvedNestedIntents(t, store, owner)
+}
+
+func TestTypedStartEnvironmentFailureIsNotReplayed(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	client := &fakeExecutionClient{}
+	starts := 0
+	client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+		starts++
+		return nil, executionEnvironmentStatusError(t, executorpb.ExecutionEnvironmentFailure_STATE_NOT_READY)
+	}
+	e := newFakeExecutor(t, store, owner, client)
+	e.shell = &execShell{Name: "bash", Path: "/bin/bash"}
+	e.environment = map[string]string{}
+
+	_, err := e.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"touch should-not-run"}`))
+	var outcome *toolOutcomeError
+	if !errors.As(err, &outcome) {
+		t.Fatalf("exec_command error=%v, want catchable environment refusal", err)
+	}
+	var message map[string]any
+	if err := json.Unmarshal([]byte(outcome.Error()), &message); err != nil {
+		t.Fatalf("environment failure is not structured JSON: %v: %s", err, outcome.Error())
+	}
+	if message["environment_state"] != "STATE_NOT_READY" || message["remote_outcome"] != "not_dispatched" ||
+		message["request_outcome"] != "not_dispatched" || message["automatic_replay"] != false || message["intent_id"] == "" {
+		t.Fatalf("environment failure facts=%+v", message)
+	}
+	if starts != 1 {
+		t.Fatalf("StartProcess attempts=%d, want exactly one", starts)
+	}
+	var processStatus string
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT status FROM sampler_process WHERE conversation_id=$1 ORDER BY id DESC LIMIT 1`, owner.ConversationID).Scan(&processStatus); err != nil {
+		t.Fatal(err)
+	}
+	if processStatus != string(protocol.ProcessExited) {
+		t.Fatalf("known not-dispatched process status=%q, want exited", processStatus)
+	}
+	assertNoUnresolvedNestedIntents(t, store, owner)
+}
+
+func TestTypedReadEnvironmentFailurePreservesUnknownProcessEvidence(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	registerRunningModelProcess(t, store, owner, "suspended-process", 1400, 8, "output before suspension\n")
+	client := &fakeExecutionClient{}
+	reads := 0
+	client.read = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+		reads++
+		return nil, executionEnvironmentStatusError(t, executorpb.ExecutionEnvironmentFailure_STATE_SUSPENDED)
+	}
+	e := newFakeExecutor(t, store, owner, client)
+
+	_, err := e.Invoke(t.Context(), "write_stdin", json.RawMessage(`{"session_id":1400}`))
+	var outcome *toolOutcomeError
+	if !errors.As(err, &outcome) {
+		t.Fatalf("write_stdin error=%v, want catchable environment refusal", err)
+	}
+	outerEvidence, ok := outcome.evidence.(executionFailureEvidence)
+	if !ok || outerEvidence.RemoteOutcome != NestedUnknown || outerEvidence.RequestOutcome == nil || *outerEvidence.RequestOutcome != NestedNotDispatched ||
+		outerEvidence.AfterSeq == nil || *outerEvidence.AfterSeq != 8 || outerEvidence.BufferedOutputBase64 == nil ||
+		!bytes.Equal(*outerEvidence.BufferedOutputBase64, []byte("output before suspension\n")) {
+		t.Fatalf("outer tool failure lost typed unknown-process evidence: %+v", outcome.evidence)
+	}
+	var message struct {
+		EnvironmentState   string                `json:"environment_state"`
+		RemoteOutcome      string                `json:"remote_outcome"`
+		RequestOutcome     string                `json:"request_outcome"`
+		AutomaticReplay    bool                  `json:"automatic_replay"`
+		Method             string                `json:"method"`
+		ProcessID          string                `json:"process_id"`
+		ExecutionSessionID string                `json:"execution_session_id"`
+		AfterSeq           *uint64               `json:"after_seq"`
+		ObservedOutput     observedProcessOutput `json:"observed_output"`
+	}
+	if err := json.Unmarshal([]byte(outcome.Error()), &message); err != nil {
+		t.Fatalf("environment failure is not structured JSON: %v: %s", err, outcome.Error())
+	}
+	if message.EnvironmentState != "STATE_SUSPENDED" || message.RemoteOutcome != "unknown" || message.RequestOutcome != "not_dispatched" ||
+		message.AutomaticReplay || message.Method != "process/read" || message.ProcessID != "suspended-process" ||
+		message.ExecutionSessionID != "retained-executor" || message.AfterSeq == nil || *message.AfterSeq != 8 ||
+		message.ObservedOutput.Text != "output before suspension\n" {
+		t.Fatalf("process read environment failure facts=%+v", message)
+	}
+	if reads != 1 {
+		t.Fatalf("ReadProcess calls=%d, want no automatic retry", reads)
+	}
+	process, err := store.Process(t.Context(), owner, "suspended-process")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if process.Status != protocol.ProcessAbandoned || process.AfterSequence == nil || *process.AfterSequence != 8 ||
+		string(process.BufferedOutput) != "output before suspension\n" {
+		t.Fatalf("uncertain process state or output was lost: %+v", process)
+	}
+	var raw []byte
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT result FROM sampler_intent WHERE conversation_id=$1 AND request->>'method'='process/read' ORDER BY id DESC LIMIT 1`, owner.ConversationID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var evidence map[string]any
+	if err := json.Unmarshal(raw, &evidence); err != nil {
+		t.Fatal(err)
+	}
+	if evidence["remote_outcome"] != "not_dispatched" || evidence["request_outcome"] != "not_dispatched" ||
+		evidence["environment_state"] != "STATE_SUSPENDED" || evidence["after_seq"] != float64(8) ||
+		evidence["buffered_output_base64"] != base64.StdEncoding.EncodeToString([]byte("output before suspension\n")) {
+		t.Fatalf("nested read intent did not retain pre-dispatch evidence: %+v", evidence)
+	}
+	assertNoUnresolvedNestedIntents(t, store, owner)
+}
+
+func TestTypedNotDispatchedStartSettlesWithZeroCursor(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	if err := store.RegisterModelProcess(t.Context(), owner, "not-dispatched-start", 1402, false); err != nil {
+		t.Fatal(err)
+	}
+	zero := uint64(0)
+	output := newHeadTailBuffer(16)
+	output.push(nil)
+	executor := newFakeExecutor(t, store, owner, &fakeExecutionClient{})
+	err := executor.outcomeToolError(t.Context(), &executorNotDispatchedError{
+		method: executorMethodProcessStart, processID: "not-dispatched-start", retainedSession: "retained-executor",
+		afterSequence: &zero, output: output, cause: errors.New("executor session unavailable"),
+	})
+	var outcome *toolOutcomeError
+	if !errors.As(err, &outcome) {
+		t.Fatalf("not-dispatched start error=%v, want a catchable tool outcome", err)
+	}
+	evidence, ok := outcome.evidence.(executionFailureEvidence)
+	if !ok || evidence.RemoteOutcome != NestedNotDispatched || evidence.RequestOutcome == nil || *evidence.RequestOutcome != NestedNotDispatched ||
+		evidence.AfterSeq == nil || *evidence.AfterSeq != 0 || evidence.BufferedOutput == nil || *evidence.BufferedOutput != "" ||
+		evidence.BufferedOutputBase64 == nil || *evidence.BufferedOutputBase64 == nil || len(*evidence.BufferedOutputBase64) != 0 ||
+		evidence.TransportError != "executor session unavailable" {
+		t.Fatalf("not-dispatched start lost typed zero/empty evidence: %+v", outcome.evidence)
+	}
+	process, err := store.Process(t.Context(), owner, "not-dispatched-start")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if process.Status != protocol.ProcessExited || process.AfterSequence == nil || *process.AfterSequence != 0 {
+		t.Fatalf("known not-dispatched start was not settled with its zero cursor: %+v", process)
+	}
+	assertNoUnresolvedNestedIntents(t, store, owner)
+}
+
+func TestExecutionFailureEvidencePreservesCursorAndOutputPresence(t *testing.T) {
+	largeCursor := uint64(1<<53 + 17)
+	outputBytes := []byte{0, 'x', 0xff}
+	output := newHeadTailBuffer(16)
+	output.push(outputBytes)
+	evidence := executionFailureRecord{
+		method: executorMethodProcessRead, remoteOutcome: NestedUnknown,
+		afterSequence: &largeCursor, output: output,
+	}.toolEvidence()
+	encoded, err := json.Marshal(evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(encoded, []byte(`"after_seq":9007199254741009`)) {
+		t.Fatalf("large cursor was narrowed in JSON projection: %s", encoded)
+	}
+	var decoded executionFailureEvidence
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.AfterSeq == nil || *decoded.AfterSeq != largeCursor || decoded.BufferedOutputBase64 == nil ||
+		!bytes.Equal(*decoded.BufferedOutputBase64, outputBytes) {
+		t.Fatalf("typed projection changed cursor or full output: %+v", decoded)
+	}
+
+	zero := uint64(0)
+	empty := newHeadTailBuffer(16)
+	empty.push([]byte{})
+	emptyEvidence := executionFailureRecord{method: executorMethodProcessRead, afterSequence: &zero, output: empty}.toolEvidence()
+	emptyJSON, err := json.Marshal(emptyEvidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var emptyFields map[string]json.RawMessage
+	if err := json.Unmarshal(emptyJSON, &emptyFields); err != nil {
+		t.Fatal(err)
+	}
+	if string(emptyFields["after_seq"]) != "0" || string(emptyFields["buffered_output"]) != `""` ||
+		string(emptyFields["buffered_output_base64"]) != `""` || string(emptyFields["buffered_bytes"]) != "0" {
+		t.Fatalf("present empty output or zero cursor changed in JSON projection: %s", emptyJSON)
+	}
+
+	absentJSON, err := json.Marshal(executionFailureRecord{method: executorMethodProcessRead, afterSequence: &zero}.toolEvidence())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var absentFields map[string]json.RawMessage
+	if err := json.Unmarshal(absentJSON, &absentFields); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"buffered_output", "buffered_output_base64", "buffered_bytes", "omitted_bytes"} {
+		if _, present := absentFields[field]; present {
+			t.Fatalf("absent output unexpectedly projected %q: %s", field, absentJSON)
+		}
+	}
+}
+
+func TestTypedWriteEnvironmentFailureDoesNotReplayInput(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	if err := store.RegisterModelProcess(t.Context(), owner, "refused-write-process", 1401, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ProcessResult(t.Context(), owner, "refused-write-process", nil, protocol.ProcessRunning, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeExecutionClient{}
+	writes := 0
+	client.write = func(context.Context, *executorpb.WriteProcessRequest) (*executorpb.WriteProcessResponse, error) {
+		writes++
+		return nil, executionEnvironmentStatusError(t, executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE)
+	}
+	e := newFakeExecutor(t, store, owner, client)
+
+	_, err := e.Invoke(t.Context(), "write_stdin", json.RawMessage(`{"session_id":1401,"chars":"must not be sent"}`))
+	var outcome *toolOutcomeError
+	if !errors.As(err, &outcome) {
+		t.Fatalf("write_stdin error=%v, want catchable environment refusal", err)
+	}
+	var message map[string]any
+	if err := json.Unmarshal([]byte(outcome.Error()), &message); err != nil {
+		t.Fatalf("environment failure is not structured JSON: %v: %s", err, outcome.Error())
+	}
+	if message["environment_state"] != "STATE_CONTROL_ROUTE_UNAVAILABLE" || message["remote_outcome"] != "not_dispatched" ||
+		message["request_outcome"] != "not_dispatched" || message["automatic_replay"] != false || message["method"] != "process/write" {
+		t.Fatalf("write refusal facts=%+v", message)
+	}
+	if writes != 1 {
+		t.Fatalf("WriteProcess calls=%d, want exactly one", writes)
+	}
+	process, err := store.Process(t.Context(), owner, "refused-write-process")
+	if err != nil || process.Status != protocol.ProcessRunning {
+		t.Fatalf("not-dispatched write changed process state: process=%+v err=%v", process, err)
+	}
+	assertNoUnresolvedNestedIntents(t, store, owner)
+}
+
 func TestApplyPatchStartRejectionIsReturnedAsNestedToolFailure(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
 	client := &fakeExecutionClient{}
@@ -180,7 +464,11 @@ func TestRejectedProcessReadDuringToolAbandonsOnlyThatHandle(t *testing.T) {
 		t.Fatalf("write_stdin error=%v, want a rejected nested tool promise", err)
 	}
 	var outcome *toolOutcomeError
-	if !errors.As(err, &outcome) || outcome.evidence["remote_outcome"] != "unknown" || outcome.evidence["automatic_replay"] != false {
+	evidence, evidenceIsMap := map[string]any(nil), false
+	if errors.As(err, &outcome) {
+		evidence, evidenceIsMap = outcome.evidence.(map[string]any)
+	}
+	if !errors.As(err, &outcome) || !evidenceIsMap || evidence["remote_outcome"] != NestedUnknown || evidence["automatic_replay"] != false {
 		t.Fatalf("missing process rejection evidence=%+v", outcome)
 	}
 	stale, err := store.Process(t.Context(), owner, "expired-native-process")
@@ -309,6 +597,17 @@ func rejectedExecutionStatus(message string) *executorpb.ExecutionStatus {
 		UpstreamCode: ptrInt32(-32602),
 		Message:      message,
 	}
+}
+
+func executionEnvironmentStatusError(t *testing.T, state executorpb.ExecutionEnvironmentFailure_State) error {
+	t.Helper()
+	response, err := status.New(codes.Unavailable, "execution environment refused the request").WithDetails(&executorpb.ExecutionEnvironmentFailure{
+		State: state, Outcome: executorpb.ExecutionEnvironmentFailure_OUTCOME_NOT_DISPATCHED,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response.Err()
 }
 
 func registerRunningModelProcess(t *testing.T, store *Store, owner Owner, id string, sessionID int, after uint64, output string) {
@@ -484,7 +783,7 @@ func TestTransportFailureExposesObservedProcessOutputAndCursor(t *testing.T) {
 	}
 	if message.RemoteOutcome != "unknown" || message.AutomaticReplay || message.Method != "process/read" ||
 		message.IntentID != "read-intent" || message.ProcessID != "observed-process" || message.AfterSeq == nil || *message.AfterSeq != cursor ||
-		message.ObservedOutput.Text != "stdout before failure\n" || message.ObservedOutput.Truncated ||
+		message.ObservedOutput == nil || message.ObservedOutput.Text != "stdout before failure\n" || message.ObservedOutput.Truncated ||
 		!strings.Contains(message.Message, "read reply lost") || !strings.Contains(message.Message, "mutation was not replayed") {
 		t.Fatalf("observed read rejection=%+v", message)
 	}
@@ -496,7 +795,8 @@ func TestTransportFailureExposesObservedProcessOutputAndCursor(t *testing.T) {
 		string(process.BufferedOutput) != "stdout before failure\n" {
 		t.Fatalf("observed output/cursor were not retained: %+v", process)
 	}
-	if encoded, _ := rejected.evidence["buffered_output_base64"].(string); encoded != base64.StdEncoding.EncodeToString(output.retained()) {
+	evidence, evidenceIsTyped := rejected.evidence.(executionFailureEvidence)
+	if !evidenceIsTyped || evidence.BufferedOutputBase64 == nil || !bytes.Equal(*evidence.BufferedOutputBase64, output.retained()) {
 		t.Fatalf("full output is missing from FollowEvents evidence: %+v", rejected.evidence)
 	}
 }
@@ -588,7 +888,10 @@ func TestObservedProcessFailureMarksBothOutputTruncationLayers(t *testing.T) {
 	if err := json.Unmarshal([]byte(message), &parsed); err != nil {
 		t.Fatal(err)
 	}
-	view := parsed.ObservedOutput
+	if parsed.ObservedOutput == nil {
+		t.Fatal("failure omitted observed process output")
+	}
+	view := *parsed.ObservedOutput
 	if !view.Truncated || view.RetainedBytes != 16*1024 || view.OmittedBytes != 16*1024 ||
 		view.DisplayOmittedBytes != 8*1024 || view.ShownHeadBytes != 4*1024 || view.ShownTailBytes != 4*1024 ||
 		!strings.Contains(view.Text, "8192 retained bytes not shown; 16384 earlier bytes omitted") {
@@ -599,10 +902,10 @@ func TestObservedProcessFailureMarksBothOutputTruncationLayers(t *testing.T) {
 		afterSequence: &cursor, output: output, cause: errors.New("connection closed"),
 	}
 	evidence := transport.evidence("")
-	full, err := base64.StdEncoding.DecodeString(evidence["buffered_output_base64"].(string))
-	if err != nil || !bytes.Equal(full, output.retained()) || evidence["omitted_bytes"] != 16*1024 {
+	if evidence.BufferedOutputBase64 == nil || !bytes.Equal(*evidence.BufferedOutputBase64, output.retained()) ||
+		evidence.OmittedBytes == nil || *evidence.OmittedBytes != 16*1024 {
 		t.Fatalf("truncated output cannot be retrieved exactly from evidence: bytes=%d omitted=%v err=%v",
-			len(full), evidence["omitted_bytes"], err)
+			len(output.retained()), evidence.OmittedBytes, nil)
 	}
 }
 
@@ -741,8 +1044,8 @@ func TestExecutorRetriesUnknownCursorReadAtMostOnce(t *testing.T) {
 }
 
 func TestExecutorDoesNotReplayMutationAfterLostReply(t *testing.T) {
-	for _, method := range []string{"process/start", "process/write"} {
-		t.Run(method, func(t *testing.T) {
+	for _, method := range []executionMethod{executorMethodProcessStart, executorMethodProcessWrite} {
+		t.Run(string(method), func(t *testing.T) {
 			store, owner := claimedExecutorStore(t)
 			client := &fakeExecutionClient{}
 			starts, writes := 0, 0
@@ -756,7 +1059,7 @@ func TestExecutorDoesNotReplayMutationAfterLostReply(t *testing.T) {
 			}
 			e := newFakeExecutor(t, store, owner, client)
 			var params any
-			if method == "process/start" {
+			if method == executorMethodProcessStart {
 				params = executorStart{ProcessID: "lost-start", Argv: []string{"touch", "once"}, Cwd: "file:///tmp"}
 			} else {
 				params = executorWrite{ProcessID: "existing", Chunk: []byte("x"), WriteID: "write-once"}
@@ -766,7 +1069,7 @@ func TestExecutorDoesNotReplayMutationAfterLostReply(t *testing.T) {
 			if !errors.As(err, &transport) || !strings.Contains(transport.Error(), "remote effect outcome is unknown") {
 				t.Fatalf("mutation result=%v", err)
 			}
-			if starts != boolInt(method == "process/start") || writes != boolInt(method == "process/write") {
+			if starts != boolInt(method == executorMethodProcessStart) || writes != boolInt(method == executorMethodProcessWrite) {
 				t.Fatalf("mutation replayed: starts=%d writes=%d", starts, writes)
 			}
 			if transport.intentID == "" {
