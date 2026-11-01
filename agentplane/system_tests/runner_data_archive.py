@@ -58,6 +58,7 @@ def capture(plan_path: Path) -> int:
 
     archive = Path(plan["archive"])
     partial_archive = Path(plan["partial_archive"])
+    rollback_journals = {Path(f"{Path(item['source']).resolve(strict=False)}-journal") for item in plan["backups"]}
     manifest["archive_attempts"] = []
     for attempt in range(1, _JOURNAL_ARCHIVE_ATTEMPTS + 1):
         # Keep each failed traversal for forensics. The last attempt uses the
@@ -83,7 +84,7 @@ def capture(plan_path: Path) -> int:
             retryable = (
                 isinstance(error, FileNotFoundError)
                 and error.filename is not None
-                and error.filename.endswith("-journal")
+                and Path(error.filename).resolve(strict=False) in rollback_journals
             )
             if not retryable or attempt == _JOURNAL_ARCHIVE_ATTEMPTS:
                 manifest["archive"] = "partial_or_failed"
