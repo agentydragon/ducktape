@@ -305,7 +305,7 @@ func TestFollowSessionDoesNotRepeatCaughtUpForAnIdleRefresh(t *testing.T) {
 	sessionID, _ := server.record(t)
 	stream := &recordedFollowStream{ctx: t.Context()}
 	call := &followCall{
-		service: server.service, stream: stream, sessionID: sessionID,
+		service: server.service, reader: server.service.reader, stream: stream, sessionID: sessionID,
 		request: &historypb.FollowSessionRequest{Follow: true},
 	}
 	if err := call.catchUp(t.Context(), true); err != nil {
