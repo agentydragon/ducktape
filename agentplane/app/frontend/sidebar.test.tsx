@@ -14,7 +14,7 @@ import { Sidebar } from "./sidebar";
 import { threadViewRecorder } from "./threads/thread_view_recorder";
 import { ConnectionIndicator, DEGRADED_AFTER_MS } from "./stream_status";
 import type { InboxNoticeState, SessionNoticeStates } from "./notification_types";
-import { latestOn, reconnected, type ServedWatch, serveEventStreams } from "./testing/watch";
+import { latestOn, reconnected, ServedWatch, serveEventStreams } from "./testing/watch";
 
 vi.mock("./threads/client", async (importOriginal) => ({
   ...(await importOriginal<typeof ThreadClientModule>()),
@@ -186,7 +186,7 @@ async function render(
           watch.send(
             url.pathname === "/upstream/app/v1/threads:watch"
               ? { changed: {}, updatesConnected: true }
-              : { observation: { changed: {} } }
+              : { changed: {} }
           );
         }
         return Promise.resolve(watch.response);

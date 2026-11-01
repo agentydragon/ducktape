@@ -43,7 +43,7 @@ import { testItem } from "./testing/entity";
 import { badgeLabels, entity, reference, serving, THREAD, threadState, toggle, viewState } from "./testing/state";
 import { ThreadSyncContext, type ThreadEntity, type ThreadState, type ThreadSync } from "./thread_sync";
 import { TopbarContext } from "../topbar";
-import { reconnected, serveEventStreams, type ServedWatch, stubWatchFetch } from "../testing/watch";
+import { reconnected, serveEventStreams, ServedWatch, stubWatchFetch } from "../testing/watch";
 
 vi.mock("./client", async (importOriginal) => ({
   ...(await importOriginal<typeof ThreadClientModule>()),
@@ -202,7 +202,7 @@ beforeEach(() => {
         if (url.pathname === "/upstream/app/v1/threads:watch") {
           stream.send({ changed: {}, updatesConnected: true });
         } else {
-          stream.send({ observation: { changed: {} } });
+          stream.send({ changed: {} });
         }
         return Promise.resolve(stream.response);
       }

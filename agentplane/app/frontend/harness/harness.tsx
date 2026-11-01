@@ -3598,8 +3598,8 @@ routes.unshift(
     (_match, _query, signal) =>
       liveNdjsonWatch(
         "/upstream/history/v1/session-summaries:watch",
-        [{ observation: { changed: {} } }],
-        () => [{ observation: { changed: {} } }],
+        [{ changed: {} }],
+        () => [{ changed: {} }],
         signal,
         flags.has("threadStreamDropped")
       ),

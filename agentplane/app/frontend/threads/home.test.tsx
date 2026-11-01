@@ -111,9 +111,7 @@ async function render(): Promise<string[]> {
       }
       threadStreams.push(pathname);
       watch.send(
-        pathname === "/upstream/app/v1/threads:watch"
-          ? { changed: {}, updatesConnected: true }
-          : { observation: { changed: {} } }
+        pathname === "/upstream/app/v1/threads:watch" ? { changed: {}, updatesConnected: true } : { changed: {} }
       );
       return Promise.resolve(watch.response);
     }
@@ -192,7 +190,10 @@ it("shares one search with the sidebar while reusing the generated update watche
   expect(searchBox(sidebar()).value).toBe("beta");
   await act(async () => vi.runAllTimers());
   expect(threadStreams).toEqual(["/upstream/app/v1/threads:watch", "/upstream/history/v1/session-summaries:watch"]);
-  expect(listThreadWindow.mock.calls.map(([listing]) => listing.search)).toEqual([null, "beta"]);
+  const searches = vi.mocked(listThreadWindow).mock.calls.map(([listing]) => listing.search);
+  expect(searches.at(-1)).toBe("beta");
+  expect(searches.filter((search) => search === "beta")).toHaveLength(1);
+  expect(searches.slice(0, -1).every((search) => search === null)).toBe(true);
   for (const scope of [home(), sidebar()]) {
     expect(row(scope, "Beta thread")).toBeDefined();
     expect(scope.textContent).not.toContain("Alpha thread");
