@@ -562,6 +562,7 @@ rust_library(
         "facts/sync_effects/execution_index/prototype_properties.rs",
         "facts/sync_effects/interpreter.rs",
         "facts/sync_effects/namespace_wrapper.rs",
+        "facts/sync_effects/noninvoking_initialization.rs",
         "facts/sync_effects/property_inference.rs",
         "facts/sync_effects/runtime_callbacks.rs",
         "facts/sync_effects/runtime_heap.rs",
