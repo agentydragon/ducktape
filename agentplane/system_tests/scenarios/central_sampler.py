@@ -19,7 +19,7 @@ from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.central_sampler import MODEL, CentralStack, capture_sampler_diagnostics, central_stack
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
-from agentplane.system_tests.sandbox import SANDBOX_READY_SECONDS, wait_until_running
+from agentplane.system_tests.sandbox import ENVIRONMENT_RUNTIME_LEASE_SUFFIX, SANDBOX_READY_SECONDS, wait_until_running
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.tracing import tracer
 from agentplane.testing.codex_model import CodexModel
@@ -87,10 +87,12 @@ async def _capture_session_diagnostics(
         except Exception as error:
             diagnostic["sandbox_error"] = repr(error)
         try:
-            runner_lease = await cluster.kubectl("get", "lease", f"{deployed.sandbox}-runner", "-o", "json")
-            diagnostic["runner_lease"] = json.loads(runner_lease)
+            environment_runtime_lease = await cluster.kubectl(
+                "get", "lease", f"{deployed.sandbox}{ENVIRONMENT_RUNTIME_LEASE_SUFFIX}", "-o", "json"
+            )
+            diagnostic["environment_runtime_lease"] = json.loads(environment_runtime_lease)
         except Exception as error:
-            diagnostic["runner_lease_error"] = repr(error)
+            diagnostic["environment_runtime_lease_error"] = repr(error)
         try:
             diagnostic["cluster_services_endpoints_pods"] = json.loads(
                 await cluster.kubectl("get", "services,endpointslices,pods", "-o", "json")
