@@ -39,8 +39,13 @@ type systemdBackend struct {
 	setStopTimeout          func(context.Context, *systemd.Conn, string, uint64) error
 	stopUnit                func(context.Context, *systemd.Conn, string) (<-chan string, error)
 	referenceMu             sync.Mutex
-	hasUnitReference        bool
-	unitReferences          []*dbus.Conn
+	unitReferences          []systemdUnitReference
+	referenceUnit           func(context.Context, string) (systemdUnitReference, error)
+}
+
+type systemdUnitReference interface {
+	Connected() bool
+	Close() error
 }
 
 func (b *systemdBackend) validate() error {
@@ -269,31 +274,57 @@ func (m nativeSystemdUnitManager) stop(ctx context.Context, _ string) (<-chan st
 // asking systemd to stop the unit. If the reference cannot be acquired, cleanup
 // still proceeds; the reaper reports missing exit evidence instead of inventing
 // a status if systemd collected the result.
-func (b *systemdBackend) retainUnitReference(_ *systemd.Conn) {
-	b.referenceMu.Lock()
-	if b.hasUnitReference {
-		b.referenceMu.Unlock()
-		return
+func (b *systemdBackend) retainUnitReference(manager *systemd.Conn) error {
+	// StartTransientUnit's AddRef belongs to the original API-bus sender. It is
+	// sufficient only while that manager connection remains alive.
+	if manager != nil && manager == b.conn && manager.Connected() {
+		return nil
 	}
+	b.referenceMu.Lock()
+	live := false
+	kept := b.unitReferences[:0]
+	for _, reference := range b.unitReferences {
+		if reference.Connected() {
+			live = true
+			kept = append(kept, reference)
+		} else {
+			_ = reference.Close()
+		}
+	}
+	b.unitReferences = kept
 	b.referenceMu.Unlock()
+	if live {
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	reference, err := referenceSystemdUnit(ctx, b.name)
+	openReference := b.referenceUnit
+	if openReference == nil {
+		openReference = referenceSystemdUnit
+	}
+	reference, err := openReference(ctx, b.name)
 	if err != nil {
 		zap.L().Warn("could not retain native systemd unit after reconnect", zap.String("unit", b.name), zap.Error(err))
-		return
+		return err
 	}
 	b.referenceMu.Lock()
-	if b.hasUnitReference {
+	live = false
+	for _, existing := range b.unitReferences {
+		if existing.Connected() {
+			live = true
+			break
+		}
+	}
+	if live {
 		_ = reference.Close()
 	} else {
-		b.hasUnitReference = true
 		b.unitReferences = append(b.unitReferences, reference)
 	}
 	b.referenceMu.Unlock()
+	return nil
 }
 
-func referenceSystemdUnit(ctx context.Context, name string) (*dbus.Conn, error) {
+func referenceSystemdUnit(ctx context.Context, name string) (systemdUnitReference, error) {
 	conn, err := dbus.ConnectSystemBus(dbus.WithContext(ctx))
 	if err != nil {
 		return nil, err
@@ -317,6 +348,9 @@ func (b *systemdBackend) requestStop(ctx context.Context, conn *systemd.Conn, gr
 	if b.stopRequests == nil {
 		b.stopRequests = make(map[*systemd.Conn]<-chan string)
 	}
+	if completed, ok := b.stopRequests[conn]; ok {
+		return completed, nil
+	}
 	if grace != nil {
 		b.requestedStopTimeout = systemdStopTimeout(*grace)
 		b.hasRequestedStopTimeout = true
@@ -333,9 +367,6 @@ func (b *systemdBackend) requestStop(ctx context.Context, conn *systemd.Conn, gr
 		if err := setTimeout(ctx, conn, b.name, b.requestedStopTimeout); err != nil {
 			return nil, fmt.Errorf("set native systemd stop timeout: %w", err)
 		}
-	}
-	if completed, ok := b.stopRequests[conn]; ok {
-		return completed, nil
 	}
 	stopUnit := b.stopUnit
 	if stopUnit == nil {
@@ -377,6 +408,11 @@ func (b *systemdBackend) reap(p *Process) {
 		}
 	}()
 	for {
+		// A reconnect loses the original sender's AddRef. Keep checking the
+		// replacement pin's liveness before trusting status from that manager.
+		if readConn != b.conn {
+			_ = b.retainUnitReference(readConn)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		props, err := b.readSnapshotOn(ctx, readConn)
 		cancel()

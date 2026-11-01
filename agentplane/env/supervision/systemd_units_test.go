@@ -88,6 +88,50 @@ func TestNativeSystemdStopRequestSetsGraceAndReusesJob(t *testing.T) {
 	}
 }
 
+func TestNativeSystemdReferenceReconnectsAfterPinLoss(t *testing.T) {
+	first := &fakeSystemdUnitReference{connected: false}
+	second := &fakeSystemdUnitReference{connected: true}
+	third := &fakeSystemdUnitReference{connected: true}
+	opened := 0
+	backend := &systemdBackend{
+		name:           "native-test.service",
+		unitReferences: []systemdUnitReference{first},
+		referenceUnit: func(context.Context, string) (systemdUnitReference, error) {
+			opened++
+			if opened == 1 {
+				return second, nil
+			}
+			return third, nil
+		},
+	}
+	if err := backend.retainUnitReference(nil); err != nil {
+		t.Fatal(err)
+	}
+	if opened != 1 || !first.closed || len(backend.unitReferences) != 1 || backend.unitReferences[0] != second {
+		t.Fatalf("first reconnect pin: opened=%d refs=%v oldClosed=%t", opened, backend.unitReferences, first.closed)
+	}
+	second.connected = false
+	if err := backend.retainUnitReference(nil); err != nil {
+		t.Fatal(err)
+	}
+	if opened != 2 || !second.closed || len(backend.unitReferences) != 1 || backend.unitReferences[0] != third {
+		t.Fatalf("second reconnect pin: opened=%d refs=%v oldClosed=%t", opened, backend.unitReferences, second.closed)
+	}
+}
+
+type fakeSystemdUnitReference struct {
+	connected bool
+	closed    bool
+}
+
+func (r *fakeSystemdUnitReference) Connected() bool { return r.connected }
+
+func (r *fakeSystemdUnitReference) Close() error {
+	r.closed = true
+	r.connected = false
+	return nil
+}
+
 type testSystemdManager struct {
 	snapshots []SystemdUnitSnapshot
 	stops     int
