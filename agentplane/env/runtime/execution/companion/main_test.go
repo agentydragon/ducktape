@@ -82,6 +82,39 @@ func TestCompanionRefusesUnavailableCodexAndKeepsServing(t *testing.T) {
 	}
 }
 
+func TestFenceRequestsStayWithTheirOwnerGeneration(t *testing.T) {
+	state := &companionOwnership{
+		status:        control.Status{Generation: "g1", Owned: true},
+		fenceRequests: make(chan struct{}, 1),
+	}
+	state.requestFence("g1")
+	state.requestFence("g1") // Duplicate lease EOF and explicit fence requests coalesce.
+	if len(state.fenceRequests) != 1 || state.pendingFence != "g1" {
+		t.Fatalf("duplicate g1 fence requests: pending=%q wakes=%d", state.pendingFence, len(state.fenceRequests))
+	}
+	<-state.fenceRequests
+	state.mu.Lock()
+	state.pendingFence = ""
+	state.fencing = true
+	state.mu.Unlock()
+	state.requestFence("g1") // A request during the in-progress fence cannot remain queued.
+	if len(state.fenceRequests) != 0 {
+		t.Fatal("duplicate g1 fence remained queued during its fence")
+	}
+	state.mu.Lock()
+	state.status = control.Status{Generation: "g2", Owned: true}
+	state.fencing = false
+	state.mu.Unlock()
+	state.requestFence("g1") // Delayed inspect response or old lease EOF.
+	if len(state.fenceRequests) != 0 {
+		t.Fatal("stale g1 fence request targeted the new owner")
+	}
+	state.requestFence("g2")
+	if len(state.fenceRequests) != 1 || state.pendingFence != "g2" {
+		t.Fatalf("g2 fence lost behind stale g1: pending=%q wakes=%d", state.pendingFence, len(state.fenceRequests))
+	}
+}
+
 func waitForSocket(t *testing.T, path string) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)

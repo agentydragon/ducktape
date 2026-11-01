@@ -34,7 +34,10 @@ proxy calls keep their existing status behavior and do not receive this executio
 The state-directory owner lock precedes socket replacement and native startup. Pod ownership is
 PID 1 plus its private process namespace. On ordinary release, the companion stops exec-server,
 fences every remaining process in that namespace, and publishes a new idle generation only after
-the process table contains no workload process. It keeps PID 1 alive for the next owner. If
+the process table contains no workload process. Fence requests name the observed generation;
+delayed duplicates cannot fence a successor. A changed generation proves the prior owner was
+fenced even if a successor has already claimed it. Startup still requires an idle generation.
+The companion keeps PID 1 alive for the next owner. If
 exec-server exits unexpectedly, the companion performs the same process-domain fence and closes the
 ownership lease so Runtime can recover the backend. If the in-container fence fails, the companion
 exits and the outer runtime's whole-namespace cleanup supplies the stronger fence. VM ownership is the Runtime systemd unit, its lifetime marker and the explicit `execution-service`
