@@ -464,6 +464,25 @@ rejection was the only failure and the tree is complete; any other failure
 exits 1. The contract is
 <../SPEC.md> § Reading-only output on gate rejection; the tree is not runnable.
 
+`debundle run --effect-conflicts-jsonl` opts into a complete per-chunk
+`effect_conflicts.jsonl` beside the bounded effect-TV summary. It uses the
+same typed facts and emitted order, streaming every conflicting pair and
+cell with access provenance, premise disposition and endpoint opacity.
+Repeat `--effect-conflicts-chunk <chunk-id>` to restrict JSONL sinks, for
+example `--effect-conflicts-chunk mcp --effect-conflicts-chunk remoteWorkerWire`.
+It requires `--effect-conflicts-jsonl` and rejects names outside the configured
+materialized chunks. It changes only JSONL emission: the full spec, loaded
+sources, analysis/census scope, graphs and bounded summaries stay the same.
+Default output remains bounded. The flag requires a configured report
+directory; rejected dry runs can export their normal rejection reports,
+whereas accepted dry runs refuse this request because they suppress reports.
+It also works with `--analysis` and `--emit-on-rejection`. Write or flush
+errors fail the run; verify row/cell counts against the sibling summary,
+which is written after the stream flushes. A gate rejection can still have
+a complete export while the command exits nonzero. The gate and
+coverage assumptions are unchanged. Format:
+<wire_format.md#translation-validation>.
+
 ### Reusing analysis across runs
 
 Analysis dominates a run, and module assignment edits do not change it. Compute

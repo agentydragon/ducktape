@@ -202,6 +202,14 @@ fn assert_staged_run_matches(opts: FixtureOpts<'_>, run_args: &[&str]) {
             .is_some_and(|name| name == "effect_translation_validation.json")),
         "direct run must produce the facts-backed effect report before staged comparison"
     );
+    if run_args.contains(&"--effect-conflicts-jsonl") {
+        assert!(
+            tree(&direct_trees.join("out")).keys().any(|path| path
+                .file_name()
+                .is_some_and(|name| name == "effect_conflicts.jsonl")),
+            "explicit stream must exist before staged comparison"
+        );
+    }
     let artifact = path(&staged.artifact).to_owned();
     let mut staged_args = run_args.to_vec();
     staged_args.extend(["--analysis", artifact.as_str()]);
@@ -270,4 +278,81 @@ fn analysis_edit_refuses_the_stale_artifact() {
         "refusal does not name the differing field:\n{}",
         refused.stderr
     );
+}
+
+#[test]
+fn full_effect_stream_matches_between_direct_and_staged_runs() {
+    assert_staged_run_matches(split_with_pure_import(), &["--effect-conflicts-jsonl"]);
+    assert_staged_run_matches(
+        rejected_split(),
+        &["--effect-conflicts-jsonl", "--emit-on-rejection"],
+    );
+}
+
+#[test]
+fn export_filter_changes_only_jsonl_sinks_and_keeps_staged_facts() {
+    let extra_modules = [(
+        "static/peer",
+        vec![logical_module("provider", &[Member::new("value")])],
+    )];
+    let opts = FixtureOpts::new(
+        "import { value } from './peer.js';\nconst first = value + 1;\nconst second = 2;\nconst tail = second;\nconsole.log(first, tail);\nexport { first, second, tail };\n",
+        vec![logical_module("outer", &[Member::new("first"), Member::new("tail")]), logical_module("inner", &[Member::new("second")])],
+    ).with_extra_chunks(&[("static/peer", "globalThis.externalMarker = 1;\nexport const value = 1;\n")]).with_extra_chunk_logical_modules(&extra_modules);
+    let (staged, _fixture) = staged(opts);
+    assert_ok(
+        &staged.run(&["--effect-conflicts-jsonl"]),
+        "unfiltered export",
+    );
+    let all = staged.set_aside("all-conflicts");
+    let flags = [
+        "--effect-conflicts-jsonl",
+        "--effect-conflicts-chunk",
+        "static/app",
+    ];
+    assert_ok(&staged.run(&flags), "filtered export");
+    let filtered = staged.set_aside("filtered-conflicts");
+    let without_streams = |root: &Path| {
+        tree(root)
+            .into_iter()
+            .filter(|(path, _)| {
+                path.file_name()
+                    .is_none_or(|name| name != "effect_conflicts.jsonl")
+            })
+            .collect::<BTreeMap<_, _>>()
+    };
+    // tree() removes only command provenance. Every other byte, including
+    // all graphs, summary counts, native census and emitted JS, must match.
+    assert_eq!(
+        without_streams(&all.join("out")),
+        without_streams(&filtered.join("out"))
+    );
+    let main_stream = Path::new("reports/tree/static/app/effect_conflicts.jsonl");
+    let peer_stream = Path::new("reports/tree/static/peer/effect_conflicts.jsonl");
+    assert_eq!(
+        fs::read(all.join("out").join(main_stream)).unwrap(),
+        fs::read(filtered.join("out").join(main_stream)).unwrap()
+    );
+    assert!(all.join("out").join(peer_stream).exists());
+    assert!(!filtered.join("out").join(peer_stream).exists());
+    let artifact = path(&staged.artifact).to_owned();
+    let mut loaded_flags = flags.to_vec();
+    loaded_flags.extend(["--analysis", &artifact]);
+    assert_ok(
+        &staged.run(&loaded_flags),
+        "filtered export from full staged analysis",
+    );
+    assert_same_trees(&filtered.join("out"), &staged.root().join("out"));
+    staged.set_aside("filtered-loaded");
+    assert_ok(
+        &staged.run(&[
+            "--effect-conflicts-jsonl",
+            "--effect-conflicts-chunk",
+            "static/app",
+            "--effect-conflicts-chunk",
+            "static/peer",
+        ]),
+        "repeated filter selects both chunks",
+    );
+    assert_same_trees(&all.join("out"), &staged.root().join("out"));
 }

@@ -98,6 +98,8 @@ pub(super) struct ChunkContext<'a> {
     pub(super) keep_going: bool,
     pub(super) list_template_identifiers: bool,
     pub(super) report_emission: &'a ReportEmission,
+    pub(super) effect_conflicts_jsonl: bool,
+    pub(super) effect_conflicts_chunks: &'a BTreeSet<String>,
     pub(super) gate_rejection: GateRejectionPolicy,
     pub(super) export_reentry_policies: &'a BTreeMap<ChunkId, ExportReentryPolicy>,
     pub(super) export_reentry_reports: &'a BTreeMap<ChunkId, ExportReentryReport>,
@@ -520,6 +522,8 @@ pub(super) fn finish_logical_chunk(
         chunk_id,
         target_dir,
         report_emission,
+        effect_conflicts_jsonl,
+        effect_conflicts_chunks,
         gate_rejection: gate_rejection_policy,
         vendor_import_oracle,
         export_reentry_policies,
@@ -660,6 +664,10 @@ pub(super) fn finish_logical_chunk(
         assignment_chunk_renames,
         entry_destination,
     )?;
+    // Select only full-detail sinks. Facts, graph construction, emitted order
+    // and every chunk's bounded summary use the unchanged full input.
+    let effect_conflicts_jsonl = effect_conflicts_jsonl
+        && (effect_conflicts_chunks.is_empty() || effect_conflicts_chunks.contains(chunk_id));
     let gate_outcome = validate_and_emit_reports(
         chunk_id,
         report_emission,
@@ -667,6 +675,7 @@ pub(super) fn finish_logical_chunk(
         program_graph,
         &assignment_analysis,
         &analysis.facts,
+        effect_conflicts_jsonl,
         &export_reentry_reports[&chunk_id_interned],
     )?;
 
@@ -1501,6 +1510,7 @@ fn validate_and_emit_reports<'a>(
     program_graph: &ProgramGraphOutput<'_>,
     assignment_analysis: &'a AssignmentAnalysis,
     facts: &[analysis::facts::StatementFacts],
+    effect_conflicts_jsonl: bool,
     export_reentry_report: &ExportReentryReport,
 ) -> Result<GateOutcome<'a>> {
     let validation = assignment_analysis.validate_for_emission();
@@ -1519,9 +1529,49 @@ fn validate_and_emit_reports<'a>(
     } else {
         report_emission.full_dir()
     };
+    ensure!(
+        !effect_conflicts_jsonl || report_out_dir.is_some(),
+        "--effect-conflicts-jsonl requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
+    );
     if let Some(report_out_dir) = report_out_dir {
-        let effects =
-            assignment_analysis.effect_translation_validation(facts, &translation_validation);
+        let jsonl_path = chunk_report_path(
+            report_out_dir,
+            chunk_id,
+            output_layout::EFFECT_CONFLICTS_JSONL,
+        );
+        let mut jsonl = if effect_conflicts_jsonl {
+            if let Some(parent) = jsonl_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            Some(std::io::BufWriter::new(
+                std::fs::File::create(&jsonl_path)
+                    .with_context(|| format!("creating {}", jsonl_path.display()))?,
+            ))
+        } else {
+            None
+        };
+        let effects = {
+            let mut write_row = |row: &gate::EffectConflictRow<'_>| -> Result<()> {
+                if let Some(writer) = &mut jsonl {
+                    serde_json::to_writer(&mut *writer, row)
+                        .with_context(|| format!("writing {}", jsonl_path.display()))?;
+                    writer
+                        .write_all(b"\n")
+                        .with_context(|| format!("writing {}", jsonl_path.display()))?;
+                }
+                Ok(())
+            };
+            assignment_analysis.effect_translation_validation(
+                facts,
+                &translation_validation,
+                effect_conflicts_jsonl.then_some(&mut write_row),
+            )?
+        };
+        if let Some(writer) = &mut jsonl {
+            writer
+                .flush()
+                .with_context(|| format!("flushing {}", jsonl_path.display()))?;
+        }
         write_chunk_report_json(
             report_out_dir,
             chunk_id,

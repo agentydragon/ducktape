@@ -152,6 +152,8 @@ fn run_spec_validate(args: ValidateArgs) -> Result<ValidateReport> {
             keep_going,
             report_dir_override: Some(capture.path().to_path_buf()),
             list_template_identifiers: true,
+            effect_conflicts_jsonl: false,
+            effect_conflicts_chunks: Default::default(),
         },
     );
 
