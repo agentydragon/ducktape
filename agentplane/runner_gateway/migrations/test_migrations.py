@@ -42,7 +42,7 @@ def test_fresh_database_and_repeat_are_idempotent(postgres_admin_url: str, datab
         try:
             with engine.connect() as conn:
                 assert conn.scalar(text("SELECT to_regclass('dispatch') IS NOT NULL"))
-                assert conn.scalar(text(f"SELECT max(version_id) FROM {_VERSION}")) == 5
+                assert conn.scalar(text(f"SELECT max(version_id) FROM {_VERSION}")) == 6
         finally:
             engine.dispose()
 
@@ -70,7 +70,7 @@ def test_concurrent_runners_serialize(postgres_admin_url: str, database_names: D
         engine = create_engine(url)
         try:
             with engine.connect() as conn:
-                assert conn.scalar(text(f"SELECT count(*) FROM {_VERSION} WHERE version_id=5 AND is_applied")) == 1
+                assert conn.scalar(text(f"SELECT count(*) FROM {_VERSION} WHERE version_id=6 AND is_applied")) == 1
         finally:
             engine.dispose()
 
