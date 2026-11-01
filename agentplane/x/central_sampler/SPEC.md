@@ -131,6 +131,12 @@ command row remains authoritative, and the two channels remain separate. An owne
 a command by direct replica or Pod RPC. Independently, a replica
 may claim pending work only when the Session lease is unowned or expired.
 
+Both work scans include accepted commands after the previous turn stopped, including a known
+provider rejection. The conversation's stopped flag prevents further sampling for that turn;
+it does not prevent processing newly admitted input. An idle Session with no pending work is not
+selected, and blocked Sessions remain excluded. Admission and wakeups never clear a blocked Session
+or replay a rejected or uncertain effect.
+
 The listener subscribes before the initial ownership/work scan. Reconnection triggers a durable
 catch-up scan, and periodic reconciliation remains enabled, so missed or coalesced notifications do
 not strand work. `central_sampler_work` uses the existing database and adds no migration, durable

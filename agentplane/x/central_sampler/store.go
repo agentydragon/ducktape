@@ -1146,7 +1146,7 @@ func (s *Store) RecoverableSessions(ctx context.Context, exclude []string, limit
 		exclude = []string{}
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT ss.id FROM sampler_session ss JOIN sampler_conversation c ON c.id=ss.conversation_id
-		WHERE ss.blocked=FALSE AND NOT c.stopped AND (c.owner IS NULL OR c.lease_until IS NULL OR c.lease_until<=clock_timestamp())
+		WHERE ss.blocked=FALSE AND (c.owner IS NULL OR c.lease_until IS NULL OR c.lease_until<=clock_timestamp())
 		AND NOT (ss.id=ANY($1::varchar[])) AND `+sessionWork+`
 		ORDER BY ss.id LIMIT $4`, pq.Array(exclude), int32(runnerpb.SetupState_SETUP_STATE_RUNNING),
 		int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED), limit)
@@ -1171,7 +1171,7 @@ func (s *Store) OwnedWork(ctx context.Context, tokens []string) ([]string, error
 		return nil, nil
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT ss.id FROM sampler_session ss JOIN sampler_conversation c ON c.id=ss.conversation_id
-		WHERE ss.blocked=FALSE AND NOT c.stopped AND c.owner=ANY($1::uuid[])
+		WHERE ss.blocked=FALSE AND c.owner=ANY($1::uuid[])
 		AND c.lease_until>clock_timestamp() AND `+sessionWork+` ORDER BY ss.id`, pq.Array(tokens),
 		int32(runnerpb.SetupState_SETUP_STATE_RUNNING), int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED))
 	if err != nil {
