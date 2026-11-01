@@ -10,6 +10,13 @@ token alone does not grant it. A Session UUID by itself grants nothing. Consumer
 database for their tests, which read the fold's tables through `fold/models.py` and validate the rows
 browsers sync with `fold/views.py`.
 
+An optional, separate `delegation` setting names the Actions actor, caller namespaces and exact full
+History RPC method names that admit delegated reads. The shared workload-auth middleware rechecks the
+asserted caller's current ServiceAccount UID. Delegated Actions calls retain ordinary execution-principal
+read scope even if the actor is also a configured backend reader; actor Pod proof does not widen the read.
+The receiver never looks up Actions or stores its credentials. Watch and follow leases still require a new
+admission when the client reconnects.
+
 The service binary embeds Goose migrations and applies them during normal startup before serving
 or starting the fold. `history-service --migrate-only` initializes fixture databases using the same
 lifecycle. Its runner ingress and fold are the runtime writers.

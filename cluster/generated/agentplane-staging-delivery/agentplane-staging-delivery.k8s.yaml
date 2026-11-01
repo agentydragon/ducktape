@@ -28,6 +28,21 @@ data:
       - agentplane-staging/actions
       - agentplane-staging/app
       - agentplane-staging/notifications
+    delegation:
+      actor: agentplane-staging/actions
+      caller_namespaces:
+        - agentplane-staging
+      methods:
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeReasoningEffort
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/WatchDispatches
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/OpenSession
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSessionOpening
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeModel
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput
 immutable: false
 ---
 apiVersion: v1

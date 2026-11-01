@@ -4,14 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
 
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -114,6 +118,68 @@ func authorityContext(t *testing.T, token string) context.Context {
 	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
 	t.Cleanup(cancel)
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
+}
+
+func delegatedAuthorityContext(
+	t *testing.T,
+	token string,
+	caller auth.Account,
+	uid, actionRequestID, actionExecutionID string,
+) context.Context {
+	t.Helper()
+	envelope := &delegationpb.Delegation{
+		Caller: &delegationpb.ServiceAccountIdentity{
+			Account: &sandboxpb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, Uid: uid,
+		},
+		ActionRequestId: actionRequestID, ActionExecutionId: actionExecutionID,
+	}
+	encoded, err := auth.MarshalDelegation(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
+	t.Cleanup(cancel)
+	return metadata.NewOutgoingContext(ctx, metadata.Pairs(
+		"authorization", "Agentplane-Delegated "+token, auth.DelegationMetadataKey, string(encoded),
+	))
+}
+
+func authorityClientWithDelegation(
+	t *testing.T,
+	store *Store,
+	inventory *authorityInventory,
+	reviews tokenReviewStub,
+	hub *WatchHub,
+	actor, effective auth.Account,
+	effectiveUID string,
+	delegatedMethods []string,
+) dispatcherpb.SessionDispatcherClient {
+	t.Helper()
+	resolver, err := auth.NewResolver(reviews, authorityTestAudience, []string{actor.Namespace}, auth.WithVerdictTTL(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := auth.ServiceAccountUIDReaderFunc(func(_ context.Context, account auth.Account) (string, bool, error) {
+		if account != effective {
+			return "", false, nil
+		}
+		return effectiveUID, true, nil
+	})
+	methods, err := MethodsWithDelegation(resolver, auth.Delegator{
+		Account: actor, CallerNamespaces: []string{effective.Namespace},
+	}, reader, delegatedMethods)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &Service{
+		Store: store, DispatcherCallers: map[auth.Account]struct{}{actor: {}},
+		WakeCallers: map[auth.Account]struct{}{actor: {}},
+		Sandboxes:   inventory, Hub: hub, WatchLease: 10 * time.Second,
+	}
+	connection := grpcmethods.Serve(t, methods, func(server *grpc.Server) {
+		dispatcherpb.RegisterSessionDispatcherServer(server, service)
+	})
+	return dispatcherpb.NewSessionDispatcherClient(connection)
 }
 
 func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
@@ -260,6 +326,187 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	}
 }
 
+func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t, 10)
+	effective := auth.Account{Namespace: caller.Namespace, Name: "delegated-effective-caller"}
+	foreign := auth.Account{Namespace: caller.Namespace, Name: "delegated-foreign-caller"}
+	const effectiveUID = "effective-caller-uid"
+	const actorUID = "actions-actor-uid"
+	snapshot := SandboxSnapshot{Name: effective.Name, Namespace: effective.Namespace, UID: authoritySandboxUID}
+	inventory := &authorityInventory{
+		sandbox: snapshot,
+		account: ServiceAccountIdentity{Account: Account(effective), UID: effectiveUID}, accountFound: true,
+	}
+	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true}
+	delegatedMethods := []string{
+		dispatcherpb.SessionDispatcher_OpenSession_FullMethodName,
+		dispatcherpb.SessionDispatcher_SubmitInput_FullMethodName,
+		dispatcherpb.SessionDispatcher_GetSessionOpening_FullMethodName,
+		dispatcherpb.SessionDispatcher_GetDispatch_FullMethodName,
+		dispatcherpb.SessionDispatcher_ListDispatches_FullMethodName,
+		dispatcherpb.SessionDispatcher_CancelDispatch_FullMethodName,
+		dispatcherpb.SessionDispatcher_InterruptTurn_FullMethodName,
+		dispatcherpb.SessionDispatcher_WatchDispatches_FullMethodName,
+	}
+	client := authorityClientWithDelegation(t, store, inventory, tokenReviewStub{
+		"actions-token":   {account: caller, uid: actorUID, pod: true},
+		"effective-token": {account: effective, uid: effectiveUID},
+	}, hub, caller, effective, effectiveUID, delegatedMethods)
+	requestID, executionID := uuid.NewString(), uuid.NewString()
+	delegated := func() context.Context {
+		return delegatedAuthorityContext(t, "actions-token", effective, effectiveUID, requestID, executionID)
+	}
+
+	const sessionID = "delegated-owned-session"
+	spec := &runnerpb.SessionSpec{}
+	directOpening, err := client.OpenSession(authorityContext(t, "effective-token"), &dispatcherpb.OpenSessionRequest{
+		SessionId: sessionID, Sandbox: snapshot.Name, SandboxUid: snapshot.UID, Spec: spec,
+	})
+	if err != nil {
+		t.Fatalf("direct effective caller open: %v", err)
+	}
+	openingRetry, err := client.OpenSession(delegated(), &dispatcherpb.OpenSessionRequest{
+		SessionId: sessionID, Sandbox: snapshot.Name, SandboxUid: snapshot.UID, Spec: spec,
+	})
+	if err != nil || openingRetry.GetOpening().GetSessionId() != sessionID {
+		t.Fatalf("delegated idempotent opening retry: %#v %v", openingRetry, err)
+	}
+	opening, err := store.GetOpening(ctx, sessionID)
+	if err != nil || opening.Creator == nil || opening.Creator.Account != Account(effective) || opening.Attribution == nil ||
+		opening.Attribution.Actor.Account != Account(effective) || opening.Attribution.EffectiveCaller.Account != Account(effective) || opening.Attribution.Action != nil {
+		t.Fatalf("delegated retry replaced direct opening admission evidence: %#v %v", opening, err)
+	}
+	if directOpening.GetOpening().GetSessionId() != sessionID || opening.WakeEligible {
+		t.Fatalf("privileged actor's wake allowlist leaked to effective caller: response=%+v durable=%+v", directOpening.GetOpening(), opening)
+	}
+
+	first, err := client.SubmitInput(authorityContext(t, "effective-token"), &dispatcherpb.SubmitInputRequest{
+		CommandId: "direct-to-action-retry", SessionId: sessionID, Sandbox: snapshot.Name, SandboxUid: snapshot.UID, Text: "same domain command",
+	})
+	if err != nil {
+		t.Fatalf("direct effective caller command: %v", err)
+	}
+	firstStored, err := store.GetDispatch(ctx, "direct-to-action-retry")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := client.SubmitInput(delegated(), &dispatcherpb.SubmitInputRequest{
+		CommandId: "direct-to-action-retry", SessionId: sessionID, Sandbox: snapshot.Name, SandboxUid: snapshot.UID, Text: "same domain command",
+	})
+	if err != nil || second.GetDispatch().GetCommandId() != first.GetDispatch().GetCommandId() {
+		t.Fatalf("direct-to-delegated operation retry was not reconciled: first=%+v second=%+v err=%v", first, second, err)
+	}
+	directRetry, err := store.GetDispatch(ctx, "direct-to-action-retry")
+	if err != nil || directRetry.Position != firstStored.Position || directRetry.Attribution == nil || directRetry.Attribution.Actor.Account != Account(effective) ||
+		directRetry.Attribution.EffectiveCaller.Account != Account(effective) || directRetry.Attribution.Action != nil {
+		t.Fatalf("Action retry replaced original direct admission evidence: %+v %v", directRetry, err)
+	}
+
+	created, err := client.SubmitInput(delegated(), &dispatcherpb.SubmitInputRequest{
+		CommandId: "delegated-new-command", SessionId: sessionID, Sandbox: snapshot.Name, SandboxUid: snapshot.UID, Text: "Action command",
+	})
+	if err != nil {
+		t.Fatalf("delegated effective caller command: %v", err)
+	}
+	stored, err := store.GetDispatch(ctx, created.GetDispatch().GetCommandId())
+	if err != nil || stored.Attribution == nil || stored.Attribution.Actor.Account != Account(caller) ||
+		stored.Attribution.Actor.UID != actorUID || stored.Attribution.ActorPod == nil ||
+		stored.Attribution.EffectiveCaller.Account != Account(effective) || stored.Attribution.EffectiveCaller.UID != effectiveUID ||
+		stored.Attribution.Action == nil || stored.Attribution.Action.RequestID != requestID || stored.Attribution.Action.ExecutionID != executionID {
+		t.Fatalf("delegated admission evidence was not durably retained distinctly: %+v %v", stored, err)
+	}
+	if stored.WakeEligible || stored.WakeCaller != nil {
+		t.Fatalf("actor's wake allowlist made effective caller's command wake-eligible: %+v", stored)
+	}
+	if _, err := client.GetSessionOpening(delegated(), &dispatcherpb.GetSessionOpeningRequest{SessionId: sessionID}); err != nil {
+		t.Fatalf("delegated caller could not read its own opening: %v", err)
+	}
+	if _, err := client.GetDispatch(delegated(), &dispatcherpb.GetDispatchRequest{CommandId: stored.CommandID}); err != nil {
+		t.Fatalf("delegated caller could not read its own dispatch: %v", err)
+	}
+
+	foreignID := "delegated-foreign-session"
+	foreignIdentity := ServiceAccountIdentity{Account: Account(foreign), UID: "foreign-caller-uid"}
+	foreignOpening, err := store.OpenSessionWithIdentity(ctx, foreignID, snapshot.Name, snapshot.UID,
+		&runnerpb.SessionSpec{}, nil, nil, &foreignIdentity, &foreignIdentity, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreignDispatch, err := store.EnqueueForCaller(ctx, foreignID, snapshot.Name, snapshot.UID,
+		input("delegated-foreign-command", "foreign"), nil, CallerIdentity{
+			ServiceAccountIdentity: foreignIdentity,
+			Attribution:            &AdmissionAttribution{Actor: foreignIdentity, EffectiveCaller: foreignIdentity},
+		})
+	if err != nil {
+		t.Fatalf("seed foreign dispatch: %v", err)
+	}
+	if _, err := client.GetSessionOpening(delegated(), &dispatcherpb.GetSessionOpeningRequest{SessionId: foreignOpening.SessionID}); status.Code(err) != codes.NotFound {
+		t.Errorf("privileged actor's backend membership leaked opening read: %v", err)
+	}
+	if _, err := client.GetDispatch(delegated(), &dispatcherpb.GetDispatchRequest{CommandId: foreignDispatch.CommandID}); status.Code(err) != codes.NotFound {
+		t.Errorf("privileged actor's backend membership leaked dispatch lookup: %v", err)
+	}
+	listed, err := client.ListDispatches(delegated(), &dispatcherpb.ListDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{
+		Scope: &dispatcherpb.DispatchFilter_Sandbox{Sandbox: snapshot.Name},
+	}})
+	if err != nil {
+		t.Fatalf("delegated sandbox dispatch list: %v", err)
+	}
+	for _, row := range listed.GetDispatches() {
+		if row.GetCommandId() == foreignDispatch.CommandID {
+			t.Fatalf("delegated sandbox list leaked a foreign Session dispatch: %+v", row)
+		}
+	}
+	if _, err := client.CancelDispatch(delegated(), &dispatcherpb.CancelDispatchRequest{CommandId: foreignDispatch.CommandID}); status.Code(err) != codes.NotFound {
+		t.Errorf("privileged actor's backend membership leaked cancellation: %v", err)
+	}
+	stillQueued, err := store.GetDispatch(ctx, foreignDispatch.CommandID)
+	if err != nil || stillQueued.State != QueueState {
+		t.Errorf("denied delegated cancellation changed the foreign operation: %+v %v", stillQueued, err)
+	}
+	if _, err := client.InterruptTurn(delegated(), &dispatcherpb.InterruptTurnRequest{
+		CommandId: "delegated-foreign-interrupt", SessionId: foreignID, Sandbox: snapshot.Name,
+		SandboxUid: snapshot.UID, TurnId: "foreign-turn",
+	}); status.Code(err) != codes.PermissionDenied {
+		t.Errorf("privileged actor's backend membership leaked interrupt authority: %v", err)
+	}
+	if _, err := client.ChangeModel(delegated(), &dispatcherpb.ChangeModelRequest{
+		CommandId: "delegated-unconfigured-method", SessionId: sessionID, Sandbox: snapshot.Name,
+		SandboxUid: snapshot.UID, Model: "test-model",
+	}); status.Code(err) != codes.Unauthenticated {
+		t.Errorf("delegation escaped its exact RPC method list: %v", err)
+	}
+
+	watchCtx, cancelWatch := context.WithCancel(delegated())
+	defer cancelWatch()
+	watch, err := client.WatchDispatches(watchCtx, &dispatcherpb.WatchDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{
+		Scope: &dispatcherpb.DispatchFilter_Sandbox{Sandbox: snapshot.Name},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var watched []string
+	for {
+		frame, err := watch.Recv()
+		if err != nil {
+			t.Fatalf("delegated dispatch watch: %v", err)
+		}
+		if dispatch := frame.GetDispatch(); dispatch != nil {
+			watched = append(watched, dispatch.GetCommandId())
+		}
+		if frame.GetCaughtUp() != nil {
+			break
+		}
+	}
+	if slices.Contains(watched, foreignDispatch.CommandID) || !slices.Contains(watched, stored.CommandID) {
+		t.Fatalf("delegated watch did not apply the same owner scope: %v", watched)
+	}
+	if _, err := client.CancelDispatch(delegated(), &dispatcherpb.CancelDispatchRequest{CommandId: stored.CommandID}); err != nil {
+		t.Fatalf("delegated effective caller could not cancel its own queued command: %v", err)
+	}
+}
+
 type changingExecutionCatalog struct {
 	testCatalog
 	accounts []ServiceAccountIdentity
@@ -281,7 +528,7 @@ func TestPendingExecutionUIDBindsOnceAndReplacementStopsRunnerDelivery(t *testin
 	snapshot := SandboxSnapshot{Name: caller.Name, Namespace: caller.Namespace, UID: pendingSandboxUID}
 	pending := ServiceAccountIdentity{Account: Account(caller)}
 	opening, err := store.OpenSessionWithIdentity(ctx, "authority-pending-session", snapshot.Name, snapshot.UID,
-		&runnerpb.SessionSpec{}, nil, nil, &pending, &ServiceAccountIdentity{Account: Account(caller), UID: "creator-uid"})
+		&runnerpb.SessionSpec{}, nil, nil, &pending, &ServiceAccountIdentity{Account: Account(caller), UID: "creator-uid"}, nil)
 	if err != nil || opening.ExecutionPrincipal == nil || opening.ExecutionPrincipal.UID != "" {
 		t.Fatalf("seed pending opening: %#v %v", opening, err)
 	}

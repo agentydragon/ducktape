@@ -64,6 +64,36 @@ func Methods(resolver *auth.Resolver) auth.Methods {
 	}
 }
 
+// MethodsWithDelegation adds an explicit Action actor grant to the configured full RPC names.
+func MethodsWithDelegation(
+	resolver *auth.Resolver,
+	delegator auth.Delegator,
+	serviceAccounts auth.ServiceAccountUIDReader,
+	delegatedMethods []string,
+) (auth.Methods, error) {
+	methods := Methods(resolver)
+	seen := make(map[string]struct{}, len(delegatedMethods))
+	for _, method := range delegatedMethods {
+		if _, duplicate := seen[method]; duplicate {
+			return nil, errors.New("delegated History method is repeated")
+		}
+		seen[method] = struct{}{}
+		rule, ok := methods[method]
+		if !ok {
+			return nil, errors.New("delegated History method is not served")
+		}
+		rule, err := rule.AllowDelegationFrom([]auth.Delegator{delegator}, serviceAccounts)
+		if err != nil {
+			return nil, err
+		}
+		methods[method] = rule
+	}
+	if len(delegatedMethods) > 0 && serviceAccounts == nil {
+		return nil, errors.New("delegated History ServiceAccount reader is required")
+	}
+	return methods, nil
+}
+
 func NewService(options Options) *Service {
 	draining, drain := context.WithCancel(context.Background())
 	readerAccounts := make(map[auth.Account]struct{}, len(options.ReaderAccounts))
@@ -81,19 +111,23 @@ func (s *Service) Drain() { s.drain() }
 
 // serve runs read under the request timeout.
 func (s *Service) scopedReader(ctx context.Context) (*reads.Reader, error) {
-	caller, err := auth.AdmittedReviewedCaller(ctx)
+	caller, err := auth.EffectiveCaller(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if caller.Pod != nil && caller.Pod.IsPodBound() {
-		if _, privileged := s.readerAccounts[caller.ServiceAccount.Account]; privileged {
+	admission, err := auth.Admitted(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if direct, ok := admission.(auth.DirectAdmission); ok && direct.Pod != nil && direct.Pod.IsPodBound() {
+		if _, privileged := s.readerAccounts[caller.Account]; privileged {
 			return s.reader.WithReadScope(storage.AllSessions()), nil
 		}
 	}
 	principal := storage.ExecutionPrincipal{
-		Namespace: caller.ServiceAccount.Account.Namespace,
-		Name:      caller.ServiceAccount.Account.Name,
-		UID:       caller.ServiceAccount.ServiceAccountUID,
+		Namespace: caller.Account.Namespace,
+		Name:      caller.Account.Name,
+		UID:       caller.ServiceAccountUID,
 	}
 	return s.reader.WithReadScope(storage.OwnedBy(principal)), nil
 }

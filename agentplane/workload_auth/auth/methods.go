@@ -168,7 +168,12 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 		if err != nil {
 			return nil, err
 		}
-		return WithReviewedCaller(ctx, caller), nil
+		principal := caller.ServiceAccount
+		admitted := withAdmission(ctx, DirectAdmission{
+			Caller: principal,
+			Pod:    caller.Pod,
+		})
+		return WithReviewedCaller(admitted, caller), nil
 	} else {
 		principal, err = rule.resolver.Resolve(reviewContext)
 	}

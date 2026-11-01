@@ -189,6 +189,11 @@ def environment_chart(
         # The app reads Threads; the Notification Service reads command receipts; the orchestration_v1
         # group reads the Sessions it drives.
         callers=app_caller | notifications_caller | actions.orchestration_callers(env),
+        delegation_actor=(
+            ServiceAccountRef(namespace=env.namespace, name=actions.NAME)
+            if env.actions.orchestration_v1 is not None
+            else None
+        ),
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()

@@ -128,6 +128,7 @@ class RunnerGateway(Construct):
         *,
         database_url: EnvValue,
         dispatcher_callers: Mapping[ServiceAccountRef, Pods],
+        delegation_actor: ServiceAccountRef | None,
         gateway_callers: Mapping[ServiceAccountRef, Pods],
         wake_callers: frozenset[ServiceAccountRef],
         sandbox_controller: tuple[ServiceAccountRef, Pods],
@@ -193,6 +194,23 @@ class RunnerGateway(Construct):
             **central_sampler_settings,
             **({"wake_callers": wake_accounts} if wake_accounts else {}),
         }
+        if delegation_actor is not None:
+            content["delegation"] = {
+                "actor": _account(delegation_actor),
+                "caller_namespaces": [namespace],
+                "methods": [
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeModel",
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeReasoningEffort",
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn",
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/OpenSession",
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSessionOpening",
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch",
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/WatchDispatches",
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches",
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
+                ],
+            }
         settings = SettingsFile(
             self,
             "settings",
@@ -373,6 +391,9 @@ def serving_chart(app: App, *, env: Environment) -> Chart:
         env,
         database_url=dispatcher_database_url,
         dispatcher_callers=callers | orchestration,
+        delegation_actor=(
+            ServiceAccountRef(namespace=env.namespace, name=actions.NAME) if env.actions.orchestration_v1 is not None else None
+        ),
         gateway_callers=callers,
         # The orchestration_v1 group sends input that wakes a Sandbox launched with wakeOnSend.
         wake_callers=env.wake_caller_accounts | orchestration.keys(),

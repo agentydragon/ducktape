@@ -40,6 +40,7 @@ type config struct {
 	DispatcherAudience          string                    `mapstructure:"dispatcher_audience"`
 	GatewayAudience             string                    `mapstructure:"gateway_audience"`
 	DispatcherCallers           []auth.Account            `mapstructure:"dispatcher_callers"`
+	Delegation                  *delegationConfig         `mapstructure:"delegation"`
 	GatewayCallers              []auth.Account            `mapstructure:"gateway_callers"`
 	WakeCallers                 []auth.Account            `mapstructure:"wake_callers"`
 	ControllerAccount           *auth.Account             `mapstructure:"sandbox_controller_account"`
@@ -49,6 +50,14 @@ type config struct {
 
 	CentralSampler  *dispatcher.CentralTarget `mapstructure:"central_sampler"`
 	ExecutorCallers []auth.Account            `mapstructure:"executor_callers"`
+}
+
+// delegationConfig is an independent trust grant. It does not inherit the direct caller or wake
+// allowlists, and its method list contains full gRPC method names.
+type delegationConfig struct {
+	Actor            auth.Account `mapstructure:"actor"`
+	CallerNamespaces []string     `mapstructure:"caller_namespaces"`
+	Methods          []string     `mapstructure:"methods"`
 }
 
 func defaultConfig() config {
@@ -107,6 +116,10 @@ func (c *config) validate() error {
 	}
 	if len(c.DispatcherCallers) == 0 || len(c.GatewayCallers) == 0 {
 		return errors.New("dispatcher_callers and gateway_callers must each list at least one ServiceAccount")
+	}
+	if c.Delegation != nil && (c.Delegation.Actor.Namespace == "" || c.Delegation.Actor.Name == "" ||
+		len(c.Delegation.CallerNamespaces) == 0 || len(c.Delegation.Methods) == 0) {
+		return errors.New("delegation requires an actor, caller namespaces and methods")
 	}
 	if c.ProxyPort < 1 || c.ProxyPort > 65535 {
 		return errors.New("proxy_port must be between 1 and 65535")
