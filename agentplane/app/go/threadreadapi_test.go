@@ -249,19 +249,6 @@ func TestListThreadViewsFiltersBySandboxIncarnationAndBindsPageToken(t *testing.
 	}
 }
 
-func TestThreadListSandboxUIDQueryParsing(t *testing.T) {
-	parsed, err := parseOptionalUUID(optionalQueryString{Value: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA", IsSet: true})
-	if err != nil || parsed == nil || *parsed != "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" {
-		t.Fatalf("parseOptionalUUID = %v, %v; want canonical UUID", parsed, err)
-	}
-	if parsed, err := parseOptionalUUID(optionalQueryString{}); err != nil || parsed != nil {
-		t.Fatalf("omitted sandbox_uid = %v, %v; want nil", parsed, err)
-	}
-	if _, err := parseOptionalUUID(optionalQueryString{Value: "not-a-uuid", IsSet: true}); err == nil {
-		t.Fatal("invalid sandbox_uid was accepted")
-	}
-}
-
 func TestMakeThreadViewPreservesFeedStatusEnum(t *testing.T) {
 	thread := threads.Thread{ID: uuid.New(), CreatedAt: time.Now().UTC()}
 	attachment := &runnerpb.Attached{HarnessState: runnerpb.HarnessState_HARNESS_STATE_STOPPED}

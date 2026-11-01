@@ -645,7 +645,7 @@ async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
             stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
         ):
             with attempt:
-                response = await survivor_http.get(f"/threads/{thread}")
+                response = await survivor_http.get(f"/upstream/app/v1/threads/{thread}")
                 assert response.status_code == 200, response.text
 
         async with survivor_http.stream("GET", f"/threads/{thread}/events/stream") as response:
@@ -701,11 +701,12 @@ async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
         stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
     ):
         with attempt:
-            response = await http.get(f"/threads/{session_id}")
-            assert response.status_code == 200, response.text
-            thread = response.json()
-            assert thread["id"] == str(session_id)
-            assert thread["sandbox"] == SANDBOX
+            metadata = await http.get(f"/upstream/app/v1/threads/{session_id}")
+            assert metadata.status_code == 200, metadata.text
+            assert metadata.json()["threadId"] == str(session_id)
+            summary = await http.get(f"/upstream/history/v1/sessions/{session_id}/summary")
+            assert summary.status_code == 200, summary.text
+            assert summary.json()["sandbox"]["name"] == SANDBOX
 
 
 async def test_open_and_inputs_reach_the_runner_while_history_lags(
