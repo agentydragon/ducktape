@@ -11,4 +11,5 @@ exports_files([
     "planning.md",
     "selectors.md",
     "spec_editing.md",
+    "wire_format.md",
 ])
