@@ -203,7 +203,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 			if _, err := conn.StartTransientUnitContext(ctx, name, "fail", proofUnitProperties("/bin/busybox", []string{"/bin/busybox", "sleep", "60"}, WorkloadSlice), nil); err != nil {
 				t.Fatal(err)
 			}
-			defer fenceSystemdUnit(context.Background(), conn, name, true, "")
+			defer FenceSystemdUnit(context.Background(), conn, name, SystemdFence{Ordered: true})
 		}
 		recovered := *launcher
 		if _, err := recovered.PrepareForOwner(stateDir, sandboxUID, runtimeOwner); err != nil {
@@ -223,7 +223,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		if _, err := conn.StartTransientUnitContext(ctx, parent, "fail", proofUnitProperties("/bin/busybox", []string{"/bin/busybox", "sleep", "60"}, "agentplane.slice"), nil); err != nil {
 			t.Fatal(err)
 		}
-		defer fenceSystemdUnit(context.Background(), conn, parent, true, "")
+		defer FenceSystemdUnit(context.Background(), conn, parent, SystemdFence{Ordered: true})
 		owned := *launcher
 		owned.lifetimeUnit = parent
 		marker := filepath.Join(dir, "saved")
@@ -290,18 +290,16 @@ func TestSystemdKernelFixture(t *testing.T) {
 		owned := *launcher
 		authoritativePID := make(chan uint32, 1)
 		propertyReads := 0 // Only this process's reaper calls the hook.
-		owned.reapServiceProperties = func(readCtx context.Context, bus *systemd.Conn, name string) (map[string]any, error) {
+		owned.reapSnapshot = func(readCtx context.Context, bus *systemd.Conn, name string) (SystemdUnitSnapshot, error) {
 			propertyReads++
 			if propertyReads == 1 {
-				return nil, context.DeadlineExceeded
+				return SystemdUnitSnapshot{}, context.DeadlineExceeded
 			}
-			props, err := bus.GetUnitTypePropertiesContext(readCtx, name, "Service")
+			props, err := ReadSystemdUnit(readCtx, bus, name)
 			if err == nil {
-				if mainPID, ok := props["MainPID"].(uint32); ok {
-					select {
-					case authoritativePID <- mainPID:
-					default:
-					}
+				select {
+				case authoritativePID <- props.MainPID:
+				default:
 				}
 			}
 			return props, err
@@ -393,25 +391,17 @@ func readProofStreams(p *Process) (<-chan string, <-chan string) {
 
 func assertSystemdProofEmpty(t *testing.T, ctx context.Context, conn *systemd.Conn, name string) {
 	t.Helper()
-	props, err := conn.GetUnitPropertiesContext(ctx, name)
-	if systemdMissing(err) {
-		return
-	}
+	unit, err := ReadSystemdUnit(ctx, conn, name)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state := props["ActiveState"]; state != "inactive" && state != "failed" {
-		t.Fatalf("unit %s still %v", name, state)
+	if !unit.stopped() {
+		t.Fatalf("unit %s still %s", name, unit.ActiveState)
 	}
-	service, err := conn.GetUnitTypePropertiesContext(ctx, name, "Service")
-	if systemdMissing(err) {
+	if unit.ControlGroup == "" {
 		return
 	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	group, _ := service["ControlGroup"].(string)
-	if empty, err := systemdGroupEmpty(group); err != nil || !empty {
+	if empty, err := systemdGroupEmpty(unit.ControlGroup); err != nil || !empty {
 		t.Fatalf("unit %s kernel domain still populated: empty=%v err=%v", name, empty, err)
 	}
 }

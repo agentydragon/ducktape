@@ -46,7 +46,7 @@ type SystemdLauncher struct {
 	lifetimeUnit                   string
 	lifetimeMarker                 string
 	startTransient                 func(context.Context, *systemd.Conn, string, []systemd.Property, chan<- string) (int, error)
-	reapServiceProperties          func(context.Context, *systemd.Conn, string) (map[string]any, error)
+	reapSnapshot                   func(context.Context, *systemd.Conn, string) (SystemdUnitSnapshot, error)
 }
 
 // ValidateProcessLimits checks values and ensures one process remains within its aggregate budget.
@@ -131,11 +131,6 @@ func openSystemdConnection() (*systemd.Conn, context.CancelFunc, error) {
 	return conn, cancel, nil
 }
 
-func systemdMissing(err error) bool {
-	var e dbus.Error
-	return errors.As(err, &e) && (e.Name == "org.freedesktop.systemd1.NoSuchUnit" || e.Name == "org.freedesktop.systemd1.LoadFailed" || e.Name == "org.freedesktop.DBus.Error.UnknownObject")
-}
-
 // Prepare uses the environment Runtime's legacy native-process scope.
 func (p *SystemdLauncher) Prepare(stateDir, sandboxUID string) (*Supervisor, error) {
 	return p.PrepareForOwner(stateDir, sandboxUID, SystemdOwner{
@@ -192,14 +187,14 @@ func (p *SystemdLauncher) PrepareForOwner(stateDir, sandboxUID string, owner Sys
 		return nil, err
 	}
 	for _, unit := range units {
-		service, err := conn.GetUnitTypePropertiesContext(ctx, unit.Name, "Service")
+		service, err := ReadSystemdUnit(ctx, conn, unit.Name)
 		if err != nil {
 			return nil, err
 		}
-		if service["Slice"] != p.Slice {
+		if service.Slice != p.Slice {
 			continue
 		}
-		if err := fenceSystemdUnit(ctx, conn, unit.Name, true, ""); err != nil {
+		if err := FenceSystemdUnit(ctx, conn, unit.Name, SystemdFence{Ordered: true}); err != nil {
 			return nil, fmt.Errorf("fence prior native unit %s: %w", unit.Name, err)
 		}
 		_ = conn.ResetFailedUnitContext(ctx, unit.Name)
@@ -286,76 +281,6 @@ func prepareSystemdLifetime(directory string) (string, error) {
 		return "", errors.New("systemd owner lifetime marker must be a root-owned read-only regular file")
 	}
 	return marker, nil
-}
-
-// fenceSystemdUnit only returns after the entire unit execution domain is empty.
-// Stop completion and a vanished main PID are insufficient evidence on their own.
-func fenceSystemdUnit(ctx context.Context, conn *systemd.Conn, name string, ordered bool, group string) error {
-	// Capture the kernel domain before StopUnit can collect an inactive unit.
-	service, err := conn.GetUnitTypePropertiesContext(ctx, name, "Service")
-	if err != nil && !systemdMissing(err) {
-		return err
-	}
-	if current, _ := service["ControlGroup"].(string); current != "" {
-		group = current
-	}
-	unit, unitErr := conn.GetUnitPropertiesContext(ctx, name)
-	if unitErr != nil && !systemdMissing(unitErr) {
-		return unitErr
-	}
-	if unit["LoadState"] == "loaded" {
-		ordered = true
-	}
-	if !ordered {
-		return errors.New("native launch acceptance remains unknown after transport loss")
-	}
-	if _, err := conn.StopUnitContext(ctx, name, "replace", nil); err != nil && !systemdMissing(err) {
-		return err
-	}
-	ticker := time.NewTicker(20 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		props, err := conn.GetUnitPropertiesContext(ctx, name)
-		if err != nil && !systemdMissing(err) {
-			return err
-		}
-		state, _ := props["ActiveState"].(string)
-		if systemdMissing(err) || state == "inactive" || state == "failed" {
-			empty, err := systemdGroupEmpty(group)
-			if err != nil {
-				return err
-			}
-			if empty {
-				return nil
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-		}
-	}
-}
-
-// cgroup.events populated accounts for the entire subtree, including descendants
-// that escaped their leader's process group. A removed cgroup is also empty.
-func systemdGroupEmpty(group string) (bool, error) {
-	if group == "" {
-		return true, nil
-	}
-	data, err := os.ReadFile(filepath.Join("/sys/fs/cgroup", group, "cgroup.events"))
-	if errors.Is(err, os.ErrNotExist) {
-		return true, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		if value, ok := strings.CutPrefix(line, "populated "); ok {
-			return value == "0", nil
-		}
-	}
-	return false, errors.New("native cgroup.events has no populated state")
 }
 
 func (p *SystemdLauncher) identityProperties() []systemd.Property {

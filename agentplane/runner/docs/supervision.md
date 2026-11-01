@@ -91,6 +91,18 @@ inactive/failed and its execution domain empty. A disconnected manager leaves cl
 process exit alone does not authorize a successor or journal seal. Runtime separately verifies
 Host/Execution service invocation and cgroup fencing during coordinated shutdown/replacement.
 
+Runtime and native supervision share typed unit snapshots, stop-job observation and process-domain
+fencing in `env/supervision`. A single D-Bus `GetAll` reads Unit and Service properties together;
+missing or malformed properties cannot establish cleanup. `StopUnit` acceptance and job completion
+are separate from the execution-domain fence. If a recorded cgroup exists, its recursive
+`cgroup.events` population must clear (or the cgroup must disappear), including after a failed stop.
+On the pinned guest systemd, a stopped loaded unit with no main/control PID or pending job can
+also report an explicitly cleared `ControlGroup`: normal manager cleanup clears that property only
+after recursive emptiness, even when the prior `InvocationID` remains. A recorded domain still
+requires its kernel check. An empty path on its own proves nothing. Exact invocation changes and
+unresolved starts after transport loss keep admission blocked. A packaged service's empty cgroup
+does not prove cleanup of the separately managed native units owned by that service.
+
 Runtime retains the original `<state_dir>/.agentplane-runner-owner` inode. Host holds
 `<state_dir>/harness-host/.agentplane-runner-owner`; Execution holds its own owner under
 `<state_dir>/execution`. After acquiring an owner lock, its launcher discovers old units in the
