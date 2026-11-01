@@ -8,7 +8,11 @@ py_library(
         "//agentplane:__subpackages__",
         "//cluster/cdk8s:__subpackages__",
     ],
-    deps = ["//agentplane/proto:runner_pb2"],
+    deps = [
+        "//agentplane/proto:runner_pb2",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
 )
 
 go_library(
