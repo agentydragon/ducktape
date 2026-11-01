@@ -1177,6 +1177,22 @@ actual top-level caller statement as their promotion site, and memoized invocati
 include that caller and the reachability revision. A static data-property
 write to a proved fresh local function retains the same A11 fast path. This
 keeps unrelated returned closures deferred when no setter can be reached.
+The ordered local-body path also checks static writes into records allocated
+in that invocation. The canonical own-descriptor shape must identify an
+existing data field, and the singleton receiver must remain settled. Ordinary
+literal fields are writable, so this write cannot reach an inherited setter;
+no prototype-integrity or heap-locality premise is required. Input objects,
+arrays, missing keys and unsettled allocation sites do not receive this proof.
+Neither do sites already represented in the heap at allocation, or sites
+reachable through frame inputs or external binding reads: one site can denote
+both the newly created record and an older receiver. The current domain does
+not distinguish those generations.
+The receiver is captured before evaluating the RHS. The shared heap retains
+weak allocation-site updates, including self-links and aliases. When the proof
+fails, the executor publishes reachable frame capabilities, widens native
+effects and uses the existing synchronous fallback closure for the remaining
+body. Earlier operations are not replayed. This local execution proof does not
+provide an owner-completion or foreign-provider certificate.
 The adjacent fresh-value proof also identifies a top-level write to an
 initialized own data field of a constructorless local class instance. That
 write cannot invoke an inherited setter, even after an earlier unknown call.

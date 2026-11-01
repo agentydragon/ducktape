@@ -1216,9 +1216,25 @@ local writes in source order. Only completing paths reach the next operation;
 binding observations retain callback-path provenance through ordinary outcome
 composition and invocation memos. Thrown capabilities remain conservatively
 published. The value operations use the shared literal-allocation transfers.
-Calls, member access or mutation, branches, unknown free bindings, dynamic
+Static field assignments through a local or parameter binding also execute in
+order when the receiver is one settled ordinary record allocated during this
+invocation and the field is an existing own data property. This permits local
+aliases, replacement of a parameter by a fresh record, and record self-links.
+Sites already represented in the heap or reachable through inputs or observed
+external bindings retain conservative handling because allocation generations
+are not distinguished.
+The receiver reference is evaluated before the right-hand side, even if that
+side replaces the binding. Stores join values in the shared allocation-site
+heap; they do not overwrite earlier abstract values. An unproved store stops
+ordered execution and conservatively summarizes the remaining body, retaining
+input, local and newly allocated capabilities and possible setter effects.
+Its precision loss identifies the assignment's source span.
+Calls, member reads, computed writes, branches, unknown free bindings, dynamic
 scope and unsupported syntax retain the conservative execution path. This
 coverage does not certify initializer effects or an imported provider summary.
+Certified record writes, writes through unrebound parameters and
+array-iteration writes retain their established execution path while their
+proof obligations are migrated to ordered operations.
 
 Synchronous execution also completes an exact member read from a TS enum
 object when, at the read, the binding is `PlainData`, no statement but its

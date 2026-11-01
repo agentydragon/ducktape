@@ -80,6 +80,27 @@ impl LiteralHeap<'_> {
         }
     }
 
+    /// Allocation sites may represent several records. Field stores retain
+    /// earlier values and version the same heap used by ordinary execution.
+    pub(super) fn write_property(
+        &mut self,
+        allocation: u32,
+        property: Option<String>,
+        values: &Values,
+    ) {
+        let slot = self
+            .properties
+            .entry(allocation)
+            .or_default()
+            .entry(property)
+            .or_default();
+        let before = slot.len();
+        slot.extend(values.iter().cloned());
+        if slot.len() != before {
+            *self.revision = self.revision.wrapping_add(1);
+        }
+    }
+
     pub(super) fn dense_array(&mut self, allocation: u32, slots: Vec<Values>) {
         let before = self.properties.get(&allocation).cloned();
         let dense = self.arrays.entry(allocation).or_insert_with(|| DenseArray {
