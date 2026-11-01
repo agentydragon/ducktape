@@ -1397,7 +1397,7 @@ it("shows a future numeric delivery state as unknown rather than a known Dispatc
   const row = pendingRow(container, waiting.commandId);
   expect(row.querySelector('[data-stage="unknown"]')).not.toBeNull();
   expect(progressLabel(container, waiting.commandId)).toBe("Outcome unknown: Unrecognized delivery state 999");
-  expect(row.querySelector(".agentplane-user-bubble")?.getAttribute("data-message-phase")).not.toBe("failed");
+  expect(row.querySelector(".transcript-user-bubble")?.getAttribute("data-message-phase")).not.toBe("failed");
   expect(watch.signal?.aborted).toBe(false);
 
   await act(async () =>
@@ -1428,7 +1428,7 @@ it("keeps the known DELIVERY_STATE_UNKNOWN receipt behavior", async () => {
   expect(progressLabel(container, waiting.commandId)).toBe("Outcome unknown: sandbox_deleted");
   expect(
     pendingRow(container, waiting.commandId)
-      .querySelector(".agentplane-user-bubble")
+      .querySelector(".transcript-user-bubble")
       ?.getAttribute("data-message-phase")
   ).toBe("failed");
 });
