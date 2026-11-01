@@ -11,7 +11,14 @@ from more_itertools import one
 
 from agentplane.env.runtime.harnesshost.harness import Harness
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s.agentplane import central_sampler, history_service, llm_ingress, runner_gateway, staging
+from cluster.cdk8s.agentplane import (
+    central_sampler,
+    history_service,
+    llm_ingress,
+    runner_gateway,
+    session_dispatcher,
+    staging,
+)
 
 
 def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
@@ -81,7 +88,18 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     config = json.loads(_resource(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
     assert "database_url" not in config
     assert config["audience"] == central_sampler.TOKEN_AUDIENCE
-    assert config["platform_instructions"]
+    platform_instructions = config["platform_instructions"]
+    assert (
+        "provider conversation and Code Mode host run in the central sampler, outside the Sandbox."
+        in platform_instructions
+    )
+    session_service = _resource(staging_manifests, "Service", session_dispatcher.NAME)
+    session_service_port = next(port["port"] for port in session_service["spec"]["ports"] if port["name"] == "grpc")
+    sessions_url = f"http://{session_dispatcher.NAME}.{namespace}.svc.cluster.local:{session_service_port}"
+    assert (
+        f"| Sessions and environments | {sessions_url} | "
+        "`agentplane-credential-agentplane-session-dispatcher-workload` |"
+    ) in platform_instructions
     props = staging.ENV.central_sampler
     assert props is not None
     assert set(config["connections"]) == {"llm-ingress", "anthropic-api"}

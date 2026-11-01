@@ -958,6 +958,7 @@ py_test(
         ":history_service",
         ":llm_ingress",
         ":runner_gateway",
+        ":session_dispatcher",
         ":staging",
         "//agentplane/env/runtime/harnesshost:harness",
         "//agentplane/workload_auth:audience",
