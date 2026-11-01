@@ -426,6 +426,38 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 		t.Fatalf("delegated caller could not read its own dispatch: %v", err)
 	}
 
+	// The Action actor can use its Pod-bound backend admission to access legacy rows with no
+	// retained owner. That authority must not pass through to the effective caller.
+	actorLegacy, err := store.OpenSession(ctx, "delegated-actor-legacy-session", snapshot.Name, snapshot.UID,
+		&runnerpb.SessionSpec{}, nil, nil)
+	if err != nil {
+		t.Fatal("seed actor-only legacy opening:", err)
+	}
+	actorLegacyDispatch, err := store.Enqueue(ctx, actorLegacy.SessionID, snapshot.Name, snapshot.UID,
+		input("delegated-actor-legacy-command", "actor-only legacy command"), nil)
+	if err != nil {
+		t.Fatal("seed actor-only legacy dispatch:", err)
+	}
+	if _, err := client.GetSessionOpening(authorityContext(t, "actions-token"), &dispatcherpb.GetSessionOpeningRequest{SessionId: actorLegacy.SessionID}); err != nil {
+		t.Fatalf("Pod-bound actor could not read its backend-only legacy opening: %v", err)
+	}
+	if _, err := client.GetDispatch(authorityContext(t, "actions-token"), &dispatcherpb.GetDispatchRequest{CommandId: actorLegacyDispatch.CommandID}); err != nil {
+		t.Fatalf("Pod-bound actor could not read its backend-only legacy dispatch: %v", err)
+	}
+	if _, err := client.GetSessionOpening(delegated(), &dispatcherpb.GetSessionOpeningRequest{SessionId: actorLegacy.SessionID}); status.Code(err) != codes.NotFound {
+		t.Errorf("delegated effective caller inherited actor's backend opening access: %v", err)
+	}
+	if _, err := client.GetDispatch(delegated(), &dispatcherpb.GetDispatchRequest{CommandId: actorLegacyDispatch.CommandID}); status.Code(err) != codes.NotFound {
+		t.Errorf("delegated effective caller inherited actor's backend dispatch access: %v", err)
+	}
+	if _, err := client.CancelDispatch(delegated(), &dispatcherpb.CancelDispatchRequest{CommandId: actorLegacyDispatch.CommandID}); status.Code(err) != codes.NotFound {
+		t.Errorf("delegated effective caller inherited actor's backend cancellation authority: %v", err)
+	}
+	actorStillQueued, err := store.GetDispatch(ctx, actorLegacyDispatch.CommandID)
+	if err != nil || actorStillQueued.State != QueueState {
+		t.Errorf("denied delegated cancellation changed actor-only operation: %+v %v", actorStillQueued, err)
+	}
+
 	foreignID := "delegated-foreign-session"
 	foreignIdentity := ServiceAccountIdentity{Account: Account(foreign), UID: "foreign-caller-uid"}
 	foreignOpening, err := store.OpenSessionWithIdentity(ctx, foreignID, snapshot.Name, snapshot.UID,
@@ -454,8 +486,8 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 		t.Fatalf("delegated sandbox dispatch list: %v", err)
 	}
 	for _, row := range listed.GetDispatches() {
-		if row.GetCommandId() == foreignDispatch.CommandID {
-			t.Fatalf("delegated sandbox list leaked a foreign Session dispatch: %+v", row)
+		if row.GetCommandId() == foreignDispatch.CommandID || row.GetCommandId() == actorLegacyDispatch.CommandID {
+			t.Fatalf("delegated sandbox list leaked a foreign or actor-only Session dispatch: %+v", row)
 		}
 	}
 	if _, err := client.CancelDispatch(delegated(), &dispatcherpb.CancelDispatchRequest{CommandId: foreignDispatch.CommandID}); status.Code(err) != codes.NotFound {
@@ -499,11 +531,15 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 			break
 		}
 	}
-	if slices.Contains(watched, foreignDispatch.CommandID) || !slices.Contains(watched, stored.CommandID) {
+	if slices.Contains(watched, foreignDispatch.CommandID) || slices.Contains(watched, actorLegacyDispatch.CommandID) ||
+		!slices.Contains(watched, stored.CommandID) {
 		t.Fatalf("delegated watch did not apply the same owner scope: %v", watched)
 	}
 	if _, err := client.CancelDispatch(delegated(), &dispatcherpb.CancelDispatchRequest{CommandId: stored.CommandID}); err != nil {
 		t.Fatalf("delegated effective caller could not cancel its own queued command: %v", err)
+	}
+	if _, err := client.CancelDispatch(authorityContext(t, "actions-token"), &dispatcherpb.CancelDispatchRequest{CommandId: actorLegacyDispatch.CommandID}); err != nil {
+		t.Fatalf("Pod-bound actor could not cancel its backend-only legacy dispatch: %v", err)
 	}
 }
 

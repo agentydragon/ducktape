@@ -2540,16 +2540,16 @@ data:
       caller_namespaces:
         - agentplane-staging
       methods:
+        - /agentplane.history_service.HistoryService/ReadSessionEvents
+        - /agentplane.history_service.HistoryService/FollowSession
         - /agentplane.history_service.HistoryService/ReadSessionObservations
         - /agentplane.history_service.HistoryService/GetSessionSummary
-        - /agentplane.history_service.HistoryService/FollowSession
-        - /agentplane.history_service.HistoryService/ReadEntityEvidence
-        - /agentplane.history_service.HistoryService/ReadThreadEntities
-        - /agentplane.history_service.HistoryService/WatchSessionSummaries
-        - /agentplane.history_service.HistoryService/FindSessions
         - /agentplane.history_service.HistoryService/BatchGetSessionSummaries
-        - /agentplane.history_service.HistoryService/ReadSessionEvents
+        - /agentplane.history_service.HistoryService/ReadThreadEntities
+        - /agentplane.history_service.HistoryService/ReadEntityEvidence
         - /agentplane.history_service.HistoryService/ReadNativeFrames
+        - /agentplane.history_service.HistoryService/FindSessions
+        - /agentplane.history_service.HistoryService/WatchSessionSummaries
 immutable: false
 ---
 apiVersion: v1

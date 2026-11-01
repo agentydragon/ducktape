@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"google.golang.org/grpc"
@@ -58,6 +59,36 @@ func ReviewedServiceAccount(resolver *Resolver) Rule {
 // admitting its callers. A method it does not list is refused before its bearer is read, so a new RPC is closed
 // until its Rule is written.
 type Methods map[string]Rule
+
+// WithDelegation returns a copy of m that admits delegation only for the named full RPC methods.
+// Every method must already have an authenticated direct Rule; delegations preserve that direct mode.
+func (m Methods) WithDelegation(
+	methodNames []string,
+	delegators []Delegator,
+	serviceAccounts ServiceAccountUIDReader,
+) (Methods, error) {
+	methods := make(Methods, len(m))
+	for method, rule := range m {
+		methods[method] = rule
+	}
+	seen := make(map[string]struct{}, len(methodNames))
+	for _, method := range methodNames {
+		if _, duplicate := seen[method]; duplicate {
+			return nil, fmt.Errorf("delegated method %q is repeated", method)
+		}
+		seen[method] = struct{}{}
+		rule, ok := methods[method]
+		if !ok {
+			return nil, fmt.Errorf("delegated method %q is not served", method)
+		}
+		rule, err := rule.AllowDelegationFrom(delegators, serviceAccounts)
+		if err != nil {
+			return nil, fmt.Errorf("delegated method %q: %w", method, err)
+		}
+		methods[method] = rule
+	}
+	return methods, nil
+}
 
 // HealthMethods lists the standard health service's methods as Public.
 func HealthMethods() Methods {

@@ -214,6 +214,46 @@ func TestHealthMethodsNeedNoBearer(t *testing.T) {
 	}
 }
 
+func TestMethodsWithDelegationRequiresUniqueServedMethodsAndAnIdentityReader(t *testing.T) {
+	method := healthpb.Health_Check_FullMethodName
+	methods := auth.Methods{method: auth.ReviewedServiceAccount(newResolver(t, api.TokenReviews()))}
+	delegator := auth.Delegator{
+		Account: auth.Account{Namespace: testNamespace, Name: "test-actions"}, CallerNamespaces: []string{testNamespace},
+	}
+	reader := auth.ServiceAccountUIDReaderFunc(func(context.Context, auth.Account) (string, bool, error) {
+		return "current-uid", true, nil
+	})
+
+	for _, test := range []struct {
+		name    string
+		names   []string
+		reader  auth.ServiceAccountUIDReader
+		wantErr string
+	}{
+		{
+			name: "duplicate method", names: []string{method, method},
+			reader:  reader,
+			wantErr: `delegated method "` + method + `" is repeated`,
+		},
+		{
+			name: "unserved method", names: []string{healthpb.Health_Watch_FullMethodName},
+			wantErr: `delegated method "` + healthpb.Health_Watch_FullMethodName + `" is not served`,
+		},
+		{
+			name: "missing identity reader", names: []string{method},
+			wantErr: `delegated method "` + method + `": ServiceAccount reader and delegators are required`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			delegators := []auth.Delegator{delegator}
+			_, err := methods.WithDelegation(test.names, delegators, test.reader)
+			if err == nil || err.Error() != test.wantErr {
+				t.Fatalf("WithDelegation error = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
 func TestTheAdmissionTimeoutBoundsTheReviewAlone(t *testing.T) {
 	_, token := workload(t, app)
 	reviews := newHeldReviews()
@@ -246,13 +286,15 @@ func TestReviewedServiceAccountDelegationKeepsActorAndEffectiveCallerSeparate(t 
 		}
 		return string(serviceAccount.UID), true, nil
 	})
-	rule, err := auth.ReviewedServiceAccount(resolver).AllowDelegationFrom([]auth.Delegator{{
+	methods, err := auth.Methods{
+		healthpb.Health_Check_FullMethodName: auth.ReviewedServiceAccount(resolver),
+		healthpb.Health_Watch_FullMethodName: auth.ReviewedServiceAccount(resolver),
+	}.WithDelegation([]string{healthpb.Health_Check_FullMethodName}, []auth.Delegator{{
 		Account: actor, CallerNamespaces: []string{testNamespace},
 	}}, reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := auth.Methods{healthpb.Health_Check_FullMethodName: rule}
 	client, effective, admissions := serveAdmissionHealth(t, methods)
 
 	if _, err := client.Check(bearing(t, callerToken), &healthpb.HealthCheckRequest{}); err != nil {
@@ -274,12 +316,16 @@ func TestReviewedServiceAccountDelegationKeepsActorAndEffectiveCallerSeparate(t 
 		delegatedAdmission.EffectiveCaller.Account != caller || delegatedAdmission.EffectiveCaller.ServiceAccountUID != string(callerAccount.UID) {
 		t.Fatalf("delegated admission conflated actor and caller: effective=%+v admission=%#v", delegatedEffective, delegatedAdmission)
 	}
-	watch, err := client.Watch(delegationContext(t, actorToken, caller, string(callerAccount.UID)), &healthpb.HealthCheckRequest{})
+	delegatedContext := delegationContext(t, actorToken, caller, string(callerAccount.UID))
+	watch, err := client.Watch(delegatedContext, &healthpb.HealthCheckRequest{})
 	if err == nil {
 		_, err = watch.Recv()
 	}
-	if status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("unconfigured method was not refused: %v", err)
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("direct-only method accepted delegated metadata: %v", err)
+	}
+	if _, err := client.List(delegatedContext, &healthpb.HealthListRequest{}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("unlisted method was not refused: %v", err)
 	}
 	// A compatibility receiver rule cannot infer a delegation from an old Bearer token plus
 	// caller metadata. Mixed and malformed forms are refused before the handler runs.

@@ -447,6 +447,11 @@ def build_chart(
         "runner-gateway",
         env,
         dispatcher_callers=gateway_callers | orchestration_caller,
+        delegation_actor=(
+            ServiceAccountRef(namespace=NAMESPACE, name=actions.NAME)
+            if env.actions.orchestration_v1 is not None
+            else None
+        ),
         gateway_callers=gateway_callers,
         wake_callers=env.wake_caller_accounts | orchestration_caller.keys(),
         database_url=dispatcher_database_url,
@@ -475,6 +480,11 @@ def build_chart(
         env,
         database_url=history_database_url,
         callers=app_caller | notifications_caller | orchestration_caller,
+        delegation_actor=(
+            ServiceAccountRef(namespace=NAMESPACE, name=actions.NAME)
+            if env.actions.orchestration_v1 is not None
+            else None
+        ),
         placement=None,
         registry_secret_name=None,
         container_env=database_env,

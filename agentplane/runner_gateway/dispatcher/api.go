@@ -228,25 +228,11 @@ func MethodsWithDelegation(
 	serviceAccounts auth.ServiceAccountUIDReader,
 	delegatedMethods []string,
 ) (auth.Methods, error) {
-	methods := Methods(resolver)
-	seen := make(map[string]struct{}, len(delegatedMethods))
-	for _, method := range delegatedMethods {
-		if _, duplicate := seen[method]; duplicate {
-			return nil, fmt.Errorf("delegated Dispatcher method is repeated")
-		}
-		seen[method] = struct{}{}
-		rule, ok := methods[method]
-		if !ok {
-			return nil, fmt.Errorf("delegated Dispatcher method is not served")
-		}
-		rule, err := rule.AllowDelegationFrom([]auth.Delegator{delegator}, serviceAccounts)
-		if err != nil {
-			return nil, err
-		}
-		methods[method] = rule
-	}
-	if len(delegatedMethods) > 0 && serviceAccounts == nil {
-		return nil, fmt.Errorf("delegated Dispatcher ServiceAccount reader is required")
+	methods, err := Methods(resolver).WithDelegation(
+		delegatedMethods, []auth.Delegator{delegator}, serviceAccounts,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("configure delegated Dispatcher methods: %w", err)
 	}
 	return methods, nil
 }
