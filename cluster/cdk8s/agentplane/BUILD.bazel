@@ -155,6 +155,7 @@ py_library(
         ":environment",
         ":history_service",
         ":llm_ingress",
+        ":platform_instructions",
         ":runner_gateway",
         ":service_workload",
         "//agentplane:subjects",

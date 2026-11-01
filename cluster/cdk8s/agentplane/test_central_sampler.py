@@ -81,6 +81,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     config = json.loads(_resource(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
     assert "database_url" not in config
     assert config["audience"] == central_sampler.TOKEN_AUDIENCE
+    assert config["platform_instructions"]
     props = staging.ENV.central_sampler
     assert props is not None
     assert set(config["connections"]) == {"llm-ingress", "anthropic-api"}
