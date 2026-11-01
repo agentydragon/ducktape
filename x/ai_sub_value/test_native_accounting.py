@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from x.ai_usage_investigation.native_accounting import aggregate, counters, database, scan
+from x.ai_sub_value.native_accounting import aggregate, counters, database, scan
 
 
 def write(path: Path, records: list[dict]) -> None:

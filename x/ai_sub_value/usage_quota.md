@@ -2,12 +2,14 @@
 
 [The unexecuted notebook](analysis.ipynb) analyzes weekly model usage, token
 categories, quota burn, conditional model capacity and statistical sensitivity.
-It reads local aggregates and makes no provider requests. Evidence, generated
-results, plots and executed notebook copies stay in ignored local paths.
+It reads local aggregates and makes no provider requests. Raw evidence, full
+generated results, plots and executed notebook copies stay in ignored local paths;
+only the dated aggregate snapshot is committed.
 
 Quota figures and tables focus on weekly budgets following Claude's Max 20× →
 Ultra tier change: [verified Ultra accounts have no five-hour limit](https://support.claude.com/en/articles/17728952-what-is-the-ultra-plan).
-Historical five-hour polls can remain in calibration evidence.
+Historical five-hour polls can remain in calibration evidence. The latest
+committed aggregate result is the [2026-10-31 weekly capacity snapshot](weekly_capacity_estimates_2026-10-31.md); its raw evidence and full estimator output remain local.
 
 ## Run locally
 
@@ -40,7 +42,7 @@ export JUPYTER_RUNTIME_DIR="$notebook_runtime/runtime"
 export IPYTHONDIR="$notebook_runtime/ipython"
 python -m ipykernel install --prefix "$notebook_runtime" --name ai-usage \
   --display-name 'AI usage (Nix)'
-cd x/ai_usage_investigation
+cd x/ai_sub_value
 jupyter lab --no-browser --ip=127.0.0.1
 ```
 
@@ -56,6 +58,9 @@ are different quantities. Resets and awards can increase observed throughput
 without increasing the regular subscription allowance. Source panels share a
 Y scale within each provider; sources stay separate because cross-system request
 overlap may be unresolved. OpenAI has no Claude Code Web path.
+
+External estimate comparisons and notes on the All Done Sites Claude Usage
+Tracker are in [external-comparisons.md](external-comparisons.md).
 
 Calibration retains monotonic poll spans below saturation, with consistent
 reset metadata, gaps of at most 15 minutes, companion-gauge coverage and stable
@@ -76,4 +81,4 @@ attribution, changing policy and the observed cache/output/effort mix remain
 separate sources of uncertainty.
 
 Tests use synthetic inputs and run through
-`bbr test //x/ai_usage_investigation:all`.
+`bbr test //x/ai_sub_value:all`.

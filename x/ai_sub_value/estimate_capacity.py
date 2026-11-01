@@ -15,8 +15,8 @@ from typing import Any
 import numpy
 from scipy.optimize import nnls
 
-from x.ai_usage_investigation.analyze import Poll, discontinuity, read_rows
-from x.ai_usage_investigation.bootstrap import BlockMethod, compare_blocks, resample_coefficients, resampling_units
+from x.ai_sub_value.analyze import Poll, discontinuity, read_rows
+from x.ai_sub_value.bootstrap import BlockMethod, compare_blocks, resample_coefficients, resampling_units
 
 
 @dataclass(frozen=True)
