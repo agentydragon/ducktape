@@ -283,98 +283,6 @@
       }
     },
     {
-      "id": 32,
-      "title": "Piraeus thin-pool physical use over time",
-      "description": "Physical bytes used and raw capacity per storage node and pool. These series do not include per-volume estimates or ext4/XFS host filesystem bytes.",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 0,
-        "y": 15
-      },
-      "datasource": "${DS_MIMIR}",
-      "targets": [
-        {
-          "expr": "disk_usage:pool_used_bytes{node=~\"$node\"}",
-          "legendFormat": "{{node}} · {{storage_pool}} used",
-          "refId": "A"
-        },
-        {
-          "expr": "disk_usage:pool_capacity_bytes{node=~\"$node\"}",
-          "legendFormat": "{{node}} · {{storage_pool}} capacity",
-          "refId": "B"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 33,
-      "title": "Diskful copy limits vs pool capacity over time",
-      "description": "PV capacity limits of diskful copies compared with raw pool capacity, per storage node and pool. These limits are not allocated bytes.",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 12,
-        "y": 15
-      },
-      "datasource": "${DS_MIMIR}",
-      "targets": [
-        {
-          "expr": "disk_usage:pool_committed_bytes{node=~\"$node\"}",
-          "legendFormat": "{{node}} · {{storage_pool}} copy limits",
-          "refId": "A"
-        },
-        {
-          "expr": "disk_usage:pool_capacity_bytes{node=~\"$node\"}",
-          "legendFormat": "{{node}} · {{storage_pool}} capacity",
-          "refId": "B"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
       "id": 34,
       "title": "Piraeus thin-pool accounting by storage node",
       "description": "Physical pool usage and capacity are shown separately from the sum of diskful PV limits. Uncommitted headroom is capacity minus those limits and may be negative.",
@@ -383,7 +291,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 15
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -650,6 +558,204 @@
       }
     },
     {
+      "id": 40,
+      "title": "Thin pools on $pool_node",
+      "type": "row",
+      "collapsed": false,
+      "panels": [],
+      "repeat": "pool_node",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      }
+    },
+    {
+      "id": 32,
+      "title": "Physical pool usage",
+      "description": "Physical bytes used and raw capacity per storage node and pool. These series do not include per-volume estimates or ext4/XFS host filesystem bytes.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "disk_usage:pool_used_bytes{node=~\"$pool_node\"}",
+          "legendFormat": "{{storage_pool}} used",
+          "refId": "A"
+        },
+        {
+          "expr": "disk_usage:pool_capacity_bytes{node=~\"$pool_node\"}",
+          "legendFormat": "{{storage_pool}} capacity",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ssd · /"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^hdd · /"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ · capacity$/"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [10, 10],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 33,
+      "title": "Diskful copy limits",
+      "description": "PV capacity limits of diskful copies compared with raw pool capacity, per storage node and pool. These limits are not allocated bytes.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 26
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "disk_usage:pool_committed_bytes{node=~\"$pool_node\"}",
+          "legendFormat": "{{storage_pool}} copy limits",
+          "refId": "A"
+        },
+        {
+          "expr": "disk_usage:pool_capacity_bytes{node=~\"$pool_node\"}",
+          "legendFormat": "{{storage_pool}} capacity",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ssd · /"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^hdd · /"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ · capacity$/"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [10, 10],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
       "id": 35,
       "type": "row",
       "title": "Piraeus diskful volume copies",
@@ -658,7 +764,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 35
       },
       "panels": []
     },
@@ -671,7 +777,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 36
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -730,7 +836,7 @@
         "h": 14,
         "w": 24,
         "x": 0,
-        "y": 47
+        "y": 48
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -882,7 +988,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 61
+        "y": 62
       },
       "panels": []
     },
@@ -895,7 +1001,7 @@
         "h": 11,
         "w": 24,
         "x": 0,
-        "y": 62
+        "y": 63
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -1108,6 +1214,22 @@
         "refresh": 1,
         "sort": 1,
         "type": "query"
+      },
+      {
+        "name": "pool_node",
+        "type": "query",
+        "datasource": "${DS_MIMIR}",
+        "definition": "label_values(disk_usage:pool_capacity_bytes{node=~\"$node\"}, node)",
+        "query": "label_values(disk_usage:pool_capacity_bytes{node=~\"$node\"}, node)",
+        "current": {
+          "text": "All",
+          "value": ["$__all"]
+        },
+        "includeAll": true,
+        "multi": true,
+        "hide": 2,
+        "refresh": 1,
+        "sort": 1
       }
     ]
   },
