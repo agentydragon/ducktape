@@ -57,7 +57,7 @@ func TestRuntimeCloseUncertainExecutionFenceRetainsOwner(t *testing.T) {
 	}
 	r := newLifecycleRunner(t, config)
 	r.mu.Lock()
-	owned := r.executionOwner
+	owned := r.executionOwner.handle
 	r.mu.Unlock()
 	if owned != execution {
 		t.Fatal("Execution service was not installed through its COSI lifecycle")

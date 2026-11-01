@@ -11,6 +11,7 @@ go_library(
         "environment_owner.go",
         "environment_state.go",
         "execution_lifecycle.go",
+        "execution_owner.go",
         "execution_service.go",
         "forward.go",
         "host_intent.go",

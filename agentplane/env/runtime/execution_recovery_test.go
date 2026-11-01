@@ -155,7 +155,7 @@ func TestExecutionControllerFencesBeforeReplacementAndDoesNotReplay(t *testing.T
 		t.Fatalf("successor before fence proof: state=%+v starts=%d", current, starts.Load())
 	}
 	r.mu.Lock()
-	ready := r.executionServer != nil || !r.executionRecovering
+	ready := r.executionOwner.executor("incarnation") != nil || !r.executionOwner.recovering()
 	r.mu.Unlock()
 	if ready {
 		t.Fatal("lost backend remained ready while fence was pending")
@@ -195,7 +195,7 @@ func TestExecutionControllerFailedFenceIsTerminal(t *testing.T) {
 		t.Fatalf("uncertain fence permitted successor: state=%+v starts=%d", current, starts.Load())
 	}
 	r.mu.Lock()
-	owner := r.executionOwner
+	owner := r.executionOwner.handle
 	r.mu.Unlock()
 	if owner != first {
 		t.Fatal("failed fence discarded prior owner")
@@ -461,7 +461,7 @@ func TestExecutionControllerUncertainStartupRetainsOwner(t *testing.T) {
 		t.Fatalf("uncertain startup recorded false fence proof: %+v", current)
 	}
 	r.mu.Lock()
-	owner := r.executionOwner
+	owner := r.executionOwner.handle
 	r.mu.Unlock()
 	if owner != handle {
 		t.Fatal("uncertain startup discarded owner")

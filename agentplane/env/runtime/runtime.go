@@ -126,10 +126,7 @@ type Runtime struct {
 	intent                   *runtimepb.LifecycleIntent
 	lastRunning              *runtimepb.Binding
 	executorProxy            executorpb.ExecutorServer
-	executionServer          executorpb.ExecutorServer
-	executionOwner           executionHandle
-	executionUID             string
-	executionRecovering      bool
+	executionOwner           *executionLifetime
 	activeAdmissions         uint64
 	activeExecutionCalls     uint64
 	execStreamID             uint64
@@ -623,7 +620,7 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 	desired, closing := r.desired, r.closing
 	activeAdmissions := r.activeAdmissions
 	activeExecution := r.activeExecutionCalls
-	executionRecovering := r.executionRecovering
+	executionRecovering := r.executionOwner.recovering()
 	r.mu.Unlock()
 	if facts == nil {
 		facts = &environmentruntimestatepb.EnvironmentRuntimeFacts{}

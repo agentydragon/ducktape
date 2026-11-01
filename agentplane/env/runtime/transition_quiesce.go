@@ -65,7 +65,7 @@ func (c *runtimeTransitionSequence) runQuiesceBarrier(ctx context.Context, kind 
 		report := r.hostReportLocked()
 		if !r.state.Lameduck() && plan.request.HasIdleSince &&
 			(!plan.factsHaveIdleSince || plan.factsIdleSinceMicros != plan.request.IdleSinceMicros ||
-				r.activeAdmissions != 0 || r.activeExecutionCalls != 0 || r.executionRecovering ||
+				r.activeAdmissions != 0 || r.activeExecutionCalls != 0 || r.executionOwner.recovering() ||
 				r.host == nil || report == nil || !report.Ready || r.intent == nil ||
 				!proto.Equal(report.Binding, r.intent.Binding) || report.Facts == nil ||
 				report.Facts.IdleSince == nil ||

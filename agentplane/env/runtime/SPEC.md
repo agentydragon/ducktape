@@ -50,7 +50,10 @@ fenced.
 
 Execution calls admitted through Runtime's public Gateway-facing gRPC server pass its control
 interceptors, epoch and scope checks, and admission accounting before Runtime calls the embedded
-adapter directly. An OpenSession stream uses the public server stream with an epoch-cancelled
+adapter directly. One Runtime-owned lifetime holds the native handle and immutable incarnation UID;
+admission reads the adapter from that owner and closes immediately on its backend loss or stop request,
+without waiting for a COSI event. An uncertain fence retains that owner with admission closed.
+An OpenSession stream uses the public server stream with an epoch-cancelled
 context; cancellation and adapter shutdown settle its workers before native backend fencing.
 
 Incarnation adoption and conditional Quiesce are sequence-bound requests to Runtime's single COSI
