@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"reflect"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -19,21 +17,21 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/httperror"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
+	threadmetadatapb "github.com/agentydragon/ducktape/agentplane/app/thread_metadata/threadmetadatapb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
-	threadDefaultPageSize      = 50
-	threadMaxPageSize          = 200
-	observationDefaultPageSize = 30
-	observationMaxPageSize     = 200
+	threadMaxPageSize = 200
 )
 
 type threadReadStore interface {
@@ -48,10 +46,6 @@ type threadReadHistory interface {
 	GetSummary(context.Context, uuid.UUID) (historydata.FoldSummary, error)
 	BatchGetSummaries(context.Context, []uuid.UUID) (map[uuid.UUID]historydata.FoldSummary, error)
 	FindSessions(context.Context, *string, *string, *string) (map[uuid.UUID]string, error)
-	Observations(context.Context, uuid.UUID, *uint64, *uint64, int) (historydata.ObservationPage, error)
-	ObservationEntry(context.Context, uuid.UUID, uint64, uint64) (*historydata.ObservationEntry, error)
-	Evidence(context.Context, uuid.UUID, string, string, string, uint64, int) (historydata.EvidencePage, error)
-	NativeFrames(context.Context, uuid.UUID, string, string, string, uint64, uint64, int) (historydata.NativeFramePage, error)
 }
 
 type threadSandboxInventory interface {
@@ -63,12 +57,7 @@ type threadRunnerStatusReader interface {
 }
 
 type (
-	threadViewOutput       struct{ Body threadView }
-	threadPageOutput       struct{ Body threadPage }
-	observationPageOutput  struct{ Body historydata.ObservationPage }
-	observationEntryOutput struct{ Body historydata.ObservationEntry }
-	evidencePageOutput     struct{ Body historydata.EvidencePage }
-	nativeFramePageOutput  struct{ Body historydata.NativeFramePage }
+	threadViewOutput struct{ Body threadView }
 )
 
 // threadView keeps the JSON contract of Python's ThreadView, including explicit nulls. The
@@ -114,53 +103,6 @@ type threadPageToken struct {
 	ID        uuid.UUID     `json:"id"`
 }
 
-type threadListInput struct {
-	Sandbox         optionalQueryString `query:"sandbox"`
-	SandboxUID      optionalQueryString `query:"sandbox_uid" format:"uuid"`
-	IncludeArchived bool                `query:"include_archived"`
-	Search          optionalQueryString `query:"search" minLength:"1"`
-	Limit           int                 `query:"limit" minimum:"1" maximum:"200" default:"50"`
-	PageToken       optionalQueryString `query:"page_token"`
-}
-
-// optionalQueryString preserves whether a query parameter was present while giving Huma a
-// non-pointer field type. Huma's query parameter reflection does not support pointers.
-type optionalQueryString struct {
-	Value string
-	IsSet bool
-}
-
-func (p optionalQueryString) Schema(registry huma.Registry) *huma.Schema {
-	return huma.SchemaFromType(registry, reflect.TypeOf(p.Value))
-}
-
-func (p *optionalQueryString) Receiver() reflect.Value {
-	return reflect.ValueOf(p).Elem().Field(0)
-}
-
-func (p *optionalQueryString) OnParamSet(isSet bool, _ any) {
-	p.IsSet = isSet
-}
-
-func (p optionalQueryString) Pointer() *string {
-	if !p.IsSet {
-		return nil
-	}
-	return &p.Value
-}
-
-func parseOptionalUUID(value optionalQueryString) (*string, error) {
-	if !value.IsSet {
-		return nil, nil
-	}
-	id, err := uuid.Parse(value.Value)
-	if err != nil {
-		return nil, fmt.Errorf("must be a UUID")
-	}
-	canonical := id.String()
-	return &canonical, nil
-}
-
 type threadIDInput struct {
 	ThreadID uuid.UUID `path:"thread_id" format:"uuid"`
 }
@@ -197,40 +139,9 @@ func (b *threadRenameBody) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(raw, &b.Name)
 }
 
-type observationListInput struct {
-	ThreadID     uuid.UUID           `path:"thread_id" format:"uuid"`
-	BeforeCursor optionalQueryString `query:"before_cursor" pattern:"^\\d+$"`
-	AfterCursor  optionalQueryString `query:"after_cursor" pattern:"^\\d+$"`
-	Limit        int                 `query:"limit" minimum:"1" maximum:"200" default:"30"`
-}
-
-type observationEntryInput struct {
-	ThreadID uuid.UUID `path:"thread_id" format:"uuid"`
-	Cursor   int64     `path:"cursor"`
-}
-
-type threadEvidenceInput struct {
-	ThreadID        uuid.UUID           `path:"thread_id" format:"uuid"`
-	ProjectionEpoch string              `query:"projection_epoch" required:"true"`
-	EntityKind      string              `query:"entity_kind" required:"true"`
-	EntityID        string              `query:"entity_id" required:"true"`
-	AfterCursor     optionalQueryString `query:"after_cursor" pattern:"^\\d+$"`
-	Limit           int                 `query:"limit" minimum:"1" maximum:"200" default:"30"`
-}
-
-type threadNativeFramesInput struct {
-	ThreadID          uuid.UUID           `path:"thread_id" format:"uuid"`
-	ObservationCursor string              `path:"observation_cursor" pattern:"^\\d+$"`
-	ProjectionEpoch   string              `query:"projection_epoch" required:"true"`
-	EntityKind        string              `query:"entity_kind" required:"true"`
-	EntityID          string              `query:"entity_id" required:"true"`
-	AfterSequence     optionalQueryString `query:"after_sequence" pattern:"^\\d+$"`
-	Limit             int                 `query:"limit" minimum:"1" maximum:"200" default:"30"`
-}
-
-// RegisterThreadReadRoutes adds the metadata/read portion of the Thread API. Content, evidence,
-// command admission, and stream routes remain separate features. The inventory and runner status
-// reader are required for the Python route's active-work archive guard.
+// RegisterThreadReadRoutes adds the app-owned metadata gateway and the Thread read/mutation routes.
+// History-owned reads are served by the History gateway; content and stream routes remain separate.
+// The inventory and runner status reader are required for the archive guard.
 func RegisterThreadReadRoutes(
 	server *HTTPServer,
 	store threadReadStore,
@@ -238,39 +149,8 @@ func RegisterThreadReadRoutes(
 	inventory threadSandboxInventory,
 	runner threadRunnerStatusReader,
 ) {
+	registerThreadMetadataGateway(server, store)
 	api := server.ProtectedAPI()
-	huma.Register[threadListInput, threadPageOutput](api, huma.Operation{
-		OperationID: "listThreads", Method: http.MethodGet, Path: "/threads", Tags: []string{"threads"},
-		Summary: "List persisted Threads newest first",
-	}, func(ctx context.Context, input *threadListInput) (*threadPageOutput, error) {
-		limit := input.Limit
-		if limit == 0 {
-			limit = threadDefaultPageSize
-		}
-		sandboxUID, err := parseOptionalUUID(input.SandboxUID)
-		if err != nil {
-			return nil, huma.Error422UnprocessableEntity("sandbox_uid " + err.Error())
-		}
-		listing := threadListing{
-			Sandbox: input.Sandbox.Pointer(), SandboxUID: sandboxUID, Search: input.Search.Pointer(),
-			IncludeArchived: input.IncludeArchived,
-		}
-		page, err := listThreadViews(ctx, store, history, listing, limit, input.PageToken.Pointer())
-		if err != nil {
-			return nil, threadReadHTTPError(err)
-		}
-		return &threadPageOutput{Body: page}, nil
-	})
-	huma.Register[threadIDInput, threadViewOutput](api, huma.Operation{
-		OperationID: "getThread", Method: http.MethodGet, Path: "/threads/{thread_id}", Tags: []string{"threads"},
-		Summary: "Read one Thread and its current History summary",
-	}, func(ctx context.Context, input *threadIDInput) (*threadViewOutput, error) {
-		view, err := getThreadView(ctx, store, history, input.ThreadID)
-		if err != nil {
-			return nil, threadReadHTTPError(err)
-		}
-		return &threadViewOutput{Body: view}, nil
-	})
 	huma.Register[threadRenameInput, threadViewOutput](api, huma.Operation{
 		OperationID: "renameThread", Method: http.MethodPatch, Path: "/threads/{thread_id}", Tags: []string{"threads"},
 		Summary: "Set or clear an operator-managed Thread title",
@@ -345,123 +225,76 @@ func RegisterThreadReadRoutes(
 		}
 		return nil, nil
 	})
-	huma.Register[observationListInput, observationPageOutput](api, huma.Operation{
-		OperationID: "listThreadObservations", Method: http.MethodGet, Path: "/threads/{thread_id}/observations", Tags: []string{"threads"},
-		Summary: "List original History observations chronologically",
-	}, func(ctx context.Context, input *observationListInput) (*observationPageOutput, error) {
-		beforeText := input.BeforeCursor.Pointer()
-		afterText := input.AfterCursor.Pointer()
-		if beforeText != nil && afterText != nil {
-			return nil, huma.Error422UnprocessableEntity("select either before_cursor or after_cursor")
-		}
-		limit := input.Limit
-		if limit == 0 {
-			limit = observationDefaultPageSize
-		}
-		before, err := parseHistoryCursor(beforeText)
+}
+
+type threadMetadataService struct {
+	threadmetadatapb.UnimplementedThreadMetadataServiceServer
+	store threadReadStore
+}
+
+func registerThreadMetadataGateway(server *HTTPServer, store threadReadStore) {
+	mux := gatewayruntime.NewServeMux()
+	if err := threadmetadatapb.RegisterThreadMetadataServiceHandlerServer(context.Background(), mux, &threadMetadataService{store: store}); err != nil {
+		panic(fmt.Errorf("register generated Thread Metadata gateway: %w", err))
+	}
+	server.RegisterRawRoute("GET /upstream/app/v1/threads", mux, false)
+	server.RegisterRawRoute("GET /upstream/app/v1/threads/{thread_id}", mux, false)
+}
+
+func (s *threadMetadataService) GetThreadMetadata(ctx context.Context, request *threadmetadatapb.GetThreadMetadataRequest) (*threadmetadatapb.ThreadMetadata, error) {
+	id, err := uuid.Parse(request.GetThreadId())
+	if err != nil || id.String() != request.GetThreadId() {
+		return nil, status.Error(codes.InvalidArgument, "thread_id must be a canonical UUID")
+	}
+	thread, err := s.store.GetThread(ctx, id)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "read Thread metadata")
+	}
+	if thread == nil {
+		return nil, status.Error(codes.NotFound, "Thread metadata not found")
+	}
+	return threadMetadataProto(*thread), nil
+}
+
+func (s *threadMetadataService) ListThreadMetadata(ctx context.Context, request *threadmetadatapb.ListThreadMetadataRequest) (*threadmetadatapb.ListThreadMetadataResponse, error) {
+	limit := int(request.GetLimit())
+	if limit == 0 {
+		limit = 50
+	}
+	if limit < 1 || limit > threadMaxPageSize {
+		return nil, status.Errorf(codes.InvalidArgument, "limit must be between 1 and %d", threadMaxPageSize)
+	}
+	listing := threadListing{IncludeArchived: request.GetIncludeArchived()}
+	var token *string
+	if request.GetPageToken() != "" {
+		value := request.GetPageToken()
+		token = &value
+	}
+	after, err := decodeThreadPageToken(token, listing)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	page, err := s.store.ListPage(ctx, limit, after, listing.IncludeArchived)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "list Thread metadata")
+	}
+	response := &threadmetadatapb.ListThreadMetadataResponse{Threads: make([]*threadmetadatapb.ThreadMetadata, 0, len(page.Threads))}
+	for _, thread := range page.Threads {
+		response.Threads = append(response.Threads, threadMetadataProto(thread))
+	}
+	if page.Next != nil {
+		response.NextPageToken, err = encodeThreadPageToken(listing, page.Next.CreatedAt, page.Next.ID)
 		if err != nil {
-			return nil, huma.Error422UnprocessableEntity(err.Error())
+			return nil, status.Error(codes.Internal, "encode Thread metadata page token")
 		}
-		after, err := parseHistoryCursor(afterText)
-		if err != nil {
-			return nil, huma.Error422UnprocessableEntity(err.Error())
-		}
-		if limit < 1 || limit > observationMaxPageSize {
-			return nil, huma.Error422UnprocessableEntity("observation page size must be between 1 and 200")
-		}
-		if _, err := getThreadView(ctx, store, history, input.ThreadID); err != nil {
-			return nil, threadReadHTTPError(err)
-		}
-		page, err := history.Observations(ctx, input.ThreadID, before, after, limit)
-		if err != nil {
-			return nil, threadReadHTTPError(err)
-		}
-		return &observationPageOutput{Body: page}, nil
-	})
-	huma.Register[observationEntryInput, observationEntryOutput](api, huma.Operation{
-		OperationID: "getThreadObservation", Method: http.MethodGet, Path: "/threads/{thread_id}/observations/{cursor}", Tags: []string{"threads"},
-		Summary: "Read one original History event behind an observation",
-	}, func(ctx context.Context, input *observationEntryInput) (*observationEntryOutput, error) {
-		if input.Cursor < 1 {
-			return nil, huma.Error404NotFound(fmt.Sprintf("no observation at %d in this thread", input.Cursor))
-		}
-		summary, err := history.GetSummary(ctx, input.ThreadID)
-		if err != nil {
-			return nil, threadReadHTTPError(err)
-		}
-		entry, err := history.ObservationEntry(ctx, input.ThreadID, uint64(input.Cursor), summary.FoldedThrough)
-		if err != nil {
-			return nil, threadReadHTTPError(err)
-		}
-		if entry == nil {
-			return nil, huma.Error404NotFound(fmt.Sprintf("no observation at %d in this thread", input.Cursor))
-		}
-		return &observationEntryOutput{Body: *entry}, nil
-	})
-	huma.Register[threadEvidenceInput, evidencePageOutput](api, huma.Operation{
-		OperationID: "readThreadEvidence", Method: http.MethodGet, Path: "/threads/{thread_id}/evidence", Tags: []string{"threads"},
-		Summary: "Read observations linked to one projected Thread entity",
-	}, func(ctx context.Context, input *threadEvidenceInput) (*evidencePageOutput, error) {
-		afterText := input.AfterCursor.Pointer()
-		if afterText == nil {
-			afterText = stringPointer("0")
-		}
-		after, err := parseHistoryCursor(afterText)
-		if err != nil || after == nil {
-			if err == nil {
-				err = errors.New("cursor must contain decimal digits")
-			}
-			return nil, huma.Error422UnprocessableEntity(err.Error())
-		}
-		limit := input.Limit
-		if limit == 0 {
-			limit = observationDefaultPageSize
-		}
-		if limit < 1 || limit > observationMaxPageSize {
-			return nil, huma.Error422UnprocessableEntity("evidence page size must be between 1 and 200")
-		}
-		page, err := history.Evidence(ctx, input.ThreadID, input.ProjectionEpoch, input.EntityKind, input.EntityID, *after, limit)
-		if err != nil {
-			return nil, threadEvidenceHTTPError(err)
-		}
-		return &evidencePageOutput{Body: page}, nil
-	})
-	huma.Register[threadNativeFramesInput, nativeFramePageOutput](api, huma.Operation{
-		OperationID: "readThreadNativeFrames", Method: http.MethodGet, Path: "/threads/{thread_id}/evidence/{observation_cursor}/frames", Tags: []string{"threads"},
-		Summary: "Read native frames for one evidence observation",
-	}, func(ctx context.Context, input *threadNativeFramesInput) (*nativeFramePageOutput, error) {
-		observationText := input.ObservationCursor
-		observation, err := parseHistoryCursor(&observationText)
-		if err != nil || observation == nil {
-			if err == nil {
-				err = errors.New("cursor must contain decimal digits")
-			}
-			return nil, huma.Error422UnprocessableEntity(err.Error())
-		}
-		afterText := input.AfterSequence.Pointer()
-		if afterText == nil {
-			afterText = stringPointer("0")
-		}
-		after, err := parseHistoryCursor(afterText)
-		if err != nil || after == nil {
-			if err == nil {
-				err = errors.New("cursor must contain decimal digits")
-			}
-			return nil, huma.Error422UnprocessableEntity(err.Error())
-		}
-		limit := input.Limit
-		if limit == 0 {
-			limit = observationDefaultPageSize
-		}
-		if limit < 1 || limit > observationMaxPageSize {
-			return nil, huma.Error422UnprocessableEntity("native frame page size must be between 1 and 200")
-		}
-		page, err := history.NativeFrames(ctx, input.ThreadID, input.ProjectionEpoch, input.EntityKind, input.EntityID, *observation, *after, limit)
-		if err != nil {
-			return nil, threadEvidenceHTTPError(err)
-		}
-		return &nativeFramePageOutput{Body: page}, nil
-	})
+	}
+	return response, nil
+}
+
+func threadMetadataProto(thread threads.Thread) *threadmetadatapb.ThreadMetadata {
+	return &threadmetadatapb.ThreadMetadata{
+		ThreadId: thread.ID.String(), CreatedAt: timestamppb.New(thread.CreatedAt), Name: thread.Name, Archived: thread.Archived,
+	}
 }
 
 func listThreadViews(ctx context.Context, store threadReadStore, history threadReadHistory, listing threadListing, limit int, token *string) (threadPage, error) {
@@ -772,20 +605,6 @@ func threadSandboxReady(sandbox *sandboxespb.Sandbox) bool {
 	return false
 }
 
-func parseHistoryCursor(value *string) (*uint64, error) {
-	if value == nil {
-		return nil, nil
-	}
-	if *value == "" {
-		return nil, errors.New("cursor must contain decimal digits")
-	}
-	parsed, err := strconv.ParseUint(*value, 10, 63)
-	if err != nil {
-		return nil, fmt.Errorf("cursor is outside the signed 64-bit range: %s", *value)
-	}
-	return &parsed, nil
-}
-
 func threadReadHTTPError(err error) error {
 	return httperror.LogServerError(classifyThreadReadError(err), err)
 }
@@ -826,8 +645,6 @@ func classifyThreadReadError(err error) error {
 		return huma.Error500InternalServerError("Thread metadata could not be read")
 	}
 }
-
-func threadEvidenceHTTPError(err error) error { return threadReadHTTPError(err) }
 
 func isHistoryConnectionError(err error) bool {
 	var networkError interface{ Timeout() bool }

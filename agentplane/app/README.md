@@ -201,7 +201,9 @@ receives its request. The History Service's fold-commit notices and the app's
 transactional `NOTIFY` wake Thread and inventory readers; both are hints, and the History Service's
 cursor remains authoritative.
 
-`/#/threads/{id}` loads metadata and the thread's tail independently of runner discovery. The
+`/#/threads/{id}` combines app-owned Thread metadata from `/upstream/app/v1/threads/{id}` with the
+History Service's generated `/upstream/history/v1/sessions/{id}/summary`, using generated protobuf
+TypeScript schemas, and loads the thread's tail independently of runner discovery. The
 browser follows one Electric shape over the thread's rows and one per payload field it shows, each
 pinned by `/threads/{id}/sync/*` to the thread and its projection epoch, and loads its window as
 subset snapshots of them: the latest 30 positions, the page before the oldest row it holds whenever
@@ -313,8 +315,8 @@ The sidebar subscribes to `/live/threads`: whole snapshots of a window of the Th
 first. The window holds a page of Threads and grows a page at a time on request; a search (name,
 Sandbox, or the start of the ID) and the archived switch narrow it on the server, and the Thread a
 page has open rides along wherever it falls, so every Thread on screen stays current without the
-browser holding the whole list. `GET /threads` pages the same list under opaque tokens bound to
-their filters. The frame carries Threads only, so only the PostgreSQL thread notifications, which
+browser holding the whole list. The sidebar uses this stream instead of paging a separate HTTP list.
+The frame carries Threads only, so only the PostgreSQL thread notifications, which
 History summary changes also send, refresh it, and Kubernetes changes do not. The browser reads
 Sandboxes only from its one `/live/sandboxes` stream, which the whole shell shares (sidebar, landing
 page, Sandbox list, and a Thread's top bar and composer), so two views of one Sandbox cannot
@@ -580,7 +582,7 @@ A new Thread's id is the public Session ID the browser mints and the opening API
 `{session_id}` in a cwd resolves server-side. The browser sends a fresh Session ID with the original
 overrides once and keeps only that ID in `sessionStorage`, never the spec or setup script, so it
 cannot retry the create. After a lost reply or a reload it never re-sends Open. **Check Open status**
-reads the Dispatcher opening and checks `GET /threads/{id}` for the projected Thread. A queued or
+reads the Dispatcher opening and checks the app metadata and History summary endpoints for the projected Thread. A queued or
 runner-admitted opening is not presented as an existing Thread until History records it; the page
 keeps the status and reason visible while the projection catches up.
 
@@ -685,26 +687,25 @@ service-worker tests do not establish that production experience.
 
 ### Lazy thread evidence
 
-`GET /threads/{thread_id}/evidence` lists observations associated with
-one `entity_kind`/`entity_id`, scoped by the exact `source_id` and `projection_epoch`.
-It returns observation cursors and whether native links exist, without reading frame bodies.
-`after_cursor` is exclusive; `next_after_cursor` is null at the end of the page sequence.
+The browser reads History evidence through the generated HTTP facade at
+`POST /upstream/history/v1/sessions/{session_id}/entity-evidence`. The request carries the exact
+`projection_epoch` and entity key; the response returns observation cursors and whether native
+links exist, without reading frame bodies. `after_cursor` is exclusive; the optional
+`next_after_cursor` is absent on the last page.
 
-`GET /threads/{thread_id}/evidence/{observation_cursor}/frames` expands
-one association under the same scope and entity. It pages native links by exclusive
-`after_sequence`, returning whole raw entries. Missing captured frames are explicitly
-`unavailable`; an association with no native links returns an empty page. All returned
-cursors/sequences are decimal strings. Both reads default to 30 records and allow up to
-200, reject stale source/epoch references with 410, and require the normal app identity.
+`POST /upstream/history/v1/sessions/{session_id}/native-frames` expands one association under the
+same scope and entity. It pages native links by exclusive `after_sequence`, returning whole raw
+entries. Missing captured frames have no retained entry; an association with no native links
+returns an empty page. All returned cursors/sequences are decimal strings. Both reads default to
+30 records and allow up to 200; the History Service reports stale projection references.
 
-`GET /threads/{thread_id}/observations` reads the original archive,
-including semantic observations, unlinked native frames, stderr, and debug checkpoints.
-With no cursor it selects the latest 30 records. Supply either exclusive `before_cursor`
-or `after_cursor` to page older or newer; responses remain in chronological order and
-provide both continuation cursors. The limit is a record count (1–200), with no body
-truncation. Reads seek through the archive primary key and retain only the selected page.
-Raw source/sequence identities do not depend on the current projection epoch. This read
-requires the same app identity and is intended for explicit debug inspection.
+`GET /upstream/history/v1/sessions/{session_id}/observations` reads the original archive,
+including semantic observations, unlinked native frames, stderr, and debug checkpoints. The
+generated response includes the History watermark and settled ranges, so the browser can page in
+either direction while preserving 64-bit cursors. The limit is a record count (1–200), with no
+body truncation. Reads seek through the archive primary key and retain only the selected page.
+Raw source/sequence identities do not depend on the current projection epoch. This read is
+intended for explicit debug inspection.
 
 Command evidence stays attached to the stable admission position when a later observation
 settles it, including shared input confirmations and lifecycle effects.

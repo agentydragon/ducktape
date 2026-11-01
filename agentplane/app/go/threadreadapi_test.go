@@ -249,19 +249,6 @@ func TestListThreadViewsFiltersBySandboxIncarnationAndBindsPageToken(t *testing.
 	}
 }
 
-func TestThreadListSandboxUIDQueryParsing(t *testing.T) {
-	parsed, err := parseOptionalUUID(optionalQueryString{Value: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA", IsSet: true})
-	if err != nil || parsed == nil || *parsed != "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" {
-		t.Fatalf("parseOptionalUUID = %v, %v; want canonical UUID", parsed, err)
-	}
-	if parsed, err := parseOptionalUUID(optionalQueryString{}); err != nil || parsed != nil {
-		t.Fatalf("omitted sandbox_uid = %v, %v; want nil", parsed, err)
-	}
-	if _, err := parseOptionalUUID(optionalQueryString{Value: "not-a-uuid", IsSet: true}); err == nil {
-		t.Fatal("invalid sandbox_uid was accepted")
-	}
-}
-
 func TestMakeThreadViewPreservesFeedStatusEnum(t *testing.T) {
 	thread := threads.Thread{ID: uuid.New(), CreatedAt: time.Now().UTC()}
 	attachment := &runnerpb.Attached{HarnessState: runnerpb.HarnessState_HARNESS_STATE_STOPPED}
@@ -352,127 +339,15 @@ func TestThreadReadRouteRegistrationPublishesOpenAPIPaths(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("GET /openapi.json status = %d; body: %s", recorder.Code, recorder.Body.String())
 	}
-	for _, path := range []string{
-		"/threads", "/threads/{thread_id}", "/threads/{thread_id}/archive",
-		"/threads/{thread_id}/unarchive",
-		"/threads/{thread_id}/observations", "/threads/{thread_id}/observations/{cursor}",
-		"/threads/{thread_id}/evidence", "/threads/{thread_id}/evidence/{observation_cursor}/frames",
-	} {
+	for _, path := range []string{"/threads/{thread_id}", "/threads/{thread_id}/archive", "/threads/{thread_id}/unarchive"} {
 		if !strings.Contains(recorder.Body.String(), `"`+path+`"`) {
 			t.Errorf("OpenAPI does not describe %s", path)
 		}
 	}
-	var document struct {
-		Paths map[string]map[string]struct {
-			Parameters []struct {
-				Name     string `json:"name"`
-				In       string `json:"in"`
-				Required bool   `json:"required"`
-				Schema   struct {
-					Format string `json:"format"`
-				} `json:"schema"`
-			} `json:"parameters"`
-		} `json:"paths"`
-	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &document); err != nil {
-		t.Fatalf("decode OpenAPI document: %v", err)
-	}
-	list, ok := document.Paths["/threads"]["get"]
-	if !ok {
-		t.Fatal("OpenAPI has no GET operation for /threads")
-	}
-	var sandboxUIDParameter *struct {
-		Name     string `json:"name"`
-		In       string `json:"in"`
-		Required bool   `json:"required"`
-		Schema   struct {
-			Format string `json:"format"`
-		} `json:"schema"`
-	}
-	for index := range list.Parameters {
-		if list.Parameters[index].Name == "sandbox_uid" {
-			sandboxUIDParameter = &list.Parameters[index]
-			break
+	for _, path := range []string{"/threads", "/threads/{thread_id}/observations", "/threads/{thread_id}/observations/{cursor}", "/threads/{thread_id}/evidence"} {
+		if strings.Contains(recorder.Body.String(), `"`+path+`"`) {
+			t.Errorf("OpenAPI still documents app-owned History wrapper %s", path)
 		}
-	}
-	if sandboxUIDParameter == nil || sandboxUIDParameter.In != "query" || sandboxUIDParameter.Required || sandboxUIDParameter.Schema.Format != "uuid" {
-		t.Fatalf("GET /threads sandbox_uid parameter = %+v, want optional UUID query parameter", sandboxUIDParameter)
-	}
-	for _, path := range []string{"/threads/{thread_id}/evidence", "/threads/{thread_id}/evidence/{observation_cursor}/frames"} {
-		get, ok := document.Paths[path]["get"]
-		if !ok {
-			t.Fatalf("OpenAPI has no GET operation for %s", path)
-		}
-		parameters := make(map[string]bool, len(get.Parameters))
-		for _, parameter := range get.Parameters {
-			if parameter.In == "query" {
-				parameters[parameter.Name] = parameter.Required
-			}
-		}
-		for _, name := range []string{"projection_epoch", "entity_kind", "entity_id"} {
-			if required, present := parameters[name]; !present || !required {
-				t.Errorf("GET %s query parameter %q required = %t, present = %t; want required", path, name, required, present)
-			}
-		}
-	}
-}
-
-func TestEvidenceCursorsMatchSignedDecimalBounds(t *testing.T) {
-	for _, value := range []string{"0", "1", "9223372036854775807"} {
-		parsed, err := parseHistoryCursor(stringPointer(value))
-		if err != nil || parsed == nil {
-			t.Errorf("parseHistoryCursor(%q) = %v, %v", value, parsed, err)
-		}
-	}
-	for _, value := range []string{"", "-1", "1.2", "9223372036854775808"} {
-		if parsed, err := parseHistoryCursor(stringPointer(value)); err == nil {
-			t.Errorf("parseHistoryCursor(%q) = %v, want error", value, parsed)
-		}
-	}
-}
-
-func TestEvidenceErrorsMapToPythonStatusesAndDetails(t *testing.T) {
-	for _, test := range []struct {
-		name       string
-		err        error
-		wantStatus int
-		wantDetail string
-	}{
-		{name: "changed projection epoch", err: historydata.ErrScopeChanged, wantStatus: http.StatusGone, wantDetail: "the thread fold projection epoch has changed"},
-		{name: "missing entity or observation", err: historydata.ErrEvidenceNotFound, wantStatus: http.StatusNotFound, wantDetail: "no selected thread entity"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			mapped := threadEvidenceHTTPError(test.err)
-			var statusError interface{ GetStatus() int }
-			if !errors.As(mapped, &statusError) {
-				t.Fatalf("mapped error %T does not expose an HTTP status", mapped)
-			}
-			if statusError.GetStatus() != test.wantStatus || !strings.Contains(mapped.Error(), test.wantDetail) {
-				t.Fatalf("mapped error = (%d, %q), want status %d and detail %q", statusError.GetStatus(), mapped.Error(), test.wantStatus, test.wantDetail)
-			}
-		})
-	}
-}
-
-func TestEvidenceJSONUsesSnakeCaseCursorStringsAndNulls(t *testing.T) {
-	evidence, err := json.Marshal(historydata.EvidencePage{
-		Observations:    []historydata.EvidenceObservation{{ObservationCursor: "9007199254740993", HasNative: true}},
-		NextAfterCursor: stringPointer("9007199254740993"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := string(evidence), `{"observations":[{"observation_cursor":"9007199254740993","has_native":true}],"next_after_cursor":"9007199254740993"}`; got != want {
-		t.Fatalf("evidence JSON = %s, want %s", got, want)
-	}
-	frames, err := json.Marshal(historydata.NativeFramePage{
-		Frames: []historydata.NativeFrame{{SourceSequence: "12", Availability: "unavailable", Entry: nil}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := string(frames), `{"frames":[{"source_sequence":"12","availability":"unavailable","entry":null}],"next_after_sequence":null}`; got != want {
-		t.Fatalf("native frame JSON = %s, want %s", got, want)
 	}
 }
 

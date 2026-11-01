@@ -132,29 +132,33 @@ func TestNonUUIDIDSegmentMatchesNoRoute(t *testing.T) {
 		t.Fatal("non-UUID sync route reached its handler")
 	}), false)
 	handler := server.Handler(nil)
-	for _, path := range []string{
-		"/threads/form", "/threads/form/observations", "/threads/form/sync/scope",
-		"/sandboxes/live/sessions/form/opening", "/threads/form/events/stream",
-		"/threads/00000000000000000000000000000000", // uuid.Parse accepts this; route converters do not.
+	for _, request := range []struct{ method, path string }{
+		{http.MethodPatch, "/threads/form"},
+		{http.MethodGet, "/threads/form/observations"},
+		{http.MethodGet, "/threads/form/sync/scope"},
+		{http.MethodGet, "/sandboxes/live/sessions/form/opening"},
+		{http.MethodGet, "/threads/form/events/stream"},
+		// uuid.Parse accepts this compact spelling; route converters do not.
+		{http.MethodPatch, "/threads/00000000000000000000000000000000"},
 	} {
-		t.Run(path, func(t *testing.T) {
+		t.Run(request.method+" "+request.path, func(t *testing.T) {
 			response := httptest.NewRecorder()
-			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+			handler.ServeHTTP(response, httptest.NewRequest(request.method, request.path, nil))
 			if response.Code != http.StatusNotFound {
-				t.Fatalf("GET %s status = %d, want 404; body: %s", path, response.Code, response.Body.String())
+				t.Fatalf("%s %s status = %d, want 404; body: %s", request.method, request.path, response.Code, response.Body.String())
 			}
 		})
 	}
-	for _, path := range []string{
-		"/threads/00000000-0000-0000-0000-000000000000",
-		"/threads/00000000-0000-0000-0000-000000000000/sync/scope",
-		"/sandboxes/live/sessions/00000000-0000-0000-0000-000000000000/opening",
-		"/threads/notices/stream",
+	for _, request := range []struct{ method, path string }{
+		{http.MethodPatch, "/threads/00000000-0000-0000-0000-000000000000"},
+		{http.MethodGet, "/threads/00000000-0000-0000-0000-000000000000/sync/scope"},
+		{http.MethodGet, "/sandboxes/live/sessions/00000000-0000-0000-0000-000000000000/opening"},
+		{http.MethodGet, "/threads/notices/stream"},
 	} {
 		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		handler.ServeHTTP(response, httptest.NewRequest(request.method, request.path, nil))
 		if response.Code != http.StatusUnauthorized {
-			t.Errorf("GET %s status = %d, want authentication boundary", path, response.Code)
+			t.Errorf("%s %s status = %d, want authentication boundary", request.method, request.path, response.Code)
 		}
 	}
 }

@@ -1,0 +1,34 @@
+load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+proto_library(
+    name = "thread_metadata_proto",
+    srcs = ["thread_metadata.proto"],
+    deps = [
+        "@googleapis//google/api:annotations_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "thread_metadata_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":thread_metadata_proto",
+    deps = ["//google/api:annotations_pb"],
+)
+
+go_proto_library(
+    name = "thread_metadata_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+        "//devinfra/go:grpc_gateway",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/thread_metadata/threadmetadatapb",
+    proto = ":thread_metadata_proto",
+    deps = ["@org_golang_google_genproto_googleapis_api//annotations"],
+)

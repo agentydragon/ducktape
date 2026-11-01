@@ -45,6 +45,7 @@ go_library(
         "//agentplane/app/go/status",
         "//agentplane/app/go/threadcommands",
         "//agentplane/app/go/threads",
+        "//agentplane/app/thread_metadata:thread_metadata_go_proto",
         "//agentplane/egress:egress_admin_go_proto",
         "//agentplane/egress/api/v1alpha1",
         "//agentplane/grpc/bearer",
@@ -95,6 +96,7 @@ go_library(
         "@org_golang_google_protobuf//reflect/protoreflect",
         "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 

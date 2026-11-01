@@ -7,7 +7,7 @@ import httpx
 from google.protobuf.timestamp_pb2 import Timestamp
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app.testing.models import ThreadPage, ThreadView
+from agentplane.app.testing.models import ThreadMetadata
 from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
 
 SPEC = runner_pb2.SessionSpec(
@@ -33,8 +33,10 @@ class ThreadHTTP:
             stop=stop_after_delay(15), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
         ):
             with attempt:
-                response = await self.http.get(f"/threads/{thread_id}")
-                assert response.status_code == 200, response.text
+                metadata = await self.http.get(f"/upstream/app/v1/threads/{thread_id}")
+                assert metadata.status_code == 200, metadata.text
+                summary = await self.http.get(f"/upstream/history/v1/sessions/{thread_id}/summary")
+                assert summary.status_code == 200, summary.text
 
     async def rename(self, thread_id: UUID, name: str) -> None:
         await self.wait(thread_id)
@@ -45,16 +47,23 @@ class ThreadHTTP:
         response = await self.http.post(f"/threads/{thread_id}/archive")
         response.raise_for_status()
 
-    async def list_threads(self, *, sandbox: str | None = None) -> list[ThreadView]:
-        params = {"include_archived": "true"}
-        if sandbox is not None:
-            params["sandbox"] = sandbox
-        threads: list[ThreadView] = []
+    async def list_threads(self, *, sandbox: str | None = None) -> list[ThreadMetadata]:
+        params = {"include_archived": "true", "limit": "200"}
+        threads: list[ThreadMetadata] = []
         while True:
-            response = await self.http.get("/threads", params=params)
+            response = await self.http.get("/upstream/app/v1/threads", params=params)
             response.raise_for_status()
-            page = ThreadPage.model_validate(response.json())
-            threads.extend(page.threads)
-            if page.next_page_token is None:
+            page = response.json()
+            for row in page.get("threads", []):
+                metadata = ThreadMetadata.model_validate(row)
+                summary = await self.http.get(f"/upstream/history/v1/sessions/{metadata.thread_id}/summary")
+                if summary.status_code == httpx.codes.NOT_FOUND:
+                    continue
+                summary.raise_for_status()
+                history_sandbox = (summary.json().get("sandbox") or {}).get("name")
+                if sandbox is None or history_sandbox == sandbox:
+                    threads.append(metadata)
+            page_token = page.get("nextPageToken")
+            if not page_token:
                 return threads
-            params["page_token"] = page.next_page_token
+            params["page_token"] = page_token
