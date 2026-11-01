@@ -120,6 +120,7 @@ func (a *claudeAdapter) Environment() (map[string]string, error) {
 	environment["ANTHROPIC_BASE_URL"] = a.launch.BaseURL
 	environment["CLAUDE_CONFIG_DIR"] = configDir
 	environment["CLAUDE_CODE_MAX_RETRIES"] = fmt.Sprint(claudeMaxRetries)
+	// TODO: Consider exporting native Claude OpenTelemetry to an Agentplane collector.
 	environment["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
 	if session.TotalContextBudgetTokens != nil && *session.TotalContextBudgetTokens != 0 {
 		environment["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = fmt.Sprint(*session.TotalContextBudgetTokens)
