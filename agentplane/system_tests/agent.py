@@ -16,46 +16,37 @@ import re
 import time
 from contextlib import aclosing
 from dataclasses import dataclass, field
-from http import HTTPStatus
 from typing import Any, TypeVar
 from uuid import UUID, uuid4
 
-import httpx
-from google.protobuf.json_format import MessageToDict
+import grpc
 from pydantic import BaseModel
-from tenacity import AsyncRetrying, retry_if_exception, retry_if_result, stop_after_delay, wait_fixed
+from tenacity import AsyncRetrying, retry_if_result, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.app.testing.models import ThreadView
+from agentplane.grpc.calls import ServiceError
 from agentplane.proto import event_log_pb2, event_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.tracing import tracer
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
+# gazelle:include_dep @pypi//protobuf
+
 # A turn on the cheap model with a few tool calls. A harness that stops making progress should fail
 # its scenario rather than hold the suite until Bazel's clock runs out.
 TURN_SECONDS = 300.0
 # The runner's writable volume; the image's workspace is not writable by the runner's user.
 WORKING_DIRECTORY = "/state/work"
-# How long a Running sandbox may still be short of a connected runner. Generous because the gap is
-# a container start, not a fixed cost, and a scenario that waits a few seconds here is cheaper than
-# one that fails a whole run.
+# How long an accepted Session opening may remain queued while its runner connects.
 RUNNER_ANSWERS_SECONDS = 120.0
 
 
-def _runner_not_answering(error: BaseException) -> bool:
-    """The app's `503`, and only that: it means the runner has not answered yet. Its `409`s -- an
-    unreachable sandbox, a refused Open -- are verdicts, not delays, and must fail immediately."""
-    return isinstance(error, httpx.HTTPStatusError) and error.response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
-
-
-def environment_runtime_startup_retries() -> AsyncRetrying:
-    return AsyncRetrying(
-        stop=stop_after_delay(RUNNER_ANSWERS_SECONDS),
-        wait=wait_fixed(2),
-        retry=retry_if_exception(_runner_not_answering),
-        reraise=True,
+def _opening_outcome_may_be_unknown(error: BaseException) -> bool:
+    """Only reconcile transport failures that can hide a committed Dispatcher write."""
+    return isinstance(error, TimeoutError) or (
+        isinstance(error, ServiceError) and error.code in {grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.UNKNOWN}
     )
 
 
@@ -70,8 +61,8 @@ _OBJECT = re.compile(r"\{.*\}", re.DOTALL)
 class Turn:
     """What one turn produced: the harness's own tool outputs and its assistant text."""
 
-    # `time.monotonic()` when the app accepted the turn's input: the Dispatcher holds it, and no
-    # native work need have started.
+    # `time.monotonic()` when the Dispatcher answered the input request; no native work need have
+    # started, and subsequent app projection time remains part of the measured turn.
     accepted: float
     tool_outputs: list[str] = field(default_factory=list)
     text: list[str] = field(default_factory=list)
@@ -109,7 +100,7 @@ class Turn:
 
 
 class Agent:
-    """One Thread. `run` returns only a successfully completed turn."""
+    """One native Session with an app Thread projection for event reads."""
 
     def __init__(
         self,
@@ -128,6 +119,7 @@ class Agent:
         self._thread_id = thread_id
         self._cursor = cursor
         self._target = (sandbox, sandbox_uid) if sandbox and sandbox_uid else None
+        self._app_projection_asserted = False
 
     @property
     def thread_id(self) -> UUID:
@@ -145,34 +137,69 @@ class Agent:
         model: str,
         instructions: str = "",
         cwd: str = WORKING_DIRECTORY,
+        reasoning_effort: str = "low",
+        setup_script: str | None = None,
     ) -> Agent:
-        """Open a session, waiting out a runner that is up but not yet connected.
+        """Open an explicit Session through Dispatcher and wait for Runner admission.
 
-        A Running Sandbox's runner may not answer yet. Retry that `503` with the same
-        Session ID; other HTTP errors fail immediately.
-
-        `instructions` are the session's standing orders, in front of the model on every turn; empty
-        is the proto's own default and opens the session the runner would open without the field.
+        On an ambiguous transport result, reconcile the one caller-minted Session ID by read. The
+        app Thread projection is checked later, when the test uses the app-owned event stream.
         """
         with tracer.start_as_current_span(
             "system_test.session.open",
             attributes={"sandbox.name": sandbox, "harness": session_pb2.Harness.Name(harness)},
         ):
             spec = session_pb2.SessionSpec(
-                harness=harness, cwd=cwd, model=model, reasoning_effort="low", instructions=instructions
+                harness=harness, cwd=cwd, model=model, reasoning_effort=reasoning_effort, instructions=instructions
             )
-            # Retry the same desired session even if an earlier Open reached the runner.
             session_id = uuid4()
-            async for attempt in environment_runtime_startup_retries():
-                with attempt:
-                    await client.create_session(
-                        sandbox, session_id, sandbox_uid=sandbox_uid, overrides=MessageToDict(spec)
-                    )
-                    thread = await client.wait_for_thread_projection(session_id, timeout_s=RUNNER_ANSWERS_SECONDS)
-                    return cls(
-                        client, dispatcher, thread_id=thread.id, cursor=0, sandbox=sandbox, sandbox_uid=str(sandbox_uid)
-                    )
-            raise AssertionError("unreachable: reraise=True either returns an agent or raises")
+            session_id_text = str(session_id)
+            try:
+                opening = await dispatcher.open_session(
+                    session_id_text, sandbox, str(sandbox_uid), spec, setup_script=setup_script
+                )
+            except (ServiceError, TimeoutError) as error:
+                if not _opening_outcome_may_be_unknown(error):
+                    raise
+                try:
+                    opening = await dispatcher.get_session_opening(session_id_text)
+                except ServiceError as reconcile_error:
+                    if reconcile_error.code == grpc.StatusCode.NOT_FOUND:
+                        raise RuntimeError(
+                            f"Session opening {session_id_text} outcome remains unknown; "
+                            "GetSessionOpening returned NOT_FOUND after an ambiguous OpenSession"
+                        ) from error
+                    raise RuntimeError(
+                        f"Session opening {session_id_text} outcome is unknown; "
+                        f"Dispatcher reconciliation failed: {reconcile_error}"
+                    ) from error
+                except Exception as reconcile_error:
+                    raise RuntimeError(
+                        f"Session opening {session_id_text} outcome is unknown; "
+                        f"Dispatcher reconciliation failed: {reconcile_error}"
+                    ) from error
+
+            if (
+                opening.session_id != session_id_text
+                or opening.sandbox != sandbox
+                or opening.sandbox_uid != str(sandbox_uid)
+            ):
+                raise RuntimeError(f"Dispatcher opening {session_id_text} does not match its original Sandbox identity")
+            opening = await dispatcher.wait_for_opening(opening, timeout_s=RUNNER_ANSWERS_SECONDS)
+            if (
+                opening.session_id != session_id_text
+                or opening.sandbox != sandbox
+                or opening.sandbox_uid != str(sandbox_uid)
+            ):
+                raise RuntimeError(f"Dispatcher changed the Sandbox identity for Session {session_id_text}")
+            return cls(
+                client,
+                dispatcher,
+                thread_id=session_id,
+                cursor=0,
+                sandbox=opening.sandbox,
+                sandbox_uid=opening.sandbox_uid,
+            )
 
     async def run(self, prompt: str) -> Turn:
         """Send `prompt` and collect the turn it starts. Nothing else drives this session, so reading
@@ -180,7 +207,7 @@ class Agent:
         after = self._cursor
         command_id = f"input-{uuid4().hex[:8]}"
         await self.submit_input(command_id, prompt)
-        return await self._collect(after=after, awaiting_command_id=command_id)
+        return await self._collect(after=after, awaiting_command_id=command_id, accepted=time.monotonic())
 
     async def submit_input(self, command_id: str, text: str) -> session_dispatcher_pb2.Dispatch:
         """Send one command directly to Dispatcher with this Session's pinned target."""
@@ -204,9 +231,12 @@ class Agent:
         `accepted` is when collecting began."""
         return await self._collect(after=self._cursor, awaiting_command_id=awaiting_command_id)
 
-    async def _collect(self, *, after: int, awaiting_command_id: str | None) -> Turn:
+    async def _collect(self, *, after: int, awaiting_command_id: str | None, accepted: float | None = None) -> Turn:
         with tracer.start_as_current_span("system_test.turn.wait", attributes={"thread.id": str(self._thread_id)}):
-            turn = Turn(accepted=time.monotonic())
+            if not self._app_projection_asserted:
+                with tracer.start_as_current_span("system_test.thread.app_projection"):
+                    await self.assert_app_projection()
+            turn = Turn(accepted=accepted if accepted is not None else time.monotonic())
             command_admitted = awaiting_command_id is None
             async with (
                 asyncio.timeout(TURN_SECONDS),
@@ -249,6 +279,15 @@ class Agent:
                         case _:
                             continue
             raise AssertionError(f"the session's stream ended before the turn completed:\n{turn.transcript}")
+
+    async def assert_app_projection(self) -> None:
+        """Wait for app Thread metadata plus History summary before using the app event stream.
+
+        Native Session admission has already completed in `open`; this is a separate integration
+        assertion over the app's presentation projection.
+        """
+        await self._client.wait_for_thread_projection(self._thread_id, timeout_s=RUNNER_ANSWERS_SECONDS)
+        self._app_projection_asserted = True
 
 
 def _completed(item: event_pb2.ItemCompleted, turn: Turn) -> None:

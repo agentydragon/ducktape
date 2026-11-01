@@ -245,6 +245,7 @@ py_library(
         "//agentplane/testing:codex_model",
         "//agentplane/testing:scripted_model",
         "//util/testing:undeclared_outputs",
+        "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//tenacity",
     ],

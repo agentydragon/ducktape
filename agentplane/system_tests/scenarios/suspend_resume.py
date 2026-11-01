@@ -7,9 +7,11 @@ import asyncio
 import json
 import subprocess
 from dataclasses import dataclass, field
+from http import HTTPStatus
 from uuid import UUID, uuid4
 
-from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
+import httpx
+from tenacity import AsyncRetrying, retry_if_exception, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
 from agentplane.app.testing.models import SandboxView
@@ -18,13 +20,7 @@ from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import OperatingMode
-from agentplane.system_tests.agent import (
-    TURN_SECONDS,
-    WORKING_DIRECTORY,
-    Agent,
-    Turn,
-    environment_runtime_startup_retries,
-)
+from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, WORKING_DIRECTORY, Agent, Turn
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
@@ -38,6 +34,22 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 # gazelle:include_dep @pypi//protobuf
 
 POD_TRANSITION_SECONDS = 300.0
+
+
+def _runner_not_answering(error: BaseException) -> bool:
+    """Only runner-status 503s can mean the resumed Runner is still connecting."""
+    return isinstance(error, httpx.HTTPStatusError) and error.response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+
+
+def _runner_status_retries() -> AsyncRetrying:
+    """Retry only the read-only runner status request while the resumed Runner connects."""
+    return AsyncRetrying(
+        stop=stop_after_delay(RUNNER_ANSWERS_SECONDS),
+        wait=wait_fixed(2),
+        retry=retry_if_exception(_runner_not_answering),
+        reraise=True,
+    )
+
 
 SEED_PROMPT = (
     "For this memory test, remember this invented, non-secret code: {marker}. "
@@ -227,7 +239,7 @@ class _ResumeRun:
             self.view = resumed
             self.resumed_incarnation = resumed.pod.uid
             self.checks.append("same_sandbox_new_incarnation_same_volumes")
-            async for attempt in environment_runtime_startup_retries():
+            async for attempt in _runner_status_retries():
                 with attempt:
                     snapshot = await self.client.runner_status(self.view.name)
             assert snapshot.environment_runtime_boot_id != self.initial_boot_id
