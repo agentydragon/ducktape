@@ -49,13 +49,10 @@ type Runner struct {
 	bootstrapBinding    *runtimepb.Binding
 	ready               atomic.Bool
 	nativeStopped       bool
-	runtimeClient       runtimepb.EnvironmentRuntimeClient
+	runtimeBridge       RuntimeBridge
 }
 
 func New(config Config) (*Runner, error) {
-	if config.RuntimeSocket == "" || config.ListenSocket == "" {
-		return nil, errors.New("runtime and harness-host socket paths are required")
-	}
 	return newRunner(config, nil)
 }
 

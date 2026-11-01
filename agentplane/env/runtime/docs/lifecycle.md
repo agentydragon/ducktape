@@ -1,14 +1,14 @@
 # Environment lifecycle ownership
 
-The environment has three process owners. Environment Runtime owns identity, bootstrap, public
+The environment has three component owners in one management process. Environment Runtime owns identity, bootstrap, public
 control and coordinated drain. Harness Host owns native Sessions, setup, app-server, journals and
 History ingress. Execution Service owns typed execution and the native exec-server. Each component
-has its own lifecycle state; no COSI engine crosses the process boundary.
+has its own lifecycle state; no COSI engine crosses the component boundary.
 
 ```mermaid
 flowchart LR
   G[Gateway] -->|Environment Runtime RPC / WatchState| R[Environment Runtime]
-  R <-->|private binding / intent / report| H[Harness Host]
+  R <-->|direct binding / intent / report / Session calls| H[Harness Host]
   R -->|launch / drain / fence| E[Execution Service]
   R --> B[Sandbox bootstrap]
   H --> S[Session setup and Claude processes]
@@ -33,18 +33,17 @@ owner-lock paths after all pre-rename workloads stop; Session IDs, native contin
 journal cursors and authored workspace files do not move. Lock acquisition does not establish a
 prior container/node fence.
 
-## Private protocol and admission
+## Lifecycle coordination and admission
 
-`env/runtime/lifecycle.proto` defines a bidirectional Connect stream and a read-only WaitBootstrap
-RPC. HostHello identifies the Host boot and its private native Session socket. Every LifecycleIntent
+`env/runtime/lifecycle.proto` defines the typed lifecycle values shared in process. Every LifecycleIntent
 and HostReport carries Runtime boot, Host boot and generation. Mode and incarnation changes need a
 new generation; Execution fencing advances monotonically within that generation.
 
 Runtime owns external transport authentication, connection epochs and conditional Quiesce. Its
-forwarded Session RPCs carry the exact binding as private metadata. Host checks it at socket ingress
+direct Session calls carry a copied exact binding. Host checks it at direct-call ingress
 and under its synchronous native admission lock. Model lookup does not hold that lock; a delayed
 reservation rechecks the binding before writing retained state. Command admission remains durable
-and idempotent. Unknown remote effects are never replayed by reconnecting the private control stream.
+and idempotent. Unknown remote effects are never replayed after a Host lifetime failure.
 
 Host's admission counter is a COSI input, incremented under that barrier before durable mutation and
 decremented when the handler settles. Missing accounting is an error, never an idle count. A drain
@@ -71,7 +70,7 @@ sequenceDiagram
   H->>R: HostReport(binding, QUIESCED)
 ```
 
-Bootstrap belongs to Runtime. Session setup waits through WaitBootstrap; canceling a waiter does not
+Bootstrap belongs to Runtime. Session setup waits through the generation-bound Runtime call; canceling a waiter does not
 cancel accepted bootstrap work. Runtime shutdown must keep that wait boundary available while
 accepted Host setup settles.
 
@@ -81,7 +80,7 @@ Host waits for the matching Execution fence before sealing. Under-cursor or unse
 FLUSHING. CLOSING preserves an existing seal and follows the same flush path; CLOSING without a seal
 performs native cleanup without ending the incarnation's history.
 
-Control-stream loss closes Host admission and starts local cleanup without inventing a seal. Local
+Host lifetime loss closes admission and starts local cleanup without inventing a seal. Local
 Close callers share one cleanup; cancellation ends only the caller's wait. Engine exit and teardown
 errors remain failures, and incomplete cleanup retains ownership. Controllers stop before worker joins;
 journals close after workers, and the Host owner releases last. Runtime retains the environment owner

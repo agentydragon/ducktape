@@ -3,27 +3,41 @@ package harnesshost
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strconv"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
-const (
-	runtimeBootMetadata = "agentplane-runtime-boot-id"
-	hostBootMetadata    = "agentplane-harness-host-boot-id"
-	generationMetadata  = "agentplane-environment-generation"
-)
+// RuntimeBridge is the in-process owner of Host lifecycle and bootstrap state.
+// Its callbacks are made without holding the Host mutex.
+type RuntimeBridge interface {
+	ConnectHost(context.Context, *Runner) error
+	WaitHostBootstrap(context.Context, *runtimepb.Binding) error
+	HostExecutionReady(context.Context) (bool, error)
+}
+
+type bindingContextKey struct{}
+
+func withBinding(ctx context.Context, binding *runtimepb.Binding) context.Context {
+	return context.WithValue(ctx, bindingContextKey{}, proto.Clone(binding).(*runtimepb.Binding))
+}
+
+func (r *Runner) BootID() string { return r.bootID }
+
+// BoundContext checks the exact lifecycle binding at direct-call ingress. Native
+// admission repeats this check under the Host mutex before any durable mutation.
+func (r *Runner) BoundContext(ctx context.Context, binding *runtimepb.Binding) (context.Context, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.authorizeBindingLocked(binding); err != nil {
+		return nil, err
+	}
+	return withBinding(ctx, binding), nil
+}
 
 func (r *Runner) environment() session.Environment {
 	r.mu.Lock()
@@ -37,24 +51,24 @@ func (r *Runner) environment() session.Environment {
 // Caller holds the synchronous native admission barrier. The interceptor alone
 // cannot fence a request that spent time waiting on model lookup or creation.
 func (r *Runner) authorizeLocked(ctx context.Context) error {
+	binding, _ := ctx.Value(bindingContextKey{}).(*runtimepb.Binding)
+	return r.authorizeBindingLocked(binding)
+}
+
+func (r *Runner) authorizeBindingLocked(binding *runtimepb.Binding) error {
 	if r.closing || !r.ready.Load() || r.intent == nil {
 		return status.Error(codes.Unavailable, "Harness Host has no ready environment binding")
 	}
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
+	if binding == nil {
 		return status.Error(codes.Unauthenticated, "environment binding is required")
 	}
-	binding := r.intent.Binding
-	for key, want := range map[string]string{runtimeBootMetadata: binding.RuntimeBootId, hostBootMetadata: r.bootID, generationMetadata: strconv.FormatUint(binding.Generation, 10)} {
-		values := md.Get(key)
-		if len(values) != 1 || values[0] != want {
-			return status.Error(codes.FailedPrecondition, "stale environment binding")
-		}
+	if !proto.Equal(binding, r.intent.Binding) || binding.HostBootId != r.bootID {
+		return status.Error(codes.FailedPrecondition, "stale environment binding")
 	}
 	return nil
 }
 
-func (r *Runner) applyIntent(ctx context.Context, intent *runtimepb.LifecycleIntent) error {
+func (r *Runner) ApplyIntent(ctx context.Context, intent *runtimepb.LifecycleIntent) error {
 	if intent == nil || intent.Binding == nil || intent.Binding.RuntimeBootId == "" || intent.Binding.HostBootId != r.bootID || intent.Binding.Generation == 0 || intent.SandboxUid != r.config.Launch.Sandbox.UID {
 		return errors.New("invalid environment lifecycle binding")
 	}
@@ -153,112 +167,51 @@ func (r *Runner) applyIntent(ctx context.Context, intent *runtimepb.LifecycleInt
 
 func (r *Runner) waitBootstrap(ctx context.Context) error {
 	r.mu.Lock()
-	if r.bootstrapBinding == nil || r.runtimeClient == nil {
+	if r.bootstrapBinding == nil || r.runtimeBridge == nil {
 		r.mu.Unlock()
 		return errors.New("environment runtime is not connected")
 	}
 	binding := proto.Clone(r.bootstrapBinding).(*runtimepb.Binding)
-	client := r.runtimeClient
+	bridge := r.runtimeBridge
 	r.mu.Unlock()
-	_, err := client.WaitBootstrap(ctx, binding)
-	return err
+	return bridge.WaitHostBootstrap(ctx, binding)
 }
 
 func (r *Runner) executionReady(ctx context.Context) (bool, error) {
-	if r.config.ExecServerURL == "" {
-		return true, nil
+	r.mu.Lock()
+	bridge := r.runtimeBridge
+	r.mu.Unlock()
+	if bridge == nil {
+		return r.config.ExecServerURL == "", nil
 	}
-	if r.config.ExecutionSocket == "" {
-		return false, errors.New("execution socket is required for a separate exec-server")
-	}
-	conn, err := grpc.NewClient("unix://"+r.config.ExecutionSocket, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return false, err
-	}
-	defer conn.Close()
-	ctx, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-	result, err := grpc_health_v1.NewHealthClient(conn).Check(ctx, &grpc_health_v1.HealthCheckRequest{})
-	if err != nil {
-		if status.Code(err) == codes.Unavailable || status.Code(err) == codes.DeadlineExceeded {
-			return false, nil
-		}
-		return false, err
-	}
-	return result.Status == grpc_health_v1.HealthCheckResponse_SERVING, nil
+	return bridge.HostExecutionReady(ctx)
 }
 
-// A connection is one Runtime incarnation. Losing it ends this Host process;
-// neither mutations nor a new incarnation are retried on an uncertain channel.
-func (r *Runner) connectRuntime(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	conn, err := grpc.NewClient("unix://"+r.config.RuntimeSocket, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	client := runtimepb.NewEnvironmentRuntimeClient(conn)
+// Report returns an immutable snapshot of the generation Host has applied. A
+// concurrent intent change invalidates this sample; the coordinator will retry
+// after observing the Host change notification.
+func (r *Runner) Report() (*runtimepb.HostReport, error) {
 	r.mu.Lock()
-	r.runtimeClient = client
+	var sampled *runtimepb.Binding
+	if r.intent != nil {
+		sampled = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
+	}
 	r.mu.Unlock()
-	stream, err := client.Connect(ctx)
+	facts, err := r.facts()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err := stream.Send(&runtimepb.ConnectRequest{Message: &runtimepb.ConnectRequest_Hello{Hello: &runtimepb.HostHello{HostBootId: r.bootID, ControlSocket: r.config.ListenSocket}}}); err != nil {
-		return err
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !proto.Equal(sampled, r.intent.GetBinding()) || r.intent == nil {
+		return nil, nil
 	}
-	failures := make(chan error, 1)
-	go func() {
-		for {
-			intent, err := stream.Recv()
-			if err == nil {
-				err = r.applyIntent(ctx, intent)
-			}
-			if err != nil {
-				failures <- err
-				return
-			}
-		}
-	}()
-	for {
-		changed := r.changesSince()
-		r.mu.Lock()
-		var sampledBinding *runtimepb.Binding
-		if r.intent != nil {
-			sampledBinding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
-		}
-		r.mu.Unlock()
-		facts, err := r.facts()
-		if err != nil {
-			return err
-		}
-		r.mu.Lock()
-		if !proto.Equal(sampledBinding, r.intent.GetBinding()) {
-			r.mu.Unlock()
-			continue
-		}
-		var report *runtimepb.HostReport
-		if r.intent != nil {
-			report = &runtimepb.HostReport{Binding: proto.Clone(r.intent.Binding).(*runtimepb.Binding), Ready: r.ready.Load(), NativeStopped: r.nativeStopped, Facts: facts}
-			current := r.lifecycle.status()
-			if current.Generation == r.intent.Binding.Generation {
-				report.Error = current.Error
-			}
-		}
-		r.mu.Unlock()
-		if report != nil {
-			if err := stream.Send(&runtimepb.ConnectRequest{Message: &runtimepb.ConnectRequest_Report{Report: report}}); err != nil {
-				return err
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case err := <-failures:
-			return fmt.Errorf("environment control ended: %w", err)
-		case <-changed:
-		}
+	report := &runtimepb.HostReport{Binding: proto.Clone(r.intent.Binding).(*runtimepb.Binding), Ready: r.ready.Load(), NativeStopped: r.nativeStopped, Facts: facts}
+	current := r.lifecycle.status()
+	if current.Generation == r.intent.Binding.Generation {
+		report.Error = current.Error
 	}
+	return report, nil
 }
+
+func (r *Runner) ChangesSince() <-chan struct{} { return r.changesSince() }

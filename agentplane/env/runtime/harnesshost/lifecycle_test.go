@@ -316,7 +316,7 @@ func TestClosingIntentPreservesSealAndWaitsForSetup(t *testing.T) {
 	r.mu.Unlock()
 	closing.Binding.Generation++
 	closing.Mode = runtimepb.LifecycleIntent_CLOSING
-	if err := r.applyIntent(context.Background(), closing); err != nil {
+	if err := r.ApplyIntent(context.Background(), closing); err != nil {
 		t.Fatal(err)
 	}
 	if seal := s.EventJournal().SealState(); seal != nil {
@@ -325,7 +325,7 @@ func TestClosingIntentPreservesSealAndWaitsForSetup(t *testing.T) {
 	finishSetup()
 	waitLifecycle(t, r, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.nativeStopped }, "native stop")
 	closing.ExecutionFenced = true
-	if err := r.applyIntent(context.Background(), closing); err != nil {
+	if err := r.ApplyIntent(context.Background(), closing); err != nil {
 		t.Fatal(err)
 	}
 	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == runnerlifecycle.Flushing }, "closing seal flush")

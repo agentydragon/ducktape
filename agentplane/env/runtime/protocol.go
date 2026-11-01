@@ -4,122 +4,128 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
+	"sync"
 
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-func (r *Runtime) Connect(stream runtimepb.EnvironmentRuntime_ConnectServer) error {
-	first, err := stream.Recv()
-	if err != nil {
-		return err
+type hostLifecyclePeer interface {
+	BootID() string
+	ApplyIntent(context.Context, *runtimepb.LifecycleIntent) error
+	Report() (*runtimepb.HostReport, error)
+	ChangesSince() <-chan struct{}
+}
+
+// ConnectHost is the sole in-process lifecycle coordinator. It serializes intent
+// application and report observation without holding either component mutex
+// across a call into the other component.
+func (r *Runtime) ConnectHost(ctx context.Context, client *harnesshost.Runner) error {
+	return r.connectHost(ctx, client, client)
+}
+
+func (r *Runtime) connectHost(ctx context.Context, client *harnesshost.Runner, peer hostLifecyclePeer) (resultErr error) {
+	bootID := peer.BootID()
+	if bootID == "" {
+		return status.Error(codes.InvalidArgument, "Harness Host has no boot ID")
 	}
-	hello := first.GetHello()
-	if hello == nil || hello.HostBootId == "" || hello.ControlSocket != r.config.HostSocket || !filepath.IsAbs(hello.ControlSocket) {
-		return status.Error(codes.InvalidArgument, "first lifecycle message must be a valid HostHello for the configured control socket")
-	}
-	conn, err := r.deps.dialHost(hello.ControlSocket)
-	if err != nil {
-		return status.Errorf(codes.Unavailable, "connect private Harness Host socket: %v", err)
-	}
-	host := &hostLink{
-		bootID: hello.HostBootId, controlSocket: hello.ControlSocket, conn: conn,
-		client: environmentruntimepb.NewEnvironmentRuntimeClient(conn), intentChanged: make(chan struct{}), connected: true,
-	}
+	host := &hostLink{bootID: bootID, client: client, intentChanged: make(chan struct{}), connected: true}
 	r.mu.Lock()
 	if r.closing || r.failed {
 		r.mu.Unlock()
-		_ = conn.Close()
 		return status.Error(codes.Unavailable, "environment Runtime is closing or failed")
 	}
 	if r.host != nil && r.host.connected {
 		r.mu.Unlock()
-		_ = conn.Close()
 		return status.Error(codes.AlreadyExists, "another Harness Host is already connected")
 	}
 	r.host = host
 	if r.intent == nil {
 		r.intent = &runtimepb.LifecycleIntent{
-			Binding:    &runtimepb.Binding{RuntimeBootId: r.bootID, HostBootId: hello.HostBootId, Generation: 1},
+			Binding:    &runtimepb.Binding{RuntimeBootId: r.bootID, HostBootId: bootID, Generation: 1},
 			SandboxUid: r.config.Launch.Sandbox.UID, Mode: runtimepb.LifecycleIntent_INACTIVE,
 		}
 	} else {
 		r.intent = proto.Clone(r.intent).(*runtimepb.LifecycleIntent)
-		r.intent.Binding.HostBootId = hello.HostBootId
+		r.intent.Binding.HostBootId = bootID
 		r.intent.Binding.Generation++
 	}
-	host.intent = proto.Clone(r.intent).(*runtimepb.LifecycleIntent)
-	initialIntent := proto.Clone(r.intent).(*runtimepb.LifecycleIntent)
 	r.changedLocked()
 	r.mu.Unlock()
-	if err := stream.Send(initialIntent); err != nil {
-		r.disconnectHost(host, err)
-		return err
-	}
+	defer func() { r.disconnectHost(host, resultErr) }()
 
-	reports := make(chan *runtimepb.HostReport, 1)
-	readErrors := make(chan error, 1)
-	go func() {
-		for {
-			request, err := stream.Recv()
-			if err != nil {
-				readErrors <- err
-				return
-			}
-			report := request.GetReport()
-			if report == nil {
-				readErrors <- status.Error(codes.InvalidArgument, "only HostReport messages may follow HostHello")
-				return
-			}
-			select {
-			case reports <- report:
-			case <-stream.Context().Done():
-				return
-			}
+	bridgeCtx, cancel := context.WithCancel(ctx)
+	var workers sync.WaitGroup
+	intentResults := make(chan error, 1)
+	intentApplied := make(chan struct{}, 1)
+	workers.Go(func() { intentResults <- r.applyHostIntents(bridgeCtx, host, peer, intentApplied) })
+	defer func() { cancel(); workers.Wait() }()
+
+	var lastReport *runtimepb.HostReport
+	for {
+		hostChanged := peer.ChangesSince()
+		report, err := peer.Report()
+		if err != nil {
+			return fmt.Errorf("observe Host lifecycle report: %w", err)
 		}
-	}()
+		if report != nil && !proto.Equal(report, lastReport) {
+			if err := r.acceptReport(host, report); err != nil {
+				return err
+			}
+			lastReport = proto.Clone(report).(*runtimepb.HostReport)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-intentResults:
+			return err
+		case <-intentApplied:
+			// Applying an intent can clear Runtime's report without changing
+			// any Host report fields (notably the same-generation fence).
+			// Re-observe even when Host's value is byte-identical.
+			lastReport = nil
+		case <-hostChanged:
+		}
+	}
+}
+
+// Intent application can wait for accepted Session setup. Observe reports on
+// the other worker so that wait cannot prevent a drain acknowledgement. The
+// single intent worker still applies generations in order.
+func (r *Runtime) applyHostIntents(ctx context.Context, host *hostLink, peer hostLifecyclePeer, applied chan<- struct{}) error {
+	var lastIntent *runtimepb.LifecycleIntent
 	for {
 		r.mu.Lock()
 		changed := host.intentChanged
-		current := r.intent
-		if current != nil {
-			current = proto.Clone(current).(*runtimepb.LifecycleIntent)
+		var current *runtimepb.LifecycleIntent
+		if r.intent != nil {
+			current = proto.Clone(r.intent).(*runtimepb.LifecycleIntent)
 		}
-		lastSent := host.intent
 		r.mu.Unlock()
-		if current != nil && !proto.Equal(current, lastSent) {
-			if err := stream.Send(current); err != nil {
-				r.disconnectHost(host, err)
-				return err
+		if current != nil && !proto.Equal(current, lastIntent) {
+			if err := peer.ApplyIntent(ctx, current); err != nil {
+				return fmt.Errorf("apply Host lifecycle intent: %w", err)
 			}
+			lastIntent = current
 			r.mu.Lock()
 			if r.host == host && host.connected {
-				host.intent = current
+				host.intent = proto.Clone(current).(*runtimepb.LifecycleIntent)
+				r.changedLocked()
 			}
 			r.mu.Unlock()
+			select {
+			case applied <- struct{}{}:
+			default:
+			}
 			continue
 		}
 		select {
-		case <-stream.Context().Done():
-			r.disconnectHost(host, stream.Context().Err())
-			return stream.Context().Err()
-		case err := <-readErrors:
-			r.disconnectHost(host, err)
-			if stream.Context().Err() != nil {
-				return stream.Context().Err()
-			}
-			return status.Errorf(codes.Unavailable, "Harness Host lifecycle stream ended: %v", err)
-		case report := <-reports:
-			if err := r.acceptReport(host, report); err != nil {
-				r.disconnectHost(host, err)
-				return err
-			}
+		case <-ctx.Done():
+			return ctx.Err()
 		case <-changed:
 		}
 	}
@@ -246,9 +252,6 @@ func (r *Runtime) disconnectHost(host *hostLink, cause error) {
 	r.mu.Lock()
 	if r.host == host && host.connected {
 		host.connected = false
-		if host.conn != nil {
-			_ = host.conn.Close()
-		}
 		r.changedLocked()
 		closing := r.closing
 		r.mu.Unlock()
@@ -260,16 +263,16 @@ func (r *Runtime) disconnectHost(host *hostLink, cause error) {
 	r.mu.Unlock()
 }
 
-func (r *Runtime) WaitBootstrap(ctx context.Context, binding *runtimepb.Binding) (*emptypb.Empty, error) {
+func (r *Runtime) WaitHostBootstrap(ctx context.Context, binding *runtimepb.Binding) error {
 	if err := ctx.Err(); err != nil {
-		return nil, status.FromContextError(err).Err()
+		return status.FromContextError(err).Err()
 	}
 	r.mu.Lock()
 	valid := binding != nil && r.host != nil && r.host.connected && r.lastRunning != nil &&
 		proto.Equal(binding, r.lastRunning) && binding.RuntimeBootId == r.bootID && binding.HostBootId == r.host.bootID
 	r.mu.Unlock()
 	if !valid {
-		return nil, status.Error(codes.FailedPrecondition, "bootstrap wait is outside the admitted environment binding")
+		return status.Error(codes.FailedPrecondition, "bootstrap wait is outside the admitted environment binding")
 	}
 	// Runtime admits the one-shot bootstrap during incarnation adoption. Host receives only
 	// this read/wait boundary; canceling this RPC never cancels the Runtime-owned operation.
@@ -280,12 +283,31 @@ func (r *Runtime) WaitBootstrap(ctx context.Context, binding *runtimepb.Binding)
 		wait = r.bootstrapHost.Wait
 	}
 	if wait == nil {
-		return &emptypb.Empty{}, nil
+		return nil
 	}
 	if err := wait(ctx); err != nil {
-		return nil, err
+		return err
 	}
-	return &emptypb.Empty{}, nil
+	return nil
+}
+
+func (r *Runtime) HostExecutionReady(ctx context.Context) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.config.CodexExecServer == nil {
+		return true, nil
+	}
+	if service, ok := r.executionOwner.(*executionServiceHandle); ok && !service.serving() {
+		return false, nil
+	}
+	if stopping, ok := r.executionOwner.(interface{ stopRequested() bool }); ok && stopping.stopRequested() {
+		return false, nil
+	}
+	return !r.closing && !r.executionRecovering && r.executionOwner != nil && r.executionServer != nil &&
+		r.intent != nil && r.executionUID == r.intent.IncarnationUid, nil
 }
 
 func (r *Runtime) setIntentLocked(mode runtimepb.LifecycleIntent_Mode, incarnationUID, sealUID string, executionFenced bool) *runtimepb.LifecycleIntent {
@@ -335,7 +357,10 @@ func (r *Runtime) waitForExecutionFenced(ctx context.Context, binding *runtimepb
 			r.mu.Unlock()
 			return status.Error(codes.Unavailable, "Harness Host connection was lost before Execution fence")
 		}
-		if r.intent != nil && proto.Equal(r.intent.Binding, binding) && r.intent.ExecutionFenced {
+		// Publishing the fence locally is not enough: stopping Host before it
+		// applies this update can make Close reject the delayed intent.
+		if r.intent != nil && proto.Equal(r.intent.Binding, binding) && r.intent.ExecutionFenced &&
+			r.host.intent != nil && proto.Equal(r.host.intent.Binding, binding) && r.host.intent.ExecutionFenced {
 			r.mu.Unlock()
 			return nil
 		}

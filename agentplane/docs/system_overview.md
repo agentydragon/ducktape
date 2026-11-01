@@ -125,8 +125,8 @@ flowchart LR
     bootstrap[Sandbox bootstrap]
     history[History ingress]
     gateway -->|mTLS Runner / Executor / WatchState| runtime
-    runtime <-->|private binding / lifecycle intents / reports| host
-    runtime -->|private native Session RPC| host
+    runtime <-->|direct binding / lifecycle intents / reports| host
+    runtime -->|direct typed Session calls| host
     runtime -->|direct Executor calls / backend fence| execution
     runtime --> bootstrap
     host -.->|durable journal push and ACK| history

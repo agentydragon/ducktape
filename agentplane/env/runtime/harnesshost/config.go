@@ -21,20 +21,19 @@ import (
 )
 
 type Config struct {
-	RuntimeSocket, ListenSocket, ExecutionSocket string
-	StateDir                                     string
-	SessionReconcileConcurrency                  int
-	Launch                                       configuration.SandboxLaunch
-	HarnessEnvironment                           map[string]string
-	Claude, Codex                                *harness.LaunchConfig
-	VMProcessLauncher                            *supervision.SystemdLauncher
-	VMProcessOwner                               supervision.SystemdOwner
-	ProcessSupervisor                            *supervision.Supervisor
-	ExecServerURL                                string
-	CodexAppServerReadiness                      codexappserver.Readiness
-	WorkspaceRoot, InitializationCwd             string
-	DebugCheckpoint                              *session.DebugCheckpointConfig
-	HTTPClient                                   *http.Client
+	StateDir                         string
+	SessionReconcileConcurrency      int
+	Launch                           configuration.SandboxLaunch
+	HarnessEnvironment               map[string]string
+	Claude, Codex                    *harness.LaunchConfig
+	VMProcessLauncher                *supervision.SystemdLauncher
+	VMProcessOwner                   supervision.SystemdOwner
+	ProcessSupervisor                *supervision.Supervisor
+	ExecServerURL                    string
+	CodexAppServerReadiness          codexappserver.Readiness
+	WorkspaceRoot, InitializationCwd string
+	DebugCheckpoint                  *session.DebugCheckpointConfig
+	HTTPClient                       *http.Client
 }
 
 func (c *Config) resolveSessionReconcileConcurrency() error {

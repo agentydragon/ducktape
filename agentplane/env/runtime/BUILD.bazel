@@ -42,12 +42,8 @@ go_library(
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//credentials/insecure",
-        "@org_golang_google_grpc//health/grpc_health_v1",
-        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
-        "@org_golang_google_protobuf//types/known/emptypb",
         "@org_golang_google_protobuf//types/known/timestamppb",
         "@org_uber_go_zap//:zap",
     ],
@@ -85,7 +81,6 @@ go_test(
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
-        "@org_golang_google_protobuf//types/known/emptypb",
     ],
 )
 
@@ -94,7 +89,6 @@ proto_library(
     srcs = ["lifecycle.proto"],
     deps = [
         "//agentplane/proto:environment_runtime_state_proto",
-        "@protobuf//:empty_proto",
     ],
 )
 
@@ -102,7 +96,6 @@ go_proto_library(
     name = "runtime_service_go_proto",
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb",
     proto = ":runtime_service_proto",

@@ -132,8 +132,9 @@ and Sandbox-hosted app-server with isolated tools remain explicit transitional o
   or readiness deadline drains the app-server before the waiting Session receives the failure.
   Execution Service probes native executor progress and exits on terminal backend loss. Runtime owns
   its process lifetime and fence proof; Host cannot start or restart the executor. Failed tool side
-  effects remain uncertain and are never replayed. Host uses the service's standard gRPC Health
-  endpoint to gate shared app-server readiness.
+  effects remain uncertain and are never replayed. Host asks Runtime for in-process Execution
+  readiness to gate the shared app-server. The embedded service's health-only Unix socket remains
+  bound for its lifetime, but only Runtime uses it for startup verification.
 - Startup fences previous executor work before opening Session stores. Quiesce fences the executor
   before journal seals; shutdown fences it before releasing state ownership. VM startup fences prior
   owned systemd units before admitting work. Runtime coordinates component shutdown so Host native

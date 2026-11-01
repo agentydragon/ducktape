@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -22,7 +21,6 @@ import (
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
-	"github.com/agentydragon/ducktape/agentplane/observability"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -32,9 +30,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -44,12 +40,6 @@ const (
 	RuntimeUnitName                            = "agentplane-environment-runtime.service"
 	RuntimeScopeID  supervision.SystemdScopeID = supervision.SystemdEnvironmentRuntimeScopeID
 	HostScopeID     supervision.SystemdScopeID = "harness-host"
-)
-
-const (
-	runtimeBootMetadata = "agentplane-runtime-boot-id"
-	hostBootMetadata    = "agentplane-harness-host-boot-id"
-	generationMetadata  = "agentplane-environment-generation"
 )
 
 // Config contains the resolved environment and embedded Host configuration.
@@ -66,8 +56,6 @@ type Config struct {
 	InitializationCwd  string
 	HostConfig         harnesshost.Config
 	HostIngress        configuration.Endpoint
-	RuntimeSocket      string
-	HostSocket         string
 	ExecutionSocket    string
 }
 
@@ -83,8 +71,6 @@ type childExit struct {
 
 type runtimeDeps struct {
 	prepareSupervisor func(Config, *os.File) (*supervision.Supervisor, error)
-	dialHost          func(string) (*grpc.ClientConn, error)
-	listen            func(string) (net.Listener, error)
 	waitBootstrap     func(context.Context) error
 	startExecution    func(context.Context, Config, string) (executionHandle, error)
 }
@@ -96,18 +82,16 @@ type executionHandle interface {
 
 type hostLink struct {
 	bootID        string
-	controlSocket string
-	conn          *grpc.ClientConn
-	client        environmentruntimepb.EnvironmentRuntimeClient
+	client        *harnesshost.Runner
 	intent        *runtimepb.LifecycleIntent
 	report        *runtimepb.HostReport
 	intentChanged chan struct{}
 	connected     bool
 }
 
-// Runtime is both the private EnvironmentRuntime lifecycle server and the Gateway-facing Runner
-// backend. Gateway epoch admission remains in env/runtime/control; every forwarded Host call carries the
-// exact Runtime/Host/generation binding.
+// Runtime owns the embedded Host lifecycle and serves the Gateway-facing Runner API.
+// Gateway epoch admission remains in env/runtime/control; every direct Host call
+// carries the exact Runtime/Host/generation binding.
 type Runtime struct {
 	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	config Config
@@ -197,20 +181,6 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	if config.CodexExecServer != nil && (config.CodexBinary == "" || config.HarnessEnvironment == nil) {
 		return nil, errors.New("execution service requires Codex binary and resolved harness environment")
 	}
-	if config.RuntimeSocket == "" {
-		if config.Supervision == "systemd" {
-			config.RuntimeSocket = filepath.Join(config.StateDir, "runtime", "lifecycle.sock")
-		} else {
-			config.RuntimeSocket = filepath.Join(config.StateDir, "r.sock")
-		}
-	}
-	if config.HostSocket == "" {
-		if config.Supervision == "systemd" {
-			config.HostSocket = filepath.Join(config.StateDir, "harness-host", "control.sock")
-		} else {
-			config.HostSocket = filepath.Join(config.StateDir, "h.sock")
-		}
-	}
 	if config.ExecutionSocket == "" {
 		if config.Supervision == "systemd" {
 			config.ExecutionSocket = filepath.Join(config.StateDir, "execution", "execution.sock")
@@ -218,10 +188,8 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 			config.ExecutionSocket = filepath.Join(config.StateDir, "e.sock")
 		}
 	}
-	for name, path := range map[string]string{"Runtime socket": config.RuntimeSocket, "Host socket": config.HostSocket, "Execution socket": config.ExecutionSocket} {
-		if !filepath.IsAbs(path) {
-			return nil, fmt.Errorf("%s path must be absolute", name)
-		}
+	if !filepath.IsAbs(config.ExecutionSocket) {
+		return nil, errors.New("Execution socket path must be absolute")
 	}
 	owner, err := openEnvironmentOwner(config.StateDir)
 	if err != nil {
@@ -247,12 +215,6 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	if err != nil {
 		_ = owner.Close()
 		return nil, err
-	}
-	if deps.dialHost == nil {
-		deps.dialHost = dialUnix
-	}
-	if deps.listen == nil {
-		deps.listen = func(address string) (net.Listener, error) { return net.Listen("unix", address) }
 	}
 	lifecycleState := injectedState
 	if lifecycleState == nil {
@@ -453,8 +415,7 @@ func (r *Runtime) finishClose() error {
 		}
 	}
 	r.mu.Lock()
-	if r.host != nil && r.host.conn != nil {
-		_ = r.host.conn.Close()
+	if r.host != nil {
 		r.host.connected = false
 	}
 	r.mu.Unlock()
@@ -1053,10 +1014,15 @@ func (r *Runtime) Quiesce(ctx context.Context, request *sessionpb.QuiesceRequest
 		// invalidates its native-stop and Execution-fence acknowledgements.
 		retry := false
 		if currentReport {
-			hostStatus, statusErr := host.client.GetStatus(r.hostContext(ctx, binding), &sessionpb.GetStatusRequest{})
+			bound, bindErr := host.client.BoundContext(ctx, binding)
+			if bindErr != nil {
+				return nil, status.Errorf(codes.Unavailable, "authorize Harness Host quiesce status: %v", bindErr)
+			}
+			hostStatus, statusErr := host.client.GetStatus(bound, &sessionpb.GetStatusRequest{})
 			if statusErr != nil {
 				return nil, status.Errorf(codes.Unavailable, "read Harness Host quiesce status: %v", statusErr)
 			}
+			hostStatus = proto.Clone(hostStatus).(*sessionpb.EnvironmentRuntimeStatus)
 			retry = hostStatus.GetLifecycle().GetError() != ""
 		}
 		if !retry {
@@ -1149,11 +1115,7 @@ func (r *Runtime) failureLocked() error {
 
 func (r *Runtime) closeOwner() error { return r.owner.Close() }
 
-func dialUnix(path string) (*grpc.ClientConn, error) {
-	return grpc.NewClient("unix://"+path, observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-}
-
 var (
 	_ environmentruntimepb.EnvironmentRuntimeServer = (*Runtime)(nil)
-	_ runtimepb.EnvironmentRuntimeServer            = (*Runtime)(nil)
+	_ harnesshost.RuntimeBridge                     = (*Runtime)(nil)
 )

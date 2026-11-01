@@ -2,8 +2,8 @@
 
 The Environment Runtime is the authority for one Sandbox environment's identity, bootstrap,
 environment-owner lock, durable quiesce marker, Gateway control listener, and lifecycle of its
-Harness Host and embedded Execution API. It serves `EnvironmentRuntime.Connect` to the Host
-on a private Unix socket and the `EnvironmentRuntime` API to the existing Runner Gateway. The Host
+Harness Host and embedded Execution API. It coordinates Host through direct lifecycle and Session
+calls and serves the public `EnvironmentRuntime` API to the existing Runner Gateway. The Host
 owns Session records, journals, native harnesses and its separate owner lock.
 
 ## Retained state
@@ -21,11 +21,12 @@ positions remain under their existing `StateDir/sessions` paths; Runtime does no
 
 ## Lifecycle boundary
 
-Each Host connection begins with `HostHello` and then reports the exact Runtime boot ID, Host boot
-ID and monotonically increasing environment generation it applied. Runtime sends a
+Each Host lifetime reports the exact Runtime boot ID, Host boot ID and monotonically increasing
+environment generation it applied. Runtime applies a
 `LifecycleIntent` containing the Sandbox UID, incarnation UID, mode and seal UID. The initial mode
 is `INACTIVE`. Session RPCs are forwarded only after the Host reports `ready` for the exact binding.
-Requests carry the three binding values as metadata; Host checks them inside its admission barrier.
+Runtime passes a copied binding with each direct Session call; Host checks it at ingress and inside
+its admission barrier. Intent and report snapshots are copied across the ownership boundary.
 
 For quiesce and replacement, Runtime first asks Host to stop admissions and drain native work.
 `native_stopped` is reported only after admitted setup, Session calls, shared app-server work and
@@ -105,15 +106,12 @@ explicit: `pid1` requires a Pod PID namespace, `systemd` requires the VM `System
 between them. The same immutable config files are passed to Host; Runtime constructs the
 per-incarnation Execution API config in memory.
 
-For Pod and explicit subprocess modes, Runtime and Host use short private sockets directly under
-`StateDir` (`r.sock`, `h.sock`, `e.sock`) so test and deployment state paths remain within the
-Unix-domain socket path limit. Execution keeps its ownership lock under `StateDir/execution` and
-binds the configured `e.sock` path for Host health checks only; Runtime does not call Executor RPCs
-through this socket. VM mode uses `/state/runtime`, `/state/harness-host` and `/state/execution`
-socket locations.
+Runtime and Host call each other directly in all supervision modes. Runtime checks its embedded
+Execution owner, backend lifetime and serving state for Host readiness; the Execution health socket remains an
+Execution-local startup check. The Pod execution companion retains its separate external socket.
 
 On startup Runtime locks the legacy owner inode before opening the old Session directory, fences
-previous Host and Execution owners, binds its private lifecycle UDS with mode `0600`, starts Host,
+previous Host and Execution owners, starts Host,
 and waits for an exact-binding initial `INACTIVE`, `ready`, `native_stopped` report before opening
 Gateway control. A Gateway incarnation is not admitted until the previous incarnation has completed
 its lifecycle and process fences.

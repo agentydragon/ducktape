@@ -3,7 +3,6 @@ package harnesshost
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,30 +12,32 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/harness"
-	"google.golang.org/grpc"
+	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 )
 
 type executionHealth struct {
-	grpc_health_v1.UnimplementedHealthServer
 	mu      sync.Mutex
 	serving bool
 	failure error
 }
 
-func (h *executionHealth) Check(context.Context, *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
+func (h *executionHealth) ConnectHost(ctx context.Context, _ *Runner) error { return ctx.Err() }
+func (h *executionHealth) WaitHostBootstrap(ctx context.Context, _ *runtimepb.Binding) error {
+	return ctx.Err()
+}
+
+func (h *executionHealth) HostExecutionReady(context.Context) (bool, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.failure != nil {
-		return nil, h.failure
+		if status.Code(h.failure) == codes.Unavailable {
+			return false, nil
+		}
+		return false, h.failure
 	}
-	state := grpc_health_v1.HealthCheckResponse_NOT_SERVING
-	if h.serving {
-		state = grpc_health_v1.HealthCheckResponse_SERVING
-	}
-	return &grpc_health_v1.HealthCheckResponse{Status: state}, nil
+	return h.serving, nil
 }
 
 func (h *executionHealth) set(serving bool, err error) {
@@ -49,23 +50,17 @@ func (h *executionHealth) set(serving bool, err error) {
 func codexHealthRunner(t *testing.T, timeout time.Duration) (*Runner, *executionHealth, string) {
 	t.Helper()
 	root := t.TempDir()
-	socket := filepath.Join(root, "execution.sock")
-	listener, err := net.Listen("unix", socket)
-	if err != nil {
-		t.Fatal(err)
-	}
 	health := &executionHealth{}
-	server := grpc.NewServer()
-	grpc_health_v1.RegisterHealthServer(server, health)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
 	marker := filepath.Join(root, "initialized")
 	config := lifecycleConfig(t, "", root, nil, "/bin/false")
 	config.Codex = &harness.LaunchConfig{Binary: codexAppServerTestBinary(t, marker), BaseURL: "https://codex.example.invalid/v1", Token: "test"}
 	config.ExecServerURL = "ws://127.0.0.1:4599"
-	config.ExecutionSocket = socket
 	config.CodexAppServerReadiness = codexappserver.Readiness{ExecServerDependencyTimeout: timeout}
-	return newLifecycleRunner(t, config), health, marker
+	runner := newLifecycleRunner(t, config)
+	runner.mu.Lock()
+	runner.runtimeBridge = health
+	runner.mu.Unlock()
+	return runner, health, marker
 }
 
 func TestCodexJoinedStartupWaitsForSeparateExecutionHealth(t *testing.T) {

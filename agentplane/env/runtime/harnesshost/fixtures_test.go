@@ -6,39 +6,36 @@ import (
 
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // Native tests hold bootstrap complete; bootstrap process ownership is exercised
-// by Runtime tests. Calls still carry the same binding as the private transport.
-type completedBootstrapClient struct {
-	runtimepb.EnvironmentRuntimeClient
+// by Runtime tests. Calls carry the exact in-process binding.
+type completedBootstrapBridge struct{}
+
+func (completedBootstrapBridge) ConnectHost(ctx context.Context, _ *Runner) error { return ctx.Err() }
+
+func (completedBootstrapBridge) WaitHostBootstrap(ctx context.Context, _ *runtimepb.Binding) error {
+	return ctx.Err()
 }
 
-func (completedBootstrapClient) WaitBootstrap(ctx context.Context, _ *runtimepb.Binding, _ ...grpc.CallOption) (*emptypb.Empty, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return &emptypb.Empty{}, nil
-}
+func (completedBootstrapBridge) HostExecutionReady(context.Context) (bool, error) { return true, nil }
 
 func bindHost(r *Runner, incarnation string) error {
 	r.mu.Lock()
-	r.runtimeClient = completedBootstrapClient{}
+	r.runtimeBridge = completedBootstrapBridge{}
 	generation := uint64(1)
 	if r.intent != nil {
 		generation = r.intent.Binding.Generation + 1
 	}
 	r.mu.Unlock()
-	return r.applyIntent(r.ctx, &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "test-runtime", HostBootId: r.bootID, Generation: generation}, SandboxUid: r.config.Launch.Sandbox.UID, IncarnationUid: incarnation, Mode: runtimepb.LifecycleIntent_RUNNING})
+	return r.ApplyIntent(r.ctx, &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "test-runtime", HostBootId: r.bootID, Generation: generation}, SandboxUid: r.config.Launch.Sandbox.UID, IncarnationUid: incarnation, Mode: runtimepb.LifecycleIntent_RUNNING})
 }
 
 func hostContext(r *Runner, ctx context.Context) context.Context {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return bindingContext(ctx, r.intent.Binding)
+	return withBinding(ctx, r.intent.Binding)
 }
 
 func quiesceHost(ctx context.Context, r *Runner) (*sessionpb.QuiesceResponse, error) {
@@ -48,7 +45,7 @@ func quiesceHost(ctx context.Context, r *Runner) (*sessionpb.QuiesceResponse, er
 	intent.Binding.Generation++
 	intent.Mode = runtimepb.LifecycleIntent_QUIESCING
 	intent.SealUid = intent.IncarnationUid
-	if err := r.applyIntent(ctx, intent); err != nil {
+	if err := r.ApplyIntent(ctx, intent); err != nil {
 		return nil, err
 	}
 	// This fixture has no Execution process. Publish its fence only after Host has
@@ -66,7 +63,7 @@ func quiesceHost(ctx context.Context, r *Runner) (*sessionpb.QuiesceResponse, er
 			return
 		}
 		intent.ExecutionFenced = true
-		if err := r.applyIntent(ctx, intent); err != nil {
+		if err := r.ApplyIntent(ctx, intent); err != nil {
 			r.fail(err)
 		}
 	}()

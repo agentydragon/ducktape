@@ -3,7 +3,7 @@
 Environment Runtime owns Sandbox identity, bootstrap, external control, and lifecycle coordination
 with Harness Host and Execution Service. The current public API still carries both environment and
 Session operations; the Task DAG tracks a later split into separate environment and Harness/Session
-services. The private Runtime-to-Host lifecycle protocol remains separate.
+services. The in-process Runtime-to-Host lifecycle coordinator remains separate from the public API.
 
 The public wire definitions are [`environment_runtime.proto`](../control/environment_runtime.proto),
 [`session.proto`](../../../proto/session.proto), and

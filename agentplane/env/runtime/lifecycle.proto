@@ -3,27 +3,8 @@ syntax = "proto3";
 package agentplane.env.runtime;
 
 import "agentplane/proto/environment_runtime_state.proto";
-import "google/protobuf/empty.proto";
-
-// Private Runtime-to-Host lifecycle protocol. The Runtime owns environment identity and
-// the generation; the Host reports which generation it has applied and whether native work
-// has stopped.
-service EnvironmentRuntime {
-  rpc Connect(stream ConnectRequest) returns (stream LifecycleIntent);
-  rpc WaitBootstrap(Binding) returns (google.protobuf.Empty);
-}
-
-message ConnectRequest {
-  oneof message {
-    HostHello hello = 1;
-    HostReport report = 2;
-  }
-}
-
-message HostHello {
-  string host_boot_id = 1;
-  string control_socket = 2;
-}
+// Typed in-process lifecycle values. Runtime owns identity and generation;
+// Host reports the generation applied and whether native work has stopped.
 
 message Binding {
   string runtime_boot_id = 1;
