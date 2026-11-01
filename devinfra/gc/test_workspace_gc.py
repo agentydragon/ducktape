@@ -2,6 +2,7 @@ import json
 import pathlib
 import re
 import subprocess
+import sys
 from collections.abc import Callable
 
 import httpx
@@ -192,6 +193,50 @@ def test_joint_prune_frees_the_repo_cache_entries_of_the_bases_it_removes(
     for entry in (freed_entry, unreferenced_entry):
         assert not entry.exists()
         assert not repo_contents_cache_gc.recorded_inputs_of(entry).exists()
+
+
+@pytest.mark.parametrize("verbose", [False, True])
+def test_busy_repo_cache_reports_skipped_entries_compactly(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], verbose: bool
+) -> None:
+    root = tmp_path / "output"
+    contents = repo_contents_cache_gc.repo_contents_cache(root)
+    entries = [
+        make_cache_entry(contents, char * 64, f"{char * 8}-{char * 4}-{char * 4}-{char * 4}-{char * 12}")
+        for char in "ab"
+    ]
+    (contents / "gc_lock").touch()
+    monkeypatch.setattr(workspace_gc.output_base_gc, "session_env_output_bases", list)
+    holder = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import fcntl,sys; f=open(sys.argv[1], 'r+'); fcntl.lockf(f, fcntl.LOCK_SH); print('locked', flush=True); sys.stdin.read(1)",
+            str(contents / "gc_lock"),
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert holder.stdout is not None
+        assert holder.stdout.readline() == "locked\n"
+        with pytest.raises(SystemExit) as exit_info:
+            workspace_gc.run_repo_cache(
+                output_user_root=root, show_all=False, sizes=False, delete=True, verbose=verbose
+            )
+    finally:
+        holder.communicate("x", timeout=5)
+    captured = capsys.readouterr()
+    assert exit_info.value.code == 1
+    assert "0 deleted, 2 skipped, 0 failed" in captured.out
+    assert "a Bazel command holds the repo contents cache" in captured.err
+    for entry in entries:
+        assert entry.is_dir()
+        assert (entry.name in captured.out) is verbose
+        assert (entry.name in captured.err) is verbose
+    if not verbose:
+        assert "SKIPPED 2 repo-cache entries" in captured.err
 
 
 if __name__ == "__main__":

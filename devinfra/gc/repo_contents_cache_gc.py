@@ -403,16 +403,24 @@ def _last_used(inspection: EntryInspection) -> str:
 
 
 def render_report(
-    inspections: Sequence[EntryInspection], *, contents: Path, include_kept: bool, include_sizes: bool
+    inspections: Sequence[EntryInspection],
+    *,
+    contents: Path,
+    include_kept: bool,
+    include_sizes: bool,
+    include_prunable: bool = False,
 ) -> str:
     contents = contents.resolve()
-    visible = (
-        list(inspections) if include_kept else [item for item in inspections if not isinstance(item, RetainedEntry)]
-    )
+    visible = [
+        item
+        for item in inspections
+        if isinstance(item, ReviewEntry) or include_kept or (include_prunable and isinstance(item, PrunableEntry))
+    ]
     sizes: dict[Path, int | None] = {}
     if include_sizes:
-        for index, item in enumerate(visible, start=1):
-            logger.info("Measuring repo-cache entry size %d/%d %s", index, len(visible), entry_path(item))
+        measured = [item for item in inspections if include_kept or not isinstance(item, RetainedEntry)]
+        for index, item in enumerate(measured, start=1):
+            logger.info("Measuring repo-cache entry size %d/%d %s", index, len(measured), entry_path(item))
             sizes[entry_path(item)] = allocated_bytes(entry_path(item))
     headers = ["STATUS", "LAST USED", "ENTRY", "DETAIL"]
     if include_sizes:

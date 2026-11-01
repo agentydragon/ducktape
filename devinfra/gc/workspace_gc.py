@@ -36,6 +36,7 @@ import shutil
 import subprocess
 import sys
 import threading
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence, Set
 from pathlib import Path
 from typing import Annotated, Any
@@ -462,7 +463,7 @@ def _apply_base_deletions(output_user_root: Path, session_bases: Sequence[Path])
     return skipped == 0 and failed == 0
 
 
-def _apply_repo_cache_deletions(output_user_root: Path, session_bases: Sequence[Path]) -> bool:
+def _apply_repo_cache_deletions(output_user_root: Path, session_bases: Sequence[Path], *, verbose: bool) -> bool:
     """Delete every unreferenced repo-cache entry; returns whether all of them succeeded.
 
     Re-scans the bases first, so entries that only bases removed moments ago referenced are
@@ -479,15 +480,22 @@ def _apply_repo_cache_deletions(output_user_root: Path, session_bases: Sequence[
         candidates, contents=contents, output_user_root=output_user_root, session_bases=session_bases
     )
     free_change = shutil.disk_usage(contents).free - free_before
+    skip_reasons: Counter[str] = Counter()
     for result in results:
         name = os.path.relpath(result.path, contents)
         if isinstance(result, DeletedEntry):
-            print(f"DELETED repo-cache entry {name}")
+            if verbose:
+                print(f"DELETED repo-cache entry {name}")
         elif isinstance(result, SkippedEntry):
-            print(f"SKIPPED repo-cache entry {name}: {result.reason}", file=sys.stderr)
+            skip_reasons[result.reason] += 1
+            if verbose:
+                print(f"SKIPPED repo-cache entry {name}: {result.reason}", file=sys.stderr)
         else:
             trash = f"; trash={result.trash}" if result.trash is not None else ""
             print(f"FAILED repo-cache entry {name}: {result.error}{trash}", file=sys.stderr)
+    if not verbose:
+        for reason, count in skip_reasons.items():
+            print(f"SKIPPED {count} repo-cache entries: {reason}", file=sys.stderr)
     deleted = sum(isinstance(result, DeletedEntry) for result in results)
     skipped = sum(isinstance(result, SkippedEntry) for result in results)
     failed = sum(isinstance(result, FailedEntry) for result in results)
@@ -597,7 +605,7 @@ def run_bases(
         raise SystemExit(1)
 
 
-def run_repo_cache(*, output_user_root: Path, show_all: bool, sizes: bool, delete: bool) -> None:
+def run_repo_cache(*, output_user_root: Path, show_all: bool, sizes: bool, delete: bool, verbose: bool) -> None:
     # Entries are classified against every base's PRUNE/KEEP/REVIEW verdict, which the
     # filesystem alone decides; no worktree, branch, or PR state can change an entry's row.
     contents = repo_contents_cache_gc.repo_contents_cache(output_user_root)
@@ -611,12 +619,16 @@ def run_repo_cache(*, output_user_root: Path, show_all: bool, sizes: bool, delet
     except (OSError, RuntimeError) as error:
         print(error, file=sys.stderr)
         raise SystemExit(1) from error
-    print(repo_contents_cache_gc.render_report(entries, contents=contents, include_kept=show_all, include_sizes=sizes))
+    print(
+        repo_contents_cache_gc.render_report(
+            entries, contents=contents, include_kept=show_all, include_sizes=sizes, include_prunable=verbose
+        )
+    )
     if not delete:
         if any(isinstance(item, PrunableEntry) for item in entries):
             print("Dry run only; pass --delete to remove the unreferenced entries.")
         return
-    if not _apply_repo_cache_deletions(output_user_root, session_bases):
+    if not _apply_repo_cache_deletions(output_user_root, session_bases, verbose=verbose):
         raise SystemExit(1)
 
 
@@ -630,6 +642,7 @@ def run_all(
     prune: bool,
     delete_foreign_clones: bool,
     workers: int,
+    verbose: bool = False,
 ) -> None:
     progress = _ProgressReporter()
     session_bases = output_base_gc.session_env_output_bases()
@@ -662,7 +675,11 @@ def run_all(
     print("\n# Bazel output bases")
     print(output_base_gc.render_report(scan.bases, include_kept=show_all, include_sizes=sizes))
     print("\n# Repo contents cache")
-    print(repo_contents_cache_gc.render_report(entries, contents=contents, include_kept=show_all, include_sizes=sizes))
+    print(
+        repo_contents_cache_gc.render_report(
+            entries, contents=contents, include_kept=show_all, include_sizes=sizes, include_prunable=verbose
+        )
+    )
     print("\n# Foreign clones")
     print(render_foreign_clones(scan.foreign_clones, include_kept=show_all))
 
@@ -696,7 +713,7 @@ def run_all(
     worktrees_ok = _apply_worktree_removals(repo, rescan().worktrees)
     branches_ok = _apply_branch_deletions(repo, rescan().branches)
     bases_ok = _apply_base_deletions(output_user_root, session_bases)
-    repo_cache_ok = _apply_repo_cache_deletions(output_user_root, session_bases)
+    repo_cache_ok = _apply_repo_cache_deletions(output_user_root, session_bases, verbose=verbose)
     foreign_ok = True
     if delete_foreign_clones:
         foreign_ok = _apply_foreign_clone_deletions(repo, output_user_root, session_bases, prs, workers)
@@ -710,10 +727,10 @@ app = typer.Typer(help=__doc__, add_completion=False)
 
 _RepoOption = Annotated[Path, typer.Option("--repo", help="a path inside the repo")]
 _RootOption = Annotated[Path, typer.Option("--output-user-root", help="Bazel output user root")]
-_AllOption = Annotated[bool, typer.Option("--all", help="also show kept items")]
+_AllOption = Annotated[bool, typer.Option("--all", help="show all items, including kept repo-cache entries")]
 _NoPrsOption = Annotated[bool, typer.Option("--no-prs", help="skip the GitHub PR cross-check (git signals only)")]
 _SizesOption = Annotated[bool, typer.Option("--sizes", help="calculate base sizes with du (potentially slow)")]
-_VerboseOption = Annotated[bool, typer.Option("--verbose", "-v", help="log every worktree/branch as it's scanned")]
+_VerboseOption = Annotated[bool, typer.Option("--verbose", "-v", help="show detailed scan and repo-cache output")]
 _WorkersOption = Annotated[
     int,
     typer.Option(
@@ -756,6 +773,7 @@ def _all_command(
     _configure_logging(verbose=verbose)
     run_all(
         repo,
+        verbose=verbose,
         output_user_root=output_user_root,
         show_all=show_all,
         no_prs=no_prs,
@@ -818,7 +836,7 @@ def _repo_cache_command(
 ) -> None:
     """The repo-contents-cache slice of the joint scan: entries no output base links to."""
     _configure_logging(verbose=verbose)
-    run_repo_cache(output_user_root=output_user_root, show_all=show_all, sizes=sizes, delete=delete)
+    run_repo_cache(output_user_root=output_user_root, show_all=show_all, sizes=sizes, delete=delete, verbose=verbose)
 
 
 _COMMANDS = {"all", "worktrees", "bazel-bases", "repo-cache"}
