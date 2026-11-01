@@ -16,9 +16,9 @@ go_library(
     deps = [
         "//agentplane/env/harnesshost/codex/protocol",
         "//agentplane/env/harnesshost/harness",
+        "//agentplane/env/jsonrpc",
         "//agentplane/observability",
         "//agentplane/proto:event_go_proto",
-        "//agentplane/runner/jsonrpc",
         "@com_github_google_uuid//:uuid",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel_trace//:trace",

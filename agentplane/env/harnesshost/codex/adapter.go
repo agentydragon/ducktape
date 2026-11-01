@@ -10,8 +10,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/codex/protocol"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/harness"
+	"github.com/agentydragon/ducktape/agentplane/env/jsonrpc"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/agentplane/runner/jsonrpc"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/google/uuid"

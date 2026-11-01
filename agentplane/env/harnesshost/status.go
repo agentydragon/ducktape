@@ -5,10 +5,10 @@ import (
 	"sort"
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/session"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )

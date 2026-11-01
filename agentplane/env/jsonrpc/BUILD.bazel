@@ -1,13 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//agentplane/env:__subpackages__"])
+
 go_library(
     name = "jsonrpc",
     srcs = ["jsonrpc.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner/jsonrpc",
-    visibility = [
-        "//agentplane/env:__subpackages__",
-        "//agentplane/runner:__subpackages__",
-    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/jsonrpc",
 )
 
 go_test(

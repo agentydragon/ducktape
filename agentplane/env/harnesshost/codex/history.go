@@ -11,8 +11,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/codex/protocol"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/harness"
+	"github.com/agentydragon/ducktape/agentplane/env/jsonrpc"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	"github.com/agentydragon/ducktape/agentplane/runner/jsonrpc"
 )
 
 // Codex history is a display projection. The paginated contract preserves the tested visible
