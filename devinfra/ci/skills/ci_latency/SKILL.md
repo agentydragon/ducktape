@@ -12,7 +12,7 @@ check result and diagnostic log become available to agents watching PR updates?
 Where do runner time and remote compute go, what blocks the user-visible critical
 path, and what changes offer the best payoff for the least cost/risk? Use reviewed
 snapshots and their commit history in `latency/` on the canonical
-[`ci-reports` branch](https://github.com/agentydragon/ducktape/tree/ci-reports) as
+[`gh-pages` branch](https://github.com/agentydragon/ducktape/tree/gh-pages) as
 an existing investigation to continue, with historical measurements and conclusions
 checked against current CI. Keep working reports and measurement snapshots out of
 `devel`; publish each reviewed
@@ -29,7 +29,7 @@ Follow measured bottlenecks to useful changes while preserving the tested contra
 ## Start from the previous investigation
 
 Before selecting new cohorts, collecting fresh measurements or choosing experiments,
-fetch the canonical `ci-reports` branch and create a separate worktree at its tip. Read
+fetch the canonical `gh-pages` branch and create a separate worktree at its tip. Read
 the **complete latest report**, including expandable sections, and its manifest.
 Inspect the supporting evidence for its substantive findings and experiments. Read
 in bounded chunks when necessary: headings, search hits, truncated output and the
@@ -597,7 +597,7 @@ covering queue/runtime arithmetic and CodeQL contention. Package and tests are u
 
 ## Durable history and test-cost attribution
 
-`agentydragon/ducktape`'s canonical [`ci-reports` branch](https://github.com/agentydragon/ducktape/tree/ci-reports)
+`agentydragon/ducktape`'s canonical [`gh-pages` branch](https://github.com/agentydragon/ducktape/tree/gh-pages)
 holds independent latest snapshots under `latency/` and `reliability/`. This skill
 owns `latency/`; the root `README.md` provides durable navigation. The latency
 directory contains `evidence.json`, `manifest.json`, a standalone `index.html`, and
@@ -611,18 +611,18 @@ commit history preserves earlier snapshots. Each new report replaces only its
 namespace's snapshot files; preserve the root README, sibling namespace, and
 unrelated files. If a new run has no attribution, remove the old `attribution.json`
 in that namespace so it cannot be mistaken for current evidence.
-The `ci-reports` branch is not a mirror of `devel`. Its earlier commits preserve the
+The `gh-pages` branch is not a mirror of `devel`. Its earlier commits preserve the
 explicitly labeled _historical_ copy of the former maintained report, not a fresh
 cdk8s comparison. Before migration, latency snapshots lived at the branch root;
 earlier commits retain that layout. Read the current `latency/` snapshot as the
 latest report and earlier history as a baseline for **methodology**, not proof of
 current performance.
 
-Use the `ci-reports` worktree and baseline review established at the start of the run.
+Use the `gh-pages` worktree and baseline review established at the start of the run.
 Collect fresh evidence and read the current workflow/path filters and BuildBuddy
 profiles. Pin the actual inspected devel SHA
-(do not use a merge SHA, PR head or the `ci-reports` branch's HEAD). Publish into the
-`ci-reports` worktree root:
+(do not use a merge SHA, PR head or the `gh-pages` branch's HEAD). Publish into the
+`gh-pages` worktree root:
 
 ```bash
 python3 devinfra/ci/reports/publish.py --source "$DEVEL_SHA" --kind latency \
@@ -643,13 +643,13 @@ and rendered page before publishing. The publisher replaces only the selected
 namespace's snapshot files, removes any leftover `report.md` there, and leaves the
 root README and sibling namespace intact. Do not mistake successful script
 execution for completion of the skill. Open a PR targeting the canonical
-`ci-reports` branch. Before submitting, fetch the
+`gh-pages` branch. Before submitting, fetch the
 branch again and confirm the PR includes its latest tip. If another run landed
 first, compare the observation windows within the same report kind and do not let
 an older run replace a newer snapshot; rebase or rebuild on that tip and republish
 when the new run is later. Never reset, amend, or force-push history. Review the report and diff for
 credentials, identities, raw logs, payloads and personal data before publishing.
-History updates go through a PR to `ci-reports`; changes to this skill or
+History updates go through a PR to `gh-pages`; changes to this skill or
 its scripts go through a normal source PR. GitHub Pages serves the branch at
 <https://agentydragon.github.io/ducktape/> (`latency/`, `reliability/`,
 `visual-reliability/`; root `index.html` is the landing page): link the published

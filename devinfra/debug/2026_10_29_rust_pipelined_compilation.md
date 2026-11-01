@@ -1,6 +1,6 @@
 # rules_rust pipelined compilation: measured, adopted on a marginal gain
 
-The 2026-10-29 ci-reports latency snapshot ranked
+The 2026-10-29 CI latency snapshot ranked
 `--@rules_rust//rust/settings:pipelined_compilation=True` as a candidate for the
 debundle PR class, whose critical path is a serial first-party rlib chain
 (≈145–185 s) ahead of `//devinfra/js/debundle/e2e:conflict_diagnostics_scale_test`.
@@ -28,5 +28,5 @@ debundle closure built with it on. Earlier attempts on a recycled runner
 477 s critical path) are unmatched because Skyframe on the recycled runner kept
 the baseline's outputs valid regardless of `--nouse_action_cache`.
 
-Revisit if debundle PR feedback does not move in the next ci-reports window, or
+Revisit if debundle PR feedback does not move in the next CI report window, or
 if a proc-macro or build-script crate misbehaves under metadata-only compiles.

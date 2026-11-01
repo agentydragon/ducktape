@@ -18,7 +18,7 @@ rankings, log signatures and successful retries are starting points, not diagnos
 
 ## Continue the previous investigation
 
-Fetch the canonical [ci-reports branch](https://github.com/agentydragon/ducktape/tree/ci-reports)
+Fetch the canonical [gh-pages branch](https://github.com/agentydragon/ducktape/tree/gh-pages)
 into an isolated worktree. Read the complete `reliability/index.html`, its
 `manifest.json`, and relevant `evidence.json` records before selecting a new sample.
 If the first report is still under review, inspect its PR and label it unmerged.
@@ -316,7 +316,7 @@ HTML; it does not generate or validate the analysis. Keep exactly one snapshot i
 stale attribution only in this directory. Preserve `latency/`, root navigation,
 and `.gitattributes` (which marks evidence JSON as generated).
 
-Open the report PR against `ci-reports`, never `devel`. Fetch the branch again before
+Open the report PR against `gh-pages`, never `devel`. Fetch the branch again before
 publishing; compare windows within `reliability/` and do not replace a newer snapshot
 with an older one. Integrate concurrent latency changes without overwriting them.
 Git history holds previous snapshots; do not add dated run trees or force-push
