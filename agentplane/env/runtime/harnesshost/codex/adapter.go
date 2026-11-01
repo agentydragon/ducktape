@@ -127,7 +127,9 @@ func (a *codexAdapter) Handshake(ctx context.Context) (nativeID string, resultEr
 			Ephemeral: &ephemeral, Model: &snapshot.Model,
 			Config: threadEnvironment(snapshot.Environment),
 		}
-		params.Config["model_reasoning_effort"] = snapshot.ReasoningEffort
+		if snapshot.ReasoningEffort != "" {
+			params.Config["model_reasoning_effort"] = snapshot.ReasoningEffort
+		}
 		if snapshot.Instructions != "" {
 			params.DeveloperInstructions = &snapshot.Instructions
 		}

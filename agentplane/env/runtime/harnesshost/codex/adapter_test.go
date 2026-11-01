@@ -184,6 +184,7 @@ func TestCodexHandshakeAndUnsupportedServerRequest(t *testing.T) {
 	ctx := context.Background()
 	base := newAdapterTestHost()
 	base.SessionState.Resuming = false
+	base.SessionState.ReasoningEffort = "high"
 	base.SessionState.Environment = map[string]string{"AGENTPLANE_DESTINATION": "test-destination"}
 	host := &adapterHandshakeHost{Host: base}
 	adapter := New(host)
@@ -203,7 +204,11 @@ func TestCodexHandshakeAndUnsupportedServerRequest(t *testing.T) {
 	if params["cwd"] != base.SessionState.Cwd || params["model"] != base.SessionState.Model || params["approvalPolicy"] != "never" || params["sandbox"] != "danger-full-access" || params["ephemeral"] != false {
 		t.Fatalf("Codex thread/start lost launch policy: %s", host.requests[0])
 	}
-	set := params["config"].(map[string]any)["shell_environment_policy.set"].(map[string]any)
+	config := params["config"].(map[string]any)
+	if config["model_reasoning_effort"] != "high" {
+		t.Fatalf("Codex thread/start effort = %v, want explicit value high", config["model_reasoning_effort"])
+	}
+	set := config["shell_environment_policy.set"].(map[string]any)
 	if set["AGENTPLANE_DESTINATION"] != "test-destination" {
 		t.Fatalf("Codex thread/start lost the Session's own tool environment: %s", host.requests[0])
 	}
@@ -216,6 +221,26 @@ func TestCodexHandshakeAndUnsupportedServerRequest(t *testing.T) {
 	}
 	if answer["id"] != "server-request" || answer["error"].(map[string]any)["code"] != float64(-32601) {
 		t.Fatalf("Codex unsupported request response: %s", base.NativeWrites[len(base.NativeWrites)-1])
+	}
+}
+
+func TestCodexHandshakeOmitsUnspecifiedReasoningEffort(t *testing.T) {
+	ctx := context.Background()
+	base := newAdapterTestHost()
+	base.SessionState.Resuming = false
+	base.SessionState.ReasoningEffort = ""
+	host := &adapterHandshakeHost{Host: base}
+	adapter := New(host)
+	if _, err := adapter.Handshake(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var start map[string]any
+	if err := json.Unmarshal(host.requests[0], &start); err != nil {
+		t.Fatal(err)
+	}
+	config := start["params"].(map[string]any)["config"].(map[string]any)
+	if effort, ok := config["model_reasoning_effort"]; ok {
+		t.Fatalf("Codex thread/start set model_reasoning_effort to %v when the Session left it unspecified", effort)
 	}
 }
 
