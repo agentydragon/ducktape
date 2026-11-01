@@ -17,6 +17,7 @@ from clickhouse_installation_crds.com.altinity.clickhouse import (
     ClickHouseInstallationSpecConfiguration,
     ClickHouseInstallationSpecConfigurationClusters,
     ClickHouseInstallationSpecConfigurationClustersLayout,
+    ClickHouseInstallationSpecConfigurationClustersLayoutReplicas,
     ClickHouseInstallationSpecConfigurationClustersLayoutShards,
     ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas,
     ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates,
@@ -363,22 +364,20 @@ def clickhouse_chart(app: App) -> Chart:
                         layout=ClickHouseInstallationSpecConfigurationClustersLayout(
                             shards_count=1,
                             replicas_count=3,
+                            # Keep the existing StatefulSet selector labels stable while
+                            # moving the full-node host to the end of the layout.
+                            replicas=[
+                                ClickHouseInstallationSpecConfigurationClustersLayoutReplicas(name="1"),
+                                ClickHouseInstallationSpecConfigurationClustersLayoutReplicas(name="2"),
+                                ClickHouseInstallationSpecConfigurationClustersLayoutReplicas(name="0"),
+                            ],
                             shards=[
                                 ClickHouseInstallationSpecConfigurationClustersLayoutShards(
                                     name="0",
                                     replicas_count=3,
                                     replicas=[
                                         ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas(
-                                            name="0",
-                                            templates=(
-                                                ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates(
-                                                    pod_template=_CLICKHOUSE_PIRAEUS_103711_POD_TEMPLATE,
-                                                    data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
-                                                )
-                                            ),
-                                        ),
-                                        ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas(
-                                            name="1",
+                                            name="0-1",
                                             templates=(
                                                 ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates(
                                                     pod_template=_CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE,
@@ -392,6 +391,15 @@ def clickhouse_chart(app: App) -> Chart:
                                             templates=(
                                                 ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates(
                                                     pod_template=_CLICKHOUSE_PIRAEUS_102453_POD_TEMPLATE,
+                                                    data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
+                                                )
+                                            ),
+                                        ),
+                                        ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas(
+                                            name="0-0",
+                                            templates=(
+                                                ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates(
+                                                    pod_template=_CLICKHOUSE_PIRAEUS_103711_POD_TEMPLATE,
                                                     data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
                                                 )
                                             ),
