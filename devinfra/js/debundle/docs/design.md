@@ -1088,6 +1088,9 @@ comparisons use canonical identities rather than recursively comparing the
 capture DAG. Opaque methods receive their receiver as an input capability;
 callback discovery traverses its stored references as well as the explicit
 arguments. Receiver taint remains independent of this callback reach.
+Later stores through a tainted or unsettled object publish the new value
+graph too: unknown or skipped code may hold that receiver. This includes
+new containers whose callbacks may be added afterward.
 Callback discovery batches all exports or all arguments into one
 traversal, so aliases share visited sets for objects, closures, and escaped
 values.
