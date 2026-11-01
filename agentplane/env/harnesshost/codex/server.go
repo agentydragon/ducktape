@@ -33,6 +33,10 @@ func ServerCommand(launch harness.LaunchConfig) ([]string, error) {
 		key   string
 		value any
 	}{
+		// TODO: Consider exporting native Codex OpenTelemetry to an Agentplane collector.
+		{"analytics.enabled", false},
+		{"feedback.enabled", false},
+		{"check_for_update_on_startup", false},
 		{"model_provider", "agentplane"},
 		{"model_providers.agentplane.name", "Agentplane LiteLLM"},
 		{"model_providers.agentplane.base_url", launch.BaseURL},
@@ -52,6 +56,9 @@ func ServerCommand(launch harness.LaunchConfig) ([]string, error) {
 		{"web_search", "disabled"},
 		// Agentplane does not use plugins; avoid their background Git sync and scratch-file churn.
 		{"features.plugins", false},
+		{"features.apps", false},
+		{"features.hooks", false},
+		{"features.skill_mcp_dependency_install", false},
 		{"features.multi_agent", true},
 		{"features.view_image", true},
 		{"features.unbounded_connection_retries", false},
