@@ -47,7 +47,7 @@ to fetch every index at startup.
 | Find an Action and its arguments | `agentplane actions list`, then `agentplane actions show GROUP/ACTION` |
 | Establish expected auto-approval | `agentplane actions policy`: match the exact Action and intended arguments |
 | Submit, recover, cancel, or follow an Action | Actions `/llms.txt`: lifecycle and recovery guides |
-| Find configured runtime offers and active environments | `agentplane environments list --limit 20`, then `agentplane environments get NAMESPACE NAME UID` to refresh that exact target handle |
+| Find configured runtime offers and active environments | `agentplane environments list --limit 20`, then `agentplane environments get --namespace NAMESPACE --name NAME --uid UID` to refresh that exact target handle |
 | Open or manage a Session | `agentplane sessions --help` |
 | Check Kubernetes access or request a temporary grant | `kubectl auth can-i`; Actions `/llms.txt`: Kubernetes and grants guide |
 | Subscribe to Actions or GitHub, or handle an inbox notice | `agentplane notifications --help`; Notifications `/llms.txt` |
