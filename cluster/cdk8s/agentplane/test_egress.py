@@ -161,6 +161,89 @@ def test_notifications_use_their_own_projected_audience(staging_manifests: list[
     assert notification_settings["token_audience"] == notifications.TOKEN_AUDIENCE
 
 
+def test_session_dispatcher_egress_is_limited_to_the_delegation_rpc_surfaces(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
+    """Only the Session and inventory RPCs get the Sandbox-bound bearer substitution.
+
+    The Gateway listener also hosts unrelated Runner-control RPCs. Compare the complete set of
+    synthesized rules that either reach this Service or consume its credential so a new route,
+    method, destination, or uncredentialed path cannot slip in beside the reviewed allowlist.
+    """
+    destination = "session-dispatcher.agentplane-staging.svc.cluster.local"
+    service_url = f"http://{destination}:8080"
+    credential_name = "agentplane-session-dispatcher-workload"
+    audience = "session-dispatcher"
+    credential_placeholder = f"agentplane-credential-{credential_name}"
+    session_paths = [
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/OpenSession",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSessionOpening",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn",
+    ]
+    discovery_paths = [
+        "/agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments",
+        "/agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment",
+    ]
+    expected_rules = [
+        (
+            BASIC_POLICY,
+            {
+                "clusterInternal": True,
+                "credentialRef": {"name": credential_name},
+                "hosts": [destination],
+                "methods": ["POST"],
+                "paths": session_paths,
+                "type": "egress",
+            },
+        ),
+        (
+            BASIC_POLICY,
+            {
+                "clusterInternal": True,
+                "credentialRef": {"name": credential_name},
+                "hosts": [destination],
+                "methods": ["POST"],
+                "paths": discovery_paths,
+                "type": "egress",
+            },
+        ),
+    ]
+
+    actual_rules = [
+        (policy["metadata"]["name"], rule)
+        for policy in staging_manifests
+        if policy["kind"] == "PolicySet"
+        for rule in policy["spec"]["rules"]
+        if destination in rule.get("hosts", []) or rule.get("credentialRef", {}).get("name") == credential_name
+    ]
+    assert actual_rules == expected_rules
+
+    credential = _by_name(staging_manifests, "EgressCredential", credential_name)
+    assert credential["spec"]["source"] == {"projectedWorkloadToken": {"audience": audience}}
+    assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}]
+    proxy_settings = yaml.safe_load(
+        _by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
+    )
+    assert proxy_settings["projected_token_audiences"].count(audience) == 1
+
+    # Both execution environments pass only the inert placeholder to the agent. The VM carries
+    # that value in its guest runner config; the Pod carries it in its runner container env.
+    pod_template = _by_name(staging_manifests, "SandboxTemplate", "runner-ducktape")
+    pod_runner = one(
+        container for container in pod_template["spec"]["pod"]["spec"]["containers"] if container["name"] == "runner"
+    )
+    pod_env = {entry["name"]: entry["value"] for entry in pod_runner["env"] if "value" in entry}
+    assert pod_env["AGENTPLANE_SESSIONS_URL"] == service_url
+    assert pod_env["AGENTPLANE_SESSIONS_CREDENTIAL"] == credential_placeholder
+
+    vm_runner = json.loads(_by_name(staging_manifests, "ConfigMap", "runner-vm-config")["data"]["runner.json"])
+    assert vm_runner["harness_environment"]["values"]["AGENTPLANE_SESSIONS_URL"] == service_url
+    assert vm_runner["harness_environment"]["values"]["AGENTPLANE_SESSIONS_CREDENTIAL"] == credential_placeholder
+
+
 def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(staging_manifests: list[dict[str, Any]]) -> None:
     """The bot can finish a pull request, not only open one.
 
