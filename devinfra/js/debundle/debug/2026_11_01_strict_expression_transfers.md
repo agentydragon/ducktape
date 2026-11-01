@@ -32,3 +32,10 @@ claim of a demonstrated baseline runtime regression or corpus precision gain.
 Closed provider captures and stable namespace member identity remain separate
 requirements. This change does not admit the actual vendor memo member, change
 the callback premise or enable a private spec opt-in.
+
+Source commit `ad437fa48f56ba499f4ade84b6bad53bcdd69bbd` passed the seven
+analysis/foreign-call/retained-factory/retained-constructor/imported-timing/
+Map-entry/publication targets, including all 316 analysis tests, in BuildBuddy
+invocation `7ef1a782-c977-4dba-bd62-8ee8209b9d3f` (148.106 seconds).
+Normal pinned hooks passed. The subsequent contract update is documentation
+only; it does not change the validated source.
