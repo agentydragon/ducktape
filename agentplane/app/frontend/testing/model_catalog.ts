@@ -1,5 +1,4 @@
-import type { ModelCatalog, ModelOption } from "../model_catalog";
-import type { SandboxPresetView } from "../model_catalog";
+import type { ModelCatalog, ModelOption, SandboxPresetView } from "../model_catalog";
 
 /** Shared model metadata for UI tests that are not specifically testing effort availability. */
 export const TEST_REASONING_EFFORTS: string[] = ["low", "medium", "high"];

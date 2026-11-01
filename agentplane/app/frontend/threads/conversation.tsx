@@ -7,8 +7,7 @@ import { Link } from "react-router";
 
 import { displayableError } from "../client";
 import { harnessBehavior } from "../harness_behavior";
-import { harnessLabel, models, modelsForHarness } from "../model_catalog";
-import type { ModelOption } from "../model_catalog";
+import { harnessLabel, models, modelsForHarness, type ModelOption } from "../model_catalog";
 import { langfuseSandboxTraceUrl, langfuseSessionTraceUrl } from "../langfuse_search";
 import { traceSearchUrl } from "../trace_search";
 import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadWindow } from "./thread_sync";
