@@ -173,7 +173,7 @@ func runtimeExecutionServiceConfig(config Config, incarnationUID string) (servic
 	serviceConfig := service.Config{
 		Namespace: config.Launch.Sandbox.Namespace, SandboxName: config.Launch.Sandbox.Name,
 		SandboxUID: config.Launch.Sandbox.UID, IncarnationUID: incarnationUID,
-		StateDir: filepath.Join(config.StateDir, "execution"), SocketPath: config.ExecutionSocket,
+		StateDir:    filepath.Join(config.StateDir, "execution"),
 		ExecutorURL: config.CodexExecServer.URL, Environment: config.HarnessEnvironment,
 		Readiness: config.CodexExecServer.Readiness,
 	}

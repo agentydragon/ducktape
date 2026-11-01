@@ -15,7 +15,7 @@ import (
 func TestRuntimeExecutionServiceConfigCarriesResolvedReadiness(t *testing.T) {
 	want := codexexecserver.Readiness{Timeout: 725 * time.Millisecond, ProbeTimeout: 55 * time.Millisecond, ProbeInterval: 130 * time.Millisecond}
 	config := Config{
-		StateDir: "/state", ExecutionSocket: "/run/execution.sock", Supervision: "subprocess",
+		StateDir: "/state", Supervision: "subprocess",
 		Launch:             configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test-namespace", Name: "test-sandbox", UID: "test-sandbox-uid"}},
 		HarnessEnvironment: map[string]string{"PATH": "/usr/bin"},
 		CodexExecServer: &codexexecserver.Config{

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -191,9 +190,6 @@ func startNativeExecutionTestServer(t *testing.T, notify bool) (string, <-chan s
 func TestOpenSessionEndsWhenObserverEpochIsSuperseded(t *testing.T) {
 	url, opened, closed := startNativeExecutionTestServer(t, false)
 	r := newExecutionRuntime(t, url, nil)
-	if _, err := os.Stat(r.config.ExecutionSocket); !os.IsNotExist(err) {
-		t.Fatalf("direct Execution fixture unexpectedly served a private RPC socket: %v", err)
-	}
 	client := startDirectExecutionTestClient(t, r, "incarnation-1")
 	stream, err := client.open(client.callCtx, "sampler-session", "open-before-supersession")
 	if err != nil {
