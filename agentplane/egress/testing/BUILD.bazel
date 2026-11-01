@@ -24,8 +24,8 @@ py_library(
     deps = [
         "//agentplane/egress:settings",
         "//agentplane/testing:go_process",
+        "//util:db_url",
         "//util:net",
         "//util/bazel:runfiles",
-        "@pypi//sqlalchemy",
     ],
 )

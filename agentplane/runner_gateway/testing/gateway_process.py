@@ -16,7 +16,6 @@ import grpc
 import httpx
 import yaml
 from grpc_health.v1 import health_pb2, health_pb2_grpc
-from sqlalchemy.engine import make_url
 
 from agentplane.grpc.calls import ServiceError, dial
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
@@ -26,6 +25,7 @@ from agentplane.runner_transport.configuration import MTLS, TLS
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from util.db_url import render_postgresql_url
 from util.net import listen_tcp
 from util.settings_contract import env_name
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -37,11 +37,7 @@ _GATEWAY_BINARY = "agentplane/runner_gateway/runner-gateway_/runner-gateway"
 
 
 def _wire_database_url(database_url: str) -> str:
-    return (
-        make_url(database_url)
-        .set(drivername="postgresql", query={"sslmode": "disable"})
-        .render_as_string(hide_password=False)
-    )
+    return render_postgresql_url(database_url, "postgresql", query={"sslmode": "disable"})
 
 
 def _migrate(database_url: str, log_path: Path) -> None:

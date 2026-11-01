@@ -82,11 +82,11 @@ py_library(
         "//agentplane/proto:runner_pb2",
         "//agentplane/testing:go_process",
         "//agentplane/testing:kubernetes_apiserver",
+        "//util:db_url",
         "//util:net",
         "//util/bazel:runfiles",
         "//util/testing:postgres",
         "@pypi//grpcio",
         "@pypi//protobuf",
-        "@pypi//sqlalchemy",
     ],
 )

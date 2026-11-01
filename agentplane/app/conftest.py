@@ -6,7 +6,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.app.testing.history import SessionHistory
@@ -40,6 +39,7 @@ from agentplane.testing.electric_role import ensure_electric_role
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
 from util.bazel.runfiles import get_required_path
+from util.db_url import render_postgresql_url
 from util.net import refusing_tcp_endpoint
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import (
@@ -63,9 +63,9 @@ def app_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseT
         migrated = subprocess.run(
             [get_required_path("_main/agentplane/app/go/agentplane-app_/agentplane-app"), "--migrate-only"],
             env={
-                "AGENTPLANE_DATABASE_URL": make_url(template.url)
-                .set(drivername="postgresql", query={"sslmode": "disable"})
-                .render_as_string(hide_password=False)
+                "AGENTPLANE_DATABASE_URL": render_postgresql_url(
+                    template.url, "postgresql", query={"sslmode": "disable"}
+                )
             },
             capture_output=True,
             text=True,

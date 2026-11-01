@@ -20,7 +20,6 @@ import grpc
 import httpx
 import uvicorn
 from playwright.async_api import Page
-from sqlalchemy.engine import make_url
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
@@ -35,6 +34,7 @@ from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service import notifications_operator_pb2_grpc
 from util.bazel.runfiles import get_required_path
+from util.db_url import render_postgresql_url
 from util.net import Listener, listen_tcp
 from util.testing.asgi import serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
@@ -224,10 +224,8 @@ async def spawn_go_app(
     listener: Listener | None = None,
 ) -> AsyncIterator[AppProcess]:
     configured = fixture_config() | config
-    configured["database_url"] = (
-        make_url(str(configured["database_url"]))
-        .set(drivername="postgresql", query={"sslmode": "disable"})
-        .render_as_string(hide_password=False)
+    configured["database_url"] = render_postgresql_url(
+        str(configured["database_url"]), "postgresql", query={"sslmode": "disable"}
     )
     stderr = undeclared_outputs_dir() / f"go-app-{uuid4().hex}.log"
     with (

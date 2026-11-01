@@ -60,6 +60,7 @@ py_library(
         "//agentplane/testing:electric_role",
         "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:kubernetes_apiserver_fixtures",
+        "//util:db_url",
         "//util:net",
         "//util/bazel:runfiles",
         "//util/testing:postgres",
