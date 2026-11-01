@@ -1,0 +1,1035 @@
+{
+  "rows": [
+    {
+      "run": "variants-4",
+      "target": "test_mcp_spike_a",
+      "process_seconds": 235.48,
+      "cpu_seconds": 621.733645,
+      "rbe_status": {},
+      "passed_receipt": true
+    },
+    {
+      "run": "variants-4",
+      "target": "test_mcp_spike_b",
+      "process_seconds": 222.945,
+      "cpu_seconds": 547.600643,
+      "rbe_status": {},
+      "passed_receipt": true
+    },
+    {
+      "run": "variants-4",
+      "target": "test_vm_spike_large",
+      "process_seconds": 224.415,
+      "cpu_seconds": 856.851124,
+      "rbe_status": {
+        "code": 14,
+        "message": "error pausing VM: Patch \"http://localhost/vm\": dial unix /buildbuddy/remotebuilds/firecracker/59ea9873-92f0-4083-ab32-a7d6cef8e28f/root/run/fc.sock: connect: connection refused"
+      },
+      "passed_receipt": true
+    },
+    {
+      "run": "variants-4",
+      "target": "test_vm_spike_large",
+      "process_seconds": 411.195,
+      "cpu_seconds": 2225.548702,
+      "rbe_status": {},
+      "passed_receipt": true
+    },
+    {
+      "run": "variants-3",
+      "target": "test_vm_spike_a",
+      "process_seconds": 434.407,
+      "cpu_seconds": 1650.315653,
+      "rbe_status": {},
+      "passed_receipt": false
+    },
+    {
+      "run": "variants-3",
+      "target": "test_vm_spike_b",
+      "process_seconds": 332.909,
+      "cpu_seconds": 1162.321312,
+      "rbe_status": {},
+      "passed_receipt": true
+    },
+    {
+      "run": "variants-3",
+      "target": "test_mcp_spike_a",
+      "process_seconds": 24.159,
+      "cpu_seconds": 13.430268,
+      "rbe_status": {},
+      "passed_receipt": false
+    },
+    {
+      "run": "variants-3",
+      "target": "test_mcp_spike_b",
+      "process_seconds": 15.495,
+      "cpu_seconds": 18.286274,
+      "rbe_status": {},
+      "passed_receipt": false
+    },
+    {
+      "run": "variants-3",
+      "target": "test_vm_spike_large",
+      "process_seconds": 19.719,
+      "cpu_seconds": 23.943552,
+      "rbe_status": {},
+      "passed_receipt": false
+    },
+    {
+      "run": "mcp-large-2",
+      "target": "test_mcp_spike_large",
+      "process_seconds": 248.066,
+      "cpu_seconds": 599.12523,
+      "rbe_status": {},
+      "passed_receipt": true
+    },
+    {
+      "run": "mcp-large-2",
+      "target": "test_mcp",
+      "process_seconds": 308.067,
+      "cpu_seconds": 699.018842,
+      "rbe_status": {},
+      "passed_receipt": true
+    },
+    {
+      "run": "baseline-2",
+      "target": "test_vm",
+      "process_seconds": 352.232,
+      "cpu_seconds": 1711.060834,
+      "rbe_status": {},
+      "passed_receipt": true
+    },
+    {
+      "run": "baseline-2",
+      "target": "test_mcp",
+      "process_seconds": 319.925,
+      "cpu_seconds": 765.292041,
+      "rbe_status": {},
+      "passed_receipt": true
+    },
+    {
+      "run": "vm-a-corrected-1",
+      "target": "test_vm_spike_a",
+      "process_seconds": 324.975,
+      "cpu_seconds": 1113.36058,
+      "rbe_status": {},
+      "passed_receipt": true
+    },
+    {
+      "run": "mcp-large-1",
+      "target": "test_pod",
+      "process_seconds": 318.948,
+      "cpu_seconds": 652.047494,
+      "rbe_status": {},
+      "passed_receipt": true
+    },
+    {
+      "run": "mcp-large-1",
+      "target": "test_mcp_spike_large",
+      "process_seconds": 345.709,
+      "cpu_seconds": 1044.275673,
+      "rbe_status": {},
+      "passed_receipt": true
+    },
+    {
+      "run": "split-repeat-1",
+      "target": "test_vm_spike_b",
+      "process_seconds": 330.1,
+      "cpu_seconds": 1167.795278,
+      "rbe_status": {},
+      "passed_receipt": true
+    },
+    {
+      "run": "split-repeat-1",
+      "target": "test_mcp_spike_b",
+      "process_seconds": 141.331,
+      "cpu_seconds": 248.11325,
+      "rbe_status": {},
+      "passed_receipt": true
+    },
+    {
+      "run": "split-repeat-1",
+      "target": "test_mcp_spike_a",
+      "process_seconds": 191.118,
+      "cpu_seconds": 343.76588,
+      "rbe_status": {},
+      "passed_receipt": true
+    },
+    {
+      "run": "baseline-1",
+      "target": "test_vm",
+      "process_seconds": 338.202,
+      "cpu_seconds": 1553.303226,
+      "rbe_status": {},
+      "passed_receipt": true
+    },
+    {
+      "run": "baseline-1",
+      "target": "test_mcp",
+      "process_seconds": 309.714,
+      "cpu_seconds": 779.677881,
+      "rbe_status": {},
+      "passed_receipt": true
+    }
+  ],
+  "coverage": {
+    "variants-4": {
+      "baseline_count": 9,
+      "group_counts": [5, 4],
+      "missing": [],
+      "extra": [],
+      "overlap": [],
+      "complete": true
+    },
+    "split-repeat-1": {
+      "baseline_count": 9,
+      "group_counts": [5, 4],
+      "missing": [],
+      "extra": [],
+      "overlap": [],
+      "complete": true
+    },
+    "vm": {
+      "baseline": [
+        "central-sampler",
+        "codex-tool-oom",
+        "runner-vm-mtls-harness_claude",
+        "runner-vm-mtls-harness_codex",
+        "vm-turn-harness_claude",
+        "vm-turn-harness_codex"
+      ],
+      "a": ["central-sampler", "runner-vm-mtls-harness_codex", "vm-turn-harness_claude"],
+      "b": ["codex-tool-oom", "runner-vm-mtls-harness_claude", "vm-turn-harness_codex"],
+      "complete": true
+    }
+  },
+  "mcp_pairs": [
+    {
+      "run": "variants-4",
+      "slowest_action_seconds": 235.48,
+      "parallel_envelope_seconds": 236.5475800037384,
+      "action_seconds_sum": 458.42499999999995,
+      "cpu_seconds_sum": 1169.334288
+    },
+    {
+      "run": "split-repeat-1",
+      "slowest_action_seconds": 191.118,
+      "parallel_envelope_seconds": 191.21089601516724,
+      "action_seconds_sum": 332.44899999999996,
+      "cpu_seconds_sum": 591.87913
+    }
+  ],
+  "source": {
+    "base_commit": "7d755083749b74590d7fb730416c519955770422",
+    "spike_commit": "11d651fcebb90f9c4e19aa1e7ced214745997b44",
+    "baseline_1_transport_base": "58e4261128f61235dd354192a907447882284ceb",
+    "baseline_1_tree_verification": {
+      "test_mcp.py": "80b4e3de323b0a67164da30e078ce9fafe5d0a4335c10db80d96b0a7bb062e16",
+      "test_vm.py": "0bfdefd1509b82a6a299098637a0a2f0b6451163e9910923f3a5e34f328648ce"
+    }
+  },
+  "invocations": {
+    "baseline-1": "6cc6abad-37bb-4613-8bec-125397bce4e4",
+    "baseline-2": "36872bd7-57f4-469c-908a-f5d56cc6e435",
+    "variants-3": "bf1386a4-3588-461e-9ce4-6c53cada8273",
+    "variants-4": "050dbecc-fbdd-470c-a333-b207900067a1",
+    "vm-a-corrected-1": "13c4429d-62e7-499a-a7bc-d0b60688e695",
+    "split-repeat-1": "d3661c6d-c0ee-4b3a-aa64-080fd3fb4083",
+    "mcp-large-1": "3082b25b-3df3-4cb9-b5fc-f765e300cb27",
+    "mcp-large-2": "a9a691bf-fec2-42ba-b555-f54a6d74a822"
+  },
+  "phases": {
+    "baseline-1": [
+      {
+        "target": "test_vm-r1-s1-a1",
+        "stack_setup_seconds": [],
+        "image_import_seconds_sum": 52.728965,
+        "scenario_seconds": [
+          {
+            "attributes": {
+              "scenario": "central-sampler"
+            },
+            "seconds": 139.285009
+          },
+          {
+            "attributes": {
+              "scenario": "runner-vm-mtls-harness_codex"
+            },
+            "seconds": 159.081152
+          },
+          {
+            "attributes": {
+              "scenario": "vm-turn-harness_codex"
+            },
+            "seconds": 167.143373
+          },
+          {
+            "attributes": {
+              "scenario": "runner-vm-mtls-harness_claude"
+            },
+            "seconds": 173.489158
+          },
+          {
+            "attributes": {
+              "scenario": "codex-tool-oom"
+            },
+            "seconds": 180.25459
+          },
+          {
+            "attributes": {
+              "scenario": "vm-turn-harness_claude"
+            },
+            "seconds": 189.305883
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios"
+            },
+            "seconds": 189.504088
+          }
+        ]
+      },
+      {
+        "target": "test_mcp-r1-s1-a1",
+        "stack_setup_seconds": [],
+        "image_import_seconds_sum": 74.995829,
+        "scenario_seconds": [
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_deployed_discovery_and_registration"
+            },
+            "seconds": 0.296206
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_agent_executes_mcp_action"
+            },
+            "seconds": 17.416011
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_agent_mcp_bff_decision"
+            },
+            "seconds": 16.284462
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_launcher_drives_only_the_sandbox_it_launched"
+            },
+            "seconds": 37.289725
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_operator_links_oauth_mcp_server[claude]"
+            },
+            "seconds": 14.804985
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_operator_links_oauth_mcp_server[codex]"
+            },
+            "seconds": 10.391845
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_policy_binding_auto_approves_the_bound_sandbox"
+            },
+            "seconds": 14.918094
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_dispatcher_central_setup_tool_and_retained_answer"
+            },
+            "seconds": 25.966392
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_pod_central_sampler_exec_resumes_after_sandbox_suspend_resume"
+            },
+            "seconds": 25.11177
+          }
+        ]
+      }
+    ],
+    "baseline-2": [
+      {
+        "target": "test_vm-r1-s1-a1",
+        "stack_setup_seconds": [109.02295],
+        "image_import_seconds_sum": 63.395425,
+        "scenario_seconds": [
+          {
+            "attributes": {
+              "scenario": "central-sampler"
+            },
+            "seconds": 140.94117
+          },
+          {
+            "attributes": {
+              "scenario": "runner-vm-mtls-harness_codex"
+            },
+            "seconds": 160.866215
+          },
+          {
+            "attributes": {
+              "scenario": "vm-turn-harness_codex"
+            },
+            "seconds": 178.154522
+          },
+          {
+            "attributes": {
+              "scenario": "runner-vm-mtls-harness_claude"
+            },
+            "seconds": 186.946805
+          },
+          {
+            "attributes": {
+              "scenario": "codex-tool-oom"
+            },
+            "seconds": 193.976734
+          },
+          {
+            "attributes": {
+              "scenario": "vm-turn-harness_claude"
+            },
+            "seconds": 206.108664
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios"
+            },
+            "seconds": 206.533193
+          }
+        ]
+      },
+      {
+        "target": "test_mcp-r1-s1-a1",
+        "stack_setup_seconds": [121.335107],
+        "image_import_seconds_sum": 77.5997,
+        "scenario_seconds": [
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_deployed_discovery_and_registration"
+            },
+            "seconds": 0.196391
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_agent_executes_mcp_action"
+            },
+            "seconds": 14.652261
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_agent_mcp_bff_decision"
+            },
+            "seconds": 17.68225
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_launcher_drives_only_the_sandbox_it_launched"
+            },
+            "seconds": 32.53998
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_operator_links_oauth_mcp_server[claude]"
+            },
+            "seconds": 13.218497
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_operator_links_oauth_mcp_server[codex]"
+            },
+            "seconds": 10.139685
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_policy_binding_auto_approves_the_bound_sandbox"
+            },
+            "seconds": 14.788387
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_dispatcher_central_setup_tool_and_retained_answer"
+            },
+            "seconds": 26.20581
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_pod_central_sampler_exec_resumes_after_sandbox_suspend_resume"
+            },
+            "seconds": 23.11463
+          }
+        ]
+      }
+    ],
+    "variants-3": [
+      {
+        "target": "test_vm_spike_b-r1-s1-a1",
+        "stack_setup_seconds": [106.951182],
+        "image_import_seconds_sum": 64.047605,
+        "scenario_seconds": [
+          {
+            "attributes": {
+              "scenario": "runner-vm-mtls-harness_claude"
+            },
+            "seconds": 164.093965
+          },
+          {
+            "attributes": {
+              "scenario": "vm-turn-harness_codex"
+            },
+            "seconds": 167.818295
+          },
+          {
+            "attributes": {
+              "scenario": "codex-tool-oom"
+            },
+            "seconds": 186.098118
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios"
+            },
+            "seconds": 186.372269
+          }
+        ]
+      }
+    ],
+    "variants-4": [
+      {
+        "target": "test_mcp_spike_b-r1-s1-a1",
+        "stack_setup_seconds": [137.354305],
+        "image_import_seconds_sum": 96.000266,
+        "scenario_seconds": [
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_deployed_discovery_and_registration"
+            },
+            "seconds": 0.141657
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_policy_binding_auto_approves_the_bound_sandbox"
+            },
+            "seconds": 14.747599
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_dispatcher_central_setup_tool_and_retained_answer"
+            },
+            "seconds": 25.040114
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_pod_central_sampler_exec_resumes_after_sandbox_suspend_resume"
+            },
+            "seconds": 22.113462
+          }
+        ]
+      },
+      {
+        "target": "test_mcp_spike_a-r1-s1-a1",
+        "stack_setup_seconds": [105.263069],
+        "image_import_seconds_sum": 63.312924,
+        "scenario_seconds": [
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_agent_executes_mcp_action"
+            },
+            "seconds": 13.24043
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_agent_mcp_bff_decision"
+            },
+            "seconds": 16.187743
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_launcher_drives_only_the_sandbox_it_launched"
+            },
+            "seconds": 33.201797
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_operator_links_oauth_mcp_server[claude]"
+            },
+            "seconds": 13.485654
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_operator_links_oauth_mcp_server[codex]"
+            },
+            "seconds": 11.098175
+          }
+        ]
+      },
+      {
+        "target": "test_vm_spike_large-r1-s1-a1",
+        "stack_setup_seconds": [174.556178],
+        "image_import_seconds_sum": 152.154372,
+        "scenario_seconds": [
+          {
+            "attributes": {
+              "scenario": "central-sampler"
+            },
+            "seconds": 148.156005
+          },
+          {
+            "attributes": {
+              "scenario": "runner-vm-mtls-harness_codex"
+            },
+            "seconds": 170.107253
+          },
+          {
+            "attributes": {
+              "scenario": "vm-turn-harness_codex"
+            },
+            "seconds": 180.37926
+          },
+          {
+            "attributes": {
+              "scenario": "runner-vm-mtls-harness_claude"
+            },
+            "seconds": 184.245361
+          },
+          {
+            "attributes": {
+              "scenario": "codex-tool-oom"
+            },
+            "seconds": 200.398528
+          },
+          {
+            "attributes": {
+              "scenario": "vm-turn-harness_claude"
+            },
+            "seconds": 204.326013
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm_spike_large.py::test_vm_scenarios"
+            },
+            "seconds": 204.512663
+          }
+        ]
+      }
+    ],
+    "vm-a-corrected-1": [
+      {
+        "target": "test_vm_spike_a-r1-s1-a1",
+        "stack_setup_seconds": [102.420289],
+        "image_import_seconds_sum": 63.774823,
+        "scenario_seconds": [
+          {
+            "attributes": {
+              "scenario": "central-sampler"
+            },
+            "seconds": 125.270627
+          },
+          {
+            "attributes": {
+              "scenario": "runner-vm-mtls-harness_codex"
+            },
+            "seconds": 146.219207
+          },
+          {
+            "attributes": {
+              "scenario": "vm-turn-harness_claude"
+            },
+            "seconds": 185.628178
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios"
+            },
+            "seconds": 185.895474
+          }
+        ]
+      }
+    ],
+    "split-repeat-1": [
+      {
+        "target": "test_vm_spike_b-r1-s1-a1",
+        "stack_setup_seconds": [102.319153],
+        "image_import_seconds_sum": 63.102418,
+        "scenario_seconds": [
+          {
+            "attributes": {
+              "scenario": "vm-turn-harness_codex"
+            },
+            "seconds": 171.718564
+          },
+          {
+            "attributes": {
+              "scenario": "runner-vm-mtls-harness_claude"
+            },
+            "seconds": 172.527295
+          },
+          {
+            "attributes": {
+              "scenario": "codex-tool-oom"
+            },
+            "seconds": 190.834648
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios"
+            },
+            "seconds": 191.101234
+          }
+        ]
+      },
+      {
+        "target": "test_mcp_spike_b-r1-s1-a1",
+        "stack_setup_seconds": [57.608595],
+        "image_import_seconds_sum": 6.234852,
+        "scenario_seconds": [
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_deployed_discovery_and_registration"
+            },
+            "seconds": 0.119215
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_policy_binding_auto_approves_the_bound_sandbox"
+            },
+            "seconds": 13.655132
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_dispatcher_central_setup_tool_and_retained_answer"
+            },
+            "seconds": 24.963082
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_pod_central_sampler_exec_resumes_after_sandbox_suspend_resume"
+            },
+            "seconds": 21.081867
+          }
+        ]
+      },
+      {
+        "target": "test_mcp_spike_a-r1-s1-a1",
+        "stack_setup_seconds": [63.54514],
+        "image_import_seconds_sum": 6.08141,
+        "scenario_seconds": [
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_agent_executes_mcp_action"
+            },
+            "seconds": 12.007723
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_agent_mcp_bff_decision"
+            },
+            "seconds": 17.3716
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_launcher_drives_only_the_sandbox_it_launched"
+            },
+            "seconds": 35.255969
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_operator_links_oauth_mcp_server[claude]"
+            },
+            "seconds": 14.031602
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_operator_links_oauth_mcp_server[codex]"
+            },
+            "seconds": 10.064676
+          }
+        ]
+      }
+    ],
+    "mcp-large-1": [
+      {
+        "target": "test_pod-r1-s1-a1",
+        "stack_setup_seconds": [76.193302],
+        "image_import_seconds_sum": 33.019205,
+        "scenario_seconds": [
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_pod.py::test_an_agent_messages_another_which_reads_and_acknowledges_it"
+            },
+            "seconds": 22.421366
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_pod.py::test_a_policy_granted_after_the_sandbox_is_running_takes_effect"
+            },
+            "seconds": 18.628513
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_pod.py::test_the_model_call_itself_goes_through_the_proxy"
+            },
+            "seconds": 15.06197
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_pod.py::test_a_preset_launches_an_initialized_editable_codex_thread"
+            },
+            "seconds": 18.28406
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_pod.py::test_cert_manager_reissues_a_deleted_tls_secret"
+            },
+            "seconds": 0.834814
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_mtls_session_survives_replacement_and_keeps_history"
+            },
+            "seconds": 21.623148
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_pod.py::test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session"
+            },
+            "seconds": 16.477412
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_pod.py::test_fresh_workspace_storage_survives_replacement"
+            },
+            "seconds": 23.521235
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_pod.py::test_codex_standing_instructions_after_suspend_and_compact"
+            },
+            "seconds": 18.879268
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_pod.py::test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume"
+            },
+            "seconds": 19.443002
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_pod.py::test_an_unknown_thread_is_not_found"
+            },
+            "seconds": 0.015227
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_pod.py::test_every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event"
+            },
+            "seconds": 13.038961
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_pod.py::test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn"
+            },
+            "seconds": 15.717242
+          }
+        ]
+      },
+      {
+        "target": "test_mcp_spike_large-r1-s1-a1",
+        "stack_setup_seconds": [154.763699],
+        "image_import_seconds_sum": 114.387268,
+        "scenario_seconds": [
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp_spike_large.py::test_deployed_discovery_and_registration"
+            },
+            "seconds": 0.241057
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp_spike_large.py::test_agent_executes_mcp_action"
+            },
+            "seconds": 16.752983
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp_spike_large.py::test_agent_mcp_bff_decision"
+            },
+            "seconds": 16.372
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp_spike_large.py::test_launcher_drives_only_the_sandbox_it_launched"
+            },
+            "seconds": 32.241138
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp_spike_large.py::test_operator_links_oauth_mcp_server[claude]"
+            },
+            "seconds": 13.202345
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp_spike_large.py::test_operator_links_oauth_mcp_server[codex]"
+            },
+            "seconds": 10.492796
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp_spike_large.py::test_policy_binding_auto_approves_the_bound_sandbox"
+            },
+            "seconds": 14.127296
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp_spike_large.py::test_dispatcher_central_setup_tool_and_retained_answer"
+            },
+            "seconds": 25.19585
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp_spike_large.py::test_pod_central_sampler_exec_resumes_after_sandbox_suspend_resume"
+            },
+            "seconds": 22.145111
+          }
+        ]
+      }
+    ],
+    "mcp-large-2": [
+      {
+        "target": "test_mcp_spike_large-r1-s1-a1",
+        "stack_setup_seconds": [56.854133],
+        "image_import_seconds_sum": 6.864535,
+        "scenario_seconds": [
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp_spike_large.py::test_deployed_discovery_and_registration"
+            },
+            "seconds": 0.106357
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp_spike_large.py::test_agent_executes_mcp_action"
+            },
+            "seconds": 13.936843
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp_spike_large.py::test_agent_mcp_bff_decision"
+            },
+            "seconds": 16.249833
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp_spike_large.py::test_launcher_drives_only_the_sandbox_it_launched"
+            },
+            "seconds": 36.355009
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp_spike_large.py::test_operator_links_oauth_mcp_server[claude]"
+            },
+            "seconds": 13.211508
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp_spike_large.py::test_operator_links_oauth_mcp_server[codex]"
+            },
+            "seconds": 11.074316
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp_spike_large.py::test_policy_binding_auto_approves_the_bound_sandbox"
+            },
+            "seconds": 14.250502
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp_spike_large.py::test_dispatcher_central_setup_tool_and_retained_answer"
+            },
+            "seconds": 24.522609
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp_spike_large.py::test_pod_central_sampler_exec_resumes_after_sandbox_suspend_resume"
+            },
+            "seconds": 22.80424
+          }
+        ]
+      },
+      {
+        "target": "test_mcp-r1-s1-a1",
+        "stack_setup_seconds": [108.233899],
+        "image_import_seconds_sum": 77.52244400000001,
+        "scenario_seconds": [
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_deployed_discovery_and_registration"
+            },
+            "seconds": 0.138179
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_agent_executes_mcp_action"
+            },
+            "seconds": 14.658304
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_agent_mcp_bff_decision"
+            },
+            "seconds": 16.366532
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_launcher_drives_only_the_sandbox_it_launched"
+            },
+            "seconds": 35.081566
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_operator_links_oauth_mcp_server[claude]"
+            },
+            "seconds": 13.019596
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_operator_links_oauth_mcp_server[codex]"
+            },
+            "seconds": 11.131403
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_policy_binding_auto_approves_the_bound_sandbox"
+            },
+            "seconds": 14.460595
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_dispatcher_central_setup_tool_and_retained_answer"
+            },
+            "seconds": 25.281136
+          },
+          {
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_mcp.py::test_pod_central_sampler_exec_resumes_after_sandbox_suspend_resume"
+            },
+            "seconds": 22.850656
+          }
+        ]
+      }
+    ]
+  },
+  "provider_failure": {
+    "invocation": "050dbecc-fbdd-470c-a333-b207900067a1",
+    "vm_log_digest": "d577cd63f01e01d3af2aaf07439b7f7a3f390339f5c90c1c5cd243369c8ba35c/48723",
+    "outer_kernel": "5.15.0 #1",
+    "fault": "general protection fault in update_load_avg+0x92/0x5c0; fatal exception in interrupt",
+    "failed_process_seconds": 224.415,
+    "failed_cpu_seconds": 856.851124,
+    "instrumentation": "ordinary guest; no perf recorder",
+    "successful_retry_process_seconds": 411.195
+  }
+}
