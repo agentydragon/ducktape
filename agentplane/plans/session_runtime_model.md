@@ -2,8 +2,9 @@
 
 Operator-requested future design, 2026-10-28 PDT; discussion directions updated 2026-10-30 PDT.
 The broader object model is a long-term north star; concrete object types, storage and protocols
-remain open. Component names and source layout were agreed on 2026-10-31 UTC; current Runtime,
-Harness Host and Execution service contracts live in their component specifications.
+remain open. Current component names, source ownership and runnable entrypoints live in the
+[environment layout](../env/README.md#layout-and-entrypoints); Runtime, Harness Host and Execution
+contracts live in their component specifications.
 Session/Environment dispatch regrouping remains for later;
 its service roles may share a binary or have separate binaries.
 Prefer the LLM agent loop outside the execution environment when capabilities are otherwise equal:
@@ -92,26 +93,13 @@ execution environments. A shared app-server serving N Sessions and a separate Ex
 process within the same environment remain supported. Direct-executing Claude belongs in an
 explicit workload resource domain; sharing one with Codex execution is a deployment choice.
 
-Current source ownership:
-
-```text
-agentplane/
-  env/
-    runtime/               # Environment Runtime entrypoint and implementation
-    execution/             # execution service, API/protocol and clients
-    harnesshost/           # environment-bound host and native Codex/Claude adapters
-    images/                # Pod/VM runtime packaging
-    oneoff/                # shared one-shot work lifecycle support
-    supervision/           # shared process supervision
-  central_sampler/         # independent control-plane sampler; not an environment host
-```
-
-`env/` groups software specific to operating execution environments. The native Harness Host runs
-inside an environment; the central sampler owns the LLM loop outside environments and may use the
-Execution service API as a client. Keep the Executor protocol and client with `env/runtime/execution`, whose
-API is consumed by the central sampler and Gateway. Shared supervision and one-shot work
-coordination serve the Environment Runtime, Execution service and Harness Host; they create no
-services.
+`env/` groups software specific to operating execution environments. Runtime, Harness Host and
+Execution share the implemented management process; Host and Execution live under `env/runtime/`.
+Shared supervision is under `env/runtime/supervision`, while one-shot bookkeeping remains in
+`env/oneoff`. The [source layout](../env/README.md#layout-and-entrypoints) owns the full map.
+The central sampler lives at `agentplane/central_sampler`, outside `env/`; it may use the Executor
+protocol and client owned by `env/runtime/execution`. Logical responsibilities remain distinct even
+when their calls are in-process.
 Use “execution environment” in APIs/docs to distinguish it from a deployment such as staging.
 Existing experimental implementations retain their status when relocated.
 
@@ -120,7 +108,7 @@ Deployment grouping remain open for later, as the operator clarified after discu
 separate binaries. Names such as `agentplane-session-dispatcher` and
 `agentplane-environment-gateway` are available if standalone entrypoints are selected. The earlier
 [combined-service proposal](dispatcher_gateway_merge.md) is an option awaiting review, not the
-selected topology. That decision does not gate the Runner extractions.
+selected topology. That decision is independent of the environment process layout.
 
 The intended routing distinction is:
 
@@ -286,6 +274,6 @@ already describes experimental `environment/add`, per-thread environments and tu
 Use it as input; it does not establish arbitrary detach/rebind or environment-free operation.
 
 Exit: reviewed terms, ownership/lifetime rules, API examples for the cases above, and a
-transition proposal preserving existing identities, history and native state. The Runner extractions
-above can be assigned independently of that broader decision. This planning change authorizes no
+transition proposal preserving existing identities, history and native state. The implemented
+component layout does not settle that broader decision. This planning change authorizes no
 live deployment or migration.
