@@ -4,18 +4,24 @@ Status: **existing-environment implementation approved, 2026-10-31; fresh provis
 The selected first
 workflow and its implementation capstone are tracked under
 [`THREAD_CREATE_AUTHORIZATION`](task_dag.md#thread_create_authorization--caller-privilege-delegation-capstone).
-The MCP tool names below remain interface contracts, not callable tools. The existing
-[Session CLI](../docs/agent_cli.md), [Dispatcher authorization](../runner_gateway/dispatcher/README.md)
-and [retained History access](../history_service/README.md) supply the implemented foundations.
-Shared delegated authentication, persisted Action caller UIDs and Dispatcher/History receiver
-enforcement are implemented under the [delegated authorization contract](../docs/delegated_authorization.md).
-The complete agent-facing workflow still needs the integration and examples below.
+The direct MCP names are `environments__list`, `environments__get`, and seven `sessions__*`
+operations (nine direct tools total) in the Action/MCP contract. The [Session CLI](../docs/agent_cli.md), [Dispatcher
+authorization](../runner_gateway/dispatcher/README.md) and [retained History access](../history_service/README.md)
+supply the implemented foundations. Shared delegated authentication, persisted Action caller UIDs
+and Dispatcher/History receiver enforcement are implemented under the
+[delegated authorization contract](../docs/delegated_authorization.md). The external MCP acceptance
+is `//agentplane/system_tests/suites/mcp:test_delegation`; it performs real Connection consent and
+proves discovery, explicit input, observation and retained reads with the integration app scaled to
+zero. Its generated Sandbox opts into the direct tools; staging remains disabled while managed
+platform-guidance activation is held.
 
 **Review status, 2026-11-01 UTC:** platform guidance [#13384](https://github.com/agentydragon/ducktape/pull/13384)
 and target discovery [#13392](https://github.com/agentydragon/ducktape/pull/13392) have passing CI and
 remain open. Managed guidance activation [#13410](https://github.com/agentydragon/ducktape/pull/13410)
-stays held until the compatible reader is deployed to every active sampler replica. Action/MCP
-adapters, remaining composite result reads and the two end-to-end reuse examples remain unfinished.
+stays held until the compatible reader is deployed to every active sampler replica. The Action/MCP
+adapter and caller-neutral retained-result reads are implemented in their dependent changes. The
+external MCP acceptance uses the exact schemas and remains a separate proof from natural-model
+usability or the still-held central-sampler activation.
 
 ## Recommendation and decisions
 
@@ -42,7 +48,7 @@ authorization contract is substantial work and should not be assumed to fit the 
 - **Full template catalogue, when implemented:** return the complete deployment-published catalogue,
   with pagination and no per-SA template filtering. Catalogue ownership and fresh provisioning
   are deferred; the first release reuses existing environments.
-- **Additive briefing:** `sessions_open.additional_instructions` appends a child briefing while
+- **Additive briefing:** `sessions__open.additional_instructions` appends a child briefing while
   preserving the default platform guidance. It does not replace the effective prompt.
 - **Explicit first input:** opening a Session, including with `additional_instructions`, does not
   start a model turn. The caller must submit input separately to start work.
@@ -94,7 +100,7 @@ proposal adds no blanket auto-approval rule for environment management.
 Ship existing-environment list/get and the seven Session operations. An external MCP caller can
 reuse an eligible existing environment without having an environment of its own. An empty list
 means an operator must prepare a suitable environment; the first release does not create one.
-`environments_list_templates`, `environments_get_creation` and `environments/create` remain
+`environments__list_templates`, `environments__get_creation` and `environments/create` remain
 later design/implementation work. Keep their sketches below to preserve the agreed direction,
 without making catalogue decisions prerequisites for the existing-environment workflow.
 
@@ -108,10 +114,10 @@ This does not require a new service or binary, a general transport rewrite, or `
 
 | Operation                                                 | Initial backend mapping                                                                           | Remaining work / TODO                                                                                                                                                                                                                     |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Open, submit input, cancel queued input, interrupt a turn | Existing `SessionDispatcher.OpenSession`, `SubmitInput`, `CancelDispatch`, `InterruptTurn`        | Reuse target UID/principal checks and existing CLI clients; add Action/MCP adapters. Additional briefing maps to the caller-instruction input; central platform composition remains in review.                                            |
-| Get Session                                               | `SessionDispatcher.GetSessionOpening` plus `HistoryService.GetSessionSummary`                     | Keep the composite read in neutral client code initially; add an owning snapshot RPC only if useful, without moving authority between services.                                                                                           |
-| Read turns, observe one input                             | Existing History reads/follows plus Dispatcher command receipts                                   | Reuse `session_client.ObserveInput` and `sessions observe-input`. Add retained-turn projections and Action/MCP exposure. TODO: owning typed RPCs/direct CLI equivalents for new compositions first exposed as Actions.                    |
-| List/get existing environments                            | `EnvironmentDiscovery` over Sandbox inventory and shared runtime/configuration sources, in review | Finish #13392 and expose caller-scoped reads through CLI/MCP. An Action route must preserve the original caller at Discovery's receiver; do not query under Actions' broad SA or expose an unfiltered namespace list.                     |
+| Open, submit input, cancel queued input, interrupt a turn | Existing `SessionDispatcher.OpenSession`, `SubmitInput`, `CancelDispatch`, `InterruptTurn`        | Exposed through `sessions__open`, `sessions__submit_input`, `sessions__cancel_input`, and `sessions__interrupt_turn`; CLI also exposes owning Dispatcher calls. Additional briefing is additive. Central guidance activation remains held. |
+| Get Session                                               | `SessionDispatcher.GetSessionOpening` plus `HistoryService.GetSessionSummary`                     | `session_client.GetSession` composes both sources without a live-environment lookup; exposed through `sessions__get` and `agentplane sessions get`. No new owning snapshot RPC is needed now.                                               |
+| Read turns, observe one input                             | Existing History reads/follows plus Dispatcher command receipts                                   | `session_client.ObserveInput` and `ReadTurns` preserve source facts and cursor coverage; exposed through `sessions__observe_input`, `sessions__read_turns`, and `agentplane sessions observe-input/read-turns`. No new owning RPC is needed now. |
+| List/get existing environments                            | `EnvironmentDiscovery` over Sandbox inventory and shared runtime/configuration sources             | Exposed through `environments__list` and `environments__get`. The Action route carries the original caller to Discovery; it never queries under Actions' broad SA or returns an unfiltered namespace list.                               |
 | List templates                                            | Full deployment-published catalogue                                                               | Extract shared defaults from app-owned presets. Direct backend read can share the Action Service process; no app calls. TODO: dedicated read RPC/CLI if initially exposed as an Action.                                                   |
 | Create environment, observe creation                      | Dedicated `environments/create` Action plus neutral provisioning/lookup code                      | Deferred: implement shared-account environments and the reviewed catalogue. Reuse persisted caller UID. TODO: typed create/lookup RPCs and CLI access for initially Action-only operations; direct create still needs approval authority. |
 
@@ -150,7 +156,7 @@ Omitting it or supplying an empty string never removes Agentplane platform guida
 
 The published input schema must describe `additional_instructions` as: "Standing instructions
 added to the Session. This field does not submit input or start a model turn. After opening,
-call `sessions_submit_input` with the task to start work." The `sessions_open` description must
+call `sessions__submit_input` with the task to start work." The `sessions__open` description must
 state the same activation rule; it must not turn the briefing into an implicit initial input.
 Optional setup may execute shell commands during opening, separately from any model turn.
 
@@ -169,7 +175,7 @@ Keep these sources distinct:
   contribution practices. A caller's additional briefing appends to the selected role text.
   Generic Agentplane guidance currently bundled with a preset belongs in the platform layer.
 - **Additional instructions:** the creator's child-specific standing brief. The first task is
-  still submitted separately through `sessions_submit_input`.
+still submitted separately through `sessions__submit_input`.
 
 The first tools need not accept preset names or introduce a backend preset registry. A client
 using an optional role preset combines its concrete role text and child briefing in
@@ -211,13 +217,17 @@ discovery verifies whether that address is eligible rather than treating an envi
 as authority.
 
 The example is a CI-maintenance coordinator delegating investigation of one latency regression.
-Names beginning `environments_` or `sessions_` below are **new MCP tools**. The `agentplane sessions`
-CLI group exists; `agentplane environments` remains proposed with target discovery. Today's central code
-mode can reach a CLI through `exec`, but has no `sessions` JavaScript global. Native harnesses can
-use MCP tools without Agentplane owning their JavaScript host.
+The deployed direct MCP names use `<group>__<action>`, such as `environments__list` and
+`sessions__open`; their schemas are available through MCP `tools/list`. The CLI exposes the same
+Action schemas and calls through `agentplane --json actions show environments/list` and
+`agentplane --json actions submit environments/list --title ... --arguments JSON --wait`. The
+`agentplane sessions` CLI group also exposes the owning Dispatcher/History APIs. Today's central
+code mode can reach a CLI through `exec`, but has no `sessions` JavaScript global. A scripted MCP
+client verifies protocol behavior; it does not establish that a natural model can discover or use
+these tools unaided.
 
-1. Discover tool schemas through MCP `tools/list`, or the proposed
-   `agentplane environments --help` and `agentplane sessions --help`. Read `environments_list` and call:
+1. Discover tool schemas through MCP `tools/list`, or inspect the Action schema with
+   `agentplane --json actions show environments/list`. Read `environments__list` and call:
 
    ```json
    { "limit": 20 }
@@ -267,9 +277,9 @@ use MCP tools without Agentplane owning their JavaScript host.
    `/workspace/ci-latency-worker`. Directory preparation is an explicit command, not a hidden copy
    of the parent's repository. Runtimes already create missing cwd directories; repository setup
    needs explicit commands. A client without execution access can provide `setup_script` to
-   `sessions_open`; setup completion is observable separately from opening.
+   `sessions__open`; setup completion is observable separately from opening.
 
-3. Mint and retain a child Session UUID **before** sending. Call `sessions_open`:
+3. Mint and retain a child Session UUID **before** sending. Call `sessions__open`:
 
    ```json
    {
@@ -291,7 +301,7 @@ use MCP tools without Agentplane owning their JavaScript host.
    uses the current wake policy; no promise that every suspended environment wakes automatically.
    Opening with this briefing does not start a model turn. Send the first task in step 4.
 
-4. Mint and retain a command UUID; call `sessions_submit_input` separately:
+4. Mint and retain a command UUID; call `sessions__submit_input` separately:
 
    ```json
    {
@@ -308,7 +318,7 @@ use MCP tools without Agentplane owning their JavaScript host.
    central code mode, Actions are available through CLI execution, not direct nested Action tools.
    Execution uses the target's authority, which this first slice requires to match the caller.
 
-5. Continue independent work, then call `sessions_observe_input`:
+5. Continue independent work, then call `sessions__observe_input`:
 
    ```json
    {
@@ -318,7 +328,7 @@ use MCP tools without Agentplane owning their JavaScript host.
    }
    ```
 
-   A possible proposed result:
+   An example successful result:
 
    ```json
    {
@@ -369,25 +379,28 @@ subscription.
 ## Proposed workflow B: external MCP-only coordinator
 
 The coordinator has an authenticated OAuth connection to Agentplane MCP; it has no kubeconfig,
-execution host, parent Session or notification inbox.
+execution host, parent Session or notification inbox. The acceptance is runnable with
+`bbr test //agentplane/system_tests/suites/mcp:test_delegation`; it uses the MCP SDK and real
+Connection consent, then scales the integration app to zero before any delegation Action call.
 
-1. `tools/list` exposes the new environment and Session tools. Call `environments_list({"limit":20})`;
+1. `tools/list` exposes the opted-in direct tools. Call `environments__list({"limit":20})`;
    it evaluates the connection's verified bound SA, rather than asking the model to provide one.
    With an eligible target, use the full reference and offered configuration exactly as in workflow A.
-2. Call `sessions_open` with a retained UUID and usable absolute cwd, respecting the backend's
+2. Call `environments__get` with the exact discovered target, then `sessions__open` with a retained UUID and usable absolute cwd, respecting the backend's
    existing path validation. The runtime creates a missing directory. Repository preparation can
-   use an explicit `setup_script`, with its result visible through `sessions_get`; a clone needs
+   use an explicit `setup_script`, with its result visible through `sessions__get`; a clone needs
    an explicit source and authorized credentials. Opening does not implicitly copy another repo.
-3. Call `sessions_submit_input`, retain the command UUID, and use `sessions_observe_input` to read
+3. Call `sessions__submit_input`, retain the command UUID, and use `sessions__observe_input` to read
    the correlated result. The external caller can reconnect and resume reads with those IDs.
-   Returning the result does not require delivering a message into the external harness.
+   Call `sessions__get` for the independently sourced opening and retained History summary, then
+   page `sessions__read_turns` with its Session-scoped `page_cursor`. Returning the result does not
+   require delivering a message into the external harness.
 
-An account can legitimately receive an empty target list. Today's staging MCP account is
-explicitly mintable as `claude-ai`; Sandboxes have their own distinct SAs. **Do not claim that
-account automatically qualifies for same-SA reuse.** The first external reuse test must configure
-an OAuth connection whose bound account is the target's actual SA, with explicit token-minting and
-backend-audience permission. That is deployable configuration work, not a caller-supplied override
-or permission to mint arbitrary workload tokens.
+An account can legitimately receive an empty target list. The acceptance fixture creates a
+Sandbox-owned ServiceAccount, marks that exact account eligible for MCP token minting, and completes
+operator Connection consent for it; the chart does not precreate the account. This proves the
+same-SA contract in the disposable fixture. Staging direct-tool activation remains separate and
+held behind the compatible managed-guidance reader rollout.
 
 ### Later: when no eligible environment exists, dedicated provisioning Actions
 
@@ -397,7 +410,7 @@ objects generated from Git-managed cdk8s configuration; launch defaults also liv
 presets. The fuller backend catalogue needs an explicit owner. The sketch uses dedicated tools
 and an Action over typed provisioning code, with no `orchestration_v1` dependency.
 
-1. Discover `environments_list_templates` through `tools/list` and call `{"limit":20}`. Select a
+1. Discover the later `environments__list_templates` proposal through `tools/list` and call `{"limit":20}`. Select a
    deployment-published VM or Pod configuration and retain its complete `template` reference, including its
    revision. The returned configuration includes the caller's actual execution account, resources,
    mounts and workload security settings. Publication means the configuration is offered for submission, not that
@@ -436,12 +449,12 @@ and an Action over typed provisioning code, with no `orchestration_v1` dependenc
    the reply is lost or the bounded wait expires, use `get_action_request` with the retained
    `idempotency_key`, then its ordinary result lookup. Do not resubmit under a new key; today's
    Action API refuses repeated submissions of the same key too.
-4. Call `environments_get_creation` with `{"creation_id":"0698a0d2-fb0d-4c84-a17e-e7c85f5c57a4"}`
+4. Call the later `environments__get_creation` proposal with `{"creation_id":"0698a0d2-fb0d-4c84-a17e-e7c85f5c57a4"}`
    to observe the backend independently of Action polling. `not_observed` is expected before
    backend admission and does not prove a timed-out request had no effect. `provisioning` proves
    admission; `created` returns the full `EnvironmentDescriptor`, including the new Sandbox UID.
    `unknown` remains uncertain while the backend reconciles; no new creation is implied.
-5. Refresh that exact target with `environments_get`, select its offered runtime configuration,
+5. Refresh that exact target with `environments__get`, select its offered runtime configuration,
    then use **open → submit → observe** from workflow A. Opening can queue before readiness. An
    approved creation does not itself open a Session, guarantee readiness or grant a different
    principal authority.
@@ -459,10 +472,10 @@ SA and remains a separate legacy capability. Its system scenario
 
 ## Tool contract derived from the workflows
 
-These are the selected MCP/CLI interface contracts and deferred provisioning sketches, not
-existing callable APIs. The first release includes `environments_list`, `environments_get` and
-the seven `sessions_*` operations; template discovery, creation and creation lookup are **later**.
-Results use MCP
+The first nine rows are the accepted direct MCP tools and typed Action contracts; the CLI exposes
+the same Action schemas through `agentplane --json actions show GROUP/ACTION` and
+`agentplane --json actions submit GROUP/ACTION`. The remaining provisioning rows are deferred
+sketches. Direct tool names are `<group>__<action>`; Action names use `group/action`. Results use MCP
 `structuredContent` plus a matching JSON text fallback. Callers do not parse prose for state,
 authority failures, IDs or recovery. The CLI exposes equivalent machine-readable output.
 
@@ -487,20 +500,20 @@ types; the linked existing protobufs remain authoritative for reused messages an
 Examples use protobuf field names; JSON Schema must pin that field spelling explicitly. New
 projections belong to neutral shared clients/backends, with no `orchestration_v1` DTO dependency.
 
-| Name                             | Purpose                                                                                                                                                                                                                                                                                                          | Approval / authorization                                                                                                                                                                          | Input schema                                                                                                                          | Success-output schema                                                                                                      |
+| MCP tool / Action                 | Purpose                                                                                                                                                                                                                                                                                                          | Approval / authorization                                                                                                                                                                          | Input schema                                                                                                                          | Success-output schema                                                                                                      |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `environments_list_templates`    | **Later.** Discover the full deployment-published Pod/VM catalogue, exact revision handles and what a creation approval would cover. Use when no eligible environment exists; it creates nothing.                                                                                                                | Authenticated read of the full catalogue, without per-SA template filtering; discovery is not creation approval.                                                                                  | `{limit: integer (1..100), after?: OpaqueCursor}`                                                                                     | `Page<TemplateDescriptor>`                                                                                                 |
-| `environments_list`              | Discover existing environments eligible for Session work, including their full handles, readiness, instructions and runtime choices. An empty list is valid; a backend failure is an error.                                                                                                                      | Automatic, filtered to the caller's eligible same-SA targets.                                                                                                                                     | `{limit: integer (1..100), after?: OpaqueCursor}`                                                                                     | `Page<EnvironmentDescriptor>`                                                                                              |
-| `environments_get`               | Refresh one environment's state and usable Session configuration. Use the complete handle; a same-name replacement is refused.                                                                                                                                                                                   | Automatic for an authorized target.                                                                                                                                                               | `{target: TargetRef}`                                                                                                                 | `EnvironmentDescriptor`                                                                                                    |
-| `environments_get_creation`      | **Later.** Look up a creation by its retained ID after a lost reply or uncertain outcome. This read neither repeats creation nor approves a pending Action.                                                                                                                                                      | Automatic for the creation's authenticated owner.                                                                                                                                                 | `{creation_id: UUID}`                                                                                                                 | `CreationObservation`                                                                                                      |
-| **Action `environments/create`** | **Later.** Create a managed environment under the caller's account from the reviewed template revision. Return a creation receipt; it does not open a Session or promise readiness.                                                                                                                              | Human approval initially, plus backend validation of the actual caller/account, namespace, revision and configuration.                                                                            | `{creation_id: UUID, name: string (Kubernetes DNS subdomain, 1..253), template: TemplateRef}`                                         | `CreationObservation` as the Action's result, inside its ordinary Action request/Decision/Execution envelope.              |
-| `sessions_open`                  | Durably open a child Session with default platform guidance, an optional additive brief and one-time setup. Opening does not start a model turn; send the task with `sessions_submit_input`. Same UUID/request recovers the original; conflicting reuse fails. Admission does not mean harness/model acceptance. | Caller is authenticated; target's actual SA UID equals caller's verified SA UID; target UID is fenced at Dispatcher admission; the owning runtime validates the requested harness/model settings. | `{target: TargetRef, session_id: UUID, spec: SessionSpec, additional_instructions?: string, setup_script?: string (maxLength 65536)}` | `{opening: Dispatcher.SessionOpening}`; normally queued initially.                                                         |
-| `sessions_submit_input`          | Durably admit input separately from opening; same command ID/request recovers its original admission.                                                                                                                                                                                                            | Same trusted logical Session principal and actual target execution account as caller; target/Session binding and target UID match.                                                                | `{target: TargetRef, session_id: UUID, command_id: UUID, text: string (nonempty)}`                                                    | `{dispatch: Dispatcher.Dispatch}`; stored is not consumed.                                                                 |
-| `sessions_observe_input`         | Bounded, read-only observation correlated to one command; timeout does not cancel work.                                                                                                                                                                                                                          | Same retained logical principal under the narrow read rule; live environment not required.                                                                                                        | `{session_id: UUID, command_id: UUID, wait_seconds: integer (0..30), resume_token?: OpaqueToken}`                                     | `{session_id: UUID, command_id: UUID, dispatch: SourcePart<Dispatcher.Dispatch, "dispatcher">, observation: Observation}`. |
-| `sessions_get`                   | Read opening plus retained History snapshot, including setup/harness state and active turn when observed.                                                                                                                                                                                                        | Same retained logical principal under the narrow read rule; live environment not required.                                                                                                        | `{session_id: UUID}`                                                                                                                  | `SessionSnapshot`; missing History remains distinct from a missing Dispatcher opening.                                     |
-| `sessions_read_turns`            | Page through compact retained turns; debug/evidence reads remain separate.                                                                                                                                                                                                                                       | Same retained logical principal under the narrow read rule; live environment not required.                                                                                                        | `{session_id: UUID, count: integer (1..100), page_cursor?: OpaqueCursor}`                                                             | `TurnPage`.                                                                                                                |
-| `sessions_cancel_input`          | Cancel only an unclaimed queued dispatch.                                                                                                                                                                                                                                                                        | Same control authority; named command must belong to the Session.                                                                                                                                 | `{session_id: UUID, command_id: UUID}`                                                                                                | `{dispatch: Dispatcher.Dispatch}`.                                                                                         |
-| `sessions_interrupt_turn`        | Interrupt exactly the observed turn; never targets a successor turn.                                                                                                                                                                                                                                             | Same control authority; Session, target incarnation and observed turn must match; use a fresh interrupt command UUID; runtime must be reachable.                                                  | `{target: TargetRef, session_id: UUID, command_id: UUID, turn_id: OpaqueId}`                                                          | `Dispatcher.InterruptTurnResponse`; includes existing state/reason/admission.                                              |
+| **Later:** `environments/list_templates` | Discover the full deployment-published Pod/VM catalogue, exact revision handles and what a creation approval would cover. Use when no eligible environment exists; it creates nothing.                                                                                                                   | Authenticated read of the full catalogue, without per-SA template filtering; discovery is not creation approval.                                                                                  | `{limit: integer (1..100), after?: OpaqueCursor}`                                                                                     | `Page<TemplateDescriptor>`                                                                                                 |
+| `environments__list`              | Discover existing environments eligible for Session work, including their full handles, readiness, instructions and runtime choices. An empty list is valid; a backend failure is an error.                                                                                                                      | Automatic, filtered to the caller's eligible same-SA targets.                                                                                                                                     | `{limit: integer (1..100), after?: OpaqueCursor}`                                                                                     | `Page<EnvironmentDescriptor>`                                                                                              |
+| `environments__get`               | Refresh one environment's state and usable Session configuration. Use the complete handle; a same-name replacement is refused.                                                                                                                                                                                   | Automatic for an authorized target.                                                                                                                                                               | `{target: TargetRef}`                                                                                                                 | `EnvironmentDescriptor`                                                                                                    |
+| **Later:** `environments/get_creation` | Look up a creation by its retained ID after a lost reply or uncertain outcome. This read neither repeats creation nor approves a pending Action.                                                                                                                                                                 | Automatic for the creation's authenticated owner.                                                                                                                                                 | `{creation_id: UUID}`                                                                                                                 | `CreationObservation`                                                                                                      |
+| **Later Action** `environments/create` | Create a managed environment under the caller's account from the reviewed template revision. Return a creation receipt; it does not open a Session or promise readiness.                                                                                                                                        | Human approval initially, plus backend validation of the actual caller/account, namespace, revision and configuration.                                                                            | `{creation_id: UUID, name: string (Kubernetes DNS subdomain, 1..253), template: TemplateRef}`                                         | `CreationObservation` as the Action's result, inside its ordinary Action request/Decision/Execution envelope.              |
+| `sessions__open`                  | Durably open a child Session with default platform guidance, an optional additive brief and one-time setup. Opening does not start a model turn; send the task with `sessions__submit_input`. Same UUID/request recovers the original; conflicting reuse fails. Admission does not mean harness/model acceptance. | Caller is authenticated; target's actual SA UID equals caller's verified SA UID; target UID is fenced at Dispatcher admission; the owning runtime validates the requested harness/model settings. | `{target: TargetRef, session_id: UUID, spec: SessionSpec, additional_instructions?: string, setup_script?: string (maxLength 65536)}` | `{opening: Dispatcher.SessionOpening}`; normally queued initially.                                                         |
+| `sessions__submit_input`          | Durably admit input separately from opening; same command ID/request recovers its original admission.                                                                                                                                                                                                            | Same trusted logical Session principal and actual target execution account as caller; target/Session binding and target UID match.                                                                | `{target: TargetRef, session_id: UUID, command_id: UUID, text: string (nonempty)}`                                                    | `{dispatch: Dispatcher.Dispatch}`; stored is not consumed.                                                                 |
+| `sessions__observe_input`         | Bounded, read-only observation correlated to one command; timeout does not cancel work.                                                                                                                                                                                                                          | Same retained logical principal under the narrow read rule; live environment not required.                                                                                                        | `{session_id: UUID, command_id: UUID, wait_seconds: integer (0..30), resume_token?: OpaqueToken}`                                     | `{session_id: UUID, command_id: UUID, dispatch: SourcePart<Dispatcher.Dispatch, "dispatcher">, observation: Observation}`. |
+| `sessions__get`                   | Read opening plus retained History snapshot, including setup/harness state and active turn when observed.                                                                                                                                                                                                        | Same retained logical principal under the narrow read rule; live environment not required.                                                                                                        | `{session_id: UUID}`                                                                                                                  | `SessionSnapshot`; missing History remains distinct from a missing Dispatcher opening.                                     |
+| `sessions__read_turns`            | Page through compact retained turns; debug/evidence reads remain separate.                                                                                                                                                                                                                                       | Same retained logical principal under the narrow read rule; live environment not required.                                                                                                        | `{session_id: UUID, count: integer (1..100), page_cursor?: OpaqueCursor}`                                                             | `TurnPage`.                                                                                                                |
+| `sessions__cancel_input`          | Cancel only an unclaimed queued dispatch.                                                                                                                                                                                                                                                                        | Same control authority; named command must belong to the Session.                                                                                                                                 | `{session_id: UUID, command_id: UUID}`                                                                                                | `{dispatch: Dispatcher.Dispatch}`.                                                                                         |
+| `sessions__interrupt_turn`        | Interrupt exactly the observed turn; never targets a successor turn.                                                                                                                                                                                                                                             | Same control authority; Session, target incarnation and observed turn must match; use a fresh interrupt command UUID; runtime must be reachable.                                                  | `{target: TargetRef, session_id: UUID, command_id: UUID, turn_id: OpaqueId}`                                                          | `Dispatcher.InterruptTurnResponse`; includes existing state/reason/admission.                                              |
 
 ### Environment records and creation semantics
 
@@ -647,11 +660,11 @@ type TurnPage = HistoryCoverage & {
 };
 type Recovery =
   | { tool: "get_action_request"; idempotency_key: string }
-  | { tool: "environments_get_creation"; creation_id: UUID }
-  | { tool: "environments_get"; target: TargetRef }
-  | { tool: "environments_list" | "environments_list_templates"; limit: integer }
-  | { tool: "sessions_get"; session_id: UUID }
-  | { tool: "sessions_observe_input"; session_id: UUID; command_id: UUID; wait_seconds: 0 };
+  | { tool: "environments__get_creation"; creation_id: UUID }
+  | { tool: "environments__get"; target: TargetRef }
+  | { tool: "environments__list" | "environments__list_templates"; limit: integer }
+  | { tool: "sessions__get"; session_id: UUID }
+  | { tool: "sessions__observe_input"; session_id: UUID; command_id: UUID; wait_seconds: 0 };
 type ToolError = {
   code: string; // machine-readable service reason, not prose to parse
   source: "environment" | "dispatcher" | "history" | "runtime" | "mcp";
@@ -686,7 +699,7 @@ Session/command and confer no permission. Lookups after a lost reply enforce the
 Dispatcher delivery states are returned unchanged, including failure, cancellation and unknown.
 Queued cancellation takes the original input command UUID. Interruption takes a fresh command UUID
 and the exact observed turn ID; its immediate response is not a new durable Dispatcher queue.
-Setup is part of the opening contract, with completion observed separately through `sessions_get`.
+Setup is part of the opening contract, with completion observed separately through `sessions__get`.
 
 The implementation must still prove that native and central History retain the necessary
 correlations and payloads; absent text is not reconstructed from another turn. Agent usability

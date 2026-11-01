@@ -6,7 +6,7 @@ cross-component behavior and durable system evidence. They are not unit tests wi
 they are the checks that the deployed system does what <../egress/SPEC.md> says it does and that a
 session's standing instructions reach the model that serves it.
 
-The five CI suites each start one [disposable k3s stack](k3s/README.md) in an RBE action.
+The seven CI suites each start one [disposable k3s stack](k3s/README.md) in an RBE action.
 The session-scoped `deployment` fixture exposes its cluster handle, app URL, token, and MCP access
 ([`system_test_target.py`](k3s/system_test_target.py)). Compatible scenarios share a stack:
 
@@ -16,6 +16,8 @@ The session-scoped `deployment` fixture exposes its cluster handle, app URL, tok
 | `//agentplane/system_tests/suites:test_dispatcher`   | Dispatcher queue, wake and replica behavior                                                                  |
 | `//agentplane/system_tests/suites/mcp:test_actions`  | MCP Action execution, BFF decisions, launcher ownership and OAuth linkage                                    |
 | `//agentplane/system_tests/suites/mcp:test_services` | Dynamic client registration, external MCP Connection, policy binding and Pod central sampler                 |
+| `//agentplane/system_tests/suites/mcp:test_delegation` | External MCP Connection reuse, explicit Session input, retained reads with the integration app unavailable |
+| `//agentplane/system_tests/suites:test_real_model` | Public LiteLLM egress and real-model standing-instruction acceptance |
 | `//agentplane/system_tests/suites:test_vm`           | VM Sandbox behavior, runner credentials and systemd supervision                                              |
 
 The shared stack cuts setup and image-import work, while each target now has a coarser cache key: a
@@ -38,8 +40,13 @@ Lifecycle cases create and clean up their own Sandboxes and resources. A host-si
 allocates a fresh loop-backed volume for each VM workspace claim UID, retaining it until stack teardown.
 Suites do not declare volume counts; deleting and recreating a claim never reuses its workspace data.
 
-The MCP cases use two independent stacks: five pytest items in `mcp:test_actions` and five in
-`mcp:test_services`. This is the partition measured in the
+The MCP cases use three independent stacks: five pytest items in `mcp:test_actions`, five in
+`mcp:test_services`, and one external delegation acceptance in `mcp:test_delegation`. The
+delegation stack is isolated because the acceptance scales its integration app to zero after real
+OAuth consent, then exercises environment discovery, Session opening, explicit input, command
+observation, snapshots and paginated retained turns through the external Connection. It restores the
+app and performs UID-fenced Sandbox cleanup over a fresh port-forward. The first two suite sizes are
+the partition measured in the
 [sharding spikes](https://github.com/agentydragon/ducktape/blob/acf041b50a6a14403554854de34c41f95ee419c7/agentplane/system_tests/debug/sharding_spikes_2026_11_01.md).
 Their shared login and policy fixtures live under `suites/mcp/`. The Pod central sampler shares
 the discovery and policy suite's MCP stack. Pod and VM suites retain their own stacks.
@@ -102,6 +109,7 @@ bbr test \
   //agentplane/system_tests/suites:test_dispatcher \
   //agentplane/system_tests/suites/mcp:test_actions \
   //agentplane/system_tests/suites/mcp:test_services \
+  //agentplane/system_tests/suites/mcp:test_delegation \
   //agentplane/system_tests/suites:test_vm
 ```
 

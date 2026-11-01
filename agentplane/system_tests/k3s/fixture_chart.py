@@ -246,6 +246,11 @@ def environment(
                 ),
             ),
         ),
+        runtime_catalog=app_settings.runtime_catalog(
+            routes,
+            templates=(POD_TEMPLATE,),
+            central_sampler_enabled=central_sampler,
+        ),
         settle_deltas=True,
         central_sampler=central_sampler_props,
         llm_ingress=LlmIngressProps(
