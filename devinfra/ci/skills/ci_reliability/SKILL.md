@@ -215,12 +215,11 @@ condition that permits it. A timeout, idle period or racy-looking source pattern
 does not by itself identify the cause.
 
 When the test emits spans, inspect the exact failed physical attempt's trace
-before adding diagnostics. [Agentplane's phase-tracing notes](https://github.com/agentydragon/ducktape/blob/devel/agentplane/system_tests/README.md#phase-tracing)
-describe `test.outputs/vm-phases.jsonl`, its parallel/nested spans and the
-separate k3s timeline. Use the
-[BuildBuddy artifact recipe](https://github.com/agentydragon/ducktape/blob/devel/devinfra/buildbuddy/skill/buildbuddy_api/SKILL.md#three-kinds-of-file-three-commands)
-to list test outputs and download the trace for the failing result and a
-comparable pass; retain each artifact's source SHA, target, and shard/run/attempt.
+before adding diagnostics. Consult the component's tracing documentation or
+producer code for artifact formats, clocks and execution lifetimes. Use the
+execution system's artifact tooling (`buildbuddy_api` for BuildBuddy) to retrieve
+the failing result and a comparable pass; retain each artifact's tested source,
+target, and shard/run/attempt.
 Find the earliest causal span/event, then correlate it with native, service and
 guest logs to distinguish a slow producer, a late observer and queueing from the
 final timeout. Do not sum nested or parallel spans: they are wall-time intervals,
@@ -242,23 +241,21 @@ the tested contract, failure sensitivity and real integration boundaries. Longer
 sleeps/timeouts, more retries, weaker assertions, serialization, mocks and disabling
 coverage are not equivalent repairs without evidence and explicit tradeoffs.
 
-Consider architectural repairs when failures recur around a shared fixture,
-resource bottleneck or environment lifecycle. Compare isolating work on separate
-executors, changing fixture ownership and using disposable or reusable environments
-alongside local synchronization fixes. Scope rejected experiments to their actual
-topology and resource conditions; one failed concurrency setting does not rule out
-other ways to distribute or isolate the work.
+Derive architectural repairs from the violated invariant and the conditions that
+permit the failure. Consider which changes to ownership, lifetime, decomposition,
+placement or isolation could make that invariant easier to maintain. Justify
+concrete candidates from the inspected system; past interventions are evidence
+under their recorded conditions, not default solutions. Scope rejected experiments
+to those conditions unless the failure mechanism supports a broader conclusion.
 
-For proposals involving sharding, warm pools or permanent test infrastructure,
-check the conditions that can change both reliability and latency: concurrent PRs,
-state reset and contamination, tested source/image identity, environment leases,
-cancellation, cleanup and recovery after a failed run or unavailable environment.
-Verify result-cache and retry semantics against the external state used by the
-test. Distinguish fresh cold/warm physical attempts from cached verdicts and reuse
-of an environment. Retain cold-start/provisioning coverage where required, and
-make any change to coverage or its scheduling explicit. Measure admission/reset
-cost and failure recovery as part of the proposed feedback time; a fast warm pass
-alone does not establish the benefit under load.
+When a proposal redistributes work or changes retained/shared state, identify the
+affected failure domains and test the relevant concurrency, reset/invalidation,
+tested-input identity, resource ownership, cancellation, cleanup and recovery
+conditions. Verify result-cache and retry semantics against any external state.
+Distinguish fresh physical attempts, retained-state executions and cached verdicts
+where applicable. Preserve the required lifecycle coverage and make any coverage
+or scheduling change explicit. Include contention, admission and recovery costs
+when assessing the proposal's feedback time under representative load.
 
 When feasible, use a bounded isolated reproduction and candidate repair, retaining
 the failing conditions. Exercise the relevant scheduling/order/resource variation

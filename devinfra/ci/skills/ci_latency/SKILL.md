@@ -1,6 +1,6 @@
 ---
 name: ci_latency
-description: Diagnose CI feedback time and compute; compare and test improvements across test internals, target decomposition, execution placement and persistent infrastructure, with reproducible evidence and explicit coverage tradeoffs.
+description: Diagnose CI feedback time and compute; derive and test improvements across test internals, execution structure, environment lifecycle and resource organization, with reproducible evidence and explicit coverage tradeoffs.
 ---
 
 # CI latency analysis
@@ -56,33 +56,37 @@ missing rather than claiming a complete baseline review.
 ## Compare execution architectures before narrowing the search
 
 For an optimization investigation, state the workload classes, requested latency
-objective and actual constraints. A goal such as halving PR feedback time calls
-for alternatives capable of that scale. Separate hard requirements from current
-implementation choices and resources that could be provisioned. A routine status
-refresh can reuse a still-valid comparison; revisit changed assumptions.
+objective and actual constraints. Evaluate alternatives against the requested
+scale of improvement. Separate hard requirements from current implementation
+choices and resources that could be provisioned. A routine status refresh can
+reuse a still-valid comparison; revisit changed assumptions.
 
 Before committing the investigation to detailed profiling of the current design,
-compare relevant alternatives across these levers:
+derive architectural alternatives from the measured work and the system's actual
+degrees of freedom. Use these questions to discover relevant options:
 
-- **Work decomposition:** split large targets into independently scheduled tests
-  or shards on separate executors; reconsider scenario grouping, fixture scope
-  and dependencies. Distinguish concurrency inside one action from distribution
-  across workers. Account for duplicated setup, stragglers, per-worker CPU/memory,
-  selection/cache granularity and the capacity needed to run the proposed pieces.
-- **Environment lifecycle:** compare per-action cold setup with preloaded images,
-  snapshots, warm pools and permanent Kubernetes clusters hosting isolated PR
-  environments. Identify exactly what can be amortized and what must be rebuilt,
-  deployed or reset for each tested revision. Retain cold-start and provisioning
-  coverage where those behaviors are part of the contract.
-- **Execution placement and hardware:** compare existing RBE with suitable owned
-  or dedicated infrastructure, including hardware virtualization where relevant.
-  Verify available infrastructure and distinguish unavailable today from
-  infeasible. Include admission/queueing, data transfer and capacity at realistic
-  concurrent PR load, plus fixed infrastructure cost and maintenance ownership.
-- **Validation structure:** reconsider broad dependencies, invalidation boundaries
-  and repeated proofs of the same behavior. Explain which assertions and real
-  integration paths each proposed arrangement exercises. Changes to when coverage
-  runs are explicit test-policy tradeoffs, not equivalent speedups by assumption.
+- **Execution structure:** what work must be serial, and what ordering comes from
+  current boundaries or scheduling? Could changing grouping, granularity or
+  placement expose useful parallelism or remove contention? Account for repeated
+  setup, dependencies, stragglers and resources per unit of work. Distinguish
+  concurrency within one execution unit from distribution across workers.
+- **State and lifetime:** which costs repeat, what state must be fresh, and what
+  can safely be retained or shared? Assess alternative ownership and lifetime
+  boundaries, including their initialization, reset and invalidation costs.
+  Preserve fresh-state and lifecycle behavior wherever it is part of the contract.
+- **Resource organization:** which limits follow from necessary capabilities or
+  capacity, and which belong to the current execution service or topology?
+  Consider changes to placement, isolation, resource mix or provisioning where
+  the evidence supports them. Include admission, transfer and queueing at realistic
+  concurrent load, recurring cost and maintenance ownership.
+- **Validation structure:** what guarantee does each costly operation establish?
+  Could equivalent validation require less work through different dependencies,
+  inputs or construction? Explain the assertions and real integration boundaries
+  preserved. Changes to coverage or when it runs require explicit tradeoffs.
+
+These are search dimensions, not prescribed solutions. Justify each concrete
+candidate from the inspected system's evidence and constraints; do not turn an
+example or a successful prior intervention into a default recommendation.
 
 For promising alternatives and combinations, sketch the changed dependency graph
 and estimate end-to-end feedback for representative PR classes. Include removed or
@@ -92,18 +96,16 @@ do not add overlapping savings. Compare absolute latency benefit alongside
 engineering effort, recurring compute/idle cost and reliability. A larger change
 with a credible path to the objective must remain visible beside cheap local fixes.
 
-Choose experiments by which uncertainty can change that decision most. A bounded
-split across independent executors or a warm-environment prototype may answer the
-architecture question before every wait inside the old setup is explained. Test
-the weakest assumption and preserve source/image identity and isolation. Inspection,
-modeling and bounded spikes do not imply authorization to deploy permanent
-infrastructure or change production validation policy.
+Choose experiments by which uncertainty can change that decision most. Test the
+weakest assumption of a promising architecture without first requiring a complete
+explanation of every internal delay in the current design. Preserve tested-input
+identity and relevant isolation guarantees. Modeling and bounded experiments do
+not imply authorization to change deployed infrastructure or validation policy.
 
-Keep negative results scoped to the tested arrangement and conditions. A failed
-global `--jobs` increase does not reject distributing one large action across
-workers; duplicated cold setup in one split does not reject a split with reusable
-environments. Record the constraint that defeated an option and revisit it when
-the proposed design changes that constraint.
+Keep negative results scoped to the hypothesis, arrangement and conditions
+actually tested. Record the constraint that defeated an option; reject a broader
+family of designs only when the failure mechanism applies to that family. Revisit
+an option when a proposed design changes the relevant constraint.
 
 When the objective remains unmet, report which architectural options were
 evaluated, rejected with evidence, or remain untested, and the next experiment
@@ -309,13 +311,12 @@ Do not stop at "this test takes seven minutes" or "setup is expensive," or let
 easy workflow tweaks substitute for investigating the dominant test work.
 
 When a selected test emits spans, use them as the primary phase evidence before
-adding instrumentation. [Agentplane's phase-tracing notes](https://github.com/agentydragon/ducktape/blob/devel/agentplane/system_tests/README.md#phase-tracing)
-document `test.outputs/vm-phases.jsonl`, the separate k3s timeline, and how the
-traces relate to fixture and scenario lifetimes. Follow the
-[BuildBuddy artifact recipe](https://github.com/agentydragon/ducktape/blob/devel/devinfra/buildbuddy/skill/buildbuddy_api/SKILL.md#three-kinds-of-file-three-commands):
-list the exact invocation's test artifacts first, then download the trace
-for the relevant target and shard/run/attempt. Tie it to the tested source SHA
-and a physical execution; do not infer a trace from a cached target summary.
+adding instrumentation. Consult the component's tracing documentation or producer
+code for artifact formats, clocks and fixture/scenario lifetimes. Use the execution
+system's artifact tooling (`buildbuddy_api` for BuildBuddy) to list the exact
+invocation's outputs before downloading the relevant target and shard/run/attempt.
+Tie the trace to the tested source and a physical execution; do not infer a trace
+from a cached target summary.
 
 Reconstruct parent/child span structure and concurrent intervals; identify a
 critical path only where event dependencies establish it. Never sum nested or
@@ -387,10 +388,9 @@ separate/censored observations:
   BuildBuddy invocation/target logs become _accessible_ to the relevant agent,
   not merely when a job ends or a log URL is advertised. Measure the observable
   hop(s) only; webhook creation, delivery, inbox read and harness receipt are
-  distinct clocks. Default PR subscriptions receive `check_run` completions and
-  `status` events, but coverage depends on App installation, subject matching,
-  and delivery health; see `agentplane/notification_service/docs/api.md`. Never
-  infer delivery from GitHub's check timestamp alone.
+  distinct clocks. Discover subscribed event types and routing from the current
+  notification system's configuration; account for installation, subject matching
+  and delivery health. Never infer delivery from a provider's check timestamp alone.
 
 Show a per-head timeline of these milestones and sample-size/p50/p90 for each
 relevant interval where timestamps exist. Declare polling/sampling resolution,
