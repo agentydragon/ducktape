@@ -54,7 +54,7 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/nix-cache"
 SERVICE = ServiceRef(
     name=NAME,
     port=Port(name="http", number=8080),
-    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", "attic-next"),)),
 )
 DATABASE = cnpg.PostgresRef.generated(name="attic-db", namespace=NAMESPACE)
 _GITHUB_PAT = SecretRef(namespace=NAMESPACE, name="github-secrets-sync-pat")
@@ -70,6 +70,7 @@ _NEXT_STORAGE = "attic-local-storage"
 _NEXT_LABELS = {"app.kubernetes.io/name": _NEXT}
 
 ROTATOR_CONFIG = Config(
+    attic_deployment="deploy/attic-next",
     tokens=[
         *[
             Token(
@@ -139,7 +140,7 @@ ROTATOR_CONFIG = Config(
                 ),
             ),
         ),
-    ]
+    ],
 )
 
 SERVER_CONFIG_MAP = ConfigMapArgs(name=_SERVER_CONFIG_MAP, namespace=NAMESPACE, files=["server.toml"])
@@ -193,9 +194,9 @@ def _server(scope: Construct, *, storage: s3.PrivateBucket) -> None:
         metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
         spec=k8s.DeploymentSpec(
             replicas=1,
-            selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
+            selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": NAME}),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
+                metadata=k8s.ObjectMeta(labels={"app.kubernetes.io/name": NAME}),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     # In the OVH zone with SeaweedFS and attic-db.
@@ -563,7 +564,7 @@ def _rotation(scope: Construct) -> None:
             annotations={
                 "description": (
                     "Runs the Attic JWT rotation CronJobs. RBAC is `pods/exec` scoped to the nix-cache namespace so"
-                    " the rotator can `kubectl exec deploy/attic -- atticadm make-token …` without ever holding the"
+                    " the rotator can `kubectl exec deploy/attic-next -- atticadm make-token …` without ever holding the"
                     " HS256 signing secret."
                 )
             },
@@ -575,7 +576,7 @@ def _rotation(scope: Construct) -> None:
         "rotator-role",
         metadata=k8s.ObjectMeta(name=_ROTATOR, namespace=NAMESPACE),
         rules=[
-            # `kubectl exec` requires get on pods (to resolve deploy/attic to a Pod name) plus
+            # `kubectl exec` requires get on pods (to resolve the deployment to a Pod name) plus
             # create on pods/exec (to open the exec stream).
             k8s.PolicyRule(api_groups=[""], resources=["pods"], verbs=["get", "list"]),
             k8s.PolicyRule(api_groups=[""], resources=["pods/exec"], verbs=["create"]),
@@ -585,7 +586,7 @@ def _rotation(scope: Construct) -> None:
                 resource_names=[ci_token.GAFFER_WRITER.name, ci_token.READER.name, ci_token.WRITER.name],
                 verbs=["get", "patch"],
             ),
-            # Resolving `deploy/attic` to a pod first reads the Deployment.
+            # Resolving the deployment to a pod first reads the Deployment.
             k8s.PolicyRule(api_groups=["apps"], resources=["deployments"], verbs=["get"]),
         ],
     )
@@ -627,7 +628,7 @@ def _rotation(scope: Construct) -> None:
                     template=k8s.PodTemplateSpec(
                         spec=k8s.PodSpec(
                             service_account_name=_ROTATOR,
-                            # The rotator runs `kubectl exec deploy/attic` with this token.
+                            # The rotator runs `kubectl exec` against the active server with this token.
                             automount_service_account_token=True,
                             restart_policy="OnFailure",
                             volumes=[
@@ -689,7 +690,7 @@ def _rotation(scope: Construct) -> None:
                 metadata=k8s.ObjectMeta(labels={"app": "attic-bootstrap-caches"}),
                 spec=k8s.PodSpec(
                     # Reuses the rotator's ServiceAccount -- same pods/exec RBAC for invoking
-                    # atticadm against deploy/attic. The bootstrap subcommand doesn't touch SOPS
+                    # atticadm against the active server. The bootstrap subcommand doesn't touch SOPS
                     # or git, so it doesn't need the rotator's GitHub PAT.
                     service_account_name=_ROTATOR,
                     automount_service_account_token=True,
@@ -709,6 +710,7 @@ def _rotation(scope: Construct) -> None:
                             image=_ROTATOR_IMAGE,
                             args=[
                                 "bootstrap-caches",
+                                "--attic-deployment=deploy/attic-next",
                                 "--cache=main",
                                 "--cache=gaffer",
                                 "--public-cache=public",

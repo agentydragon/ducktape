@@ -1,15 +1,14 @@
 # Nix Binary Cache (Attic)
 
 Attic server at `cache.allegedly.works`, backed by PostgreSQL (CNPG) for
-metadata and a SeaweedFS S3 bucket for NAR chunk storage. Manifests in
+metadata and a replicated Piraeus volume for NAR chunk storage. Manifests in
 `k8s/nix-cache/`.
 
 ## Architecture
 
-- **Server**: `ghcr.io/zhaofengli/attic:latest` (busybox-based Rust image)
-- **Database**: CNPG cluster `attic-db` (2 instances, OVH-HA, hdd tier via the
-  deprecated `local-path-ovh` alias)
-- **Cache storage**: SeaweedFS S3 bucket `attic` (`seaweedfs-s3.seaweedfs:8333`), replicated `001` across OVH volume servers
+- **Server**: `attic-next`, pinned to the previous server's image digest
+- **Database**: database `attic_local` in CNPG cluster `attic-db` (3 instances on OVH Piraeus SSD)
+- **Cache storage**: `attic-local-storage`, a 100 GiB `piraeus-hdd-2` volume with two synchronous copies in OVH
 - **Caches** (priority 41, ED25519 keypairs supplied from SOPS — see Bootstrap):
   - `main` — private; ducktape CI's general-purpose cache (flake outputs)
   - `gaffer` — private; gaffer-private CI's cache (drivefs and friends)
@@ -57,7 +56,7 @@ DB they'd otherwise live in exclusively.
 The bootstrap Job in `cluster/k8s/nix-cache/` runs on every Flux
 reconcile of the `nix-cache` Kustomization (`job.yaml`'s
 `kustomize.toolkit.fluxcd.io/force: enabled` recreates it on every change so it
-always re-runs). It mints a 5-minute admin JWT via `kubectl exec deploy/attic
+always re-runs). It mints a 5-minute admin JWT via `kubectl exec deploy/attic-next
 -- atticadm`, then for each `--cache`/`--public-cache` arg
 (`cluster/rotators/attic_jwt_rotation/rotate.py`'s `bootstrap-caches`
 subcommand — the previous shell-script implementation this doc used to
@@ -146,10 +145,9 @@ not decrypt a SOPS token file.
 `drivefs` (the Google Drive binary) and `drivectl` must stay in the restricted
 `gaffer` cache and **never** land in the broadly-readable `main` cache. The boundary that
 enforces this is the **narinfo**: each cache signs and serves its own narinfos,
-gated by per-cache JWT scope. `main` and `gaffer` physically share the one
-`attic` S3 bucket of content-addressed chunks, but chunks are useless without
-the gaffer narinfo (NAR hash → ordered chunk list), so narinfo scoping is the
-real access boundary even though chunk bytes coexist.
+gated by per-cache JWT scope. `main` and `gaffer` physically share
+content-addressed chunks on the local volume; cache authorization governs
+client access to those paths.
 
 The leak it guards against: `nix/home/modules/google-drive.nix`, when
 `services.google-drive.enable = true` (wyrm2, rugged), pulls `drivefs` and
@@ -186,10 +184,8 @@ automatically and a config that lacks the module is never mis-targeted (the bug
 that the earlier "force off everywhere with home-manager" approach hit on
 `bazel-test`).
 
-**Storage-layer follow-up (not done):** for defense-in-depth — so even a broad
-`attic`-bucket reader key (SeaweedFS `claude-reader`, which holds `Read:attic`)
-can't touch `drivefs` chunks — `gaffer` would need its **own S3 bucket** with
-separate credentials. The narinfo boundary above is the current line of defense.
+The local volume is shared by the caches; the Attic cache authorization boundary
+still controls which clients can fetch private cache paths.
 
 ## Pulling (Machines and Users)
 
@@ -221,10 +217,10 @@ user-specific Attic credential.
 Attic uses serde defaults for env var fallback — values must be **absent** from
 `server.toml` for the env var to take effect (TOML values always win).
 
-| Env Var                                  | TOML Field                              | Source                   |
-| ---------------------------------------- | --------------------------------------- | ------------------------ |
-| `ATTIC_SERVER_DATABASE_URL`              | `database.url`                          | `attic-db-app` secret    |
-| `ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64` | `jwt.signing.token-hs256-secret-base64` | `attic-jwt-token` secret |
+| Env Var                                  | TOML Field                              | Source                        |
+| ---------------------------------------- | --------------------------------------- | ----------------------------- |
+| `ATTIC_SERVER_DATABASE_URL`              | `database.url`                          | `attic-local-database` secret |
+| `ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64` | `jwt.signing.token-hs256-secret-base64` | `attic-jwt-token` secret      |
 
 ## Known Issues
 

@@ -151,7 +151,7 @@ configMapGenerator:
                 annotation_key: gaffer.allegedly.works/attic-token-version
               storage: kubernetes
         attic_namespace: nix-cache
-        attic_deployment: deploy/attic
+        attic_deployment: deploy/attic-next
         server_config: /config/server.toml
         token_field: attic_token
         rotate_below_hours: 24
