@@ -11,6 +11,10 @@ configMapGenerator:
     namespace: nix-cache
     files:
       - server.toml
+  - name: attic-local-config
+    namespace: nix-cache
+    files:
+      - server.toml=server-local.toml
   - name: attic-rotators-config
     namespace: nix-cache
     literals:
