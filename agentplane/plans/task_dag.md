@@ -139,6 +139,35 @@ accepted [Electric exception](electric_ha.md). K3s fixtures remain single-replic
 nested K3s roll and associated RBE kernel change are waived. Arbitrary JS-state restoration and
 the broader runtime redesign remain outside this sprint.
 
+### Environment Runtime audit follow-through
+
+**Selected and in flight, operator dispatch 2026-11-01 UTC; `/root` integrates the PR stack.**
+The Runtime, Host and Execution management code share a process and COSI engine. The executor
+companion remains a separate Pod PID-1 process; VM native workload and executor slices remain
+separate. These outcomes are independent of the later `SYSTEMD_UNIT_COSI_DESIGN` decision.
+
+- `RUNTIME_COMPANION_FENCE_GENERATION` — `/root/fix_companion_fence`: bind fence requests and
+  lease closure to the exact executor generation, so delayed requests cannot fence a successor.
+  Exit: deterministic duplicate/stale fence regressions, including changed-generation proof and
+  startup fencing; preserve uncertain-outcome handling.
+- `RUNTIME_EXECUTION_LIFECYCLE` — `/root/fix_execution`: consolidate the production Execution
+  lifecycle and its redundant test-only controller, and remove unnecessary embedded self-health
+  transport where feasible. Exit: one clear owner, native readiness, loss handling and fence proof;
+  standalone API and companion isolation retain their documented behavior.
+- `RUNTIME_HOST_COSI` — `/root/fix_host_bridge`: reduce the in-process intent/report bridge in
+  favor of typed shared state. Exit: exact-generation admission, native stop, Execution fence and
+  History seal acknowledgement retain their ordering under cancellation, replacement and shutdown.
+- `RUNTIME_TRANSITION_COSI` — `/root`: make lifecycle transition inputs and barrier outcomes
+  explicit, reduce mirrored Execution state, and simplify obsolete Runtime/Host lifecycle paths.
+  Exit: no replay of uncertain effects; race coverage for epoch cancellation, engine loss and Close
+  during an in-flight fence. Preserve separate process-domain and durable-history proofs.
+- `RUNTIME_AUDIT_CLEANUP` — `/root`: remove unused Runtime bookkeeping and correct startup-fence
+  documentation. Exit: callers and specifications agree with the implemented control boundary.
+
+Each implementation is independently reviewable; the native PR stack is a review ordering, not a
+technical dependency between these outcomes. Required Pod and VM system coverage precedes merging
+staging-impacting changes. Finished nodes leave the DAG when the corresponding outcome lands.
+
 ### Dispatch order and prerequisites
 
 Give concrete reliability regressions first attention. Caller-authorized resume waits on its
@@ -178,9 +207,9 @@ The original native-cleanup timeout remains unexplained; the closed
 [#13442](https://github.com/agentydragon/ducktape/pull/13442) path-reconstruction workaround is not
 selected. A later, separate [Runtime.Close caller-deadline failure](../env/runtime/debug/2026-11-01_runtime_close_wait_timeout.md)
 also lacks causal evidence. On recurrence, capture shutdown-stage/join evidence before attributing
-either failure or claiming it fixed. Passing later tests does not establish either cause. Eventual
-COSI ownership remains a separate operator decision. The combined management process and its direct
-component calls are implemented; that does not establish the cause of either earlier failure.
+either failure or claiming it fixed. Passing later tests does not establish either cause. The selected
+Runtime COSI improvements below do not establish the cause of either earlier failure. The broader
+systemd-unit ownership decision remains separate.
 
 Small launch-UX work can proceed alongside these tracks. Fresh-VM latency and VM-based Bazel are
 next and are independent of each other; image/layering work becomes a prerequisite only when the
