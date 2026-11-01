@@ -49,6 +49,7 @@ import { sampleConnection } from "../connections/testing/fixture";
 import type { Connection } from "../connections/models";
 
 import { dispatchFromJson } from "../threads/client";
+const COMMAND_TARGET = { sandbox: "ready-sandbox", sandboxUid: "0f9c1d2e-0000-4000-8000-00000000a1b2" };
 import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { McpLinkageView } from "../mcp_linkage_client";
 import type {
@@ -2408,7 +2409,7 @@ function threadScope(threadId: string): Record<string, string> {
 }
 
 function rememberPendingInput(): void {
-  const local = new LocalCommands(THREADS[2].id);
+  const local = new LocalCommands(THREADS[2].id, COMMAND_TARGET);
   local.remember(
     create(CommandSchema, {
       commandId: "locally-retained",
@@ -2421,7 +2422,7 @@ function rememberPendingInput(): void {
 }
 
 function rememberInputEcho(): void {
-  const local = new LocalCommands(THREADS[2].id);
+  const local = new LocalCommands(THREADS[2].id, COMMAND_TARGET);
   local.remember(
     create(CommandSchema, {
       commandId: "locally-retained",
@@ -2435,7 +2436,7 @@ function rememberInputEcho(): void {
 
 function rememberSettledCommands(): void {
   // A settled command shows while the browser that sent it still holds it.
-  const local = new LocalCommands(THREADS[2].id);
+  const local = new LocalCommands(THREADS[2].id, COMMAND_TARGET);
   local.remember(
     create(CommandSchema, {
       commandId: "queued-model",
@@ -2465,11 +2466,12 @@ function rememberDispatch(threadId = RUNNING_THREAD): void {
       value: { text: "Continue when the Sandbox is ready." },
     },
   });
-  const local = new LocalCommands(threadId);
+  const local = new LocalCommands(threadId, COMMAND_TARGET);
   local.remember(command);
   const dispatch = dispatchFromJson({
     commandId: command.commandId,
     sessionId: threadId,
+    ...COMMAND_TARGET,
     state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
     reason: "sandbox_resuming",
     updatedAt: ago(1_000),
@@ -2492,13 +2494,14 @@ function rememberShortRefusedWake(): void {
   const reason =
     'sandbox_wake_failed: sandboxes.agentplane.allegedly.works "box" is forbidden: User "system:serviceaccount:agentplane-staging:runner-gateway" cannot update resource "sandboxes" in API group "agentplane.allegedly.works" in the namespace "agentplane-staging"';
   queuedReasons.set(command.commandId, reason);
-  const local = new LocalCommands(RUNNING_THREAD);
+  const local = new LocalCommands(RUNNING_THREAD, COMMAND_TARGET);
   local.remember(command);
   local.acknowledgeDispatch(
     command,
     dispatchFromJson({
       commandId: command.commandId,
       sessionId: RUNNING_THREAD,
+      ...COMMAND_TARGET,
       state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
       reason,
       updatedAt: ago(1_000),
@@ -2515,11 +2518,12 @@ function rememberFailedDispatch(): void {
       value: { text: "Please start the Sandbox when capacity is available." },
     },
   });
-  const local = new LocalCommands(RUNNING_THREAD);
+  const local = new LocalCommands(RUNNING_THREAD, COMMAND_TARGET);
   local.remember(command);
   const dispatch = dispatchFromJson({
     commandId: command.commandId,
     sessionId: RUNNING_THREAD,
+    ...COMMAND_TARGET,
     state: "DELIVERY_STATE_FAILED",
     reason: "wake_deadline_expired: Ready=False/Unschedulable: 0/2 nodes are available: PVC is not bound",
     updatedAt: ago(1_000),
@@ -3235,7 +3239,7 @@ routes.push(
             dispatch: {
               commandId,
               sessionId: query.get("filter.sessionId"),
-              sandbox: "pending-sandbox",
+              ...COMMAND_TARGET,
               state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
               reason: queuedReasons.get(commandId) ?? "sandbox_resuming",
               updatedAt: ago(1_000),

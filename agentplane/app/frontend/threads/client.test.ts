@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 
-import { api } from "../client";
 import {
   interruptTurn,
+  changeModel,
+  changeReasoningEffort,
   submitInput,
   CommandSubmissionRefused,
   threadObservationEntry,
@@ -208,125 +209,150 @@ it("uses generated History requests and adapts evidence and native frame pages",
   });
 });
 const input = { commandId: "immutable-command", text: "keep this input" };
+const target = { sandbox: "original-sandbox", sandboxUid: "original-uid" };
 
-it.each([504, 502, 408])("treats HTTP %i without a command receipt as unconfirmed", async (status) => {
-  const middleware = { onRequest: () => Response.json({ detail: "deadline" }, { status }) };
-  api.use(middleware);
-  try {
-    const failure: unknown = await submitInput("thread", input.commandId, input.text).catch((error: unknown) => error);
-    expect(failure).toBeInstanceOf(Error);
-    expect(failure).not.toBeInstanceOf(CommandSubmissionRefused);
-  } finally {
-    api.eject(middleware);
-  }
+it.each([
+  [504, 4],
+  [502, 14],
+  [408, undefined],
+  [404, 5],
+  [400, 9],
+  [429, 8],
+])("keeps HTTP %i / gRPC %s without a receipt unconfirmed", async (status, code) => {
+  vi.stubGlobal("fetch", () => Response.json({ code, message: "not confirmed" }, { status }));
+  const failure: unknown = await submitInput("thread", target, input.commandId, input.text).catch(
+    (error: unknown) => error
+  );
+  expect(failure).toBeInstanceOf(Error);
+  expect(failure).not.toBeInstanceOf(CommandSubmissionRefused);
 });
 
-it.each([409, 422, 429, 403])("recognizes explicit HTTP %i command rejection", async (status) => {
-  const middleware = { onRequest: () => Response.json({ detail: "refused" }, { status }) };
-  api.use(middleware);
-  try {
-    await expect(submitInput("thread", input.commandId, input.text)).rejects.toBeInstanceOf(CommandSubmissionRefused);
-  } finally {
-    api.eject(middleware);
-  }
+it.each([
+  [400, 3],
+  [409, 6],
+  [403, 7],
+  [403, undefined],
+])("recognizes HTTP %i / gRPC %s invariant or authorization rejection", async (status, code) => {
+  vi.stubGlobal("fetch", () => Response.json({ code, message: "refused" }, { status }));
+  await expect(submitInput("thread", target, input.commandId, input.text)).rejects.toBeInstanceOf(
+    CommandSubmissionRefused
+  );
 });
 
-it("accepts a durable queued Dispatch separately from a runner admission receipt", async () => {
-  const middleware = {
-    onRequest: () =>
-      Response.json({
-        kind: "dispatch",
-        dispatch: {
-          commandId: input.commandId,
-          sessionId: "thread",
-          state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-          reason: "sandbox_resuming",
-          updatedAt: "2026-10-14T12:00:00Z",
-        },
-      }),
-  };
-  api.use(middleware);
-  try {
-    const result = await submitInput("thread", input.commandId, input.text);
-    expect(result.kind).toBe("dispatch");
-    if (result.kind !== "dispatch") throw new Error("Expected Dispatcher receipt");
-    expect(result.dispatch).toMatchObject({
-      commandId: input.commandId,
-      sessionId: "thread",
-      state: DeliveryState.QUEUED_IN_DISPATCHER,
-      reason: "sandbox_resuming",
-      updatedAt: { seconds: BigInt(Date.parse("2026-10-14T12:00:00Z") / 1000), nanos: 0 },
-    });
-    expect(result.dispatch.admission).toBeUndefined();
-  } finally {
-    api.eject(middleware);
-  }
-});
-
-it("keeps a transient interrupt result distinct from a durable Dispatch", async () => {
-  const paths: string[] = [];
-  const middleware = {
-    onRequest({ request }: { request: Request }) {
-      paths.push(new URL(request.url, "https://app.invalid").pathname);
-      return Response.json({
-        kind: "interrupt_result",
-        result: { state: "DELIVERY_STATE_NO_OP", reason: "turn already ended" },
-      });
-    },
-  };
-  api.use(middleware);
-  try {
-    const result = await interruptTurn("thread", "interrupt-id", "turn-id");
-    expect(result).toMatchObject({
-      kind: "interrupt_result",
-      result: { state: DeliveryState.NO_OP, reason: "turn already ended" },
-    });
-    if (result.kind !== "interrupt_result") throw new Error("Expected immediate interrupt result");
-    expect(result.result.admission).toBeUndefined();
-    expect(paths).toEqual(["/threads/thread/interrupt-turn"]);
-  } finally {
-    api.eject(middleware);
-  }
-});
-
-it("accepts a tagged archived admission after a deleted Sandbox", async () => {
-  const middleware = {
-    onRequest: () =>
-      Response.json({
-        kind: "archived_admission",
-        admission: { cursor: "1", event: { commandAdmitted: { command: { commandId: input.commandId } } } },
-      }),
-  };
-  api.use(middleware);
-  try {
-    await expect(submitInput("thread", input.commandId, input.text)).resolves.toMatchObject({
-      kind: "archived_admission",
-      admission: {
-        cursor: 1n,
-        event: { observation: { case: "commandAdmitted", value: { command: { commandId: input.commandId } } } },
+it.each([
+  {
+    operation: "submitInput",
+    fields: { text: input.text },
+    call: () => submitInput("thread", target, input.commandId, input.text),
+  },
+  {
+    operation: "changeModel",
+    fields: { model: "vendor/model" },
+    call: () => changeModel("thread", target, input.commandId, "vendor/model"),
+  },
+  {
+    operation: "changeReasoningEffort",
+    fields: { effort: "high" },
+    call: () => changeReasoningEffort("thread", target, input.commandId, "high"),
+  },
+])("uses the generated $operation route and preserves a queued Dispatch", async ({ operation, fields, call }) => {
+  const requests: Request[] = [];
+  vi.stubGlobal("fetch", (url: RequestInfo | URL, init?: RequestInit) => {
+    requests.push(new Request(url, init));
+    return Response.json({
+      dispatch: {
+        commandId: input.commandId,
+        sessionId: "thread",
+        ...target,
+        state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+        reason: "sandbox_resuming",
+        updatedAt: "2026-10-14T12:00:00Z",
       },
     });
-  } finally {
-    api.eject(middleware);
-  }
+  });
+  const result = await call();
+  expect(result.kind).toBe("dispatch");
+  if (result.kind !== "dispatch") throw new Error("Expected Dispatcher receipt");
+  expect(result.dispatch).toMatchObject({
+    commandId: input.commandId,
+    sessionId: "thread",
+    ...target,
+    state: DeliveryState.QUEUED_IN_DISPATCHER,
+    reason: "sandbox_resuming",
+    updatedAt: { seconds: BigInt(Date.parse("2026-10-14T12:00:00Z") / 1000), nanos: 0 },
+  });
+  expect(result.dispatch.admission).toBeUndefined();
+  expect(requests).toHaveLength(1);
+  expect(new URL(requests[0]!.url).pathname).toBe(`/upstream/dispatcher/v1/sessions/thread:${operation}`);
+  expect(requests[0]!.method).toBe("POST");
+  expect(await requests[0]!.json()).toEqual({ commandId: input.commandId, ...target, ...fields });
 });
 
-it("treats a lost transport reply as unconfirmed without changing the submitted command", async () => {
+it("keeps the generated immediate interrupt result separate from a durable Dispatch", async () => {
   const requests: Request[] = [];
-  const middleware = {
-    onRequest({ request }: { request: Request }) {
-      requests.push(request);
-      throw new TypeError("connection lost");
+  vi.stubGlobal("fetch", (url: RequestInfo | URL, init?: RequestInit) => {
+    requests.push(new Request(url, init));
+    return Response.json({ state: "DELIVERY_STATE_NO_OP", reason: "turn already ended" });
+  });
+  const result = await interruptTurn("thread", target, "interrupt-id", "turn-id");
+  expect(result).toMatchObject({
+    kind: "interrupt_result",
+    result: { state: DeliveryState.NO_OP, reason: "turn already ended" },
+  });
+  expect(new URL(requests[0]!.url).pathname).toBe("/upstream/dispatcher/v1/sessions/thread:interruptTurn");
+  expect(await requests[0]!.json()).toEqual({ commandId: "interrupt-id", ...target, turnId: "turn-id" });
+});
+
+it.each([
+  {},
+  { dispatch: { commandId: input.commandId, sessionId: "thread", ...target } },
+  {
+    dispatch: {
+      commandId: input.commandId,
+      sessionId: "thread",
+      ...target,
+      sandboxUid: "replacement-uid",
+      state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
     },
-  };
-  api.use(middleware);
-  try {
-    const failure: unknown = await submitInput("thread", input.commandId, input.text).catch((error: unknown) => error);
+  },
+  {
+    dispatch: {
+      commandId: "other-command",
+      sessionId: "thread",
+      ...target,
+      state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+    },
+  },
+  {
+    dispatch: {
+      commandId: input.commandId,
+      sessionId: "other-session",
+      ...target,
+      state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+    },
+  },
+])("does not acknowledge a missing or mismatched generated receipt: %j", async (body) => {
+  vi.stubGlobal("fetch", () => Response.json(body));
+  const failure: unknown = await submitInput("thread", target, input.commandId, input.text).catch(
+    (error: unknown) => error
+  );
+  expect(failure).toBeInstanceOf(Error);
+  expect(failure).not.toBeInstanceOf(CommandSubmissionRefused);
+});
+
+it("keeps the original command and Sandbox incarnation after a lost transport reply", async () => {
+  const requests: Request[] = [];
+  vi.stubGlobal("fetch", (url: RequestInfo | URL, init?: RequestInit) => {
+    requests.push(new Request(url, init));
+    throw new TypeError("connection lost");
+  });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const failure: unknown = await submitInput("thread", target, input.commandId, input.text).catch(
+      (error: unknown) => error
+    );
     expect(failure).toBeInstanceOf(Error);
     expect(failure).not.toBeInstanceOf(CommandSubmissionRefused);
-    expect(requests).toHaveLength(1);
-    expect(await requests[0].json()).toMatchObject({ commandId: input.commandId });
-  } finally {
-    api.eject(middleware);
   }
+  expect(requests).toHaveLength(2);
+  for (const request of requests) expect(await request.json()).toEqual({ ...input, ...target });
 });

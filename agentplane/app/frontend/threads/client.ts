@@ -31,11 +31,21 @@ import {
   type ReadSessionObservationsResponse,
 } from "../../../history_service/history_service_pb";
 import {
+  ChangeModelRequestSchema,
+  ChangeModelResponseSchema,
+  ChangeReasoningEffortRequestSchema,
+  ChangeReasoningEffortResponseSchema,
+  DeliveryState,
   DispatchSchema,
+  InterruptTurnRequestSchema,
   InterruptTurnResponseSchema,
+  SubmitInputRequestSchema,
+  SubmitInputResponseSchema,
   type Dispatch,
   type InterruptTurnResponse,
 } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+
+export type CommandTarget = { sandbox: string; sandboxUid: string };
 
 type ThreadView = ThreadViewSchema;
 export interface ThreadListing {
@@ -120,9 +130,9 @@ async function historyJson(path: string, init: RequestInit = {}): Promise<JsonVa
   return (await response.json()) as JsonValue;
 }
 
-function historyBodyWithoutSessionId(value: JsonValue): string {
+function bodyWithoutSessionId(value: JsonValue): string {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("History request did not serialize to a JSON object");
+    throw new Error("Request did not serialize to a JSON object");
   }
   const body = { ...value };
   delete body.sessionId;
@@ -291,7 +301,7 @@ export async function threadEvidence(
     await historyJson(`/sessions/${encodeURIComponent(threadId)}/entity-evidence`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: historyBodyWithoutSessionId(toJson(ReadEntityEvidenceRequestSchema, request)),
+      body: bodyWithoutSessionId(toJson(ReadEntityEvidenceRequestSchema, request)),
       signal,
     })
   );
@@ -324,7 +334,7 @@ export async function threadNativeFrames(
     await historyJson(`/sessions/${encodeURIComponent(threadId)}/native-frames`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: historyBodyWithoutSessionId(toJson(ReadNativeFramesRequestSchema, request)),
+      body: bodyWithoutSessionId(toJson(ReadNativeFramesRequestSchema, request)),
       signal,
     })
   );
@@ -338,13 +348,11 @@ export async function threadNativeFrames(
   };
 }
 
-/** An explicit 4xx command rejection: unlike a lost reply, this is not an admission receipt. */
+/** An explicit Dispatcher rejection of this request, not a durable admission receipt. */
 export class CommandSubmissionRefused extends Error {}
 
 export type CommandSubmission =
-  | { kind: "archived_admission"; admission: EventEntry }
-  | { kind: "dispatch"; dispatch: Dispatch }
-  | { kind: "interrupt_result"; result: InterruptTurnResponse };
+  { kind: "dispatch"; dispatch: Dispatch } | { kind: "interrupt_result"; result: InterruptTurnResponse };
 
 export function dispatchFromJson(value: unknown): Dispatch {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -357,91 +365,111 @@ export function dispatchFromJson(value: unknown): Dispatch {
   return fromJson(DispatchSchema, value as JsonValue);
 }
 
-function interruptTurnResponse(value: unknown): InterruptTurnResponse {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("Session Dispatcher returned an invalid interrupt result");
-  }
-  const row = value as Record<string, unknown>;
-  if (typeof row.state !== "string") {
-    throw new Error("Session Dispatcher returned an invalid interrupt state");
-  }
-  return fromJson(InterruptTurnResponseSchema, value as JsonValue);
-}
-
-/** The runner's exact durable CommandAdmitted receipt; the app archive may still be catching up.
- * Replaying the same immutable command id/payload is safe after a lost response.
- */
-async function commandSubmission(
-  call: () => Promise<{ data?: unknown; error?: unknown; response: Response }>
-): Promise<CommandSubmission> {
-  let result;
+/** A timeout, lost response, stale destination, or missing Sandbox does not prove an earlier
+ * attempt was never admitted. Only invariant/auth rejections are known refusals. */
+async function dispatcherCommand(path: string, body: string): Promise<JsonValue> {
+  let response: Response;
   try {
-    result = await call();
+    response = await fetchWithLogin(new URL(`/upstream/dispatcher/v1${path}`, window.location.href), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body,
+    });
   } catch (cause) {
-    // A transport failure gives no proof that the app or runner did not admit the command.
     throw new Error(`Command admission unconfirmed: ${displayableError(cause)}`, { cause });
   }
-  const { data, error, response } = result;
-  if (error) {
-    const message = displayableError(error);
-    // A lost server reply, timeout or transient error can happen after runner admission.
-    // Treat only an explicit, non-timeout client rejection as a refusal.
-    if (response.status >= 400 && response.status < 500 && response.status !== 408) {
-      throw new CommandSubmissionRefused(message);
+  const value = (await response.json().catch(() => null)) as JsonValue;
+  if (!response.ok) {
+    const error = new HttpError(response, value);
+    const code = value && typeof value === "object" && !Array.isArray(value) ? value.code : undefined;
+    if (code === 3 || code === 6 || code === 7 || code === 16 || (response.status === 403 && code === undefined)) {
+      throw new CommandSubmissionRefused(error.message);
     }
-    throw new Error(`Command admission unconfirmed: ${message}`);
+    throw new Error(`Command admission unconfirmed: ${error.message}`);
   }
-  try {
-    const value = data as Record<string, unknown>;
-    if (value.kind === "dispatch") return { kind: "dispatch", dispatch: dispatchFromJson(value.dispatch) };
-    if (value.kind === "interrupt_result")
-      return { kind: "interrupt_result", result: interruptTurnResponse(value.result) };
-    if (value.kind === "archived_admission")
-      return { kind: "archived_admission", admission: fromJson(EventEntrySchema, value.admission as JsonValue) };
-    throw new Error("App returned an unrecognized command submission kind");
-  } catch (cause) {
-    throw new Error(`Command receipt could not be verified: ${displayableError(cause)}`, { cause });
-  }
+  if (value === null) throw new Error("Command receipt could not be verified: empty Dispatcher response");
+  return value;
 }
 
-export async function submitInput(threadId: string, commandId: string, text: string): Promise<CommandSubmission> {
-  return commandSubmission(() =>
-    api.POST("/threads/{thread_id}/submit-input", {
-      params: { path: { thread_id: threadId } },
-      body: { commandId, text },
-    })
-  );
+function confirmedDispatch(
+  dispatch: Dispatch | undefined,
+  threadId: string,
+  target: CommandTarget,
+  commandId: string
+): Dispatch {
+  if (!dispatch) throw new Error("Command receipt could not be verified: missing Dispatch");
+  if (
+    dispatch.commandId !== commandId ||
+    dispatch.sessionId !== threadId ||
+    dispatch.sandbox !== target.sandbox ||
+    dispatch.sandboxUid !== target.sandboxUid ||
+    dispatch.state === DeliveryState.UNSPECIFIED
+  )
+    throw new Error("Command receipt could not be verified: mismatched Dispatcher destination or command");
+  return dispatch;
 }
 
-export async function changeModel(threadId: string, commandId: string, model: string): Promise<CommandSubmission> {
-  return commandSubmission(() =>
-    api.POST("/threads/{thread_id}/change-model", {
-      params: { path: { thread_id: threadId } },
-      body: { commandId, model },
-    })
+export async function submitInput(
+  threadId: string,
+  target: CommandTarget,
+  commandId: string,
+  text: string
+): Promise<CommandSubmission> {
+  const request = create(SubmitInputRequestSchema, { sessionId: threadId, commandId, ...target, text });
+  const value = await dispatcherCommand(
+    `/sessions/${encodeURIComponent(threadId)}:submitInput`,
+    bodyWithoutSessionId(toJson(SubmitInputRequestSchema, request))
   );
+  const response = fromJson(SubmitInputResponseSchema, value);
+  return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, target, commandId) };
+}
+
+export async function changeModel(
+  threadId: string,
+  target: CommandTarget,
+  commandId: string,
+  model: string
+): Promise<CommandSubmission> {
+  const request = create(ChangeModelRequestSchema, { sessionId: threadId, commandId, ...target, model });
+  const value = await dispatcherCommand(
+    `/sessions/${encodeURIComponent(threadId)}:changeModel`,
+    bodyWithoutSessionId(toJson(ChangeModelRequestSchema, request))
+  );
+  const response = fromJson(ChangeModelResponseSchema, value);
+  return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, target, commandId) };
 }
 
 export async function changeReasoningEffort(
   threadId: string,
+  target: CommandTarget,
   commandId: string,
   effort: string
 ): Promise<CommandSubmission> {
-  return commandSubmission(() =>
-    api.POST("/threads/{thread_id}/change-reasoning-effort", {
-      params: { path: { thread_id: threadId } },
-      body: { commandId, effort },
-    })
+  const request = create(ChangeReasoningEffortRequestSchema, { sessionId: threadId, commandId, ...target, effort });
+  const value = await dispatcherCommand(
+    `/sessions/${encodeURIComponent(threadId)}:changeReasoningEffort`,
+    bodyWithoutSessionId(toJson(ChangeReasoningEffortRequestSchema, request))
   );
+  const response = fromJson(ChangeReasoningEffortResponseSchema, value);
+  return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, target, commandId) };
 }
 
-export async function interruptTurn(threadId: string, commandId: string, turnId: string): Promise<CommandSubmission> {
-  return commandSubmission(() =>
-    api.POST("/threads/{thread_id}/interrupt-turn", {
-      params: { path: { thread_id: threadId } },
-      body: { commandId, turnId },
-    })
+export async function interruptTurn(
+  threadId: string,
+  target: CommandTarget,
+  commandId: string,
+  turnId: string
+): Promise<CommandSubmission> {
+  const request = create(InterruptTurnRequestSchema, { sessionId: threadId, commandId, ...target, turnId });
+  const value = await dispatcherCommand(
+    `/sessions/${encodeURIComponent(threadId)}:interruptTurn`,
+    bodyWithoutSessionId(toJson(InterruptTurnRequestSchema, request))
   );
+  const result = fromJson(InterruptTurnResponseSchema, value);
+  if (result.state !== DeliveryState.RUNNER_ADMITTED && result.state !== DeliveryState.NO_OP) {
+    throw new Error("Command receipt could not be verified: invalid interrupt result");
+  }
+  return { kind: "interrupt_result", result };
 }
 
 /**

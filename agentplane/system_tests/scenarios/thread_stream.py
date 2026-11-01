@@ -25,7 +25,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.app.testing.models import SandboxView
-from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
+from agentplane.proto import command_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, Agent
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
@@ -119,19 +119,12 @@ def _input(label: str, text: str) -> command_pb2.Command:
 
 
 async def _submit(client: Client, thread_id: UUID, command: command_pb2.Command) -> None:
-    """Submit `command`; the answer, the Dispatcher's or the archive's, names that same command."""
+    """Submit `command`; the Dispatcher receipt names that same command."""
     with tracer.start_as_current_span(
         "system_test.thread_stream.submit", record_exception=False, set_status_on_exception=False
     ):
         answer = await client.submit_input(thread_id, command.command_id, command.submit_input.text)
-    if isinstance(answer, session_dispatcher_pb2.Dispatch):
-        assert (answer.command_id, answer.operation) == (
-            command.command_id,
-            session_dispatcher_pb2.OPERATION_SUBMIT_INPUT,
-        )
-    else:
-        assert isinstance(answer, event_log_pb2.EventEntry)
-        assert answer.event.command_admitted.command == command
+    assert (answer.command_id, answer.operation) == (command.command_id, session_dispatcher_pb2.OPERATION_SUBMIT_INPUT)
 
 
 async def _turn_status(client: Client, thread_id: UUID, status: str) -> None:
@@ -187,10 +180,13 @@ def _admitted(frames: list[Frame]) -> list[str]:
 async def an_unknown_thread_is_not_found(http: httpx.AsyncClient) -> None:
     unknown = "/threads/00000000-0000-0000-0000-000000000000"
     assert (await http.get(f"{unknown}/events/stream")).status_code == 404
+    command_path = "/upstream/dispatcher/v1/sessions/00000000-0000-0000-0000-000000000000:submitInput"
     assert (
-        await http.post(f"{unknown}/submit-input", json={"commandId": "test-x", "text": "hello"})
+        await http.post(
+            command_path, json={"commandId": "test-x", "text": "hello", "sandbox": "missing", "sandboxUid": "missing"}
+        )
     ).status_code == 404
-    assert (await http.post(f"{unknown}/submit-input", json={"commandId": "test-x"})).status_code == 422
+    assert (await http.post(command_path, json={"commandId": "test-x"})).status_code == 400
 
 
 async def every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event(
@@ -209,9 +205,15 @@ async def every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event
         assert (await first.next()).event == "attached"
         command = _input("test-tabs-first", "Reply with exactly: TABS_FIRST")
         await _submit(client, thread_id, command)
-        # The id names that command alone, whether the Dispatcher or the archive answers.
+        # The Dispatcher id names that command alone.
         reused = await http.post(
-            f"/threads/{thread_id}/submit-input", json={"commandId": command.command_id, "text": "Something else"}
+            f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
+            json={
+                "commandId": command.command_id,
+                "text": "Something else",
+                "sandbox": view.name,
+                "sandboxUid": str(view.uid),
+            },
         )
         assert reused.status_code == 409, reused.text
         # An exact retry, as after a lost response, answers the same command.

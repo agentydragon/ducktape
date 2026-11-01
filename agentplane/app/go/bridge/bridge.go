@@ -28,10 +28,6 @@ type SandboxGetter interface {
 
 // Dispatcher is the narrow unary surface used by the RunnerBridge.
 type Dispatcher interface {
-	SubmitInput(context.Context, *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error)
-	ChangeModel(context.Context, *dispatcherpb.ChangeModelRequest) (*dispatcherpb.ChangeModelResponse, error)
-	ChangeReasoningEffort(context.Context, *dispatcherpb.ChangeReasoningEffortRequest) (*dispatcherpb.ChangeReasoningEffortResponse, error)
-	InterruptTurn(context.Context, *dispatcherpb.InterruptTurnRequest) (*dispatcherpb.InterruptTurnResponse, error)
 	OpenSession(context.Context, *dispatcherpb.OpenSessionRequest) (*dispatcherpb.OpenSessionResponse, error)
 	GetSessionOpening(context.Context, *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error)
 }
@@ -44,37 +40,19 @@ type RunnerProxy interface {
 	RunnerStatus(context.Context, *sandboxespb.Sandbox) (*runnerpb.RunnerStatus, error)
 }
 
-// Readiness supplies the app-owned Thread check and History Service feed state
-// used before admitting a new command.
-type Readiness interface {
-	Exists(context.Context, uuid.UUID) (bool, error)
-	FeedState(context.Context, uuid.UUID) (*FeedSnapshot, error)
-}
-
-// FeedSnapshot is the admission-relevant part of the History Service's folded
-// feed state. A nil snapshot or nil End is healthy, matching the Python bridge.
-type FeedSnapshot struct{ End *FeedError }
-
-// FeedError means History rejected the runner event feed.
-type FeedError struct{ Message string }
-
-// RunnerBridge joins the app's sandbox identity, dispatcher, runner, and thread
-// readiness services without owning HTTP routes or runtime startup.
+// RunnerBridge joins the app's Sandbox identity, Dispatcher and Runner services.
 type RunnerBridge struct {
 	sandboxes  SandboxGetter
 	runner     RunnerProxy
 	dispatcher Dispatcher
-	readiness  Readiness
 }
 
-// New constructs the bridge. The runner and readiness services may be nil when
-// a caller only uses the dispatcher methods, but SandboxGetter and Dispatcher
-// are always required.
-func New(sandboxes SandboxGetter, runner RunnerProxy, dispatcher Dispatcher, readiness Readiness) (*RunnerBridge, error) {
+// New constructs the bridge. Runner may be nil for callers using only Session openings.
+func New(sandboxes SandboxGetter, runner RunnerProxy, dispatcher Dispatcher) (*RunnerBridge, error) {
 	if sandboxes == nil || dispatcher == nil {
 		return nil, errors.New("Sandbox getter and Session Dispatcher are required")
 	}
-	return &RunnerBridge{sandboxes: sandboxes, runner: runner, dispatcher: dispatcher, readiness: readiness}, nil
+	return &RunnerBridge{sandboxes: sandboxes, runner: runner, dispatcher: dispatcher}, nil
 }
 
 // OpenSession queues one immutable Session specification. The caller-minted
@@ -131,92 +109,6 @@ func (b *RunnerBridge) SessionOpening(ctx context.Context, sandbox string, sessi
 	return opening, nil
 }
 
-// SubmitInput first checks app Thread/History readiness, then durably admits
-// one idempotent input command through the Session Dispatcher.
-func (b *RunnerBridge) SubmitInput(ctx context.Context, sandbox string, sessionID uuid.UUID, commandID, text string) (*dispatcherpb.Dispatch, error) {
-	if err := b.commandRequestReady(ctx, sandbox, sessionID, commandID); err != nil {
-		return nil, err
-	}
-	response, err := b.dispatcher.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
-		CommandId: commandID, SessionId: sessionID.String(), Sandbox: sandbox, Text: text,
-	})
-	if err != nil {
-		return nil, wrapCommandTimeout(commandID, err)
-	}
-	if response.GetDispatch() == nil {
-		return nil, errors.New("Session Dispatcher returned no Dispatch for SubmitInput")
-	}
-	return response.GetDispatch(), nil
-}
-
-// ChangeModel checks readiness, then durably admits a model-change command.
-func (b *RunnerBridge) ChangeModel(ctx context.Context, sandbox string, sessionID uuid.UUID, commandID, model string) (*dispatcherpb.Dispatch, error) {
-	if err := b.commandRequestReady(ctx, sandbox, sessionID, commandID); err != nil {
-		return nil, err
-	}
-	response, err := b.dispatcher.ChangeModel(ctx, &dispatcherpb.ChangeModelRequest{
-		CommandId: commandID, SessionId: sessionID.String(), Sandbox: sandbox, Model: model,
-	})
-	if err != nil {
-		return nil, wrapCommandTimeout(commandID, err)
-	}
-	if response.GetDispatch() == nil {
-		return nil, errors.New("Session Dispatcher returned no Dispatch for ChangeModel")
-	}
-	return response.GetDispatch(), nil
-}
-
-// ChangeReasoningEffort checks readiness, then durably admits a reasoning
-// effort change.
-func (b *RunnerBridge) ChangeReasoningEffort(ctx context.Context, sandbox string, sessionID uuid.UUID, commandID, effort string) (*dispatcherpb.Dispatch, error) {
-	if err := b.commandRequestReady(ctx, sandbox, sessionID, commandID); err != nil {
-		return nil, err
-	}
-	response, err := b.dispatcher.ChangeReasoningEffort(ctx, &dispatcherpb.ChangeReasoningEffortRequest{
-		CommandId: commandID, SessionId: sessionID.String(), Sandbox: sandbox, Effort: effort,
-	})
-	if err != nil {
-		return nil, wrapCommandTimeout(commandID, err)
-	}
-	if response.GetDispatch() == nil {
-		return nil, errors.New("Session Dispatcher returned no Dispatch for ChangeReasoningEffort")
-	}
-	return response.GetDispatch(), nil
-}
-
-// InterruptTurn checks readiness and asks the Dispatcher to interrupt only the
-// caller's identified active turn.
-func (b *RunnerBridge) InterruptTurn(ctx context.Context, sandbox string, sessionID uuid.UUID, commandID, turnID string) (*dispatcherpb.InterruptTurnResponse, error) {
-	if err := b.commandRequestReady(ctx, sandbox, sessionID, commandID); err != nil {
-		return nil, err
-	}
-	response, err := b.dispatcher.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
-		CommandId: commandID, SessionId: sessionID.String(), Sandbox: sandbox, TurnId: turnID,
-	})
-	if err != nil {
-		return nil, wrapCommandTimeout(commandID, err)
-	}
-	if response == nil {
-		return nil, errors.New("Session Dispatcher returned no result for InterruptTurn")
-	}
-	return response, nil
-}
-
-func (b *RunnerBridge) commandRequestReady(ctx context.Context, sandbox string, sessionID uuid.UUID, commandID string) error {
-	if sandbox == "" || commandID == "" {
-		return errors.New("Sandbox name and command ID are required")
-	}
-	return b.CommandReady(ctx, sessionID)
-}
-
-func wrapCommandTimeout(commandID string, err error) error {
-	var timeout *RequestTimeoutError
-	if errors.As(err, &timeout) {
-		return &DispatcherRequestTimeoutError{CommandID: commandID, Cause: err}
-	}
-	return err
-}
-
 // ListSessions proxies the live runner's durable Session inventory through its
 // current Sandbox incarnation.
 func (b *RunnerBridge) ListSessions(ctx context.Context, sandboxName string) ([]*runnerpb.SessionSummary, error) {
@@ -259,29 +151,6 @@ func (b *RunnerBridge) currentSandbox(ctx context.Context, name string) (*sandbo
 		return nil, fmt.Errorf("Sandbox %q has incomplete or mismatched identity", name)
 	}
 	return sandbox, nil
-}
-
-// CommandReady rejects an absent Thread or a feed that History has marked as
-// rejected before a caller submits another command to the Dispatcher.
-func (b *RunnerBridge) CommandReady(ctx context.Context, threadID uuid.UUID) error {
-	if b.readiness == nil {
-		return errors.New("Thread readiness is not configured")
-	}
-	exists, err := b.readiness.Exists(ctx, threadID)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return &ThreadNotFoundError{ThreadID: threadID}
-	}
-	snapshot, err := b.readiness.FeedState(ctx, threadID)
-	if err != nil {
-		return err
-	}
-	if snapshot != nil && snapshot.End != nil {
-		return &ThreadStateError{Message: "runner history is rejected: " + snapshot.End.Message}
-	}
-	return nil
 }
 
 // ParseSessionSpec applies strict proto-JSON fields over a cloned set of

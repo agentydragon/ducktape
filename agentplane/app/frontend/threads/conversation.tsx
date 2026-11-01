@@ -214,7 +214,7 @@ function ConversationBody({
   const activityAge = modelActivityAge(thread.last_model_activity_at, Math.max(clock, Date.now()));
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const sync = useThreadSync().useThread();
-  const commands = useThreadCommands(threadId, entities);
+  const commands = useThreadCommands(thread, entities);
   const onInputEchoLoaded = useCallback(
     (commandId: string) => commands.store.acknowledgeEcho(commandId),
     [commands.store]

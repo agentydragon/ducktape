@@ -185,7 +185,7 @@ export function PendingInputMessages({
             action={
               !admitted && !value.attempted && value.dispatch === null
                 ? { label: "Cancel", onClick: () => store.cancelUnsent(id) }
-                : !admitted && value.dispatch === null
+                : !admitted && value.dispatch === null && value.target !== null
                   ? { label: "Retry", onClick: () => void deliver(value) }
                   : undefined
             }
@@ -273,17 +273,21 @@ function LocalControlRows({
                   local
                   unsent={!value.attempted}
                 />
-                {!admitted && !settled && value.dispatch === null && !value.interruptResult && (
-                  <Button
-                    size="xs"
-                    variant="subtle"
-                    onClick={() =>
-                      value.attempted ? void deliver(value) : store.cancelUnsent(value.command.commandId)
-                    }
-                  >
-                    {value.attempted ? "Retry" : "Cancel"}
-                  </Button>
-                )}
+                {!admitted &&
+                  !settled &&
+                  value.dispatch === null &&
+                  !value.interruptResult &&
+                  (!value.attempted || value.target !== null) && (
+                    <Button
+                      size="xs"
+                      variant="subtle"
+                      onClick={() =>
+                        value.attempted ? void deliver(value) : store.cancelUnsent(value.command.commandId)
+                      }
+                    >
+                      {value.attempted ? "Retry" : "Cancel"}
+                    </Button>
+                  )}
               </Group>
             </ControlCommandFrame>
           );

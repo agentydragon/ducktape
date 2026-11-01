@@ -10,6 +10,7 @@ import { watchDispatches } from "./dispatch_watch";
 import { LocalCommands } from "./local_commands";
 
 const SESSION = "session-1";
+const COMMAND_TARGET = { sandbox: "box", sandboxUid: "20000000-0000-4000-8000-000000000001" };
 
 let fetchMock: ReturnType<typeof stubWatchFetch>;
 let stop: () => void = () => undefined;
@@ -37,6 +38,7 @@ function queued(store: LocalCommands, commandId: string): Command {
     dispatchFromJson({
       commandId,
       sessionId: SESSION,
+      ...COMMAND_TARGET,
       state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
     })
   );
@@ -49,7 +51,7 @@ function stateOf(store: LocalCommands, commandId: string): Dispatch["state"] | u
 
 // A Dispatch as gRPC-Gateway writes it: proto-JSON that leaves out the unset `reason` and `admission`.
 function dispatchFrame(commandId: string, state: string) {
-  return { dispatch: { commandId, sessionId: SESSION, sandbox: "box", state, updatedAt: "2026-10-19T12:00:00Z" } };
+  return { dispatch: { commandId, sessionId: SESSION, ...COMMAND_TARGET, state, updatedAt: "2026-10-19T12:00:00Z" } };
 }
 
 async function settle(): Promise<void> {
@@ -57,7 +59,7 @@ async function settle(): Promise<void> {
 }
 
 it("asks for the Session's named commands and applies the rows it is sent", async () => {
-  const store = new LocalCommands(SESSION);
+  const store = new LocalCommands(SESSION, COMMAND_TARGET);
   queued(store, "a");
   queued(store, "b");
   stop = watchDispatches(store, SESSION, ["a", "b"]);
@@ -74,7 +76,7 @@ it("asks for the Session's named commands and applies the rows it is sent", asyn
 });
 
 it("calls a command it holds no row for unknown once the watch has caught up, as after Sandbox deletion", async () => {
-  const store = new LocalCommands(SESSION);
+  const store = new LocalCommands(SESSION, COMMAND_TARGET);
   queued(store, "kept");
   queued(store, "deleted");
   stop = watchDispatches(store, SESSION, ["kept", "deleted"]);
@@ -91,7 +93,7 @@ it("calls a command it holds no row for unknown once the watch has caught up, as
 });
 
 it("judges what is missing by the rows of the current connection, not an earlier one", async () => {
-  const store = new LocalCommands(SESSION);
+  const store = new LocalCommands(SESSION, COMMAND_TARGET);
   queued(store, "a");
   stop = watchDispatches(store, SESSION, ["a"]);
   await settle();
@@ -108,7 +110,7 @@ it("judges what is missing by the rows of the current connection, not an earlier
 
 it("keeps applying frames after one it cannot read", async () => {
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
-  const store = new LocalCommands(SESSION);
+  const store = new LocalCommands(SESSION, COMMAND_TARGET);
   queued(store, "a");
   stop = watchDispatches(store, SESSION, ["a"]);
   await settle();

@@ -402,6 +402,60 @@ func TestHistoryFacadeRequiresAnAuthenticatedCaller(t *testing.T) {
 	}
 }
 
+func TestDispatcherCommandFacadePreservesCallerAuthAndOnlyFourWrites(t *testing.T) {
+	authentication := newStreamTestAuth(t)
+	server := NewHTTPServer(authentication)
+	var forwarded []string
+	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, request *http.Request, _ context.Context, path, bearer string) error {
+		if request.Method != http.MethodPost || bearer != "" {
+			t.Errorf("forwarded method/bearer = %q/%q", request.Method, bearer)
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			return err
+		}
+		if string(body) != `{"commandId":"stable","sandbox":"demo","sandboxUid":"uid-1"}` {
+			t.Errorf("forwarded body = %q", body)
+		}
+		forwarded = append(forwarded, path)
+		w.WriteHeader(http.StatusAccepted)
+		return nil
+	}}
+	RegisterStreamingRoutes(server, StreamingDependencies{DispatcherHTTP: upstream})
+	const prefix = "/upstream/dispatcher/v1/sessions/9b6d568a-2253-43d7-a7d4-190e98359594"
+	const body = `{"commandId":"stable","sandbox":"demo","sandboxUid":"uid-1"}`
+
+	unauthenticated := httptest.NewRecorder()
+	server.Handler(authentication).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodPost, prefix+":submitInput", strings.NewReader(body)))
+	if unauthenticated.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous command status = %d, want 401", unauthenticated.Code)
+	}
+	for _, method := range []string{"submitInput", "changeModel", "changeReasoningEffort", "interruptTurn"} {
+		request := httptest.NewRequest(http.MethodPost, prefix+":"+method, strings.NewReader(body))
+		request.Header.Set("Authorization", "Bearer accepted")
+		response := httptest.NewRecorder()
+		server.Handler(authentication).ServeHTTP(response, request)
+		if response.Code != http.StatusAccepted {
+			t.Fatalf("workload-token %s status = %d %s, want 202", method, response.Code, response.Body.String())
+		}
+	}
+	if len(forwarded) != 4 {
+		t.Fatalf("forwarded command paths = %v, want four", forwarded)
+	}
+	for _, path := range []string{prefix + ":delete", "/upstream/dispatcher/v1/dispatches:watch", prefix + "/extra:submitInput"} {
+		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		request.Header.Set("Authorization", "Bearer accepted")
+		response := httptest.NewRecorder()
+		server.Handler(authentication).ServeHTTP(response, request)
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("unsupported command path %q status = %d, want 404", path, response.Code)
+		}
+	}
+	if len(forwarded) != 4 {
+		t.Fatalf("unsupported route was forwarded: %v", forwarded)
+	}
+}
+
 func TestConsoleRelayStreamsBase64OutputAndClosesOnCancellation(t *testing.T) {
 	reader, writer := io.Pipe()
 	response := newStreamingRecorder()

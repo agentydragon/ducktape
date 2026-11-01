@@ -43,7 +43,6 @@ go_library(
         "//agentplane/app/go/proxy",
         "//agentplane/app/go/sandboxes",
         "//agentplane/app/go/status",
-        "//agentplane/app/go/threadcommands",
         "//agentplane/app/go/threads",
         "//agentplane/app/thread_metadata:thread_metadata_go_proto",
         "//agentplane/egress:egress_admin_go_proto",

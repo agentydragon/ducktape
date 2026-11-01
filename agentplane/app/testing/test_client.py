@@ -50,7 +50,16 @@ async def _app(
     async def serve(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         request = (await reader.readuntil(b"\r\n\r\n")).decode()
         if requests is not None:
-            requests.append(request)
+            length = next(
+                (
+                    int(line.split(":", 1)[1])
+                    for line in request.splitlines()
+                    if line.lower().startswith("content-length:")
+                ),
+                0,
+            )
+            body = (await reader.readexactly(length)).decode() if length else ""
+            requests.append(request + body)
         after = int(request.split("after=")[1].split(" ")[0].split("&")[0]) if "after=" in request else 0
         try:
             await remaining.pop(0)(after, writer)
@@ -92,14 +101,9 @@ async def test_command_accepts_the_dispatchers_durable_receipt() -> None:
     )
 
     async def accepted(_after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(
-            writer,
-            "200 OK",
-            json.dumps({"kind": "dispatch", "dispatch": MessageToDict(receipt)}).encode(),
-            "application/json",
-        )
+        await _respond(writer, "200 OK", json.dumps({"dispatch": MessageToDict(receipt)}).encode(), "application/json")
 
-    async with _app(accepted) as (client, _):
+    async with _app(_session_summary, accepted) as (client, _):
         result = await client.submit_input(uuid4(), command_id, "Continue")
     assert result == receipt
 
@@ -175,21 +179,39 @@ async def test_app_config_client_adapts_proto_json_to_test_views() -> None:
     assert views[0].session_defaults.reasoning_effort is None
 
 
-async def test_command_accepts_an_archived_admission_without_a_dispatch() -> None:
-    command_id = "archived"
-    admission = event_log_pb2.EventEntry(cursor=1)
+async def _session_summary(_after: int, writer: asyncio.StreamWriter) -> None:
+    await _respond(
+        writer,
+        "200 OK",
+        json.dumps({"sandbox": {"name": "original", "uid": "original-uid"}}).encode(),
+        "application/json",
+    )
 
-    async def archived(_after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(
-            writer,
-            "200 OK",
-            json.dumps({"kind": "archived_admission", "admission": MessageToDict(admission)}).encode(),
-            "application/json",
-        )
 
-    async with _app(archived) as (client, _):
-        result = await client.submit_input(uuid4(), command_id, "Continue")
-    assert result == admission
+async def test_command_retry_reuses_the_original_destination_without_another_lookup() -> None:
+    thread_id = uuid4()
+    receipt = session_dispatcher_pb2.Dispatch(command_id="retry", session_id=str(thread_id))
+
+    async def accepted(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(writer, "200 OK", json.dumps({"dispatch": MessageToDict(receipt)}).encode(), "application/json")
+
+    requests: list[str] = []
+    async with _app(_session_summary, accepted, accepted, requests=requests) as (client, _):
+        assert await client.submit_input(thread_id, "retry", "Continue") == receipt
+        assert await client.submit_input(thread_id, "retry", "Continue") == receipt
+    assert requests[0].startswith(f"GET /upstream/history/v1/sessions/{thread_id}/summary ")
+    assert len(requests) == 3
+    assert all(
+        request.startswith(f"POST /upstream/dispatcher/v1/sessions/{thread_id}:submitInput ")
+        for request in requests[1:]
+    )
+    for request in requests[1:]:
+        assert json.loads(request.split("\r\n\r\n", 1)[1]) == {
+            "commandId": "retry",
+            "sandbox": "original",
+            "sandboxUid": "original-uid",
+            "text": "Continue",
+        }
 
 
 async def test_resumes_after_the_last_entry_when_the_stream_closes_without_an_end_frame() -> None:

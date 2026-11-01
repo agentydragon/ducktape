@@ -67,17 +67,18 @@ bbr test //agentplane/app/...
 
 ### While the History Service is down or rolling
 
-Thread lists, Thread views, the retained-event SSE API and Thread commands fail with the History
-Service's error: each typed command route first looks for its admission in the archive and checks
-the Thread's feed state (`go/threadcommands/`), so even a command the runner would accept is refused. Resume
-reads the feed state the same way. Sandbox lifecycle and Action review keep working.
-The app’s History watch reconnects on its own, and Sessions recorded meanwhile get their Threads once it does.
+Thread lists, Thread views, and retained-event reads fail with the History Service error.
+The generated Dispatcher command facade remains available: it validates the Session and current Sandbox
+UID independently of History. The browser retains submitted commands until History can reconcile
+their admission. Resume still reads the History feed state. Sandbox lifecycle and Action review
+keep working. The app’s History watch reconnects on its own, and Sessions recorded meanwhile
+get their Threads once it does.
 
 ## Implementation and testing
 
 - `go/`: configuration, Huma REST routes, raw HTTP streams and the service lifecycle. The generated
   frontend API comes from `//agentplane/app/go:export_schema_bin`.
-- `go/threads/` and `go/threadcommands/`: operator-owned Thread metadata and Dispatcher submissions.
+- `go/threads/`: operator-owned Thread metadata. Generated Dispatcher HTTP routes own command submissions.
   History owns event storage, folding and evidence; `go/historydata/` reads it through gRPC.
 - `go/liveinventory/` and `go/policyaccess/`: Kubernetes list/watch snapshots and policy projections.
   Policy watches invalidate cached Action policy reads; the Action Service owns their evaluation.
@@ -98,15 +99,14 @@ The app’s History watch reconnects on its own, and Sessions recorded meanwhile
 
 ### Replica-safe command delivery
 
-Any app replica accepts typed `submit-input`, `change-model`, `change-reasoning-effort`, and
-`interrupt-turn` requests under `/threads/{id}/`, each with a stable
-command id. The required `session_dispatcher_target` calls the matching generated Session Dispatcher
-RPC. Durable operations return their stored `Dispatch`; `InterruptTurn` returns its immediate
-result without a queue row. A Dispatcher
-failure is returned to the caller; the app has no direct Runner Gateway command path. An exact retry
-already present in the History archive returns its `CommandAdmitted` entry without another service
-call. Otherwise the browser keeps Retry and never Cancel after an unconfirmed result, because the
-Dispatcher may have stored the command despite a lost reply.
+The browser sends `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, and `InterruptTurn` through
+the generated `/upstream/dispatcher/v1/sessions/{id}:<verb>` HTTP facade. Each request carries a
+stable command ID and the immutable Sandbox name and UID captured with the retained local command.
+The Dispatcher checks the current Sandbox UID and Session authority. Durable operations return their
+stored `Dispatch`; `InterruptTurn` returns its immediate result without a queue row. A lost response
+leaves admission unconfirmed, so the browser keeps the command for exact-ID retry and History
+reconciliation. Legacy retained commands without a stored destination remain visible for History
+reconciliation but cannot be resent to a newly resolved Sandbox.
 
 The browser follows the Dispatcher's later state of the commands it still holds as queued or delivering
 with `GET /upstream/dispatcher/v1/dispatches:watch?filter.sessionId=…&filter.commandIds=…`. The app's
@@ -120,12 +120,13 @@ remains the authority for command outcomes. The browser retains the command loca
 projects its admission or command row; the app adds no command queue. Deploy the Session Dispatcher
 and authorize the app ServiceAccount before rolling out an app image that requires this setting.
 
-The `/upstream/dispatcher/…` BFF routes expose Dispatcher reads to an operator session and call typed
-gRPC methods with the app's rotating projected Dispatcher token. Unary routes return ProtoJSON; the
-watch keeps a bounded initial read before starting its streaming response and then relays frames until
-the operator session ends, the app drains or the browser goes. Reads carry no Thread check, so an
-operator can read the Dispatches of any Session id. Commands stay on the typed Thread routes, whose
-checks the Dispatcher does not make.
+The `/upstream/dispatcher/…` BFF routes expose Dispatcher reads to an operator session and the four
+command POSTs to an authenticated operator or accepted workload token. They call generated gRPC methods
+with the app's rotating projected Dispatcher token. Unary routes return ProtoJSON; the watch keeps a
+bounded initial read before starting its streaming response and then relays frames until the operator
+session ends, the app drains or the browser goes. Reads carry no Thread check, so an operator can read
+the Dispatches of any Session id. Command writes no longer check the app's History feed state or model
+catalog before reaching the Dispatcher; the runner remains the authority for supported model choices.
 
 The Sandbox page lists retained Sessions from History Thread summaries, so suspension or removal of a
 runner Pod does not clear the inventory. A row's status mark is derived from those last-observed History

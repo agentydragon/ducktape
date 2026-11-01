@@ -13,6 +13,7 @@ import { watchDispatches } from "./dispatch_watch";
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot, type PendingCommand } from "./local_commands";
 import { type ThreadEntity } from "./thread_sync";
+import type { ThreadView } from "../schema";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], inputEchoes: [], error: null };
 
@@ -38,8 +39,16 @@ interface ThreadCommands {
   store: LocalCommands;
 }
 
-export function useThreadCommands(threadId: string, entities: ThreadEntity[]): ThreadCommands {
-  const store = useMemo(() => new LocalCommands(threadId), [threadId]);
+export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]): ThreadCommands {
+  const threadId = thread.id;
+  const store = useMemo(
+    () =>
+      new LocalCommands(
+        threadId,
+        thread.sandbox && thread.sandbox_uid ? { sandbox: thread.sandbox, sandboxUid: thread.sandbox_uid } : null
+      ),
+    [threadId, thread.sandbox, thread.sandbox_uid]
+  );
   const local = useSyncExternalStore(store.subscribe, store.getSnapshot, () => EMPTY_LOCAL);
   const [errors, setErrors] = useState(new Map<string, CommandIssue>());
   const [submissionError, setSubmissionError] = useState<string | null>(null);
@@ -73,28 +82,35 @@ export function useThreadCommands(threadId: string, entities: ThreadEntity[]): T
           setErrors((previous) => new Map(previous).set(id, issue));
       };
       try {
+        if (!value.target) {
+          settle({
+            kind: "unconfirmed",
+            message:
+              "This saved command predates Sandbox destination tracking. It cannot be safely resent; wait for History evidence.",
+          });
+          return;
+        }
         if (!navigator.onLine || !store.markAttempted(id)) return;
         const operation = value.command.operation;
         const commandId = value.command.commandId;
         let result: CommandSubmission;
         switch (operation.case) {
           case "submitInput":
-            result = await submitInput(threadId, commandId, operation.value.text);
+            result = await submitInput(threadId, value.target, commandId, operation.value.text);
             break;
           case "changeModel":
-            result = await changeModel(threadId, commandId, operation.value.model);
+            result = await changeModel(threadId, value.target, commandId, operation.value.model);
             break;
           case "changeReasoningEffort":
-            result = await changeReasoningEffort(threadId, commandId, operation.value.effort);
+            result = await changeReasoningEffort(threadId, value.target, commandId, operation.value.effort);
             break;
           case "interruptTurn":
-            result = await interruptTurn(threadId, commandId, operation.value.turnId);
+            result = await interruptTurn(threadId, value.target, commandId, operation.value.turnId);
             break;
           default:
             throw new Error("Unknown retained operation");
         }
-        if (result.kind === "archived_admission") store.acknowledge(value.command, result.admission);
-        else if (result.kind === "interrupt_result") store.acknowledgeInterrupt(value.command, result.result);
+        if (result.kind === "interrupt_result") store.acknowledgeInterrupt(value.command, result.result);
         else store.acknowledgeDispatch(value.command, result.dispatch);
         settle(null);
       } catch (reason) {
@@ -113,7 +129,8 @@ export function useThreadCommands(threadId: string, entities: ThreadEntity[]): T
     [store, threadId]
   );
   // Deliver each retained command with no server receipt once on mount. An exact retry is safe after
-  // a lost reply because the Dispatcher deduplicates by command ID.
+  // a lost reply because durable Dispatcher writes and direct runner interrupt admission
+  // deduplicate the same command ID and payload.
   useEffect(() => {
     for (const value of store.getSnapshot().commands)
       if (value.admission === null && value.dispatch === null && !value.interruptResult) void deliver(value);
