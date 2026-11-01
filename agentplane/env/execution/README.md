@@ -6,8 +6,8 @@ model provider or integration app. It owns one Codex exec-server and a private U
 The generated Go and Python clients live with this protocol. [SPEC.md](SPEC.md) defines lifetime,
 admission and recovery guarantees.
 
-[Isolation and resources](ISOLATION.md) describes the current shared Codex backend, process
-placement, collective resource limits and failure scope.
+[Isolation and resources](ISOLATION.md) describes protection goals, the current shared Codex
+backend, process placement, collective resource limits and failure scope.
 
 Environment Runtime starts this service as a child in Pods and as a systemd unit in VMs. Harness
 Host calls its private Unix gRPC API; Runtime owns service startup, health, shutdown and fencing. In
