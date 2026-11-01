@@ -279,12 +279,38 @@ fn exported_factory_result_rejects_a_rebound_factory() {
         "create = function (record) { return new Holder(record); };\nconst command = create({ execute: () => later });",
     );
     let rebound_chunks = [("static/consumer", ACYCLIC_COMMAND_IMPORTER)];
-    expect_atomic_conflict_rejection(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(&rebound_provider, exported_record_factory_modules(&[]))
             .with_chunk_id("static/provider")
             .with_extra_chunks(&rebound_chunks),
-        &["callbacks/wrapped", "values/later"],
-        &[],
+    );
+    assert!(rejected.atomic_group_conflicts().iter().any(|conflict| {
+        conflict["causes"]
+            .as_array()
+            .is_some_and(|causes| causes.iter().any(|cause| cause == "eager_rebind"))
+            && conflict["claims"].as_array().is_some_and(|claims| {
+                claims
+                    .iter()
+                    .any(|claim| claim["module"] == "callbacks/wrapped")
+            })
+    }));
+    let graph = rejected.dependency_graph();
+    let command = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "command")
+        })
+        .expect("provider command");
+    assert!(
+        command
+            .synchronous_execution
+            .as_ref()
+            .expect("command execution")
+            .local_record_factory_uses
+            .is_empty()
     );
 }
 

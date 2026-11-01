@@ -82,10 +82,10 @@ const names = Object.getOwnPropertyNames({
 });
 const argumentThrew = (() => {
   try {
-    Object.getOwnPropertyNames({ field: (() => { throw new Error("argument"); })() });
+    Object.getOwnPropertyNames({ field: (() => { throw "argument"; })() });
     return false;
   } catch (error) {
-    return error.message === "argument";
+    return error === "argument";
   }
 })();
 const later = 42;

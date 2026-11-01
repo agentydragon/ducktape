@@ -1084,6 +1084,7 @@ enum CallKind {
     ObjectSpread,
     LocalMemberRead,
     AccessorCalleeLookup,
+    OpaqueExecution,
     InProtocol,
     InstanceOfProtocol,
     DeepDestructuringProtocol,
@@ -5727,6 +5728,8 @@ struct ExecutionIndex {
     /// lets runtime timing suppress only foreign-callback promotion when the
     /// exact outer call's callback identities satisfy its contract.
     no_reentry_accessor_calls: BTreeMap<CallSite, CallSite>,
+    /// The ordinary call whose callee is evaluated by a synthetic lookup.
+    accessor_callee_calls: BTreeMap<CallSite, Call>,
     no_reentry_exports: BTreeSet<Id>,
     host_async_local_storage_imports: BTreeSet<Id>,
     host_promise_resolve: bool,
@@ -5889,6 +5892,7 @@ impl Default for ExecutionIndex {
             retained_constructor_calls: BTreeMap::new(),
             no_reentry_callback_calls: BTreeMap::new(),
             no_reentry_accessor_calls: BTreeMap::new(),
+            accessor_callee_calls: BTreeMap::new(),
             no_reentry_exports: BTreeSet::new(),
             host_async_local_storage_imports: BTreeSet::new(),
             host_promise_resolve: false,
@@ -10372,7 +10376,13 @@ impl Visit for ExecutionIndex {
 
     fn visit_with_stmt(&mut self, statement: &WithStmt) {
         self.dynamic_scope_owners.insert(self.owner);
-        statement.visit_children_with(self);
+        statement.obj.visit_with(self);
+        self.record_source_protocol(
+            CallKind::OpaqueExecution,
+            ValueExpr::from_expr(&statement.obj),
+            statement.span,
+        );
+        statement.body.visit_with(self);
         self.mark_opaque();
     }
 
@@ -11807,6 +11817,11 @@ impl Visit for ExecutionIndex {
             ));
             self.mark_dynamic_property_effect(Some(&member.obj));
         }
+        self.record_source_protocol(
+            CallKind::OpaqueExecution,
+            ValueExpr::from_expr(&expression.arg),
+            expression.span,
+        );
         self.mark_opaque();
     }
 
@@ -12127,7 +12142,7 @@ impl Visit for ExecutionIndex {
             {
                 self.literal_true_second_arguments.insert(call.span.into());
             }
-            self.record_call(Call {
+            let indexed_call = Call {
                 callee: ValueExpr::from_expr(callee),
                 args: call
                     .args
@@ -12160,8 +12175,14 @@ impl Visit for ExecutionIndex {
                         matches!(arg.expr.unwrap_parens(), Expr::Object(object)
                             if object.props.iter().all(plain_assign_source_property))
                     }),
-            });
+            };
+            if let Expr::Member(member) = callee.unwrap_parens() {
+                self.accessor_callee_calls
+                    .insert(member.span.into(), indexed_call.clone());
+            }
+            self.record_call(indexed_call);
         } else {
+            self.record_source_protocol(CallKind::OpaqueExecution, ValueExpr::Unknown, call.span);
             self.mark_opaque();
         }
     }
@@ -12179,6 +12200,21 @@ impl Visit for ExecutionIndex {
             expression.visit_with(self);
         }
         template.type_params.visit_with(self);
+        self.record_source_protocol(
+            CallKind::OpaqueExecution,
+            ValueExpr::Alternatives(
+                std::iter::once(ValueExpr::from_expr(&template.tag))
+                    .chain(
+                        template
+                            .tpl
+                            .exprs
+                            .iter()
+                            .map(|expr| ValueExpr::from_expr(expr)),
+                    )
+                    .collect(),
+            ),
+            template.span,
+        );
         self.mark_opaque();
     }
 

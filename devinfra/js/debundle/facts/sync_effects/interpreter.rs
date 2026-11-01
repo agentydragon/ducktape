@@ -364,7 +364,7 @@ struct CallbackPoolObservation {
     accumulated_values: OrdMap<u32, Values>,
     applied_accessors: OrdMap<u32, BTreeMap<String, AppliedAccessor>>,
     class_superclasses: OrdMap<u32, Values>,
-    set_sizes: [usize; 11],
+    set_sizes: [usize; 12],
     array_intrinsic_mutated: bool,
     uncertain_native_execution: bool,
 }
@@ -559,6 +559,9 @@ impl ExecutionInputs<'_> {
         for value in state.prefix_values.get(binding)? {
             match value {
                 AbstractValue::Value(Value::Prim(_)) => {}
+                // PlainData above proves the whole lifetime after the checked
+                // initializer. Initializer writes can conservatively taint an
+                // enum allocation without invalidating that stronger proof.
                 AbstractValue::Value(Value::Alloc(Kind::Object, object))
                     if state.parameter_initialized_objects.contains(object) =>
                 {
@@ -651,6 +654,9 @@ pub(super) struct ExecutionState {
     /// Their synchronous effects still run; execution alone does not expose
     /// the wrapper or the classes' deferred callable members to the host.
     private_constructor_result_owners: BTreeSet<SourceUnitOrdinal>,
+    checked_constructor_inputs: BTreeSet<u32>,
+    /// A proven silent primitive push changed contents, not descriptors or prototypes.
+    unknown_array_contents: BTreeSet<u32>,
     /// Exact source-checked receivers whose prototype premises the author supplies.
     record_factory_prototype_premises: RefCell<RecordFactoryPrototypePremises>,
     checking_record_factory_contract: bool,
@@ -687,7 +693,7 @@ pub(super) struct ExecutionState {
     tainted_objects: BTreeSet<u32>,
     /// Objects code the interpreter did not run may have reached and mutated.
     /// This records possible mutation or escape, not an observed escape to
-    /// unknown code. Only settled element state consults it.
+    /// unknown code. Its properties and prototypes are no longer settled.
     unsettled_objects: BTreeSet<u32>,
     tainted_native_sets: BTreeSet<u32>,
     tainted_functions: BTreeSet<u32>,
@@ -716,6 +722,18 @@ pub(super) struct ExecutionState {
     active: BTreeSet<ActiveInvocation>,
     /// Context lookup only; completed outcomes live in the shared fact store.
     invocation_memos: OrdMap<InvocationSignature, ProgramPoint>,
+}
+
+impl ExecutionState {
+    /// Skipped local code can change descriptors or prototypes even when no
+    /// escape to foreign code was observed. Neither set permits prefix reads.
+    fn object_properties_are_settled(&self, object: &u32) -> bool {
+        self.object_accessors_are_settled(object) && !self.unknown_array_contents.contains(object)
+    }
+
+    fn object_accessors_are_settled(&self, object: &u32) -> bool {
+        !self.tainted_objects.contains(object) && !self.unsettled_objects.contains(object)
+    }
 }
 
 pub(super) struct Executor<'source, 'rule> {
@@ -1190,7 +1208,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             source_object: *object,
             source_values: values.clone(),
             prefix_properties: properties.clone(),
-            tainted: self.state.tainted_objects.contains(object),
+            tainted: !self.state.object_properties_are_settled(object),
             request,
         })
     }
@@ -1419,6 +1437,110 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         ))
     }
 
+    fn native_member_lookup_is_data(&self, callee: &ValueExpr, site: Option<u32>) -> bool {
+        let ValueExpr::Member(receiver, Some(property), MemberKey::Static) = callee else {
+            return false;
+        };
+        let ValueExpr::Binding(binding) = receiver.as_ref() else {
+            return false;
+        };
+        if self.inputs.flow.is_declared(binding)
+            || self.inputs.shadowed.contains(binding.0.as_ref())
+            || !self.inputs.index.dynamic_scope_owners.is_empty()
+        {
+            return false;
+        }
+        let Some(family) = NativeIntrinsic::for_global_binding(binding.0.as_ref()) else {
+            return false;
+        };
+        let Some(property) = crate::facts::abstract_domain::builtins::own_data_property_name(
+            binding.0.as_ref(),
+            property,
+        ) else {
+            return false;
+        };
+        let Some(premise) = native_premise(
+            &self.inputs.index.integrity,
+            &[
+                IntrinsicSlot::Global(family),
+                IntrinsicSlot::Static(family, property),
+            ],
+            site,
+            InferenceRule::NativeOwnDataRead,
+        ) else {
+            return false;
+        };
+        // Identity discharges this lookup only. An operation-use record is
+        // reserved for the separately admitted invocation.
+        self.record_proof_dependencies(
+            NativeIntegrityGuard::NativeCallIdentity,
+            &premise.dependencies,
+        );
+        self.state
+            .inference_uses
+            .borrow_mut()
+            .insert(premise.inference_use);
+        true
+    }
+
+    /// Reuse the exact identity/lookup proof of the canonical outer call.
+    /// Neither this lookup nor native identity certifies the invocation's
+    /// inputs, timing, purity or throws.
+    fn callee_lookup_is_certified(&self, lookup: &Call) -> bool {
+        if self.native_member_lookup_is_data(&lookup.callee, None) {
+            return true;
+        }
+        if let ValueExpr::Member(receiver, Some(property), MemberKey::Static) = &lookup.callee
+            && let ValueExpr::Binding(namespace) = receiver.as_ref()
+            && self
+                .inputs
+                .index
+                .audited_factory_members
+                .get(namespace)
+                .into_iter()
+                .chain(self.inputs.index.no_reentry_members.get(namespace))
+                .chain(self.inputs.index.no_reentry_record_members.get(namespace))
+                .any(|members| members.contains(property))
+        {
+            // These maps contain only the completed namespace identity,
+            // publication, mutation and namespace_independent_members proofs.
+            return true;
+        }
+        let Some(call) = self
+            .inputs
+            .index
+            .accessor_callee_calls
+            .get(&lookup.span.into())
+        else {
+            return false;
+        };
+        let site = CallSite::from(call.span);
+        if self.native_member_lookup_is_data(&lookup.callee, Some(site.allocation_id())) {
+            return true;
+        }
+        let Some((row, _)) = self.exact_native_call_row(call.kind, &call.callee, site) else {
+            return false;
+        };
+        let premise = native_premise(
+            &self.inputs.index.integrity,
+            row.requires,
+            Some(site.allocation_id()),
+            InferenceRule::NativeCallIdentity,
+        )
+        .expect("exact native call retained its identity premise");
+        // Identity discharges this lookup only. An operation-use record is
+        // reserved for the separately admitted invocation.
+        self.record_proof_dependencies(
+            NativeIntegrityGuard::NativeCallIdentity,
+            &premise.dependencies,
+        );
+        self.state
+            .inference_uses
+            .borrow_mut()
+            .insert(premise.inference_use);
+        true
+    }
+
     /// An admitted row certifies the operation after its inputs have
     /// evaluated. It does not infer purity or exception freedom.
     fn resolve_native_call(
@@ -1489,7 +1611,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         && matches!(target_values.iter().collect::<Vec<_>>().as_slice(),
                             [AbstractValue::Value(Value::Alloc(Kind::Object, object))]
                                 if self.inputs.index.plain_data_objects.contains(object)
-                                    && !self.state.tainted_objects.contains(object)
+                                    && self.state.object_properties_are_settled(object)
                                     && self.state.prefix_object_properties.get(object)
                                         .is_some_and(BTreeMap::is_empty)
                                     && !self.state.applied_accessors.contains_key(object))
@@ -1757,10 +1879,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// A11 also excludes an inherited user getter unless a visible mutation
     /// has invalidated the ordinary Object.prototype assumption.
     fn absent_plain_data_property(&self, object: u32, property: &str) -> bool {
-        if self.state.private_constructor_result_owners.is_empty()
+        if (self.state.private_constructor_result_owners.is_empty()
+            && !self.state.checked_constructor_inputs.contains(&object))
             || Self::standard_object_prototype_property(property)
             || !self.inputs.index.plain_data_objects.contains(&object)
-            || self.state.tainted_objects.contains(&object)
+            || !self.state.object_properties_are_settled(&object)
             || !self.input_field_prototype_absent(object, property)
         {
             return false;
@@ -1804,7 +1927,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         else {
             return None;
         };
-        if self.state.tainted_objects.contains(object)
+        if !self.state.object_properties_are_settled(object)
             || self.state.applied_accessors.contains_key(object)
             || (!self.inputs.index.plain_data_objects.contains(object)
                 && !self.state.ordinary_spread_copies.contains(object))
@@ -1843,7 +1966,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         else {
             return None;
         };
-        if !self.array_slots_intact(requires) || self.state.tainted_objects.contains(object) {
+        if !self.array_slots_intact(requires) || !self.state.object_properties_are_settled(object) {
             return None;
         }
         Some((*object, self.state.dense_arrays.get(object)?.clone()))
@@ -1868,16 +1991,26 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return false;
         }
         let receiver = self.evaluate(receiver, env, captures);
-        let Some((object, _)) = self.dense_source(&receiver, ARRAY_PROTOTYPE_SLOTS) else {
+        let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
+            receiver.iter().collect::<Vec<_>>().as_slice()
+        else {
             return false;
         };
+        if !self.state.dense_arrays.contains_key(object)
+            || !self.state.object_accessors_are_settled(object)
+            || !self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS)
+        {
+            return false;
+        }
         // An intact ordinary array has its own writable length, and the
         // guarded prototypes cannot intercept the appended primitive slots.
         // Preserve its contained callbacks, but invalidate the precise array
-        // surface after this real mutation. Subsequent reads/calls therefore
-        // use the conservative path; this is only a call-timing proof.
-        self.state.tainted_objects.insert(object);
-        self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+        // contents after this real mutation. No descriptor replacement or
+        // getter installation occurred. Refuse exact array snapshots without
+        // claiming a fresh value or modeling how often this site executed.
+        if self.state.unknown_array_contents.insert(*object) {
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+        }
         true
     }
 
@@ -1979,7 +2112,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
                         (!self.inputs.index.plain_data_objects.contains(object)
                             && !self.state.ordinary_spread_copies.contains(object))
-                            || self.state.tainted_objects.contains(object)
+                            || !self.state.object_properties_are_settled(object)
                     }
                     AbstractValue::Value(Value::Alloc(Kind::Function, key))
                     | AbstractValue::Closure(key, _) => self.state.tainted_functions.contains(key),
@@ -2087,7 +2220,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             | AbstractValue::Value(Value::Alloc(Kind::Function, _))
             | AbstractValue::Closure(_, _) => true,
             AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
-                !self.state.tainted_objects.contains(object)
+                self.state.object_properties_are_settled(object)
                     && (self.inputs.index.plain_data_objects.contains(object)
                         || self.state.ordinary_spread_copies.contains(object)
                         || self.state.dense_arrays.contains_key(object))
@@ -2167,7 +2300,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.merge_array_effects(outcome, nested);
             let current_source = self.evaluate(&proof.source, env, captures);
             let valid = !unsupported && self.dense_source(&current_source, row.requires).is_some_and(|(object, current)| object == source && current.slots == dense.slots)
-                && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, object)) if self.state.tainted_objects.contains(object)))
+                && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, object)) if !self.state.object_properties_are_settled(object)))
                 && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Function, key)) | AbstractValue::Closure(key, _) if self.state.tainted_functions.contains(key)));
             let valid = valid
                 && (!matches!(
@@ -2371,7 +2504,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         else {
             return None;
         };
-        if self.state.tainted_objects.contains(array) {
+        if !self.state.object_properties_are_settled(array) {
             return None;
         }
         let count = *self.inputs.index.dense_array_literals.get(array)?;
@@ -2394,7 +2527,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .index
                         .primitive_data_properties
                         .contains(&(entry, proof.key.clone()))
-                    || self.state.tainted_objects.contains(&entry)
+                    || !self.state.object_properties_are_settled(&entry)
                 {
                     return None;
                 }
@@ -3485,7 +3618,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.inputs.index.plain_data_objects.contains(&object)
         };
         literal
-            && !self.state.tainted_objects.contains(&object)
+            && self.state.object_properties_are_settled(&object)
             && self.state.prefix_values.get(binding).is_some_and(|values| {
                 values.len() == 1
                     && values.contains(&AbstractValue::Value(Value::Alloc(Kind::Object, object)))
@@ -3874,6 +4007,111 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .hoisted_function_owners
                 .contains(&candidate)
             || !self.inputs.facts[candidate.0].var_declared.is_empty()
+    }
+
+    /// Follow only initialized, uniquely written canonical binding copies.
+    /// A lost local result or any other initializer is not an external root.
+    fn external_binding_root(&self, binding: &Id) -> bool {
+        let mut current = binding;
+        let mut seen = BTreeSet::new();
+        loop {
+            if !seen.insert(current) || self.inputs.index.reassigned_bindings.contains(current) {
+                return false;
+            }
+            if self.inputs.index.imported_bindings.contains(current)
+                || (!self.inputs.flow.is_declared(current)
+                    && !self.inputs.shadowed.contains(current.0.as_ref()))
+            {
+                return true;
+            }
+            if !self.inputs.single_writer_bindings.contains(current)
+                || !self.state.initialized_bindings.contains(current)
+            {
+                return false;
+            }
+            let Some(writes) = self.inputs.index.binding_declaration_writes.get(current) else {
+                return false;
+            };
+            let [write] = writes.as_slice() else {
+                return false;
+            };
+            let Some(ValueExpr::Binding(source)) = &write.initializer else {
+                return false;
+            };
+            if !write.direct_top_level || !write.simple_identifier {
+                return false;
+            }
+            current = source;
+        }
+    }
+
+    /// An unknown descriptor or prototype can make a read invoke any accessor
+    /// previously installed by reachable code. Its returned value is Top, but
+    /// its synchronous binding effects still occur at this read's prefix.
+    fn promote_possible_getter(&mut self, call: &Call, receivers: &Values, outcome: &mut Outcome) {
+        let no_prior_skipped_execution = !self.state.uncertain_native_execution;
+        if self.state.array_iteration_depth > 0 {
+            self.state.array_iteration_unsupported = true;
+        }
+        self.note_unknown_call(call);
+        self.taint_objects(receivers);
+        // A direct unshadowed global is already an external graph. Source
+        // callbacks installed into it are retained by publication/opaque-call
+        // tracking. A local or derived Top may instead hide a private graph
+        // lost by skipped execution and must retain the broader fallback.
+        let external_root = matches!(&call.callee,
+            ValueExpr::Member(receiver, _, _) if matches!(receiver.as_ref(),
+                ValueExpr::Binding(binding)
+                    if self.external_binding_root(binding)))
+            && self.inputs.index.dynamic_scope_owners.is_empty()
+            && !self.state.reachability.incomplete
+            && no_prior_skipped_execution
+            && !receivers
+                .iter()
+                .any(|value| matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, _))));
+        let mut owners: BTreeSet<_> = if external_root {
+            BTreeSet::new()
+        } else {
+            self.state
+                .reachability
+                .owners
+                .iter()
+                .copied()
+                .filter(|owner| self.may_be_available_accessor_owner(*owner))
+                .collect()
+        };
+        if !external_root {
+            owners.extend(outcome.executed_owners.iter().copied());
+            owners.insert(call.owner);
+        }
+        if self.state.reachability.incomplete {
+            owners.extend(self.all_owners());
+        }
+        let effect_owner = self.state.current_top_owner.unwrap_or(call.owner);
+        if !external_root {
+            owners.insert(effect_owner);
+        }
+        self.assuming(AssumedEffectReason::PossibleGetter, |this| {
+            for owner in owners {
+                this.promote_lazy_owner(owner, effect_owner, outcome);
+            }
+            this.promote_raw_callbacks(receivers, outcome);
+        });
+        // Promoted getters may mutate another captured object or rebind a
+        // captured cell before the next operation in this same statement.
+        let reached: Values = outcome
+            .effects
+            .reads
+            .iter()
+            .filter_map(|(binding, _)| self.state.prefix_values.get(binding))
+            .flatten()
+            .cloned()
+            .collect();
+        self.unsettle(&reached);
+        self.apply_rebind_effects(&outcome.effects.rebinds);
+        self.invoke_possible_callbacks(std::slice::from_ref(receivers), false, outcome);
+        outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
+        outcome.unknown_call = true;
     }
 
     fn safe_object_assign_target(&self, call: &Call, id: &Id) -> bool {
@@ -4429,7 +4667,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             else {
                 return BTreeSet::new();
             };
-            if self.state.tainted_objects.contains(object)
+            if !self.state.object_properties_are_settled(object)
                 || self
                     .state
                     .array_iteration_protected_objects
@@ -4490,7 +4728,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     any_object = true;
                     objects.insert(*object);
                     executor.inputs.index.plain_data_objects.contains(object)
-                        && !executor.state.tainted_objects.contains(object)
+                        && executor.state.object_properties_are_settled(object)
                         && !executor.state.dense_arrays.contains_key(object)
                 }
                 _ => false,
@@ -4871,6 +5109,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn unsettle(&mut self, values: &Values) {
         let mut pending: Vec<_> = values.iter().cloned().collect();
         let mut visited = BTreeSet::new();
+        let mut changed = false;
         while let Some(value) = pending.pop() {
             if !visited.insert(value.clone()) {
                 continue;
@@ -4881,7 +5120,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.revoke_audited_result(captured);
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
-                    self.state.unsettled_objects.insert(*object);
+                    changed |= self.state.unsettled_objects.insert(*object);
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
                 | AbstractValue::Closure(key, _) => {
@@ -4902,6 +5141,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 pending.push(reference.clone());
             });
         }
+        if changed {
+            // Invocation memos must not reuse property proofs from before
+            // a bounded callback made these objects unknown.
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+        }
     }
 
     fn taint_objects(&mut self, values: &Values) {
@@ -4920,10 +5164,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::ArrayIntrinsic => {
                     self.state.array_intrinsic_mutated = true;
                 }
-                AbstractValue::Value(Value::Alloc(Kind::Object, object))
-                    if !self.state.tainted_objects.insert(*object) =>
-                {
-                    expand_stored_references = false;
+                AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                    if !self.state.tainted_objects.insert(*object) {
+                        expand_stored_references = false;
+                    }
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Set, site))
                     if !self.state.tainted_native_sets.insert(*site) =>
@@ -5058,7 +5302,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     matches!(value,
                     AbstractValue::Value(Value::Alloc(Kind::Object, object))
                         if self.inputs.index.plain_data_objects.contains(object)
-                            && !self.state.tainted_objects.contains(object))
+                            && self.state.object_properties_are_settled(object))
                 })
             {
                 return Err(unchecked);
@@ -5105,6 +5349,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 );
             }
         }
+        let previous_inputs = std::mem::take(&mut self.state.checked_constructor_inputs);
+        self.state.checked_constructor_inputs = args
+            .iter()
+            .flatten()
+            .filter_map(|value| match value {
+                AbstractValue::Value(Value::Alloc(Kind::Object, object)) => Some(*object),
+                _ => None,
+            })
+            .collect();
         let outcome = constructor.key.map_or_else(
             || Outcome {
                 complete: true,
@@ -5112,6 +5365,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             },
             |constructor_key| self.invoke(constructor_key, args.to_vec(), None, true),
         );
+        self.state.checked_constructor_inputs = previous_inputs;
         let values: Values = args.iter().flatten().cloned().collect();
         let instance = AbstractValue::Instance(key, self.intern_callback_set(values));
         Ok((outcome, instance))
@@ -5262,7 +5516,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     return global(GlobalReachCause::ForeignRecord);
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Object, object))
-                    if self.state.tainted_objects.contains(object) =>
+                    if !self.state.object_properties_are_settled(object) =>
                 {
                     return global(GlobalReachCause::TaintedInput);
                 }
@@ -5391,7 +5645,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && values.iter().all(|value| match value {
                 AbstractValue::Value(Value::Prim(_)) => true,
                 AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
-                    !self.state.tainted_objects.contains(object)
+                    self.state.object_properties_are_settled(object)
                         && self.array_intrinsics_intact()
                         && (self.inputs.index.plain_data_objects.contains(object)
                             || self.state.ordinary_spread_copies.contains(object)
@@ -5947,6 +6201,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             class_superclasses: state.class_superclasses.clone(),
             set_sizes: [
                 state.global_escaped_callbacks.len(),
+                state.unknown_array_contents.len(),
                 state.exported_runtime_values.len(),
                 state.tainted_objects.len(),
                 state.tainted_native_sets.len(),
@@ -6705,6 +6960,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             values.insert(AbstractValue::Instance(key, captured));
                         }
                         AbstractValue::Value(Value::Alloc(Kind::Object, object_id)) => {
+                            if !self.state.object_properties_are_settled(&object_id) {
+                                values.insert(AbstractValue::Value(Value::Top));
+                                continue;
+                            }
                             if self.state.dense_arrays.contains_key(&object_id)
                                 && (property.is_none()
                                     || matches!(
@@ -7149,11 +7408,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         captured: Option<CapturedContext>,
         fresh_checked_constructor: bool,
     ) -> Outcome {
-        let Some((callable_owner, callable_opaque, uses_arguments)) =
+        let Some((callable_owner, uses_arguments)) =
             self.inputs.index.callables.get(&key).map(|callable| {
                 (
                     callable.owner,
-                    callable.opaque,
                     callable.reads.iter().any(|id| id.0.as_ref() == "arguments"),
                 )
             })
@@ -7184,9 +7442,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.state.statement_invoked_callables.insert(key);
         // Memoized outcomes still represent an invocation at this point.
         self.activate_native_effects(callable_owner, Some(key));
-        if callable_opaque {
-            self.note_unknown_execution(callable_owner);
-        }
         let signature = InvocationSignature {
             callable: key,
             arguments: args.clone(),
@@ -7269,7 +7524,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 (!self.inputs.index.plain_data_objects.contains(object)
                                     && !self.state.ordinary_spread_copies.contains(object)
                                     && !self.state.dense_arrays.contains_key(object))
-                                    || self.state.tainted_objects.contains(object)
+                                    || !self.state.object_properties_are_settled(object)
                                     || !self.state.prefix_object_properties.get(object).is_some_and(
                                         |properties| properties.contains_key(&property),
                                     )
@@ -7380,14 +7635,35 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             );
         }
         for call in &callable.calls {
-            self.execute_call(call, &env, &env, &mut outcome);
+            if !self.execute_call(call, &env, &env, &mut outcome) {
+                // Local initializers are pre-evaluated for capability reach.
+                // A skipped operation may precede their real evaluation and
+                // change even a primitive member value into an object.
+                // Preserve retained capabilities, but forfeit exact aliases.
+                let mut widened = false;
+                for (binding, _) in &callable.local_assignments {
+                    widened |= env
+                        .entry(binding.clone())
+                        .or_default()
+                        .insert(AbstractValue::Value(Value::Top));
+                    if self.inputs.top_bindings.contains(binding)
+                        && let Some(values) = self.state.prefix_values.get_mut(binding)
+                        && values.insert(AbstractValue::Value(Value::Top))
+                    {
+                        widened = true;
+                    }
+                }
+                if widened {
+                    self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                }
+            }
         }
         if !certified_data_receivers.is_empty()
             && (self.state.array_iteration_unsupported
                 || !self.array_intrinsics_intact()
                 || certified_data_receivers
                     .iter()
-                    .any(|object| self.state.tainted_objects.contains(object)))
+                    .any(|object| !self.state.object_properties_are_settled(object)))
         {
             self.state
                 .tainted_objects
@@ -7462,7 +7738,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         env: &Context,
         captures: &Context,
         outcome: &mut Outcome,
-    ) {
+    ) -> bool {
+        // Completeness is cumulative in the returned outcome, but only this
+        // transfer's skipped effects can invalidate its own inputs here.
+        let complete_before = outcome.complete;
+        outcome.complete = true;
         let result = self.request(RuntimeOperation::Call {
             call: call.clone(),
             environment: env.clone(),
@@ -7473,6 +7753,28 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             unreachable!("call transfers produce outcomes");
         };
         *outcome = *result;
+        if !outcome.complete {
+            self.widen_native_effects();
+            // A truncated transfer can mutate its inputs before the next
+            // flattened operation in this same top-level statement or body.
+            let mut reached = self.evaluate(&call.callee, env, captures);
+            for argument in &call.args {
+                reached.extend(self.evaluate(argument, env, captures));
+            }
+            reached.extend(
+                outcome
+                    .effects
+                    .reads
+                    .iter()
+                    .filter_map(|(binding, _)| self.state.prefix_values.get(binding))
+                    .flatten()
+                    .cloned(),
+            );
+            self.unsettle(&reached);
+        }
+        let transfer_complete = outcome.complete;
+        outcome.complete &= complete_before;
+        transfer_complete
     }
 
     pub(super) fn execute_call_transfer(
@@ -7482,6 +7784,49 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         captures: &Context,
         outcome: &mut Outcome,
     ) {
+        if call.kind == CallKind::OpaqueExecution {
+            let fact = &self.inputs.facts[call.owner.0];
+            let mut reached: Values = env
+                .values()
+                .chain(captures.values())
+                .flatten()
+                .chain(
+                    fact.reads
+                        .eager
+                        .iter()
+                        .chain(&fact.reads.lazy)
+                        .filter_map(|binding| self.state.prefix_values.get(binding))
+                        .flatten(),
+                )
+                .cloned()
+                .collect();
+            for argument in &call.args {
+                reached.extend(self.evaluate(argument, env, captures));
+            }
+            self.note_unknown_call(call);
+            self.unsettle(&reached);
+            self.promote_escaped_callbacks(&reached, outcome);
+            self.invoke_possible_callbacks(&[reached], false, outcome);
+            outcome.unsupported(ExecutionOperation::OpaqueExecution, call.owner, call.span);
+            outcome.unknown_call = true;
+            return;
+        }
+        if call.kind == CallKind::Call && call.has_spread {
+            // The canonical argument values are iterable capabilities, not
+            // the actual positional arguments. No exact local invocation can
+            // use them as though spreading had completed without effects.
+            let mut reached = self.evaluate(&call.callee, env, captures);
+            for argument in &call.args {
+                reached.extend(self.evaluate(argument, env, captures));
+            }
+            self.note_unknown_call(call);
+            self.unsettle(&reached);
+            self.promote_escaped_callbacks(&reached, outcome);
+            self.invoke_possible_callbacks(&[reached], false, outcome);
+            outcome.unsupported(ExecutionOperation::OpaqueExecution, call.owner, call.span);
+            outcome.unknown_call = true;
+            return;
+        }
         if call.kind == CallKind::Call
             && self
                 .state
@@ -7495,6 +7840,29 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 unreachable!("accessor callee lookup always records a member");
             };
             let values = self.evaluate(receiver, env, captures);
+            if values.contains(&AbstractValue::Value(Value::Top))
+                && (self.callee_lookup_is_certified(call)
+                    || self
+                        .inputs
+                        .index
+                        .no_reentry_accessor_calls
+                        .get(&CallSite::from(call.span))
+                        .copied()
+                        .is_some_and(|site| {
+                            self.no_reentry_member_lookup_admitted(site, env, captures)
+                        }))
+            {
+                return;
+            }
+            if values.iter().any(|value| {
+                matches!(value, AbstractValue::Value(Value::Top))
+                    || matches!(value,
+                AbstractValue::Value(Value::Alloc(Kind::Object, object))
+                    if !self.state.object_accessors_are_settled(object))
+            }) {
+                self.promote_possible_getter(call, &values, outcome);
+                return;
+            }
             for value in &values {
                 if let AbstractValue::OwnDescriptorMap(site) = value {
                     self.invalidate_own_descriptor_map(*site);
@@ -7582,6 +7950,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return;
         }
         if call.kind == CallKind::LocalMemberRead {
+            if self.native_member_lookup_is_data(&call.callee, None) {
+                return;
+            }
             if self.closed_enum_member_read(&call.callee) {
                 return;
             }
@@ -7605,6 +7976,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 unreachable!()
             };
             let values = self.evaluate(receiver, env, captures);
+            if values.iter().any(|value| {
+                matches!(value, AbstractValue::Value(Value::Top))
+                    || matches!(value,
+                AbstractValue::Value(Value::Alloc(Kind::Object, object))
+                    if !self.state.object_accessors_are_settled(object))
+            }) {
+                self.promote_possible_getter(call, &values, outcome);
+                return;
+            }
             if values.contains(&AbstractValue::ForeignDeferredRecord) {
                 self.promote_foreign_record(outcome);
                 self.note_unknown_call(call);
@@ -7622,7 +8002,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             let unsupported_local = values.iter().any(|value| match value {
                 AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
-                    self.state.tainted_objects.contains(object)
+                    !self.state.object_properties_are_settled(object)
                         || ((!self.inputs.index.plain_data_objects.contains(object)
                             && !self.state.ordinary_spread_copies.contains(object)
                             && !self.state.descriptor_copy_results.contains(object)
@@ -7670,8 +8050,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }) {
                     self.promote_escaped_callbacks(&values, outcome);
                 }
-                self.taint_objects(&values);
+                // This receiver is still settled: preserve the known member's
+                // capabilities for effects before taint discards its value.
+                // Unsettled receivers took the possible-getter path above.
                 let selected = self.evaluate(&call.callee, env, captures);
+                self.taint_objects(&values);
                 self.promote_escaped_callbacks(&selected, outcome);
                 if self.state.array_iteration_depth > 0 {
                     self.state.array_iteration_unsupported = true;
@@ -7988,11 +8371,35 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if call.kind == CallKind::Call
             && let ValueExpr::Member(receiver, _, _) = &call.callee
         {
-            let values = self.evaluate(receiver, env, captures);
-            let contains_array = self.contains_dense_array(&values);
-            self.taint_objects(&values);
-            if contains_array {
-                self.promote_raw_callbacks(&targets, outcome);
+            let unused_receiver = self.inputs.index.dynamic_scope_owners.is_empty()
+                && !targets.is_empty()
+                && targets.iter().all(|target| {
+                    let key = match target {
+                        AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                        | AbstractValue::Closure(key, _) => key,
+                        _ => return false,
+                    };
+                    self.inputs.index.callables.get(key).is_some_and(|body| {
+                        !body.opaque
+                            && !body.generator
+                            && body.calls.is_empty()
+                            && !body.reads.iter().any(|id| id.0.as_ref() == "arguments")
+                            && self
+                                .inputs
+                                .index
+                                .callables
+                                .values()
+                                .filter(|nested| nested.owner == body.owner)
+                                .all(|nested| !nested.implicit_capture)
+                    })
+                });
+            if !unused_receiver {
+                let values = self.evaluate(receiver, env, captures);
+                let contains_array = self.contains_dense_array(&values);
+                self.taint_objects(&values);
+                if contains_array {
+                    self.promote_raw_callbacks(&targets, outcome);
+                }
             }
         }
         let mut opaque_args = args.clone();
@@ -9043,6 +9450,8 @@ pub(crate) fn annotate_synchronous_calls(
         proof_uses: Vec::new(),
         returned_record_proof_uses: Vec::new(),
         private_constructor_result_owners: BTreeSet::new(),
+        checked_constructor_inputs: BTreeSet::new(),
+        unknown_array_contents: BTreeSet::new(),
         record_factory_prototype_premises: RefCell::default(),
         checking_record_factory_contract: false,
         prior_effect_owners: BTreeSet::new(),
@@ -9194,10 +9603,7 @@ impl Executor<'_, '_> {
             let arrays = values.iter().all(|value| match value {
                 AbstractValue::Value(Value::Alloc(Kind::Object, array)) => {
                     match self.state.dense_arrays.get(array) {
-                        Some(dense)
-                            if !self.state.tainted_objects.contains(array)
-                                && !self.state.unsettled_objects.contains(array) =>
-                        {
+                        Some(dense) if self.state.object_properties_are_settled(array) => {
                             elements.extend(dense.slots.iter().flatten().cloned());
                             true
                         }
@@ -9223,8 +9629,7 @@ impl Executor<'_, '_> {
                         return false;
                     };
                     if !inputs.index.plain_data_objects.contains(object)
-                        || self.state.tainted_objects.contains(object)
-                        || self.state.unsettled_objects.contains(object)
+                        || !self.state.object_properties_are_settled(object)
                         || self.state.applied_accessors.contains_key(object)
                         || self.state.dense_arrays.contains_key(object)
                         || others.contains(element)
@@ -9433,9 +9838,6 @@ impl Executor<'_, '_> {
             // consume the prefix roots.
             roots.extend(fact_roots.iter().copied());
         }
-        if index.opaque_top.contains(&fact.ordinal) {
-            self.note_unknown_execution(fact.ordinal);
-        }
         // A class object keeps the superclass value from its definition.
         // Snapshot a simple lexical heritage read from this source prefix so
         // a later assignment to the binding cannot replace the base whose
@@ -9557,6 +9959,7 @@ impl Executor<'_, '_> {
         outcome.effects.complete = outcome.complete;
         outcome.effects.settled_array_elements = settled_array_elements;
         if !outcome.complete {
+            self.widen_native_effects();
             self.unsettle_incomplete_reach(fact, &outcome.effects);
         }
         outcome.effects.global_object_aliases = global_object_aliases;

@@ -1169,6 +1169,8 @@ console.log(globalThis.earlyRead, globalThis.earlyValue, later);
 
 #[test]
 fn no_sync_callback_member_hint_keeps_stored_provider_deferred() {
+    // The initialized, unique-writer registry alias retains its import origin
+    // for lookup reach; the call hint only exempts its stored argument graph.
     let source = r#"import { registry as importedRegistry } from "./registry.js";
 const registry = importedRegistry;
 const provider = { read() { return later; } };

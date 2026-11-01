@@ -42,11 +42,11 @@ fn complete_execution_has_no_precision_loss() {
 }
 
 #[test]
-fn incomplete_local_call_does_not_disable_later_own_data_reads() {
+fn incomplete_local_call_preserves_unrelated_own_data_reads() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const record = { name: "ready" };
 function ignore(value) {}
-ignore(...[record]);
+ignore(...[{}]);
 const selected = [record.name];
 console.log(selected[0]);
 "#,
@@ -129,6 +129,177 @@ console.log(changed[0], escaped[0], getter[0], dynamic[0], reflected[0]);
             }),
             "{binding} should retain the conservative member-read path: {report}"
         );
+    }
+}
+
+#[test]
+fn skipped_local_mutations_keep_later_property_reads_conservative() {
+    for (mutation, observed, output) in [
+        (
+            "Object.defineProperty(value, 'name', { get() { globalThis.observed = true; return 'changed'; } });",
+            "record.name",
+            "changed true\n",
+        ),
+        (
+            "value.name = 'changed';",
+            "record.name",
+            "changed undefined\n",
+        ),
+        (
+            "Object.defineProperty(value, 'name', { get() { globalThis.observed = true; return () => 'changed'; } });",
+            "record.name()",
+            "changed true\n",
+        ),
+    ] {
+        let source = format!(
+            "const record = {{ name: () => 'original' }};\n\
+             function change(value) {{ {mutation} }}\n\
+             change(...[record]);\n\
+             const selected = {observed};\n\
+             console.log(selected, globalThis.observed);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, output);
+        let report = execution(&fixture, "selected");
+        assert_eq!(report["complete"], false, "{mutation}: {report}");
+        assert!(
+            report["precision_losses"].as_array().is_some_and(|losses| {
+                losses.iter().any(|loss| {
+                    loss["reason"]["code"] == "unsupported_operation"
+                        && loss["reason"]["operation"] == "member_read"
+                        && loss["reach"]["kind"] == "global"
+                })
+            }),
+            "a skipped mutation may install a getter: {report}"
+        );
+    }
+}
+
+#[test]
+fn skipped_getter_installation_keeps_binding_effects_at_the_later_read() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const state = 'ready';
+const record = { name: 'original' };
+function change(value) {
+  Object.defineProperty(value, 'name', { get() { return state; } });
+}
+
+change(...[record]);
+const selected = record.name;
+console.log(selected);
+"#,
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "ready\n");
+    let graph = fixture.dependency_graph();
+    let reader = source_unit_for_binding(&graph, "selected");
+    let state = source_unit_for_binding(&graph, "state");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == reader
+                && edge.target == state
+                && edge.binding.as_deref() == Some("state")
+                && edge.constrains_init_order
+        }),
+        "the later read may invoke the installed getter and read state"
+    );
+}
+
+#[test]
+fn skipped_post_initializer_writes_disable_the_closed_enum_certificate() {
+    for mutation in [
+        "value.READY = 'changed';",
+        "Object.defineProperty(value, 'READY', { get() { return 'changed'; } });",
+    ] {
+        let source = format!(
+            "var Status = ((values) => ((values.READY = 'ready'), values))(Status || {{}});\n\
+             function change(value) {{ {mutation} }}\n\
+             change(...[Status]);\n\
+             const selected = Status.READY;\n\
+             console.log(selected);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "changed\n");
+        let report = execution(&fixture, "selected");
+        assert_eq!(report["complete"], false, "{mutation}: {report}");
+    }
+}
+
+#[test]
+fn skipped_local_mutations_invalidate_reads_in_the_same_statement() {
+    for mutation in ["change(...[record])", "tag`${record}`"] {
+        let source = format!(
+            "const record = {{ name: 'original' }};\n\
+             function change(value) {{ value.name = 'changed'; }}\n\
+             function tag(_, value) {{ value.name = 'changed'; }}\n\
+             const selected = ({mutation}, record.name);\n\
+             console.log(selected);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "changed\n");
+        let report = execution(&fixture, "selected");
+        assert_reason(
+            &report,
+            serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
+        );
+    }
+}
+
+#[test]
+fn opaque_body_does_not_cache_property_values_before_its_skipped_code() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function change(value) { value.name = { get current() { return state; }, toString() { return 'changed'; } }; }
+function read(record) {
+  const selected = (change(...[record]), record.name);
+  return selected;
+}
+
+const value = read({ name: 'original' });
+const observed = value.current;
+var state = 'late';
+const coerced = { [value]: true };
+console.log(observed, Object.keys(coerced)[0]);
+"#,
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "undefined changed\n");
+    assert_reason(
+        &execution(&fixture, "observed"),
+        serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
+    );
+    let graph = fixture.dependency_graph();
+    let observed = source_unit_for_binding(&graph, "observed");
+    let state = source_unit_for_binding(&graph, "state");
+    assert!(graph.edges.iter().any(|edge| {
+        edge.source == observed && edge.target == state && edge.constrains_init_order
+    }));
+    let coerced = source_unit_for_binding(&graph, "coerced");
+    let node = graph.nodes.iter().find(|node| node.id == coerced).unwrap();
+    assert_eq!(
+        serde_json::to_value(node).unwrap()["purity"]["kind"],
+        "not_pure"
+    );
+}
+
+#[test]
+fn skipped_operation_events_preserve_same_owner_getter_effects() {
+    for source in [
+        "const record = { name: 'original' };\nfunction tag(_, value) { Object.defineProperty(value, 'name', { get() { return state; } }); }\nconst selected = (tag`${record}`, record.name);\nvar state = 'changed';\nconsole.log(selected);\n",
+        "const record = { name: 'original' };\nconst trigger = { get value() { return 0; }, set value(_) { Object.defineProperty(record, 'name', { get() { return state; } }); } };\nconst selected = (trigger.value++, record.name);\nvar state = 'changed';\nconsole.log(selected);\n",
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output(&fixture, "undefined\n");
+        let report = execution(&fixture, "selected");
+        assert_reason(
+            &report,
+            serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
+        );
+        let graph = fixture.dependency_graph();
+        let selected = source_unit_for_binding(&graph, "selected");
+        let state = source_unit_for_binding(&graph, "state");
+        assert!(graph.edges.iter().any(|edge| {
+            edge.source == selected && edge.target == state && edge.constrains_init_order
+        }));
     }
 }
 
@@ -933,6 +1104,84 @@ fn untracked_identity_paths_keep_prototype_absence_conservative() {
                     && mutation["statement_ordinal"] == 0
                     && mutation["properties"].is_null()),
             "{capability}: {report}"
+        );
+    }
+}
+
+#[test]
+fn silent_primitive_push_invalidates_contents_without_inventing_a_getter() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const record = [0];\nconst first = record.push(1);\nconst second = record.push(2);\nconst copied = record.map(value => value);\nconst snapshot = Object.getOwnPropertyDescriptors(record);\nconsole.log(copied.join(','), snapshot.length.value);\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "0,1,2 3\n");
+    for binding in ["first", "second"] {
+        assert_eq!(execution(&fixture, binding)["complete"], true, "{binding}");
+    }
+    for binding in ["copied", "snapshot"] {
+        assert_eq!(execution(&fixture, binding)["complete"], false, "{binding}");
+    }
+}
+
+#[test]
+fn local_method_receiver_precision_excludes_implicit_captures() {
+    for body in [
+        "this.name = 'changed';",
+        "const change = () => { this.name = 'changed'; }; return change;",
+    ] {
+        let source = format!(
+            "const record = {{ name: 'original', change() {{ {body} }} }};\nconst returned = record.change();\nif (returned) returned();\nconst selected = record.name;\nconsole.log(selected);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "changed\n");
+        assert_reason(
+            &execution(&fixture, "selected"),
+            serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
+        );
+    }
+}
+
+#[test]
+fn external_root_getter_keeps_published_source_callbacks_at_the_read() {
+    for source in [
+        "globalThis.syntheticHost = { get read() { return state; } };\nconst observed = syntheticHost.read;\nvar state = 'late';\nconsole.log(observed);\ndelete globalThis.syntheticHost;\n",
+        "globalThis.syntheticHost = {};\nObject.defineProperty(globalThis.syntheticHost, 'read', { get() { return state; } });\nconst observed = syntheticHost.read;\nvar state = 'late';\nconsole.log(observed);\ndelete globalThis.syntheticHost;\n",
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output(&fixture, "undefined\n");
+        assert_reason(
+            &execution(&fixture, "observed"),
+            serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
+        );
+        let graph = fixture.dependency_graph();
+        let observed = source_unit_for_binding(&graph, "observed");
+        let state = source_unit_for_binding(&graph, "state");
+        assert!(graph.edges.iter().any(|edge| {
+            edge.source == observed && edge.target == state && edge.constrains_init_order
+        }));
+    }
+}
+
+#[test]
+fn external_binding_alias_proof_excludes_reassignment_private_and_skipped_values() {
+    for setup in [
+        "let alias = syntheticHost; alias = { get read() { return state; } };",
+        "const privateRecord = { get read() { return state; } }; const alias = privateRecord;",
+        "const alias = syntheticHost; function install(value) { Object.defineProperty(value, 'read', { get() { return state; } }); } install(...[alias]);",
+    ] {
+        let source = format!(
+            "globalThis.syntheticHost = {{ read: 'original' }};\n{setup}\nconst observed = alias.read;\nvar state = 'late';\nconsole.log(observed);\ndelete globalThis.syntheticHost;\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "undefined\n");
+        let graph = fixture.dependency_graph();
+        let observed = source_unit_for_binding(&graph, "observed");
+        let state = source_unit_for_binding(&graph, "state");
+        assert!(
+            graph.edges.iter().any(|edge| {
+                edge.source == observed && edge.target == state && edge.constrains_init_order
+            }),
+            "the actual later getter read must retain state: {setup}"
         );
     }
 }

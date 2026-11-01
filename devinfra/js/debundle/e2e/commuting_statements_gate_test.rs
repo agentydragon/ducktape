@@ -424,7 +424,7 @@ fn pair_without_a_sequenced_edge_is_unused() {
 /// callback may run (`callback_pool_limit`).
 fn padded_pool(callback: &str) -> String {
     let padding = vec!["() => 3"; 64].join(", ");
-    format!("JSON.stringify([{callback}, {padding}])")
+    format!("serialize([{callback}, {padding}])")
 }
 
 /// `first` and `second` touch `state` through `bump` (writes) and `peek`
@@ -433,7 +433,7 @@ fn padded_pool(callback: &str) -> String {
 /// `outer`/`inner` cycle.
 fn state_source(first: &str, second: &str) -> String {
     format!(
-        "let state = 0;\nfunction bump() {{ state = 1; return 3; }}\nfunction peek() {{ return state; }}\nconst first = {first};\nconst second = {second};\nconst third = String(second).length;\nconsole.log(String(first).length, third, state);\nexport {{ state, bump, peek, first, second, third }};\n"
+        "let state = 0;\nfunction bump() {{ state = 1; return 3; }}\nfunction peek() {{ return state; }}\nconst serialize = JSON.stringify;\nconst first = {first};\nconst second = {second};\nconst third = String(second).length;\nconsole.log(String(first).length, third, state);\nexport {{ state, bump, peek, first, second, third }};\n"
     )
 }
 
@@ -449,6 +449,7 @@ fn state_split(source: &str, pairs: Vec<CommutingStatementsContract>) -> Fixture
                     Member::new("state"),
                     Member::new("bump"),
                     Member::new("peek"),
+                    Member::new("serialize"),
                 ],
             ),
             logical_module(
@@ -648,14 +649,13 @@ fn assert_observed_pair_rejected(source: &str, helpers: &[&'static str]) {
 /// `bump`/`peek` escaped to `JSON.stringify`.
 const ESCAPE_PRELUDE: &str = "const escape = JSON.stringify([bump, peek]);";
 
-/// [`ESCAPE_PRELUDE`] after a write to an `Object` static, so the native
+/// [`ESCAPE_PRELUDE`] after writes to the exact `Object` slots read below, so the native
 /// census no longer proves `Object`'s own data slots intact: reading one may
 /// yield or run any escaped callback (a replaced getter could), and the
 /// interpreter promotes their closures. Neither alias read calls them. Each
 /// probe ends in a host call so its strict S-chain edge is inertable; the
 /// read runs first and contributes `state` first.
-const NATIVE_ESCAPE_PRELUDE: &str =
-    "const mark = (Object.probeFlag = 1);\nconst escape = JSON.stringify([bump, peek]);";
+const NATIVE_ESCAPE_PRELUDE: &str = "const mark = (Object.defineProperty = Object.defineProperty, Object.getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor);\nconst escape = JSON.stringify([bump, peek]);";
 
 #[test]
 fn native_member_read_promoting_escaped_callbacks_is_inertable() {
@@ -689,14 +689,14 @@ fn native_member_read_beside_observed_effects_rejects_the_pair() {
 #[test]
 fn opaque_call_invoking_its_callback_arguments_is_inertable() {
     let source = probe_source(
-        ESCAPE_PRELUDE,
-        &["escape"],
-        "JSON.stringify([bump])",
-        "JSON.stringify([peek])",
+        &format!("{ESCAPE_PRELUDE}\nconst serialize = JSON.stringify;"),
+        &["escape", "serialize"],
+        "serialize([bump])",
+        "serialize([peek])",
     );
     assert_assumed_pair_accepted(
         &source,
-        &["escape"],
+        &["escape", "serialize"],
         serde_json::json!({"path": "opaque_callback_invocation"}),
         "string string 0\n",
     );
@@ -704,7 +704,7 @@ fn opaque_call_invoking_its_callback_arguments_is_inertable() {
 
 /// `box` escaped to `JSON.stringify`, so its fields may since hold anything
 /// (an accessor among them): reading one promotes the closure of the
-/// callbacks it may yield. Reading a field never calls it. The trailing host
+/// callbacks it may yield, and the getter itself may run at the read. The trailing host
 /// call keeps each statement opaque, so their strict S-chain edge is
 /// inertable too; it runs after the read, which contributed `state` first.
 const BOX_PRELUDE: &str = "const box = { f: bump, g: peek };\nconst boxed = JSON.stringify(box);";
@@ -720,7 +720,7 @@ fn escaped_record_member_read_closure_is_inertable() {
     assert_assumed_pair_accepted(
         &source,
         &["box", "boxed"],
-        serde_json::json!({"path": "escaped_callback_closure"}),
+        serde_json::json!({"path": "possible_getter"}),
         "string string 0\n",
     );
 }
@@ -741,8 +741,8 @@ fn escaped_record_member_read_beside_observed_effects_rejects_the_pair() {
 /// run.
 #[test]
 fn whole_body_promotion_for_unsupported_inputs_is_inertable() {
-    let prelude = "function touch() { const later = () => { state = 2; }; return arguments.length + typeof later.length; }\nfunction look() { const later = () => state; return arguments.length + typeof later.length; }";
-    let source = probe_source(prelude, &["touch", "look"], "touch()", "look()");
+    let prelude = "function touch({}) { const later = () => { state = 2; }; return typeof later.length; }\nfunction look({}) { const later = () => state; return typeof later.length; }";
+    let source = probe_source(prelude, &["touch", "look"], "touch({})", "look({})");
     assert_assumed_pair_accepted(
         &source,
         &["touch", "look"],

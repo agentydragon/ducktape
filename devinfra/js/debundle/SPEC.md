@@ -1831,6 +1831,10 @@ the statement; the `reason`'s `path` names the first such path:
 - `possible_setter`: an accessor owner's body that a property write after an
   unknown call, or an `Object.assign` onto an unproven target, may trigger.
   A setter declared for the written property stays `observed`.
+- `possible_getter`: available accessor and callback bodies that a property
+  read may invoke after skipped or opaque code changed the receiver's
+  descriptors or prototype. The read returns an unknown value and keeps global
+  reach, including when it looks up a method's callee.
 - `whole_body_promotion` (`operation`: `callable_inputs` or
   `array_iteration`): the lazy body of a callable whose inputs or iteration the
   interpreter could not model, beyond what its execution reached.
@@ -2693,7 +2697,8 @@ for dynamic scope first, then for each input, then over the read closure:
   read closure is mutated or escaped; or the truncated callable itself
   escaped.
 - `tainted_input`: an input, through stored properties, captures and
-  accessors, is an unknown value, a global object alias, a tainted object, or
+  accessors, is an unknown value, a global object alias, a tainted or unsettled
+  ordinary object, or
   a callable already escaped to opaque code.
 - `foreign_record`: an input or the callee is a foreign deferred record.
 - `unknown_callee`: the read closure of the code and its inputs' callables
@@ -2707,6 +2712,18 @@ for dynamic scope first, then for each input, then over the read closure:
 
 A site reached more than once keeps one record, `global` if any reach was.
 The classification is a report: both reaches promote the same effects.
+
+Ordinary-object allocations, including dense arrays, reached by skipped local
+execution lose their settled property values and descriptor/prototype
+guarantees. A later read, including a method lookup,
+returns an unknown value and retains possible getter effects with a global
+`unsupported_operation` / `member_read` loss. An earlier incomplete statement's
+ordering does not certify that later read. Descriptor, native-array and ordinary
+object proofs also reject those unsettled objects. Intrinsic-integrity premises
+do not exempt ordinary objects from these checks. The existing closed-enum
+certificate retains its stronger whole-lifetime `PlainData` guarantee; later
+mutation or publication disqualifies it (<docs/purity_soundness.md> § Settled
+heap taint).
 
 Property-specific Object prototype premises appear in
 `synchronous_execution.native_prototype_property_checks`: each entry names the
