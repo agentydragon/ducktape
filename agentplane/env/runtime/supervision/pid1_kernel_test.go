@@ -72,7 +72,9 @@ func pid1ProofNative(mode string) int {
 		}
 	}
 	signals := make(chan os.Signal, 1)
-	if mode == "escalate" {
+	if mode == "host-setup" {
+		signal.Notify(signals, syscall.SIGUSR1)
+	} else if mode == "escalate" {
 		signal.Ignore(syscall.SIGTERM)
 		signal.Notify(signals, syscall.SIGUSR1)
 	} else {
@@ -89,6 +91,9 @@ func pid1ProofNative(mode string) int {
 		return 23
 	}
 	<-signals
+	if mode == "host-setup" {
+		return 23 // Complete accepted setup without launching the mock harness.
+	}
 	return 0
 }
 

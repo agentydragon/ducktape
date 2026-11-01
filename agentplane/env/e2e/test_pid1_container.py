@@ -4,10 +4,14 @@ import asyncio
 import fcntl
 import json
 import os
+import signal
 import time
 import uuid
+from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import override
 
+import grpc
 import pytest
 import pytest_bazel
 
@@ -17,7 +21,7 @@ from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.process_fixtures import wait_for_exit
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.environment_runtime_transport.config import Insecure
-from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
+from agentplane.history_service import session_ingress_pb2, session_ingress_pb2_grpc
 from agentplane.proto import session_pb2
 from third_party.containers import debian_slim
 from util.bazel.runfiles import get_required_path
@@ -49,10 +53,57 @@ def _descendant_pids(container: LoggedContainer, backend: str) -> list[int]:
     return pids
 
 
+def _host_native_pid(container: LoggedContainer) -> int:
+    table = container.get_wrapped_container().top()
+    pid_index, command_index = table["Titles"].index("PID"), table["Titles"].index("CMD")
+    rows = [row for row in table["Processes"] if "--pid1-proof-native host-setup" in row[command_index]]
+    assert len(rows) == 1
+    return int(rows[0][pid_index])
+
+
 def _clear_generation(directory: Path) -> None:
     for path in directory.iterdir():
         if path.name != "owner":
             path.unlink()
+
+
+@pytest.fixture
+async def acknowledging_history() -> AsyncIterator[str]:
+    """Acknowledge the actual Host journal protocol without starting History's database."""
+    acknowledgements: dict[tuple[str, str], session_ingress_pb2.Acknowledgement] = {}
+
+    class Ingress(session_ingress_pb2_grpc.SessionJournalIngressServicer):
+        @override
+        async def Push(
+            self, frames: AsyncIterator[session_ingress_pb2.PushFrame], context: grpc.aio.ServicerContext
+        ) -> AsyncIterator[session_ingress_pb2.Acknowledgement]:
+            first = await anext(frames)
+            assert first.HasField("announce")
+            assert first.announce.session_id
+            key = (first.announce.session_id, first.announce.incarnation_uid)
+            acknowledgement = acknowledgements.setdefault(key, session_ingress_pb2.Acknowledgement())
+            yield session_ingress_pb2.Acknowledgement(cursor=acknowledgement.cursor, sealed=acknowledgement.sealed)
+            async for frame in frames:
+                if frame.HasField("entry"):
+                    assert not acknowledgement.sealed
+                    assert frame.entry.cursor == acknowledgement.cursor + 1
+                    acknowledgement.cursor = frame.entry.cursor
+                elif frame.HasField("sealed"):
+                    assert frame.sealed.cursor == acknowledgement.cursor
+                    assert frame.sealed.incarnation_uid
+                    acknowledgement.sealed = True
+                else:
+                    assert frame.HasField("heartbeat")
+                yield session_ingress_pb2.Acknowledgement(cursor=acknowledgement.cursor, sealed=acknowledgement.sealed)
+
+    server = grpc.aio.server()
+    session_ingress_pb2_grpc.add_SessionJournalIngressServicer_to_server(Ingress(), server)
+    port = server.add_insecure_port("127.0.0.1:0")
+    await server.start()
+    try:
+        yield f"127.0.0.1:{port}"
+    finally:
+        await server.stop(grace=None)
 
 
 @pytest.mark.parametrize("mode", ["native-exit", "term", "escalate", "crash"])
@@ -164,7 +215,7 @@ async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, 
 
 
 async def test_production_pid1_embedded_host_reaps_setup(
-    tmp_path: Path, gateway: Gateway, history_service: GoHistoryService
+    tmp_path: Path, gateway: Gateway, acknowledging_history: str
 ) -> None:
     """A Host-owned setup child must use Runtime's PID1 reaper and join its process group."""
     load_oci_image(debian_slim.IMAGE)
@@ -183,7 +234,7 @@ async def test_production_pid1_embedded_host_reaps_setup(
         initialization_cwd="/proof/state",
         workspace_root="/proof/state/workspaces",
         control=control,
-        ingress=Endpoint(target=history_service.ingress_target, bearer=await history_service.writer_token(WRITER)),
+        ingress=Endpoint(target=acknowledging_history, bearer="unused-ingress-token"),
         platform_instructions="PID1 Host proof",
         harness_environment=EnvironmentVariables(
             values={"PATH": "/bin:/usr/bin", "HOME": "/proof/state", "OPENAI_API_KEY": "test-key"}
@@ -227,11 +278,17 @@ async def test_production_pid1_embedded_host_reaps_setup(
         await asyncio.to_thread(_wait_native_group, tmp_path)
         descendants = await asyncio.to_thread(_descendant_pids, container, "pid1")
         assert len(descendants) == 1
-        await asyncio.to_thread(wrapped.kill, signal="SIGTERM")
-        result = await asyncio.to_thread(wrapped.wait, timeout=15)
-        assert result["StatusCode"] == 0
+        os.kill(await asyncio.to_thread(_host_native_pid, container), signal.SIGUSR1)
         for pid in descendants:
             await asyncio.wait_for(wait_for_exit(pid), timeout=5)
+        await asyncio.to_thread(wrapped.kill, signal="SIGTERM")
+        try:
+            result = await asyncio.to_thread(wrapped.wait, timeout=15)
+        except Exception:
+            # Preserve the management-process wait site in container.log.
+            await asyncio.to_thread(wrapped.kill, signal="SIGQUIT")
+            raise
+        assert result["StatusCode"] == 0
 
 
 def _wait_native_tree(directory: Path) -> None:
