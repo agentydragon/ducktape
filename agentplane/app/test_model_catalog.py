@@ -1,7 +1,7 @@
 import pytest_bazel
 
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
-from agentplane.runner.harness import Harness
+from agentplane.env.harnesshost.harness import Harness
 
 
 def test_central_sampler_offerings_have_no_service_selection() -> None:

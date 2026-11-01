@@ -7,9 +7,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"

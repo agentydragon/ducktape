@@ -1,0 +1,32 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "harness",
+    srcs = [
+        "adapter.go",
+        "native_request.go",
+        "recovery.go",
+        "stdout_framer.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/harnesshost/harness",
+    visibility = [
+        "//agentplane/env/harnesshost:__subpackages__",
+        "//agentplane/runner:__pkg__",
+        "//agentplane/runner:__subpackages__",
+    ],
+    deps = [
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+    ],
+)
+
+go_test(
+    name = "harness_test",
+    srcs = [
+        "recovery_test.go",
+        "stdout_framer_test.go",
+    ],
+    embed = [":harness"],
+    deps = ["//agentplane/proto:event_go_proto"],
+)

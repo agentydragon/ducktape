@@ -46,11 +46,11 @@ from pydantic import BaseModel, Field
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.app.testing.models import SUBSET_ROW_LIMIT, SubsetRequest, ThreadScopeResponse
+from agentplane.env.harnesshost.harness import Harness
 from agentplane.history_service.fold.views import EntityKind, PayloadField, ThreadItemState, ThreadPayloadReference
 from agentplane.native.claude import wire as claude_wire  # Both harnesses name their frame module `wire`.
 from agentplane.native.codex import wire as codex_wire
 from agentplane.proto import event_pb2, runner_pb2
-from agentplane.runner.harness import Harness
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.sandbox import Sandboxes
 from util.testing.undeclared_outputs import undeclared_outputs_dir

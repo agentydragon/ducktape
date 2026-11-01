@@ -1,0 +1,40 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(
+    default_visibility = [
+        "//agentplane/env/harnesshost:__subpackages__",
+        "//agentplane/runner:__subpackages__",
+    ],
+)
+
+go_library(
+    name = "stream",
+    srcs = [
+        "connection.go",
+        "retry.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/harnesshost/stream",
+    deps = [
+        "//agentplane/observability",
+        "@com_github_sethvargo_go_retry//:go-retry",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//backoff",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
+go_test(
+    name = "stream_test",
+    srcs = ["retry_test.go"],
+    embed = [":stream"],
+    race = "on",
+    deps = [
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)

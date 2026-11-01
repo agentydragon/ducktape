@@ -3,8 +3,8 @@
 from collections.abc import Sequence
 
 from agentplane.app.testing.client import Client
+from agentplane.env.harnesshost.harness import Harness
 from agentplane.proto import runner_pb2
-from agentplane.runner.harness import Harness
 
 
 async def models_offered_for(client: Client, harnesses: Sequence[runner_pb2.Harness]) -> dict[runner_pb2.Harness, str]:

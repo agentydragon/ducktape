@@ -4,7 +4,7 @@ deployment's own presets, so the scenario never depends on a preset an operator 
 from __future__ import annotations
 
 from agentplane.app.presets import SandboxPreset, ThreadPreset
-from agentplane.runner.harness import Harness
+from agentplane.env.harnesshost.harness import Harness
 
 SANDBOX_PRESET = "test-scripted-sandbox-preset"
 THREAD_PRESET = "test-scripted-thread-preset"

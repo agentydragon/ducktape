@@ -10,15 +10,15 @@ go_library(
     ),
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/bootstrap",
     visibility = [
+        "//agentplane/env/harnesshost/session:__pkg__",
         "//agentplane/runner:__pkg__",
-        "//agentplane/runner/session:__pkg__",
     ],
     deps = [
+        "//agentplane/env/harnesshost/retained",
         "//agentplane/env/oneoff",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/runner/cosi",
         "//agentplane/runner/lifecycle",
-        "//agentplane/runner/retained",
         "//agentplane/runner/scripts",
         "@com_github_cosi_project_runtime//pkg/controller",
         "@com_github_cosi_project_runtime//pkg/resource",

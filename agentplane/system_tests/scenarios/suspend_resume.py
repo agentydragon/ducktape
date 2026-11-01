@@ -13,9 +13,9 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.testing.client import Client
 from agentplane.app.testing.models import SandboxView
+from agentplane.env.harnesshost.harness import Harness
 from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_log_pb2, runner_pb2
-from agentplane.runner.harness import Harness
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.agent import TURN_SECONDS, WORKING_DIRECTORY, Agent, Turn, runner_startup_retries
 from agentplane.system_tests.cluster import Cluster

@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/harness"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 )
 
 type Journal struct {

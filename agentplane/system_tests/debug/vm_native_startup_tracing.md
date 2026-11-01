@@ -1,8 +1,8 @@
 # VM native Runner startup spans, 2026-10-31
 
-The Runner now records spans at the native harness boundary: `agentplane.runner.harness.start`
+The Runner now records spans at the native harness boundary: `agentplane.env.harnesshost.harness.start`
 encloses workspace preparation, native process or shared Codex app-server acquisition, and the
-thread handshake. `agentplane.runner.harness.handshake` covers the protocol handshake. Codex's
+thread handshake. `agentplane.env.harnesshost.harness.handshake` covers the protocol handshake. Codex's
 shared `agentplane.codex.app_server.start` encloses process `launch` and JSON-RPC `initialize`;
 `agentplane.codex.thread.handshake` covers `thread/start` or `thread/resume` on that server.
 `agentplane.codex.exec_server.launch` covers starting the exec-server, while `ready` covers each
