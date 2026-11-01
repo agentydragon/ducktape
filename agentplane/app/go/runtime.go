@@ -270,6 +270,15 @@ func run(ctx context.Context, config Config) error {
 		return fmt.Errorf("configure generated Session Dispatcher HTTP facade: %w", err)
 	}
 	dispatcherGateway := proxy.NewHandlerUpstream(dispatcherFacade, config.SessionDispatcherTokenFile)
+	historyFacade, err := facade.NewHandler(
+		facadeContext, config.HistoryServiceTarget,
+		time.Duration(config.HistoryServiceRequestTimeoutSeconds*float64(time.Second)),
+		historypb.RegisterHistoryServiceHandlerFromEndpoint,
+	)
+	if err != nil {
+		return fmt.Errorf("configure generated History Service HTTP facade: %w", err)
+	}
+	historyGateway := proxy.NewHandlerUpstream(historyFacade, config.HistoryServiceTokenFile)
 	notificationTarget, err := grpcTargetFromHTTPURL(config.NotificationsURL)
 	if err != nil {
 		return fmt.Errorf("configure Notification Service gRPC client: %w", err)
@@ -322,6 +331,7 @@ func run(ctx context.Context, config Config) error {
 		ActionPolicy: actionClient, Federator: federator,
 		ActionServiceURL: config.ActionFederation.ServiceURL,
 		DispatcherHTTP:   dispatcherGateway, ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
+		HistoryHTTP:      historyGateway,
 		Notifications:    notifications_operatorpb.NewNotificationsOperatorClient(notificationConn),
 		NotificationWait: time.Duration(config.NotificationsRequestTimeoutSeconds * float64(time.Second)),
 		Egress:           egress_adminpb.NewEgressAdminClient(egressConn),

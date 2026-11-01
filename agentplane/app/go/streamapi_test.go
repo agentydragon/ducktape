@@ -370,6 +370,38 @@ func TestOperatorStreamsAndProxyRoutesRejectWorkloadTokens(t *testing.T) {
 	}
 }
 
+func TestHistoryFacadeRequiresAnAuthenticatedCaller(t *testing.T) {
+	authentication := newStreamTestAuth(t)
+	server := NewHTTPServer(authentication)
+	var gotPath, gotBearer string
+	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, _ *http.Request, _ context.Context, path, bearer string) error {
+		gotPath, gotBearer = path, bearer
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, err := io.WriteString(w, `{"observations":[]}`)
+		return err
+	}}
+	RegisterStreamingRoutes(server, StreamingDependencies{HistoryHTTP: upstream})
+
+	path := "/upstream/history/v1/sessions/9b6d568a-2253-43d7-a7d4-190e98359594/observations"
+	unauthenticated := httptest.NewRecorder()
+	server.Handler(authentication).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, path, nil))
+	if unauthenticated.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated History facade status = %d, want %d", unauthenticated.Code, http.StatusUnauthorized)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, path+"?limit=30", nil)
+	request.Header.Set("Authorization", "Bearer accepted")
+	response := httptest.NewRecorder()
+	server.Handler(authentication).ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Body.String() != `{"observations":[]}` {
+		t.Fatalf("authenticated History facade response = %d %q", response.Code, response.Body.String())
+	}
+	if gotPath != "v1/sessions/9b6d568a-2253-43d7-a7d4-190e98359594/observations" || gotBearer != "" {
+		t.Fatalf("History upstream path/bearer = %q/%q", gotPath, gotBearer)
+	}
+}
+
 func TestConsoleRelayStreamsBase64OutputAndClosesOnCancellation(t *testing.T) {
 	reader, writer := io.Pipe()
 	response := newStreamingRecorder()

@@ -6,26 +6,41 @@ package agentplane.history_service;
 import "agentplane/proto/event.proto";
 import "agentplane/proto/event_log.proto";
 import "agentplane/proto/runner.proto";
+import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
 service HistoryService {
-  rpc ReadSessionEvents(ReadSessionEventsRequest) returns (ReadSessionEventsResponse);
+  rpc ReadSessionEvents(ReadSessionEventsRequest) returns (ReadSessionEventsResponse) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}/events"};
+  }
   // Reads committed raw entries, optionally continuing as new entries commit.
   rpc FollowSession(FollowSessionRequest) returns (stream FollowSessionResponse);
-  rpc ReadSessionObservations(ReadSessionObservationsRequest) returns (ReadSessionObservationsResponse);
+  rpc ReadSessionObservations(ReadSessionObservationsRequest) returns (ReadSessionObservationsResponse) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}/observations"};
+  }
   // Newest first by `first_event_at`, Sessions with nothing folded yet ahead of the rest.
-  rpc GetSessionSummary(GetSessionSummaryRequest) returns (SessionSummary);
+  rpc GetSessionSummary(GetSessionSummaryRequest) returns (SessionSummary) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}/summary"};
+  }
   // The named Sessions' summaries, in no particular order; a Session with no history is left out.
-  rpc BatchGetSessionSummaries(BatchGetSessionSummariesRequest) returns (BatchGetSessionSummariesResponse);
+  rpc BatchGetSessionSummaries(BatchGetSessionSummariesRequest) returns (BatchGetSessionSummariesResponse) {
+    option (google.api.http) = {post: "/v1/sessions:batchGetSummaries" body: "*"};
+  }
   // Fails with FAILED_PRECONDITION when the caller's projection epoch is no longer current.
   rpc ReadThreadEntities(ReadThreadEntitiesRequest) returns (ReadThreadEntitiesResponse);
   // The observations an entity was folded from, and the native harness frames behind each.
-  rpc ReadEntityEvidence(ReadEntityEvidenceRequest) returns (ReadEntityEvidenceResponse);
-  rpc ReadNativeFrames(ReadNativeFramesRequest) returns (ReadNativeFramesResponse);
+  rpc ReadEntityEvidence(ReadEntityEvidenceRequest) returns (ReadEntityEvidenceResponse) {
+    option (google.api.http) = {post: "/v1/sessions/{session_id}/entity-evidence" body: "*"};
+  }
+  rpc ReadNativeFrames(ReadNativeFramesRequest) returns (ReadNativeFramesResponse) {
+    option (google.api.http) = {post: "/v1/sessions/{session_id}/native-frames" body: "*"};
+  }
   // Every Session written by a Sandbox with a matching name, deleted Sandboxes included, in no
   // particular order.
-  rpc FindSessions(FindSessionsRequest) returns (FindSessionsResponse);
+  rpc FindSessions(FindSessionsRequest) returns (FindSessionsResponse) {
+    option (google.api.http) = {get: "/v1/sessions:find"};
+  }
   // Tells the caller when fold state it may hold changed, which names nothing: re-read what you hold.
   // On request it also names each Session the History Service records.
   rpc WatchSessionSummaries(WatchSessionSummariesRequest) returns (stream WatchSessionSummariesResponse);
