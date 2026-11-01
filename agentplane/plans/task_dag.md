@@ -470,6 +470,8 @@ flowchart TD
     SESSION_PLATFORM_GUIDANCE[In review: default platform guidance]
     SESSION_PLATFORM_GUIDANCE_ACTIVATION[Held draft: activate managed sampler guidance]
     PLATFORM_GUIDANCE_OWNERSHIP_DESIGN[Later decision: platform-guidance ownership and composition]
+    PLATFORM_GUIDANCE_SINGLE_OWNER[Later refactor: one platform-guidance owner]
+    PLATFORM_GUIDANCE_OWNERSHIP_DESIGN --> PLATFORM_GUIDANCE_SINGLE_OWNER
     SESSION_OPEN_CONFIGURATION[Candidate: valid optional opening configuration]
     SESSION_DELEGATION_ACTIVATION[Held draft: expose staging delegation tools]
     APP_ENVIRONMENT_DISCOVERY[Later: app inventory through backend Discovery]
@@ -618,7 +620,7 @@ configuration activation, not unrelated delegation backend/client implementation
 
 ### `PLATFORM_GUIDANCE_OWNERSHIP_DESIGN` — decide platform-guidance ownership and composition
 
-**Later decision; current duplication is accepted.** Explore one authoritative owner/source for
+**Later decision; current duplication is accepted.** Design one authoritative owner/source for
 platform guidance while allowing placement- and environment-specific variants. Compare ownership and
 composition in the native Harness Host and Central Sampler. The existing shared template is a textual
 source of truth; it does not settle which services distribute or compose guidance, or how deployment-
@@ -635,6 +637,20 @@ guidance service, new network dependency, Dispatcher ownership, or runtime-unifi
 It is independent of the [default guidance implementation](#session_platform_guidance--platform-guidance-independent-of-presets)
 and its [managed activation hold](#session_platform_guidance_activation--enable-managed-sampler-platform-guidance),
 and does not block either one or current reliability and delegation work.
+
+### `PLATFORM_GUIDANCE_SINGLE_OWNER` — consolidate platform-guidance ownership
+
+**Future refactor; blocked on `PLATFORM_GUIDANCE_OWNERSHIP_DESIGN` review.** Put the job of knowing
+the platform instructions in one authoritative owner, then migrate native Harness Host and Central
+Sampler consumers to it. Remove independently maintained guidance configuration and selection rules
+from those consumers. Shared template text alone does not complete this refactor. Consumers may
+cache or materialize resolved guidance; deployment-specific content, harness differences and
+per-environment instructions still need truthful composition under the reviewed design.
+
+Preserve frozen instructions for existing Sessions, additive caller instructions and harness/provider
+base prompts. Exit with both native and central workflows using the common owner and the redundant
+ownership removed. Owner placement and distribution remain design choices; this item does not
+require a new service and does not block #13384 or its managed activation.
 
 ### `SESSION_OPEN_CONFIGURATION` — schema-valid optional opening configuration
 
