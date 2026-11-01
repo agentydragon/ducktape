@@ -22,6 +22,7 @@ type Manager struct {
 	ctx           context.Context
 	state         state.State
 	store         *retained.Store
+	environment   func() Environment
 	workspaceRoot string
 	dependencies  sessionDependencies
 	destination   func(string) string
@@ -40,7 +41,7 @@ type Manager struct {
 }
 
 func NewManager(config Config) (*Manager, error) {
-	if config.Context == nil || config.State == nil || config.Store == nil || config.Destination == nil || config.Scripts == nil || config.BootstrapHost == nil || config.EnsureWorkspace == nil || config.LaunchProcess == nil || config.ResolveModelConfig == nil || config.PublishSeal == nil || config.PublishAck == nil || config.OnChange == nil || config.OnError == nil || config.ReconcileConcurrency <= 0 {
+	if config.Context == nil || config.State == nil || config.Store == nil || config.Destination == nil || config.Scripts == nil || config.WaitBootstrap == nil || config.Environment == nil || config.EnsureWorkspace == nil || config.LaunchProcess == nil || config.ResolveModelConfig == nil || config.PublishSeal == nil || config.PublishAck == nil || config.OnChange == nil || config.OnError == nil || config.ReconcileConcurrency <= 0 {
 		return nil, fmt.Errorf("invalid Session manager dependencies")
 	}
 	if config.Claude != nil {
@@ -53,7 +54,7 @@ func NewManager(config Config) (*Manager, error) {
 	}
 	m := &Manager{
 		ctx: config.Context, state: config.State, store: config.Store,
-		workspaceRoot: config.WorkspaceRoot, destination: config.Destination,
+		workspaceRoot: config.WorkspaceRoot, destination: config.Destination, environment: config.Environment,
 		publishSeal: config.PublishSeal, publishAck: config.PublishAck,
 		changed: config.OnChange, fail: config.OnError,
 		workers: config.ReconcileConcurrency, sessions: map[string]*Session{}, freshReservations: map[string]struct{}{},
@@ -62,7 +63,7 @@ func NewManager(config Config) (*Manager, error) {
 		ctx: config.Context, state: config.State, store: config.Store,
 		claude: config.Claude, harnessEnvironment: maps.Clone(config.HarnessEnvironment),
 		debugCheckpoint: config.DebugCheckpoint, scripts: config.Scripts,
-		codexAppServer: config.CodexAppServer, bootstrapHost: config.BootstrapHost,
+		codexAppServer: config.CodexAppServer, waitBootstrap: config.WaitBootstrap, environmentState: config.Environment,
 		ensureWorkspace: config.EnsureWorkspace, launchProcess: config.LaunchProcess,
 		resolveModelConfig: config.ResolveModelConfig,
 		publish:            m.publishSession, publishOperation: m.publishOperation,
@@ -184,7 +185,7 @@ func (m *Manager) loadLocked(ctx context.Context, id string, recoverRetained boo
 }
 
 func (m *Manager) ResumeRecovered(s *Session) error {
-	if m.store.Lameduck() || s.journal.SealState() != nil {
+	if m.environment().Quiesced || s.journal.SealState() != nil {
 		return nil
 	}
 	commands, err := s.journal.PendingCommands(m.ctx)
@@ -202,9 +203,10 @@ func (m *Manager) ResumeRecovered(s *Session) error {
 }
 
 func (m *Manager) Reopen(ctx context.Context, s *Session) error {
-	uid, known := m.store.IncarnationUID()
+	env := m.environment()
+	uid, known := env.IncarnationUID, env.IncarnationUID != ""
 	seal := s.journal.SealState()
-	mayReopen := known && !m.store.Lameduck()
+	mayReopen := known && !m.environment().Quiesced
 	reopening := mayReopen && seal != nil && seal.IncarnationUID != uid
 	if reopening {
 		if err := s.journal.Reopen(ctx, uid); err != nil {

@@ -26,8 +26,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/env/harnesshost/codex/protocol",
     tags = ["no-nogo"],
     visibility = [
-        "//agentplane/env/harnesshost:__subpackages__",
-        "//agentplane/runner:__subpackages__",
+        "//agentplane/env:__subpackages__",
     ],
 )
 
@@ -41,7 +40,6 @@ genrule(
     """,
     tools = ["@agentplane_codex_cli_linux_x64//:codex_binary"],
     visibility = [
-        "//agentplane/env/harnesshost:__subpackages__",
-        "//agentplane/runner:__subpackages__",
+        "//agentplane/env:__subpackages__",
     ],
 )

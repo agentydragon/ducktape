@@ -10,11 +10,7 @@ go_library(
     ],
     embedsrcs = glob(["migrations/*.sql"]),
     importpath = "github.com/agentydragon/ducktape/agentplane/env/harnesshost/journal",
-    visibility = [
-        "//agentplane/env/harnesshost/ingress:__pkg__",
-        "//agentplane/env/harnesshost/session:__pkg__",
-        "//agentplane/runner:__pkg__",
-    ],
+    visibility = ["//agentplane/env:__subpackages__"],
     deps = [
         "//agentplane/env/harnesshost/harness",
         "//agentplane/proto:command_go_proto",

@@ -1,4 +1,4 @@
-"""The shared runner disk supplies the executable both Pods and VMs start."""
+"""The shared environment disk supplies the binaries that Pods and VMs start."""
 
 import os
 import subprocess
@@ -22,7 +22,12 @@ def test_runner_disk_holds_the_executables(tmp_path: Path) -> None:
         check=True,
     )
 
-    for name in ("agentplane", "agentplane-runner"):
+    for name in (
+        "agentplane",
+        "agentplane-environment-runtime",
+        "agentplane-execution-service",
+        "agentplane-harness-host",
+    ):
         assert os.access(tmp_path / "bin" / name, os.X_OK)
 
 

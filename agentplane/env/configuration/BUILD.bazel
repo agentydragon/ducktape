@@ -1,0 +1,39 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/env:__subpackages__"])
+
+go_library(
+    name = "configuration",
+    srcs = [
+        "configuration.go",
+        "guest.go",
+        "resolved.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/configuration",
+    deps = [
+        "//agentplane/env/execution/codexexecserver",
+        "//agentplane/env/harnesshost/codexappserver",
+        "//agentplane/env/harnesshost/harness",
+        "//agentplane/env/harnesshost/session",
+        "//agentplane/env/supervision",
+        "//agentplane/runner_transport",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
+go_test(
+    name = "configuration_test",
+    srcs = [
+        "configuration_test.go",
+        "environment_test.go",
+        "guest_test.go",
+    ],
+    data = ["//agentplane/env/runtime/cmd:agentplane-environment-runtime"],
+    embed = [":configuration"],
+    race = "on",
+    deps = [
+        "//agentplane/env/execution/codexexecserver",
+        "//agentplane/env/harnesshost/codexappserver",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)

@@ -16,11 +16,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/workspace"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/bootstrap"
+	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
-	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/runner/scripts"
 	"github.com/cosi-project/runtime/pkg/controller"
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -188,7 +188,8 @@ func TestTurnStartedReceiveBatchDoesNotDeadlockCompletion(t *testing.T) {
 		}
 	}()
 	s := newSession(sessionDependencies{
-		ctx: ctx, publish: func(*Session, bool) {}, changed: func() {}, fail: func(err error) { t.Error(err) },
+		environmentState: func() Environment { return Environment{IncarnationUID: "test-incarnation"} },
+		ctx:              ctx, publish: func(*Session, bool) {}, changed: func() {}, fail: func(err error) { t.Error(err) },
 	}, "session", &retained.Record{}, j)
 	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "current"}), nil); err != nil {
 		t.Fatal(err)
@@ -344,7 +345,7 @@ func frameTestSessionWithControllerGate(t *testing.T, command []string, withCont
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := NewManager(Config{Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root), Scripts: scriptRunner, BootstrapHost: bootstrapHost, EnsureWorkspace: func(_ context.Context, cwd string) (string, error) { return workspace.Resolve(cwd, filepath.Dir(root)) }, LaunchProcess: launch, ResolveModelConfig: func(context.Context, runnerpb.Harness, string) (*int, error) { return nil, nil }, Destination: func(string) string { return "test-destination" }, PublishSeal: func(string, *journal.SealState) error { return nil }, PublishAck: func(string, retained.Acknowledgement) error { return nil }, OnChange: func() {}, OnError: func(err error) {
+	m, err := NewManager(Config{Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root), Scripts: scriptRunner, WaitBootstrap: bootstrapHost.Wait, Environment: func() Environment { return Environment{IncarnationUID: "test-incarnation"} }, EnsureWorkspace: func(_ context.Context, cwd string) (string, error) { return workspace.Resolve(cwd, filepath.Dir(root)) }, LaunchProcess: launch, ResolveModelConfig: func(context.Context, runnerpb.Harness, string) (*int, error) { return nil, nil }, Destination: func(string) string { return "test-destination" }, PublishSeal: func(string, *journal.SealState) error { return nil }, PublishAck: func(string, retained.Acknowledgement) error { return nil }, OnChange: func() {}, OnError: func(err error) {
 		if err != nil && !errors.Is(err, context.Canceled) {
 			t.Error(err)
 		}
@@ -706,7 +707,7 @@ func TestConfirmationReplayKeepsTerminalReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deps := sessionDependencies{ctx: ctx, state: resources, store: store, publish: func(*Session, bool) {}, changed: func() {}, fail: func(err error) { t.Error(err) }}
+	deps := sessionDependencies{environmentState: func() Environment { return Environment{IncarnationUID: "test-incarnation"} }, ctx: ctx, state: resources, store: store, publish: func(*Session, bool) {}, changed: func() {}, fail: func(err error) { t.Error(err) }}
 	s := newSession(deps, "session-1", &record, journal)
 	command := &commandpb.Command{CommandId: "input-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}
 	if _, _, err := journal.Admit(ctx, command, ""); err != nil {

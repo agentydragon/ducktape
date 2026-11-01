@@ -13,11 +13,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
+	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
-	"github.com/agentydragon/ducktape/agentplane/runner/scripts"
 	"github.com/cosi-project/runtime/pkg/state"
 	"go.uber.org/zap"
 )
@@ -76,7 +75,8 @@ type sessionDependencies struct {
 	debugCheckpoint    *DebugCheckpointConfig
 	scripts            *scripts.Runner
 	codexAppServer     *codexappserver.Host
-	bootstrapHost      *bootstrap.Host
+	waitBootstrap      func(context.Context) error
+	environmentState   func() Environment
 	ensureWorkspace    func(context.Context, string) (string, error)
 	launchProcess      func(context.Context, string, supervision.ProcessConfig) (*supervision.ManagedProcess, error)
 	resolveModelConfig func(context.Context, runnerpb.Harness, string) (*int, error)
@@ -141,7 +141,7 @@ func (s *Session) ensureReady(ctx context.Context) error {
 	if setup == runnerpb.SetupState_SETUP_STATE_FAILED || setup == runnerpb.SetupState_SETUP_STATE_INTERRUPTED || setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
 		return errors.New("session setup failed or was interrupted; create a new session")
 	}
-	if err := s.deps.bootstrapHost.Wait(ctx); err != nil {
+	if err := s.deps.waitBootstrap(ctx); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -329,11 +329,11 @@ func (s *Session) sealJournal(ctx context.Context) error {
 	if err := s.settleUndispatched(ctx, "the Sandbox was quiesced before this command was dispatched"); err != nil {
 		return err
 	}
-	uid, err := s.deps.store.RequireIncarnationUID()
-	if err != nil {
-		return err
+	uid := s.deps.environmentState().IncarnationUID
+	if uid == "" {
+		return errors.New("environment incarnation is not bound")
 	}
-	_, err = s.journal.Seal(ctx, uid)
+	_, err := s.journal.Seal(ctx, uid)
 	return err
 }
 

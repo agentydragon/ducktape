@@ -8,12 +8,18 @@ page is what the runner guarantees about it.
 The runner does not own product Threads, app command persistence, Kubernetes lifecycle, or the
 Thread-page projection. Their cross-layer contract is [Thread, runner, and harness layering](../docs/thread_layering.md).
 
+The logical Runner service spans Environment Runtime, Harness Host and Execution Service.
+Runtime owns environment identity, bootstrap, external control and lifecycle aggregation. Host owns
+native Session state, adapters, journals and History ingress. Execution Service owns process/file
+execution. Their private generation-bound Unix-socket protocol is specified in
+[Harness Host](../env/harnesshost/SPEC.md).
+
 ## Configuration
 
-Every Pod and VM starts `agentplane-runner --config PATH --launch-file PATH`. The executable name
+Every Pod and VM starts `agentplane-environment-runtime --config PATH --launch-file PATH`. The executable name
 has no effect on configuration. Both flags are required; the shared version-2 JSON configuration
 rejects unknown fields, unsupported versions and contradictory policy before state ownership.
-Runner serves control at `control.listen_address` with an explicit `control.security.mode`.
+Environment Runtime serves control at `control.listen_address` with an explicit `control.security.mode`.
 `mtls` requires `security.tls`; its server certificate URI must name the Sandbox namespace and UID
 in the separate controller-owned launch file. `insecure` is plaintext without peer authentication
 and rejects TLS configuration. Missing/unknown modes and bad mTLS credentials never fall back.
@@ -69,10 +75,9 @@ budget remains authoritative across all of its native services.
 ## Initialization
 
 - The Sandbox's launch file (`--launch-file`, written by the Sandbox controller) carries the
-  Sandbox's identity and the bootstrap shell source. The runner starts the bootstrap with
-  `/bin/sh -eu` from the configured `initialization_cwd` when the runner starts; a Sandbox without a bootstrap runs
-  nothing. `OpenSession` durably reserves a Session without waiting for the bootstrap. The runner
-  does not run session setup or start a native harness until the bootstrap succeeds. If it fails
+  Sandbox's identity and the bootstrap shell source. Environment Runtime starts the bootstrap with
+  `/bin/sh -eu` from the configured `initialization_cwd` when Runtime starts; a Sandbox without a bootstrap runs
+  nothing. `OpenSession` durably reserves a Session without waiting for the bootstrap. Host waits on Runtime's bound `WaitBootstrap` RPC and does not run session setup or start a native harness until the bootstrap succeeds. If it fails
   or is interrupted, admitted commands receive durable failure outcomes.
 - The first request durably selects the script digest at the fixed path
   `<state_dir>/initialization/request.json`, before the script starts. The runner thereafter refuses
@@ -86,7 +91,7 @@ budget remains authoritative across all of its native services.
 - Stdout, stderr, and the attempt's result or interruption are appended to a persistent event log with
   dense Sandbox-scoped sequence numbers. An abandoned `OpenSession` does not stop the script or
   recording.
-- The runner takes the bootstrap only from its launch file, never over the control protocol.
+- Environment Runtime takes the bootstrap only from its launch file, never over the control protocol.
 
 ## Sessions
 
@@ -149,25 +154,24 @@ budget remains authoritative across all of its native services.
   local tools. Claude execution is unchanged.
 - In VMs the executor and native harnesses have separate sibling slice budgets under the shared
   `agentplane.slice`. In Pods the executor companion is PID 1 in a separate container with a private PID namespace
-  and Kubernetes resource limits. It starts the shared `agentplane-runner` executable in explicit
-  `executor` mode, before Runner, COSI and telemetry startup. Workspace and runtime paths are shared
+  and Kubernetes resource limits. It starts `agentplane-execution-service companion`. Workspace and runtime paths are shared
   under the same Sandbox principal.
 - Runner may launch and initialize the shared app-server while executor startup is still in
   progress. It admits no Codex Session to that app-server until the executor is ready; a refusal
   or readiness deadline drains the app-server before the waiting Session receives the failure.
-  Runner probes executor RPC progress every five seconds with
-  a three-second deadline. Three consecutive failures fence its work and restart the executor with
-  bounded backoff; a successful probe resets the failure count. Server exit fences without waiting
-  for further probes. A
-  failed tool's side effects remain uncertain; Runner never replays it. Executor loss does not itself
-  emit `HarnessExited` for the app-server.
+  Execution Service probes native executor progress and exits on terminal backend loss. Runtime owns
+  its process lifetime and fence proof; Host cannot start or restart the executor. Failed tool side
+  effects remain uncertain and are never replayed. Host uses the service's standard gRPC Health
+  endpoint to gate shared app-server readiness.
 - Startup fences previous executor work before opening Session stores. Quiesce fences the executor
-  before journal seals; shutdown fences it before releasing state ownership. VM startup fences prior owned systemd units before opening stores; native services are bound
-  to the Runner unit and systemd stops their entire cgroups on Runner death. Pod ownership-connection loss exits the executor
-  container, and a new idle container generation proves the runtime cleaned up detached descendants.
-  Failed cleanup prevents sealing and starting a successor. A Pod companion that could not spawn
-  Codex at all exits no generation and refuses the claim with its reason, staying available to
-  fence and to answer a later claim.
+  before journal seals; shutdown fences it before releasing state ownership. VM startup fences prior
+  owned systemd units before admitting work. Runtime coordinates Host and Execution unit shutdown so
+  Host native drain and the Execution fence complete before either unit is stopped. Pod ownership
+  loss normally fences the companion's workload process domain and publishes a fresh idle generation
+  while PID 1 stays alive; if that fence fails, the companion exits and the container runtime must
+  fence the whole namespace. Failed cleanup prevents sealing and starting a successor. If a Pod
+  companion cannot spawn Codex, it refuses the claim with its reason and stays available to answer a
+  later claim; no workload generation was started to fence.
 - Code-mode workers, MCP helpers and external daemons are outside the executor budget in the pinned
   Codex release. Details and configuration: [Codex executor isolation](docs/codex_executor.md).
 - Central sampler execution sessions wait for controller-owned readiness and retries within the
@@ -281,29 +285,20 @@ budget remains authoritative across all of its native services.
   admission when Quiesce is accepted finishes durably or is rejected before teardown proceeds; new
   ordinary command IDs and new sessions are refused, while an identical command retry retains its
   original admission.
-  `Close` and `Quiesce` join the same lifecycle: Close preserves a seal UID already selected by
-  Quiesce, and a Quiesce accepted during Close adds its seal UID without reopening the Runner. Close
-  waits for setup/bootstrap, process stop, outstanding inspection writes and required journal seals,
-  then closes journals and releases state ownership. A current-generation teardown error is surfaced
-  without reporting the Runner lifecycle complete, and state ownership stays held until native cleanup
-  is proven. A failed operation-start publication starts no work, but does not block a later teardown
-  generation from running cleanup. Close does not wait for ingress acknowledgement;
-  if it supersedes Quiesce before that acknowledgement, the durable seals remain but the Runner can
-  close while quiesce progress is still `FLUSHING`.
-- `Close(ctx)` is local process cleanup, not an RPC. Concurrent callers wait for the same cleanup;
-  a caller's cancellation or deadline ends only its wait, while accepted setup/bootstrap and cleanup
-  continue under Runner ownership. Lifecycle-engine exit interrupts waits with its failure cause;
-  incomplete cleanup never reports successful Close or releases state ownership. Process termination
-  waits for local cleanup independently of the signal context; it does not require ingress acknowledgement.
-- One in-memory COSI Runtime per Runner schedules five controller roles: Runner, Session (including
-  one-shot setup), Codex exec-server, shared Codex app-server, and Sandbox bootstrap. Controllers own
-  lifecycle policy, including readiness probes, restart deadlines and dependency-ordered shutdown;
-  native operation hosts retain process handles and publish completion facts. The Runtime mirrors
-  input, operation, seal and ingress-acknowledgement facts. It owns no native handles or durable truth. The Session
-  store, journal, persisted ingress acknowledgement and state-owner lock remain authoritative across
-  restart. See [Runner lifecycle ownership](docs/lifecycle.md) for the controller/resource map and
-  shutdown ordering.
-- Orderly runner shutdown also waits for running setup and bootstrap. An unexpected process loss
+  Runtime closes admission with a new private generation. Host reports native drain completion for
+  that binding, Runtime proves Execution fenced, and Host then seals and flushes. A CLOSING intent
+  preserves a previously selected seal and waits for its exact History acknowledgement before Runtime
+  stops Host. A CLOSING intent without a seal only drains native work.
+- Host `Close(ctx)` is local process cleanup. Concurrent callers share cleanup; caller cancellation
+  ends only that wait. It never invents an Execution fence or a seal after losing Runtime control.
+  Existing durable journal seals remain intact. Lifecycle-engine failure retains the Host lock until
+  native cleanup is proven. Runtime keeps the environment lock until Host and Execution are fenced.
+- Host's in-memory COSI engine schedules native Session/setup, app-server and supervised process
+  controllers. Runtime owns bootstrap scheduling and cross-process lifecycle aggregation; Execution
+  Service owns its backend lifecycle. Session records, journals and acknowledgements remain durable
+  Host authority; the environment seal marker remains Runtime authority. There is no duplicated
+  environment controller in Host. See [lifecycle ownership](docs/lifecycle.md).
+- Orderly Runtime shutdown also waits for Host setup and Runtime bootstrap. An unexpected process loss
   can still interrupt a script; recovery records that outcome and never silently reruns it.
 - A sealed journal takes no further Events, so its commands are refused. Its ingress push sends
   every entry through the seal's cursor, then `Sealed`.
@@ -384,13 +379,16 @@ harness's outcome. Tool names and argument shapes are the harness's own.
 
 ## Durability and restart
 
-- One runner has exclusive lifetime ownership of one retained `state_dir`. It takes a nonblocking
-  POSIX exclusive lock on the fixed `<state_dir>/.agentplane-runner-owner` inode before it reads
-  sessions, opens a journal, dials out, runs initialization, or starts a harness. A contender that
-  cannot take that lock exits without serving the directory. The normal runner shutdown releases
-  ownership only after its sessions stop and their journals close.
-- Production Pods explicitly select PID1 supervision and reject startup outside container PID 1.
-  Runner directly spawns natives in process groups and retains state ownership through cleanup.
+- Runtime retains exclusive ownership of the original `<state_dir>/.agentplane-runner-owner`
+  inode throughout the environment lifetime. Host separately locks
+  `<state_dir>/harness-host/.agentplane-runner-owner` before opening Session records and journals.
+  Runtime alone owns `<state_dir>/sessions/sealed`; Host never clears or adopts that marker.
+  Host releases its lock only after native cleanup and journal close. Runtime releases the
+  environment lock only after its child domains are fenced. Durable Session IDs and paths do not move.
+- Production Pods explicitly select PID1 supervision and reject Runtime startup outside container
+  PID 1. Runtime supervises the Host process; Host explicitly uses subprocess supervision for native
+  helpers. Normal Host `native_stopped` reports prove its native cleanup; abnormal Host process exit
+  alone does not prove that escaped process groups are gone.
   One reaper owns direct-child exit statuses and adopted orphans; native leaders never compete
   with an `exec.Cmd.Wait` goroutine. Leader exit kills its remaining group; completion waits until
   the group disappears. Stop sends TERM, then KILL after its grace budget. Non-PID1 fixtures
@@ -401,8 +399,8 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   disappearance does not prove that outer fence. Replacement after node loss or force deletion
   requires a prior-container or external node/storage fence.
   [Supervision](docs/supervision.md#pid-1-and-the-outer-fence) describes these boundaries.
-- In VMs every native launch is a systemd transient `Type=exec` service, bound to the Runner unit,
-  with `Restart=no` and five-second stop grace. A condition requires the current Runner invocation's
+- In VMs every native launch is a systemd transient `Type=exec` service, bound to their owning Runtime, Host or Execution unit,
+  with `Restart=no` and five-second stop grace. A condition requires the owning service invocation's
   marker in its systemd-managed runtime directory; delayed requests from a previous invocation
   cannot execute after replacement. Systemd contains descendants across process-group changes.
   Runner reports completion only after the service is inactive/failed and its execution

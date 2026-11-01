@@ -1,7 +1,7 @@
 [Unit]
 Description=Prepare the VM fixture's harness tools and network
 DefaultDependencies=no
-Before=network.target agentplane-runner.service
+Before=network.target agentplane-environment-runtime.service
 
 [Service]
 Type=oneshot

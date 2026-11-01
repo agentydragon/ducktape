@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/execution/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/codex"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
@@ -82,7 +81,8 @@ type Dependencies struct {
 	StateDir           string
 	RequestAdmission   RequestAdmission
 	Admission          lifecycle.AdmissionGuard
-	ExecServer         *codexexecserver.Host
+	ExecServerURL      string
+	ExecutionReady     func(context.Context) (bool, error)
 	Readiness          Readiness
 	OnError            func(error)
 	OnChange           func()
@@ -342,8 +342,8 @@ func (c *Host) initialize(ctx context.Context, owner *Attachment, generation uin
 		env = map[string]string{}
 	}
 	maps.Copy(env, codex.ServerEnvironment(c.launch, c.store))
-	if c.deps.ExecServer != nil {
-		env["CODEX_EXEC_SERVER_URL"] = c.deps.ExecServer.URL()
+	if c.deps.ExecServerURL != "" {
+		env["CODEX_EXEC_SERVER_URL"] = c.deps.ExecServerURL
 	}
 	initialize, initialized, err := codex.InitializeFrames()
 	if err != nil {

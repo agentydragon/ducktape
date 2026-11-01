@@ -57,7 +57,7 @@ func (s *Session) Observe() Observation {
 		pid := int64(s.process.PID())
 		result.pid = &pid
 	}
-	if uid, known := s.deps.store.IncarnationUID(); known {
+	if uid := s.deps.environmentState().IncarnationUID; uid != "" {
 		result.incarnation = &uid
 	}
 	return result

@@ -3,7 +3,7 @@ Description=Profile the VM fixture's native cold startup
 DefaultDependencies=no
 ConditionKernelCommandLine=agentplane.native-profile=1
 After=local-fs.target
-Before=agentplane-runner.service
+Before=agentplane-environment-runtime.service
 
 [Service]
 Type=oneshot

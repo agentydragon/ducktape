@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,7 +59,101 @@ func newPID1Supervisor(stateOwnerFD *os.File, requireStateOwner bool) (*Supervis
 	reaper := pid1Children()
 	return &Supervisor{makeBackend: func(config ProcessConfig) processBackend {
 		return &pid1Backend{config: config, owner: stateOwnerFD, reaper: reaper, exited: make(chan nativeExit, 1)}
-	}}, nil
+	}, fenceNamespace: reaper.fenceNamespace}, nil
+}
+
+func (r *childReaper) fenceNamespace(ctx context.Context) error {
+	if os.Getpid() != 1 {
+		return errors.New("PID namespace fencing requires the caller to be PID 1")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		r.mu.Lock()
+		managed := len(r.children)
+		r.mu.Unlock()
+		if managed != 0 {
+			return fmt.Errorf("PID namespace fence started with %d managed child processes", managed)
+		}
+
+		if _, err := namespaceWorkloadPIDs(os.Getuid()); err != nil {
+			return err
+		}
+		if err := unix.Kill(-1, unix.SIGKILL); err != nil && !errors.Is(err, unix.ESRCH) {
+			return fmt.Errorf("kill PID namespace workload: %w", err)
+		}
+		remaining, err := namespaceWorkloadPIDs(os.Getuid())
+		if err != nil {
+			return err
+		}
+		if len(remaining) == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("wait for PID namespace workload fence: %w", ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
+// namespaceWorkloadPIDs fails closed if a workload process has credentials
+// PID 1 cannot signal. Container workloads inherit PID 1's identity and cannot
+// gain privilege because the companion runs without capabilities or privilege
+// escalation.
+func namespaceWorkloadPIDs(uid int) ([]int, error) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil, fmt.Errorf("read PID namespace process table: %w", err)
+	}
+	var pids []int
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil || pid == 1 {
+			continue
+		}
+		status, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "status"))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read PID namespace process %d credentials: %w", pid, err)
+		}
+		credentials, err := processUIDs(string(status))
+		if err != nil {
+			return nil, fmt.Errorf("read PID namespace process %d credentials: %w", pid, err)
+		}
+		if !slices.Equal(credentials, []int{uid, uid, uid, uid}) {
+			return nil, fmt.Errorf("PID namespace process %d does not share PID 1's unprivileged UID", pid)
+		}
+		pids = append(pids, pid)
+	}
+	return pids, nil
+}
+
+func processUIDs(status string) ([]int, error) {
+	for _, line := range strings.Split(status, "\n") {
+		if !strings.HasPrefix(line, "Uid:") {
+			continue
+		}
+		fields := strings.Fields(strings.TrimPrefix(line, "Uid:"))
+		if len(fields) != 4 {
+			return nil, errors.New("process status has an invalid Uid record")
+		}
+		uids := make([]int, 0, len(fields))
+		for _, field := range fields {
+			uid, err := strconv.Atoi(field)
+			if err != nil || uid < 0 {
+				return nil, errors.New("process status has an invalid Uid record")
+			}
+			uids = append(uids, uid)
+		}
+		return uids, nil
+	}
+	return nil, errors.New("process status has no Uid record")
 }
 
 type nativeExit struct {

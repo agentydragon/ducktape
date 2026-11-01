@@ -10,12 +10,12 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/env/harnesshost/codexappserver",
     visibility = [
+        "//agentplane/env:__subpackages__",
+        "//agentplane/env/configuration:__pkg__",
+        "//agentplane/env/harnesshost:__pkg__",
         "//agentplane/env/harnesshost/session:__pkg__",
-        "//agentplane/runner:__pkg__",
-        "//agentplane/runner/configuration:__pkg__",
     ],
     deps = [
-        "//agentplane/env/execution/codexexecserver",
         "//agentplane/env/harnesshost/codex",
         "//agentplane/env/harnesshost/harness",
         "//agentplane/env/oneoff",

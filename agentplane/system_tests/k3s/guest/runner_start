@@ -10,7 +10,7 @@ esac
 case " $(cat /proc/cmdline) " in
     *" agentplane.boot-probe=1 "*)
         echo AGENTPLANE_BOOT_CRITICAL_CHAIN_BEGIN >/dev/ttyS0
-        /usr/bin/systemd-analyze --no-pager critical-chain agentplane-runner.service >/dev/ttyS0 2>&1 || :
+        /usr/bin/systemd-analyze --no-pager critical-chain agentplane-environment-runtime.service >/dev/ttyS0 2>&1 || :
         echo AGENTPLANE_BOOT_BLAME_BEGIN >/dev/ttyS0
         /usr/bin/systemd-analyze --no-pager blame >/dev/ttyS0 2>&1 || :
         echo AGENTPLANE_STARTUP_PROBE_END >/dev/ttyS0
@@ -34,4 +34,4 @@ else
 	exit 1
 fi
 
-exec /run/agentplane/runner/bin/agentplane-runner --config /run/agentplane/config/runner.json --launch-file /run/agentplane/sandbox/launch.json
+exec /run/agentplane/runner/bin/agentplane-environment-runtime --config /run/agentplane/config/runner.json --launch-file /run/agentplane/sandbox/launch.json

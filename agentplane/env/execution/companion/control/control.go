@@ -15,7 +15,8 @@ type Request struct {
 	Environment map[string]string `json:"environment,omitempty"`
 }
 
-// Status identifies the container PID namespace and whether it currently owns exec-server.
+// Status identifies the current executor process-domain generation and whether
+// the companion currently owns exec-server.
 type Status struct {
 	Generation string `json:"generation"`
 	Owned      bool   `json:"owned"`

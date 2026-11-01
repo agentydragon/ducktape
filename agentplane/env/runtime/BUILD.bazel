@@ -1,0 +1,115 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+go_library(
+    name = "runtime",
+    srcs = [
+        "environment_owner.go",
+        "environment_state.go",
+        "execution_service.go",
+        "forward.go",
+        "protocol.go",
+        "runtime.go",
+        "serve.go",
+        "systemd_units.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime",
+    deps = [
+        ":runtime_service_go_proto",
+        "//agentplane/env/configuration",
+        "//agentplane/env/execution:executor_go_proto",
+        "//agentplane/env/execution/codexexecserver",
+        "//agentplane/env/execution/service",
+        "//agentplane/env/runtime/bootstrap",
+        "//agentplane/env/runtime/control",
+        "//agentplane/env/scripts",
+        "//agentplane/env/supervision",
+        "//agentplane/history_service:runner_ingress_go_proto",
+        "//agentplane/observability",
+        "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:runner_state_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/runner:runner_service_go_proto",
+        "//agentplane/runner/lifecycle",
+        "//agentplane/runner_transport",
+        "@com_github_coreos_go_systemd_v22//dbus",
+        "@com_github_cosi_project_runtime//pkg/controller/runtime",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
+        "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
+        "@com_github_godbus_dbus_v5//:dbus",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
+go_test(
+    name = "runtime_test",
+    srcs = glob(["*_test.go"]),
+    embed = [":runtime"],
+    race = "on",
+    deps = [
+        "//agentplane/env/configuration",
+        "//agentplane/env/execution:executor_go_proto",
+        "//agentplane/env/execution/adapter:execution",
+        "//agentplane/env/execution/codexexecserver",
+        "//agentplane/env/harnesshost",
+        "//agentplane/env/harnesshost/harness",
+        "//agentplane/env/harnesshost/workspace",
+        "//agentplane/env/runtime/bootstrap",
+        "//agentplane/env/runtime/control",
+        "//agentplane/env/scripts",
+        "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:runner_state_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/runner:runner_service_go_proto",
+        "//agentplane/runner/lifecycle",
+        "//agentplane/runner_transport",
+        "//agentplane/runner_transport/testing",
+        "@com_github_coder_websocket//:websocket",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/emptypb",
+    ],
+)
+
+proto_library(
+    name = "runtime_service_proto",
+    srcs = ["lifecycle.proto"],
+    deps = [
+        "//agentplane/proto:runner_state_proto",
+        "@protobuf//:empty_proto",
+    ],
+)
+
+go_proto_library(
+    name = "runtime_service_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb",
+    proto = ":runtime_service_proto",
+    deps = [
+        "//agentplane/proto:runner_state_go_proto",
+        "@org_golang_google_protobuf//types/known/emptypb",
+    ],
+)

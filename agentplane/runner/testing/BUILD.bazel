@@ -131,7 +131,11 @@ py_library(
 py_library(
     name = "process",
     srcs = ["process.py"],
-    data = ["//agentplane/runner/cmd:agentplane-runner"],  # keep: the production subprocess
+    data = [
+        "//agentplane/env/execution/cmd:agentplane-execution-service",  # keep: Runtime child
+        "//agentplane/env/harnesshost/cmd:agentplane-harness-host",  # keep: Runtime child
+        "//agentplane/env/runtime/cmd:agentplane-environment-runtime",  # keep: production Runtime subprocess
+    ],
     deps = [
         ":config",
         ":gateway",
@@ -152,7 +156,7 @@ py_library(
     name = "codex_exec_server_container",
     srcs = ["codex_exec_server_container.py"],
     data = [
-        "//agentplane/runner/cmd:agentplane-runner",  # keep: production executor-mode executable
+        "//agentplane/env/execution/cmd:agentplane-execution-service",  # keep: production companion executable
         "@agentplane_codex_cli_linux_x64//:files",  # keep: pinned exec-server executable
     ],
     deps = [

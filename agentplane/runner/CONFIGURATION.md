@@ -10,7 +10,7 @@ Pods and VMs start the same executable with the same configuration contract:
 
 Both arguments are required. Unknown flags, positional arguments, unknown JSON fields and unsupported
 versions fail before Runner opens state. The executable name does not select a mode. The file schema
-is [`configuration.py`](configuration.py); [`configuration/configuration.go`](configuration/configuration.go) validates and
+is [`configuration.py`](configuration.py); [`env/configuration/configuration.go`](../env/configuration/configuration.go) validates and
 composes it into the runtime configuration. The [protocol contract](SPEC.md) covers Session behavior.
 
 ## Ownership and composition

@@ -1,8 +1,17 @@
 # Agentplane runner
 
-A statically linked Go executable that runs the native harnesses of its sessions, a Claude Code process per session
-and one shared Codex app-server for its Codex sessions. It serves the Runner protocol from an explicitly configured gRPC listener (mTLS in cluster deployments; optional insecure transport for local tests) and pushes journals to History ingress. Pod Codex tools can run in `agentplane-runner executor` mode in a separate companion container. The contract is in <SPEC.md>; the wire definition is
-[`agentplane/proto/runner.proto`](../proto/runner.proto).
+The Runner wire contract is served by three process owners:
+
+- **Environment Runtime** (`agentplane/env/runtime`) owns Sandbox identity, configuration,
+  bootstrap, Gateway discovery/control, health and coordinated drain.
+- **Harness Host** (`agentplane/env/harnesshost`) owns native Session admission, one Claude
+  process per Session, the shared Codex app-server, continuation state, journals and History ingress.
+- **Execution Service** (`agentplane/env/execution`) owns typed filesystem/process execution
+  and the isolated native executor. Central sampler remains outside `env/`.
+
+The public contract is in <SPEC.md>; the wire definition remains
+[`agentplane/proto/runner.proto`](../proto/runner.proto). Runtime forwards native Session calls to
+Host over a private Unix socket with a Runtime boot, Host boot and admission generation binding.
 
 The deployment renders `platform_instructions.j2` with concrete service URLs; the runner appends
 the Sandbox/Session notification destination and caller's assignment. Keep the standing prompt to
@@ -10,7 +19,7 @@ platform orientation and essential constraints. Detailed workflows live behind t
 services' `/llms.txt` indexes, so every Sandbox runtime can discover the deployed guides on demand.
 
 ```sh
-bbr test //agentplane/runner/...
+bbr test //agentplane/env/... //agentplane/runner/...
 ```
 
 While its ingress (the History Service) is down or rolling, the runner keeps its harnesses
@@ -18,93 +27,40 @@ running and admitting commands through the configured control transport, and kee
 entry on its state volume. Each Session's push retries with ingress backoff and resumes after the
 last acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history but loses none of it.
 
-## Layout
+## Layout and entrypoints
 
-- `lifecycle_runtime.go`, `lifecycle_resources.go`, and `lifecycle_inputs.go`: Runner COSI runtime
-  wiring, Runner-specific typed resources, host input publication, and the adapter that supplies
-  admitted process owners and generations to `supervision.Host` ([ownership](docs/lifecycle.md)).
-- `runner_controller.go`: Runner-wide aggregate lifecycle controller. `session/controller.go`,
-  `bootstrap/controller.go`, and `codexappserver/controller.go` own their component lifecycles.
-- `scripts/`: one-shot shell execution over supervised process streams. Each run samples
-  `os.Environ` and overlays the configured harness environment; the caller owns operation admission
-  and process ownership.
-- `bootstrap/`: the Sandbox one-shot operation host, COSI resources and controller, durable script
-  selection, and append-only initialization log. Runner supplies state, admission, the shared worker
-  barrier, and the script runner; the package owns no Runner coordinator.
-- `runner.go`: Runner composition, incarnation adoption and aggregate lifetime.
-- `admission.go` and `status.go`: public admission and status/facts RPCs.
-- `session/`: durable Session inventory, recovery, journal and native protocol effects, setup,
-  status projection, owned operation results, COSI input/runtime resources and controller. Runner
-  supplies the synchronous admission barrier and shared process, workspace and ingress facilities.
-  Its native connection owns stream framing, reader joins and handshake waiters; Session supplies
-  frame translation and lifecycle callbacks and retains the exact-turn native-write gate.
-- [`env/execution/codexexecserver/`](../env/execution/codexexecserver): isolated executor configuration, COSI resources and controller, host-owned probe
-  operations, native launch adapter, RPC probes and container ownership fencing
-  ([execution modes](docs/codex_executor.md)). The package takes explicit process, state and admission
-  dependencies and owns no Runner lifecycle coordinator.
-- `lifecycle/`: the narrow shared COSI contract for Runner desired state and aggregate status. The root
-  Runner controller and independent component controllers use its typed readers and writers.
-- `../env/oneoff/`: the shared one-shot operation lifecycle for slot ownership, cancellation, publication
-  ordering and worker joins. Session, bootstrap and Codex app-server retain their typed COSI result
-  publication and deletion adapters.
-- [`env/execution/companion/`](../env/execution/companion): the PID-1 companion mode for Pod Codex execution, its Unix control protocol and reaper.
-- `codexappserver/`: the one shared Codex process, its COSI lifecycle resources and controller,
-  startup, protocol routing, reader drain, and process exit. `Session` supplies callbacks that
-  commit routed frame batches and exit observations to its journal.
-- `control/`: the gRPC listener, explicit transport security, state observer epochs, RPC fencing,
-  state watch and standard gRPC health service. Runner supplies domain RPCs and facts.
-- [`env/execution/adapter/`](../env/execution/adapter): typed process/file RPCs and the local Codex JSON-RPC adapter. An `OpenSession`
-  server stream owns each WebSocket connection; unary calls carry typed operations and return native
-  evidence. Runner supplies admission and readiness; shutdown drains adapter sessions before fencing
-  the exec-server. This adapter owns no persistent state or operation receipts.
-- `transport.go`: Runner-wide `Run` orchestration and component composition. It keeps ingress alive
-  while Runner shutdown flushes final acknowledgements.
-- `ingress/`: History connection and authentication, each Session's push protocol (replay, durable
-  ACKs, backpressure, seal ordering, journal wakeups and retry), and supervision of per-Session
-  workers. It discovers unsealed Sessions, keeps one worker per Session, and owns cancellation and
-  joins; Runner supplies inventory, change notifications and ACK publication.
-- `stream/`: outbound gRPC setup for per-Session History ingress.
-- `journal/`: the Goose-managed SQLite schema, verbatim protobuf Event blobs, native request records
-  with foreign-key links to their originating commands, and recovery queries. It depends on the
-  neutral harness contract and protobuf types, with no dependency on `Runner`. Transactions use
-  `database/sql` with the cgo-free SQLite driver. Outcomes and all coalesced command receipts commit
-  together; publication and startup handshake replies follow commit.
-- `retained/`: durable session metadata, ingress acknowledgements, incarnation markers, the ownership
-  lock, and filesystem durability helpers. SQLite remains the separate journal authority.
-- `workspace/`: workspace path containment and creation. Runner supplies the configured helper
-  launcher at the composition boundary, keeping process ownership and generation policy in Runner.
-- `../env/supervision/`: the shared native-process API, COSI process resources and controller, host registry,
-  and private systemd, PID1 and subprocess backends. Runner wires its `Host` and controller into the same COSI
-  engine as its lifecycle controllers; the package owns streams, exit observation and
-  execution-domain cleanup. `systemd/` contains the static guest units. See
-  [supervision](docs/supervision.md).
-- `claude/` and `codex/`: harness-specific launch, frame translation and native
-  history readers. They depend on the shared adapter contract and recovery types in
-  `harness/`, independently of the runner runtime. Unknown frames remain in raw history,
-  and derived Events retain their sources.
-  Native argument payloads remain as received; runner-constructed projections use standard
-  JSON encoding rather than reproducing the former Python runner's formatting.
-- `configuration/`: deployment JSON parsing, explicit child environments, launch
-  settings, TLS identity validation, and VM resource validation/systemd properties.
-- `cmd/`: executable startup, flags, private process modes, and translation of
-  resolved deployment settings into the Runner runtime `Config`.
-- `config.go`: runtime dependencies and model configuration lookup.
-  Pods and VMs invoke the same executable with explicit `--config` and `--launch-file` arguments.
-  The [Runner configuration inventory](CONFIGURATION.md) documents the configuration sources and VM paths.
+| Owner               | Executable target                                             | Main packages                                                                  |
+| ------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Environment Runtime | `//agentplane/env/runtime/cmd:agentplane-environment-runtime` | environment owner/state, private lifecycle protocol, bootstrap, public control |
+| Harness Host        | `//agentplane/env/harnesshost/cmd:agentplane-harness-host`    | Session, Claude/Codex adapters, app-server, retained records, journal, ingress |
+| Execution Service   | `//agentplane/env/execution/cmd:agentplane-execution-service` | execution adapter, native exec-server, companion                               |
 
-The optional `codex_readiness` object sets the executor and app-server readiness windows independently;
-the configuration inventory lists the fields and defaults.
+Shared process machinery is in `env/supervision`; one-shot operation bookkeeping is in
+`env/oneoff`, shell execution in `env/scripts`, and Go deployment parsing in `env/configuration`.
+Host owns workspace containment and helpers in `env/harnesshost/workspace`. The existing `runner/` directory retains wire contracts, deployment assets and cross-process integration tests.
 
-The production executable is `//agentplane/runner/cmd:agentplane-runner`, shipped with the `agentplane`
-CLI in `//agentplane/runner:disk_image`. The runner and executor modes share the same executable;
-executor mode returns before Runner, COSI and telemetry startup. The native Claude/Codex executables,
-workspace tools and CA certificates are supplied by the runtime image.
+Runtime and Host read the same `--config` and `--launch-file`. Runtime launches the Host with
+private lifecycle and Session socket paths and an explicit `--supervision subprocess|systemd`.
+Production Pod Runtime is PID1; its Host child uses subprocess supervision. VMs use distinct Runtime,
+Host and Execution systemd scopes. Runtime retains the original environment owner inode; Host locks
+`<state_dir>/harness-host/.agentplane-runner-owner`. Session state stays under `<state_dir>/sessions`
+and the shared Codex home stays under `<state_dir>/codex`.
+
+The private lifecycle protocol binds every intent/report to the same process boots and generation.
+Host drains admitted work and native processes before reporting `native_stopped`. Runtime fences
+Execution before acknowledging `execution_fenced`; only then may Host seal journals and report exact
+History acknowledgements. Losing the control stream closes native admission and drains Host without
+creating a seal. An abnormal Pod Host exit requires the outer container fence before replacement.
+See [Host contract](../env/harnesshost/SPEC.md) and [lifecycle](docs/lifecycle.md).
+
+The three executables ship with the `agentplane` CLI in `//agentplane/runner:disk_image`.
+Native Claude/Codex executables, workspace tools and CA certificates come from the runtime image.
 
 ## Codex executor container
 
 Runner Pods can run Codex command execution through a companion container in the same Pod. The runner
-retains the Codex app-server and journals; `agentplane-runner executor` runs as PID 1 and supervises
-`codex exec-server` in its private container PID namespace. The runner claims the companion over a Unix socket before Codex
+retains the Codex app-server and journals; `agentplane-execution-service companion` runs as PID 1 and supervises
+`codex exec-server` in its private container PID namespace. The Execution Service claims the companion over a Unix socket before Codex
 starts and fences it before replacing a lost process. A companion exit or failed health probe lets
 Kubernetes restart that container with a fresh PID namespace; the runner never replays an in-flight
 command. `Environment.isolated_codex_executor` controls this Pod-template policy and can be disabled
@@ -119,7 +75,7 @@ Its Kubernetes requests and limits are independently configurable with `executor
 companion receives the Sandbox kubeconfig and any optional BuildBuddy diagnostics key so its command
 tools keep the runner's intended access. It gets no model credentials or sidecar-projected tokens.
 
-`codex/protocol` generates Go models at build time with Quicktype from schemas
+`../env/harnesshost/codex/protocol` generates Go models at build time with Quicktype from schemas
 exported by the same pinned Codex executable used by the native tests. Requests,
 responses, notifications and known item payloads use these models. Method and item
 dispatch keep a raw JSON boundary for unknown variants; recorded native frames are
@@ -138,10 +94,10 @@ extensions cover `appendSystemPrompt`, interrupt metadata, model/effort changes,
 raw tool inputs and explicit null reply fields. User tool results have their own
 wire type.
 
-The integration fixtures launch this executable and drive its public control and ingress
+The integration fixtures launch Runtime and its separate Host/Execution processes and drive its public control and ingress
 protocols. `test_turns.py`, `test_subagents.py`, and `test_restart.py` exercise the real
 native harnesses; App, History, Gateway, and Notification integration tests use the
-same Go process.
+same process topology.
 
 ## Release and image inputs
 
@@ -167,7 +123,7 @@ default ACL and private `.home` directory.
 
 ## Tests
 
-`//agentplane/runner:runner_test` and `//agentplane/env/harnesshost/codex:codex_test` run with Go's race detector. The
+`//agentplane/env/harnesshost:harnesshost_test` and `//agentplane/env/harnesshost/codex:codex_test` run with Go's race detector. The
 Codex router test drives parallel sessions through shared host, request, and thread routing state. The
 journal suite (`//agentplane/env/harnesshost/journal:journal_test`) also runs with the race detector;
 the runner suite covers process and Session integration. The VM fixture runs the separate
@@ -175,7 +131,7 @@ pure-Go `//agentplane/env/supervision:runner_systemd_fixture` test binary agains
 Runner. It exercises direct argv/stream semantics, lost launch replies, Runner death, stop status,
 reaper retries and scoped startup fencing. Ordinary VM Session setup checks workspace creation,
 credentials, resource mapping and detached descendants; VM tools cover execution and OOM.
-The production `//agentplane/runner/cmd:agentplane-runner` remains pure-Go.
+The production `//agentplane/env/harnesshost/cmd:agentplane-harness-host` remains pure-Go.
 
 ### Native subagents
 
@@ -262,12 +218,12 @@ The connection uses `journal_mode=DELETE` and `synchronous=EXTRA`; publication r
 A journal mutex owns each complete transaction, including batch publication.
 Explicit `BEGIN IMMEDIATE` reserves the writer before reading ids/cursors; no transaction spans
 harness or network I/O. One retained connection serves the single runner-session writer.
-That SQLite transaction is not the native-execution fence: a runner owns its whole retained state
-directory through a nonblocking lifetime lock on the fixed `.agentplane-runner-owner` inode before
-opening a journal, dialing out, or launching a harness. A contender exits before it can serve state.
-In production Pods Runner directly supervises natives as PID 1; the outer container runtime fences
-escaped descendants before replacement. Non-PID1 fixtures retain the subprocess supervisor. In VMs systemd owns native cgroups; a replacement acquires
-the lock and then fences prior owned services before opening Session stores or journals.
+Runtime acquires the legacy environment lifetime lock before starting Host. Host acquires its distinct
+`harness-host/.agentplane-runner-owner` lock before opening Session journals or launching natives;
+a contender exits before it can serve state. In production Pods Runtime is PID 1 and supervises Host,
+which supervises native subprocesses. The outer container runtime fences escaped descendants before
+an abnormal replacement. In VMs systemd owns each component's distinct scope; startup fences prior
+owned services before opening the Session stores or journals.
 See <SPEC.md#durability-and-restart> for storage, startup barriers and containment boundaries.
 
 The stdout reader commits in groups (`Journal.WithBatch`): the lines one pipe read delivered and the

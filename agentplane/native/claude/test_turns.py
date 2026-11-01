@@ -302,7 +302,7 @@ async def test_thinking_ahead_of_a_tool_killed_mid_run_is_saved_but_not_replayed
 ) -> None:
     """The transcript holds the thinking block as an entry of its own under the id of its message,
     yet the resume loads neither it nor the tool call: a message left holding only thinking is
-    dropped. `runner/claude/history.go` mirrors this."""
+    dropped. `env/harnesshost/claude/history.go` mirrors this."""
     await _seed_crashed_session(claude, anthropic_messages)
 
     async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION) as first:

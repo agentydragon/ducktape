@@ -121,9 +121,29 @@ async def _diagnostics(cluster: Cluster) -> None:
         "system_test.central_sampler.diagnostics", record_exception=False, set_status_on_exception=False
     ):
         output = undeclared_outputs_dir()
-        (output / "central-services.json").write_text(
-            await cluster.kubectl("get", "services,endpointslices,pods", "-o", "json")
-        )
+        state = await cluster.kubectl("get", "services,endpointslices,pods", "-o", "json")
+        (output / "central-services.json").write_text(state)
+        sandbox_pods = [
+            pod
+            for pod in json.loads(state)["items"]
+            if pod.get("kind") == "Pod"
+            and pod.get("metadata", {}).get("labels", {}).get("agentplane.allegedly.works/sandbox")
+        ]
+        if sandbox_pods:
+            async with cluster.api_client() as connection:
+                core = k8s.CoreV1Api(connection)
+                for pod in sandbox_pods:
+                    name = pod["metadata"]["name"]
+                    pod_output = output / "sandbox-pods" / name
+                    pod_output.mkdir(parents=True, exist_ok=True)
+                    (pod_output / "pod.json").write_text(json.dumps(pod, indent=2) + "\n")
+                    for container in pod.get("spec", {}).get("containers", []):
+                        container_name = container["name"]
+                        try:
+                            log = await core.read_namespaced_pod_log(name, cluster.namespace, container=container_name)
+                        except ApiException as error:
+                            log = f"Container logs unavailable: {error}"
+                        (pod_output / f"{container_name}.log").write_text(log)
         for component in ("runner-gateway", "history-service"):
             (output / f"central-{component}.log").write_text(
                 await cluster.kubectl("logs", f"deployment/{component}", "--all-containers")

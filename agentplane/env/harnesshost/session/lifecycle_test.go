@@ -145,9 +145,7 @@ func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
 				t.Fatalf("quiesce poisoned admitted journal: %v", err)
 			}
 			waitSession(t, s, func(current Runtime) bool { return current.Phase == Halted }, "halted Session")
-			if err := m.store.AdoptIncarnation("test-incarnation"); err != nil {
-				t.Fatal(err)
-			}
+
 			if err := s.stopProcess(ctx); err != nil {
 				t.Fatal(err)
 			}

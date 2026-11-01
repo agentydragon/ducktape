@@ -4738,7 +4738,7 @@ spec:
             - --launch-file
             - /run/agentplane/sandbox/launch.json
           command:
-            - /run/agentplane/runner/bin/agentplane-runner
+            - /run/agentplane/runner/bin/agentplane-environment-runtime
           env:
             - name: OTEL_SERVICE_NAME
               value: agentplane-runner
@@ -4852,7 +4852,7 @@ spec:
               readOnly: true
           workingDir: /state
         - args:
-            - executor
+            - companion
             - --socket
             - /run/agentplane/executor/control.sock
             - --listen
@@ -4862,7 +4862,7 @@ spec:
             - --binary
             - /bin/codex
           command:
-            - /run/agentplane/runner/bin/agentplane-runner
+            - /run/agentplane/runner/bin/agentplane-execution-service
           env:
             - name: HTTP_PROXY
               value: http://127.0.0.1:3128

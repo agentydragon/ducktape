@@ -12,12 +12,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/workspace"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/bootstrap"
+	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/runner/scripts"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
@@ -25,6 +25,9 @@ import (
 
 func withTestSessionFacilities(t *testing.T, config Config) Config {
 	t.Helper()
+	if config.Environment == nil {
+		config.Environment = func() Environment { return Environment{IncarnationUID: "test-incarnation"} }
+	}
 	var workers sync.WaitGroup
 	host := supervision.NewHost(config.Context, config.State, runnerlifecycle.Namespace, &workers, func(err error) {
 		if err != nil {
@@ -39,7 +42,7 @@ func withTestSessionFacilities(t *testing.T, config Config) Config {
 	if err != nil {
 		t.Fatal(err)
 	}
-	config.BootstrapHost, err = bootstrap.NewHost(bootstrap.Config{}, bootstrap.Dependencies{
+	bootstrapHost, err := bootstrap.NewHost(bootstrap.Config{}, bootstrap.Dependencies{
 		Context: config.Context, State: config.State, Workers: &workers,
 		Admission: func(ctx context.Context, _ runnerlifecycle.Desired, work func(context.Context) error) error {
 			return work(ctx)
@@ -53,6 +56,7 @@ func withTestSessionFacilities(t *testing.T, config Config) Config {
 	if err != nil {
 		t.Fatal(err)
 	}
+	config.WaitBootstrap = bootstrapHost.Wait
 	config.LaunchProcess = launch
 	config.EnsureWorkspace = func(_ context.Context, cwd string) (string, error) {
 		return workspace.Resolve(cwd, config.WorkspaceRoot)
@@ -263,15 +267,13 @@ func TestReopenRetryClearsSealedAcknowledgementAfterJournalReopened(t *testing.T
 	if err := store.WriteAcknowledgement("reopen-session", sealedAck); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.AdoptIncarnation("current-incarnation"); err != nil {
-		t.Fatal(err)
-	}
+	environment := Environment{IncarnationUID: "current-incarnation"}
 	resources := state.WrapCore(namespaced.NewState(inmem.Build))
 	var ackPublications []retained.Acknowledgement
 	ackPublishCalls := 0
 	publishErr := errors.New("injected acknowledgement publication failure")
 	m, err := NewManager(withTestSessionFacilities(t, Config{
-		Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root),
+		Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root), Environment: func() Environment { return environment },
 		Destination: func(string) string { return "test-destination" },
 		PublishSeal: func(string, *journal.SealState) error { return nil },
 		PublishAck: func(_ string, ack retained.Acknowledgement) error {
@@ -313,9 +315,7 @@ func TestReopenRetryClearsSealedAcknowledgementAfterJournalReopened(t *testing.T
 	if err := store.WriteAcknowledgement("reopen-session", sealedAck); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.EnterLameduck(); err != nil {
-		t.Fatal(err)
-	}
+	environment.Quiesced = true
 
 	s, err := m.Load(ctx, "reopen-session")
 	if err != nil {
@@ -387,7 +387,8 @@ func TestCodexExitBeforeProcessInstall(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = j.Close() })
 	s := newSession(sessionDependencies{
-		ctx: ctx, state: state.WrapCore(namespaced.NewState(inmem.Build)), store: store,
+		environmentState: func() Environment { return Environment{IncarnationUID: "test-incarnation"} },
+		ctx:              ctx, state: state.WrapCore(namespaced.NewState(inmem.Build)), store: store,
 		changed: func() {}, fail: func(err error) { t.Error(err) }, publish: func(*Session, bool) {},
 	}, "codex-session", &record, j)
 	attachment := s.appServerAttachment()

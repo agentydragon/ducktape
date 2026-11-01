@@ -5,10 +5,8 @@ go_library(
     srcs = ["resources.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/cosi",
     visibility = [
-        "//agentplane/env/execution/codexexecserver:__pkg__",
-        "//agentplane/env/harnesshost/codexappserver:__pkg__",
-        "//agentplane/env/harnesshost/session:__pkg__",
-        "//agentplane/env/supervision:__pkg__",
+        "//agentplane/env:__subpackages__",
+        "//agentplane/env/harnesshost:__pkg__",
         "//agentplane/runner:__pkg__",
         "//agentplane/runner:__subpackages__",
     ],
