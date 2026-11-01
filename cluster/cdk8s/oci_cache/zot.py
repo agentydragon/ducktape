@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart, Size
+from cdk8s import ApiObjectMetadata, App, Chart, JsonPatch, Size
 from cdk8s_plus_34 import Cpu, k8s
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
@@ -45,7 +45,7 @@ def _tcp_probe(port: str, *, initial_delay_seconds: int, period_seconds: int) ->
 
 
 def _storage(chart: Chart) -> s3.PrivateBucket:
-    return s3.PrivateBucket(
+    storage = s3.PrivateBucket(
         chart,
         "storage",
         name="registry-cache",
@@ -55,6 +55,11 @@ def _storage(chart: Chart) -> s3.PrivateBucket:
         description="Zot's OCI pull-through cache: manifests and blobs.",
         key_fields=None,
     )
+    # This bucket and its identity held only the disposable S3 cache. Stage
+    # operator-owned deletion policies before removing these CRs in a follow-up.
+    for resource in (storage.bucket, storage.credentials, storage.identity):
+        resource.add_json_patch(JsonPatch.replace("/spec/reclaimPolicy", "Delete"))
+    return storage
 
 
 def _deployment(chart: Chart) -> None:
