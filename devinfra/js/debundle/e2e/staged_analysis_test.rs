@@ -226,6 +226,22 @@ fn assert_staged_run_matches(opts: FixtureOpts<'_>, run_args: &[&str]) {
 #[test]
 fn accepted_split_matches_a_direct_run() {
     assert_staged_run_matches(split_with_pure_import(), &[]);
+    assert_staged_run_matches(
+        FixtureOpts::new(
+            "const value = 1;\nconst closure = () => { throw value; };\nconst erased = (globalThis.marker = 1, 1);\nconst first = 1, second = 2;\nexport { value, closure, erased, first, second };\n",
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("value"),
+                    Member::new("closure"),
+                    Member::new("erased"),
+                    Member::new("first"),
+                    Member::new("second"),
+                ],
+            )],
+        ),
+        &[],
+    );
 }
 
 #[test]

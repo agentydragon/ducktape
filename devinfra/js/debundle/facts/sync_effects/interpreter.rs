@@ -9842,6 +9842,10 @@ impl Executor<'_, '_> {
         let global_object_aliases = self.global_object_aliases(fact);
         let calls = &index.top_calls[owner.0];
         let assignments = &index.top_assignments[owner.0];
+        let initializer_source = index.noninvoking_initializers.get(&owner).filter(|source| {
+            matches!(assignments.as_slice(), [(binding, _)] if source.matches_binding(owner, binding))
+        });
+        let mut evaluated_initializer = None;
         let needed = &inputs.needed_bindings;
         let mut top_env = std::mem::take(&mut self.state.top_env);
         let mut top_captures = std::mem::take(&mut self.state.top_captures);
@@ -10119,10 +10123,30 @@ impl Executor<'_, '_> {
             );
         }
         for (id, expression) in assignments {
+            if !needed.contains(id) && initializer_source.is_none() {
+                continue;
+            }
+            let values = if let Some(source) = initializer_source {
+                let RuntimeValue::Initializer { values, evaluated } =
+                    self.request(RuntimeOperation::EvaluateInitializer {
+                        source: source.clone(),
+                        expression: expression.clone(),
+                        environment: top_env.clone(),
+                        captures: top_captures.clone(),
+                    })
+                else {
+                    unreachable!("checked initializer transfers produce initializer results");
+                };
+                evaluated_initializer = evaluated;
+                values
+            } else {
+                self.evaluate(expression, &top_env, &top_captures)
+            };
+            // A dead initializer is evaluated for coverage, while the normal
+            // needed-binding policy still owns retained prefix values.
             if !needed.contains(id) {
                 continue;
             }
-            let values = self.evaluate(expression, &top_env, &top_captures);
             if !self.inputs.top_bindings.contains(id) {
                 top_captures
                     .entry(id.clone())
@@ -10265,6 +10289,15 @@ impl Executor<'_, '_> {
             .effects
             .evaluation_effects
             .depend_on(&self.queries.dependencies());
+        if outcome.complete
+            && !outcome.unknown_call
+            && outcome.effects.precision_losses.is_empty()
+            && outcome.effects.uninitialized_reads.is_empty()
+            && let (Some(source), Some(evaluated)) = (initializer_source, evaluated_initializer)
+        {
+            outcome.effects.completed_initialization =
+                source.complete(evaluated, owner, &self.state.initialized_bindings);
+        }
         outcome.effects
     }
 }
