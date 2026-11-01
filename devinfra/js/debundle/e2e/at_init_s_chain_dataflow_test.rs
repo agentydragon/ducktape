@@ -3,7 +3,7 @@
 //! top-level statements only when the earlier one writes a cell the later
 //! one reads or writes.
 //!
-//! Each test builds a fixture, inspects `dependency_graph.json::edges`, and
+//! Each test builds a fixture, inspects `dependency_graph.json.gz::edges`, and
 //! asserts that no `Sequenced` edge connects the two non-interacting
 //! statements in either direction. Patterns: disjoint global property
 //! writes; a fresh-local allocation after a global write; independent

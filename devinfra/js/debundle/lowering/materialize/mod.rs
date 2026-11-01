@@ -1485,7 +1485,7 @@ enum GateOutcome<'a> {
 ///
 /// Under [`ReportEmission::OnRejection`] (the `debundle run
 /// --dry-run` mode) the accept path writes nothing, but a rejection
-/// still writes `dependency_graph.json` plus the rejection evidence so
+/// still writes `dependency_graph.json.gz` plus the rejection evidence so
 /// the documented `debundle gate list/describe` follow-up works.
 /// The chunk's `selector_diagnostics.json`, where `spec validate` collects
 /// per-chunk reports; nothing to write while no outcome was recorded.
@@ -1619,7 +1619,7 @@ fn validate_and_emit_reports<'a>(
         if let Some(report_out_dir) = report_out_dir {
             // Project onto the wire shape: source units as `"unit:N"`,
             // modules as canonical `ModulePath` — the same entity
-            // keys `dependency_graph.json` uses, so the file joins
+            // keys `dependency_graph.json.gz` uses, so the file joins
             // against the dependency graph without string surgery.
             let wire = ::analysis::AtomicGroupConflictReport::from_conflicts(
                 &assignment_report.atomic_group_conflicts,
@@ -1660,7 +1660,7 @@ fn validate_and_emit_reports<'a>(
         if let Some(report_out_dir) = report_out_dir {
             // Trim the wire shape before writing: keep `id` (array
             // index), `modules`, `cut`. Per-edge evidence is
-            // recomputable from `dependency_graph.json` + this entry's
+            // recomputable from `dependency_graph.json.gz` + this entry's
             // `modules` set via `debundle gate describe <id>`. See
             // `validation.rs` `BlockingSccEntry` for the schema and
             // `docs/cli.md` § "Gate queries" for the CLI surface.

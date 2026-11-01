@@ -142,7 +142,7 @@ enum SpecNsCommand {
     /// Draft `commuting_statements` entries for a rejection's blocking SCCs.
     ///
     /// Reads `cycles.json` (default: the sibling of `--graph`) and
-    /// `dependency_graph.json`. Every constraining `sequenced` edge inside a
+    /// `dependency_graph.json.gz`. Every constraining `sequenced` edge inside a
     /// blocking SCC (not only the cut, whose feedback arc set may skip the
     /// arc a premise can break) whose retained premise verdict the gate
     /// would accept becomes a proposal: one

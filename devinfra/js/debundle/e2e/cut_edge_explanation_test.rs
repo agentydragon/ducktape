@@ -193,7 +193,7 @@ fn gate_cut_query_carries_the_same_explanations() {
     let rejected = run_rejection_fixture(dataflow_cycle_fixture());
     let graph = rejected
         .report_root
-        .join("static/app/dependency_graph.json");
+        .join("static/app/dependency_graph.json.gz");
     let out = run_debundle(&[
         "gate",
         "cut",

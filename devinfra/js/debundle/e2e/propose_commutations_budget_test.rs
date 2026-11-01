@@ -50,7 +50,7 @@ fn many_pairs_beside_many_unrelated_edges_fit_the_budget() {
     let rejected = run_rejection_fixture(
         FixtureOpts::new(&source, modules.into()).with_unassigned_mode(unassigned_mode_inline()),
     );
-    let graph = rejected.report_path("dependency_graph.json");
+    let graph = rejected.report_path("dependency_graph.json.gz");
     let started = Instant::now();
     let out = run_debundle(&[
         "spec",

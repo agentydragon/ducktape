@@ -81,7 +81,7 @@ fn delegated_workers_replay_after_original_inputs_are_removed_and_edit_independe
     let workers = TempDir::new().unwrap();
     let first = workers.path().join("first worker");
     let second = workers.path().join("second worker");
-    let graph = fixture.report_root.join("main/dependency_graph.json");
+    let graph = fixture.report_root.join("main/dependency_graph.json.gz");
     let first_report = create(&graph, &first);
     create(&graph, &second);
     fs::remove_dir_all(fixture.root()).unwrap();
@@ -179,7 +179,7 @@ fn unmapped_output_replay_stays_inside_relocated_spec_root() {
         "{}",
         String::from_utf8_lossy(&original.stderr)
     );
-    let original_graph = original_out.join("reports/tree/main/dependency_graph.json");
+    let original_graph = original_out.join("reports/tree/main/dependency_graph.json.gz");
     let workers = TempDir::new().unwrap();
     let destination = workers.path().join("worker");
     let report = create(&original_graph, &destination);
@@ -253,7 +253,7 @@ fn unmapped_output_replay_stays_inside_relocated_spec_root() {
         "{}",
         String::from_utf8_lossy(&replay.stderr)
     );
-    let refreshed_graph = out_root.join("reports/tree/main/dependency_graph.json");
+    let refreshed_graph = out_root.join("reports/tree/main/dependency_graph.json.gz");
     assert!(refreshed_graph.is_file());
     assert!(out_root.join("app/main/entry.js").is_file());
     let refreshed = Command::new(debundler_path())
@@ -375,7 +375,7 @@ fn snapshot_replays_bundled_swap_with_existence_only_package_input() {
     let workers = TempDir::new().unwrap();
     let destination = workers.path().join("worker");
     let report = create(
-        &fixture.report_root.join("main/dependency_graph.json"),
+        &fixture.report_root.join("main/dependency_graph.json.gz"),
         &destination,
     );
     package.close().unwrap();
@@ -438,7 +438,7 @@ fn stale_inputs_and_existing_destinations_do_not_publish_or_overwrite_snapshots(
     assert!(fixture.result.status.success(), "{}", fixture.result.stderr);
     let workers = TempDir::new().unwrap();
     let destination = workers.path().join("worker");
-    let graph = fixture.report_root.join("main/dependency_graph.json");
+    let graph = fixture.report_root.join("main/dependency_graph.json.gz");
     create(&graph, &destination);
     let before = fs::read(destination.join("snapshot.json")).unwrap();
     let repeated = Command::new(debundler_path())
@@ -486,7 +486,7 @@ fn snapshot_engine_and_yaml_membership_are_verified() {
     let workers = TempDir::new().unwrap();
     let destination = workers.path().join("worker");
     let report = create(
-        &fixture.report_root.join("main/dependency_graph.json"),
+        &fixture.report_root.join("main/dependency_graph.json.gz"),
         &destination,
     );
     let modules = Path::new(report["modules"].as_str().unwrap());
@@ -558,7 +558,7 @@ fn browser_snapshot_replay_keeps_html_assets_and_summary_after_original_removal(
     let nested_destination = fixture.root().join("snapshot/worker");
     let nested = Command::new(debundler_path())
         .args(["snapshot", "create", "--graph"])
-        .arg(fixture.report_root.join("main/dependency_graph.json"))
+        .arg(fixture.report_root.join("main/dependency_graph.json.gz"))
         .arg("--destination")
         .arg(&nested_destination)
         .output()
@@ -566,7 +566,7 @@ fn browser_snapshot_replay_keeps_html_assets_and_summary_after_original_removal(
     assert!(!nested.status.success());
     assert!(!nested_destination.exists());
     let report = create(
-        &fixture.report_root.join("main/dependency_graph.json"),
+        &fixture.report_root.join("main/dependency_graph.json.gz"),
         &destination,
     );
     fs::remove_dir_all(fixture.root()).unwrap();

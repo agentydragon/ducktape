@@ -95,7 +95,7 @@ pub struct CycleReport {
 /// Trimmed wire shape for `cycles.json` (one entry per blocking SCC).
 ///
 /// The full list of constraining cross-module edges inside the SCC
-/// is recomputable from `dependency_graph.json` + this entry's `modules`
+/// is recomputable from `dependency_graph.json.gz` + this entry's `modules`
 /// set, so the wire entry carries only the modules and the cut (a
 /// 1335-module SCC's full evidence is multi-MB; the trimmed entry is
 /// ~100 KB). Consumers that need per-edge evidence re-derive it via
@@ -109,7 +109,7 @@ pub struct BlockingSccEntry {
     /// Every module in the unrealizable SCC, by canonical
     /// [`ModulePath`] — the same value as the dependency graph module
     /// table's `path`, so consumers join `cycles.json` against
-    /// `dependency_graph.json` by resolving destination keys through the
+    /// `dependency_graph.json.gz` by resolving destination keys through the
     /// table (see `docs/wire_format.md` §"one canonical module
     /// identity").
     pub modules: Vec<ModulePath>,

@@ -4,6 +4,14 @@ load(":defs.bzl", "debundle_e2e_test")
 package(default_testonly = True)
 
 debundle_e2e_test(
+    name = "compressed_graph_reports_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+debundle_e2e_test(
     name = "describe_batch_cli_test",
     deps = ["@crates//:serde_json"],
 )
@@ -148,6 +156,7 @@ rust_library(
         "//devinfra/js/debundle:artifact",
         "//devinfra/js/debundle:graph_provenance",
         "//devinfra/js/debundle:output_layout",
+        "//devinfra/js/debundle:report_io",
         "//devinfra/js/debundle:spec",
         "@crates//:serde",
         "@crates//:serde_json",
@@ -173,6 +182,7 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "graph_provenance_test",
     deps = [
+        "//devinfra/js/debundle:report_io",
         "@crates//:serde_json",
         "@crates//:tempfile",
     ],

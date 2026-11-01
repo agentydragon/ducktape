@@ -609,7 +609,7 @@ pub fn build_dependency_graph_with(
 /// How a `commuting_statements` premise over an edge's two endpoints may
 /// treat that edge. Decided once per edge by [`premise_verdict`] when the
 /// graph is built and retained on the edge (`EdgeReason::premise_verdict`,
-/// `dependency_graph.json` `edges[].premise_verdict`), so the gate applying
+/// `dependency_graph.json.gz` `edges[].premise_verdict`), so the gate applying
 /// a premise and `spec propose-commutations` drafting one read the same
 /// classification.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -727,7 +727,7 @@ fn premise_verdict(
 
 /// Retain [`premise_verdict`] on every edge it classifies, so a premise
 /// applied now ([`apply_commuting_statements`]) and one drafted later from
-/// `dependency_graph.json` read the same classification.
+/// `dependency_graph.json.gz` read the same classification.
 fn retain_premise_verdicts(
     edges: &mut [DependencyEdge],
     stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,

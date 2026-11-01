@@ -265,7 +265,7 @@ pub fn graph_of(
     let module_nodes = module_table(nodes.iter().map(|n| &n.destination));
     DependencyGraphReport {
         chunk_id: "x".to_string(),
-        program_graph: "../program_graph.json".into(),
+        program_graph: "../program_graph.json.gz".into(),
         nodes,
         purity_causes: Vec::new(),
         imported_callable_summaries: Vec::new(),

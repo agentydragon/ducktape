@@ -131,7 +131,7 @@ seconds; its output is what must be canonical.
   slice plus its imports' summaries.
 - **Existing partial reuse.** `ContractAudit` keeps the S0 preparation and
   reruns from `chunk_export_purity` in-process; `cli/edit_gate.rs` gates
-  post-edit assignments against a saved `dependency_graph.json` without a run.
+  post-edit assignments against a saved `dependency_graph.json.gz` without a run.
   The staged run complements both: it produces the lowered tree.
 
 ## Artifact
@@ -301,7 +301,7 @@ it says otherwise.
   change the boundary. Work that shares state between S2 and S3 (for example
   reusing S2's prepared execution indexes in S3) must pass it as a value in
   the S2 artifact, not as shared in-process state.
-- **Dependency-graph slimming.** Changes `dependency_graph.json`, which the run
+- **Dependency-graph slimming.** Changes `dependency_graph.json.gz`, which the run
   stage still writes; the artifact caches facts, not the graph, so the two do
   not interact.
 

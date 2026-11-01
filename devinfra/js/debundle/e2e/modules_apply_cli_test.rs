@@ -83,7 +83,7 @@ fn apply_ignores_modules_owned_by_other_chunks() {
     );
     assert!(run.result.status.success(), "{}", run.result.stderr);
     let modules = run.root().join("modules");
-    let graph = run.report_root.join("main/dependency_graph.json");
+    let graph = run.report_root.join("main/dependency_graph.json.gz");
     let source = run.root().join("snapshot");
     let config = run.root().join("spec_config.yaml");
     let proposed = Command::new(debundler_path())
@@ -158,7 +158,7 @@ fn apply_preserves_case_sensitive_chunk_root() {
     );
     assert!(run.result.status.success(), "{}", run.result.stderr);
     let modules = run.root().join("modules");
-    let graph = run.report_root.join("main/dependency_graph.json");
+    let graph = run.report_root.join("main/dependency_graph.json.gz");
     let config = run.root().join("spec_config.yaml");
     let proposed = Command::new(debundler_path())
         .args(["modules", "propose", "--graph"])

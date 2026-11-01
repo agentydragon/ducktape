@@ -605,14 +605,14 @@ impl EdgeReason {
     }
 
     /// Reattach the retained cause of a `Sequenced` edge read back from
-    /// `dependency_graph.json` (`DependencyEdgeReport::sequenced_cause`).
+    /// `dependency_graph.json.gz` (`DependencyEdgeReport::sequenced_cause`).
     pub fn with_sequenced_cause(mut self, cause: Option<SequencedCause>) -> Self {
         self.sequenced_cause = cause.map(Box::new);
         self
     }
 
     /// Mark the reason inert under `premise`, or reattach a marker read
-    /// back from `dependency_graph.json` (`DependencyEdgeReport::commuting_premise`).
+    /// back from `dependency_graph.json.gz` (`DependencyEdgeReport::commuting_premise`).
     pub fn with_commuting_premise(mut self, premise: Option<CommutingStatementsRef>) -> Self {
         self.inerted_by = premise;
         self

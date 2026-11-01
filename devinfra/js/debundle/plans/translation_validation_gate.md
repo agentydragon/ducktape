@@ -236,7 +236,7 @@ swapped conflicting pairs, not only the first.
     from, and the full edge set becomes a tooling view built on demand.
   - Assignment edits, the agent loop, still never touch S3.
 - **Tooling** (atomic groups, `peel`, `modules propose`, `gate describe`,
-  per-atomic-group `unassigned_mode`): these read `dependency_graph.json` edges
+  per-atomic-group `unassigned_mode`): these read `dependency_graph.json.gz` edges
   and atomic groups. They keep that data until each is ported to query
   swapped-pair conflicts. Atomic groups remain a planning heuristic, not the
   acceptance criterion.
@@ -304,7 +304,7 @@ that their callbacks cannot execute at init.
 
 ### Original prototype measurements
 
-The prototype is an offline script over existing `dependency_graph.json`
+The prototype is an offline script over existing `dependency_graph.json.gz`
 outputs; it changes no engine code and is not committed.
 
 It rebuilds the emitted module order as the gate's simulator does:

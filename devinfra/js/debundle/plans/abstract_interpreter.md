@@ -383,7 +383,7 @@ atomic group or loss there.
 - `Purity::Pure ⇔` the statement's effect set has no `Write` to an observable
   cell, no `Invoke`, no `Havoc`. `PurityRule` reasons become projections of
   the offending effect (`Coerce` → `CoercingOperator`, `Havoc` → `UnknownCall`,
-  …) so `dependency_graph.json` wire shape is unchanged. PlainData (#25) is
+  …) so `dependency_graph.json.gz` wire shape is unchanged. PlainData (#25) is
   `escape = Private ∧ taint = Clean ∧ props ⊆ Prim`; `native_rows.rs`'s
   syntactic operand resolution becomes the `Coerce` resolution rule. Delete
   `plain_data.rs`, `ts_enum_iife.rs` (the IIFE is interpreted), most of
@@ -601,7 +601,7 @@ and the children report. Record:
   `cross_module_purity_scale`, `plain_data_escape_scale`,
   `conflict_diagnostics_scale`, `perf/gen_synth_corpus.py` (10k statements).
 - Private canonical inputs: gate verdict, atomic-group count, per-reason edge
-  counts in `dependency_graph.json`, `precision_losses` count by reason. On
+  counts in `dependency_graph.json.gz`, `precision_losses` count by reason. On
   `devel` both gates reject today (the pinned engine accepts Tana), so "verdict
   unchanged" is vacuous; the invariant is that edge counts, atomic-group counts
   and losses never grow at any step, and the public e2e suite passes unchanged.

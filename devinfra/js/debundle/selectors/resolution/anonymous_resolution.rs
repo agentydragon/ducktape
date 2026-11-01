@@ -204,7 +204,7 @@ fn resolve_claim_sets(
         });
     if direct_binding_claims {
         let no_sources = "spec contains typed direct, source-backed, or relational binding claims, but \
-             dependency_graph.json has no source_location data; cannot resolve selectors";
+             dependency_graph.json.gz has no source_location data; cannot resolve selectors";
         return js_ast::with_swc_globals(|| {
             with_source_modules(
                 graph,
@@ -312,11 +312,11 @@ fn resolve_claim_sets(
             }
         }
         let no_sources = if has_anonymous {
-            "spec contains anonymous_statements, but dependency_graph.json has no source_location \
+            "spec contains anonymous_statements, but dependency_graph.json.gz has no source_location \
              data; cannot resolve anonymous selectors"
         } else {
             "spec contains typed direct, source-backed, or relational binding claims, but \
-             dependency_graph.json has no source_location data; cannot resolve selectors"
+             dependency_graph.json.gz has no source_location data; cannot resolve selectors"
         };
         with_source_modules(
             graph,
@@ -538,7 +538,7 @@ fn claim_entity(
                 .with_context(|| {
                     format!(
                         "module {} anonymous statement selector matched source {} statement \
-                         ordinal {ordinal}, but dependency_graph.json has no anonymous source_unit at that \
+                         ordinal {ordinal}, but dependency_graph.json.gz has no anonymous source_unit at that \
                          source position",
                         claims.module_path.display(),
                         source.source_path,

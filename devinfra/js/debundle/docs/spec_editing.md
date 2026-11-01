@@ -305,9 +305,9 @@ Then preview and apply the same reviewed file:
 
 ```bash
 debundle modules refine --batch reviewed-source-units.json --dry-run \
-  --graph dependency_graph.json --modules spec/modules --source-root source
+  --graph dependency_graph.json.gz --modules spec/modules --source-root source
 debundle modules refine --batch reviewed-source-units.json \
-  --graph dependency_graph.json --modules spec/modules --source-root source
+  --graph dependency_graph.json.gz --modules spec/modules --source-root source
 ```
 
 This command moves existing selector entries for each source unit as a unit. It
@@ -430,7 +430,7 @@ Source-module comments and notes are composed as described in
 
 The edit gate checks direct claims against the dependency graph and, for typed
 `kind` pins, the original source before checking the post-merge assignment.
-Pass `--graph <dependency_graph.json>` for the chunk's edge topology and
+Pass `--graph <dependency_graph.json.gz>` for the chunk's edge topology and
 `--source-root <dir>` when the graph's relative source paths are not otherwise
 resolvable. It rejects missing or ambiguous local claims, mismatched typed
 claims, and merges that would create cross-module cycles or split an atomic

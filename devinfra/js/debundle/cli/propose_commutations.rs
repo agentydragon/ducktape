@@ -2,7 +2,7 @@
 //! entries for the `sequenced` edges inside a rejection's blocking SCCs
 //! (SPEC.md § Commuting statements, § Realizability cut explanations).
 //!
-//! The command reads `cycles.json` and `dependency_graph.json`, classifies
+//! The command reads `cycles.json` and `dependency_graph.json.gz`, classifies
 //! each constraining `sequenced` edge between an SCC's modules with the
 //! verdict the graph build retained on it
 //! (`edges[].premise_verdict`, decided by `graph/build.rs::premise_verdict`,
@@ -44,7 +44,7 @@ use crate::{GraphCompatibilityScope, InspectionRoots, emit_report};
 /// Args for `debundle spec propose-commutations`.
 #[derive(Debug, ClapArgs)]
 pub(super) struct ProposeCommutationsArgs {
-    /// `dependency_graph.json` of the rejected chunk.
+    /// `dependency_graph.json.gz` of the rejected chunk.
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
     pub graph: PathBuf,
 
@@ -251,7 +251,7 @@ pub enum RejectionReason {
     VerdictNotRecorded { edge: String },
     /// No selector proves `endpoint` alone; `detail` is the nearest miss.
     NoUniqueSelector { endpoint: String, detail: String },
-    /// `cycles.json` and `dependency_graph.json` disagree.
+    /// `cycles.json` and `dependency_graph.json.gz` disagree.
     CutEdgeNotInGraph,
 }
 

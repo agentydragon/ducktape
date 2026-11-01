@@ -744,7 +744,7 @@ export { a1, a2, b1 };
         ],
     ));
     assert!(
-        rejected.stderr.contains("dependency_graph.json"),
+        rejected.stderr.contains("dependency_graph.json.gz"),
         "stderr should point at the dependency graph report:\n{}",
         rejected.stderr,
     );

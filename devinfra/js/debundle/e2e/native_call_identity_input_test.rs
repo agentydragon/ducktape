@@ -439,7 +439,7 @@ fn freeze_heap_proof_retains_nested_array_mutation() {
             .report_root
             .join("static")
             .join("app")
-            .join("dependency_graph.json"),
+            .join("dependency_graph.json.gz"),
     );
     let module_of: std::collections::HashMap<&str, &str> = graph["module_graph"]["nodes"]
         .as_array()

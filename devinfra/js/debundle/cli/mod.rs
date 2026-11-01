@@ -39,14 +39,12 @@ use crate::modules_commands::ModulesNs;
 use crate::scc_cluster::{ClusterArgs, SccArgs, run_cluster, run_scc};
 use crate::spec_commands::SpecNs;
 
-/// Read and JSON-parse an `dependency_graph.json` into an [`DependencyGraphReport`],
+/// Read and JSON-parse an `dependency_graph.json.gz` into an [`DependencyGraphReport`],
 /// the load every `cli` verb that takes `--graph` shares.
 pub(crate) fn load_dependency_graph_report(
     path: &std::path::Path,
 ) -> Result<analysis::DependencyGraphReport> {
-    let text =
-        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    serde_json::from_str(&text)
+    report_io::read_json(path)
         .with_context(|| format!("parsing dependency graph {}", path.display()))
 }
 
@@ -376,7 +374,7 @@ enum DebundleCommand {
     /// unrealizable spec is rejected (there is no `run --no-verify` — fix
     /// the spec), and the rejection evidence (`cycles.json` /
     /// `atomic_group_conflicts.json`) is written under
-    /// `reports/tree/<chunk>/` next to `dependency_graph.json`, where
+    /// `reports/tree/<chunk>/` next to `dependency_graph.json.gz`, where
     /// `debundle gate list` / `gate describe` read it.
     Run(RunArgs),
     /// Compute the analysis (cross-module summaries and every analysed

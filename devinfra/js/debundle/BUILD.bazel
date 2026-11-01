@@ -15,6 +15,25 @@ exports_files([
 ])
 
 rust_library(
+    name = "report_io",
+    srcs = ["report_io.rs"],
+    edition = "2024",
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:flate2",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "report_io_test",
+    crate = ":report_io",
+    edition = "2024",
+    deps = ["@crates//:tempfile"],
+)
+
+rust_library(
     name = "source_identity",
     srcs = ["source_identity.rs"],
     crate_root = "source_identity.rs",
@@ -474,6 +493,7 @@ rust_library(
     srcs = ["graph_provenance.rs"],
     edition = "2024",
     deps = [
+        ":report_io",
         "@crates//:anyhow",
         "@crates//:ring",
         "@crates//:serde",
@@ -873,6 +893,7 @@ rust_library(
         ":anonymous_resolution",
         ":gate",
         ":graph_provenance",
+        ":report_io",
         ":spec",
         ":spec_modules",
         ":spec_tree",
@@ -969,6 +990,7 @@ rust_library(
         ":output_layout",
         ":program_analysis",
         ":reconstruction",
+        ":report_io",
         ":selector_outcome",
         ":selector_resolve",
         ":source_identity",
@@ -1144,6 +1166,7 @@ rust_library(
         ":peel",
         ":pipeline",
         ":prepare_chunks",
+        ":report_io",
         ":selector_codemod",
         ":selector_debt",
         ":selector_outcome",

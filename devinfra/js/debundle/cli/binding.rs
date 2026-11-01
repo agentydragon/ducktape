@@ -1171,7 +1171,7 @@ pub fn run_source_unit_refine(
     for assignment in assignments {
         anyhow::ensure!(
             source_unit_index_by_id.contains_key(&assignment.unit_id),
-            "source unit ID {:?} is absent from dependency_graph.json",
+            "source unit ID {:?} is absent from dependency_graph.json.gz",
             assignment.unit_id
         );
         anyhow::ensure!(

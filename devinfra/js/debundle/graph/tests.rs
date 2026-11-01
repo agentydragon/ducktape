@@ -144,7 +144,7 @@ mod from_report_tests {
     fn report_with_edge(target: &str, role: Option<EdgeRoleReport>) -> DependencyGraphReport {
         DependencyGraphReport {
             chunk_id: "chunk".into(),
-            program_graph: "../program_graph.json".into(),
+            program_graph: "../program_graph.json.gz".into(),
             nodes: vec![node("unit:0", 0), node("unit:1", 1), node("unit:2", 2)],
             purity_causes: Vec::new(),
             imported_callable_summaries: Vec::new(),
@@ -204,7 +204,7 @@ mod from_report_tests {
     }
 
     /// Strict mapping: an edge referencing an source unit id missing from
-    /// the node table (malformed / version-skewed `dependency_graph.json`)
+    /// the node table (malformed / version-skewed `dependency_graph.json.gz`)
     /// must be a hard error, not a silently dropped edge — the
     /// planner-side gate would otherwise reason over a weaker graph.
     #[test]

@@ -121,7 +121,7 @@ impl AssignmentInputs {
     }
 
     /// Canonical module identity for `id` — the [`spec::ModulePath`]
-    /// every wire artifact (`dependency_graph.json` module table,
+    /// every wire artifact (`dependency_graph.json.gz` module table,
     /// `cycles.json`, `atomic_group_conflicts.json`) and diagnostic
     /// uses to denote this module. Parses the in-process
     /// `PlannedModule.id` (`"<chunk_id>::<path>"`) down to the clean

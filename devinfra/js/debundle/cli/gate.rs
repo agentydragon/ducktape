@@ -11,7 +11,7 @@
 //!
 //! - `gate list` — one line per blocking SCC (id, modules count, cut size).
 //! - `gate describe <id>` — full picture: modules list, cut, and
-//!   **recomputed evidence**, sourced from `dependency_graph.json` plus
+//!   **recomputed evidence**, sourced from `dependency_graph.json.gz` plus
 //!   the SCC's module set. Same per-binding-pair render as the
 //!   per-rejection stderr summary.
 //! - `gate cut <id>` — just the cut edges (already in the trimmed
@@ -63,7 +63,7 @@ enum GateCommand {
     /// Full picture for one blocking SCC: modules, cut, recomputed evidence.
     ///
     /// The per-edge evidence is recomputed on demand from
-    /// `dependency_graph.json` and the SCC's module set — the same
+    /// `dependency_graph.json.gz` and the SCC's module set — the same
     /// per-binding-pair blame view the realizability gate emits to
     /// stderr at rejection time.
     Describe(GateDescribeArgs),
@@ -83,7 +83,7 @@ enum GateCommand {
 /// keeps the two files in non-standard locations.
 #[derive(Debug, Clone, ClapArgs)]
 pub struct GateCommonArgs {
-    /// Path to `dependency_graph.json` (debundler analysis output).
+    /// Path to `dependency_graph.json.gz` (debundler analysis output).
     #[arg(
         long = "graph",
         env = "DEBUNDLE_GRAPH",
@@ -110,7 +110,7 @@ impl GateCommonArgs {
     }
 }
 
-/// The default `cycles.json` location: the sibling of `dependency_graph.json`
+/// The default `cycles.json` location: the sibling of `dependency_graph.json.gz`
 /// in the per-chunk report layout.
 pub(crate) fn sibling_cycles_path(graph: &Path) -> PathBuf {
     graph
@@ -178,7 +178,7 @@ pub struct GateDiagnoseArgs {
     /// Binding whose constraining promoted callback dependencies to inspect.
     pub binding: String,
 
-    /// Path to `dependency_graph.json`.
+    /// Path to `dependency_graph.json.gz`.
     #[arg(long, required = true)]
     pub graph: PathBuf,
 
@@ -237,7 +237,7 @@ pub struct GateDescribeReport {
     pub modules: Vec<ModulePath>,
     pub cut: Vec<CycleEdge>,
     /// Every constraining cross-module edge inside the SCC,
-    /// recomputed from `dependency_graph.json` + `modules` (the wire
+    /// recomputed from `dependency_graph.json.gz` + `modules` (the wire
     /// entry carries only `modules` + `cut`). Edges a `commuting_statements`
     /// premise made inert are listed in `inert_commuting_edges` instead.
     pub evidence: Vec<CycleEdge>,
@@ -1215,7 +1215,7 @@ fn edge_touches_binding(edge: &CycleEdge, binding: &str) -> bool {
         || edge.from_binding.as_ref().map(|a| a.as_ref()) == Some(binding)
 }
 
-/// Reconstruct diagnostic context for an SCC from `dependency_graph.json`.
+/// Reconstruct diagnostic context for an SCC from `dependency_graph.json.gz`.
 /// Unlike gate validation, this includes lazy edges as well as constraining
 /// edges. Preserve the report projection: omit intra-module/outside-SCC edges
 /// and promoted edges whose callee is in another module; dedup sequencing by
@@ -1367,7 +1367,7 @@ fn incomplete_execution_suffix(cause: &SequencedSourceUnitCause) -> &'static str
 }
 
 /// Report-side twin of `analysis::reports::schema::impure_source_unit_cause`
-/// over a `dependency_graph.json` node.
+/// over a `dependency_graph.json.gz` node.
 fn impure_source_unit_cause(node: &SourceUnitReport) -> Option<SequencedSourceUnitCause> {
     matches!(&node.purity, Purity::NotPure { .. }).then(|| SequencedSourceUnitCause {
         source_unit_id: node.id.clone(),

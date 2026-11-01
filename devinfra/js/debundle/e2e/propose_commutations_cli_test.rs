@@ -65,7 +65,7 @@ fn propose(graph: &Path, source_root: &Path, extra: &[&str]) -> Value {
 
 fn propose_rejected(rejected: &RejectedFixture, extra: &[&str]) -> Value {
     propose(
-        &rejected.report_path("dependency_graph.json"),
+        &rejected.report_path("dependency_graph.json.gz"),
         &rejected.source_root,
         extra,
     )
@@ -482,7 +482,7 @@ fn tree_spec_members_are_proposed_as_resolved_members() {
     );
     let modules = run.root().join("modules/tree");
     let report = propose(
-        &run.report_root.join("app/dependency_graph.json"),
+        &run.report_root.join("app/dependency_graph.json.gz"),
         &run.root().join("snapshot"),
         &["--modules", modules.to_str().unwrap()],
     );
@@ -511,7 +511,7 @@ fn print_invocation_classifies_read_only_analysis_with_a_draft_write() {
         "spec",
         "propose-commutations",
         "--graph",
-        "reports/tree/static/app/dependency_graph.json",
+        "reports/tree/static/app/dependency_graph.json.gz",
         "--source-root",
         "snapshot",
         "--out",
