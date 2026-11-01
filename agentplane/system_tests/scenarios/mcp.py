@@ -42,8 +42,8 @@ from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, Shell
 # A status write follows the informer's next watch event; the bound covers a relist after a
 # dropped watch, not a healthy round trip.
 POLICY_READY_SECONDS = 120.0
-# Where the runner disk mounts the CLI in a Sandbox Pod (`agentplane/env/images/BUILD.bazel`).
-CLI = "/run/agentplane/runner/bin/agentplane"
+# Where the environment disk mounts the CLI in a Sandbox Pod (`agentplane/env/images/BUILD.bazel`).
+CLI = "/run/agentplane/environment/bin/agentplane"
 # The key of the orchestration_v1 group in every deployment that offers it (cluster/cdk8s/agentplane/actions.py).
 ORCHESTRATION_GROUP = "orchestration_v1"
 
