@@ -142,6 +142,9 @@ rust_library(
     srcs = glob(["aw-server/src/**/*.rs"]),
     compile_data = ["@aw_webui//:dist"],
     crate_root = "aw-server/src/lib.rs",
+    # Rocket's route macros also generate PID-dependent names in this crate;
+    # its metadata and object code must come from the same compiler process.
+    disable_pipelining = True,
     edition = "2021",
     rustc_env = {
         "AW_WEBUI_DIR": "$(execpath @aw_webui//:dist)",
