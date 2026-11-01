@@ -131,7 +131,8 @@ the broader runtime redesign remain outside this sprint.
 
 ### Dispatch order and prerequisites
 
-Give concrete reliability regressions first attention when reported. Dedicated sampler-roll and
+Give concrete reliability regressions first attention when reported, including the selected
+`EXEC_SUSPENDED_RESUME_DECISION` and its `EXEC_SUSPENDED_RESUME` follow-up. Dedicated sampler-roll and
 JS/exec continuation exercises are deferred pending operator use; they do not hold independent work.
 
 P1 scheduling and the approved caller-privilege delegation implementation proceed in parallel.
@@ -1436,8 +1437,12 @@ flowchart TD
     SANDBOX_AUTODISKFUL[Decision, unscheduled: auto-diskful storage for Sandboxes]
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
+    EXEC_SUSPENDED_RESUME_DECISION[Selected P0 decision: exec against a suspended Sandbox]
+    EXEC_SUSPENDED_RESUME[Selected P0: recover exec on a suspended Sandbox]
+    EXEC_SUSPENDED_RESUME_DECISION --> EXEC_SUSPENDED_RESUME
     EXEC_INCARNATION_FENCING[Unscheduled: model-controlled exec incarnation fencing]
     AGENT_RESUME_NOTICE -. related awareness, not a prerequisite .-> EXEC_INCARNATION_FENCING
+    EXEC_INCARNATION_FENCING -. related agent choice .-> EXEC_SUSPENDED_RESUME_DECISION
     AGENT_EXECUTOR_LOSS_NOTICE[Unscheduled: tell agents when executor restarts or kills lose their processes]
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
@@ -1741,6 +1746,34 @@ background process, a terminal and workspace files, and a crash restart (no susp
 differently.
 
 Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-coverage).
+
+### `EXEC_SUSPENDED_RESUME_DECISION` — choose how exec resumes a suspended Sandbox
+
+**Decision, selected P0 reliability sprint; operator, 2026-10-31 PDT.** A central sampler Session
+can keep thinking after its execution Sandbox suspends, but a nested `exec` does not wake it. In
+[this thread](https://agentplane-staging.allegedly.works/#/threads/ccd8f68a-a2b7-459f-969a-51b70a06321b),
+the agent could not continue after idle suspension and later saw a dial timeout. Investigation found
+the control endpoint still advertising the vanished Gateway at that address. Decide whether to
+report a structured suspended state and expose a resume operation the
+agent can choose, or automatically request resume when exec needs the Sandbox. Consider authority,
+wake budgets, readiness, agent discoverability and interaction with `EXEC_INCARNATION_FENCING`.
+Recommendation: start with an explicit, discoverable agent-controlled resume and clear suspended
+state, so the agent chooses when to resume; automatic resume remains an alternative for review.
+Which behavior should the product use? This decision is independent of implementing incarnation
+fencing and broader resume notices.
+
+### `EXEC_SUSPENDED_RESUME` — make exec recoverable after Sandbox suspension
+
+**Blocked on `EXEC_SUSPENDED_RESUME_DECISION`; selected P0 reliability sprint.** Implement the
+chosen behavior across the sampler, Sandbox wake and execution boundaries. A suspended Sandbox must
+yield an actionable state or be resumed according to the decision; stale Gateway endpoints must not
+strand the workflow behind misleading dial timeouts. Preserve Sandbox identity and authorization,
+readiness and incarnation fencing, and reconcile prior execution outcomes without replaying uncertain
+mutations. Update agent-facing discovery and the owning contracts.
+
+**Exit:** deterministic coverage exercises idle suspension, the chosen wake behavior, readiness,
+reconnection to the same Sandbox's new incarnation and a successful newly requested exec; it also
+covers stale Gateway endpoints, denied or failed wake, and uncertain prior effects without replay.
 
 ### `EXEC_INCARNATION_FENCING` — let the model choose whether exec crosses an incarnation change
 
