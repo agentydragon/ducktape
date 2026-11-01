@@ -10,8 +10,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc"

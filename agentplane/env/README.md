@@ -13,7 +13,7 @@ control-plane service outside `env/`.
 | Harness Host        | `//agentplane/env/harnesshost/cmd:agentplane-harness-host`    | Session, Claude/Codex adapters, app-server, retained records, journal, ingress |
 | Execution Service   | `//agentplane/env/execution/cmd:agentplane-execution-service` | execution adapter, native exec-server, companion                               |
 
-Shared process machinery is in `env/supervision`; one-shot operation bookkeeping is in
+Shared process machinery is in `env/runtime/supervision`; one-shot operation bookkeeping is in
 `env/oneoff`, shell execution in `env/scripts`, and Go deployment parsing in `env/configuration`.
 Host owns workspace containment and helpers in `env/harnesshost/workspace`. The `env/e2e/` contains cross-service integration tests; image and VM packaging lives in `env/images/`.
 

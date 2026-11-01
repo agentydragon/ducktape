@@ -17,7 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/session"
-	"github.com/agentydragon/ducktape/agentplane/env/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"go.uber.org/zap"
 )
 

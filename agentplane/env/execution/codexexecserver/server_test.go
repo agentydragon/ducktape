@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/coder/websocket"
 )
 

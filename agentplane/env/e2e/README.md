@@ -12,7 +12,7 @@ package defaults to test-only in Bazel.
 Codex router test drives parallel sessions through shared host, request, and thread routing state. The
 journal suite (`//agentplane/env/harnesshost/journal:journal_test`) also runs with the race detector;
 the runner suite covers process and Session integration. The VM fixture runs the separate
-pure-Go `//agentplane/env/supervision:environment_runtime_systemd_fixture` test binary against its real systemd manager before starting
+pure-Go `//agentplane/env/runtime/supervision:environment_runtime_systemd_fixture` test binary against its real systemd manager before starting
 Runner. It exercises direct argv/stream semantics, lost launch replies, Runner death, stop status,
 reaper retries and scoped startup fencing. Ordinary VM Session setup checks workspace creation,
 credentials, resource mapping and detached descendants; VM tools cover execution and OOM.

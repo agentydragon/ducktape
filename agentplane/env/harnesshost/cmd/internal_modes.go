@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/workspace"
-	"github.com/agentydragon/ducktape/agentplane/env/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 )
 
 // internalMode handles native process supervision helpers before serving Sessions.

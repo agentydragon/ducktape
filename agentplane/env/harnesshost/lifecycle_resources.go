@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"

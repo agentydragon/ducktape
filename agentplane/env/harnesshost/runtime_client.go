@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/session"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
-	"github.com/agentydragon/ducktape/agentplane/env/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
-	"github.com/agentydragon/ducktape/agentplane/env/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"

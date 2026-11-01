@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/execution/companion/control"
-	"github.com/agentydragon/ducktape/agentplane/env/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )

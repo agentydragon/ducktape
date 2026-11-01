@@ -14,7 +14,7 @@ go_binary(
         "//agentplane/env/configuration",
         "//agentplane/env/harnesshost",
         "//agentplane/env/harnesshost/workspace",
-        "//agentplane/env/supervision",
+        "//agentplane/env/runtime/supervision",
         "//agentplane/observability",
         "@io_opentelemetry_go_otel//attribute",
         "@org_uber_go_zap//:zap",

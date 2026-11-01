@@ -8,7 +8,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"

@@ -18,8 +18,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/session"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"

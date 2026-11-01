@@ -11,7 +11,7 @@ import (
 	"time"
 
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
-	"github.com/agentydragon/ducktape/agentplane/env/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 )

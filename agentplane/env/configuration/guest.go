@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/env/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 )
 
 type guestResources struct {

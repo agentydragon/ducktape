@@ -17,10 +17,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/codex"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
-	"github.com/agentydragon/ducktape/agentplane/env/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 
-	"github.com/agentydragon/ducktape/agentplane/env/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/state"

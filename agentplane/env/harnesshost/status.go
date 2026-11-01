@@ -5,7 +5,7 @@ import (
 	"sort"
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/session"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"

@@ -11,7 +11,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	runtime "github.com/agentydragon/ducktape/agentplane/env/runtime"
-	"github.com/agentydragon/ducktape/agentplane/env/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"

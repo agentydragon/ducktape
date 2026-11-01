@@ -122,7 +122,7 @@ protect storage ownership across Runner restart and ensure harness descendants a
 make Runner internals or sibling Session stores confidential from code in the same Sandbox.
 
 Systemd service cgroups provide resource containment and teardown within one Sandbox principal
-([supervision](../runner/docs/supervision.md)).
+([supervision](../env/runtime/supervision/docs/supervision.md)).
 In isolated Codex mode, the exec-server and its descendants have a sibling budget separate from the
 app-server. Claude, local Codex mode, and app-server-owned helpers share their native harness budget.
 
@@ -177,7 +177,7 @@ The subsequent conversation-recovery failure is addressed separately in
   to the Sandbox security boundary.
 - Systemd owns native service cgroups and stops them when their owning service exits. After acquiring the state-owner
   lock, a replacement fences its prior owned services before opening Session stores and journals
-  ([runner supervision](../runner/docs/supervision.md#completion-and-crash-fencing)).
+  ([runner supervision](../env/runtime/supervision/docs/supervision.md#invocation-and-scope-fencing)).
 - Agent processes get no unrestricted guest root and no cgroup administration, so they cannot alter
   guest services or the configured resource budgets. This does not protect Runner-owned state from
   other code in the same Sandbox; the journal is not tamper-proof against agent code.

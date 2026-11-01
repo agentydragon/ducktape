@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/execution/companion/control"
-	"github.com/agentydragon/ducktape/agentplane/env/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 )
 
 func TestMain(m *testing.M) {

@@ -291,7 +291,7 @@ carry each Session's working directory, model, effort, developer instructions an
 map, whose `shell_environment_policy.set` gives a thread's tools its Session's notification
 destination. The Session record stores one Claude session ID or Codex thread ID, and a runner restart
 creates a new process and resumes the native conversation from that store. See
-[`session/`](../env/harnesshost/session), [`supervision/`](../env/supervision/),
+[`session/`](../env/harnesshost/session), [`supervision/`](../env/runtime/supervision/),
 [`retained/`](../env/harnesshost/retained), and the adapters ([Claude](../env/harnesshost/claude/adapter.go),
 [Codex](../env/harnesshost/codex/adapter.go)).
 

@@ -179,7 +179,7 @@ executor. The Environment Runtime unit uses `OOMPolicy=continue`. Aggregate and 
 selects individual victims. The kernel may select the harness or executor and may kill more processes
 if pressure persists. Native leader exit still fences all descendants. Runtime logs OOM counters and
 available peak memory before releasing a native service.
-See [supervision](docs/supervision.md) for the unit hierarchy and startup fence.
+See [supervision](../supervision/docs/supervision.md) for the unit hierarchy and startup fence.
 
 `/run/agentplane/config/environment-runtime.env` supplies the VM systemd unit's Environment Runtime-only OpenTelemetry
 settings. Pod templates set the corresponding container environment directly. The Go guest loader

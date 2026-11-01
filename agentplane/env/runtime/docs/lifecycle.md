@@ -100,7 +100,7 @@ markers. Runtime preserves its legacy scope hash so it can discover pre-rename t
 Owner-lock paths changed, so all pre-rename VMs must stop before reusing their state volumes. Host uses scope
 `harness-host`; each native service is bound to its owning unit. Completion requires service state
 and an empty execution domain, including descendants. Manager disconnect and uncertain fence results
-block successors. See [supervision](supervision.md).
+block successors. See [supervision](../supervision/docs/supervision.md).
 
 ## Host COSI state
 
@@ -112,7 +112,7 @@ journal connections. The host registry owns native handles and publishes observa
 Session input includes demand, setup, process liveness, pending commands and inspection dependencies.
 Session runtime records phase, attempt and native generation. The shared app-server has its own
 input/runtime and readiness deadline. Process desired/status/input resources are provided by
-`env/supervision`; finalizers remain until native cleanup is proven. `env/oneoff.Operation` owns
+`env/runtime/supervision`; finalizers remain until native cleanup is proven. `env/oneoff.Operation` owns
 one-shot slots through result publication and consumption, preventing retries from duplicating an
 in-flight effect.
 

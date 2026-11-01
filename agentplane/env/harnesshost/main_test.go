@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/workspace"
-	"github.com/agentydragon/ducktape/agentplane/env/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 )
 
 func TestMain(m *testing.M) {

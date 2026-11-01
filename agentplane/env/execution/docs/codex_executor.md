@@ -74,7 +74,7 @@ Execution Service unit. Runtime fences prior Host and Execution invocations befo
 incarnation. During orderly shutdown Runtime drains Host, proves Execution fenced, and then stops
 both units; the units do not independently stop ahead of that lifecycle protocol. The guest supplies
 systemd, agent UID/GID and block devices; templates supply resource limits.
-See [native supervision](supervision.md) for the backend and ownership boundary.
+See [native supervision](../../runtime/supervision/docs/supervision.md) for the backend and ownership boundary.
 
 ## Startup, loss and suspend
 

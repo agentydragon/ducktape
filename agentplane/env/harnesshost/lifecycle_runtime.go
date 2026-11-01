@@ -7,8 +7,8 @@ import (
 	"sync"
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/codexappserver"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/env/supervision"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/cosi-project/runtime/pkg/controller"
 
 	// Avoid the collision with the runner runtime state.

@@ -402,7 +402,7 @@ py_test(
         "//agentplane/env/execution/cmd:agentplane-execution-service",
         "//agentplane/env/harnesshost/cmd:agentplane-harness-host",
         "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
-        "//agentplane/env/supervision:runner_pid1_fixture",
+        "//agentplane/env/runtime/supervision:runner_pid1_fixture",
     ],
     env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
