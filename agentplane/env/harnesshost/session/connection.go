@@ -10,7 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/journal"
-	"github.com/agentydragon/ducktape/agentplane/env/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 )
 
 // nativeConnection owns protocol readers and handshake waiters. Session supplies

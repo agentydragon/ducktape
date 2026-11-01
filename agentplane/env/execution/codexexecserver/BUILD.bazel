@@ -16,9 +16,9 @@ go_library(
     deps = [
         "//agentplane/env/cosi",
         "//agentplane/env/execution/companion/control",
-        "//agentplane/env/lifecycle",
         "//agentplane/env/oneoff",
-        "//agentplane/env/supervision",
+        "//agentplane/env/runtime/lifecycle",
+        "//agentplane/env/runtime/supervision",
         "//agentplane/observability",
         "@com_github_coder_websocket//:websocket",
         "@com_github_cosi_project_runtime//pkg/controller",
@@ -42,8 +42,8 @@ go_test(
     embed = [":codexexecserver"],
     race = "on",
     deps = [
-        "//agentplane/env/lifecycle",
-        "//agentplane/env/supervision",
+        "//agentplane/env/runtime/lifecycle",
+        "//agentplane/env/runtime/supervision",
         "@com_github_coder_websocket//:websocket",
         "@com_github_cosi_project_runtime//pkg/controller/runtime",
         "@com_github_cosi_project_runtime//pkg/resource",

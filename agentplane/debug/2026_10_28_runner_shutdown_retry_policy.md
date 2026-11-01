@@ -44,7 +44,7 @@ selected seal but does not require ingress acknowledgement.
 4. Add those cases to the Runner race and supervision suites, then validate native restart:
 
    ```bash
-   bbr test //agentplane/env/harnesshost:harnesshost_test //agentplane/env/supervision:supervision_test
+   bbr test //agentplane/env/harnesshost:harnesshost_test //agentplane/env/runtime/supervision:supervision_test
    bbr test //agentplane/env/e2e:test_restart
    ```
 

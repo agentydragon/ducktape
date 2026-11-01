@@ -170,7 +170,7 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   natives that close inherited descriptors. A lock acquisition or force-deleted Pod's API
   disappearance does not prove that outer fence. Replacement after node loss or force deletion
   requires a prior-container or external node/storage fence.
-  [Supervision](docs/supervision.md#pid-1-and-the-outer-fence) describes these boundaries.
+  [Supervision](../../runtime/supervision/docs/supervision.md#pid-1-and-the-outer-fence) describes these boundaries.
 - In VMs every native launch is a systemd transient `Type=exec` service, bound to their owning Runtime, Host or Execution unit,
   with `Restart=no` and five-second stop grace. A condition requires the owning service invocation's
   marker in its systemd-managed runtime directory; delayed requests from a previous invocation
@@ -184,7 +184,7 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   second launch. A status-read timeout on a connected manager retries without declaring native
   exit or releasing ownership. Manager disconnection remains a fencing barrier, preventing
   successors and seals until the native domain is proven empty.
-  [Supervision](docs/supervision.md) describes the resource hierarchy and backend boundary.
+  [Supervision](../../runtime/supervision/docs/supervision.md) describes the resource hierarchy and backend boundary.
 - The supported state mount is the checked-in node-local `piraeus-hdd-local` PVC. A remote or
   otherwise unreliable locking filesystem is unsupported rather than a substitute cross-host
   fencing authority.

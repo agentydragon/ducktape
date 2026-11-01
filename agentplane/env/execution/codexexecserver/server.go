@@ -14,7 +14,7 @@ import (
 	"time"
 
 	executorcontrol "github.com/agentydragon/ducktape/agentplane/env/execution/companion/control"
-	"github.com/agentydragon/ducktape/agentplane/env/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/coder/websocket"
 	"github.com/sethvargo/go-retry"
 	"go.uber.org/zap"

@@ -9,7 +9,7 @@ go_binary(
     deps = [
         "//agentplane/env/configuration",
         "//agentplane/env/runtime",
-        "//agentplane/env/supervision",
+        "//agentplane/env/runtime/supervision",
         "//agentplane/observability",
         "@io_opentelemetry_go_otel//attribute",
         "@org_uber_go_zap//:zap",

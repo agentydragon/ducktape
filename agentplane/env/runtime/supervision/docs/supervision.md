@@ -1,7 +1,7 @@
 # Native process supervision
 
 The reusable launchers, COSI process controller and process registry live in
-[`agentplane/env/supervision`](../../env/supervision/). Environment Runtime, Harness Host and
+[`agentplane/env/runtime/supervision`](../). Environment Runtime, Harness Host and
 Execution Service each own their process lifetime and inject their own context, state, namespace,
 worker tracking and error callback. Native adapters and script workers publish
 `supervision.ProcessConfig` through `supervision.ManagedProcess`; owning controllers retain
@@ -27,7 +27,7 @@ intents before acknowledging cleanup; a reader observing leader exit cannot hide
 Runtime coordinates the process owners over private sockets. Host reports native stop against the
 exact Runtime/Host boot IDs and lifecycle generation. Runtime fences Execution before authorizing
 Host sealing and waits for the matching seal/History ACK before completing quiesce. The
-[Host protocol](../../env/harnesshost/SPEC.md) and [environment lifecycle](lifecycle.md) define those
+[Host protocol](../../../harnesshost/SPEC.md) and [environment lifecycle](../../docs/lifecycle.md) define those
 barriers. Transport loss closes admission and drains native work without inventing a seal.
 
 ## VM services
@@ -92,7 +92,7 @@ process exit alone does not authorize a successor or journal seal. Runtime separ
 Host/Execution service invocation and cgroup fencing during coordinated shutdown/replacement.
 
 Runtime and native supervision share typed unit snapshots, stop-job observation and process-domain
-fencing in `env/supervision`. A single D-Bus `GetAll` reads Unit and Service properties together;
+fencing in `env/runtime/supervision`. A single D-Bus `GetAll` reads Unit and Service properties together;
 missing or malformed properties cannot establish cleanup. `StopUnit` acceptance and job completion
 are separate from the execution-domain fence. If a recorded cgroup exists, its recursive
 `cgroup.events` population must clear (or the cgroup must disappear), including after a failed stop.
@@ -189,7 +189,7 @@ native executor loss/replacement, shared app-server continuity and coordinated q
 tool effects are never replayed as part of process replacement.
 
 The system-test guest boots real systemd with the same owner/slice units. Before Runtime starts,
-`//agentplane/env/supervision:environment_runtime_systemd_fixture` exercises credentials, separate streams, kernel
+`//agentplane/env/runtime/supervision:environment_runtime_systemd_fixture` exercises credentials, separate streams, kernel
 resource limits, lost/canceled launch replies, detached descendants, parent-unit death, ordinary
 stop and scoped startup fencing. VM scenarios exercise storage, actual harnesses, tool OOM and
 suspend/resume. The fixture wrapper and observer add no production control endpoint.

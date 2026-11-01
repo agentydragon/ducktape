@@ -13,7 +13,7 @@ go_library(
         "//agentplane/env/execution:executor_go_proto",
         "//agentplane/env/execution/adapter:execution",
         "//agentplane/env/execution/codexexecserver",
-        "//agentplane/env/supervision",
+        "//agentplane/env/runtime/supervision",
         "//agentplane/grpc/graceful",
         "@com_github_sethvargo_go_retry//:go-retry",
         "@org_golang_google_grpc//:grpc",
@@ -32,7 +32,7 @@ go_test(
     deps = [
         "//agentplane/env/execution:executor_go_proto",
         "//agentplane/env/execution/codexexecserver",
-        "//agentplane/env/supervision",
+        "//agentplane/env/runtime/supervision",
         "//agentplane/proto:sandboxes_go_proto",
         "@com_github_coder_websocket//:websocket",
         "@org_golang_google_grpc//:grpc",

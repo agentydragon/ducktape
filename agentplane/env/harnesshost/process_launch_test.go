@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/env/supervision"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 )

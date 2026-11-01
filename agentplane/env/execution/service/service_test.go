@@ -13,7 +13,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
-	"github.com/agentydragon/ducktape/agentplane/env/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc"

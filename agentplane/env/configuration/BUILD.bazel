@@ -15,7 +15,7 @@ go_library(
         "//agentplane/env/harnesshost/codexappserver",
         "//agentplane/env/harnesshost/harness",
         "//agentplane/env/harnesshost/session",
-        "//agentplane/env/supervision",
+        "//agentplane/env/runtime/supervision",
         "//agentplane/environment_runtime_transport",
         "@org_uber_go_zap//:zap",
     ],

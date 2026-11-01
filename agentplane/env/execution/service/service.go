@@ -13,7 +13,7 @@ import (
 	execution "github.com/agentydragon/ducktape/agentplane/env/execution/adapter"
 	"github.com/agentydragon/ducktape/agentplane/env/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
-	"github.com/agentydragon/ducktape/agentplane/env/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/sethvargo/go-retry"
 	"google.golang.org/grpc"

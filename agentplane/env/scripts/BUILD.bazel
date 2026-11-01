@@ -8,7 +8,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/env/scripts",
     visibility = ["//agentplane/env:__subpackages__"],
     deps = [
-        "//agentplane/env/supervision",
+        "//agentplane/env/runtime/supervision",
         "@org_golang_x_sync//errgroup",
     ],
 )

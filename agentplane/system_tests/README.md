@@ -114,7 +114,7 @@ The lower-level `//agentplane/env/e2e:test_pid1_container` runs the direct PID1 
 as real container PID 1. It checks native exit, TERM, abrupt PID1 death, escaped descendants and
 replacement after observed runtime exit. The shared Sandbox template explicitly selects the direct PID1 backend
 for the Pod system tests. The outer replacement boundary is described in the Environment Runtime's
-[supervision contract](../env/supervision/docs/supervision.md#pid-1-and-the-outer-fence).
+[supervision contract](../env/runtime/supervision/docs/supervision.md#pid-1-and-the-outer-fence).
 
 `Agent.run` returns only for `TURN_STATUS_COMPLETED`. Any other terminal status fails immediately
 with the turn id, status and quoted Environment Runtime diagnostic. Its collector also stops at a new

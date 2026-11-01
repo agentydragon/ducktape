@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/agentydragon/ducktape/agentplane/env/execution/codexexecserver"
-	"github.com/agentydragon/ducktape/agentplane/env/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 )
 
 // Config is immutable for a service lifetime. The environment owner supplies it;

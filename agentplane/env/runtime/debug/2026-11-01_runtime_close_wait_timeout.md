@@ -8,6 +8,6 @@ does not identify which internal close or join stage consumed that deadline.
 
 The later uncached focused run `14fd3c3a-c201-41f1-a35f-79436ae36dd6` passed
 both `//agentplane/env/runtime:runtime_test` and
-`//agentplane/env/supervision:supervision_test`. That pass does not establish
+`//agentplane/env/runtime/supervision:supervision_test`. That pass does not establish
 the cause of the earlier timeout or prove this change fixed it. If it recurs,
 capture stage-level close/join evidence before attributing it to a component.

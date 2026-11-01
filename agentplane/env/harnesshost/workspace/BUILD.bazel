@@ -8,7 +8,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/env/harnesshost/workspace",
     visibility = ["//agentplane/env:__subpackages__"],
     deps = [
-        "//agentplane/env/supervision",
+        "//agentplane/env/runtime/supervision",
         "@org_golang_x_sys//unix",
     ],
 )
@@ -18,5 +18,5 @@ go_test(
     srcs = ["workspace_test.go"],
     embed = [":workspace"],
     race = "on",
-    deps = ["//agentplane/env/supervision"],
+    deps = ["//agentplane/env/runtime/supervision"],
 )
