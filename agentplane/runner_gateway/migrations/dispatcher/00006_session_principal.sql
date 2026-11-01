@@ -7,6 +7,7 @@ ALTER TABLE session_opening
     ADD COLUMN IF NOT EXISTS creator_account_name VARCHAR,
     ADD COLUMN IF NOT EXISTS creator_account_uid VARCHAR;
 
+-- +goose StatementBegin
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -30,8 +31,8 @@ BEGIN
                 CHECK ((creator_account_namespace IS NULL) = (creator_account_name IS NULL)
                     AND (creator_account_namespace IS NULL) = (creator_account_uid IS NULL));
     END IF;
-END
-$$;
+END $$;
+-- +goose StatementEnd
 
 -- +goose Down
 ALTER TABLE session_opening
