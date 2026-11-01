@@ -76,11 +76,9 @@ failed or the model turn ended. The structured result preserves source errors an
 ranges. A resume token is tied to its Session and command and confers no permission; the command rebuilds
 the observation from the retained admission cursor so it can restore command-to-turn correlation.
 
-**Integration gap at this branch's base:** Dispatcher calls are admitted only for configured
-`dispatcher_callers`. The staging config currently lists `agentplane-staging/app`,
-`agentplane-staging/notifications` and `agentplane-staging/actions`; this CLI adds no caller grant or
-identity. Same-ServiceAccount admission is tracked separately, so a caller outside the current allowlist
-cannot use these commands until that backend change lands.
+Dispatcher authorizes ordinary callers against the target's actual ServiceAccount UID and scopes
+retained opening/command reads to their recorded principal. Configured privileged backend callers
+remain a separate authority path. The CLI supplies no additional grant or identity.
 `sessions observe-input` also requires independent History URL/credential configuration and backend
 authorization; the CLI does not add reader authority or fall back to another caller.
 

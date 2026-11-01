@@ -3,8 +3,10 @@
 Status: **proposed policy design**, not an implemented permission or a grant to existing
 callers. Tracked as `THREAD_READ_POLICY_DESIGN` in [the task DAG](task_dag.md), where the operator
 holds its decisions for now (2026-10-17 UTC). Review the choices below before implementing the policy. The durable raw Session Event
-history and its Thread fold live in the [History Service](../history_service/README.md),
-which today serves only its configured reader accounts.
+history and its Thread fold live in the [History Service](../history_service/README.md).
+Narrow same-principal retained reads are already implemented for
+[caller-privilege delegation](session_delegation_workflows.md), independently of this held
+cross-ServiceAccount policy. Configured privileged readers remain a separate authority path.
 
 SA-level caller attribution and Sandbox-level authorization are agreed. Reads may request an
 individual Session, but the permission covers its Sandbox's histories. V1 supports history tags on the
