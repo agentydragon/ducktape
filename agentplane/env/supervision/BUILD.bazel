@@ -17,6 +17,7 @@ go_library(
         "supervisor.go",
         "systemd.go",
         "systemd_launcher.go",
+        "systemd_units.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/env/supervision",
     deps = [

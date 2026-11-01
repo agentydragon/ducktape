@@ -157,16 +157,16 @@ func (b *systemdBackend) start(ctx context.Context, p *Process) error {
 			if result != "done" {
 				err = fmt.Errorf("native unit start job failed: %s", result)
 			} else {
-				service, observeErr := conn.GetUnitTypePropertiesContext(ctx, b.name, "Service")
+				service, observeErr := ReadSystemdUnit(ctx, conn, b.name)
 				if observeErr != nil {
 					err = observeErr
 				} else {
-					pid, _ := service["ExecMainPID"].(uint32)
+					pid := service.ExecMainPID
 					if pid == 0 {
 						err = errors.New("native start job completed without executing a process; Runner invocation may have ended")
 						break
 					}
-					b.group, _ = service["ControlGroup"].(string)
+					b.group = service.ControlGroup
 					p.setNativePID(int(pid))
 					go b.reap(p)
 					return nil
@@ -205,7 +205,7 @@ func (b *systemdBackend) fenceUntilCertain() error {
 		// Only the original live connection supplies FIFO ordering behind an
 		// uncertain start. Replacement absence alone must never release admission.
 		ordered := b.accepted || (conn == b.conn && conn.Connected())
-		err := fenceSystemdUnit(ctx, conn, b.name, ordered, b.group)
+		err := FenceSystemdUnit(ctx, conn, b.name, SystemdFence{Ordered: ordered, ControlGroup: b.group})
 		cancel()
 		if err == nil {
 			return nil
@@ -227,7 +227,7 @@ func (b *systemdBackend) reap(p *Process) {
 	code := 125
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		props, err := b.readServiceProperties(ctx)
+		props, err := b.readSnapshot(ctx)
 		cancel()
 		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) && b.conn.Connected() {
@@ -240,9 +240,9 @@ func (b *systemdBackend) reap(p *Process) {
 			zap.L().Warn("native systemd process observation failed; fencing", zap.String("unit", b.name), zap.Error(err))
 			break
 		}
-		pid, _ := props["MainPID"].(uint32)
-		status, _ := props["ExecMainStatus"].(int32)
-		why, _ := props["ExecMainCode"].(int32)
+		pid := props.MainPID
+		status := props.ExecMainStatus
+		why := props.ExecMainCode
 		if pid == 0 && why != 0 {
 			code = int(status)
 			if why != 1 {
@@ -254,7 +254,7 @@ func (b *systemdBackend) reap(p *Process) {
 		// before this observation. GetAll then synthesizes a not-found service
 		// with zeroed exit properties. Start already observed a real ExecMainPID;
 		// losing it is terminal process loss, not an indefinitely running process.
-		if executed, _ := props["ExecMainPID"].(uint32); executed == 0 {
+		if props.ExecMainPID == 0 {
 			break
 		}
 		if !b.waitChange() {
@@ -262,11 +262,10 @@ func (b *systemdBackend) reap(p *Process) {
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	if unit, err := b.conn.GetUnitTypePropertiesContext(ctx, b.name, "Service"); err == nil {
-		if group, ok := unit["ControlGroup"].(string); ok && group != "" {
-			logCgroupMemoryDiagnostics(filepath.Join("/sys/fs/cgroup", group))
-		}
+	if unit, err := ReadSystemdUnit(ctx, b.conn, b.name); err == nil && unit.ControlGroup != "" {
+		logCgroupMemoryDiagnostics(filepath.Join("/sys/fs/cgroup", unit.ControlGroup))
 	}
+
 	cancel()
 	fenceErr := b.fenceUntilCertain()
 	_ = p.CloseStdin()
@@ -274,11 +273,11 @@ func (b *systemdBackend) reap(p *Process) {
 	p.completeWith(code, fenceErr)
 }
 
-func (b *systemdBackend) readServiceProperties(ctx context.Context) (map[string]any, error) {
-	if read := b.launcher.reapServiceProperties; read != nil {
+func (b *systemdBackend) readSnapshot(ctx context.Context) (SystemdUnitSnapshot, error) {
+	if read := b.launcher.reapSnapshot; read != nil {
 		return read(ctx, b.conn, b.name)
 	}
-	return b.conn.GetUnitTypePropertiesContext(ctx, b.name, "Service")
+	return ReadSystemdUnit(ctx, b.conn, b.name)
 }
 
 func (b *systemdBackend) stop(ctx context.Context, p *Process, grace time.Duration) error {
@@ -345,7 +344,6 @@ func (b *systemdBackend) waitChange() bool {
 func (b *systemdBackend) diagnostics() string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	unit, unitErr := b.conn.GetUnitPropertiesContext(ctx, b.name)
-	service, serviceErr := b.conn.GetUnitTypePropertiesContext(ctx, b.name, "Service")
-	return fmt.Sprintf("active=%v sub=%v unit_job=%v main_pid=%v exec_pid=%v exec_code=%v exec_status=%v result=%v unit_error=%v service_error=%v", unit["ActiveState"], unit["SubState"], unit["Job"], service["MainPID"], service["ExecMainPID"], service["ExecMainCode"], service["ExecMainStatus"], service["Result"], unitErr, serviceErr)
+	unit, err := ReadSystemdUnit(ctx, b.conn, b.name)
+	return fmt.Sprintf("active=%s sub=%s unit_job=%d main_pid=%d exec_pid=%d exec_code=%d exec_status=%d result=%s error=%v", unit.ActiveState, unit.SubState, unit.JobID, unit.MainPID, unit.ExecMainPID, unit.ExecMainCode, unit.ExecMainStatus, unit.Result, err)
 }
