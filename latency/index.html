@@ -3,9 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>
-      Ducktape CI latency · workspace boot evidence, 1 November 2026
-    </title>
+    <title>Ducktape CI latency · 1 November 2026</title>
     <style>
       :root {
         color-scheme: light;
@@ -307,1629 +305,1343 @@
           padding-bottom: 14px;
         }
       }
+
+      .phase {
+        font-variant-numeric: tabular-nums;
+      }
+      .scope code {
+        word-break: break-all;
+      }
     </style>
   </head>
   <body>
     <header>
-      <div class="eyebrow">
-        Ducktape · CI latency · boot follow-up, 1 November 2026
-      </div>
-      <h1>VM work dominates the integration feedback path.</h1>
+      <div class="eyebrow">Ducktape · CI latency · 1 November 2026</div>
+      <h1>Queues and VM work delay feedback.</h1>
       <p class="lead">
-        The retained integration run spends
-        <strong
-          >491 seconds of its 524-second critical path in the VM suite</strong
-        >. Browser shards consume more aggregate test CPU but finish six minutes
-        earlier. New guest-console evidence shows the workspace disk registered
-        in the kernel at 6.6 seconds, with its processed udev event observed at
-        26.3 seconds. The remaining boot question is the ordering, coldplug and
-        udev interval. Native startup outside sampled userspace CPU remains
-        open.
+        In the latest slice (1 November, 01:00–02:30 UTC), green heads reach the
+        three CI job results in
+        <strong>558 seconds at the median and 677 seconds at p90</strong>. Bazel
+        finishes last on 29 of those 30 heads. In the busy historical slice, a
+        zero-target documentation PR waits
+        <strong>733 seconds for its artifact runner</strong>. Recent VM-critical
+        runs spend 324–354 seconds executing the VM suite.
+      </p>
+      <p>
+        <strong>Small concrete improvement:</strong> remove Nix installation
+        from visual announcement and cancellation jobs. A dependency-free
+        transport spike passed; those setup steps consumed 26.5 runner-minutes
+        in the latest slice. Stabilizing the Dispatcher diagnostic snapshot is a
+        separate reliability proposal. Native startup remains a measured
+        investigation, with the new scheduler result below.
       </p>
       <p class="scope">
-        Run arrivals: 31 October 2026, 08:30–12:30 UTC. Collected
-        12:34:13–12:36:42 UTC. Cohort source
+        Four fixed 90-minute arrival windows, 29 October–1 November UTC; six
+        sampled hours, with gaps. Core collection: 1 November 02:47:35–02:52:04
+        UTC. Inspected devel:
         <a
-          href="https://github.com/agentydragon/ducktape/commit/61d18e604e37757ebc9838404a292fec6348181f"
-          ><code>61d18e604e37</code></a
-        >. These cohort measurements are retained unchanged. The targeted boot
-        follow-up below was observed on 1 November; it is not a new PR census or
-        a measured treatment effect.
-      </p>
-      <p class="scope">
-        Follow-up source inspection: devel <code>4e01c8387b20</code>. Each boot
-        probe below identifies its own tested source, guest and verdict.
+          href="https://github.com/agentydragon/ducktape/commit/58e4261128f61235dd354192a907447882284ceb"
+          >58e4261128f6</a
+        >. The three-job interval is a workflow-created proxy; complete
+        auto-merge readiness and agent delivery are unmeasured. No production
+        workflow or scanning policy changed.
       </p>
       <div class="metrics">
         <div class="metric">
-          <strong>215 / 701 s</strong
-          ><span
-            >Required-job feedback proxy p50/p90 · 85 green exact heads</span
-          >
+          <strong>558 / 677 s</strong
+          ><span>Latest slice · proxy p50/p90 · 30 green of 55 heads</span>
         </div>
         <div class="metric">
-          <strong>491 / 524 s</strong
-          ><span
-            >VM action / computed critical path · one inspected integration
-            run</span
-          >
+          <strong>14 / 74 s</strong
+          ><span>Latest Bazel job queue p50/p90 · 55 assigned attempts</span>
         </div>
         <div class="metric">
-          <strong>52.2 CPU-min</strong
+          <strong>11 / 23 s earlier</strong
           ><span
-            >16 fresh browser shards · worker cost, not feedback delay</span
+            >Informational test-success status versus required job completion ·
+            30 green heads</span
           >
         </div>
       </div>
       <nav aria-label="Report sections">
-        <a href="#decisions">Next work</a
-        ><a href="#guest-boot">Workspace boot</a
-        ><a href="#feedback">PR feedback</a
-        ><a href="#execution">Execution cost</a
-        ><a href="#timelines">Linked timelines</a><a href="#retries">Retries</a
-        ><a href="#shipped">Shipped changes</a
-        ><a href="#prior">Prior findings</a
-        ><a href="#scope">Methods &amp; limits</a>
+        <a href="#decisions">Decisions</a><a href="#feedback">PR feedback</a
+        ><a href="#queues">Queues &amp; runner cost</a
+        ><a href="#timelines">Linked timelines</a
+        ><a href="#vm">VM work &amp; profiles</a
+        ><a href="#signals">Agent feedback</a><a href="#reruns">Reruns</a
+        ><a href="#prior">Prior work</a><a href="#methods">Methods</a>
       </nav>
     </header>
     <main>
       <section id="decisions">
-        <div class="eyebrow">Selected investigation batch</div>
-        <h2>Use the collected profiles to narrow the remaining work.</h2>
+        <div class="eyebrow">Ranked proposals</div>
+        <h2>Remove measured setup work; preserve real integration proofs.</h2>
         <ol>
           <li>
-            <strong>Native startup: attribute the unsampled interval.</strong>
-            A passing manual profile captured about 2.2 sampled user-CPU seconds
-            during the OOM app-server's 20.1-second startup. Kernel CPU,
-            scheduling, TCG effects and waits remain unresolved. Sparse function
-            samples identify no dominant individual CPU hotspot.
+            <strong
+              >A · Make visual check announcements run with host Python and the
+              standard library.</strong
+            >
+            Refactor <code>devinfra/pr_visuals/check_run.py</code> into one
+            host-compatible entrypoint and use it from the trusted-devel
+            <code>announce</code> and <code>cancel</code> jobs in
+            <code>pr-visuals-publish.yml</code>. Retain exact run/attempt
+            external IDs, pagination, duplicate detection, completed-result
+            ordering, summary limits, details links and error propagation. Keep
+            the artifact publisher on its released package. This removes a
+            measured median 20-second Nix setup from a 34–35-second job.
+            <strong
+              >Planning range: 15–25 runner-seconds per affected job; PR
+              feedback savings unmeasured.</strong
+            >
+            Effort small; confidence high that setup can be removed, moderate in
+            hosted integration. The
+            <a
+              href="https://app.buildbuddy.io/invocation/86a78a82-a72a-4f72-bf93-6be9ae6fe014"
+              >86a78a82</a
+            >
+            spike passed seven cases, including an actual standard-library
+            transport under Python <code>-S</code>, with the network boundary
+            simulated. It did not mutate a GitHub check or validate the hosted
+            credentials/source boundary. Validate those on a bounded source PR
+            before adopting.
           </li>
           <li>
             <strong
-              >Guest boot: registration and readiness are now separated.</strong
+              >B · Give the Dispatcher archive proof an explicit filesystem
+              snapshot boundary.</strong
             >
-            In the new probe, the kernel registers the workspace disk at 6.6
-            seconds; the monitor receives its processed udev event at 26.3
-            seconds and systemd activates the device at 26.7 seconds.
-            <a href="#guest-boot">The retained timeline</a> narrows the gap to
-            startup ordering, coldplug and udev. Its CPU, queueing and rule-cost
-            split remains unmeasured. Automatic collection is in
-            <a href="https://github.com/agentydragon/ducktape/pull/13413"
-              >#13413</a
-            >.
+            A fresh rerun failed when
+            <code>runner_data_archive.capture()</code> recursively visited a
+            native scratch Git directory that disappeared during traversal. The
+            online SQLite backups were already valid. In
+            <code>scenarios/dispatcher.py::_archive_runner_data</code>, take
+            those online backups first, then pause the owned container task
+            around full-mount traversal with guaranteed unpause on success,
+            error and cancellation. Verify post-resume writer and Runner
+            liveness, WAL preservation, all expected marker bytes and complete
+            archives. This keeps the strict data proof. It is a
+            <strong
+              >proposal requiring an actual container-runtime integration
+              spike</strong
+            >, not a validated freeze implementation. The first failure’s
+            observed recovery tail was 328 seconds; no fleet saving or failure
+            frequency is estimated from one event. Effort medium; confidence
+            high in the live-tree race mechanism, lower in the runtime ownership
+            change.
           </li>
           <li>
-            <strong>Guest span coverage is now checked.</strong> Merged resource
-            identity and stage/parentage checks cover all six guests, including
-            the central sampler. The final uncached proof attributed all 249
-            Runner spans to Sandbox resources. Use the existing OTel artifacts
-            for subsequent measurements.
-          </li>
-          <li value="5">
-            <strong>Browser: finish child-process CPU attribution.</strong>
-            The full 16-shard diagnostic passed. First-case setup took 33–67
-            seconds per shard; the selected Python worker profile used 7.1 CPU
-            seconds and excludes earlier imports and PostgreSQL/Electric child
-            CPU. Backend attribution remains open; no shard policy changed.
-          </li>
-          <li value="7">
-            <strong>Report refresh completed.</strong> The 121-head snapshot,
-            adoption pointers and retry diagnoses are retained below. Subsequent
-            investigations refine the next work without changing this frozen
-            cohort or its historical experiments.
+            <strong
+              >C · Retain execution policy and obtain provider-side kernel
+              evidence.</strong
+            >
+            Keep six independent boots, cold native startup, real
+            OOM/same-session recovery and cleanup assertions. Recent VM paths
+            are process-dominated, not remote-queue-dominated. The new CPU
+            recording includes a material kernel contribution; an exact
+            scheduler split is still unresolved. For the separate outer-VM
+            panic, give BuildBuddy the pinned invocation/physical execution and
+            retained VM-log digest, and request its exact 5.15 kernel build plus
+            core/host evidence for the invalid pointer in update_load_avg. That
+            evidence is outside this repository and session access; no matching
+            core or kernel revision is exposed. This is a concrete provider
+            triage packet, with no estimated fleet saving from one observed
+            crash. There is no tested basis for raising deadlines, changing
+            global jobs=50, enabling bytecode broadly, adding a second Pod stack
+            or buying capacity from this sample.
           </li>
         </ol>
-        <div class="callout">
-          <strong>Decision boundary.</strong> The VM suite finishes 158.6
-          seconds after Pod in the inspected run. That is conditional
-          finishing-order headroom with other clocks held fixed, not promised CI
-          savings. This fixed-graph comparison is not a ceiling on architectural
-          changes or combinations of interventions. The new boot observations
-          establish neither removable time nor a whole-PR speedup. Browser
-          compute work has no demonstrated effect on this feedback tail.
+        <div class="callout caution">
+          A removes runner occupancy. It does not directly subtract 20 seconds
+          from a required gate, and queue response is nonlinear. B prevents a
+          specific diagnostic failure if its snapshot boundary is implemented
+          correctly. Neither is a measured fleet-wide improvement.
         </div>
-        <p class="small">
-          Subsequent investigation pointers:
-          <a href="https://github.com/agentydragon/ducktape/pull/13351"
-            >#13351</a
-          >
-          records browser fixture/profiler findings and limits;
-          <a href="https://github.com/agentydragon/ducktape/pull/13352"
-            >#13352</a
-          >
-          carries the Runner identity and six-guest trace contract;
-          <a href="https://github.com/agentydragon/ducktape/pull/13359"
-            >#13359</a
-          >
-          retains the repeatable boot probe. Those three PRs merged.
-          <a href="https://github.com/agentydragon/ducktape/pull/13364"
-            >#13364</a
-          >
-          adds manual native profiling and durable raw artifacts. Its
-          <a
-            href="https://app.buildbuddy.io/invocation/44d682a7-5b89-4544-ae8e-259557148aa6"
-            >profile</a
-          >
-          and
-          <a
-            href="https://app.buildbuddy.io/invocation/83f4fdd3-3722-4987-8f57-b68f8ee421c3"
-            >unprofiled control</a
-          >
-          passed, with different source snapshots and unverified image-byte
-          identity. They establish no causal latency saving. These follow-ups
-          are outside the measurement cohort; current PR checks are linked
-          separately from the recorded experimental results.
-        </p>
       </section>
-      <section id="guest-boot">
-        <div class="eyebrow">
-          New evidence · one selected guest · 1 November UTC
-        </div>
-        <h2>Workspace boot delay continues after kernel registration.</h2>
+
+      <section id="feedback">
+        <h2>Head outcomes remain in the denominator.</h2>
         <p>
-          The OOM guest's kernel registers a 10 GiB virtio block disk as
-          <code>/dev/vde</code> at <strong>6.610 seconds</strong>. The matching
-          processed udev event, received at <strong>26.286 seconds</strong>,
-          carries <code>ID_SERIAL=workspace</code> and the stable
-          <code>/dev/disk/by-id/virtio-workspace</code> link. The disk is
-          already registered when systemd starts waiting for that link at 11.923
-          seconds.
-        </p>
-        <p class="small">
-          Source:
-          <a
-            href="https://app.buildbuddy.io/invocation/347b6930-c685-4637-9850-17eb82d9c18e"
-            >BuildBuddy probe 347b6930</a
-          >, <code>//agentplane/system_tests/suites:test_vm</code>, run 1 /
-          shard 1 / attempt 1; source <code>9d882959ac11</code> plus the initial
-          collector patch. All six scenarios passed; test action 387.854
-          seconds. Selected OOM launcher UID
-          <code>9c9311e0-9c18-473e-a5d2-8f9ffbceea0c</code>. This is one Debian
-          13 / BusyBox / EROFS guest under QEMU TCG on RBE.
+          The four slices contain
+          <strong
+            >199 exact PR head observations: 117 green, 30 failed, 50 cancelled
+            and two incomplete</strong
+          >. They contain 199 distinct SHAs. Start: earliest selected core PR
+          workflow creation for that head. Stop: the last successful
+          latest-attempt completion among the three currently required devel job
+          names. The pooled green proxy is 451/1,060 seconds p50/p90; the latest
+          slice is more useful for current operation.
         </p>
         <div class="table-wrap">
           <table>
-            <caption class="small">
-              One guest, one invocation. Times are guest boot-relative
-              observations; clock sources are identified below.
-            </caption>
             <thead>
               <tr>
-                <th>Guest time, s</th>
-                <th>Observed boundary</th>
-                <th>Evidence</th>
+                <th>Arrival window</th>
+                <th>Heads / green</th>
+                <th>Three-job proxy p50/p90, s</th>
+                <th>Bazel queue p50/p90, s</th>
+                <th>Other outcomes</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td data-label="Guest time, s" class="numbers">6.610</td>
-                <td data-label="Observed boundary">
-                  Kernel registers the workspace disk
-                </td>
-                <td data-label="Evidence">
-                  Printk: <code>virtio10</code>, <code>vde</code>, 10 GiB;
-                  launcher attaches serial <code>workspace</code>.
+                <td data-label="Arrival window">29 Oct 20:50–22:20 UTC</td>
+                <td data-label="Heads / green">37 / 24</td>
+                <td data-label="Three-job proxy p50/p90, s">147 / 583</td>
+                <td data-label="Bazel queue p50/p90, s">2 / 23</td>
+                <td data-label="Other outcomes">9 failed, 4 canceled</td>
+              </tr>
+              <tr>
+                <td data-label="Arrival window">30 Oct 20:50–22:20 UTC</td>
+                <td data-label="Heads / green">94 / 58</td>
+                <td data-label="Three-job proxy p50/p90, s">507 / 1,362</td>
+                <td data-label="Bazel queue p50/p90, s">69 / 358</td>
+                <td data-label="Other outcomes">
+                  1 incomplete, 23 canceled, 12 failed
                 </td>
               </tr>
               <tr>
-                <td data-label="Guest time, s" class="numbers">11.923</td>
-                <td data-label="Observed boundary">
-                  Systemd starts waiting for the workspace link
-                </td>
-                <td data-label="Evidence">
-                  Console: expecting
-                  <code>dev-disk-by\x2did-virtio\x2dworkspace.device</code>.
-                </td>
+                <td data-label="Arrival window">31 Oct 20:50–22:20 UTC</td>
+                <td data-label="Heads / green">13 / 5</td>
+                <td data-label="Three-job proxy p50/p90, s">214 / 455</td>
+                <td data-label="Bazel queue p50/p90, s">6 / 30</td>
+                <td data-label="Other outcomes">8 canceled</td>
               </tr>
               <tr>
-                <td data-label="Guest time, s" class="numbers">14.793</td>
-                <td data-label="Observed boundary">
-                  Block-event monitor is ready
-                </td>
-                <td data-label="Evidence">
-                  Manager <code>ActiveEnterTimestampMonotonic</code>; unit
-                  orders readiness before coldplug.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Guest time, s" class="numbers">16.052</td>
-                <td data-label="Observed boundary">Coldplug starts</td>
-                <td data-label="Evidence">
-                  Systemd starts <code>systemd-udev-trigger.service</code>.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Guest time, s" class="numbers">
-                  20.032–23.314
-                </td>
-                <td data-label="Observed boundary">
-                  Udev daemon starts and becomes ready
-                </td>
-                <td data-label="Evidence">
-                  Guest console and short-monotonic journal.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Guest time, s" class="numbers">23.792</td>
-                <td data-label="Observed boundary">
-                  Monitor receives the workspace coldplug event
-                </td>
-                <td data-label="Evidence">
-                  <code>KERNEL add …/virtio10/block/vde</code>; this is the
-                  replay observed by the monitor.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Guest time, s" class="numbers">24.358</td>
-                <td data-label="Observed boundary">
-                  Coldplug trigger completes
-                </td>
-                <td data-label="Evidence">Guest short-monotonic journal.</td>
-              </tr>
-              <tr>
-                <td data-label="Guest time, s" class="numbers">26.286</td>
-                <td data-label="Observed boundary">
-                  Monitor receives the processed workspace event
-                </td>
-                <td data-label="Evidence">
-                  <code>UDEV add</code>, serial <code>workspace</code>; the
-                  by-id link exists by this observation.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Guest time, s" class="numbers">26.723</td>
-                <td data-label="Observed boundary">
-                  Systemd activates the workspace device
-                </td>
-                <td data-label="Evidence">
-                  Device <code>ActiveEnterTimestampMonotonic</code>.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Guest time, s" class="numbers">
-                  27.359–30.088
-                </td>
-                <td data-label="Observed boundary">
-                  Workspace filesystem creation
-                </td>
-                <td data-label="Evidence">
-                  Makefs start, format completion and unit completion in the
-                  journal.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Guest time, s" class="numbers">31.088</td>
-                <td data-label="Observed boundary">
-                  Workspace mount completes
-                </td>
-                <td data-label="Evidence">
-                  <code>/state/workspaces</code> mounted, short-monotonic
-                  journal.
+                <td data-label="Arrival window">01 Nov 01:00–02:30 UTC</td>
+                <td data-label="Heads / green">55 / 30</td>
+                <td data-label="Three-job proxy p50/p90, s">558 / 677</td>
+                <td data-label="Bazel queue p50/p90, s">14 / 74</td>
+                <td data-label="Other outcomes">
+                  15 canceled, 9 failed, 1 incomplete
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <div class="callout caution">
-          <strong>What this establishes.</strong> Kernel registration precedes
-          the observed wait for device-link readiness. The roughly 20-second
-          registration-to-processed-event interval includes boot ordering,
-          coldplug, event delivery and udev work. It is not an isolated rule
-          execution time or an estimate of removable CI time. The old hardware
-          database rebuild is already skipped after
-          <a href="https://github.com/agentydragon/ducktape/pull/13011"
-            >#13011</a
-          >.
-        </div>
-        <h3>Collection and interpretation</h3>
         <p>
-          <a href="https://github.com/agentydragon/ducktape/pull/13413"
-            >PR #13413</a
-          >
-          adds default OOM-guest collection to the ordinary VM suite: a standard
-          <code>udevadm monitor</code> subscription before coldplug, a bounded
-          report of device identity, manager clock origins, unit activation and
-          execution timestamps, and the guest journal. Existing per-incarnation
-          console retention preserves the records through teardown. Successful
-          teardown requires monitor-ready and complete-report receipts,
-          including across rotated console files. The monitor records events; it
-          does not replace udev's device setup.
+          The previous report’s four-hour 31 October cohort had 85 green heads
+          and a 215/701-second proxy. The earlier 25-hour cohort had 222 green
+          heads and 301/933 seconds. These populations, workload mixes and
+          windows differ. The new values establish
+          <strong>no causal regression or benefit</strong> from the landed
+          changes.
         </p>
-        <p>
-          The initial probe's report was <strong>partial</strong>: several
-          utility paths were absent from the minimal guest, and its original
-          reporter held the boot target open while requesting timing summaries.
-          The PR uses explicit BusyBox applets, direct serial receipts and a
-          separate <code>Type=exec</code> reporter capped at 35 seconds, with
-          two-second command bounds. Final-source CI validation is recorded
-          separately in the evidence; a passing scenario run alone does not
-          establish complete diagnostics.
-        </p>
-        <details>
-          <summary>
-            Complete diagnostic packet from CI; teardown selector failure
-          </summary>
-          <p>
-            The subsequent
-            <a
-              href="https://app.buildbuddy.io/invocation/e15d7eb9-1828-5a36-ba23-6b67e8646887"
-              >CI invocation e15d7eb9</a
-            >
-            tested PR head <code>90c5cf010050</code> through synthetic merge
-            <code>1e46dcb63034</code> with base <code>12b78b2c1bc5</code>. The
-            VM scenarios passed, but the suite failed during diagnostic
-            validation: a substring selector also matched the feature flag in
-            five other guests' skipped-condition messages. The selected OOM
-            guest did retain all four required report sections, a raw
-            monitor-ready receipt and <code>status=complete</code>, with all 25
-            required commands returning zero. The optional critical-chain and
-            blame commands timed out. This is usable diagnostic evidence from a
-            failed suite, not a green CI result.
-          </p>
-          <div class="table-wrap">
-            <table>
-              <caption class="small">
-                Separate CI guest: OOM launcher UID
-                81fa77f5-01f8-474a-82ab-85ac9d80756a. These clocks do not
-                replace the first probe's values.
-              </caption>
-              <thead>
-                <tr>
-                  <th>CI guest observation</th>
-                  <th>Guest time, s</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td data-label="CI guest observation">
-                    Kernel registers workspace <code>vde</code>
-                  </td>
-                  <td data-label="Guest time, s" class="numbers">7.280684</td>
-                </tr>
-                <tr>
-                  <td data-label="CI guest observation">
-                    Manager userspace clock origin
-                  </td>
-                  <td data-label="Guest time, s" class="numbers">8.629435</td>
-                </tr>
-                <tr>
-                  <td data-label="CI guest observation">
-                    Monitor active before coldplug
-                  </td>
-                  <td data-label="Guest time, s" class="numbers">14.279040</td>
-                </tr>
-                <tr>
-                  <td data-label="CI guest observation">
-                    Coldplug main-process start / exit
-                  </td>
-                  <td data-label="Guest time, s" class="numbers">
-                    15.464834 / 22.663335
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="CI guest observation">
-                    Udevd main-process start / active
-                  </td>
-                  <td data-label="Guest time, s" class="numbers">
-                    18.523670 / 21.407349
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="CI guest observation">
-                    Workspace KERNEL / processed UDEV event observed
-                  </td>
-                  <td data-label="Guest time, s" class="numbers">
-                    21.993292 / 25.087906
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="CI guest observation">
-                    Workspace device active
-                  </td>
-                  <td data-label="Guest time, s" class="numbers">26.211320</td>
-                </tr>
-                <tr>
-                  <td data-label="CI guest observation">
-                    Makefs main-process start / exit
-                  </td>
-                  <td data-label="Guest time, s" class="numbers">
-                    26.399422 / 28.319788
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="CI guest observation">
-                    Workspace mount active
-                  </td>
-                  <td data-label="Guest time, s" class="numbers">29.334848</td>
-                </tr>
-                <tr>
-                  <td data-label="CI guest observation">Manager boot finish</td>
-                  <td data-label="Guest time, s" class="numbers">36.199546</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p>
-            Raw artifact:
-            <code
-              >test.outputs/vm-artifacts/consoles/systest_virt-launcher-systest-vm-codex-oom-vkm22_81fa77f5-01f8-474a-82ab-85ac9d80756a/0.log-1158307.cri.log</code
-            >, run 1 / shard 1 / attempt 1. The packet supplies the clock-origin
-            and process fields missing from the first probe. Different source
-            and uncontrolled worker/cache conditions prevent a latency or
-            collector overhead comparison. The selector correction in
-            <a href="https://github.com/agentydragon/ducktape/pull/13413"
-              >#13413</a
-            >
-            uses the exact standalone report receipt; its validation is tracked
-            separately from this failed attempt.
-          </p>
-        </details>
-        <details>
-          <summary>Clocks, artifacts, production parity and open work</summary>
-          <p>
-            Printk brackets are guest kernel timestamps. Udev monitor event
-            times, journal <code>short-monotonic</code> and systemd
-            <code>*TimestampMonotonic</code> are guest monotonic sources;
-            monitor times include reception and scheduling delay.
-            <code>/proc/uptime</code> uses <code>CLOCK_BOOTTIME</code>,
-            including suspend; this OOM guest did not suspend. Outer CRI
-            prefixes are host receipt times and can be buffered. The historical
-            critical-chain <code>@15.319s</code> came from
-            <a
-              href="https://app.buildbuddy.io/invocation/a394fe63-0e05-4287-8748-08edfbc2228a"
-              >a different probe</a
-            >; do not compare it directly with this run's 6.610-second
-            registration.
-          </p>
-          <p>
-            Raw selected console:
-            <code
-              >test.outputs/vm-artifacts/consoles/systest_virt-launcher-systest-vm-codex-oom-8mk5t_9c9311e0-9c18-473e-a5d2-8f9ffbceea0c/0.log-646826.cri.log</code
-            >. The matching launcher log records the virtio block attachment.
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/90c5cf010050c3bcec337287529cf8e626f237cc/agentplane/debug/2026_10_31_vm_boot_critical_chain.md"
-              >Source-pinned investigation note</a
-            >.
-          </p>
-          <p>
-            Both checked-in test and production/staging VM configurations
-            declare a virtio block workspace with ext4. The
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/90c5cf010050c3bcec337287529cf8e626f237cc/agentplane/system_tests/TODO.md"
-              >new TODO</a
-            >
-            compares backing storage and guest boot, format and mount behavior,
-            and calls for equivalent-workload benchmarks before deciding which
-            remaining differences to align. Production uses a NixOS guest; these
-            test-guest timings do not measure production performance.
-          </p>
-          <p>
-            Still open: what dominates the pre-coldplug ordering, enumeration
-            and event-processing intervals, and how much lies on the complete
-            VM/PR critical path. A future optimization needs matched source,
-            image, worker and workload evidence. Distributing test work,
-            changing environment lifetimes and resource placement remain
-            architectural options to evaluate; this one-guest observation is not
-            a comparison of those designs or evidence for a 2× feedback
-            improvement.
-          </p>
-        </details>
-      </section>
-      <section id="feedback">
-        <h2>Exact-head feedback, with unsuccessful heads retained.</h2>
-        <p>
-          The snapshot contains <strong>121 direct-PR head SHAs</strong>: 85
-          green, 14 failed, and 22 cancelled or superseded. For green heads, the
-          start is earliest core workflow creation for that SHA; the stop is the
-          last of its three latest required-job completions. This is a survivor
-          feedback proxy, not push-to-green or full auto-merge readiness.
-        </p>
+        <h3>Path classes across the four slices</h3>
         <div class="table-wrap">
           <table>
-            <caption class="small">
-              Current PR files classify a head only when that PR still names the
-              exact SHA. Superseded heads keep an unknown class.
-            </caption>
             <thead>
               <tr>
                 <th>PR class</th>
                 <th>Heads / green</th>
-                <th>Proxy p50 / p90, s</th>
+                <th>Proxy p50/p90, s</th>
                 <th>Other outcomes</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td data-label="PR class">Agentplane backend</td>
-                <td data-label="Heads / green" class="numbers">6 / 6</td>
-                <td data-label="Proxy p50 / p90, s" class="numbers">
-                  524 / 2301
-                </td>
-                <td data-label="Other outcomes">—</td>
+                <td data-label="Heads / green">19 / 14</td>
+                <td data-label="Proxy p50/p90, s">714 / 1,471</td>
+                <td data-label="Other outcomes">5 failed</td>
               </tr>
               <tr>
                 <td data-label="PR class">build/CI/tooling</td>
-                <td data-label="Heads / green" class="numbers">4 / 4</td>
-                <td data-label="Proxy p50 / p90, s" class="numbers">
-                  114 / 197
-                </td>
+                <td data-label="Heads / green">12 / 12</td>
+                <td data-label="Proxy p50/p90, s">146 / 316</td>
+                <td data-label="Other outcomes">—</td>
+              </tr>
+              <tr>
+                <td data-label="PR class">cdk8s</td>
+                <td data-label="Heads / green">6 / 6</td>
+                <td data-label="Proxy p50/p90, s">665 / 1,468</td>
                 <td data-label="Other outcomes">—</td>
               </tr>
               <tr>
                 <td data-label="PR class">debundle</td>
-                <td data-label="Heads / green" class="numbers">20 / 17</td>
-                <td data-label="Proxy p50 / p90, s" class="numbers">
-                  322 / 478
-                </td>
-                <td data-label="Other outcomes">failed: 3</td>
+                <td data-label="Heads / green">12 / 12</td>
+                <td data-label="Proxy p50/p90, s">214 / 496</td>
+                <td data-label="Other outcomes">—</td>
               </tr>
               <tr>
                 <td data-label="PR class">docs-only</td>
-                <td data-label="Heads / green" class="numbers">12 / 12</td>
-                <td data-label="Proxy p50 / p90, s" class="numbers">
-                  101 / 155
-                </td>
+                <td data-label="Heads / green">23 / 23</td>
+                <td data-label="Proxy p50/p90, s">336 / 720</td>
                 <td data-label="Other outcomes">—</td>
               </tr>
               <tr>
                 <td data-label="PR class">frontend</td>
-                <td data-label="Heads / green" class="numbers">2 / 2</td>
-                <td data-label="Proxy p50 / p90, s" class="numbers">
-                  325 / 344
-                </td>
+                <td data-label="Heads / green">3 / 3</td>
+                <td data-label="Proxy p50/p90, s">558 / 570</td>
                 <td data-label="Other outcomes">—</td>
               </tr>
               <tr>
                 <td data-label="PR class">other code/config</td>
-                <td data-label="Heads / green" class="numbers">6 / 6</td>
-                <td data-label="Proxy p50 / p90, s" class="numbers">
-                  152 / 262
-                </td>
+                <td data-label="Heads / green">1 / 1</td>
+                <td data-label="Proxy p50/p90, s">145 / 145</td>
                 <td data-label="Other outcomes">—</td>
               </tr>
               <tr>
                 <td data-label="PR class">system/runtime</td>
-                <td data-label="Heads / green" class="numbers">14 / 13</td>
-                <td data-label="Proxy p50 / p90, s" class="numbers">
-                  652 / 819
-                </td>
-                <td data-label="Other outcomes">failed: 1</td>
+                <td data-label="Heads / green">5 / 5</td>
+                <td data-label="Proxy p50/p90, s">583 / 630</td>
+                <td data-label="Other outcomes">—</td>
               </tr>
               <tr>
                 <td data-label="PR class">unknown</td>
-                <td data-label="Heads / green" class="numbers">57 / 25</td>
-                <td data-label="Proxy p50 / p90, s" class="numbers">
-                  157 / 665
-                </td>
+                <td data-label="Heads / green">118 / 41</td>
+                <td data-label="Proxy p50/p90, s">600 / 1,097</td>
                 <td data-label="Other outcomes">
-                  cancelled/superseded: 22, failed: 10
+                  25 failed, 50 canceled, 2 incomplete
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <p>
-          Bazel is the last required gate on <strong>77 of 85</strong> green
-          heads; artifacts are last on eight. The prior report’s 301/933-second
-          proxy covered 222 green heads over 25 hours 20 minutes. The new
-          215/701-second result has a shorter window and different
-          source/workload mix, including 57 heads whose path class is unknown.
-          It does not establish an optimization effect.
+        <p class="small">
+          Only 81 heads match a final/current PR head and have its paginated
+          file diff. The other 118 retain unknown class and size; this strongly
+          biases class rows toward surviving final heads. Classification
+          priority: docs-only, cdk8s, system/runtime, frontend, debundle,
+          Agentplane backend, build/CI/tooling, other cluster/config, other.
+          Paths can overlap. A cdk8s row is not a matched deployment comparison.
+          Nine known heads target stack branches; their three-job proxy does not
+          assert devel policy applies to their actual base. Seventy-two known
+          heads target devel; the remaining 118 bases are not established here.
         </p>
         <details>
-          <summary>Queue and runtime are different clocks</summary>
+          <summary>Latest job durations and file-count strata</summary>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Required job / event</th>
-                  <th>Attempts</th>
-                  <th>Queue p50 / p90, s</th>
-                  <th>Runtime p50 / p90, s</th>
-                  <th>Outcomes</th>
+                  <th>Required job</th>
+                  <th>Attempts / outcomes</th>
+                  <th>Queue p50/p90, s</th>
+                  <th>Runtime p50/p90, s</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td data-label="Required job / event">
-                    Build artifacts + imports check · pull_request
+                  <td data-label="Required job">
+                    Build artifacts + imports check
                   </td>
-                  <td data-label="Attempts">121</td>
-                  <td data-label="Queue p50 / p90, s" class="numbers">
-                    6 / 69
+                  <td data-label="Attempts / outcomes">
+                    57 · 50 success, 7 cancelled
                   </td>
-                  <td data-label="Runtime p50 / p90, s" class="numbers">
-                    81 / 89
-                  </td>
-                  <td data-label="Outcomes">cancelled: 8, success: 113</td>
+                  <td data-label="Queue p50/p90, s">11 / 91</td>
+                  <td data-label="Runtime p50/p90, s">83 / 90</td>
                 </tr>
                 <tr>
-                  <td data-label="Required job / event">
-                    Build artifacts + imports check · push
+                  <td data-label="Required job">Pre-commit checks</td>
+                  <td data-label="Attempts / outcomes">
+                    57 · 49 success, 2 failure, 6 cancelled
                   </td>
-                  <td data-label="Attempts">65</td>
-                  <td data-label="Queue p50 / p90, s" class="numbers">
-                    3 / 71
-                  </td>
-                  <td data-label="Runtime p50 / p90, s" class="numbers">
-                    82 / 88
-                  </td>
-                  <td data-label="Outcomes">success: 65</td>
+                  <td data-label="Queue p50/p90, s">9 / 97</td>
+                  <td data-label="Runtime p50/p90, s">63 / 70</td>
                 </tr>
                 <tr>
-                  <td data-label="Required job / event">
-                    Pre-commit checks · pull_request
+                  <td data-label="Required job">bazel-ci / Test &amp; Build</td>
+                  <td data-label="Attempts / outcomes">
+                    60 · 10 failure, 20 cancelled, 30 success
                   </td>
-                  <td data-label="Attempts">121</td>
-                  <td data-label="Queue p50 / p90, s" class="numbers">
-                    12 / 67
-                  </td>
-                  <td data-label="Runtime p50 / p90, s" class="numbers">
-                    62 / 68
-                  </td>
-                  <td data-label="Outcomes">
-                    cancelled: 6, failure: 3, success: 112
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="Required job / event">
-                    Pre-commit checks · push
-                  </td>
-                  <td data-label="Attempts">70</td>
-                  <td data-label="Queue p50 / p90, s" class="numbers">
-                    7 / 63
-                  </td>
-                  <td data-label="Runtime p50 / p90, s" class="numbers">
-                    128 / 136
-                  </td>
-                  <td data-label="Outcomes">success: 70</td>
-                </tr>
-                <tr>
-                  <td data-label="Required job / event">
-                    bazel-ci / Test &amp; Build · pull_request
-                  </td>
-                  <td data-label="Attempts">125</td>
-                  <td data-label="Queue p50 / p90, s" class="numbers">
-                    9 / 70
-                  </td>
-                  <td data-label="Runtime p50 / p90, s" class="numbers">
-                    171 / 624
-                  </td>
-                  <td data-label="Outcomes">
-                    cancelled: 23, failure: 15, success: 87
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="Required job / event">
-                    bazel-ci / Test &amp; Build · push
-                  </td>
-                  <td data-label="Attempts">70</td>
-                  <td data-label="Queue p50 / p90, s" class="numbers">
-                    43 / 233
-                  </td>
-                  <td data-label="Runtime p50 / p90, s" class="numbers">
-                    126 / 555
-                  </td>
-                  <td data-label="Outcomes">
-                    cancelled: 23, failure: 8, success: 39
-                  </td>
+                  <td data-label="Queue p50/p90, s">14 / 74</td>
+                  <td data-label="Runtime p50/p90, s">516 / 688</td>
                 </tr>
               </tbody>
             </table>
           </div>
           <p class="small">
-            Assigned jobs only for queue/runtime; cancelled jobs with no runner
-            have no runtime. All attempt outcomes remain in the counts. Push-run
-            concurrency intentionally preserves an in-flight shipping run and
-            coalesces pending work; a pending push is not equivalent to a PR
-            awaiting a free runner.
+            Queue distributions use assigned jobs with ordered clocks. Runtime
+            includes completed assigned attempts, including cancelled or failed
+            attempts; it is not a successful-test duration distribution. Latest
+            Bazel attempts: 30 success, 10 failure and 20 cancelled. Job-created
+            arrivals and workflow-created arrivals are different populations. No
+            missing timestamp becomes zero.
           </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Current exact-head size</th>
+                  <th>Heads / green</th>
+                  <th>Proxy p50/p90, s</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td data-label="Current exact-head size">1-5 files</td>
+                  <td data-label="Heads / green">47 / 46</td>
+                  <td data-label="Proxy p50/p90, s">327 / 841</td>
+                </tr>
+                <tr>
+                  <td data-label="Current exact-head size">21+ files</td>
+                  <td data-label="Heads / green">15 / 15</td>
+                  <td data-label="Proxy p50/p90, s">558 / 1,346</td>
+                </tr>
+                <tr>
+                  <td data-label="Current exact-head size">6-20 files</td>
+                  <td data-label="Heads / green">19 / 15</td>
+                  <td data-label="Proxy p50/p90, s">451 / 1,060</td>
+                </tr>
+                <tr>
+                  <td data-label="Current exact-head size">unknown</td>
+                  <td data-label="Heads / green">118 / 41</td>
+                  <td data-label="Proxy p50/p90, s">600 / 1,097</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </details>
       </section>
-      <section id="execution">
-        <h2>Feedback latency and worker CPU rank different tests.</h2>
+
+      <section id="queues">
+        <h2>Contention is visible in the busy slice, not continuously.</h2>
         <p>
-          <a
-            href="https://app.buildbuddy.io/invocation/f0c59d85-d192-5dfd-8140-ef12fb71cb16"
-            >Invocation <code>f0c59d85</code></a
-          >
-          passed for
-          <a href="https://github.com/agentydragon/ducktape/pull/13339"
-            >PR #13339</a
-          >. This is an affected-target PR invocation, not a full
-          <code>//...</code> sweep. Its tested source is GitHub’s synthetic
-          merge
-          <a
-            href="https://github.com/agentydragon/ducktape/commit/34e535e27b94418ad0151e5fccaa35a3e7a52309"
-            ><code>34e535e27b94</code></a
-          >, with final PR head <code>6b783c8b8b</code> as a parent; this is
-          verified ancestry, not an assumed equality with the squash merge.
-        </p>
-        <h3>Longest fresh action, seconds</h3>
-        <div class="bar-row">
-          <span>VM</span>
-          <div class="bar-track">
-            <div class="bar" style="width: 100%"></div>
-          </div>
-          <span class="numbers">486.9 s</span>
-        </div>
-        <div class="bar-row">
-          <span>Pod</span>
-          <div class="bar-track">
-            <div class="bar" style="width: 67.4%"></div>
-          </div>
-          <span class="numbers">328.3 s</span>
-        </div>
-        <div class="bar-row">
-          <span>MCP</span>
-          <div class="bar-track">
-            <div class="bar" style="width: 47.2%"></div>
-          </div>
-          <span class="numbers">230.0 s</span>
-        </div>
-        <div class="bar-row">
-          <span>Thread browser</span>
-          <div class="bar-track">
-            <div class="bar" style="width: 28.3%"></div>
-          </div>
-          <span class="numbers">137.6 s</span>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Fresh TestRunner lane</th>
-                <th>Actions</th>
-                <th>Process sum, s</th>
-                <th>Worker CPU sum, s</th>
-                <th>Finishing context</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td data-label="Fresh TestRunner lane"><code>test_vm</code></td>
-                <td data-label="Actions">1</td>
-                <td data-label="Process sum, s">486.928</td>
-                <td data-label="Worker CPU sum, s">2,551.489</td>
-                <td data-label="Finishing context">
-                  491.14 s on the 523.56 s computed path; XML 463.256 s, one
-                  passed test containing six concurrent scenarios.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Fresh TestRunner lane">
-                  <code>test_thread_browser</code>
-                </td>
-                <td data-label="Actions">16</td>
-                <td data-label="Process sum, s">1,572.159</td>
-                <td data-label="Worker CPU sum, s">3,131.374</td>
-                <td data-label="Finishing context">
-                  Largest aggregate test CPU; finishes 12:04:19 UTC, about six
-                  minutes before VM.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Fresh TestRunner lane">
-                  <code>test_pod</code>
-                </td>
-                <td data-label="Actions">1</td>
-                <td data-label="Process sum, s">328.275</td>
-                <td data-label="Worker CPU sum, s">676.431</td>
-                <td data-label="Finishing context">
-                  Finishes 12:07:49 UTC, 158.6 s before VM.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Fresh TestRunner lane">
-                  <code>test_mcp</code>
-                </td>
-                <td data-label="Actions">1</td>
-                <td data-label="Process sum, s">230.003</td>
-                <td data-label="Worker CPU sum, s">477.269</td>
-                <td data-label="Finishing context">Finishes 12:06:12 UTC.</td>
-              </tr>
-              <tr>
-                <td data-label="Fresh TestRunner lane">
-                  <code>test_bridge</code>
-                </td>
-                <td data-label="Actions">2</td>
-                <td data-label="Process sum, s">306.705</td>
-                <td data-label="Worker CPU sum, s">370.440</td>
-                <td data-label="Finishing context">
-                  Longest shard 158.783 s; finishes 12:04:40 UTC.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="small">
-          All 50 originating TestRunner actions in this invocation total 4,219.9
-          process seconds and 9,350.1 worker CPU seconds, with zero missing CPU
-          records. Filter: <code>invocationLinkType=1</code> (NEW). Reused
-          executions and repeated aggregate target-summary durations are
-          excluded. Concurrent action spans, worker CPU and CI wall time are
-          different resources.
-        </p>
-        <p>
-          The computed path is 99.98% remote and 98.35% process; its queue share
-          is 0.07%. These action records do not show a remote scheduling
-          backlog. They cannot rule out admission or capacity limits before an
-          execution record exists.
-        </p>
-        <details>
-          <summary>VM traces and fresh browser diagnostic</summary>
-          <p>
-            The VM artifact contains 17,355 process spans, including 272 Runner
-            spans and explicit quiesce identities for the five driver-created
-            guests. Their ready spans sum to 549.34 seconds (maximum 139.91),
-            turn waits sum to 355.87 seconds, and the OOM case spans 242.84
-            seconds. These inclusive, concurrent durations are not additive.
-            They do not establish complete guest stage coverage or reliable
-            terminal flush.
-          </p>
-          <p>
-            A subsequent
-            <a
-              href="https://app.buildbuddy.io/invocation/6ca19414-fe78-4b9e-a0cd-9e5641e95ec1"
-              >full browser diagnostic</a
-            >
-            on source <code>7bedf6a9c03d</code> passed all 16 shards and 50 case
-            instances: 1,572.709 process seconds, 3,153.509 CPU seconds, longest
-            shard 122.065 seconds, computed path 124.84 seconds. It used
-            built-in pytest duration reporting and temporary CDP profiling.
-            Image loads repeat once per shard (228.8 summed worker-seconds), as
-            does PostgreSQL readiness (46.0 summed seconds). These overlapping
-            wall intervals are not CPU attribution or measured savings. The CDP
-            capture excludes earlier fixture dependencies. No sharding policy is
-            changed.
-          </p>
-        </details>
-      </section>
-      <section id="timelines">
-        <h2>Linked examples preserve the surrounding CI cost.</h2>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Selected PR / source</th>
-                <th>Head proxy, s</th>
-                <th>Bazel job queue / runtime, s</th>
-                <th>Inner test elapsed / path, s</th>
-                <th>Observed mechanism</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td data-label="Selected PR / source">
-                  <a
-                    href="https://github.com/agentydragon/ducktape/actions/runs/41190051238/job/124504791367"
-                    >docs-only</a
-                  ><br /><a
-                    href="https://github.com/agentydragon/ducktape/pull/13306"
-                    >#13306</a
-                  >
-                  · <code>1e4016693002</code>
-                </td>
-                <td data-label="Head proxy, s">108</td>
-                <td data-label="Bazel job queue / runtime, s">3 / 104</td>
-                <td data-label="Inner test elapsed / path, s">
-                  No test invocation
-                </td>
-                <td data-label="Observed mechanism">
-                  Zero affected targets; runner log explicitly skips test/build.
-                  Selection/setup still occupies the Bazel job.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Selected PR / source">
-                  <a
-                    href="https://github.com/agentydragon/ducktape/actions/runs/41190891375/job/124507301749"
-                    >debundle</a
-                  ><br /><a
-                    href="https://github.com/agentydragon/ducktape/pull/13313"
-                    >#13313</a
-                  >
-                  · <code>fac3cbd0e494</code>
-                </td>
-                <td data-label="Head proxy, s">322</td>
-                <td data-label="Bazel job queue / runtime, s">2 / 320</td>
-                <td data-label="Inner test elapsed / path, s">
-                  <a
-                    href="https://app.buildbuddy.io/invocation/3c190bfa-8bf7-5337-854b-0984e7428a7c"
-                    >211.4 / 155.4</a
-                  >
-                </td>
-                <td data-label="Observed mechanism">
-                  155.39s dependency chain: Rust metadata/link/compile work
-                  plus31.58s isolated-edit test; not a VM-tail workload.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Selected PR / source">
-                  <a
-                    href="https://github.com/agentydragon/ducktape/actions/runs/41191497111/job/124509035320"
-                    >system/runtime</a
-                  ><br /><a
-                    href="https://github.com/agentydragon/ducktape/pull/13319"
-                    >#13319</a
-                  >
-                  · <code>91a238d7a801</code>
-                </td>
-                <td data-label="Head proxy, s">652</td>
-                <td data-label="Bazel job queue / runtime, s">5 / 646</td>
-                <td data-label="Inner test elapsed / path, s">
-                  <a
-                    href="https://app.buildbuddy.io/invocation/0a9bb943-c7f0-5547-ad96-9f9540f10749"
-                    >548.2 / 543.1</a
-                  >
-                </td>
-                <td data-label="Observed mechanism">
-                  VM-target dependency path543.06s; following artifact
-                  build3.147s. This older tested tree is a separate source.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Selected PR / source">
-                  <a
-                    href="https://github.com/agentydragon/ducktape/actions/runs/41199139956/job/124531292995"
-                    >Agentplane backend</a
-                  ><br /><a
-                    href="https://github.com/agentydragon/ducktape/pull/13339"
-                    >#13339</a
-                  >
-                  · <code>34e535e27b94</code>
-                </td>
-                <td data-label="Head proxy, s">647</td>
-                <td data-label="Bazel job queue / runtime, s">23 / 624</td>
-                <td data-label="Inner test elapsed / path, s">
-                  <a
-                    href="https://app.buildbuddy.io/invocation/f0c59d85-d192-5dfd-8140-ef12fb71cb16"
-                    >540.1 / 523.6</a
-                  >
-                </td>
-                <td data-label="Observed mechanism">
-                  VM-critical affected-target integration run; following
-                  artifact build5.047s with0.04s path.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Selected PR / source">
-                  <a
-                    href="https://github.com/agentydragon/ducktape/actions/runs/41186999349/job/124495841151"
-                    >build/CI/tooling</a
-                  ><br /><a
-                    href="https://github.com/agentydragon/ducktape/pull/13288"
-                    >#13288</a
-                  >
-                  · <code>6e84b8501225</code>
-                </td>
-                <td data-label="Head proxy, s">149</td>
-                <td data-label="Bazel job queue / runtime, s">2 / 146</td>
-                <td data-label="Inner test elapsed / path, s">
-                  <a
-                    href="https://app.buildbuddy.io/invocation/ab3b0049-08e7-5a5b-9e79-494c49b0fce3"
-                    >29.5 / 23.1</a
-                  >
-                </td>
-                <td data-label="Observed mechanism">
-                  Small bbapi selection;23.08s test path, then7.133s build. Not
-                  representative of full integration work.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="small">
-          Selected middle-ranked green examples within available path classes,
-          plus the recent integration case. GitHub step clocks and BuildBuddy
-          timestamps have different resolutions and uncalibrated host skew. The
-          evidence records observed step boundaries and test start/end
-          separately; unassigned pre-test time includes outer-runner allocation,
-          source/tool setup and graph selection. It is not all provider queue
-          time. No webhook, log-availability or agent-receipt clock was
-          measured.
-        </p>
-      </section>
-      <section id="retries">
-        <h2>Current long tails include distinct failure mechanisms.</h2>
-        <p>
-          Four core workflow runs in this arrival window were rerun once and
-          eventually passed. They are separate attempts on the same head, not
-          four new pushes and not evidence of the old CLI automatically
-          replaying an accepted run.
-        </p>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Run / PR</th>
-                <th>First failure</th>
-                <th>Observed failed-job end → rerun creation</th>
-                <th>Interpretation</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td data-label="Run / PR">
-                  <a
-                    href="https://github.com/agentydragon/ducktape/actions/runs/41184917810"
-                    >41184917810 · #13283</a
-                  >
-                </td>
-                <td data-label="First failure">
-                  VM pytest 600-second deadline
-                </td>
-                <td data-label="Observed failed-job end → rerun creation">
-                  512 s
-                </td>
-                <td data-label="Interpretation">
-                  08:49:39 → 08:58:11 UTC; final-head proxy 2,301 s. Driver OTel
-                  predates the shared collection artifact in this execution.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Run / PR">
-                  <a
-                    href="https://github.com/agentydragon/ducktape/actions/runs/41194638696"
-                    >41194638696 · #13321</a
-                  >
-                </td>
-                <td data-label="First failure">
-                  VM pytest 600-second deadline
-                </td>
-                <td data-label="Observed failed-job end → rerun creation">
-                  1,107 s
-                </td>
-                <td data-label="Interpretation">
-                  11:01:12 → 11:19:39 UTC; final-head proxy 1,932 s. OOM guest’s
-                  first baseline command waited 300.010 s before allocation
-                  testing; cleanup then lasted 59.833 s.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Run / PR">
-                  <a
-                    href="https://github.com/agentydragon/ducktape/actions/runs/41196601793"
-                    >41196601793 · #13338</a
-                  >
-                </td>
-                <td data-label="First failure">
-                  Bazel exit 34: Execute-result
-                  <code>UNAVAILABLE: io exception</code>
-                </td>
-                <td data-label="Observed failed-job end → rerun creation">
-                  457 s
-                </td>
-                <td data-label="Interpretation">
-                  11:34:59 → 11:42:36 UTC. This is not a pytest assertion
-                  failure or the GetEventLog reset.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Run / PR">
-                  <a
-                    href="https://github.com/agentydragon/ducktape/actions/runs/41196890323"
-                    >41196890323 · #13339, earlier head</a
-                  >
-                </td>
-                <td data-label="First failure">
-                  Bazel exit 34: Execute-result
-                  <code>UNAVAILABLE: io exception</code>
-                </td>
-                <td data-label="Observed failed-job end → rerun creation">
-                  445 s
-                </td>
-                <td data-label="Interpretation">
-                  11:35:06 → 11:42:31 UTC. Subsequent final-head checks also
-                  passed; do not attach the older attempt to its later head.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="callout caution">
+          Adding visual jobs to the selected core workflows gives
           <strong
-            >The 300-second wait is a wedge boundary, not an OOM allocation
-            cost.</strong
-          >
-          In #13321’s retained trace, the OOM guest became Ready in 71.993
-          seconds and opened its session in 7.802 seconds. The first native
-          memory-read command then waited 300.010 seconds. The other five
-          scenarios finished before it. The initiating native/transport cause
-          remains unproven; raising the test deadline would conceal this
-          failure.
-        </div>
-        <p>
-          Intervals between attempts are observed gaps. The run metadata
-          identifies the triggering account but does not establish whether a
-          person, automation or scheduler caused the interval. No operator-delay
-          attribution or automatic retry change is made here. The failed-result
-          summary can retain durations from a reused remote execution; those
-          values are not the GitHub job runtime.
+            >22.41 completed runner-hours in the busy 90-minute slice</strong
+          >, a peak of 20 busy runners and 5.82 minutes at that peak. At 21:51
+          UTC, the one-minute sample sees 20 occupied runners and 10 queued
+          direct-PR Bazel jobs. PR Bazel, artifact and pre-commit jobs have no
+          dependency on one another. This supports contention during that
+          interval; it does not identify the account plan, scheduler priority or
+          an account-wide capacity limit.
         </p>
-        <details>
-          <summary>Log-stream reset research remains separate</summary>
-          <p>
-            <a href="https://github.com/agentydragon/ducktape/pull/13336"
-              >#13336</a
-            >
-            and
-            <a href="https://github.com/agentydragon/ducktape/pull/13343"
-              >#13343</a
-            >
-            record a real <code>RST_STREAM INTERNAL_ERROR</code> outside GitHub
-            Actions. HTTP/2 error 0x2 is mapped by grpc-go to gRPC Internal
-            (13); that does not identify who caused the peer’s reset. A
-            controlled 12-minute low-volume run, including six minutes of
-            producer silence, did not reproduce it. Direct observers survived
-            9m32s and 7m28s through EOF; unchanged responses approximately every
-            three seconds mean producer silence was not transport idleness. A
-            changing invocation attempt/cursor did not disconnect those
-            observers.
-          </p>
-          <p>
-            The separate empty <code>ffff</code> log-index boundary returns
-            ResourceExhausted, not this reset. Upstream backend/proxy reset
-            cause and same-accepted-run CLI reconnection remain open in
-            <a href="https://github.com/agentydragon/ducktape/issues/13270"
-              >#13270</a
-            >. The replay guard and bbapi cursor recovery already shipped; do
-            not repeat whole-run submission to repair log observation.
-          </p>
-        </details>
-      </section>
-      <section id="shipped">
-        <h2>Shipped work leaves the implementation queue.</h2>
         <p>
-          All changes below were rechecked as merged. Passing checks and
-          narrower mechanism evidence are distinguished from fleet-wide or
-          matched feedback savings.
+          The latest slice has
+          <strong>16.20 completed runner-hours and a peak of 19</strong> in the
+          same selected scope. Its median Bazel queue is 14 seconds, versus 69
+          in the busy slice. Push jobs have intentional serialization/coalescing
+          and are not used as independent PR queue observations.
         </p>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Lane / source</th>
-                <th>Verified behavior</th>
-                <th>Remaining limit or decision</th>
+                <th>Latest visual job</th>
+                <th>Assigned completed jobs</th>
+                <th>Clipped runner-minutes</th>
+                <th>Runtime p50/p90, s</th>
+                <th>What it buys</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td data-label="Lane / source">
-                  Stable Go race config<br /><a
-                    href="https://github.com/agentydragon/ducktape/pull/13216"
-                    >#13216</a
+                <td data-label="Latest visual job">announce</td>
+                <td data-label="Assigned completed jobs">55</td>
+                <td data-label="Clipped runner-minutes">32.45</td>
+                <td data-label="Runtime p50/p90, s">35 / 44</td>
+                <td data-label="What it buys">
+                  Queryable visual-review check for the exact attempt
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Latest visual job">cancel</td>
+                <td data-label="Assigned completed jobs">21</td>
+                <td data-label="Clipped runner-minutes">12.40</td>
+                <td data-label="Runtime p50/p90, s">34 / 44</td>
+                <td data-label="What it buys">
+                  Terminal cancellation of the same attempt’s announcement
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Latest visual job">publish</td>
+                <td data-label="Assigned completed jobs">55</td>
+                <td data-label="Clipped runner-minutes">62.97</td>
+                <td data-label="Runtime p50/p90, s">59 / 121</td>
+                <td data-label="What it buys">
+                  Artifact collection, image comparison, upload and review
+                  publication
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          There are
+          <strong
+            >73 successful Nix setup steps totaling 1,590 runner-seconds</strong
+          >
+          in announcement/cancellation jobs. Their API step medians are two and
+          three seconds. This isolates the operation A removes. The earlier busy
+          slice’s publication median was 135 seconds; the latest is 59 seconds,
+          after publisher changes landed. Different workload, failure and cache
+          mixes prevent attributing that distribution change to one patch.
+        </p>
+        <p>
+          <strong>Old active records are not current runner demand.</strong> The
+          active sweep contains 14 queued and five in-progress workflow records
+          created between 15 May and 13 September. A 03:34 UTC follow-up finds
+          no unfinished jobs on any of those 19 records: 14 return no jobs, five
+          only completed jobs. Their workflow ages are not native job queue
+          ages. The core sweep’s only unfinished check-like job row is an
+          unassigned <code>PR visual review</code>, age 3,609 seconds. None
+          enters occupied runner time. No cause is assigned to the stale
+          workflow state and no old run is cancelled.
+        </p>
+        <p class="small">
+          Occupancy includes completed assigned jobs clipped to each half-open
+          window; unfinished jobs, other workflows, owner repositories and
+          completed runs arriving before the sampled windows may be absent. It
+          is a lower bound. Visual metadata was collected after the core sweep.
+          The 540 busy-slice and 353 latest-slice visual workflow records
+          include skipped/unassigned jobs; they are not 893 occupied runners or
+          distinct PRs.
+        </p>
+      </section>
+
+      <section id="timelines">
+        <h2>Required-job completion and inner test time differ.</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Linked job / exact PR head</th>
+                <th>Head proxy, s</th>
+                <th>Job queue / host setup, s</th>
+                <th>Remote pre-test / inner test / post-test, s</th>
+                <th>Inner test</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Linked job / exact PR head">
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41134163411/job/124332349967"
+                    >#13124</a
+                  ><br /><code>e7673bf7ed40</code>
+                </td>
+                <td data-label="Head proxy, s">818</td>
+                <td data-label="Job queue / host setup, s">188 / 26</td>
+                <td data-label="Remote pre-test / inner test / post-test, s">
+                  No inner test; see case notes
+                </td>
+                <td data-label="Inner test">—</td>
+              </tr>
+              <tr>
+                <td data-label="Linked job / exact PR head">
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41137230818/job/124342572929"
+                    >#13117</a
+                  ><br /><code>4f0ae681adc9</code>
+                </td>
+                <td data-label="Head proxy, s">908</td>
+                <td data-label="Job queue / host setup, s">246 / 28</td>
+                <td data-label="Remote pre-test / inner test / post-test, s">
+                  No inner test; see case notes
+                </td>
+                <td data-label="Inner test">—</td>
+              </tr>
+              <tr>
+                <td data-label="Linked job / exact PR head">
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41263364706/job/124720978223"
+                    >#13412</a
+                  ><br /><code>647d0b1da82c</code>
+                </td>
+                <td data-label="Head proxy, s">105</td>
+                <td data-label="Job queue / host setup, s">2 / 27</td>
+                <td data-label="Remote pre-test / inner test / post-test, s">
+                  No inner test; see case notes
+                </td>
+                <td data-label="Inner test">—</td>
+              </tr>
+              <tr>
+                <td data-label="Linked job / exact PR head">
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41265014893/job/124725896062"
+                    >#13407</a
+                  ><br /><code>e51d680297c4</code>
+                </td>
+                <td data-label="Head proxy, s">563</td>
+                <td data-label="Job queue / host setup, s">7 / 31</td>
+                <td data-label="Remote pre-test / inner test / post-test, s">
+                  69.2 / 446.1 / 9.7
+                </td>
+                <td data-label="Inner test">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/6afc34b5-8aa1-59a6-9882-96e311f3c163"
+                    >6afc34b5</a
                   >
                 </td>
-                <td data-label="Verified behavior">
-                  Build-wide race default; explicit production-binary opt-outs;
-                  no go_test wrapper. Selected modes preserved; following hosted
-                  build configured zero targets.
+              </tr>
+              <tr>
+                <td data-label="Linked job / exact PR head">
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41261296760/job/124714942237"
+                    >#13406</a
+                  ><br /><code>e8e1dc1331d1</code>
                 </td>
-                <td data-label="Remaining limit or decision">
-                  Analysis reuse established; matched elapsed savings
+                <td data-label="Head proxy, s">383</td>
+                <td data-label="Job queue / host setup, s">60 / 38</td>
+                <td data-label="Remote pre-test / inner test / post-test, s">
+                  16.9 / 240.3 / 26.8
+                </td>
+                <td data-label="Inner test">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/ecf6fa6f-d684-59ac-8355-c77bc2488739"
+                    >ecf6fa6f</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Linked job / exact PR head">
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41265356563/job/124726929205"
+                    >#13413</a
+                  ><br /><code>4cd6a7301ffb</code>
+                </td>
+                <td data-label="Head proxy, s">624</td>
+                <td data-label="Job queue / host setup, s">125 / 23</td>
+                <td data-label="Remote pre-test / inner test / post-test, s">
+                  25.1 / 424.5 / 25.4
+                </td>
+                <td data-label="Inner test">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2"
+                    >11b1a7ad</a
+                  >
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <strong>Zero-target contrast:</strong>
+          <a href="https://github.com/agentydragon/ducktape/pull/13412"
+            >#13412</a
+          >
+          spends 2 seconds queued, 27 in host setup, 71 in remote selection and
+          four after that step, with the one-second workflow/job creation gap:
+          105 seconds to its final gate. Its runner explicitly selects zero
+          affected targets.
+          <a href="https://github.com/agentydragon/ducktape/pull/13124"
+            >#13124</a
+          >
+          also selects zero targets; Bazel finishes at +282 seconds, while
+          artifacts wait 733 seconds then run for 85, finishing last at +818.
+          Speeding Bazel alone would not repair that example.
+        </p>
+        <p>
+          <strong>Stacked docs are different:</strong>
+          <a href="https://github.com/agentydragon/ducktape/pull/13117"
+            >#13117</a
+          >
+          targets <code>sampler-exporter-workqueue</code>, selects 864 targets
+          and runs a 434.8-second test plus a 133.4-second build on its tested
+          source. A Markdown-only final PR diff does not prove an empty
+          effective CI workload. Do not introduce a blanket documentation
+          bypass.
+        </p>
+        <p>
+          <strong>Integration:</strong>
+          <a href="https://github.com/agentydragon/ducktape/pull/13407"
+            >#13407</a
+          >
+          has a 384.92-second computed path, including 355.69 seconds attributed
+          to the VM action and 28.90 to fixture rendering. Its fresh VM process
+          is 354.35 seconds. In
+          <a href="https://github.com/agentydragon/ducktape/pull/13413"
+            >#13413</a
+          >, the 415.80-second path includes a 326.17-second VM action and guest
+          archive/EROFS/image assembly. Its process execution is 324.25 seconds.
+          The separate final build reuses analysis:
+          <a href="https://github.com/agentydragon/ducktape/pull/13407"
+            >#13407</a
+          >
+          configures zero targets and takes 3.289 seconds.
+        </p>
+        <p class="small">
+          Host setup ends at the remote step start. Remote pre-test includes
+          allocation, checkout/tools and target selection; those subintervals
+          are not individually isolated. Post-test includes build and
+          finalization. Inner timestamps come from BES, not buffered console
+          receipt. The source SHA for each inspected invocation is in evidence.
+          GitHub’s one-second resolution and uncalibrated cross-host skew limit
+          precision.
+        </p>
+        <details>
+          <summary>A reused execution is not current compute</summary>
+          <p>
+            <a href="https://github.com/agentydragon/ducktape/pull/13406"
+              >#13406</a
+            >
+            reuses a Pod execution that started at 01:29:00 UTC, before this
+            invocation started at 01:31:22.947, and finishes at 01:35:22.466.
+            Its <code>invocationLinkType=2</code> process clocks span 382.40
+            seconds; this invocation waits for only the remaining portion. Its
+            computed path shows an impossible 169.75% process and negative
+            “other” share. Those stage percentages are rejected. The
+            invocation’s observed 240.298-second elapsed interval remains valid;
+            reused worker CPU is excluded from fresh cost.
+          </p>
+        </details>
+      </section>
+
+      <section id="vm">
+        <h2>VM work remains on two inspected integration paths.</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Inner invocation</th>
+                <th>Fresh test actions</th>
+                <th>Test process sum, s</th>
+                <th>Test CPU sum, s</th>
+                <th>VM process / CPU, s</th>
+                <th>Computed path, s</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Inner invocation">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2"
+                    >11b1a7ad</a
+                  >
+                  · #13413
+                </td>
+                <td data-label="Fresh test actions">10</td>
+                <td data-label="Test process sum, s">1,187.1</td>
+                <td data-label="Test CPU sum, s">3,308.1</td>
+                <td data-label="VM process / CPU, s">324.3 / 1563.1</td>
+                <td data-label="Computed path, s">415.80</td>
+              </tr>
+              <tr>
+                <td data-label="Inner invocation">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/6afc34b5-8aa1-59a6-9882-96e311f3c163"
+                    >6afc34b5</a
+                  >
+                  · #13407
+                </td>
+                <td data-label="Fresh test actions">79</td>
+                <td data-label="Test process sum, s">4,619.8</td>
+                <td data-label="Test CPU sum, s">9,214.9</td>
+                <td data-label="VM process / CPU, s">354.3 / 1700.8</td>
+                <td data-label="Computed path, s">384.92</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small">
+          Only originating <code>TestRunner</code> records with
+          <code>invocationLinkType=1</code> enter these resource totals. No CPU
+          records are missing. Shard/action sums are worker resources; they are
+          not additional gate wall time. Reused browser actions are excluded, so
+          this is not a fresh browser cost census. The prior fresh browser
+          measurement remains historical: 16 shards, 3,131.4 CPU-seconds,
+          finishing six minutes before that older VM tail.
+        </p>
+        <h3>What the fresh VM action does</h3>
+        <p>
+          In
+          <a href="https://github.com/agentydragon/ducktape/pull/13407"
+            >#13407</a
+          >, fixture setup is 94.86 seconds. Six independent guest scenarios
+          then overlap. Five driver readiness spans range from 87.93 to 118.04
+          seconds; the central sampler has its own helper. The final scenario is
+          <strong>Claude’s turn, 221.75 seconds</strong>, with 32.14 seconds of
+          its own cleanup. The Codex OOM scenario is 198.50 seconds: baseline
+          command 41.44, allocation/survival 23.87 and same-session recovery
+          11.97, followed by 28.71 of cleanup. These nested/concurrent intervals
+          are not additive. An OOM-only speedup would eventually leave Claude
+          last. The VM execution begins at 02:27:01.371; pytest’s XML session
+          timestamp is 02:27:28.894. That 27.5-second pre-session interval is
+          not split into interpreter bootstrap, imports or other launch work
+          here. XML records 325.584 seconds; its difference from the
+          354.348-second action is not charged to fixture spans. The prior
+          full-Pod bytecode experiment did not establish a wall-time benefit, so
+          it is not revived from this gap alone.
+        </p>
+        <h3>Final-source boot evidence is now verified</h3>
+        <p>
+          <a
+            href="https://app.buildbuddy.io/invocation/11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2"
+            >11b1a7ad</a
+          >
+          passed the final
+          <a href="https://github.com/agentydragon/ducktape/pull/13413"
+            >#13413</a
+          >
+          head through synthetic merge <code>ad7264cf171f</code>; exact-head and
+          stable-race-fix ancestry were verified. Its OOM guest has one complete
+          raw report receipt. Kernel disk registration is 6.003 seconds,
+          processed workspace udev receipt 23.005, device active 23.569, makefs
+          24.549–26.258 and workspace mount active 27.377. The monitor starts at
+          11.126 and reports active at 12.943, before coldplug starts at 14.091.
+          Coldplug exits at 21.024; udevd starts at 16.929 and becomes active at
+          19.874. This confirms collection completeness, not a speedup. The
+          monitor itself adds an ordering edge; overhead is unmeasured.
+        </p>
+        <p>
+          The old registration-to-link question is narrowed but not eliminated:
+          early systemd/coldplug ordering, scheduling and rule work still
+          overlap. Production uses a NixOS guest; this Debian/BusyBox/EROFS test
+          guest runs with one virtual CPU under TCG. Both declare virtio block
+          workspace disks and ext4. Keep the parity/benchmark TODO; these clocks
+          do not measure production.
+        </p>
+        <h3>New scheduler profile</h3>
+        <p>
+          The first expanded recording,
+          <a
+            href="https://app.buildbuddy.io/invocation/ab1d4ba3-ce97-45e9-b2bc-a1012c054a3a"
+            ><code>ab1d4ba3</code></a
+          >, retained a valid 15.97 MB perf data region with CPU-clock and
+          scheduler events. All six scenarios passed; the suite failed teardown
+          because the OOM guest lacked its shutdown-complete receipt. It is
+          <strong>not a green suite result</strong>. The large post-recording
+          console report may have perturbed shutdown; that causal link is
+          unproven.
+        </p>
+        <p>
+          The OOM Session’s native app-server TGID is 620. Its same-resource
+          <code>app_server.start</code> span is <strong>12.791 seconds</strong>,
+          including an 11.410-second initialize child. Guest clock markers give
+          nominal UNIX-minus-uptime 1793501728.05 seconds, with about one second
+          of uncertainty. In the mapped interval, 49 Hz CPU-clock sampling
+          records <strong>153 kernel and 128 user samples</strong> for that TGID
+          across its threads, approximately 3.1 kernel and 2.6 user CPU-seconds.
+          Shifting the entire interval by −1/+1 second yields 148/143 kernel and
+          123/131 user samples. This establishes a material sampled kernel
+          contribution in this probe. It is not a comparison with the old
+          20.1-second startup and not proof that the remaining wall time is
+          removable waiting.
+        </p>
+        <p>
+          Kernel frames are unresolved <code>[kernel.kallsyms]</code> addresses.
+          The first recording also applied frequency sampling to scheduler
+          tracepoints, so it cannot reconstruct every running/runnable/blocked
+          transition. An explicit-period-1 probe removed the large console dump
+          and requested every scheduler transition; its status is recorded
+          below. Missing transitions, absent kernel symbols and the TCG/host
+          scheduling boundary prevent naming the native startup root cause. No
+          startup optimization is recommended from these counts.
+        </p>
+        <div class="callout caution">
+          <strong>Separate outer-VM failure:</strong>
+          <a
+            href="https://app.buildbuddy.io/invocation/9bb2ad9b-9b72-4c31-a3d9-46d716138808"
+            ><code>9bb2ad9b</code></a
+          >
+          produced two originating physical executions of the same TestRunner
+          action. The first runs 03:03:23.711–03:13:52.515 UTC (628.804
+          seconds), then reports an unavailable Firecracker pause API. Its
+          retained <code>vm_log_tail.txt</code> shows a general protection fault
+          in <code>update_load_avg+0x92/0x5c0</code>, followed by
+          <code>Kernel panic - not syncing: Fatal exception in interrupt</code>,
+          outer kernel <code>5.15.0 #1</code> and VMM exit. This is the
+          <strong>RBE action VM containing k3s/QEMU</strong>, not the nested
+          Debian 6.12 guest. The invalid-pointer cause remains unknown without
+          that kernel’s exact build/core and executor-host evidence.
+        </div>
+        <p>
+          RBE retries the action internally at 03:13:53.948; its second
+          execution lasts 338.781 seconds. Each remote queue is about 0.06
+          seconds. The two executions consume 967.585 action-execution seconds
+          and 5,263.118 worker CPU-seconds. The first has empty stdout/stderr
+          and an empty test-output tree; its VM server log is the surviving
+          failure evidence. The final attempt rejects my
+          <code>/period=1/</code> tracepoint syntax (guest perf accepts only
+          call-graph and stack-size terms), exits 129 without a profile, and
+          fails profile capture. The long invocation is
+          <strong
+            >not evidence of runner starvation or a slow successful native
+            startup</strong
+          >. No client resubmitted an accepted command; the physical retry is
+          explicitly counted.
+        </p>
+        <p>
+          The corrected scheduler-only
+          <a
+            href="https://app.buildbuddy.io/invocation/f9cb36c0-d239-4fa8-a80b-9ce6234a5365"
+            >probe f9cb36c0</a
+          >
+          records every requested transition (<code>sample_period=1</code>) and
+          retains a valid 25,225,875-byte profile. Its suite fails the existing
+          600-second pytest deadline and teardown. The trace spans guest uptime
+          59.442–119.523 seconds; the same-resource OOM native startup begins at
+          nominal uptime 141.813 seconds, more than 22 seconds after recording
+          ends. One-second clock uncertainty does not bridge that gap. The
+          initialize child then errors after 66.907 seconds, the first baseline
+          command waits 298.255 seconds, and OOM cleanup lasts 300.493 seconds.
+          Those nested intervals are not additive. This is a pre-allocation
+          startup/command wedge, not a successful OOM or native-performance
+          proof.
+        </p>
+        <p class="small">
+          Source base: devel <code>58e4261128f6</code>, with isolated profiler
+          patches. Raw artifact:
+          <code
+            >test.outputs/vm-artifacts/profiles/35fd79c0-5dd1-4d0f-b20c-4909489160b0.perf.data</code
+          >, SHA-256
+          <code
+            >892e4a66a47e3aac5f8e2ccc1925f0c4923d1cafd1e710b519b4bc4cb1cdb5fa</code
+          >. CPU sample analysis used <code>perf script</code>, joined to the
+          guest’s own clock fields and exact OTel Session/resource. The next
+          discriminating capture must first follow actual recorder lifetime:
+          keep the root-service profiler independent of the native PID/cgroup,
+          record from before Runner startup, and stop it explicitly through the
+          shared state/control FIFO before fixture capture. The fixed 60-second
+          boot-relative window is disproven for delayed startup. A further
+          full-suite repeat without that lifecycle change is disproportionate
+          after these three costly probes. Matching guest kernel symbols are
+          also needed; attributing TCG/host off-CPU time additionally needs a
+          QEMU/worker-side trace. No account-wide capacity or
+          kernel-hot-function claim follows from unavailable metadata.
+        </p>
+      </section>
+
+      <section id="signals">
+        <h2>The live test status leads the required job by seconds.</h2>
+        <p>
+          Exact-head status histories were read for the latest slice’s 55 heads
+          and matched to deterministic run/attempt test invocation IDs.
+          Fifty-two have pending and terminal status records. Among all 30 green
+          heads, the informational successful test status precedes required
+          Bazel job completion by
+          <strong>11 seconds at p50 and 23 at p90</strong>, maximum 28. Workflow
+          creation to that status is 533/663 seconds p50/p90. For 52 heads with
+          a pending record, the pending status is created at +47/+122 seconds
+          p50/p90.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Milestone for final boot head</th>
+                <th>Recorded UTC</th>
+                <th>What this clock establishes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Milestone for final boot head">
+                  Core workflow created
+                </td>
+                <td data-label="Recorded UTC">02:28:36</td>
+                <td data-label="What this clock establishes">
+                  Start proxy; push timestamp unavailable
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Milestone for final boot head">
+                  Required Bazel job starts
+                </td>
+                <td data-label="Recorded UTC">02:30:42</td>
+                <td data-label="What this clock establishes">
+                  Runner assigned after 125-second job queue
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Milestone for final boot head">
+                  Informational status pending
+                </td>
+                <td data-label="Recorded UTC">02:31:04</td>
+                <td data-label="What this clock establishes">
+                  GitHub records the invocation link
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Milestone for final boot head">
+                  Inner test starts / completes
+                </td>
+                <td data-label="Recorded UTC">02:31:30.073 / 02:38:34.563</td>
+                <td data-label="What this clock establishes">
+                  BES clock; test verdict precedes final build
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Milestone for final boot head">
+                  Informational status success
+                </td>
+                <td data-label="Recorded UTC">02:38:37</td>
+                <td data-label="What this clock establishes">
+                  Test verdict status recorded 23 seconds before required job
+                  completes
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Milestone for final boot head">
+                  Required job completes
+                </td>
+                <td data-label="Recorded UTC">02:39:00</td>
+                <td data-label="What this clock establishes">
+                  Authoritative required context becomes terminal
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small">
+          These are GitHub status creation clocks, not measured
+          first-queryability, webhook delivery or agent reception. The API read
+          is a later positive accessibility observation. Job logs, BuildBuddy
+          logs and artifacts were retrieved in this investigation after
+          completion; their earliest accessibility was not polled. No
+          notification/inbox Action is connected in this session, and no
+          delivery log or harness receipt clock was available. Default
+          subscription behavior in
+          <code>agentplane/notification_service/docs/api.md</code> does not
+          prove actual delivery for these heads. No raw inbox or webhook payload
+          is published.
+        </p>
+      </section>
+
+      <section id="reruns">
+        <h2>Two latest-window reruns cross different failure boundaries.</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Run / failed job</th>
+                <th>Observed failure</th>
+                <th>Failure end → attempt 2 creation</th>
+                <th>Failure end → final required job completion</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Run / failed job">
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41261063458"
+                    >41261063458</a
+                  >
+                  ·
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41261063458/job/124714247365"
+                    >first attempt</a
+                  >
+                </td>
+                <td data-label="Observed failure">
+                  Dispatcher live archive loses native scratch HEAD; consistent
+                  SQLite backups pass
+                </td>
+                <td data-label="Failure end → attempt 2 creation">57 s</td>
+                <td data-label="Failure end → final required job completion">
+                  328 s
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Run / failed job">
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41262571801"
+                    >41262571801</a
+                  >
+                  ·
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41262571801/job/124718657785"
+                    >first attempt</a
+                  >
+                </td>
+                <td data-label="Observed failure">
+                  Nix installer download TLS EOF; no Bazel test starts
+                </td>
+                <td data-label="Failure end → attempt 2 creation">255 s</td>
+                <td data-label="Failure end → final required job completion">
+                  857 s
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          For the Dispatcher failure,
+          <a
+            href="https://app.buildbuddy.io/invocation/438b13ec-4346-5cf6-9105-4f0d77065369"
+            >438b13ec</a
+          >
+          retains the exact assertion: the archive is partial because
+          <code>codex/.tmp/git-*/HEAD</code> disappears. Both independent SQLite
+          integrity checks pass. Current source recursively archives the live
+          mounts with <code>tarfile.add</code>; admission readiness does not
+          freeze native background filesystem activity. Treating partial data as
+          complete would weaken the proof. Proposal B establishes the needed
+          boundary and must retain the online-backup and resumed-writer checks.
+        </p>
+        <p>
+          The second failure is curl exit 35 while downloading Nix 2.35.4,
+          followed by a secondary linkage upload with no path. It is unrelated
+          to Bazel tests, the former GetEventLog HTTP/2 reset or
+          execution-result <code>UNAVAILABLE</code>. There is no evidence here
+          identifying a server/network owner for the TLS EOF. Certificate
+          validation remains required. Both rerun records identify the
+          repository owner account as triggering actor; that does not
+          distinguish a person from automation using the account. These gaps are
+          observed intervals, not proven operator or scheduler delays.
+        </p>
+        <p class="small">
+          The historical slices contain ten additional rerun workflow records.
+          Their all-attempt clocks remain in cohort data; this report does not
+          claim a fresh root-cause census of those older failures. They precede
+          or overlap replay/race changes and are explicitly deferred in favor of
+          current two-case diagnosis. The previous four VM
+          deadline/Execute-result cases and positive/negative reset experiments
+          remain in the pinned prior report with their original sources.
+        </p>
+      </section>
+
+      <section id="prior">
+        <h2>Prior experiments stay attached to their original scope.</h2>
+        <p>
+          The complete
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/5592d8e63b1147aabbdffe100fe42be8d7956d7d/latency/index.html"
+            >previous report</a
+          >
+          and
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/5592d8e63b1147aabbdffe100fe42be8d7956d7d/latency/evidence.json"
+            >evidence</a
+          >
+          were read before selecting this sample. The prior report also retains
+          the 29–30 October investigation and its rejected experiments. This
+          refresh replaces its cohort, keeps its useful conclusions and updates
+          the final boot proof.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Prior lane</th>
+                <th>Current disposition / next discriminating evidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Prior lane">Stable Go race configuration</td>
+                <td
+                  data-label="Current disposition / next discriminating evidence"
+                >
+                  Shipped #13216; final boot tree contains it. Current #13407
+                  build configures zero targets after test. Retire the
+                  implementation recommendation. Matched elapsed benefit remains
                   unmeasured.
                 </td>
               </tr>
               <tr>
-                <td data-label="Lane / source">
-                  Owned cleanup and suspend routing<br /><a
-                    href="https://github.com/agentydragon/ducktape/pull/13213"
-                    >#13213</a
-                  >,
-                  <a href="https://github.com/agentydragon/ducktape/pull/13319"
-                    >#13319</a
-                  >,
-                  <a href="https://github.com/agentydragon/ducktape/pull/13327"
-                    >#13327</a
-                  >,
-                  <a href="https://github.com/agentydragon/ducktape/pull/13333"
-                    >#13333</a
-                  >
+                <td data-label="Prior lane">
+                  Replay guard, cursor recovery and upstream reset
                 </td>
-                <td data-label="Verified behavior">
-                  Independent cleanup overlaps; telemetry relay survives Runner
-                  shutdown; held suspension snapshots retain controller Quiesce
-                  routing. Fresh storage cleanup was 3.44 s, suspend 3.07 s,
-                  delete 0.15 s; Runner exits preceded relay exit.
-                </td>
-                <td data-label="Remaining limit or decision">
-                  The old minute retry / five-second shutdown tails are
-                  historical source-specific evidence. No further Pod deletion
-                  code is justified by that old trace. Long-run reliability and
-                  full-gate effect remain unmeasured.
+                <td
+                  data-label="Current disposition / next discriminating evidence"
+                >
+                  Shipped #13268/#13288. Keep issue #13270 for same-accepted-run
+                  CLI reconnection and provider-side reset attribution. Prior
+                  outside-Actions positive and 12-minute negative probes retain
+                  scope. No client automatically resubmitted an accepted remote
+                  command here; the new RBE physical action retry is counted
+                  separately.
                 </td>
               </tr>
               <tr>
-                <td data-label="Lane / source">
-                  Notice delivery / configured Kubernetes QPS<br /><a
-                    href="https://github.com/agentydragon/ducktape/pull/13339"
-                    >#13339</a
-                  >
+                <td data-label="Prior lane">
+                  Cleanup overlap, suspend routing, relay lifetime and Gateway
+                  QPS
                 </td>
-                <td data-label="Verified behavior">
-                  Gateway reads strict <code>kubernetes_client_qps</code>; zero
-                  retains client-go default, deployment explicitly sets -1.
-                  Lease acquisitions were 8–19 ms after change;
-                  enqueue-to-delivery 31/33 ms in the focused Pod probe.
-                </td>
-                <td data-label="Remaining limit or decision">
-                  Replaces inferred client-go 5-QPS bottleneck; keeps
-                  intentional notice quiet window and ownership checks. Focused
-                  probe used the original equivalent -1 implementation; final
-                  configured source and generated manifest passed CI. No fleet
-                  speedup claimed.
+                <td
+                  data-label="Current disposition / next discriminating evidence"
+                >
+                  Retain merged #13213/#13319/#13327/#13339 and focused
+                  source-specific mechanisms. Old minute Pod deletion traces do
+                  not justify new Pod edits. Current VM cleanup still takes
+                  27–32 seconds in the selected run; a different backend and
+                  source. No matched fleet effect measured.
                 </td>
               </tr>
               <tr>
-                <td data-label="Lane / source">
-                  Shared stage/process traces<br /><a
-                    href="https://github.com/agentydragon/ducktape/pull/13274"
-                    >#13274</a
-                  >,
-                  <a href="https://github.com/agentydragon/ducktape/pull/13298"
-                    >#13298</a
-                  >,
-                  <a href="https://github.com/agentydragon/ducktape/pull/13303"
-                    >#13303</a
-                  >,
-                  <a href="https://github.com/agentydragon/ducktape/pull/13309"
-                    >#13309</a
-                  >,
-                  <a href="https://github.com/agentydragon/ducktape/pull/13328"
-                    >#13328</a
-                  >,
-                  <a href="https://github.com/agentydragon/ducktape/pull/13338"
-                    >#13338</a
-                  >
-                </td>
-                <td data-label="Verified behavior">
-                  Major k3s setup/scenario/cleanup stages and service exports
-                  use shared OTel artifacts; retain VM launcher relay
-                  diagnostics and containerd profiles.
-                </td>
-                <td data-label="Remaining limit or decision">
-                  Stage collection is shipped. Resource identity and
-                  all-six-guest stage checks subsequently merged in
-                  <a href="https://github.com/agentydragon/ducktape/pull/13352"
-                    >#13352</a
-                  >; its final uncached proof attributed 249/249 Runner spans.
-                  Shutdown warnings alone do not establish lost earlier spans.
+                <td data-label="Prior lane">Guest boot and trace identity</td>
+                <td
+                  data-label="Current disposition / next discriminating evidence"
+                >
+                  All-six resource/stage checks shipped #13352; final #13413
+                  ordinary CI now passes with complete boot packet. Native
+                  scheduler probes are separate manual variants. Monitor
+                  overhead and production parity remain open.
                 </td>
               </tr>
               <tr>
-                <td data-label="Lane / source">
-                  Native overlap / compressed guest<br /><a
-                    href="https://github.com/agentydragon/ducktape/pull/13300"
-                    >#13300</a
-                  >,
-                  <a href="https://github.com/agentydragon/ducktape/pull/13304"
-                    >#13304</a
-                  >,
-                  <a href="https://github.com/agentydragon/ducktape/pull/13337"
-                    >#13337</a
-                  >
-                </td>
-                <td data-label="Verified behavior">
-                  App-server initialization overlaps executor startup with
-                  readiness gates preserved. Guest LZ4 root is 39% smaller; one
-                  import pair was 29.5 vs72.1 s. Ordinary guests use TCG;
-                  detailed boot evidence retained.
-                </td>
-                <td data-label="Remaining limit or decision">
-                  Different workers/source/cache states prevent a whole-CI
-                  saving or CPU non-regression claim. Current work profiles
-                  actual guest boot/native startup; the historical
-                  <a href="https://github.com/agentydragon/ducktape/pull/13359"
-                    >boot probe</a
-                  >
-                  and
-                  <a href="https://github.com/agentydragon/ducktape/pull/13364"
-                    >native profiles</a
-                  >
-                  retain evidence for attribution. The new
-                  <a href="#guest-boot">device-event timeline</a> separates
-                  kernel registration from link readiness, and
-                  <a href="https://github.com/agentydragon/ducktape/pull/13413"
-                    >#13413</a
-                  >
-                  adds automatic boot evidence. No matched speedup is
-                  established.
+                <td data-label="Prior lane">Native overlap and LZ4 guest</td>
+                <td
+                  data-label="Current disposition / next discriminating evidence"
+                >
+                  Shipped #13300/#13304. Retain 39% image-size reduction and
+                  original isolated import observations; no matched gate/CPU
+                  effect. Cold native CPU-only profile is extended here rather
+                  than repeated unchanged.
                 </td>
               </tr>
               <tr>
-                <td data-label="Lane / source">
-                  Visual publication / cancellation<br /><a
-                    href="https://github.com/agentydragon/ducktape/pull/13253"
-                    >#13253</a
-                  >,
-                  <a href="https://github.com/agentydragon/ducktape/pull/13264"
-                    >#13264</a
-                  >,
-                  <a href="https://github.com/agentydragon/ducktape/pull/13287"
-                    >#13287</a
-                  >
-                </td>
-                <td data-label="Verified behavior">
-                  Exact digest fast path, eight bounded S3 workers, cancellation
-                  checks for run and attempt, active wheel pin. One co-location
-                  probe passed: remote test 26 s, publisher 45 s, 19 s tail.
-                </td>
-                <td data-label="Remaining limit or decision">
-                  Ordinary publisher remains separate. Manual co-location probe
-                  is not matched live-CI/cancellation evidence. Visual
-                  availability is outside these three required gates.
+                <td data-label="Prior lane">Browser fixture CPU</td>
+                <td
+                  data-label="Current disposition / next discriminating evidence"
+                >
+                  Retain #13351 diagnostic: all 16 shards / 50 case instances
+                  pass, first-case setup 33–67 seconds; Python profile excludes
+                  earlier imports and child PostgreSQL/Electric CPU. Defer
+                  child-process CPU attribution because fresh selected critical
+                  paths are VM. Next step is whole child-process CPU capture on
+                  the same 16-shard input. No shard policy change.
                 </td>
               </tr>
               <tr>
-                <td data-label="Lane / source">
-                  Accepted-run replay / log cursor recovery<br /><a
-                    href="https://github.com/agentydragon/ducktape/pull/13268"
-                    >#13268</a
-                  >,
-                  <a href="https://github.com/agentydragon/ducktape/pull/13288"
-                    >#13288</a
-                  >
+                <td data-label="Prior lane">
+                  Bytecode, global jobs and extra Pod stack
                 </td>
-                <td data-label="Verified behavior">
-                  Whole-run automatic replay disabled; bbapi observer handles
-                  cursor/log-only failures while retaining invocation outcome.
-                  Source-specific runtime controls verify recovery semantics.
-                </td>
-                <td data-label="Remaining limit or decision">
-                  Upstream CLI reattachment and actual HTTP/2 reset cause remain
-                  open. Execute-result transport failures are a separate
-                  method/layer.
+                <td
+                  data-label="Current disposition / next discriminating evidence"
+                >
+                  Keep bytecode policy and jobs=50. Full Pod bytecode pair did
+                  not improve wall time; forced collection added 2,651 compile
+                  actions. jobs=100 full sweep failed; jobs=50 passed. The 6+7
+                  Pod split duplicated cold setup without matched gate benefit.
+                  No changed premise revives those proposals.
                 </td>
               </tr>
               <tr>
-                <td data-label="Lane / source">
-                  Python bytecode / jobs counterfactuals<br /><a
-                    href="https://github.com/agentydragon/ducktape/pull/13340"
-                    >#13340</a
-                  >,
-                  <a href="https://github.com/agentydragon/ducktape/pull/13275"
-                    >#13275</a
-                  >
+                <td data-label="Prior lane">
+                  Visual publisher and co-location
                 </td>
-                <td data-label="Verified behavior">
-                  Matched-source/worker full Pod suite passed 13 cases both
-                  ways: Bazel 441.356→452.629 s with bytecode; longest
-                  cumulative import 3.768→2.418 s. Forced uncached collection
-                  ran2,651 PyCompile actions. Full //... jobs=100 ended
-                  REMOTE_ERROR; jobs=50 passed.
+                <td
+                  data-label="Current disposition / next discriminating evidence"
+                >
+                  Digest/concurrency/cancellation changes shipped #13253/#13264.
+                  New occupancy measured here. Prior #13287 co-location probe
+                  added a 19-second tail to one host; retain ordinary publisher
+                  separation. Announcement-only proposal A addresses a different
+                  operation.
                 </td>
-                <td data-label="Remaining limit or decision">
-                  Keep bytecode policy unchanged and jobs=50. A single pair does
-                  not establish a stable regression; improved import time did
-                  not improve that suite’s critical path. The bytecode
-                  comparison was full test_pod, not full //....
+              </tr>
+              <tr>
+                <td data-label="Prior lane">
+                  Rust stripping, pipelining and refine outlier
+                </td>
+                <td
+                  data-label="Current disposition / next discriminating evidence"
+                >
+                  Retain shipped strip #13066 and historical 64.9→32.6-second
+                  matched control; Rust 682→653 seconds and eight-browser-shard
+                  longest 132→196 tradeoff remain historical. Defer 113.4-second
+                  refine off-CPU attribution while VM paths dominate current
+                  inspected integration runs.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Prior lane">
+                  Merge-base cache, whole-tree input and fixture architecture
+                </td>
+                <td
+                  data-label="Current disposition / next discriminating evidence"
+                >
+                  No revival: ideal hash hit <6 seconds did not justify
+                  ownership; whole-tree inputs +10.18 seconds did not reproduce
+                  91-second stall. API split, renderer variants, DCR, bridge
+                  shards, PostgreSQL templates, Props prefetch, shallow checkout
+                  and warm Bazel/YAML/Gazelle/marker caches retain prior
+                  dispositions.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Prior lane">
+                  Capacity, cancellation and reliability soak
+                </td>
+                <td
+                  data-label="Current disposition / next discriminating evidence"
+                >
+                  Partial invocation timestamps and the earlier executor
+                  endpoint 403 remain visibility limits. No quota claim.
+                  Physical VM-stop/admission ownership, journal soak denominator
+                  and unrelated Casino/grader/FreeCAD risks are deferred to
+                  their owning reliability work. Runner lifecycle ownership
+                  simplification remains a standing follow-up.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Prior lane">Feedback clocks and report UI</td>
+                <td
+                  data-label="Current disposition / next discriminating evidence"
+                >
+                  Push, complete policy readiness, webhook/inbox/harness receipt
+                  and earliest log accessibility remain unmeasured. New
+                  exact-head status creation lead is added with those limits.
+                  The user-removed headroom widget remains absent.
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
       </section>
-      <section id="prior">
-        <h2>Retained findings and explicit dispositions.</h2>
+
+      <section id="methods">
+        <h2>Reproducibility and limits.</h2>
         <p>
-          The complete
-          <a
-            href="https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/index.html"
-            >prior report</a
-          >
-          and
-          <a
-            href="https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
-            >supporting evidence</a
-          >
-          preserve original source revisions, clocks and experiments. This table
-          accounts for the still-relevant findings without treating old
-          measurements as current opportunities.
-        </p>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Prior finding</th>
-                <th>Disposition in this snapshot</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td data-label="Prior finding">
-                  Pod starts after runfiles are ready
-                </td>
-                <td data-label="Disposition in this snapshot">
-                  Prior profile/aquery found jobs=50 action-slot contention, not
-                  a removable image/lint prerequisite. The jobs=100
-                  counterfactual failed; no global concurrency increase. Current
-                  inspected finishing order makes VM first priority.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior finding">
-                  Second Pod stack / split 6+7 cases
-                </td>
-                <td data-label="Disposition in this snapshot">
-                  All 13 cases passed, but duplicated cold setup used1,444.6
-                  CPU-s; different worker warmth and small gate headroom
-                  defeated a ready recommendation for that specific split. This
-                  did not test distributed VM cases or retained-environment
-                  architectures. Preserve real assertions when evaluating a
-                  different execution arrangement.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior finding">Native first-command wait</td>
-                <td data-label="Disposition in this snapshot">
-                  Earlier77.5 s probe included a 988 ms shell command plus cold
-                  startup/protocol gaps. Current failed trace localizes a 300 s
-                  pre-allocation first-command wait. Real profiling remains
-                  selected; no prewarmed shared session or fake OOM result.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior finding">
-                  Snapshot-copy and executable hashing
-                </td>
-                <td data-label="Disposition in this snapshot">
-                  Symbol stripping#13066 remains shipped, with six post-adoption
-                  executions16.6–38.8 s and a prior matched 64.9→32.6 s control.
-                  Keep relocation/integrity assertions. A 113.4 s modules-refine
-                  outlier still lacks off-CPU attribution; no new algorithmic
-                  claim.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior finding">
-                  Race test/build analysis invalidation
-                </td>
-                <td data-label="Disposition in this snapshot">
-                  Old global test-only flag discarded analysis. Final build-wide
-                  default#13216 preserved test instrumentation and analysis
-                  reuse. Implementation retired from recommendations; elapsed
-                  benefit still unmeasured.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior finding">
-                  Merge-base hash cache / whole-tree input overhead
-                </td>
-                <td data-label="Disposition in this snapshot">
-                  Ideal local-hit hash savings 5.397 s warm/3.845 s fresh JVM
-                  did not justify cache ownership/cost. Full-tree inputs added
-                  10.18 s but did not reproduce old 91 s stall. No cache
-                  proposal revived.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior finding">
-                  Rust, browser sharding and scale
-                </td>
-                <td data-label="Disposition in this snapshot">
-                  Rust pipelining and manual scale remain shipped. Historical
-                  cold Rust 682→653 s and eight-browser-shard 603 process-s
-                  saving/longest 132→196 s tradeoff keep their original scope.
-                  New browser profiling does not silently re-adopt fewer shards.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior finding">
-                  Certificates, imports and six VM guests
-                </td>
-                <td data-label="Disposition in this snapshot">
-                  Watch-based readiness, startup/import overlap and independent
-                  concurrent VM boots remain shipped. Retain conservative 16.2 s
-                  import control and current source-specific timings; do not sum
-                  overlapping improvements.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior finding">
-                  Fixture graph and prior architecture changes
-                </td>
-                <td data-label="Disposition in this snapshot">
-                  API split, renderer variants, DCR, bridge sharding, PostgreSQL
-                  templates, Props prefetch, shallow checkout, warm Bazel and
-                  YAML/Gazelle/marker caches retain prior dispositions. No new
-                  evidence reverses rejected ctr/no-unpack, prepared
-                  check-container or extra Pod recycling-key experiments.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior finding">
-                  Live BuildBuddy capacity / stale partial invocations
-                </td>
-                <td data-label="Disposition in this snapshot">
-                  Historical selected lookup found 8 executing actions and no
-                  observed queue; epoch active timestamps were unavailable, not
-                  zero wait. SearchExecution missed live rows; executor endpoint
-                  403. No provider quota or capacity conclusion. Current
-                  critical-path queue is small, not account-wide proof.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior finding">
-                  Reliability and deferred follow-ups
-                </td>
-                <td data-label="Disposition in this snapshot">
-                  Bounded retries remain. Cancellation/physical VM-stop and
-                  admission ownership are distinct unresolved boundaries.
-                  Journal soak to 4 Nov 06:19 UTC lacks a refreshed
-                  fresh-execution denominator; explicitly deferred during this
-                  latency batch. Casino/grader/FreeCAD source risks have no new
-                  causal evidence. Runner lifecycle ownership simplification
-                  remains a separate standing follow-up.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior finding">
-                  Agent-visible feedback and readiness
-                </td>
-                <td data-label="Disposition in this snapshot">
-                  Exact push, API/log accessibility, webhook/inbox/harness
-                  receipt and complete auto-merge readiness remain unmeasured.
-                  Required-job completion is the labeled proxy, never a
-                  fabricated user-reception clock.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-      <section id="scope">
-        <h2>Sampling, resources and reproduction.</h2>
-        <p>
-          The recursive collector verified all
-          <strong>1,737 arriving workflow runs</strong> against API totals,
-          retained 21 older unfinished runs, fetched 708 selected core run
-          records and 2,616 job rows across attempts. The first attempt stopped
-          on a moving active-status count; the successful retry is the snapshot
-          used here. No truncated 1,000-result search was accepted. Job pages
-          include all attempts; open-PR checks are separately sampled during the
-          sweep.
+          The collector verified
+          <strong>2,672 arriving workflow records</strong> against all API
+          totals, recursively splitting the dense 30 October slice. It fetched
+          1,122 selected core run records and 3,371 job rows across attempts;
+          these sums include repeated older-active sweeps. They are not unique
+          PR counts. Visual job pages were separately collected for the busy and
+          latest slices. Each core collection’s bounds and pagination counts are
+          in evidence.
         </p>
         <p>
-          Completed, assigned jobs from the selected core workflows occupied
-          <strong>42.96 runner-hours</strong> in this four-hour window, with a
-          peak 20 simultaneously active jobs. This includes post-CI
-          image/release jobs and excludes unfinished jobs, other workflows and
-          other repositories. It is a lower bound on selected occupancy, not
-          account utilization or a provider slot limit. Whole CI workflow
-          failures can occur after a successful required Bazel job; they are not
-          interchangeable verdicts.
-        </p>
-        <p>
-          The original snapshot's inspected devel rules require
+          Required devel contexts were re-read live:
           <code>Build artifacts + imports check</code>,
-          <code>Pre-commit checks</code> and
-          <code>bazel-ci / Test &amp; Build</code>, with zero ordinary approvals
-          and no strict up-to-date requirement. CodeQL default setup remains
-          not-configured. Draft/conflict history and exceptions such as extra
-          approval for unattributed changes are outside the proxy.
+          <code>Pre-commit checks</code>,
+          <code>bazel-ci / Test &amp; Build</code>. Rules require zero ordinary
+          approvals, no code-owner review and no strict current-base condition,
+          with an extra unattributed-change approval exception. CodeQL default
+          setup is <code>not-configured</code>. Draft, conflicts, applicable
+          exceptions, auto-merge enablement and historical review state are not
+          reconstructed. Therefore no head is assigned a full
+          auto-merge-readiness timestamp.
+        </p>
+        <p>
+          Each 90-minute slice is a complete arrival census, but the four slices
+          are a fixed, nonrandom sample of a wider period. Closed/superseded
+          heads retain unknown path class unless their exact final SHA matches
+          current PR metadata. No head falls within 30 seconds of a lower window
+          bound; incomplete companion gates remain non-green. Rerun attempts are
+          joined to their original exact SHA. Two agent-fork heads were joined
+          by full SHA and PR number to their frozen trusted-workflow titles:
+          #13375 reached all three jobs in 226 seconds, #13376 in 455. Both are
+          green; external forks requiring environment review have no sampled
+          observations. Source normalization only makes those explicitly matched
+          trusted events eligible for the same-head gate join.
+        </p>
+        <p>
+          Nearest-rank percentiles, seconds. The source/workload/cache and
+          worker mix is uncontrolled. Remote costs count originating physical
+          execution records, not cached target-summary durations. Completed
+          runner occupancy, test CPU, process duration and PR wall time are kept
+          separate. Current remote action records do not show a queue-dominated
+          integration path; outer admission before an execution record and
+          account-wide capacity remain unknown.
         </p>
         <details>
-          <summary>Reproduction and evidence boundaries</summary>
+          <summary>Commands and artifact provenance</summary>
           <pre>
-python devinfra/ci/skills/ci_latency/scripts/collect.py agentydragon/ducktape &#92;
-  2026-10-31T08:30:00Z 2026-10-31T12:30:00Z OUTPUT &#92;
-  --workflow-id 207172864 --workflow-id 222524328 --workflow-id 305072831 &#92;
+python3 devinfra/ci/skills/ci_latency/scripts/collect.py agentydragon/ducktape START END OUTPUT \
+  --workflow-id 207172864 --workflow-id 222524328 --workflow-id 305072831 \
   --workflow-id 324829196 --workflow-id 258641841
-bbapi execution f0c59d85-d192-5dfd-8140-ef12fb71cb16 --json
+bash devinfra/ci/skills/ci_latency/scripts/evidence.sh OUTPUT
+python3 devinfra/ci/skills/ci_latency/scripts/snapshot_analysis.py OUTPUT/snapshot.json \
+  --since START --until END --gate "Build artifacts + imports check" \
+  --gate "Pre-commit checks" --gate "bazel-ci / Test &amp; Build" --output ANALYSIS
+bbapi execution 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 --json
 jq -f devinfra/ci/skills/ci_latency/scripts/test_costs.jq executions.json
-bbapi tool-log cat f0c59d85-d192-5dfd-8140-ef12fb71cb16 "critical path"</pre>
+bbapi tool-log cat 11b1a7ad-2b9f-51c1-8e8a-4600f08c7ff2 "critical path"</pre>
           <p class="small">
-            Commands run from the pinned source with the Nix devshell loaded and
-            normal remote execution/cache. The published evidence contains
-            reviewed numeric summaries, exact-head gate rows and direct public
-            links; full API responses, logs, profiles, credentials and raw
-            process payloads remain local. Nearest-rank percentiles. GitHub
-            clocks resolve to one second; cross-host skew is uncalibrated.
-            Cancellation is terminal but not a green/red verdict. Worker CPU,
-            process spans, runner occupancy and gate wall time are not added
-            together.
+            Full API payloads, process spans, job logs, profiles and temporary
+            source spikes remain local or in the linked BuildBuddy invocation
+            artifacts. Published evidence contains reviewed numeric summaries,
+            exact-head gate clocks and artifact hashes. No raw logs, inbox
+            contents, credentials or personal identity records are published.
+            Attribution is not collected. The report’s source inspection used an
+            isolated named branch with the Nix devshell; all tests and browser
+            renders use Bazel/RBE.
           </p>
         </details>
       </section>
@@ -1937,13 +1649,13 @@ bbapi tool-log cat f0c59d85-d192-5dfd-8140-ef12fb71cb16 "critical path"</pre>
     <footer>
       <a href="evidence.json">Reviewed evidence</a> ·
       <a href="manifest.json">Manifest</a> ·
-      <a href="../reliability/">CI reliability</a> ·
+      <a href="../reliability/">Reliability</a> ·
       <a href="../visual-reliability/">Visual reliability</a> ·
       <a href="../">All reports</a>
       <p>
-        Latest-only snapshot on gh-pages; earlier snapshots remain commit-pinned
-        in Git. GitHub Pages updates after the report PR merges. No matched
-        fleet-wide saving is claimed.
+        Latest snapshot on <code>gh-pages</code>, the renamed report/publication
+        branch. Git history preserves previous snapshots. GitHub Pages updates
+        after this report PR merges.
       </p>
     </footer>
   </body>
