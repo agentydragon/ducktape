@@ -8,11 +8,10 @@ from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy.engine import make_url
-
 from agentplane.egress.settings import Settings
 from agentplane.testing.go_process import GoProcess, go_process
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from util.db_url import render_postgresql_url
 from util.net import Listener, listen_tcp
 
 _PROXY = get_required_path(own_repo_rlocation("agentplane/egress/cmd/egress-proxy_/egress-proxy"))
@@ -38,11 +37,7 @@ async def go_replica(settings: Settings, *, directory: Path) -> AsyncIterator[Go
     The Go binary reads the same YAML keys the Python `Settings` model authors, so a key one side
     gains without the other is rejected here rather than ignored.
     """
-    database_url = (
-        make_url(settings.database_url)
-        .set(drivername="postgresql", query={"sslmode": "disable"})
-        .render_as_string(hide_password=False)
-    )
+    database_url = render_postgresql_url(settings.database_url, "postgresql", query={"sslmode": "disable"})
     with ExitStack() as listeners:
         proxy_listener = listeners.enter_context(listen_tcp())
         admin_listener = listeners.enter_context(listen_tcp())

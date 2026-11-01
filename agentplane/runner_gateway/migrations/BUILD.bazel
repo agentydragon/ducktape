@@ -30,6 +30,7 @@ py_test(
         ":conftest",
         "//:conftest",
         "//agentplane/runner_gateway:conftest",
+        "//util:db_url",
         "//util/bazel:runfiles",
         "//util/testing:postgres",
         "@pypi//psycopg",

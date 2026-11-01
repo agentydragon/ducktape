@@ -39,5 +39,13 @@ def test_render_accepts_sqlalchemy_url_and_keeps_target_driver() -> None:
     assert make_url(rendered).query["options"] == url.query["options"]
 
 
+def test_render_replaces_query_when_requested() -> None:
+    url = "postgresql://user:password@db.example:5432/app?sslmode=require&application_name=production"
+
+    rendered = render_postgresql_url(url, "postgresql", query={"sslmode": "disable"})
+
+    assert make_url(rendered).query == {"sslmode": "disable"}
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

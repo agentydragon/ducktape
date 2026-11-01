@@ -17,6 +17,7 @@ py_library(
         "//agentplane/runner_gateway:settings",
         "//agentplane/runner_transport:configuration",
         "//agentplane/testing:tls",
+        "//util:db_url",
         "//util:net",
         "//util:settings_contract",
         "//util/bazel:runfiles",
@@ -26,7 +27,6 @@ py_library(
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pyyaml",
-        "@pypi//sqlalchemy",
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )

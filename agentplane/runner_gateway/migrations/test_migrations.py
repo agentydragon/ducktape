@@ -4,9 +4,9 @@ import subprocess
 
 import pytest_bazel
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
 
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from util.db_url import render_postgresql_url
 from util.testing.postgres import DatabaseNames, create_temporary_database
 
 # SQLAlchemy loads this URL dialect dynamically.
@@ -29,9 +29,7 @@ def _run(url: str, *, check: bool = True) -> subprocess.CompletedProcess[str]:
 
 def _wire_url(url: str) -> str:
     # The local testcontainer has no TLS; production URLs keep their own sslmode.
-    return (
-        make_url(url).set(drivername="postgresql", query={"sslmode": "disable"}).render_as_string(hide_password=False)
-    )
+    return render_postgresql_url(url, "postgresql", query={"sslmode": "disable"})
 
 
 def test_fresh_database_and_repeat_are_idempotent(postgres_admin_url: str, database_names: DatabaseNames) -> None:

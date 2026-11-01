@@ -17,7 +17,6 @@ from pathlib import Path
 from uuid import UUID
 
 import grpc
-from sqlalchemy.engine import make_url
 
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc
@@ -27,6 +26,7 @@ from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.go_process import GoProcess, go_process
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from util.db_url import render_postgresql_url
 from util.net import listen_tcp
 from util.testing.postgres import PostgresDatabaseTemplate
 
@@ -50,11 +50,7 @@ WRITER = ServiceAccountRef(namespace="test-sandbox-namespace", name="test-sandbo
 
 def _go_database_url(database_url: str) -> str:
     """`database_url` as the Go services' PostgreSQL driver reads it."""
-    return (
-        make_url(database_url)
-        .set(drivername="postgresql", query={"sslmode": "disable"})
-        .render_as_string(hide_password=False)
-    )
+    return render_postgresql_url(database_url, "postgresql", query={"sslmode": "disable"})
 
 
 def migrate_history_database(database_url: str) -> None:
