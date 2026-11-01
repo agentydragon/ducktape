@@ -20,11 +20,12 @@ import (
 )
 
 type controllerExecutionHandle struct {
-	exited   chan childExit
-	stop     func(context.Context) error
-	mu       sync.Mutex
-	expected bool
-	once     sync.Once
+	exited        chan childExit
+	stop          func(context.Context) error
+	mu            sync.Mutex
+	expected      bool
+	once          sync.Once
+	leaveExitOpen bool
 }
 
 func newControllerExecutionHandle(stop func(context.Context) error) *controllerExecutionHandle {
@@ -43,7 +44,7 @@ func (h *controllerExecutionHandle) StopAndFence(ctx context.Context) error {
 	if h.stop != nil {
 		err = h.stop(ctx)
 	}
-	if err == nil {
+	if err == nil && !h.leaveExitOpen {
 		h.once.Do(func() { close(h.exited) })
 	}
 	return err
@@ -250,6 +251,7 @@ func TestExecutionControllerStopSuppressesRecoveryAndJoinsCanceledWait(t *testin
 		t.Fatalf("stop lacked fence evidence: %+v", current)
 	}
 }
+
 func TestFencedExecutionLossRestartsAPIForSameIncarnation(t *testing.T) {
 	url, opened, _ := startNativeExecutionTestServer(t, false)
 	config := executionRuntimeConfig(t, url, nil)
@@ -419,5 +421,117 @@ func TestExecutionControllerCanceledStartupJoinsFenceBeforeNewEpoch(t *testing.T
 	}
 	if starts.Load() != 2 {
 		t.Fatalf("successor epoch starts=%d", starts.Load())
+	}
+}
+
+func TestExecutionControllerFencedStartupErrorReturnsToLiveCaller(t *testing.T) {
+	readinessErr := errors.New("Execution API readiness timed out")
+	var starts atomic.Int32
+	r := newExecutionControllerRuntime(t, func(context.Context, Config, string) (executionHandle, error) {
+		starts.Add(1)
+		return nil, errors.Join(ErrFencedStartup, readinessErr)
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := r.startExecutionForUID(ctx, "incarnation"); !errors.Is(err, readinessErr) {
+		t.Fatalf("fenced startup error = %v, want readiness cause", err)
+	}
+	if starts.Load() != 1 {
+		t.Fatalf("fenced startup retried under same demand: %d", starts.Load())
+	}
+	current := waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionStopped && s.AwaitDemand })
+	if current.FencedGeneration != current.Generation {
+		t.Fatalf("fenced startup lacked proof: %+v", current)
+	}
+}
+
+func TestExecutionControllerUncertainStartupRetainsOwner(t *testing.T) {
+	fenceErr := errors.New("unready process domain not empty")
+	var starts atomic.Int32
+	handle := newControllerExecutionHandle(func(context.Context) error { return fenceErr })
+	r := newExecutionControllerRuntime(t, func(context.Context, Config, string) (executionHandle, error) {
+		starts.Add(1)
+		return handle, fenceErr
+	})
+	if err := r.startExecutionForUID(t.Context(), "incarnation"); err == nil {
+		t.Fatal("uncertain unready startup returned success")
+	}
+	current := waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionFailed })
+	if current.FencedGeneration == current.Generation {
+		t.Fatalf("uncertain startup recorded false fence proof: %+v", current)
+	}
+	r.mu.Lock()
+	owner := r.executionOwner
+	r.mu.Unlock()
+	if owner != handle {
+		t.Fatal("uncertain startup discarded owner")
+	}
+	if err := r.startExecutionForUID(t.Context(), "another-incarnation"); err == nil || starts.Load() != 1 {
+		t.Fatalf("uncertain startup admitted successor: err=%v starts=%d", err, starts.Load())
+	}
+}
+
+func TestExecutionControllerProvedStopJoinsWatcherWithoutExitNotification(t *testing.T) {
+	r := newExecutionControllerRuntime(t, func(context.Context, Config, string) (executionHandle, error) {
+		handle := newControllerExecutionHandle(nil)
+		handle.leaveExitOpen = true
+		return handle, nil
+	})
+	if err := r.startExecutionForUID(t.Context(), "incarnation"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.stopExecution(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	joined := make(chan struct{})
+	go func() { r.lifecycleWorkers.Wait(); close(joined) }()
+	select {
+	case <-joined:
+	case <-time.After(time.Second):
+		t.Fatal("proved stop left ProcessExit watcher blocked")
+	}
+}
+
+func TestExecutionControllerDoesNotPublishStaleSameUIDStart(t *testing.T) {
+	startEntered := make(chan struct{})
+	releaseStart := make(chan struct{})
+	var starts atomic.Int32
+	r := newExecutionControllerRuntime(t, func(context.Context, Config, string) (executionHandle, error) {
+		if starts.Add(1) == 1 {
+			close(startEntered)
+			<-releaseStart
+		}
+		return newControllerExecutionHandle(nil), nil
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- r.startExecutionForUID(ctx, "incarnation") }()
+	select {
+	case <-startEntered:
+	case <-time.After(time.Second):
+		t.Fatal("first start was not admitted")
+	}
+	input, _, err := cosi.Read(context.Background(), r.lifecycleState, executionInputResource(executionInput{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Demand++
+	r.executionLifecycle.mu.Lock()
+	r.executionLifecycle.startContexts[input.Demand] = t.Context()
+	r.executionLifecycle.mu.Unlock()
+	if err := cosi.Publish(context.Background(), r.lifecycleState, executionInputResource(input), input, "embedded-execution-host"); err != nil {
+		t.Fatal(err)
+	}
+	close(releaseStart)
+	if err := r.executionLifecycle.wait(t.Context(), "incarnation", input.Demand); err != nil {
+		t.Fatalf("new epoch result = %v", err)
+	}
+	cancel()
+	if err := <-firstDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("first epoch result = %v", err)
+	}
+	current := waitExecutionState(t, r, func(s executionState) bool { return s.Phase == executionReady && s.Demand == input.Demand })
+	if current.Generation != 2 || current.FencedGeneration != 1 || starts.Load() != 2 {
+		t.Fatalf("stale start served a newer epoch: state=%+v starts=%d", current, starts.Load())
 	}
 }

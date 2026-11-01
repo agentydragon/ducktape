@@ -73,12 +73,14 @@ func (executionExtension[T]) ResourceDefinition() spec.ResourceDefinitionSpec {
 
 func executionInputResource(value executionInput) *typed.Resource[executionInput, executionExtension[executionInput]] {
 	return typed.NewResource[executionInput, executionExtension[executionInput]](
-		resource.NewMetadata(lifecycle.Namespace, executionInputType, executionResourceID, resource.VersionUndefined), value)
+		resource.NewMetadata(lifecycle.Namespace, executionInputType, executionResourceID, resource.VersionUndefined), value,
+	)
 }
 
 func executionStateResource(value executionState) *typed.Resource[executionState, executionExtension[executionState]] {
 	return typed.NewResource[executionState, executionExtension[executionState]](
-		resource.NewMetadata(lifecycle.Namespace, executionStateType, executionResourceID, resource.VersionUndefined), value)
+		resource.NewMetadata(lifecycle.Namespace, executionStateType, executionResourceID, resource.VersionUndefined), value,
+	)
 }
 
 type executionEventKind uint8
@@ -93,6 +95,8 @@ type executionEvent struct {
 	kind    executionEventKind
 	handle  executionHandle
 	uid     string
+	demand  uint64
+	epoch   context.Context
 	err     error
 	skipped bool
 }
@@ -107,8 +111,11 @@ type executionLifecycle struct {
 	handle            executionHandle
 	terminal          error
 	startContexts     map[uint64]context.Context
+	startOutcomes     map[uint64]error
+	activeDemands     map[uint64]struct{}
 	activeStartCancel context.CancelFunc
 	activeStartEpoch  uint64
+	watchCancel       context.CancelFunc
 }
 
 func (h *executionLifecycle) failTerminal(err error) {
@@ -139,26 +146,26 @@ func (h *executionLifecycle) initialize(ctx context.Context) error {
 	return cosi.Publish(ctx, h.state, executionInputResource(executionInput{}), executionInput{}, "embedded-execution-host")
 }
 
-func (h *executionLifecycle) request(ctx context.Context, uid string) error {
+func (h *executionLifecycle) request(ctx context.Context, uid string) (uint64, error) {
 	if err := h.terminalError(); err != nil {
-		return err
+		return 0, err
 	}
 	h.inputMu.Lock()
 	defer h.inputMu.Unlock()
 	input, found, err := cosi.Read(ctx, h.state, executionInputResource(executionInput{}))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if !found {
-		return errors.New("embedded Execution input is not initialized")
+		return 0, errors.New("embedded Execution input is not initialized")
 	}
 	if uid != "" && input.UID == uid {
 		current, _, err := cosi.Read(ctx, h.state, executionStateResource(executionState{}))
 		if err != nil {
-			return err
+			return 0, err
 		}
-		if current.Phase == executionReady && current.UID == uid {
-			return nil
+		if current.Phase == executionReady && current.UID == uid && h.readyOwner() {
+			return current.Demand, nil
 		}
 	}
 	input.UID, input.Demand = uid, input.Demand+1
@@ -167,17 +174,38 @@ func (h *executionLifecycle) request(ctx context.Context, uid string) error {
 		if h.startContexts == nil {
 			h.startContexts = make(map[uint64]context.Context)
 		}
+		if h.activeDemands == nil {
+			h.activeDemands = make(map[uint64]struct{})
+		}
 		h.startContexts[input.Demand] = ctx
+		h.activeDemands[input.Demand] = struct{}{}
 		h.mu.Unlock()
 	}
 	err = cosi.Publish(ctx, h.state, executionInputResource(input), input, "embedded-execution-host")
 	if err != nil {
+		h.mu.Lock()
+		delete(h.startContexts, input.Demand)
+		delete(h.activeDemands, input.Demand)
+		h.mu.Unlock()
 		h.failTerminal(fmt.Errorf("publish embedded Execution intent: %w", err))
 	}
 	if uid == "" {
 		h.cancelStart()
 	}
-	return err
+	return input.Demand, err
+}
+
+func (h *executionLifecycle) readyOwner() bool {
+	h.mu.Lock()
+	handle := h.handle
+	h.mu.Unlock()
+	if handle == nil {
+		return false
+	}
+	if service, ok := handle.(*executionServiceHandle); ok {
+		return service.serving()
+	}
+	return true
 }
 
 func (h *executionLifecycle) signal(event executionEvent) {
@@ -221,11 +249,11 @@ func (h *executionLifecycle) launch(uid string, demand uint64, recovery bool) {
 			delete(h.startContexts, demand)
 			h.mu.Unlock()
 			if launchCtx == nil {
-				h.signal(executionEvent{kind: executionStarted, uid: uid, err: errors.New("accepted Execution start lost its caller epoch")})
+				h.signal(executionEvent{kind: executionStarted, uid: uid, demand: demand, err: errors.New("accepted Execution start lost its caller epoch")})
 				return
 			}
 			if launchCtx.Err() != nil {
-				h.signal(executionEvent{kind: executionStarted, uid: uid, skipped: true})
+				h.signal(executionEvent{kind: executionStarted, uid: uid, demand: demand, skipped: true})
 				return
 			}
 		}
@@ -246,21 +274,21 @@ func (h *executionLifecycle) launch(uid string, demand uint64, recovery bool) {
 		input, found, readErr := cosi.Read(startCtx, h.state, executionInputResource(executionInput{}))
 		if readErr != nil {
 			if startCtx.Err() != nil {
-				h.signal(executionEvent{kind: executionStarted, uid: uid, skipped: true})
+				h.signal(executionEvent{kind: executionStarted, uid: uid, demand: demand, skipped: true})
 			} else {
-				h.signal(executionEvent{kind: executionStarted, uid: uid, err: readErr})
+				h.signal(executionEvent{kind: executionStarted, uid: uid, demand: demand, err: readErr})
 			}
 			return
 		}
 		if !found || input.UID != uid || startCtx.Err() != nil {
-			h.signal(executionEvent{kind: executionStarted, uid: uid, skipped: true})
+			h.signal(executionEvent{kind: executionStarted, uid: uid, demand: demand, skipped: true})
 			return
 		}
 		h.r.mu.Lock()
 		allowed := !h.r.closing && (!recovery || h.r.intent != nil && h.r.intent.Mode == runtimepb.LifecycleIntent_RUNNING && h.r.intent.IncarnationUid == uid)
 		h.r.mu.Unlock()
 		if !allowed {
-			h.signal(executionEvent{kind: executionStarted, uid: uid, skipped: true})
+			h.signal(executionEvent{kind: executionStarted, uid: uid, demand: demand, skipped: true})
 			return
 		}
 		handle, err := h.r.deps.startExecution(startCtx, h.r.config, uid)
@@ -302,7 +330,7 @@ func (h *executionLifecycle) launch(uid string, demand uint64, recovery bool) {
 				err = errors.Join(err, handle.StopAndFence(context.Background()))
 			}
 		}
-		h.signal(executionEvent{kind: executionStarted, handle: handle, uid: uid, err: err})
+		h.signal(executionEvent{kind: executionStarted, handle: handle, uid: uid, demand: demand, epoch: launchCtx, err: err})
 	}()
 }
 
@@ -314,16 +342,29 @@ func (h *executionLifecycle) watch(handle executionHandle, uid string) {
 	if !ok || monitor.ProcessExit() == nil {
 		return
 	}
+	watchCtx, cancel := context.WithCancel(h.ctx)
+	h.mu.Lock()
+	h.watchCancel = cancel
+	h.mu.Unlock()
 	h.r.lifecycleWorkers.Add(1)
 	go func() {
 		defer h.r.lifecycleWorkers.Done()
-		exit, ok := <-monitor.ProcessExit()
+		defer cancel()
+		var exit childExit
+		var ok bool
+		select {
+		case exit, ok = <-monitor.ProcessExit():
+		case <-watchCtx.Done():
+			return
+		}
 		if !ok || monitor.stopRequested() {
 			return
 		}
 		if exit.code != 0 || exit.err != nil {
-			h.signal(executionEvent{kind: executionLost, handle: handle, uid: uid,
-				err: fmt.Errorf("embedded Execution exited without fence proof (status=%d): %w", exit.code, exit.err)})
+			h.signal(executionEvent{
+				kind: executionLost, handle: handle, uid: uid,
+				err: fmt.Errorf("embedded Execution exited without fence proof (status=%d): %w", exit.code, exit.err),
+			})
 			return
 		}
 		h.signal(executionEvent{kind: executionLost, handle: handle, uid: uid})
@@ -345,7 +386,15 @@ func (h *executionLifecycle) stop(handle executionHandle, uid string) {
 	}()
 }
 
-func (h *executionLifecycle) wait(ctx context.Context, uid string) error {
+func (h *executionLifecycle) wait(ctx context.Context, uid string, demand uint64) error {
+	if uid != "" {
+		defer func() {
+			h.mu.Lock()
+			delete(h.activeDemands, demand)
+			delete(h.startOutcomes, demand)
+			h.mu.Unlock()
+		}()
+	}
 	for {
 		if err := h.terminalError(); err != nil {
 			return err
@@ -361,6 +410,17 @@ func (h *executionLifecycle) wait(ctx context.Context, uid string) error {
 		if current.Phase == executionFailed {
 			return errors.New(current.Error)
 		}
+		if uid != "" && (current.Demand > demand || current.Phase == executionStopped && current.Demand == demand && current.FencedGeneration == current.Generation) {
+			h.mu.Lock()
+			outcome, settled := h.startOutcomes[demand]
+			if settled {
+				delete(h.startOutcomes, demand)
+			}
+			h.mu.Unlock()
+			if settled {
+				return outcome
+			}
+		}
 		if uid != "" {
 			h.r.mu.Lock()
 			failure := h.r.failureLocked()
@@ -372,7 +432,7 @@ func (h *executionLifecycle) wait(ctx context.Context, uid string) error {
 		if uid == "" && current.Phase == executionStopped && current.FencedGeneration == current.Generation {
 			return nil
 		}
-		if uid != "" && current.Phase == executionReady && current.UID == uid {
+		if uid != "" && current.Phase == executionReady && current.UID == uid && current.Demand == demand && h.readyOwner() {
 			return nil
 		}
 		select {
@@ -436,7 +496,7 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	if event, ok := h.take(); ok {
 		switch event.kind {
 		case executionStarted:
-			if current.Phase != executionStarting || current.UID != event.uid {
+			if current.Phase != executionStarting || current.UID != event.uid || current.Demand != event.demand {
 				err := errors.New("embedded Execution launch outcome lost its generation")
 				h.failTerminal(err)
 				return err
@@ -451,8 +511,31 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			if event.skipped || errors.Is(event.err, ErrFencedStartup) {
 				current.Phase, current.FencedGeneration = executionStopped, current.Generation
 				current.AwaitDemand = true
+				outcome := event.err
+				if outcome == nil {
+					outcome = errors.New("embedded Execution startup was superseded")
+				}
+				h.mu.Lock()
+				if _, active := h.activeDemands[current.Demand]; active {
+					if h.startOutcomes == nil {
+						h.startOutcomes = make(map[uint64]error)
+					}
+					h.startOutcomes[current.Demand] = outcome
+				}
+				h.mu.Unlock()
 			} else if event.err != nil {
 				current.Phase, current.Error = executionFailed, event.err.Error()
+				if event.handle != nil {
+					h.mu.Lock()
+					h.handle = event.handle
+					h.mu.Unlock()
+					h.r.mu.Lock()
+					h.r.executionOwner, h.r.executionUID = event.handle, event.uid
+					h.r.executionServer = nil
+					h.r.executionRecovering = true
+					h.r.changedLocked()
+					h.r.mu.Unlock()
+				}
 				h.r.fail(fmt.Errorf("start embedded Execution: %w", event.err))
 			} else {
 				h.mu.Lock()
@@ -460,7 +543,8 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				h.mu.Unlock()
 				h.r.mu.Lock()
 				h.r.executionOwner, h.r.executionUID = event.handle, event.uid
-				if input.UID == event.uid {
+				validEpoch := event.epoch == nil || event.epoch.Err() == nil
+				if input.UID == event.uid && input.Demand == event.demand && validEpoch {
 					h.r.executionServer = event.handle.Executor()
 					h.r.executionRecovering = false
 				} else {
@@ -470,7 +554,7 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				h.r.idleSince = nil
 				h.r.changedLocked()
 				h.r.mu.Unlock()
-				if input.UID == event.uid {
+				if input.UID == event.uid && input.Demand == event.demand && validEpoch {
 					current.Phase = executionReady
 				} else {
 					current.Phase = executionStopping
@@ -509,6 +593,10 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				current.Phase, current.FencedGeneration = executionStopped, current.Generation
 				h.mu.Lock()
 				h.handle = nil
+				if h.watchCancel != nil {
+					h.watchCancel()
+					h.watchCancel = nil
+				}
 				h.mu.Unlock()
 				h.r.mu.Lock()
 				h.r.executionOwner, h.r.executionServer, h.r.executionUID = nil, nil, ""

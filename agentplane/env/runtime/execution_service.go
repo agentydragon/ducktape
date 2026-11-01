@@ -143,7 +143,7 @@ func (r *Runtime) startExecutionService(ctx context.Context, config Config, inca
 		fenceCtx, cancel := context.WithTimeout(context.Background(), executionFenceGrace)
 		defer cancel()
 		if err := handle.StopAndFence(fenceCtx); err != nil {
-			return nil, errors.Join(cause, err)
+			return handle, errors.Join(cause, err)
 		}
 		return nil, errors.Join(ErrFencedStartup, cause)
 	}

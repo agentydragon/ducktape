@@ -678,10 +678,11 @@ func (r *Runtime) startExecutionForUID(ctx context.Context, uid string) error {
 	if r.config.CodexExecServer == nil {
 		return nil
 	}
-	if err := r.executionLifecycle.request(ctx, uid); err != nil {
+	demand, err := r.executionLifecycle.request(ctx, uid)
+	if err != nil {
 		return err
 	}
-	return r.executionLifecycle.wait(ctx, uid)
+	return r.executionLifecycle.wait(ctx, uid, demand)
 }
 
 func (r *Runtime) publishIntent(ctx context.Context, desiredMode lifecycle.Mode, intentMode runtimepb.LifecycleIntent_Mode, uid, sealUID string) (*runtimepb.Binding, error) {
@@ -725,10 +726,11 @@ func (r *Runtime) stopExecution(ctx context.Context) error {
 	if r.executionLifecycle == nil {
 		return nil
 	}
-	if err := r.executionLifecycle.request(context.Background(), ""); err != nil {
+	demand, err := r.executionLifecycle.request(context.Background(), "")
+	if err != nil {
 		return err
 	}
-	return r.executionLifecycle.wait(ctx, "")
+	return r.executionLifecycle.wait(ctx, "", demand)
 }
 
 func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, error) {
