@@ -610,10 +610,10 @@ landed in [#13390](https://github.com/agentydragon/ducktape/pull/13390). Its ord
 acceptance remains unproven: add RPC-boundary coverage that the owner can read while another or an
 unassociated legacy principal cannot, before pagination or lookup reveals data. Cover source lookup,
 batch and filtered reads, follows, and opened-Session watches; retain access after Sandbox deletion.
-Verify revocation rejects new calls and an existing stream ends at its lease and requires fresh
-authorization. Compare direct and delegated calls and prove there is no privileged fallback. This
-does not expand into the held cross-ServiceAccount archive/tag policy, and does not add a live
-rollout gate.
+Verify revocation rejects new calls within the shared authorization freshness bounds, and an
+existing stream ends at its lease and requires fresh authorization. Compare direct and delegated
+calls and prove there is no privileged fallback. This does not expand into the held
+cross-ServiceAccount archive/tag policy, and does not add a live rollout gate.
 
 ### `SESSION_TARGET_DISCOVERY` — discover usable existing environments
 
@@ -1955,10 +1955,11 @@ no executable/process consolidation is dispatched now.
 domain from Sandbox to Environment once its model and boundaries settle.** This is exploratory; no
 rename is selected. Start from the [Session/runtime model](session_runtime_model.md) and inventory
 Agentplane-owned domain objects, public API/proto/CLI/UI/config names, Kubernetes resource names and
-CRDs, storage and migrations, generated manifests, documentation and callers. Distinguish these
-from the upstream agent-sandbox `Sandbox` CRD and Action execution boxes, which have separate owners
-and are tracked by [`RUNNER_RENAME`](#runner_rename--remaining-runner-protocol-and-resource-names)
-and [`ACTION_BOX_RENAME`](#action_box_rename--action-boxes-stop-being-called-sandboxes).
+CRDs, storage and migrations, generated manifests, documentation and callers. The upstream
+agent-sandbox `Sandbox` CRD remains separately owned. Coordinate Agentplane-owned naming with
+[`RUNNER_RENAME`](#runner_rename--remaining-runner-protocol-and-resource-names), while Action
+execution boxes keep their distinct [`ACTION_BOX_RENAME`](#action_box_rename--action-boxes-stop-being-called-sandboxes)
+scope.
 
 **Exit:** review a scoped vocabulary map and, if a rename is recommended, an ordered API/resource
 and reference migration that preserves identities and stored data. Do not use a global text
