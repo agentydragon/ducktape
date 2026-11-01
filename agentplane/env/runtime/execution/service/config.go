@@ -16,19 +16,20 @@ import (
 // Config is immutable for a service lifetime. The environment owner supplies it;
 // a different incarnation requires stopping and fencing this service first.
 type Config struct {
-	Namespace        string            `json:"namespace"`
-	SandboxName      string            `json:"sandbox_name"`
-	SandboxUID       string            `json:"sandbox_uid"`
-	IncarnationUID   string            `json:"incarnation_uid"`
-	WorkingDirectory string            `json:"working_directory"`
-	StateDir         string            `json:"state_dir"`
-	SocketPath       string            `json:"socket_path,omitempty"`
-	Binary           string            `json:"binary"`
-	ContainerSocket  string            `json:"container_socket,omitempty"`
-	ExecutorURL      string            `json:"executor_url"`
-	Environment      map[string]string `json:"environment"`
-	Backend          string            `json:"backend"`
-	Systemd          *SystemdConfig    `json:"systemd,omitempty"`
+	Namespace        string                    `json:"namespace"`
+	SandboxName      string                    `json:"sandbox_name"`
+	SandboxUID       string                    `json:"sandbox_uid"`
+	IncarnationUID   string                    `json:"incarnation_uid"`
+	WorkingDirectory string                    `json:"working_directory"`
+	StateDir         string                    `json:"state_dir"`
+	SocketPath       string                    `json:"socket_path,omitempty"`
+	Binary           string                    `json:"binary"`
+	ContainerSocket  string                    `json:"container_socket,omitempty"`
+	ExecutorURL      string                    `json:"executor_url"`
+	Environment      map[string]string         `json:"environment"`
+	Backend          string                    `json:"backend"`
+	Readiness        codexexecserver.Readiness `json:"readiness,omitempty"`
+	Systemd          *SystemdConfig            `json:"systemd,omitempty"`
 }
 
 type SystemdConfig struct {
@@ -56,10 +57,29 @@ func Load(path string) (Config, error) {
 	if err := decoder.Decode(new(any)); err != io.EOF {
 		return Config{}, errors.New("execution configuration must contain exactly one JSON object")
 	}
-	return config, config.Validate()
+	return config.Resolve()
+}
+
+// Resolve supplies the executor's compatible default readiness windows and validates the
+// complete configuration before it is handed to the service runtime.
+func (c Config) Resolve() (Config, error) {
+	readiness, err := c.Readiness.Resolve()
+	if err != nil {
+		return Config{}, err
+	}
+	c.Readiness = readiness
+	if err := c.validate(); err != nil {
+		return Config{}, err
+	}
+	return c, nil
 }
 
 func (c Config) Validate() error {
+	_, err := c.Resolve()
+	return err
+}
+
+func (c Config) validate() error {
 	if c.Namespace == "" || c.SandboxName == "" || c.SandboxUID == "" || c.IncarnationUID == "" {
 		return errors.New("execution configuration requires Sandbox namespace, name, UID and incarnation UID")
 	}

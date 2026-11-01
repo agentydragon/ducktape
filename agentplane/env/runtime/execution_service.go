@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	executionFenceGrace = 150 * time.Second
-	executionReadyWait  = 30 * time.Second
+	executionFenceGrace              = 150 * time.Second
+	executionCompanionFenceAllowance = 90 * time.Second
+	executionNativeStartAllowance    = 30 * time.Second
 )
 
 // executionServiceHandle owns one in-process Go Execution API lifetime. The
@@ -129,34 +130,9 @@ func (h *executionServiceHandle) serving() bool {
 }
 
 func (r *Runtime) startExecutionService(ctx context.Context, config Config, incarnationUID string) (executionHandle, error) {
-	serviceConfig := service.Config{
-		Namespace: config.Launch.Sandbox.Namespace, SandboxName: config.Launch.Sandbox.Name,
-		SandboxUID: config.Launch.Sandbox.UID, IncarnationUID: incarnationUID,
-		StateDir: filepath.Join(config.StateDir, "execution"), SocketPath: config.ExecutionSocket,
-		ExecutorURL: config.CodexExecServer.URL, Environment: config.HarnessEnvironment,
-	}
-	if config.Supervision == "systemd" {
-		launcher := config.CodexExecServer.Launcher
-		if launcher == nil {
-			return nil, errors.New("VM execution service requires its explicit systemd launcher")
-		}
-		serviceConfig.Backend = "systemd"
-		serviceConfig.Binary = config.CodexBinary
-		serviceConfig.WorkingDirectory = config.StateDir
-		serviceConfig.Systemd = &service.SystemdConfig{
-			AgentUID: launcher.AgentUID, AgentGID: launcher.AgentGID, BlockDevices: launcher.BlockDevices,
-			AggregateLimits: launcher.AggregateLimits, ProcessLimits: launcher.ProcessLimits,
-			OwnerUnit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime",
-		}
-	} else {
-		if config.CodexExecServer.ContainerSocket == "" {
-			return nil, errors.New("Pod execution service requires the companion ownership socket")
-		}
-		serviceConfig.Backend = "companion"
-		serviceConfig.ContainerSocket = config.CodexExecServer.ContainerSocket
-	}
-	if err := serviceConfig.Validate(); err != nil {
-		return nil, fmt.Errorf("execution service configuration: %w", err)
+	serviceConfig, err := runtimeExecutionServiceConfig(config, incarnationUID)
+	if err != nil {
+		return nil, err
 	}
 	handle := newExecutionServiceHandle(serviceConfig, service.RunEmbedded)
 	stopUnready := func(cause error) (executionHandle, error) {
@@ -164,7 +140,7 @@ func (r *Runtime) startExecutionService(ctx context.Context, config Config, inca
 		defer cancel()
 		return nil, errors.Join(cause, handle.StopAndFence(fenceCtx))
 	}
-	readyCtx, cancel := context.WithTimeout(ctx, executionReadyWait)
+	readyCtx, cancel := context.WithTimeout(ctx, executionServiceReadyTimeout(serviceConfig.Readiness.Timeout))
 	defer cancel()
 	select {
 	case ready := <-handle.ready:
@@ -181,4 +157,68 @@ func (r *Runtime) startExecutionService(ctx context.Context, config Config, inca
 	default:
 	}
 	return handle, nil
+}
+
+func runtimeExecutionServiceConfig(config Config, incarnationUID string) (service.Config, error) {
+	if config.CodexExecServer == nil {
+		return service.Config{}, errors.New("Execution service requires a configured Codex exec-server")
+	}
+	serviceConfig := service.Config{
+		Namespace: config.Launch.Sandbox.Namespace, SandboxName: config.Launch.Sandbox.Name,
+		SandboxUID: config.Launch.Sandbox.UID, IncarnationUID: incarnationUID,
+		StateDir: filepath.Join(config.StateDir, "execution"), SocketPath: config.ExecutionSocket,
+		ExecutorURL: config.CodexExecServer.URL, Environment: config.HarnessEnvironment,
+		Readiness: config.CodexExecServer.Readiness,
+	}
+	if config.Supervision == "systemd" {
+		launcher := config.CodexExecServer.Launcher
+		if launcher == nil {
+			return service.Config{}, errors.New("VM execution service requires its explicit systemd launcher")
+		}
+		serviceConfig.Backend = "systemd"
+		serviceConfig.Binary = config.CodexBinary
+		serviceConfig.WorkingDirectory = config.StateDir
+		serviceConfig.Systemd = &service.SystemdConfig{
+			AgentUID: launcher.AgentUID, AgentGID: launcher.AgentGID, BlockDevices: launcher.BlockDevices,
+			AggregateLimits: launcher.AggregateLimits, ProcessLimits: launcher.ProcessLimits,
+			OwnerUnit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime",
+		}
+	} else {
+		if config.CodexExecServer.ContainerSocket == "" {
+			return service.Config{}, errors.New("Pod execution service requires the companion ownership socket")
+		}
+		serviceConfig.Backend = "companion"
+		serviceConfig.ContainerSocket = config.CodexExecServer.ContainerSocket
+	}
+	serviceConfig, err := serviceConfig.Resolve()
+	if err != nil {
+		return service.Config{}, fmt.Errorf("execution service configuration: %w", err)
+	}
+	return serviceConfig, nil
+}
+
+// executionServiceReadyTimeout covers setup before the configured executor probe
+// window and the embedded Health.Check afterward. The setup allowance includes the
+// companion's 90s process-domain fence followed by up to 30s for ownership claim or
+// native service startup; systemd owner preparation and native start are bounded by
+// 30s each. An expired outer deadline still requires StopAndFence proof before return.
+func executionServiceReadyTimeout(probeWindow time.Duration) time.Duration {
+	return addExecutionDurationsSaturating(
+		probeWindow,
+		executionCompanionFenceAllowance,
+		executionNativeStartAllowance,
+		service.EmbeddedHealthReadinessTimeout,
+	)
+}
+
+func addExecutionDurationsSaturating(values ...time.Duration) time.Duration {
+	const maxDuration = time.Duration(1<<63 - 1)
+	total := time.Duration(0)
+	for _, value := range values {
+		if value > 0 && total > maxDuration-value {
+			return maxDuration
+		}
+		total += value
+	}
+	return total
 }
