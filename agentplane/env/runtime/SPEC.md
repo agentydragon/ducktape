@@ -126,8 +126,8 @@ Runtime and Host call each other directly in all supervision modes. Runtime chec
 Execution owner, backend lifetime and serving state for Host readiness; the Execution health socket remains an
 Execution-local startup check. The Pod execution companion retains its separate external socket.
 
-On startup Runtime locks the legacy owner inode before opening the old Session directory, fences
-previous Host and Execution owners, starts Host,
-and waits for an exact-binding initial `INACTIVE`, `ready`, `native_stopped` report before opening
-Gateway control. A Gateway incarnation is not admitted until the previous incarnation has completed
-its lifecycle and process fences.
+On startup Runtime locks its environment owner inode before opening the Session directory, starts
+Host, and waits for an exact-binding initial `INACTIVE`, `ready`, `native_stopped` report before
+opening Gateway control. During incarnation adoption, Execution fences its prior native owner before
+the new execution lifetime is admitted. A Gateway incarnation is not admitted until the previous
+incarnation has completed its lifecycle and process fences.

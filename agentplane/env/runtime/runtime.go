@@ -137,16 +137,13 @@ type Runtime struct {
 	executionRecovering      bool
 	activeAdmissions         uint64
 	activeExecutionCalls     uint64
-	activeExecStreams        uint64
 	execStreamID             uint64
 	execStreams              map[uint64]context.CancelFunc
 	execCalls                map[uint64]context.CancelFunc
 	execCallID               uint64
-	executionFence           bool
 	fenceInFlight            *runtimepb.Binding
 	closing                  bool
 	failed                   bool
-	idleSince                *timestamppb.Timestamp
 	changes                  chan struct{}
 	fatal                    chan error
 	failureErr               error

@@ -45,7 +45,6 @@ func (r *Runtime) authorizeHostCall(ctx context.Context, mutation bool) (*harnes
 		binding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
 		if mutation {
 			r.activeAdmissions++
-			r.idleSince = nil
 			r.changedLocked()
 			admitted = true
 		}
@@ -154,7 +153,6 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 		r.execCalls[callID] = cancel
 		r.activeAdmissions++
 		r.activeExecutionCalls++
-		r.idleSince = nil
 		r.changedLocked()
 		admitted = true
 		return nil
@@ -247,9 +245,7 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 		r.execStreamID++
 		streamID = r.execStreamID
 		r.execStreams[streamID] = cancel
-		r.activeExecStreams++
 		r.activeExecutionCalls++
-		r.idleSince = nil
 		r.changedLocked()
 		return nil
 	})
@@ -266,9 +262,6 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 		cancel()
 		r.mu.Lock()
 		delete(r.execStreams, streamID)
-		if r.activeExecStreams > 0 {
-			r.activeExecStreams--
-		}
 		if r.activeExecutionCalls > 0 {
 			r.activeExecutionCalls--
 		}
