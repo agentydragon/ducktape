@@ -23,7 +23,7 @@ import (
 
 func (r *Runner) OpenSession(ctx context.Context, request *environmentruntimepb.OpenSessionRequest) (response *environmentruntimepb.OpenSessionResponse, resultErr error) {
 	ctx, span := observability.Start(
-		ctx, "Runner OpenSession",
+		ctx, "Environment Runtime OpenSession",
 		trace.WithAttributes(
 			attribute.String("session.id", request.GetSessionId()),
 			attribute.String("sandbox.name", r.config.Launch.Sandbox.Name),

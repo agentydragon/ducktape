@@ -1,4 +1,4 @@
-"""Assertions over the VM suite's driver and Runner trace artifacts."""
+"""Assertions over the VM suite's driver and Environment Runtime trace artifacts."""
 
 from __future__ import annotations
 
@@ -83,7 +83,7 @@ def _assert_stages(
 ) -> None:
     for name, uid in identities.items():
         missing = sorted(required - stages_by_uid.get(uid, set()))
-        assert not missing, f"{role} Sandbox {name} ({uid}) is missing Runner stages: {missing}"
+        assert not missing, f"{role} Sandbox {name} ({uid}) is missing Environment Runtime stages: {missing}"
 
 
 def assert_vm_process_trace_contract(output_dir: Path) -> None:
@@ -92,12 +92,14 @@ def assert_vm_process_trace_contract(output_dir: Path) -> None:
     scenario_ready = _sandbox_identities(test_spans, "system_test.sandbox.ready")
     assert scenario_ready, "no ready VM Sandbox spans reached test-spans.jsonl"
 
-    runner_spans = [span for span in process_spans if span.get("service") == "agentplane-runner"]
-    assert runner_spans, "no Runner spans reached process-spans.jsonl"
-    unattributed = sorted({str(span.get("name")) for span in runner_spans if _resource_uid(span) is None})
-    assert not unattributed, "Runner spans lack resource sandbox.uid: " + ", ".join(unattributed)
+    environment_runtime_spans = [
+        span for span in process_spans if span.get("service") == "agentplane-environment-runtime"
+    ]
+    assert environment_runtime_spans, "no Environment Runtime spans reached process-spans.jsonl"
+    unattributed = sorted({str(span.get("name")) for span in environment_runtime_spans if _resource_uid(span) is None})
+    assert not unattributed, "Environment Runtime spans lack resource sandbox.uid: " + ", ".join(unattributed)
     stages_by_uid: dict[str, set[object]] = {}
-    for span in runner_spans:
+    for span in environment_runtime_spans:
         if uid := _resource_uid(span):
             stages_by_uid.setdefault(uid, set()).add(span.get("name"))
 
@@ -105,8 +107,8 @@ def assert_vm_process_trace_contract(output_dir: Path) -> None:
         stages_by_uid,
         scenario_ready,
         {
-            "agentplane.runner.Runner/OpenSession",
-            "Runner OpenSession",
+            "agentplane.env.runtime.control.EnvironmentRuntime/OpenSession",
+            "Environment Runtime OpenSession",
             "agentplane.env.harnesshost.harness.start",
             "agentplane.env.harnesshost.harness.handshake",
         },
@@ -127,19 +129,23 @@ def assert_vm_process_trace_contract(output_dir: Path) -> None:
         },
         "Codex VM",
     )
-    runner_open = [span for span in runner_spans if span.get("name") == "Runner OpenSession"]
+    environment_runtime_open = [
+        span for span in environment_runtime_spans if span.get("name") == "Environment Runtime OpenSession"
+    ]
     rpc_open_ids = {
         (_trace_id(span), span.get("span_id"))
-        for span in runner_spans
-        if span.get("name") == "agentplane.runner.Runner/OpenSession"
+        for span in environment_runtime_spans
+        if span.get("name") == "agentplane.env.runtime.control.EnvironmentRuntime/OpenSession"
     }
-    for span in runner_open:
+    for span in environment_runtime_open:
         assert (_trace_id(span), span.get("parent_span_id")) in rpc_open_ids, (
-            "Runner OpenSession did not retain its gRPC parent span"
+            "Environment Runtime OpenSession did not retain its gRPC parent span"
         )
         name = _attributes(span).get("sandbox.name")
         if isinstance(name, str) and name in scenario_ready:
-            assert _resource_uid(span) == scenario_ready[name], f"Runner OpenSession for {name} has wrong UID"
+            assert _resource_uid(span) == scenario_ready[name], (
+                f"Environment Runtime OpenSession for {name} has wrong UID"
+            )
 
     for span in test_spans:
         if span.get("name") != "system_test.session.open":
@@ -151,5 +157,5 @@ def assert_vm_process_trace_contract(output_dir: Path) -> None:
             _resource_uid(operation) == scenario_ready[name]
             and _attributes(operation).get("sandbox.name") == name
             and _trace_id(operation) == _trace_id(span)
-            for operation in runner_open
-        ), f"session.open trace for {name} did not reach its Runner operation span"
+            for operation in environment_runtime_open
+        ), f"session.open trace for {name} did not reach its Environment Runtime operation span"
