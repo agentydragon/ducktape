@@ -53,6 +53,16 @@ func (f *threadReadStoreFake) ListPage(_ context.Context, limit int, after *thre
 	return page, nil
 }
 
+func (f *threadReadStoreFake) ArchivedCount(context.Context) (int, error) {
+	count := 0
+	for _, row := range f.rows {
+		if row.Archived {
+			count++
+		}
+	}
+	return count, nil
+}
+
 func (f *threadReadStoreFake) Rename(_ context.Context, id uuid.UUID, name *string) (threads.Thread, error) {
 	for index, row := range f.rows {
 		if row.ID == id {
@@ -333,7 +343,7 @@ func TestThreadRenameBodyRequiresOneKnownField(t *testing.T) {
 
 func TestThreadReadRouteRegistrationPublishesOpenAPIPaths(t *testing.T) {
 	server := NewHTTPServer(nil)
-	RegisterThreadReadRoutes(server, nil, nil, nil, nil)
+	RegisterThreadReadRoutes(server, nil, nil, nil, nil, nil, nil)
 	recorder := httptest.NewRecorder()
 	server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
 	if recorder.Code != http.StatusOK {

@@ -317,7 +317,7 @@ func run(ctx context.Context, config Config) error {
 	RegisterPolicyRoutes(server, config, inventory, policies)
 	RegisterSessionRoutes(server, config, inventory, appBridge, threadStore)
 	RegisterRunnerRoutes(server, appBridge)
-	RegisterThreadReadRoutes(server, threadStore, history, inventory, appBridge)
+	RegisterThreadReadRoutes(server, threadStore, history, inventory, appBridge, wakeupHub, wakeupHub.Connected)
 	if err := threadcommands.RegisterRoutes(server.ProtectedAPI(), threadcommands.Dependencies{
 		Threads: threadStore, History: history, Readiness: appBridge, Dispatcher: dispatcher,
 		Models: config.Models.Harnesses,

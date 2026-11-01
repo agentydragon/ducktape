@@ -262,9 +262,9 @@ whether the page can open a new one; it does not determine whether a retained Hi
 in the table. Session creation displays progress and prevents duplicate clicks while the request
 runs.
 
-Each `/live/sandboxes`, `/live/sandboxes/{name}` and `/live/threads` snapshot is computed once per change for every
-stream with the same parameters and sent to all of them; a stream skips a snapshot identical to its last one.
-Only the Action policy list, which depends on the viewer, is computed per stream.
+Each `/live/sandboxes` and `/live/sandboxes/{name}` snapshot is computed once per change for every stream with the
+same parameters and sent to all of them; a stream skips a snapshot identical to its last one. Only the Action policy
+list, which depends on the viewer, is computed per stream.
 
 A snapshot is not a delta, and there is no resumable id: a relist replaces a kind wholesale and a
 `resourceVersion` expires, so a reconnecting tab is served a fresh snapshot instead. Every frame
@@ -311,22 +311,22 @@ since its response writer implements no `Flush()`.
 
 ## Sidebar inventory updates
 
-The sidebar subscribes to `/live/threads`: whole snapshots of a window of the Thread list, newest
-first. The window holds a page of Threads and grows a page at a time on request; a search (name,
-Sandbox, or the start of the ID) and the archived switch narrow it on the server, and the Thread a
-page has open rides along wherever it falls, so every Thread on screen stays current without the
-browser holding the whole list. The sidebar uses this stream instead of paging a separate HTTP list.
-The frame carries Threads only, so only the PostgreSQL thread notifications, which
-History summary changes also send, refresh it, and Kubernetes changes do not. The browser reads
-Sandboxes only from its one `/live/sandboxes` stream, which the whole shell shares (sidebar, landing
-page, Sandbox list, and a Thread's top bar and composer), so two views of one Sandbox cannot
-disagree. A listener reconnect
-rereads PostgreSQL, including writes whose notifications were missed while disconnected. There
-is no sidebar polling loop or new notification service.
+The browser builds the Thread window from the generated app metadata list and History summary reads. It pages app-owned
+metadata until it has enough visible rows, joins summaries in batches, applies name/Sandbox/ID-prefix search, and pins
+the open Thread if it is outside the visible page. The app list response also carries the archived count. Two generated
+HTTP streams invalidate that view: History reports summary changes, and the app reports Thread metadata changes plus
+whether its PostgreSQL listener is connected. The browser re-reads the list after either signal and reconnects each
+watch independently; a listener reconnect signals a re-read, including writes whose notifications were missed while
+disconnected. There is no sidebar polling loop or new notification service.
+
+The browser reads Sandboxes only from its one `/live/sandboxes` stream, which the whole shell shares (sidebar, landing
+page, Sandbox list, and a Thread's top bar and composer), so two views of one Sandbox cannot disagree. Kubernetes
+inventory health stays with that stream; the Thread list's connection status comes from its History and app watches and
+the PostgreSQL listener state.
 
 The landing route (`/`) is the same Thread list as a whole page, with each Thread's harness, model
 and last activity, so a phone opens on its Sandboxes and Threads rather than behind the drawer. The
-sidebar and the landing page share the one `/live/threads` stream and its search.
+sidebar and the landing page share one browser listing and its search.
 
 The retained snapshot stays navigable during an outage, and the browser connection, stale
 Kubernetes watch, and disconnected database listener all show in the topbar's one connection

@@ -6,12 +6,19 @@ import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import type { SandboxView, ThreadView } from "../schema";
+import type * as ThreadClientModule from "./client";
+import { listThreadWindow } from "./client";
 import { Home } from "./home";
-import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./live";
+import { RoutedThreadsLiveProvider } from "./live";
 import { SandboxesLiveProvider, type SandboxesSnapshot } from "../sandboxes/live";
 import type { SessionNoticeStates } from "../notification_types";
 import { Sidebar } from "../sidebar";
-import { serveEventStreams } from "../testing/watch";
+import { ServedWatch, serveEventStreams } from "../testing/watch";
+
+vi.mock("./client", async (importOriginal) => ({
+  ...(await importOriginal<typeof ThreadClientModule>()),
+  listThreadWindow: vi.fn(),
+}));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
@@ -20,6 +27,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.useRealTimers();
+  vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -75,6 +83,7 @@ const THREADS = [
  * every threads stream opened, in order. */
 async function render(): Promise<string[]> {
   const threadStreams: string[] = [];
+  const otherFetch = globalThis.fetch;
   serveEventStreams((stream) => {
     const { pathname, searchParams } = stream.url;
     if (pathname === "/threads/notices/stream") {
@@ -87,18 +96,36 @@ async function render(): Promise<string[]> {
       stream.event("snapshot", JSON.stringify(inventory));
       return;
     }
-    expect(pathname).toBe("/live/threads");
-    threadStreams.push(stream.url.href);
-    const search = searchParams.get("search")?.toLowerCase();
-    const snapshot: ThreadsSnapshot = {
-      threads: THREADS.filter((candidate) => search === undefined || candidate.name?.toLowerCase().includes(search)),
-      more: false,
-      archived_count: 0,
-      updates_connected: true,
-      watch: { healthy: true, failing: {} },
-    };
-    stream.event("snapshot", JSON.stringify(snapshot));
+    throw new Error(`Unexpected event stream route: ${pathname}${searchParams}`);
+  }, otherFetch);
+  const eventFetch = globalThis.fetch;
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    if (new Headers(init?.headers).get("Accept") === "application/x-ndjson") {
+      const watch = new ServedWatch(String(input), init?.signal ?? undefined);
+      const pathname = watch.url.pathname;
+      if (
+        pathname !== "/upstream/app/v1/threads:watch" &&
+        pathname !== "/upstream/history/v1/session-summaries:watch"
+      ) {
+        throw new Error(`Unexpected Thread watch route: ${pathname}`);
+      }
+      threadStreams.push(pathname);
+      watch.send(
+        pathname === "/upstream/app/v1/threads:watch"
+          ? { changed: {}, updatesConnected: true }
+          : { observation: { changed: {} } }
+      );
+      return Promise.resolve(watch.response);
+    }
+    return eventFetch(input, init);
   });
+  vi.mocked(listThreadWindow).mockImplementation(async (listing) => ({
+    threads: THREADS.filter(
+      (candidate) => listing.search === null || candidate.name?.toLowerCase().includes(listing.search.toLowerCase())
+    ),
+    more: false,
+    archived_count: 0,
+  }));
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -154,7 +181,7 @@ it("adds each Thread's harness, model and last activity to its row, which the si
   expect(sidebar().querySelector(".agentplane-thread-list-row-detail")).toBeNull();
 });
 
-it("shares one search with the sidebar, as one threads stream", async () => {
+it("shares one search with the sidebar while reusing the generated update watches", async () => {
   const threadStreams = await render();
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const input = searchBox(home());
@@ -164,7 +191,8 @@ it("shares one search with the sidebar, as one threads stream", async () => {
   });
   expect(searchBox(sidebar()).value).toBe("beta");
   await act(async () => vi.runAllTimers());
-  expect(threadStreams.map((url) => new URL(url, "http://test").searchParams.get("search"))).toEqual([null, "beta"]);
+  expect(threadStreams).toEqual(["/upstream/app/v1/threads:watch", "/upstream/history/v1/session-summaries:watch"]);
+  expect(listThreadWindow.mock.calls.map(([listing]) => listing.search)).toEqual([null, "beta"]);
   for (const scope of [home(), sidebar()]) {
     expect(row(scope, "Beta thread")).toBeDefined();
     expect(scope.textContent).not.toContain("Alpha thread");

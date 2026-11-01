@@ -26,7 +26,7 @@ func exportOpenAPI(writer io.Writer) error {
 	RegisterPolicyRoutes(server, config, (*sandboxes.Access)(nil), (*policyaccess.Access)(nil))
 	RegisterSessionRoutes(server, config, nil, nil, nil)
 	RegisterRunnerRoutes(server, nil)
-	RegisterThreadReadRoutes(server, (*threads.Store)(nil), (*historydata.Store)(nil), nil, nil)
+	RegisterThreadReadRoutes(server, (*threads.Store)(nil), (*historydata.Store)(nil), nil, nil, nil, nil)
 	if err := threadcommands.RegisterRoutes(server.ProtectedAPI(), threadcommands.Dependencies{
 		Threads: (*threads.Store)(nil), History: (*historydata.Store)(nil), Readiness: (*bridge.RunnerBridge)(nil),
 		Dispatcher: (*bridge.DispatcherClient)(nil),
