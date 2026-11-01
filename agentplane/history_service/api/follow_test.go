@@ -14,10 +14,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -452,7 +452,13 @@ func (s *leaseBlockedFollowStream) releaseWrite() { s.releaseOnce.Do(func() { cl
 func TestFollowSessionDoesNotReconnectAfterAWriteIsCanceledByItsLease(t *testing.T) {
 	server := newServer(t, 2*time.Second)
 	sessionID, _ := server.record(t)
-	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer "+readerToken))
+	// This test calls the service directly, so provide the reviewed caller proof that the
+	// gRPC admission interceptor normally places in the handler context.
+	account := auth.Account{Namespace: testNamespace, Name: "test-reader"}
+	ctx := auth.WithReviewedCaller(t.Context(), auth.ReviewedCaller{
+		ServiceAccount: auth.ServiceAccountPrincipal{Account: account, ServiceAccountUID: "test-reader-uid"},
+		Pod:            &auth.Principal{Account: account, ServiceAccountUID: "test-reader-uid", PodName: "test-reader-pod", PodUID: "test-reader-pod-uid"},
+	})
 	stream := &leaseBlockedFollowStream{
 		ctx: ctx, initialCaught: make(chan struct{}), writeStarted: make(chan struct{}),
 		writeFinished: make(chan struct{}), release: make(chan struct{}),
