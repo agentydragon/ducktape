@@ -44,7 +44,7 @@ Each test is one interaction script run against both harnesses, written against
 `testing/driver.py`: it plays the Runner Gateway's side of the control stream and reads each
 session's Events from the stand-in ingress in `testing/gateway.py`;
 the parametrized `model` fixture is the only place that knows the model API dialect. The scripted
-model is shared with other packages' tests in [`agentplane/testing/`](../testing):
+model is shared with other packages' tests in [`agentplane/testing/`](../../testing):
 `scripted_model.py` is the neutral vocabulary (`Text`, `Reasoning`, `ShellCall`, and the request
 markers), and `claude_model.py` and `codex_model.py` speak the two dialects. Harness fixtures live
 in `testing/`, where `launches.py` wires the pinned binaries to a scripted upstream. `test_restart.py`

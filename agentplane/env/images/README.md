@@ -17,7 +17,7 @@ any pin bump.
 The guest declares `/state/workspaces` in NixOS `fileSystems` as ext4 with `autoFormat`:
 `systemd-makefs` creates the filesystem when `blkid` finds no signature and skips any disk that
 has one, so a disk holding data but no recognized signature is formatted too
-([why that is accepted](../docs/vm_sandboxes.md#guest-and-storage)).
+([why that is accepted](../../docs/vm_sandboxes.md#guest-and-storage)).
 
 `systemd.tmpfiles` owns the mounted workspace directory's `agent:agent` ownership, setgid mode,
 default ACL and private `.home` directory.
@@ -40,5 +40,5 @@ No credentials are embedded in the image. The staging container workflow is Buil
 builds, not a local Bazel client with remote actions. Local Bazel execution is deferred until
 VM-backed environments; package availability does not imply permission to run it. Adding tools
 does not itself establish a tool memory boundary. Isolated Codex execution is configured separately
-([executor lifecycle and scope](docs/codex_executor.md)). See the
-[BuildBuddy execution policy and validation](../docs/buildbuddy_remote_auth.md#validation-and-execution-policy).
+([executor lifecycle and scope](../runtime/execution/docs/codex_executor.md)). See the
+[BuildBuddy execution policy and validation](../../docs/buildbuddy_remote_auth.md#validation-and-execution-policy).
