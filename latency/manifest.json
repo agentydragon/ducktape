@@ -1,41 +1,12 @@
 {
-  "source_devel_commit": "8a4df4b1c32bf60b526020efa4a34f3882132b9b",
-  "window_start_utc": "2026-10-29T20:50:00Z",
-  "window_end_utc": "2026-11-01T08:45:37.410364+00:00",
-  "published_at_utc": "2026-11-01T08:51:49.840245+00:00",
+  "source_devel_commit": "de5f671002f516e952c3dfafcbf06659a4bc731b",
+  "window_start_utc": "2026-11-01T02:30:00Z",
+  "window_end_utc": "2026-11-01T21:45:00Z",
+  "published_at_utc": "2026-11-01T22:13:41.520206+00:00",
   "attribution": "not collected",
-  "sampling_design": "Retained cohort: Four fixed complete 90-minute arrival windows with gaps, not a continuous census or random sample. Focused suite experiments are a separate selected sample, not additional sampled fleet hours.",
-  "sampling_windows_utc": [
-    {
-      "start": "2026-10-29T20:50:00Z",
-      "end": "2026-10-29T22:20:00Z"
-    },
-    {
-      "start": "2026-10-30T20:50:00Z",
-      "end": "2026-10-30T22:20:00Z"
-    },
-    {
-      "start": "2026-10-31T20:50:00Z",
-      "end": "2026-10-31T22:20:00Z"
-    },
-    {
-      "start": "2026-11-01T01:00:00Z",
-      "end": "2026-11-01T02:30:00Z"
-    }
-  ],
-  "sampled_hours": 6,
-  "retained_cohort_window_end_utc": "2026-11-01T02:30:00Z",
-  "retained_cohort_source_devel_commit": "58e4261128f61235dd354192a907447882284ceb",
-  "runtime_experiment_window_utc": {
-    "start": "2026-11-01T06:00:06.594512Z",
-    "end": "2026-11-01T06:34:13.094158Z"
-  },
-  "implementation_update_window_utc": {
-    "start": "2026-11-01T08:08:06.898611Z",
-    "end": "2026-11-01T08:35:07.322716Z"
-  },
-  "implementation_update_scope": "Implementation-status update and two selected hosted executions; retained fleet cohort unchanged. No combined-revision or matched before/after speedup measurement.",
-  "previous_report_commit": "f1af47e031",
-  "report_html_sha256": "510477a290e1c7836ce2121c6f1a6b3f0ae695aa0c094dbfcb89afa6eb176dfd",
-  "visual_validation_invocation": "26f129a9-fae2-4fc7-ab3b-74946cf769b1"
+  "previous_report_branch_commit": "a7aba03c0c745de172872fda1393303cbd55dd70",
+  "report_html_sha256": "f40489a76b6ca5d5d6112a667df727cfe4ae147ce4ad5029aa4782a78af48f0e",
+  "evidence_sha256": "09c1be4d4da48ec5b5256b7ae3faf2b5c5d761d6abdaab6ed0a7224e5a6a71c6",
+  "visual_validation_invocation": "0ab77479-9c78-4b32-afbe-fd2e35f132d5",
+  "sampling_design": "Continuous Actions arrival census; exact-head gate proxy; selected combined-source runtime samples."
 }
