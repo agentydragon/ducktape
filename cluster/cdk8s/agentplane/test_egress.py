@@ -198,11 +198,13 @@ def test_session_dispatcher_egress_is_limited_to_the_delegation_rpc_surfaces(
 
     actual_permissions: set[tuple[str, str | None, str, str, str, bool]] = set()
     for policy in staging_manifests:
-        # This separate opt-in set intentionally grants uncredentialed public access to any host.
-        if policy["kind"] != "PolicySet" or policy["metadata"]["name"] == PUBLIC_INTERNET_POLICY:
+        if policy["kind"] != "PolicySet":
             continue
         for rule in policy["spec"]["rules"]:
             credential_ref = rule.get("credentialRef", {}).get("name")
+            # This separate opt-in set intentionally grants uncredentialed public access to any host.
+            if policy["metadata"]["name"] == PUBLIC_INTERNET_POLICY and credential_ref is None:
+                continue
             if not any(host_matches_destination(host) for host in rule.get("hosts", [])) and (
                 credential_ref != credential_name
             ):
