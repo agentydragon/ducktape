@@ -4,10 +4,50 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/configuration"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/service"
 )
+
+func TestRuntimeExecutionServiceConfigCarriesResolvedReadiness(t *testing.T) {
+	want := codexexecserver.Readiness{Timeout: 725 * time.Millisecond, ProbeTimeout: 55 * time.Millisecond, ProbeInterval: 130 * time.Millisecond}
+	config := Config{
+		StateDir: "/state", ExecutionSocket: "/run/execution.sock", Supervision: "subprocess",
+		Launch:             configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test-namespace", Name: "test-sandbox", UID: "test-sandbox-uid"}},
+		HarnessEnvironment: map[string]string{"PATH": "/usr/bin"},
+		CodexExecServer: &codexexecserver.Config{
+			URL: "ws://127.0.0.1:4501", ContainerSocket: "/run/executor.sock", Readiness: want,
+		},
+	}
+	resolved, err := runtimeExecutionServiceConfig(config, "test-incarnation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Readiness != want {
+		t.Fatalf("embedded service readiness = %+v, want configured values %+v", resolved.Readiness, want)
+	}
+}
+
+func TestRuntimeExecutionReadyTimeoutPreservesConfiguredWindow(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		probeWindow time.Duration
+		want        time.Duration
+	}{
+		{name: "default window plus setup and health", probeWindow: 20 * time.Second, want: 145 * time.Second},
+		{name: "override above former fixed cap", probeWindow: 45 * time.Second, want: 170 * time.Second},
+		{name: "saturates instead of overflowing", probeWindow: time.Duration(1<<63 - 1), want: time.Duration(1<<63 - 1)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := executionServiceReadyTimeout(test.probeWindow); got != test.want {
+				t.Fatalf("runtime Execution readiness timeout = %s, want %s", got, test.want)
+			}
+		})
+	}
+}
 
 func TestSupervisedExecutionFenceProofSurvivesCleanupRetry(t *testing.T) {
 	managerOpen := true

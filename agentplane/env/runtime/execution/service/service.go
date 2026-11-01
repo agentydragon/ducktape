@@ -31,6 +31,10 @@ import (
 // replace the API process without replacing the Harness Host.
 var ErrFencedBackendLoss = errors.New("execution backend loss was fenced")
 
+// EmbeddedHealthReadinessTimeout bounds the private Health.Check after the executor
+// passes its configured readiness probes.
+const EmbeddedHealthReadinessTimeout = 5 * time.Second
+
 // Run owns the backend from startup fencing until shutdown. The caller must be
 // PID 1 for the direct pod backend: returning lets the container runtime fence escaped descendants.
 // Systemd callers supply an owner unit and lifetime directory; death of that
@@ -50,7 +54,9 @@ func RunEmbedded(ctx context.Context, config Config, ready func(executorpb.Execu
 }
 
 func runOwned(ctx context.Context, config Config, ready func(executorpb.ExecutorServer, context.Context)) (result error) {
-	if err := config.Validate(); err != nil {
+	var err error
+	config, err = config.Resolve()
+	if err != nil {
 		return err
 	}
 	owner, err := lock(config.StateDir)
@@ -137,6 +143,11 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 }
 
 func runWithServer(ctx context.Context, config Config, start codexexecserver.Start, ready func(executorpb.ExecutorServer, context.Context), serve func(*grpc.Server, net.Listener) error) (result error) {
+	readinessConfig, err := config.Readiness.Resolve()
+	if err != nil {
+		return err
+	}
+	config.Readiness = readinessConfig
 	lifetime, cancel := context.WithCancel(ctx)
 	defer cancel()
 	instance, err := start(lifetime)
@@ -162,9 +173,9 @@ func runWithServer(ctx context.Context, config Config, start codexexecserver.Sta
 		case <-lifetime.Done():
 		}
 	}()
-	readiness, endReadiness := context.WithTimeout(lifetime, 20*time.Second)
-	err = retry.Do(readiness, retry.NewConstant(100*time.Millisecond), func(ctx context.Context) error {
-		probeCtx, endProbe := context.WithTimeout(ctx, 2*time.Second)
+	readiness, endReadiness := context.WithTimeout(lifetime, config.Readiness.Timeout)
+	err = retry.Do(readiness, retry.NewConstant(config.Readiness.ProbeInterval), func(ctx context.Context) error {
+		probeCtx, endProbe := context.WithTimeout(ctx, config.Readiness.ProbeTimeout)
 		defer endProbe()
 		if err := codexexecserver.ProbeAt(config.ExecutorURL)(probeCtx); err != nil {
 			return retry.RetryableError(err)
@@ -173,6 +184,25 @@ func runWithServer(ctx context.Context, config Config, start codexexecserver.Sta
 	})
 	endReadiness()
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			select {
+			case backendErr := <-backendDone:
+				if backendErr == nil {
+					backendErr = errors.New("execution backend stopped")
+				}
+				if errors.Is(backendErr, codexexecserver.ErrExecutionBackendLost) {
+					fencedBackendLoss = backendErr
+					return nil
+				}
+				return fmt.Errorf("execution backend readiness: %w", backendErr)
+			default:
+				if ctx.Err() != nil {
+					// Runtime-requested shutdown can interrupt startup probing. The
+					// deferred backend stop still has to establish its fence first.
+					return nil
+				}
+			}
+		}
 		return fmt.Errorf("execution backend readiness: %w", err)
 	}
 	go func() {
@@ -280,7 +310,7 @@ func waitEmbeddedHealth(ctx context.Context, socket string, served <-chan error)
 	}
 	defer conn.Close()
 	client := healthpb.NewHealthClient(conn)
-	readiness, cancel := context.WithTimeout(ctx, 5*time.Second)
+	readiness, cancel := context.WithTimeout(ctx, EmbeddedHealthReadinessTimeout)
 	defer cancel()
 	err = retry.Do(readiness, retry.NewConstant(20*time.Millisecond), func(ctx context.Context) error {
 		select {
