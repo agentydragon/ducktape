@@ -8,6 +8,7 @@ import { type CommandIssue } from "./command_delivery";
 import type { LocalCommands, LocalCommand } from "./local_commands";
 import { decimalBigInt, useThreadSync, type ThreadEntity } from "./thread_sync";
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import { isUnknownDispatchState } from "./client";
 
 function subject(operation: string): CommandSubject {
   if (operation === "submit_input" || operation === "submitInput") return "input";
@@ -24,6 +25,7 @@ function progressStage(
 ): CommandStage {
   if (outcome === "effected" || outcome === "failed" || outcome === "noop") return outcome;
   if (admitted) return "admitted";
+  if (receipt && isUnknownDispatchState(receipt.state)) return "unknown";
   switch (receipt?.state) {
     case DeliveryState.QUEUED_IN_DISPATCHER:
       return "queued";
@@ -160,7 +162,10 @@ export function PendingInputMessages({
         const admitted = row !== undefined || value.admission !== null || dispatchAdmitted;
         const stage = progressStage(outcome, admitted, value.dispatch, issue);
         const failed =
-          outcome === "failed" || stage === "dispatch_failed" || stage === "cancelled" || stage === "unknown";
+          outcome === "failed" ||
+          stage === "dispatch_failed" ||
+          stage === "cancelled" ||
+          (stage === "unknown" && !isUnknownDispatchState(dispatchState));
         const noop = outcome === "noop" || stage === "noop";
         const effected = outcome === "effected";
         const outcomeReason = row && "outcome" in row.state ? row.state.outcome_reason : null;
@@ -247,10 +252,12 @@ function LocalControlRows({
         .map((value) => {
           const operation = value.command.operation;
           const admitted = value.admission !== null;
+          const dispatchState = value.dispatch?.state;
           const settled =
             Boolean(value.interruptResult) ||
-            (value.dispatch !== null &&
-              ![DeliveryState.QUEUED_IN_DISPATCHER, DeliveryState.DELIVERING_TO_RUNNER].includes(value.dispatch.state));
+            (dispatchState !== undefined &&
+              !isUnknownDispatchState(dispatchState) &&
+              ![DeliveryState.QUEUED_IN_DISPATCHER, DeliveryState.DELIVERING_TO_RUNNER].includes(dispatchState));
           const issue = errors.get(value.command.commandId);
           return (
             <ControlCommandFrame key={value.command.commandId} id={value.command.commandId}>
