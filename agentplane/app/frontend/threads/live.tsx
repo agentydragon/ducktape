@@ -152,6 +152,9 @@ function useThreadsLive(listing: ThreadListing, openThreadId: string | null): Li
     }
 
     refreshRef.current = refresh;
+    // Render the initial read even if a watch is slow to open. Once both watches have sent their
+    // opening frames, refresh again to cover changes between this read and the watch snapshots.
+    refresh();
     const stopMetadata = followWatch("/upstream/app/v1/threads:watch", {
       onOpen: () => {
         metadataReady = false;

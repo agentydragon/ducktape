@@ -531,9 +531,14 @@ function composeThreadView(metadata: ThreadMetadata, summary: SessionSummary): T
     FEED_STATUS_ENDED: "ended",
     FEED_STATUS_FAILED: "failed",
   };
-  const feedStatusName = attachment ? enumName(summary.feedStatus, FeedStatusSchema, "FeedStatus") : null;
+  // An attached Session can precede the first runner feed observation. History represents
+  // that valid state with FEED_STATUS_UNSPECIFIED, which the old Thread view exposed as null.
+  const feedStatusName =
+    attachment && summary.feedStatus !== 0 ? enumName(summary.feedStatus, FeedStatusSchema, "FeedStatus") : null;
   const feedStatus = feedStatusName === null ? null : feedStatusNames[feedStatusName];
-  if (attachment && !feedStatus) throw new Error(`History Service returned an unknown FeedStatus: ${feedStatusName}`);
+  if (feedStatusName !== null && !feedStatus) {
+    throw new Error(`History Service returned an unknown FeedStatus: ${feedStatusName}`);
+  }
 
   return {
     id: metadata.threadId,
