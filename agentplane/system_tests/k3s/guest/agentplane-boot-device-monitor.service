@@ -1,0 +1,18 @@
+[Unit]
+Description=Record fixture guest block-device discovery events
+DefaultDependencies=no
+ConditionKernelCommandLine=agentplane.boot-evidence=1
+Before=systemd-udev-trigger.service shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=notify
+NotifyAccess=all
+TimeoutStartSec=5s
+ExecStart=/usr/sbin/agentplane-boot-evidence-monitor
+Environment=LC_ALL=C
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=sysinit.target

@@ -12,6 +12,7 @@ from agentplane.system_tests.k3s.guest_logs import (
     SUPERVISION_FAILED,
     SUPERVISION_PASSED,
     GuestBootError,
+    GuestBootEvidenceError,
     GuestShutdownError,
     capture,
     check_boot,
@@ -19,6 +20,16 @@ from agentplane.system_tests.k3s.guest_logs import (
 )
 
 MARKER = "2026-10-27T21:41:13.112914838Z stdout F " + SHUTDOWN_COMPLETE.decode() + "\n"
+BOOT_EVIDENCE = """2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_BEGIN
+2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_BEGIN /usr/bin/busybox cat /proc/cmdline
+2026-10-27T21:41:13Z stdout F root=/dev/ram console=ttyS0 agentplane.boot-evidence=1
+2026-10-27T21:41:13Z stdout F AGENTPLANE_UDEV_MONITOR_READY
+2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_GUEST_END
+2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_DEVICE_END
+2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_ACTIVATION_END
+2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_JOURNAL_END
+2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_END status=complete
+"""
 
 
 def test_boot_failure_requires_a_complete_console_payload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -130,6 +141,7 @@ def test_retains_failure_evidence_without_masking_exception(tmp_path: Path) -> N
             kubevirt_namespace="kubevirt",
             destination=outputs,
             validate_shutdown=lambda: True,
+            require_boot_evidence=True,
         ),
     ):
         raise failure
@@ -149,10 +161,111 @@ def test_session_failures_disable_validation_at_teardown(tmp_path: Path) -> None
         kubevirt_namespace="kubevirt",
         destination=outputs,
         validate_shutdown=lambda: failures == 0,
+        require_boot_evidence=True,
     ):
         # pytest reports failed cases without throwing their exception into the session fixture.
         failures += 1
     assert [path.read_text() for path in outputs.rglob("*.log")] == ["FAILED_GUEST\n"]
+
+
+def test_successful_teardown_requires_complete_evidence_from_selected_guest(tmp_path: Path) -> None:
+    logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
+    selected = logs / "systest_virt-launcher-test_uid-oom" / "guest-console-log" / "0.log"
+    selected.parent.mkdir(parents=True)
+    selected.write_text(BOOT_EVIDENCE + MARKER)
+    other = logs / "systest_virt-launcher-test_uid-runner" / "guest-console-log" / "0.log"
+    other.parent.mkdir(parents=True)
+    other.write_text(
+        "2026-10-27T21:41:13Z stdout F [   10.883319] systemd[1]: agentplane-boot-device-monitor.service "
+        "was skipped because of an unmet condition check "
+        "(ConditionKernelCommandLine=agentplane.boot-evidence=1).\n" + MARKER
+    )
+
+    with capture(
+        log_root=logs,
+        namespace="systest",
+        kubevirt_namespace="kubevirt",
+        destination=outputs,
+        validate_shutdown=lambda: True,
+        require_boot_evidence=True,
+    ):
+        pass
+
+
+@pytest.mark.parametrize(
+    ("evidence", "message"),
+    [
+        ("", "Expected exactly one retained guest"),
+        (BOOT_EVIDENCE.replace("AGENTPLANE_UDEV_MONITOR_READY\n", ""), "did not report readiness"),
+        (
+            BOOT_EVIDENCE.replace(
+                "AGENTPLANE_BOOT_EVIDENCE_END status=complete\n",
+                "AGENTPLANE_BOOT_EVIDENCE_END status=partial\n"
+                "2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_REQUIRED_FAILURES 1\n",
+            ),
+            "was partial",
+        ),
+        (BOOT_EVIDENCE.replace("AGENTPLANE_BOOT_EVIDENCE_ACTIVATION_END\n", ""), "missed a required section"),
+        (
+            BOOT_EVIDENCE.replace("2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_END status=complete\n", ""),
+            "did not complete",
+        ),
+    ],
+)
+def test_successful_teardown_reports_incomplete_boot_evidence(tmp_path: Path, evidence: str, message: str) -> None:
+    logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
+    source = logs / "systest_virt-launcher-test_uid-oom" / "guest-console-log" / "0.log"
+    source.parent.mkdir(parents=True)
+    source.write_text(evidence + MARKER)
+
+    with (
+        pytest.raises(GuestBootEvidenceError, match=message),
+        capture(
+            log_root=logs,
+            namespace="systest",
+            kubevirt_namespace="kubevirt",
+            destination=outputs,
+            validate_shutdown=lambda: True,
+            require_boot_evidence=True,
+        ),
+    ):
+        pass
+    assert evidence == "" or list(outputs.rglob("*.log"))
+
+
+def test_successful_teardown_collects_evidence_split_across_rotated_guest_logs(tmp_path: Path) -> None:
+    logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
+    console = logs / "systest_virt-launcher-test_uid-oom" / "guest-console-log"
+    console.mkdir(parents=True)
+    (console / "0.log").write_text(
+        "2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_BEGIN\n"
+        "2026-10-27T21:41:13Z stdout F root=/dev/ram console=ttyS0 agentplane.boot-evidence=1\n"
+        "2026-10-27T21:41:13Z stdout F AGENTPLANE_UDEV_MONITOR_READY\n"
+    )
+    (console / "1.log").write_text(
+        "\n".join(
+            "2026-10-27T21:41:13Z stdout F " + marker
+            for marker in (
+                "AGENTPLANE_BOOT_EVIDENCE_GUEST_END",
+                "AGENTPLANE_BOOT_EVIDENCE_DEVICE_END",
+                "AGENTPLANE_BOOT_EVIDENCE_ACTIVATION_END",
+                "AGENTPLANE_BOOT_EVIDENCE_JOURNAL_END",
+                "AGENTPLANE_BOOT_EVIDENCE_END status=complete",
+                SHUTDOWN_COMPLETE.decode(),
+            )
+        )
+        + "\n"
+    )
+
+    with capture(
+        log_root=logs,
+        namespace="systest",
+        kubevirt_namespace="kubevirt",
+        destination=outputs,
+        validate_shutdown=lambda: True,
+        require_boot_evidence=True,
+    ):
+        pass
 
 
 def test_retains_only_scoped_console_compute_relay_and_handler_logs(tmp_path: Path) -> None:

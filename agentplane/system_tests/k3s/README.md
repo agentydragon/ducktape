@@ -240,10 +240,41 @@ including the guest kernel, systemd, Runner and native service diagnostics. Open
 output across launcher deletion, suspension, replacement and container restarts.
 On successful VM test teardown, each retained launcher incarnation must contain
 `AGENTPLANE_GUEST_SHUTDOWN_COMPLETE`, emitted by a systemd unit after runner exit and successful
-workspace/state unmounts. Rotated logs are checked together per launcher. Existing test failures skip
-this additional assertion while retaining their logs. Launcher `compute` logs and the KubeVirt
+workspace/state unmounts. Rotated logs are checked together per launcher. Existing test failures
+skip this additional assertion while retaining their logs. Launcher `compute` logs and the KubeVirt
 namespace's `virt-handler` logs are retained under `vm-artifacts/launchers/` and
 `vm-artifacts/handlers/`, respectively, for graceful-shutdown and domain-exit evidence.
+
+The normal `test_vm` target also selects block-device boot evidence on its OOM guest only. An early
+guest unit runs `udevadm monitor --kernel --udev --property --subsystem-match=block`; it reports
+`AGENTPLANE_UDEV_MONITOR_READY` after both monitor sockets are bound and before systemd coldplug.
+This captures coldplug and udev rule completion for block devices, including their serial and
+`DEVLINKS`; it does not timestamp the original kernel driver registration. The guest kernel's
+serial printk messages show registration, while the monitor distinguishes kernel coldplug replays
+from post-rule udev events. Its event timestamps are when the monitor handles the event on guest
+`CLOCK_MONOTONIC`; they are not the original device-emission time. A separate bounded `Type=exec`
+report starts after `agentplane-environment-runtime.service` starts, independently of Runner
+readiness and without holding
+`multi-user.target` open. It records the workspace symlink and udev properties, block-device names
+and serials, `/etc/fstab`, and the udevd, udev-trigger, workspace `.device`, makefs, mount and
+environment-runtime unit configuration and monotonic properties. It also retains short-monotonic
+journal records. It attempts optional `systemd-analyze` timing and critical-chain output after required
+sections; if the boot transaction is still finishing, those commands can fail and their statuses
+remain visible without making the required report partial. The report uses a two-second
+per-command bound and a 35-second runtime bound; every command has an exit-status marker, and a final
+`status=partial` or missing end marker identifies incomplete required evidence.
+Machine-readable readiness and report receipts are written directly to the guest serial port;
+command output and udev events also go through `journal+console`. This keeps receipt parsing
+independent of systemd's journal-forwarding prefix.
+
+Find `AGENTPLANE_BOOT_EVIDENCE_BEGIN` in the OOM guest's retained console. It includes the kernel
+command line, guest boot ID and DMI UUID so the marker maps to the exact launcher incarnation. The
+report labels its clocks separately: `/proc/uptime` is guest `CLOCK_BOOTTIME` and includes suspend;
+udev monitor timestamps, journal `short-monotonic`, and systemd `*TimestampMonotonic` use guest
+`CLOCK_MONOTONIC`. Kernel printk brackets are guest kernel timestamps; CRI prefixes on the outer
+console artifact are host receipt times and can be buffered. The ordinary OOM guest does not
+suspend during the collected boot timeline. Do not add host CRI timestamps to guest monotonic
+values. The manual `test_vm_profile` and `test_vm_manual` targets do not select this collector.
 
 For VM tests, shared client fixture cleanup exports retained Session events, including native frames
 in both directions, stderr and lifecycle failures, for

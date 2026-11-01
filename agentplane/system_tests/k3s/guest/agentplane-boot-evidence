@@ -1,0 +1,77 @@
+#!/usr/bin/busybox sh
+set +e
+required_failures=0
+command_status=0
+
+receipt() {
+	printf '%s\n' "$*" >/dev/ttyS0
+}
+
+run() {
+	printf '\nAGENTPLANE_BOOT_EVIDENCE_BEGIN %s\n' "$*"
+	receipt "AGENTPLANE_BOOT_EVIDENCE_BEGIN $*"
+	/usr/bin/busybox timeout 2 "$@"
+	command_status=$?
+	printf 'AGENTPLANE_BOOT_EVIDENCE_END status=%s command=%s\n' "$command_status" "$*"
+	receipt "AGENTPLANE_BOOT_EVIDENCE_END status=$command_status command=$*"
+}
+
+run_required() {
+	run "$@"
+	if [ "$command_status" -ne 0 ]; then
+		required_failures=$((required_failures + 1))
+	fi
+}
+
+receipt AGENTPLANE_BOOT_EVIDENCE_BEGIN
+receipt 'AGENTPLANE_BOOT_EVIDENCE_CLOCKS /proc/uptime is guest CLOCK_BOOTTIME (includes suspend); udevadm monitor, systemd journal short-monotonic, and systemd *TimestampMonotonic use guest CLOCK_MONOTONIC; kernel printk brackets are guest kernel timestamps; outer CRI timestamps are host receipt times and may be buffered.'
+receipt AGENTPLANE_BOOT_EVIDENCE_GUEST_BEGIN
+run_required /usr/bin/busybox uname -a
+run_required /usr/bin/busybox cat /proc/cmdline
+run_required /usr/bin/busybox cat /proc/uptime
+run_required /usr/bin/busybox cat /proc/sys/kernel/random/boot_id
+run_required /usr/bin/busybox cat /sys/class/dmi/id/product_uuid
+run_required /usr/bin/udevadm --version
+run_required /usr/bin/systemctl --version
+receipt AGENTPLANE_BOOT_EVIDENCE_GUEST_END
+receipt AGENTPLANE_BOOT_EVIDENCE_DEVICE_BEGIN
+run_required /usr/bin/busybox ls -l /dev/disk/by-id/virtio-workspace
+run_required /usr/bin/busybox readlink -f /dev/disk/by-id/virtio-workspace
+run_required /usr/bin/udevadm info --query=property --name=/dev/disk/by-id/virtio-workspace
+run_required /usr/bin/lsblk --nodeps --output NAME,MAJ:MIN,TYPE,SIZE,MODEL,SERIAL
+receipt AGENTPLANE_BOOT_EVIDENCE_DEVICE_END
+receipt AGENTPLANE_BOOT_EVIDENCE_ACTIVATION_BEGIN
+run_required /usr/bin/busybox cat /etc/fstab
+properties=Id,ActiveState,SubState,Result,ActiveEnterTimestampMonotonic,InactiveEnterTimestampMonotonic,ActiveExitTimestampMonotonic,InactiveExitTimestampMonotonic,StateChangeTimestampMonotonic,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic,ExecMainCode,ExecMainStatus,Type,TimeoutStartUSec,TimeoutStopUSec,NotifyAccess,Before,After,Conflicts,Requires,Wants
+run_required /usr/bin/systemctl --no-pager show \
+	--property=FirmwareTimestampMonotonic,LoaderTimestampMonotonic,KernelTimestampMonotonic,InitRDTimestampMonotonic,UserspaceTimestampMonotonic,FinishTimestampMonotonic
+run_required /usr/bin/systemctl --no-pager show --property="$properties" 'dev-disk-by\x2did-virtio\x2dworkspace.device'
+run_required /usr/bin/systemctl --no-pager show --property="$properties" systemd-udevd.service
+run_required /usr/bin/systemctl --no-pager show --property="$properties" systemd-udev-trigger.service
+run_required /usr/bin/systemctl --no-pager show --property="$properties" \
+	'systemd-makefs@dev-disk-by\x2did-virtio\x2dworkspace.service'
+run_required /usr/bin/systemctl --no-pager show --property="$properties" state-workspaces.mount
+run_required /usr/bin/systemctl --no-pager show --property="$properties" agentplane-environment-runtime.service
+run_required /usr/bin/systemctl --no-pager show --property="$properties" agentplane-boot-device-monitor.service
+run_required /usr/bin/systemctl --no-pager cat systemd-udevd.service
+run_required /usr/bin/systemctl --no-pager cat systemd-udev-trigger.service agentplane-boot-device-monitor.service
+run_required /usr/bin/systemctl --no-pager cat \
+	'systemd-makefs@dev-disk-by\x2did-virtio\x2dworkspace.service'
+run_required /usr/bin/systemctl --no-pager cat state-workspaces.mount
+receipt AGENTPLANE_BOOT_EVIDENCE_ACTIVATION_END
+receipt AGENTPLANE_BOOT_EVIDENCE_JOURNAL_BEGIN
+run_required /usr/bin/journalctl --no-pager --boot=0 --output=short-monotonic --lines=100 \
+	--unit=systemd-udevd.service \
+	--unit=systemd-udev-trigger.service \
+	--unit='systemd-makefs@dev-disk-by\x2did-virtio\x2dworkspace.service' \
+	--unit=state-workspaces.mount
+receipt AGENTPLANE_BOOT_EVIDENCE_JOURNAL_END
+run /usr/bin/systemd-analyze --no-pager time
+run /usr/bin/systemd-analyze --no-pager critical-chain agentplane-environment-runtime.service
+run /usr/bin/systemd-analyze --no-pager blame
+if [ "$required_failures" -eq 0 ]; then
+	receipt 'AGENTPLANE_BOOT_EVIDENCE_END status=complete'
+else
+	receipt 'AGENTPLANE_BOOT_EVIDENCE_END status=partial'
+	receipt "AGENTPLANE_BOOT_EVIDENCE_REQUIRED_FAILURES $required_failures"
+fi

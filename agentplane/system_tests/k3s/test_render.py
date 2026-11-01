@@ -415,14 +415,14 @@ def test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling() -> No
     ].endswith("/agentplane-vm-guest-root-profile:unset")
 
 
-def test_vm_boot_probe_selects_only_oom_guest_at_runtime() -> None:
+def test_vm_boot_evidence_selects_only_oom_guest_at_runtime() -> None:
     fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
-    vm_sandboxes.select_boot_probe(fixture.objects, enabled=True)
+    vm_sandboxes.select_boot_evidence(fixture.objects, enabled=True)
     selected = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
     other = _resource(fixture.objects, "SandboxTemplate", "runner-vm")
     selected_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
     other_args = other["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
-    assert selected_args == other_args + " agentplane.boot-probe=1"
+    assert selected_args == other_args + " agentplane.boot-evidence=1"
 
 
 def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:

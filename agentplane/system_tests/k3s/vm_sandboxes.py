@@ -51,15 +51,15 @@ def select_native_profile(objects: list[dict[str, Any]], *, enabled: bool, profi
             volume["containerDisk"]["image"] = _PROFILE_ROOT_IMAGE
 
 
-def select_boot_probe(objects: list[dict[str, Any]], *, enabled: bool) -> None:
-    """Select the serial boot probe after manifest rendering, inside the VM test action."""
+def select_boot_evidence(objects: list[dict[str, Any]], *, enabled: bool) -> None:
+    """Select retained device-discovery evidence on the OOM guest in the VM system test."""
     if not enabled:
         return
     template = one(
         obj for obj in objects if obj["kind"] == "SandboxTemplate" and obj["metadata"]["name"] == OOM_TEMPLATE
     )
     boot = template["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]
-    boot["kernelArgs"] += " agentplane.boot-probe=1"
+    boot["kernelArgs"] += " agentplane.boot-evidence=1"
 
 
 def _manifest(variable: str) -> list[dict[str, Any]]:

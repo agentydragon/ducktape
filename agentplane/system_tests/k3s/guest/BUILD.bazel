@@ -125,6 +125,8 @@ pkg_tar(
 pkg_files(
     name = "root_init_file",
     srcs = [
+        "agentplane-boot-evidence",
+        "agentplane-boot-evidence-monitor",
         "cgroup_observer",
         "guest_prepare",
         "runner_start",
@@ -155,6 +157,8 @@ pkg_files(
     name = "root_systemd_files",
     srcs = [
         "agentplane-acpi.service",
+        "agentplane-boot-device-monitor.service",
+        "agentplane-boot-evidence.service",
         "agentplane-cgroup-observer.service",
         "agentplane-guest-prepare.service",
         "agentplane-shutdown-proof.service",
@@ -173,8 +177,10 @@ pkg_tar(
     symlinks = {
         "default.target": "/usr/lib/systemd/system/multi-user.target",
         "getty.target": "/dev/null",
+        "sysinit.target.wants/agentplane-boot-device-monitor.service": "../agentplane-boot-device-monitor.service",
         "multi-user.target.wants/agentplane-acpi.service": "../agentplane-acpi.service",
         "multi-user.target.wants/agentplane-environment-runtime.service": "/usr/lib/systemd/system/agentplane-environment-runtime.service",
+        "multi-user.target.wants/agentplane-boot-evidence.service": "../agentplane-boot-evidence.service",
         "multi-user.target.wants/agentplane-shutdown-proof.service": "../agentplane-shutdown-proof.service",
         "multi-user.target.wants/agentplane-startup-profile.service": "../agentplane-startup-profile.service",
         "systemd-firstboot.service": "/dev/null",

@@ -14,6 +14,16 @@ logger = logging.getLogger(__name__)
 SHUTDOWN_COMPLETE = b"AGENTPLANE_GUEST_SHUTDOWN_COMPLETE"
 SUPERVISION_FAILED = b"AGENTPLANE_GUEST_SUPERVISION_FAILED"
 SUPERVISION_PASSED = b'AGENTPLANE_GUEST_SUPERVISION_PASSED {"real_systemd_supervision":"passed"}'
+BOOT_EVIDENCE_REPORT_BEGIN = b"AGENTPLANE_BOOT_EVIDENCE_BEGIN"
+BOOT_EVIDENCE_READY = b"AGENTPLANE_UDEV_MONITOR_READY"
+BOOT_EVIDENCE_COMPLETE = b"AGENTPLANE_BOOT_EVIDENCE_END status=complete"
+BOOT_EVIDENCE_PARTIAL = b"AGENTPLANE_BOOT_EVIDENCE_END status=partial"
+BOOT_EVIDENCE_REQUIRED_SECTIONS = (
+    b"AGENTPLANE_BOOT_EVIDENCE_GUEST_END",
+    b"AGENTPLANE_BOOT_EVIDENCE_DEVICE_END",
+    b"AGENTPLANE_BOOT_EVIDENCE_ACTIVATION_END",
+    b"AGENTPLANE_BOOT_EVIDENCE_JOURNAL_END",
+)
 CONSOLES_ENV = "AGENTPLANE_TEST_GUEST_CONSOLES"
 
 
@@ -25,11 +35,46 @@ class GuestBootError(RuntimeError):
     """The real-manager supervision proof failed before runner startup."""
 
 
+class GuestBootEvidenceError(RuntimeError):
+    """The selected fixture guest did not retain complete device-discovery evidence."""
+
+
 def _has_payload(path: Path, payload: bytes) -> bool:
     return any(
         line.endswith(b"\n") and line.rstrip(b"\r\n").split(b" ", 3)[1:] == [b"stdout", b"F", payload]
         for line in path.read_bytes().splitlines(keepends=True)
     )
+
+
+def _require_boot_evidence(consoles: Path) -> None:
+    selected: set[Path] = set()
+    for path in consoles.glob("*/*.cri.log"):
+        # Select only the guest whose reporter ran. Unselected guests still print the literal
+        # kernel argument in systemd's skipped ConditionKernelCommandLine diagnostic.
+        if _has_payload(path, BOOT_EVIDENCE_REPORT_BEGIN):
+            selected.add(path.parent)
+
+    if len(selected) != 1:
+        names = sorted(path.name for path in selected)
+        raise GuestBootEvidenceError(
+            f"Expected exactly one retained guest with {BOOT_EVIDENCE_REPORT_BEGIN.decode()} receipt; "
+            f"found {len(selected)}: {', '.join(names) or 'none'}"
+        )
+
+    incarnation = next(iter(selected))
+    # The selected guest can rotate/restart its console container between boot and teardown.
+    # Retention stores each inode as a separate CRI log under the same launcher UID directory.
+    logs = list(incarnation.glob("*.cri.log"))
+    if not any(_has_payload(path, BOOT_EVIDENCE_READY) for path in logs):
+        raise GuestBootEvidenceError(
+            f"Guest boot-device monitor did not report readiness; see retained console {incarnation}"
+        )
+    if any(_has_payload(path, BOOT_EVIDENCE_PARTIAL) for path in logs):
+        raise GuestBootEvidenceError(f"Guest boot evidence report was partial; see retained console {incarnation}")
+    if not all(any(_has_payload(path, marker) for path in logs) for marker in BOOT_EVIDENCE_REQUIRED_SECTIONS):
+        raise GuestBootEvidenceError(f"Guest boot evidence report missed a required section; see {incarnation}")
+    if not any(_has_payload(path, BOOT_EVIDENCE_COMPLETE) for path in logs):
+        raise GuestBootEvidenceError(f"Guest boot evidence report did not complete; see retained console {incarnation}")
 
 
 def check_boot() -> None:
@@ -104,7 +149,13 @@ def _require_shutdown(consoles: Path) -> None:
 
 @contextmanager
 def capture(
-    *, log_root: Path, namespace: str, kubevirt_namespace: str, destination: Path, validate_shutdown: Callable[[], bool]
+    *,
+    log_root: Path,
+    namespace: str,
+    kubevirt_namespace: str,
+    destination: Path,
+    validate_shutdown: Callable[[], bool],
+    require_boot_evidence: bool = False,
 ) -> Iterator[None]:
     """Retain guest, launcher relay, and virt-handler logs; validate only successful teardown.
 
@@ -134,3 +185,5 @@ def capture(
         copying.result()
         if validate_shutdown():
             _require_shutdown(destination / "consoles")
+            if require_boot_evidence:
+                _require_boot_evidence(destination / "consoles")
