@@ -27,7 +27,7 @@ spec:
     name: seaweedfs
     namespace: seaweedfs
   name: registry-cache
-  reclaimPolicy: Retain
+  reclaimPolicy: Delete
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
@@ -37,7 +37,7 @@ metadata:
   name: registry-cache
   namespace: oci-cache
 spec:
-  reclaimPolicy: Retain
+  reclaimPolicy: Delete
   seaweedRef:
     name: seaweedfs
     namespace: seaweedfs
@@ -50,7 +50,7 @@ metadata:
 spec:
   identityRef:
     name: registry-cache
-  reclaimPolicy: Retain
+  reclaimPolicy: Delete
   seaweedRef:
     name: seaweedfs
     namespace: seaweedfs
