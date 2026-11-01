@@ -322,6 +322,39 @@ fn absorb_effects<T: Ord>(
     target.extend(source);
 }
 
+/// The values a body exposes to whoever runs it with unknown arguments:
+/// passed to a call or as its receiver, written through, stored, assigned or
+/// returned. Reads that feed none of these expose nothing.
+fn exposed_expressions(callable: &Callable) -> Vec<&ValueExpr> {
+    let mut exposed: Vec<&ValueExpr> = Vec::new();
+    for call in &callable.calls {
+        if matches!(
+            call.kind,
+            CallKind::LocalMemberRead | CallKind::AccessorCalleeLookup
+        ) {
+            continue;
+        }
+        match &call.callee {
+            // A method call passes its receiver as `this`.
+            ValueExpr::Member(receiver, _, _) => exposed.push(receiver),
+            callee => exposed.push(callee),
+        }
+        exposed.extend(&call.args);
+    }
+    exposed.extend(&callable.dynamic_property_receivers);
+    for (_, _, value) in &callable.member_value_writes {
+        exposed.push(value);
+    }
+    for write in &callable.callback_result_writes {
+        exposed.push(&write.receiver);
+        exposed.push(&write.value);
+    }
+    exposed.extend(&callable.returns);
+    exposed.extend(&callable.namespace_escape_values);
+    exposed.extend(callable.local_assignments.iter().map(|(_, value)| value));
+    exposed
+}
+
 #[derive(Debug, Clone, Default)]
 struct ReachabilityState {
     unknown_call_seen: bool,
@@ -4711,6 +4744,64 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         AbstractValue::DeferredCallbacks(self.intern_callback_set(values))
     }
 
+    /// The settled values `expression` can hand to code the interpreter does
+    /// not follow, without evaluating any call: a top-level binding's values,
+    /// a static member of one, and every operand of anything else.
+    fn exposed_values(&self, expression: &ValueExpr, values: &mut Values) {
+        match expression {
+            ValueExpr::Binding(binding) => {
+                if let Some(bound) = self.state.prefix_values.get(binding) {
+                    values.extend(bound.iter().cloned());
+                }
+            }
+            ValueExpr::Member(object, Some(property), MemberKey::Static) => {
+                let ValueExpr::Binding(binding) = object.as_ref() else {
+                    return self.exposed_values(object, values);
+                };
+                for value in self.state.prefix_values.get(binding).into_iter().flatten() {
+                    let AbstractValue::Value(Value::Alloc(Kind::Object, site)) = value else {
+                        values.insert(value.clone());
+                        continue;
+                    };
+                    match self.state.prefix_object_properties.get(site) {
+                        Some(properties) if properties.contains_key(&Some(property.clone())) => {
+                            for key in [Some(property.clone()), None] {
+                                values.extend(properties.get(&key).into_iter().flatten().cloned());
+                            }
+                        }
+                        _ => {
+                            values.insert(value.clone());
+                        }
+                    }
+                }
+            }
+            ValueExpr::Alloc(kind, site) => {
+                values.insert(AbstractValue::Value(Value::Alloc(*kind, *site)));
+            }
+            ValueExpr::ObjectLiteral(site, properties) => {
+                values.insert(AbstractValue::Value(Value::Alloc(Kind::Object, *site)));
+                for (_, value) in properties {
+                    self.exposed_values(value, values);
+                }
+            }
+            ValueExpr::Member(object, _, _)
+            | ValueExpr::ArrayIteratorPrototype(object)
+            | ValueExpr::SetIteratorPrototype(object) => self.exposed_values(object, values),
+            ValueExpr::Call(callee, args, _) | ValueExpr::New(callee, args, _) => {
+                self.exposed_values(callee, values);
+                for arg in args {
+                    self.exposed_values(arg, values);
+                }
+            }
+            ValueExpr::Primitive(operands) | ValueExpr::Alternatives(operands) => {
+                for operand in operands {
+                    self.exposed_values(operand, values);
+                }
+            }
+            ValueExpr::Undefined | ValueExpr::NonCallable(_) | ValueExpr::Unknown => {}
+        }
+    }
+
     fn taint_objects(&mut self, values: &Values) {
         let mut pending: Vec<_> = values.iter().cloned().collect();
         let mut visited = BTreeSet::new();
@@ -4738,21 +4829,45 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
                 | AbstractValue::Closure(key, _) => {
-                    // Code the interpreter does not follow may run this body:
-                    // whatever it reads through top-level bindings is exposed
-                    // to that code, and so is every body it can reach that way.
+                    // Code the interpreter does not follow may run this body
+                    // with unknown arguments: what it passes, writes through,
+                    // stores or returns is exposed to that code, and so is
+                    // every body it can call. What it only reads is not.
                     if self.state.tainted_functions.insert(*key)
                         && let Some(callable) = self.inputs.index.callables.get(key)
                     {
-                        pending.extend(
-                            callable
-                                .reads
-                                .iter()
-                                .filter(|binding| self.inputs.top_bindings.contains(*binding))
-                                .filter_map(|binding| self.state.prefix_values.get(binding))
-                                .flatten()
-                                .cloned(),
-                        );
+                        // Receivers it writes through may get any data, and
+                        // the bodies it can call run under the same terms.
+                        let mut values = Values::new();
+                        for expression in exposed_expressions(callable) {
+                            self.exposed_values(expression, &mut values);
+                        }
+                        for receiver in callable
+                            .member_writes
+                            .iter()
+                            .map(|(receiver, _)| receiver)
+                            .chain(&callable.escaped_bindings)
+                        {
+                            self.exposed_values(&ValueExpr::Binding(receiver.clone()), &mut values);
+                        }
+                        for binding in &callable.reads {
+                            if let Some(read) = self.state.prefix_values.get(binding) {
+                                values.extend(
+                                    read.iter()
+                                        .filter(|value| {
+                                            matches!(
+                                                value,
+                                                AbstractValue::Value(Value::Alloc(
+                                                    Kind::Function,
+                                                    _
+                                                )) | AbstractValue::Closure(..)
+                                            )
+                                        })
+                                        .cloned(),
+                                );
+                            }
+                        }
+                        pending.extend(values);
                     }
                 }
                 _ => {}
