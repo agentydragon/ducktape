@@ -29,7 +29,7 @@ import (
 	"github.com/zitadel/oidc/v3/pkg/op"
 
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 )
 
 const (

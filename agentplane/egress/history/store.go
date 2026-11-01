@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 )
 
 // decisionsChannel is notified with every committed batch, to every replica listening.

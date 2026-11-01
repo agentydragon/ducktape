@@ -5,9 +5,9 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 go_library(
     name = "probes",
     srcs = ["probes.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/postgres/go/probes",
+    importpath = "github.com/agentydragon/ducktape/agentplane/postgres/probes",
     deps = [
-        "//agentplane/postgres/go/wakeups",
+        "//agentplane/postgres/wakeups",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_google_grpc//status",
@@ -24,7 +24,7 @@ go_test(
     embed = [":probes"],
     tags = ["requires_docker"],
     deps = [
-        "//agentplane/postgres/go/wakeups",
+        "//agentplane/postgres/wakeups",
         "//agentplane/testing/postgres",
         "@com_github_lib_pq//:pq",
         "@org_golang_google_grpc//health/grpc_health_v1",

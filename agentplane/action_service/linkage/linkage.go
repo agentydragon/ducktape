@@ -20,7 +20,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/lib/pq"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 	"google.golang.org/protobuf/types/known/timestamppb"

@@ -37,7 +37,7 @@ fenced commits prevent stale workers from overwriting newer work. Listener loss 
 Actions history is read through its API, not its database. GitHub refresh deadlines, provider
 backoff, delivery retries and retention remain durable or scheduled work even without new ingress.
 See [`worker`](../worker/worker.go), [`store`](../store/store.go) and
-[`wakeups`](../../postgres/go/wakeups).
+[`wakeups`](../../postgres/wakeups).
 
 ## Notice delivery and history
 

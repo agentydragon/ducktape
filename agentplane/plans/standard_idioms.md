@@ -30,7 +30,7 @@ In the merged service, key delivery by Sandbox on a work queue fed by informer e
 Blocked on the [merge design](dispatcher_gateway_merge.md). `WatchDispatches` ships deleted rows as
 base64 protobuf split into `pg_notify` parts (`dispatcher/terminal.go`), reassembled with a timeout
 and a pending cap, failing every stream on any malformed part, with no replay, through its own
-`pq.NewListener` rather than the shared `postgres/go/wakeups.Hub`; every stream re-lists its scope on
+`pq.NewListener` rather than the shared `postgres/wakeups.Hub`; every stream re-lists its scope on
 any change. Use a version column bumped from a sequence on every write, short-lived tombstones keyed
 by command ID with no Sandbox address (which satisfies "no row addresses a deleted Sandbox UID"),
 payload-free notifications through `wakeups.Hub`, and `WHERE version > last` resumption.

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/migrations"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 )

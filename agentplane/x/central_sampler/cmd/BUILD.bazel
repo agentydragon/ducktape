@@ -13,9 +13,9 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//agentplane/grpc/graceful",
-        "//agentplane/postgres/go:postgres",
-        "//agentplane/postgres/go/migrate",
-        "//agentplane/postgres/go/wakeups",
+        "//agentplane/postgres",
+        "//agentplane/postgres/migrate",
+        "//agentplane/postgres/wakeups",
         "//agentplane/workload_auth/auth",
         "//agentplane/x/central_sampler",
         "//agentplane/x/central_sampler:sampler_go_proto",
