@@ -7,6 +7,7 @@ syntax = "proto3";
 package agentplane.proto;
 
 import "google/protobuf/timestamp.proto";
+import "agentplane/proto/delegation.proto";
 
 enum InitializationStream {
   INITIALIZATION_STREAM_UNSPECIFIED = 0;
@@ -98,6 +99,9 @@ message Attached {
   // The UID of the incarnation (the Pod or VM launcher Pod) whose runner took this snapshot. Absent from a
   // runner that predates the field.
   optional string incarnation_uid = 8;
+  // Immutable logical principal under which this Session executes, independent of the journal writer.
+  // Absent on legacy retained Sessions without a trustworthy association.
+  ServiceAccountIdentity execution_principal = 9;
 }
 
 // Every session in the runner's state directory. Session ids are client-chosen, so this is how a

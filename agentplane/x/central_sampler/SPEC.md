@@ -4,7 +4,12 @@
 
 `Sampler` is a separate authenticated gRPC API. `OpenSession` binds a canonical public Session UUID
 to a central `SessionSpec`, caller ServiceAccount UID and fixed `SandboxDestination` plus expected
-incarnation UID. The Dispatcher uses its one configured central sampler target. Session specs,
+incarnation UID. The Dispatcher also supplies an optional immutable execution principal containing
+the account namespace/name and ServiceAccount UID; when present, its account must match the executor
+owner and the configuration retains it across retries and restarts. A legacy configuration without
+that principal cannot acquire one on a retry. The authenticated sampler ServiceAccount remains the
+journal producer identity and is retained separately by History. The Dispatcher uses its one
+configured central sampler target. Session specs,
 including browser, Actions, and Dispatcher opening inputs, contain no service selection. Model and effort must be server-configured. Every RPC
 uses TokenReview and the allowed-account policy; Session UUID knowledge grants no authority.
 Reusing an identifier with a different payload conflicts. The integration app owns neither this

@@ -31,6 +31,7 @@ go_library(
         "//agentplane/observability",
         "//agentplane/postgres",
         "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
@@ -109,6 +110,7 @@ go_test(
     deps = [
         ":session_dispatcher_go_proto",
         "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/runner_gateway/migrations",
@@ -202,6 +204,7 @@ go_test(
     embed = [":dispatcher"],
     deps = [
         "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/runner:runner_service_go_proto",

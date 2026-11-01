@@ -24,6 +24,9 @@ func (r *Reader) ReadEntityEvidence(ctx context.Context, request *historypb.Read
 	}
 	var response *historypb.ReadEntityEvidenceResponse
 	err = snapshot(ctx, r.DB, func(tx *sql.Tx) error {
+		if err := r.requireSession(ctx, tx, sessionID); err != nil {
+			return err
+		}
 		entityCursor, _, err := findEntity(ctx, tx, sessionID, request.GetProjectionEpoch(), request.GetEntity())
 		if err != nil {
 			return err
@@ -73,6 +76,9 @@ func (r *Reader) ReadNativeFrames(ctx context.Context, request *historypb.ReadNa
 	var sequences []uint64
 	var sourceID string
 	err = snapshot(ctx, r.DB, func(tx *sql.Tx) error {
+		if err := r.requireSession(ctx, tx, sessionID); err != nil {
+			return err
+		}
 		var entityCursor uint64
 		var err error
 		if entityCursor, sourceID, err = findEntity(ctx, tx, sessionID, request.GetProjectionEpoch(), request.GetEntity()); err != nil {

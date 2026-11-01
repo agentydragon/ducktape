@@ -236,11 +236,13 @@ func TestTheIngressSettlesDeltasOnlyWhenConfigured(t *testing.T) {
 	}
 }
 
-func TestEachPortAdmitsOnlyItsOwnCallers(t *testing.T) {
+func TestEachPortEnforcesItsCallerContract(t *testing.T) {
 	service := start(t, nil)
 	_, err := service.reads.GetSessionSummary(bearing(t, writerToken), &historypb.GetSessionSummaryRequest{SessionId: uuid.NewString()})
-	if got := status.Code(err); got != codes.Unauthenticated {
-		t.Errorf("a runner on the read API: %v, want Unauthenticated", got)
+	// The read API admits reviewed ServiceAccounts, then scopes reads to the
+	// retained execution principal. An unknown Session stays hidden.
+	if got := status.Code(err); got != codes.NotFound {
+		t.Errorf("a runner without a matching principal on the read API: %v, want NotFound", got)
 	}
 	push, err := service.ingress.Push(bearing(t, readerToken))
 	if err != nil {

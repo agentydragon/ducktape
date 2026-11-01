@@ -9,6 +9,7 @@ import (
 	"time"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
@@ -30,7 +31,7 @@ func (s openingFixture) GetOpening(context.Context, string) (*Opening, error) {
 
 type nativeFixture struct{ calls int }
 
-func (r *nativeFixture) OpenSession(context.Context, SandboxSnapshot, string, *runnerpb.SessionSpec, *string) error {
+func (r *nativeFixture) OpenSession(context.Context, SandboxSnapshot, string, *runnerpb.SessionSpec, *string, *delegationpb.ServiceAccountIdentity) error {
 	r.calls++
 	return nil
 }
@@ -78,7 +79,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 	sandbox := SandboxSnapshot{Name: "executor", Namespace: "test", UID: "sandbox-uid", Incarnation: "pod-uid", Blocker: "sandbox_not_ready"}
 	runner := &RoutingRunner{Native: native, Store: openingFixture{&Opening{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Spec: spec}}, Target: &CentralTarget{Target: listener.Addr().String(), TokenFile: tokenFile}, Timeout: time.Second}
 	setup := "printf 'executor setup\\n'"
-	if err := runner.OpenSession(context.Background(), sandbox, "session", spec, &setup); err != nil {
+	if err := runner.OpenSession(context.Background(), sandbox, "session", spec, &setup, nil); err != nil {
 		t.Fatal(err)
 	}
 	if fixture.opened.GetExpectedIncarnationUid() != "pod-uid" || fixture.opened.GetExecutor().GetSandboxUid() != "sandbox-uid" || fixture.opened.GetSetupScript() != setup || fixture.token != "Bearer projected" {
@@ -94,7 +95,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 		t.Fatalf("changed binding accepted: %v", err)
 	}
 	nativeSpec := &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CODEX}
-	if err := runner.OpenSession(context.Background(), sandbox, "native", nativeSpec, nil); err != nil {
+	if err := runner.OpenSession(context.Background(), sandbox, "native", nativeSpec, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	runner.Store = openingFixture{}
@@ -105,7 +106,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 		t.Fatalf("native calls %d", native.calls)
 	}
 	runner.Target = nil
-	if err := runner.OpenSession(context.Background(), sandbox, "disabled", spec, nil); status.Code(err) != codes.FailedPrecondition {
+	if err := runner.OpenSession(context.Background(), sandbox, "disabled", spec, nil, nil); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("disabled sampler accepted: %v", err)
 	}
 }

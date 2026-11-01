@@ -28,6 +28,22 @@ type Reader struct {
 	DB                       *sql.DB
 	History                  *storage.Store
 	NativeFrameReadBatchSize int
+	scope                    *storage.ReadScope
+}
+
+// WithReadScope returns a reader that applies the same retained owner scope to fold and raw-history queries.
+func (r *Reader) WithReadScope(scope storage.ReadScope) *Reader {
+	copy := *r
+	copy.scope = &scope
+	copy.History = r.History.WithReadScope(scope)
+	return &copy
+}
+
+func (r *Reader) sessionPredicate(alias string, firstArgument int) (string, []any) {
+	if r.scope == nil {
+		return "TRUE", nil
+	}
+	return r.scope.Predicate(alias, firstArgument)
 }
 
 func invalid(detail string) error { return fmt.Errorf("%w: %s", storage.ErrInvalidArgument, detail) }
@@ -49,4 +65,15 @@ func snapshot(ctx context.Context, db *sql.DB, f func(*sql.Tx) error) error {
 	}
 	defer tx.Rollback()
 	return f(tx)
+}
+
+func (r *Reader) requireSession(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID) error {
+	predicate, scopeArgs := r.sessionPredicate("h", 2)
+	args := append([]any{sessionID}, scopeArgs...)
+	var found bool
+	err := tx.QueryRowContext(ctx, "SELECT true FROM session_history h WHERE h.id = $1 AND "+predicate, args...).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%w: %s", storage.ErrNotFound, sessionID)
+	}
+	return err
 }

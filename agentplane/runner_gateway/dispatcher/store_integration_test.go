@@ -12,6 +12,7 @@ import (
 	"time"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
@@ -846,7 +847,7 @@ func (r *acceptingRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string
 	return &eventlogpb.EventEntry{Cursor: 1}, nil
 }
 
-func (r *acceptingRunner) OpenSession(_ context.Context, _ SandboxSnapshot, sessionID string, _ *runnerpb.SessionSpec, _ *string) error {
+func (r *acceptingRunner) OpenSession(_ context.Context, _ SandboxSnapshot, sessionID string, _ *runnerpb.SessionSpec, _ *string, _ *delegationpb.ServiceAccountIdentity) error {
 	r.calls <- "opening:" + sessionID
 	return nil
 }
@@ -1099,7 +1100,7 @@ func (r *retryRunner) Deliver(_ context.Context, sandbox SandboxSnapshot, _ stri
 	return &eventlogpb.EventEntry{Cursor: 1}, nil
 }
 
-func (*retryRunner) OpenSession(context.Context, SandboxSnapshot, string, *runnerpb.SessionSpec, *string) error {
+func (*retryRunner) OpenSession(context.Context, SandboxSnapshot, string, *runnerpb.SessionSpec, *string, *delegationpb.ServiceAccountIdentity) error {
 	return errors.New("unexpected opening")
 }
 
@@ -1176,7 +1177,7 @@ func (r *orderedRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string, 
 	return &eventlogpb.EventEntry{Cursor: 1}, nil
 }
 
-func (*orderedRunner) OpenSession(context.Context, SandboxSnapshot, string, *runnerpb.SessionSpec, *string) error {
+func (*orderedRunner) OpenSession(context.Context, SandboxSnapshot, string, *runnerpb.SessionSpec, *string, *delegationpb.ServiceAccountIdentity) error {
 	return errors.New("unexpected opening")
 }
 

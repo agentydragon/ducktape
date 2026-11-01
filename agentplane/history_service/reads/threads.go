@@ -9,7 +9,6 @@ import (
 	"math"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -48,10 +47,7 @@ func (r *Reader) ReadThreadEntities(ctx context.Context, request *historypb.Read
 	}
 	var response *historypb.ReadThreadEntitiesResponse
 	err = snapshot(ctx, r.DB, func(tx *sql.Tx) error {
-		var found bool
-		if err := tx.QueryRowContext(ctx, "SELECT true FROM session_history WHERE id = $1", sessionID).Scan(&found); errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("%w: %s", storage.ErrNotFound, sessionID)
-		} else if err != nil {
+		if err := r.requireSession(ctx, tx, sessionID); err != nil {
 			return err
 		}
 		checkpoint, err := readCheckpoint(ctx, tx, sessionID)

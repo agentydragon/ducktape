@@ -65,17 +65,19 @@ func (r *Reader) FindSessions(ctx context.Context, request *historypb.FindSessio
 	var argument any
 	switch sandbox := request.GetSandbox().(type) {
 	case *historypb.FindSessionsRequest_SandboxName:
-		match, name, argument = "sandbox_name = $1", sandbox.SandboxName, sandbox.SandboxName
+		match, name, argument = "h.sandbox_name = $1", sandbox.SandboxName, sandbox.SandboxName
 	case *historypb.FindSessionsRequest_SandboxNameContains:
-		match, name = `sandbox_name ILIKE '%' || $1 || '%'`, likeEscaper.Replace(sandbox.SandboxNameContains)
+		match, name = `h.sandbox_name ILIKE '%' || $1 || '%'`, likeEscaper.Replace(sandbox.SandboxNameContains)
 		argument = name
 	case *historypb.FindSessionsRequest_SandboxUid:
-		match, name, argument = "sandbox_uid = $1", sandbox.SandboxUid, sandbox.SandboxUid
+		match, name, argument = "h.sandbox_uid = $1", sandbox.SandboxUid, sandbox.SandboxUid
 	}
 	if name == "" {
 		return nil, invalid("a non-empty Sandbox name or UID match is required")
 	}
-	rows, err := r.DB.QueryContext(ctx, "SELECT id, sandbox_namespace, sandbox_name, sandbox_uid FROM session_history WHERE "+match+" ORDER BY id", argument)
+	predicate, scopeArgs := r.sessionPredicate("h", 2)
+	args := append([]any{argument}, scopeArgs...)
+	rows, err := r.DB.QueryContext(ctx, "SELECT h.id, h.sandbox_namespace, h.sandbox_name, h.sandbox_uid FROM session_history h WHERE ("+match+") AND "+predicate+" ORDER BY h.id", args...)
 	if err != nil {
 		return nil, err
 	}
@@ -102,13 +104,15 @@ func (r *Reader) summaries(ctx context.Context, sessionIDs []uuid.UUID) ([]*hist
 	for index, sessionID := range sessionIDs {
 		ids[index] = sessionID.String()
 	}
+	predicate, scopeArgs := r.sessionPredicate("h", 2)
+	args := append([]any{pq.Array(ids)}, scopeArgs...)
 	rows, err := r.DB.QueryContext(ctx, `SELECT h.id, h.last_cursor, h.sandbox_namespace, h.sandbox_name, h.sandbox_uid,
 			c.projection_epoch, c.through_cursor, s.first_event_at, s.last_event_at, s.last_model_activity_at,
 			s.idle_since, s.last_turn_status, s.attached, s."end"
 		FROM session_history h
 		LEFT JOIN thread_history_summary s ON s.thread_id = h.id
 		LEFT JOIN thread_checkpoint c ON c.thread_id = h.id
-		WHERE h.id = ANY($1::uuid[]) ORDER BY h.id`, pq.Array(ids))
+		WHERE h.id = ANY($1::uuid[]) AND `+predicate+` ORDER BY h.id`, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -65,7 +66,7 @@ type WakeController interface {
 
 type DeliveryRunner interface {
 	RunnerCommands
-	OpenSession(context.Context, SandboxSnapshot, string, *runnerpb.SessionSpec, *string) error
+	OpenSession(context.Context, SandboxSnapshot, string, *runnerpb.SessionSpec, *string, *delegationpb.ServiceAccountIdentity) error
 }
 
 type LeaseOwner interface {
@@ -637,7 +638,8 @@ func (w *DeliveryWorker) deliverOpening(ctx context.Context, opening *Opening, s
 			return true
 		}
 	}
-	callErr := w.Runner.OpenSession(ctx, sandbox, opening.SessionID, opening.Spec, opening.SetupScript)
+	callErr := w.Runner.OpenSession(ctx, sandbox, opening.SessionID, opening.Spec, opening.SetupScript,
+		openingExecutionPrincipal(opening.ExecutionPrincipal))
 	if callErr != nil {
 		span.SetStatus(otelcodes.Error, "runner session opening failed")
 	}
