@@ -56,19 +56,6 @@ type DispatchPart struct {
 	Error      *SourceError    `json:"error,omitempty"`
 }
 
-type CursorRange struct {
-	First uint64 `json:"first"`
-	Last  uint64 `json:"last"`
-}
-
-type HistoryCoverage struct {
-	Source        string        `json:"source"`
-	ThroughCursor string        `json:"through_cursor,omitempty"`
-	Gaps          []CursorRange `json:"gaps"`
-	ResumeToken   string        `json:"resume_token,omitempty"`
-	Error         *SourceError  `json:"error,omitempty"`
-}
-
 type CorrelatedTurn struct {
 	TurnID                string   `json:"turn_id"`
 	InputCommandIDs       []string `json:"input_command_ids"`
@@ -128,7 +115,7 @@ func ObserveInput(
 		CommandID: request.CommandID,
 		Dispatch:  DispatchPart{Kind: "not_observed", Source: "dispatcher"},
 		Observation: InputResult{
-			HistoryCoverage: HistoryCoverage{Source: "history", Gaps: []CursorRange{}},
+			HistoryCoverage: HistoryCoverage{Source: SourceHistory, Gaps: []HistoryCursorRange{}},
 			Kind:            ObservationNotObserved,
 		},
 	}
@@ -326,7 +313,7 @@ func followInput(
 			}
 			if _, corrected := frame.GetFrame().(*historypb.FollowSessionResponse_Removed); corrected {
 				removed := frame.GetRemoved()
-				result.Observation.Gaps = append(result.Observation.Gaps, CursorRange{First: removed.GetFirst(), Last: removed.GetLast()})
+				result.Observation.Gaps = append(result.Observation.Gaps, HistoryCursorRange{First: removed.GetFirst(), Last: removed.GetLast()})
 				result.Observation.Error = &SourceError{Code: codes.DataLoss.String(), Message: "History contains a removed cursor range"}
 				if correlated == nil {
 					setObservation(result, ObservationNotObserved, nil, nil, nil)

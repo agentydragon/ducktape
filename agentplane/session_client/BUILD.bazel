@@ -4,11 +4,15 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 
 go_library(
     name = "session_client",
-    srcs = ["observe_input.go"],
+    srcs = [
+        "observe_input.go",
+        "results.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/session_client",
     deps = [
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//:grpc",
@@ -20,7 +24,10 @@ go_library(
 
 go_test(
     name = "session_client_test",
-    srcs = ["observe_input_test.go"],
+    srcs = [
+        "observe_input_test.go",
+        "results_test.go",
+    ],
     embed = [":session_client"],
     race = "on",
     deps = [

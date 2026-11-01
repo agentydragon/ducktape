@@ -20,8 +20,9 @@ the facades keep these commands' contract, and a service that moves behind one u
 ## Commands
 
 One command group per service, each configured and failing independently: `agentplane actions` needs
-only the Action Service, `sessions` uses the Session Dispatcher and `sessions observe-input` also uses
-History, `notifications` uses only the Notification Service, and `egress` only the Egress rules API.
+only the Action Service, `sessions` uses the Session Dispatcher, `sessions get` and
+`sessions observe-input` also use History, `sessions read-turns` uses only History, `notifications`
+uses only the Notification Service, and `egress` only the Egress rules API.
 Session commands operate on an existing Sandbox; they do not create an environment. A command whose
 configuration is absent exits `2` naming the missing
 variables and leaves the others usable. Output, configuration, errors and exit codes are shared by every
@@ -43,6 +44,8 @@ group, so another service joins as one more group under them.
 | `sessions open SESSION_ID --sandbox NAME --sandbox-uid UID --spec JSON\|@FILE\|- [--setup-script TEXT\|@FILE\|-] [--additional-instructions TEXT]` | `SessionDispatcher.OpenSession`                                         |
 | `sessions submit-input SESSION_ID --sandbox NAME --sandbox-uid UID --command-id ID --text TEXT`                                                    | `SessionDispatcher.SubmitInput`                                         |
 | `sessions get-opening SESSION_ID`                                                                                                                  | `SessionDispatcher.GetSessionOpening`                                   |
+| `sessions get SESSION_ID`                                                                                                                          | `GetSessionOpening` and `HistoryService.GetSessionSummary`              |
+| `sessions read-turns SESSION_ID [--count N] [--page-cursor TOKEN]`                                                                                 | `HistoryService.ReadSessionEvents`, projected as retained turns         |
 | `sessions get-dispatch COMMAND_ID`                                                                                                                 | `SessionDispatcher.GetDispatch`                                         |
 | `sessions cancel-input COMMAND_ID`                                                                                                                 | `SessionDispatcher.CancelDispatch`                                      |
 | `sessions interrupt-turn SESSION_ID --sandbox NAME --sandbox-uid UID --command-id ID --turn-id ID`                                                 | `SessionDispatcher.InterruptTurn`                                       |
@@ -75,6 +78,16 @@ zero reads once. `not_observed` means the requested evidence was not seen in thi
 failed or the model turn ended. The structured result preserves source errors and removed History cursor
 ranges. A resume token is tied to its Session and command and confers no permission; the command rebuilds
 the observation from the retained admission cursor so it can restore command-to-turn correlation.
+
+`sessions get` reads the Dispatcher opening and History summary independently; its structured result
+keeps missing and unavailable sources distinct. It does not query a live environment. `sessions
+read-turns` reads retained History through the cursor captured on its first page, returns at most 100
+turns (default 20), and resumes after completed turns with its opaque Session-scoped `--page-cursor`.
+The final retained turn may be unfinished and then has no terminal status. Gaps and read errors remain
+explicit. A failed read preserves the unfinished turn's observed facts and returns a cursor at the
+preceding completed turn; retrying can return that same turn with more facts. Replace its projection
+by turn ID when combining these pages. Tool results do not establish task success, and the projection never fills missing content
+from another turn.
 
 Dispatcher authorizes ordinary callers against the target's actual ServiceAccount UID and scopes
 retained opening/command reads to their recorded principal. Configured privileged backend callers
@@ -110,9 +123,12 @@ Left out on purpose:
   `ACTION_STATE_FAILED`, `ACTION_STATE_CANCELLED` and `ACTION_STATE_EXECUTION_UNKNOWN`. Other enum
   fields use their generated protobuf value names too (for example, `mcp` becomes `EXECUTOR_KIND_MCP`).
   Session JSON preserves the full returned `SessionOpening`, `Dispatch` or `InterruptTurnResponse`, including
-  UID, delivery state, reason and timestamps where present. `sessions observe-input` emits its structured
-  Dispatcher `SourcePart` and History coverage/observation projection; it does not wrap that value in a
-  second response envelope.
+  UID, delivery state, reason and timestamps where present. `sessions get` emits source-part states and
+  each observed opening or summary as its service's ProtoJSON; `sessions read-turns` emits UUID command IDs,
+  opaque provider turn/item IDs, ProtoJSON enum names and decimal-string cursor values. `observe-input`
+  emits its structured Dispatcher `SourcePart` and History coverage/observation projection; it does not
+  wrap that value in a second response envelope. Its History gap cursor bounds now serialize
+  as decimal strings, matching protobuf JSON for `uint64`; this corrects the prior numeric JSON shape.
   Action JSON is therefore a deliberate format change from the previous HTTP client's snake_case fields
   and lowercase state names; update scripts that read `--json` before using this CLI version.
 - Notifications and Egress keep their service JSON objects. A gRPC-Gateway response wraps each answer in
