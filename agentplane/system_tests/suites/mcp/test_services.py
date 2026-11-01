@@ -14,7 +14,7 @@ from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.harness_pair import run_harness_pair
 from agentplane.system_tests.k3s.stack import Stack
-from agentplane.system_tests.sandbox import Sandboxes
+from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes
 from agentplane.system_tests.scenarios import central_sampler, dcr, mcp
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 
@@ -49,7 +49,11 @@ async def test_dispatcher_central_setup_tool_and_retained_answer(
     cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream
 ) -> None:
     await central_sampler.dispatcher_central_setup_tool_and_retained_answer(
-        cluster, tmp_path, scripted, Executor(template="runner", cwd="/state/workspaces/central-acceptance")
+        cluster,
+        tmp_path,
+        scripted,
+        Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-acceptance"),
+        central_sampler.POD_EXECUTION,
     )
 
 
@@ -59,7 +63,7 @@ async def test_pod_central_sampler_exec_resumes_after_sandbox_suspend_resume(
     cluster: Cluster, client: Client, tmp_path: Path, scripted: ScriptedUpstream
 ) -> None:
     await central_sampler.pod_exec_session_rebinds_after_sandbox_suspend_resume(
-        cluster, client, tmp_path, scripted, Executor(template="runner", cwd="/state/workspaces/central-resume")
+        cluster, client, tmp_path, scripted, Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-resume")
     )
 
 
