@@ -464,11 +464,11 @@ func TestRejectedProcessReadDuringToolAbandonsOnlyThatHandle(t *testing.T) {
 		t.Fatalf("write_stdin error=%v, want a rejected nested tool promise", err)
 	}
 	var outcome *toolOutcomeError
-	evidence, evidenceIsMap := map[string]any(nil), false
-	if errors.As(err, &outcome) {
-		evidence, evidenceIsMap = outcome.evidence.(map[string]any)
+	if !errors.As(err, &outcome) {
+		t.Fatalf("missing process rejection evidence: %v", err)
 	}
-	if !errors.As(err, &outcome) || !evidenceIsMap || evidence["remote_outcome"] != NestedUnknown || evidence["automatic_replay"] != false {
+	evidence, ok := outcome.evidence.(rejectedProcessReadEvidence)
+	if !ok || evidence.RemoteOutcome != NestedUnknown || evidence.AutomaticReplay {
 		t.Fatalf("missing process rejection evidence=%+v", outcome)
 	}
 	stale, err := store.Process(t.Context(), owner, "expired-native-process")
@@ -625,7 +625,7 @@ func registerRunningModelProcess(t *testing.T, store *Store, owner Owner, id str
 
 func TestTypedReadResponseKeepsEmptyChunksAsAnArray(t *testing.T) {
 	response := &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}}
-	value, err := responseObject("process/read", response)
+	value, err := responseObject(executorMethodProcessRead, response)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -643,7 +643,7 @@ func TestTypedReadResponseKeepsEmptyChunksAsAnArray(t *testing.T) {
 }
 
 func TestTypedReadResponsesKeepEmptyBytesAsEmptyStrings(t *testing.T) {
-	readProcess, err := responseObject("process/read", &executorpb.ReadProcessResponse{
+	readProcess, err := responseObject(executorMethodProcessRead, &executorpb.ReadProcessResponse{
 		Status: completedExecutionStatus(),
 		Chunks: []*executorpb.ExecutionOutputChunk{{Seq: 1, Stream: "stdout"}},
 	})
@@ -654,7 +654,7 @@ func TestTypedReadResponsesKeepEmptyBytesAsEmptyStrings(t *testing.T) {
 		t.Fatalf("empty process output chunk=%+v, want base64 empty string", readProcess["chunks"])
 	}
 
-	readFile, err := responseObject("fs/readBlock", &executorpb.ReadFileResponse{Status: completedExecutionStatus(), Eof: true})
+	readFile, err := responseObject(executorMethodFSReadBlock, &executorpb.ReadFileResponse{Status: completedExecutionStatus(), Eof: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -671,7 +671,7 @@ func TestReadFileReturnsBytesWhileJournalingOnlyDigest(t *testing.T) {
 		return &executorpb.ReadFileResponse{Status: completedExecutionStatus(), Data: chunk, Eof: true}, nil
 	}
 	e := newFakeExecutor(t, store, owner, client)
-	result, err := executorRPCWithEvidence[executorFSBlock](t.Context(), e, "fs/readBlock", executorFSReadBlock{HandleID: "image", Len: len(chunk)}, blockEvidence)
+	result, err := executorRPCWithEvidence[executorFSBlock](t.Context(), e, executorMethodFSReadBlock, executorFSReadBlock{HandleID: "image", Len: len(chunk)}, blockEvidence)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -755,6 +755,43 @@ func TestAbandonedWriteStdinIsARecoverableToolError(t *testing.T) {
 	}
 }
 
+func TestNotDispatchedJournalEvidenceKeepsLegacyProjection(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	executor := newFakeExecutor(t, store, owner, &fakeExecutionClient{})
+	handled := executor.outcomeToolError(t.Context(), &executorNotDispatchedError{
+		method: executorMethodInitialize, cause: errors.New("connection refused"),
+	})
+	var outcome *toolOutcomeError
+	if !errors.As(handled, &outcome) {
+		t.Fatalf("not-dispatched error=%v, want structured tool error", handled)
+	}
+	evidence, ok := outcome.evidence.(executionFailureEvidence)
+	if !ok {
+		t.Fatalf("not-dispatched evidence has type %T, want executionFailureEvidence", outcome.evidence)
+	}
+	if evidence.Method != executorMethodInitialize || evidence.RemoteOutcome != NestedNotDispatched ||
+		evidence.RequestOutcome == nil || *evidence.RequestOutcome != NestedNotDispatched ||
+		evidence.AutomaticReplay || evidence.TransportError != "connection refused" {
+		t.Fatalf("not-dispatched evidence lost legacy fields: %+v", evidence)
+	}
+	wire, err := json.Marshal(evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(wire, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for _, omitted := range []string{"message", "phase", "observed_output"} {
+		if _, ok := fields[omitted]; ok {
+			t.Errorf("legacy not-dispatched journal projection unexpectedly contains %q: %s", omitted, wire)
+		}
+	}
+	if got := string(fields["transport_error"]); got != `"connection refused"` {
+		t.Errorf("legacy transport_error=%s, want %q (wire %s)", got, "connection refused", wire)
+	}
+}
+
 func TestTransportFailureExposesObservedProcessOutputAndCursor(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
 	if err := store.RegisterModelProcess(t.Context(), owner, "observed-process", 78, false); err != nil {
@@ -767,7 +804,7 @@ func TestTransportFailureExposesObservedProcessOutputAndCursor(t *testing.T) {
 	output.push([]byte("stdout before failure\n"))
 	cursor := uint64(8)
 	transport := &executorTransportError{
-		method: "process/read", phase: "grpc", intentID: "read-intent", processID: "observed-process",
+		method: executorMethodProcessRead, phase: "grpc", intentID: "read-intent", processID: "observed-process",
 		retainedSession: "retained-executor", afterSequence: &cursor, output: output,
 		cause: status.Error(codes.Unavailable, "read reply lost"),
 	}
@@ -781,7 +818,7 @@ func TestTransportFailureExposesObservedProcessOutputAndCursor(t *testing.T) {
 	if err := json.Unmarshal([]byte(rejected.Error()), &message); err != nil {
 		t.Fatalf("rejected promise is not parseable JSON: %v: %s", err, rejected.Error())
 	}
-	if message.RemoteOutcome != "unknown" || message.AutomaticReplay || message.Method != "process/read" ||
+	if message.RemoteOutcome != NestedUnknown || message.AutomaticReplay || message.Method != executorMethodProcessRead ||
 		message.IntentID != "read-intent" || message.ProcessID != "observed-process" || message.AfterSeq == nil || *message.AfterSeq != cursor ||
 		message.ObservedOutput == nil || message.ObservedOutput.Text != "stdout before failure\n" || message.ObservedOutput.Truncated ||
 		!strings.Contains(message.Message, "read reply lost") || !strings.Contains(message.Message, "mutation was not replayed") {
@@ -795,9 +832,85 @@ func TestTransportFailureExposesObservedProcessOutputAndCursor(t *testing.T) {
 		string(process.BufferedOutput) != "stdout before failure\n" {
 		t.Fatalf("observed output/cursor were not retained: %+v", process)
 	}
-	evidence, evidenceIsTyped := rejected.evidence.(executionFailureEvidence)
-	if !evidenceIsTyped || evidence.BufferedOutputBase64 == nil || !bytes.Equal(*evidence.BufferedOutputBase64, output.retained()) {
+	evidence, ok := rejected.evidence.(executionFailureEvidence)
+	if !ok || evidence.BufferedOutputBase64 == nil || *evidence.BufferedOutputBase64 == nil ||
+		!bytes.Equal(*evidence.BufferedOutputBase64, output.retained()) || evidence.OmittedBytes == nil || *evidence.OmittedBytes != 0 {
 		t.Fatalf("full output is missing from FollowEvents evidence: %+v", rejected.evidence)
+	}
+}
+
+func TestExecutionFailureEvidencePreservesZeroCursorAndPresentEmptyOutput(t *testing.T) {
+	cursor := uint64(0)
+	requestOutcome := NestedNotDispatched
+	record := executionFailureRecord{
+		message: "stale read", method: executorMethodProcessRead, intentID: "read-intent",
+		processID: "process-1", executionSessionID: "session-1", afterSequence: &cursor,
+		remoteOutcome: NestedUnknown, requestOutcome: &requestOutcome, automaticReplay: false,
+		currentIncarnationUID: "current-incarnation", output: newHeadTailBuffer(64),
+	}
+	evidence := record.toolEvidence()
+	if evidence.AfterSeq == nil || *evidence.AfterSeq != 0 || evidence.BufferedOutput == nil || *evidence.BufferedOutput != "" ||
+		evidence.BufferedOutputBase64 == nil || *evidence.BufferedOutputBase64 == nil || len(*evidence.BufferedOutputBase64) != 0 ||
+		evidence.BufferedBytes == nil || *evidence.BufferedBytes != 0 || evidence.OmittedBytes == nil || *evidence.OmittedBytes != 0 {
+		t.Fatalf("typed evidence lost zero cursor or present empty buffer: %+v", evidence)
+	}
+	journalEvidence := record.intentEvidence()
+	if journalEvidence.Message != "" {
+		t.Fatalf("journal evidence should not repeat the model error text: %+v", journalEvidence)
+	}
+	wire, err := json.Marshal(journalEvidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(wire, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{
+		"after_seq": "0", "buffered_output": `""`, "buffered_output_base64": `""`,
+		"buffered_bytes": "0", "omitted_bytes": "0",
+	} {
+		if got := string(fields[name]); got != want {
+			t.Errorf("typed evidence %s=%s, want %s (full evidence %s)", name, got, want, wire)
+		}
+	}
+	if _, ok := fields["observed_output"]; ok {
+		t.Fatalf("empty output should not fabricate observed output: %s", wire)
+	}
+	if _, ok := fields["message"]; ok {
+		t.Fatalf("intent evidence should not add a message field: %s", wire)
+	}
+
+	message, err := executionFailureMessage(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var modelFailure observedProcessFailure
+	if err := json.Unmarshal([]byte(message), &modelFailure); err != nil {
+		t.Fatalf("decode JS-facing failure record %q: %v", message, err)
+	}
+	if modelFailure.AfterSeq == nil || *modelFailure.AfterSeq != 0 || modelFailure.CurrentIncarnationUID != "current-incarnation" ||
+		modelFailure.RequestOutcome == nil || *modelFailure.RequestOutcome != NestedNotDispatched || modelFailure.ObservedOutput != nil {
+		t.Fatalf("JS-facing typed failure lost cursor/outcome or fabricated output: %+v", modelFailure)
+	}
+}
+
+func TestExecutionFailureEvidencePreservesFullWidthCursorAtJSONBoundary(t *testing.T) {
+	cursor := ^uint64(0)
+	record := executionFailureRecord{
+		method: executorMethodProcessRead, afterSequence: &cursor, remoteOutcome: NestedUnknown,
+		automaticReplay: false,
+	}
+	wire, err := json.Marshal(record.intentEvidence())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded executionFailureEvidence
+	if err := json.Unmarshal(wire, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.AfterSeq == nil || *decoded.AfterSeq != cursor {
+		t.Fatalf("full-width cursor did not survive JSON boundary: wire=%s decoded=%+v", wire, decoded)
 	}
 }
 
@@ -878,7 +991,7 @@ func TestObservedProcessFailureMarksBothOutputTruncationLayers(t *testing.T) {
 	output.push(bytes.Repeat([]byte("a"), 32*1024))
 	cursor := uint64(12)
 	message, err := observedProcessFailureMessage(&executorTransportError{
-		method: "process/read", phase: "grpc", intentID: "read-intent", processID: "observed-process",
+		method: executorMethodProcessRead, phase: "grpc", intentID: "read-intent", processID: "observed-process",
 		afterSequence: &cursor, output: output, cause: errors.New("connection closed"),
 	})
 	if err != nil {
@@ -898,14 +1011,13 @@ func TestObservedProcessFailureMarksBothOutputTruncationLayers(t *testing.T) {
 		t.Fatalf("truncation metadata=%+v", view)
 	}
 	transport := &executorTransportError{
-		method: "process/read", phase: "grpc", intentID: "read-intent", processID: "observed-process",
+		method: executorMethodProcessRead, phase: "grpc", intentID: "read-intent", processID: "observed-process",
 		afterSequence: &cursor, output: output, cause: errors.New("connection closed"),
 	}
 	evidence := transport.evidence("")
-	if evidence.BufferedOutputBase64 == nil || !bytes.Equal(*evidence.BufferedOutputBase64, output.retained()) ||
-		evidence.OmittedBytes == nil || *evidence.OmittedBytes != 16*1024 {
-		t.Fatalf("truncated output cannot be retrieved exactly from evidence: bytes=%d omitted=%v err=%v",
-			len(output.retained()), evidence.OmittedBytes, nil)
+	if evidence.BufferedOutputBase64 == nil || *evidence.BufferedOutputBase64 == nil ||
+		!bytes.Equal(*evidence.BufferedOutputBase64, output.retained()) || evidence.OmittedBytes == nil || *evidence.OmittedBytes != 16*1024 {
+		t.Fatalf("truncated output cannot be retrieved exactly from evidence: %+v", evidence)
 	}
 }
 
@@ -994,7 +1106,7 @@ func TestExecutorRetriesOnlyCursorReadWithSameIdentity(t *testing.T) {
 	e := newFakeExecutor(t, store, owner, client)
 	e.reconnectRequired = false
 	cursor := uint64(7)
-	_, err := executorRPC[executorReadResult](t.Context(), e, "process/read", executorRead{ProcessID: "existing-process", AfterSeq: &cursor, MaxBytes: 65536})
+	_, err := executorRPC[executorReadResult](t.Context(), e, executorMethodProcessRead, executorRead{ProcessID: "existing-process", AfterSeq: &cursor, MaxBytes: 65536})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1030,7 +1142,7 @@ func TestExecutorRetriesUnknownCursorReadAtMostOnce(t *testing.T) {
 	}
 	e := newFakeExecutor(t, store, owner, client)
 	cursor := uint64(5)
-	_, err := executorRPC[executorReadResult](t.Context(), e, "process/read", executorRead{ProcessID: "existing-process", AfterSeq: &cursor, MaxBytes: 65536})
+	_, err := executorRPC[executorReadResult](t.Context(), e, executorMethodProcessRead, executorRead{ProcessID: "existing-process", AfterSeq: &cursor, MaxBytes: 65536})
 	if !errors.As(err, new(*executorTransportError)) {
 		t.Fatalf("read error=%v, want an explicit unknown result", err)
 	}
@@ -1109,7 +1221,7 @@ func TestExecutorNeverSubstitutesMissingSessionOnRecovery(t *testing.T) {
 			}
 			e := newFakeExecutor(t, store, owner, client)
 			e.reconnectRequired = true
-			_, err := e.rpc(t.Context(), "process/read", executorRead{ProcessID: "existing", MaxBytes: 65536}, nil)
+			_, err := e.rpc(t.Context(), executorMethodProcessRead, executorRead{ProcessID: "existing", MaxBytes: 65536}, nil)
 			if err == nil || reads != 0 || opens != 1 {
 				t.Fatalf("session substitution: err=%v reads=%d opens=%d", err, reads, opens)
 			}
@@ -1280,11 +1392,11 @@ func TestExecutorReconnectsBeforeNextOperationWithoutReplayingMutation(t *testin
 		return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "retained-executor"}}, nil
 	}
 	e := newFakeExecutor(t, store, owner, client)
-	_, err := e.rpc(t.Context(), "process/start", executorStart{ProcessID: "lost-start", Argv: []string{"touch", "once"}, Cwd: "file:///tmp"}, nil)
+	_, err := e.rpc(t.Context(), executorMethodProcessStart, executorStart{ProcessID: "lost-start", Argv: []string{"touch", "once"}, Cwd: "file:///tmp"}, nil)
 	if !errors.As(err, new(*executorTransportError)) {
 		t.Fatalf("start error=%v, want explicit unknown result", err)
 	}
-	_, err = e.rpc(t.Context(), "process/read", executorRead{ProcessID: "existing", MaxBytes: 65536}, nil)
+	_, err = e.rpc(t.Context(), executorMethodProcessRead, executorRead{ProcessID: "existing", MaxBytes: 65536}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -75,13 +75,14 @@ func execCommandToolDefinition() protocol.CodeToolDefinition {
 		InputSchema: &protocol.JSONSchema{
 			Type: "object", Required: []string{"cmd"}, AdditionalProperties: &closed,
 			Properties: map[string]protocol.JSONSchema{
-				"cmd":               schemaString("Shell command to execute."),
-				"workdir":           schemaString("Working directory for the command. Defaults to the turn cwd."),
-				"tty":               schemaBoolean("True allocates a PTY for the command; false or omitted uses plain pipes."),
-				"yield_time_ms":     schemaNumber("Wait before yielding output. Defaults to 10000 ms; effective range is 250-30000 ms."),
-				"max_output_tokens": schemaNumber(outputTokenBudgetPropertyDoc),
-				"shell":             schemaString("Shell binary to launch. Defaults to the user's default shell."),
-				"login":             schemaBoolean("True runs the shell with -l/-i semantics; false disables them. Defaults to true."),
+				"cmd":                      schemaString("Shell command to execute."),
+				"expected_incarnation_uid": schemaString("Optional execution Sandbox incarnation UID from authorized environment inspection. Rejects this command if the target has changed incarnation."),
+				"workdir":                  schemaString("Working directory for the command. Defaults to the turn cwd."),
+				"tty":                      schemaBoolean("True allocates a PTY for the command; false or omitted uses plain pipes."),
+				"yield_time_ms":            schemaNumber("Wait before yielding output. Defaults to 10000 ms; effective range is 250-30000 ms."),
+				"max_output_tokens":        schemaNumber(outputTokenBudgetPropertyDoc),
+				"shell":                    schemaString("Shell binary to launch. Defaults to the user's default shell."),
+				"login":                    schemaBoolean("True runs the shell with -l/-i semantics; false disables them. Defaults to true."),
 			},
 		},
 		OutputSchema: unifiedExecOutputSchema(),
@@ -126,13 +127,14 @@ func unifiedExecOutputSchema() *protocol.JSONSchema {
 // Codex rust-v0.162.1 core/src/tools/handlers/unified_exec.rs ExecCommandArgs and
 // ExecCommandEnvironmentArgs. Unknown fields are ignored and null means omitted, as with serde.
 type execCommandArgs struct {
-	Cmd             *string `json:"cmd"`
-	Workdir         *string `json:"workdir"`
-	Shell           *string `json:"shell"`
-	Login           *bool   `json:"login"`
-	TTY             *bool   `json:"tty"`
-	YieldTimeMS     *uint64 `json:"yield_time_ms"`
-	MaxOutputTokens *uint64 `json:"max_output_tokens"`
+	Cmd                    *string `json:"cmd"`
+	ExpectedIncarnationUID *string `json:"expected_incarnation_uid"`
+	Workdir                *string `json:"workdir"`
+	Shell                  *string `json:"shell"`
+	Login                  *bool   `json:"login"`
+	TTY                    *bool   `json:"tty"`
+	YieldTimeMS            *uint64 `json:"yield_time_ms"`
+	MaxOutputTokens        *uint64 `json:"max_output_tokens"`
 }
 
 // Codex rust-v0.162.1 core/src/tools/handlers/unified_exec/write_stdin.rs WriteStdinArgs.
@@ -209,6 +211,12 @@ func parseExecCommand(input json.RawMessage) (execCommandArgs, error) {
 	}
 	if args.Cmd == nil {
 		return args, missingField("cmd")
+	}
+	if args.ExpectedIncarnationUID != nil {
+		uid := *args.ExpectedIncarnationUID
+		if uid == "" || strings.TrimSpace(uid) != uid || len(uid) > 256 {
+			return args, &toolError{"failed to parse function arguments: `expected_incarnation_uid` must be a non-empty, unpadded UID of at most 256 bytes"}
+		}
 	}
 	return args, nil
 }

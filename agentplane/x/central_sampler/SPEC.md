@@ -279,6 +279,17 @@ interrupts. Session numbers are random in upstream's range and unique among a co
 processes until their exit is reported. Argument and session errors reject the nested call in
 JavaScript instead of failing the Session, as do exec-server rejections, which have no effect.
 
+`exec_command` also accepts optional `expected_incarnation_uid`, supplied from authorized
+environment/scope inspection when the caller needs a per-call fence. The sampler carries that UID
+on session admission and each execution operation, so a stale value is rejected before workspace
+or command dispatch. A same-Sandbox incarnation change is adopted only after a fresh authenticated
+session open succeeds; old process and file handles are retired before the new binding can prepare
+the workspace. The structured rejection returns the current UID only after the target has been
+authorized. Omitting the argument preserves the existing verified same-Sandbox adoption behavior.
+This UID fences the Gateway-visible execution incarnation; it does not detect an executor-container
+restart inside the same Pod, and native process/file handles remain bound to their original
+execution session.
+
 **Deviation:** `exec_command` omits upstream's approval parameters (`sandbox_permissions`,
 `justification`, `prefix_rule`); Agentplane's Sandbox, egress and Action Service own those
 boundaries, and sampler approvals are out of scope.

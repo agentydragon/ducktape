@@ -1847,6 +1847,19 @@ func (s *Store) RetireLostExecutorSession(ctx context.Context, owner Owner, sess
 // Sandbox UID. The new fence, handle retirement and model notice commit atomically before any
 // command can use the replacement incarnation.
 func (s *Store) RebindExecutorIncarnation(ctx context.Context, owner Owner, sandboxUID, previousUID, replacementUID, notDispatchedProcessID string) error {
+	return s.rebindExecutorIncarnation(ctx, owner, sandboxUID, previousUID, replacementUID, notDispatchedProcessID, "", nil)
+}
+
+// RebindExecutorIncarnationWithSession atomically retires the old scope and binds an
+// authenticated, newly opened empty execution session at the replacement incarnation.
+func (s *Store) RebindExecutorIncarnationWithSession(ctx context.Context, owner Owner, sandboxUID, previousUID, replacementUID, sessionID string, shell *string) error {
+	if sessionID == "" {
+		return protocol.ErrInvalid
+	}
+	return s.rebindExecutorIncarnation(ctx, owner, sandboxUID, previousUID, replacementUID, "", sessionID, shell)
+}
+
+func (s *Store) rebindExecutorIncarnation(ctx context.Context, owner Owner, sandboxUID, previousUID, replacementUID, notDispatchedProcessID, replacementSessionID string, shell *string) error {
 	if sandboxUID == "" || previousUID == "" || replacementUID == "" || previousUID == replacementUID {
 		return protocol.ErrInvalid
 	}
@@ -1881,8 +1894,16 @@ func (s *Store) RebindExecutorIncarnation(ctx context.Context, owner Owner, sand
 		}); err != nil {
 			return err
 		}
-		notice := fmt.Sprintf("The execution Sandbox changed incarnation from %s to %s while retaining Sandbox UID %s (for example, after suspend and resume). A fresh execution session is being opened. Old process and file handles cannot be reused; unfinished process outcomes remain unknown and no previous command was replayed. Persistent workspace files may remain, but verify any required process or temporary state before continuing.", previousUID, replacementUID, sandboxUID)
-		return s.retireExecutorSession(ctx, tx, owner, conversation, session, notDispatchedProcessID, notice)
+		notice := fmt.Sprintf("The execution Sandbox changed incarnation from %s to %s while retaining Sandbox UID %s (for example, after suspend and resume). A fresh execution session is being used. Old process and file handles cannot be reused; unfinished process outcomes remain unknown and no previous command was replayed. Persistent workspace files may remain, but verify any required process or temporary state before continuing.", previousUID, replacementUID, sandboxUID)
+		if err := s.retireExecutorSession(ctx, tx, owner, conversation, session, notDispatchedProcessID, notice); err != nil {
+			return err
+		}
+		if replacementSessionID != "" {
+			conversation.ExecutorSession = &replacementSessionID
+			conversation.ExecutorShell = shell
+			return updateConversation(ctx, tx, conversation)
+		}
+		return nil
 	})
 }
 
