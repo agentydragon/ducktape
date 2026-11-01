@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/claude"
 	"github.com/agentydragon/ducktape/agentplane/env/harnesshost/codex"
@@ -82,7 +83,7 @@ func (s *Session) startProcess(ctx context.Context, adapter harness.ProcessAdapt
 	if err != nil {
 		return err
 	}
-	process, err := s.deps.launchProcess(ctx, ControllerName+"/"+s.id, supervision.ProcessConfig{Command: command, Dir: cwd, Env: env})
+	process, err := s.deps.launchProcess(ctx, ControllerName+"/"+s.id, supervision.ProcessConfig{Command: command, Dir: cwd, Env: env, StopGrace: 5 * time.Second})
 	if err != nil {
 		return err
 	}

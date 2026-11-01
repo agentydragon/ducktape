@@ -348,12 +348,12 @@ func (b *pid1Backend) signal(p *Process, signal syscall.Signal) {
 	}
 }
 
-func (b *pid1Backend) stop(ctx context.Context, p *Process, grace time.Duration) error {
+func (b *pid1Backend) stop(ctx context.Context, p *Process) error {
 	if err := p.CloseStdin(); err != nil && !errors.Is(err, os.ErrClosed) {
 		return err
 	}
 	b.signal(p, syscall.SIGTERM)
-	timer := time.NewTimer(max(grace, 0))
+	timer := time.NewTimer(b.config.StopGrace)
 	defer timer.Stop()
 	select {
 	case <-p.waitDone:

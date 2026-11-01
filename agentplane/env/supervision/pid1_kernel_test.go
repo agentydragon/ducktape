@@ -139,8 +139,9 @@ func TestPID1ContainerContract(t *testing.T) {
 		t.Fatal("PID1_PROOF_BACKEND must explicitly select pid1 or subprocess")
 	}
 	p, err := supervisor.NewProcess(ProcessConfig{
-		Command: []string{os.Args[0], "--pid1-proof-native", mode},
-		Env:     map[string]string{"PID1_PROOF_BACKEND": os.Getenv("PID1_PROOF_BACKEND")},
+		Command:   []string{os.Args[0], "--pid1-proof-native", mode},
+		Env:       map[string]string{"PID1_PROOF_BACKEND": os.Getenv("PID1_PROOF_BACKEND")},
+		StopGrace: time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -193,7 +194,7 @@ func TestPID1ContainerContract(t *testing.T) {
 			t.Fatal(ctx.Err())
 		case <-signals:
 		}
-		if err := p.Stop(ctx, time.Second); err != nil {
+		if err := p.Stop(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}

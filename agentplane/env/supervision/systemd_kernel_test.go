@@ -76,7 +76,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		stale := *launcher
 		stale.lifetimeMarker = filepath.Join(runtimeLifetimeDirectory, strings.ReplaceAll(uuid.NewString(), "-", ""))
 		effect := filepath.Join(dir, "stale-runner-effect")
-		p, err := stale.newSupervisor().NewProcess(ProcessConfig{Command: []string{"/bin/busybox", "touch", effect}, Dir: dir, Env: map[string]string{}})
+		p, err := stale.newSupervisor().NewProcess(ProcessConfig{Command: []string{"/bin/busybox", "touch", effect}, Dir: dir, Env: map[string]string{}, StopGrace: stopGrace})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -124,7 +124,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		script := `printf '%s|%s|%s|%s\n' "$1" "$2" "$3" "$4"; printf 'shell:%s:%s\n' "$HOME" "${SENTINEL}"`
 		literals := []string{"$HOME", "${SENTINEL}", "%n", `single'quote"$`}
 		command := append([]string{"/bin/sh", "-eu", "-c", script, "--"}, literals...)
-		p, err := supervisor.NewProcess(ProcessConfig{Command: command, Dir: dir, Env: map[string]string{"PATH": "/bin:/usr/bin", "HOME": "/explicit/proof-home", "SENTINEL": "shell sentinel"}})
+		p, err := supervisor.NewProcess(ProcessConfig{Command: command, Dir: dir, Env: map[string]string{"PATH": "/bin:/usr/bin", "HOME": "/explicit/proof-home", "SENTINEL": "shell sentinel"}, StopGrace: stopGrace})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -144,7 +144,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		}
 	})
 	t.Run("invalid_launch_cannot_escape_fence", func(t *testing.T) {
-		p, err := supervisor.NewProcess(ProcessConfig{Command: []string{"/missing-agentplane-proof-binary"}, Dir: dir, Env: map[string]string{}})
+		p, err := supervisor.NewProcess(ProcessConfig{Command: []string{"/missing-agentplane-proof-binary"}, Dir: dir, Env: map[string]string{}, StopGrace: stopGrace})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -179,7 +179,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 				}
 				return job, context.DeadlineExceeded
 			}
-			p, err := owned.newSupervisor().NewProcess(ProcessConfig{Command: []string{"/bin/sh", "-c", "sleep 60"}, Dir: dir, Env: map[string]string{"PATH": "/bin:/usr/bin"}})
+			p, err := owned.newSupervisor().NewProcess(ProcessConfig{Command: []string{"/bin/sh", "-c", "sleep 60"}, Dir: dir, Env: map[string]string{"PATH": "/bin:/usr/bin"}, StopGrace: stopGrace})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -203,7 +203,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 			if _, err := conn.StartTransientUnitContext(ctx, name, "fail", proofUnitProperties("/bin/busybox", []string{"/bin/busybox", "sleep", "60"}, WorkloadSlice), nil); err != nil {
 				t.Fatal(err)
 			}
-			defer fenceSystemdUnit(context.Background(), conn, name, true, "")
+			defer FenceSystemdUnit(context.Background(), conn, name, SystemdFence{Ordered: true})
 		}
 		recovered := *launcher
 		if _, err := recovered.PrepareForOwner(stateDir, sandboxUID, runtimeOwner); err != nil {
@@ -223,7 +223,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		if _, err := conn.StartTransientUnitContext(ctx, parent, "fail", proofUnitProperties("/bin/busybox", []string{"/bin/busybox", "sleep", "60"}, "agentplane.slice"), nil); err != nil {
 			t.Fatal(err)
 		}
-		defer fenceSystemdUnit(context.Background(), conn, parent, true, "")
+		defer FenceSystemdUnit(context.Background(), conn, parent, SystemdFence{Ordered: true})
 		owned := *launcher
 		owned.lifetimeUnit = parent
 		marker := filepath.Join(dir, "saved")
@@ -259,7 +259,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 			t.Fatal(err)
 		}
 		stdout, stderr := readProofStreams(p)
-		if err := p.Stop(ctx, stopGrace); err != nil {
+		if err := p.Stop(ctx); err != nil {
 			t.Fatal(err)
 		}
 		if code, err := p.Wait(ctx); err != nil || code != 23 {
@@ -270,14 +270,18 @@ func TestSystemdKernelFixture(t *testing.T) {
 		assertSystemdProofEmpty(t, ctx, conn, systemdProofUnitName(t, p))
 	})
 	t.Run("ordinary_stop_waits_for_domain", func(t *testing.T) {
-		p := startSystemdProof(t, ctx, supervisor, dir, "trap '' TERM; printf ready; sleep 60 & wait")
+		p := startSystemdProofWithGrace(t, ctx, supervisor, dir, 50*time.Millisecond, "trap '' TERM; printf ready; sleep 60 & wait")
 		ready := make([]byte, 5)
 		if _, err := io.ReadFull(p.Stdout(), ready); err != nil {
 			t.Fatal(err)
 		}
 		stdout, stderr := readProofStreams(p)
-		if err := p.Stop(ctx, 50*time.Millisecond); err != nil {
+		stopStarted := time.Now()
+		if err := p.Stop(ctx); err != nil {
 			t.Fatal(err)
+		}
+		if elapsed := time.Since(stopStarted); elapsed > 3*time.Second {
+			t.Fatalf("systemd stop ignored caller's 50ms grace: elapsed=%s", elapsed)
 		}
 		if code, err := p.Wait(ctx); err != nil || code != 137 {
 			t.Fatalf("forcedstop exit=%d error=%v want137", code, err)
@@ -290,18 +294,16 @@ func TestSystemdKernelFixture(t *testing.T) {
 		owned := *launcher
 		authoritativePID := make(chan uint32, 1)
 		propertyReads := 0 // Only this process's reaper calls the hook.
-		owned.reapServiceProperties = func(readCtx context.Context, bus *systemd.Conn, name string) (map[string]any, error) {
+		owned.reapSnapshot = func(readCtx context.Context, bus *systemd.Conn, name string) (SystemdUnitSnapshot, error) {
 			propertyReads++
 			if propertyReads == 1 {
-				return nil, context.DeadlineExceeded
+				return SystemdUnitSnapshot{}, context.DeadlineExceeded
 			}
-			props, err := bus.GetUnitTypePropertiesContext(readCtx, name, "Service")
+			props, err := ReadSystemdUnit(readCtx, bus, name)
 			if err == nil {
-				if mainPID, ok := props["MainPID"].(uint32); ok {
-					select {
-					case authoritativePID <- mainPID:
-					default:
-					}
+				select {
+				case authoritativePID <- props.MainPID:
+				default:
 				}
 			}
 			return props, err
@@ -368,8 +370,12 @@ func TestSystemdKernelFixture(t *testing.T) {
 }
 
 func startSystemdProof(t *testing.T, ctx context.Context, supervisor *Supervisor, dir, script string) *Process {
+	return startSystemdProofWithGrace(t, ctx, supervisor, dir, stopGrace, script)
+}
+
+func startSystemdProofWithGrace(t *testing.T, ctx context.Context, supervisor *Supervisor, dir string, grace time.Duration, script string) *Process {
 	t.Helper()
-	p, err := supervisor.NewProcess(ProcessConfig{Command: []string{"/bin/sh", "-eu", "-c", script}, Dir: dir, Env: map[string]string{"PATH": "/bin:/usr/bin", "HOME": "/explicit/proof-home", "SENTINEL": "proof sentinel"}})
+	p, err := supervisor.NewProcess(ProcessConfig{Command: []string{"/bin/sh", "-eu", "-c", script}, Dir: dir, Env: map[string]string{"PATH": "/bin:/usr/bin", "HOME": "/explicit/proof-home", "SENTINEL": "proof sentinel"}, StopGrace: grace})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +384,7 @@ func startSystemdProof(t *testing.T, ctx context.Context, supervisor *Supervisor
 	}
 	t.Cleanup(func() {
 		if p.Running() {
-			_ = p.Stop(context.Background(), stopGrace)
+			_ = p.Stop(context.Background())
 		}
 	})
 	return p
@@ -393,25 +399,17 @@ func readProofStreams(p *Process) (<-chan string, <-chan string) {
 
 func assertSystemdProofEmpty(t *testing.T, ctx context.Context, conn *systemd.Conn, name string) {
 	t.Helper()
-	props, err := conn.GetUnitPropertiesContext(ctx, name)
-	if systemdMissing(err) {
-		return
-	}
+	unit, err := ReadSystemdUnit(ctx, conn, name)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state := props["ActiveState"]; state != "inactive" && state != "failed" {
-		t.Fatalf("unit %s still %v", name, state)
+	if !unit.stopped() {
+		t.Fatalf("unit %s still %s", name, unit.ActiveState)
 	}
-	service, err := conn.GetUnitTypePropertiesContext(ctx, name, "Service")
-	if systemdMissing(err) {
+	if unit.ControlGroup == "" {
 		return
 	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	group, _ := service["ControlGroup"].(string)
-	if empty, err := systemdGroupEmpty(group); err != nil || !empty {
+	if empty, err := systemdGroupEmpty(unit.ControlGroup); err != nil || !empty {
 		t.Fatalf("unit %s kernel domain still populated: empty=%v err=%v", name, empty, err)
 	}
 }

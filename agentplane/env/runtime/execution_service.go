@@ -36,6 +36,8 @@ type supervisedExecutionHandle struct {
 	process      childProcess
 	fence        func(context.Context) error
 	mu           sync.Mutex
+	fenceMu      sync.Mutex
+	fenced       bool
 	expectedStop bool
 	healthCancel context.CancelFunc
 	exited       chan childExit
@@ -44,6 +46,12 @@ type supervisedExecutionHandle struct {
 func (h *supervisedExecutionHandle) ClientConn() *grpc.ClientConn { return h.conn }
 
 func (h *supervisedExecutionHandle) StopAndFence(ctx context.Context) error {
+	h.fenceMu.Lock()
+	defer h.fenceMu.Unlock()
+	if h.fenced {
+		return nil
+	}
+
 	h.mu.Lock()
 	h.expectedStop = true
 	stopHealth := h.healthCancel
@@ -51,22 +59,27 @@ func (h *supervisedExecutionHandle) StopAndFence(ctx context.Context) error {
 	if stopHealth != nil {
 		stopHealth()
 	}
+	var err error
 	if h.fence != nil {
-		return h.fence(ctx)
-	}
-	if h.process == nil {
-		return errors.New("execution service has no supervised process")
-	}
-	stopErr := h.process.Stop(ctx, executionStopGrace)
-	code, waitErr := h.process.Wait(ctx)
-	if code != 0 {
-		description := ""
-		if process, ok := h.process.(interface{ ExitDescription() string }); ok {
-			description = process.ExitDescription()
+		err = h.fence(ctx)
+	} else if h.process == nil {
+		err = errors.New("execution service has no supervised process")
+	} else {
+		stopErr := h.process.Stop(ctx)
+		code, waitErr := h.process.Wait(ctx)
+		if code != 0 {
+			description := ""
+			if process, ok := h.process.(interface{ ExitDescription() string }); ok {
+				description = process.ExitDescription()
+			}
+			waitErr = errors.Join(waitErr, fmt.Errorf("execution service exited with status %d; no backend fence proof: %s", code, description))
 		}
-		waitErr = errors.Join(waitErr, fmt.Errorf("execution service exited with status %d; no backend fence proof: %s", code, description))
+		err = errors.Join(stopErr, waitErr)
 	}
-	return errors.Join(stopErr, waitErr)
+	if err == nil {
+		h.fenced = true
+	}
+	return err
 }
 
 func (h *supervisedExecutionHandle) ProcessExit() <-chan childExit { return h.exited }
@@ -180,11 +193,20 @@ func (r *Runtime) startExecutionService(ctx context.Context, config Config, inca
 	var handle *supervisedExecutionHandle
 	if config.Supervision == "systemd" {
 		invocation, err := r.deps.startUnit(ctx, ExecutionUnitName)
+		if invocation.reference != nil || invocation.ID != "" {
+			r.mu.Lock()
+			r.executionUnit = invocation
+			r.mu.Unlock()
+		}
 		if err != nil {
 			return nil, err
 		}
 		handle = &supervisedExecutionHandle{exited: make(chan childExit, 1), fence: func(fenceCtx context.Context) error {
-			return r.deps.fenceUnit(fenceCtx, ExecutionUnitName, invocation)
+			if err := r.deps.fenceUnit(fenceCtx, ExecutionUnitName, invocation); err != nil {
+				return err
+			}
+			r.clearExecutionUnit(invocation)
+			return nil
 		}}
 	} else {
 		binary := config.ExecutionBinary
@@ -196,13 +218,13 @@ func (r *Runtime) startExecutionService(ctx context.Context, config Config, inca
 			binary = filepath.Join(filepath.Dir(current), "agentplane-execution-service")
 		}
 		process, err := r.deps.startChild(r.supervisor, supervision.ProcessConfig{
-			Command: []string{binary, "--config", configPath}, Env: inheritedEnvironment(),
+			Command: []string{binary, "--config", configPath}, Env: inheritedEnvironment(), StopGrace: executionStopGrace,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("start standalone execution service: %w", err)
 		}
 		if err := process.Start(ctx); err != nil {
-			return nil, errors.Join(err, process.Stop(context.Background(), executionStopGrace))
+			return nil, errors.Join(err, process.Stop(context.Background()))
 		}
 		// Drain child output into Runtime's log stream. Besides avoiding blocked
 		// pipes, this preserves the Execution service's native fence diagnostics.

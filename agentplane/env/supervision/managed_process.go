@@ -36,7 +36,7 @@ func (h *Host) Launch(ctx context.Context, owner string, generation uint64, supe
 	p := &ManagedProcess{host: h, id: uuid.NewString(), native: native}
 	deadline, _ := ctx.Deadline()
 	err = h.requestNative(ctx, p.id, DesiredState{
-		Owner: owner, Generation: generation, StartDeadline: deadline, StopTimeout: stopGrace + 5*time.Second,
+		Owner: owner, Generation: generation, StartDeadline: deadline, StopTimeout: config.StopGrace + 5*time.Second,
 	}, func(startCtx context.Context) (*Instance, error) {
 		if err := native.Start(startCtx); err != nil {
 			return nil, err
@@ -48,7 +48,7 @@ func (h *Host) Launch(ctx context.Context, owner string, generation uint64, supe
 			_, err := native.Wait(h.ctx)
 			done <- err
 		}()
-		return &Instance{PID: native.PID(), Done: done, Stop: func(stopCtx context.Context) error { return native.Stop(stopCtx, stopGrace) }}, nil
+		return &Instance{PID: native.PID(), Done: done, Stop: native.Stop}, nil
 	})
 	if err != nil {
 		return nil, err

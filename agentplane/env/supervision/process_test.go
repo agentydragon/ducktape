@@ -128,6 +128,34 @@ func TestProcessStartFailureCompletesWait(t *testing.T) {
 	}
 }
 
+func TestSubprocessNativeStartFailureRollsBack(t *testing.T) {
+	process, err := NewSubprocessSupervisor(nil).NewProcess(ProcessConfig{
+		Command:   []string{"/run/agentplane-missing-native-command"},
+		StopGrace: 75 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := process.Start(context.Background()); err == nil {
+		t.Fatal("Start succeeded for a missing native command")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if code, err := process.Wait(ctx); code != 125 || err != nil {
+		t.Fatalf("Wait after native start rollback = (%d, %v), want (125, nil)", code, err)
+	}
+}
+
+func TestNewProcessRejectsNegativeStopGrace(t *testing.T) {
+	_, err := NewSubprocessSupervisor(nil).NewProcess(ProcessConfig{
+		Command:   []string{"/bin/true"},
+		StopGrace: -time.Nanosecond,
+	})
+	if err == nil {
+		t.Fatal("NewProcess accepted a negative stop grace")
+	}
+}
+
 func TestSupervisorProcessesHaveIndependentLifetimes(t *testing.T) {
 	supervisor := NewSubprocessSupervisor(nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -135,7 +163,8 @@ func TestSupervisorProcessesHaveIndependentLifetimes(t *testing.T) {
 	var processes []*Process
 	for range 2 {
 		process, err := supervisor.NewProcess(ProcessConfig{
-			Command: []string{"/bin/sh", "-c", `while IFS= read -r line; do printf '%s\n' "$line"; done`},
+			Command:   []string{"/bin/sh", "-c", `while IFS= read -r line; do printf '%s\n' "$line"; done`},
+			StopGrace: 0,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -145,12 +174,12 @@ func TestSupervisorProcessesHaveIndependentLifetimes(t *testing.T) {
 		}
 		processes = append(processes, process)
 		t.Cleanup(func() {
-			if err := process.Stop(context.Background(), 0); err != nil {
+			if err := process.Stop(context.Background()); err != nil {
 				t.Error(err)
 			}
 		})
 	}
-	if err := processes[0].Stop(ctx, 0); err != nil {
+	if err := processes[0].Stop(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if err := processes[1].WriteLine(ctx, "still running"); err != nil {
@@ -176,7 +205,7 @@ func TestSupervisorProcessesHaveIndependentLifetimes(t *testing.T) {
 }
 
 func TestInputCancellationAndCloseUnblockPendingWrites(t *testing.T) {
-	process, err := NewSubprocessSupervisor(nil).NewProcess(ProcessConfig{Command: []string{"/bin/sleep", "60"}})
+	process, err := NewSubprocessSupervisor(nil).NewProcess(ProcessConfig{Command: []string{"/bin/sleep", "60"}, StopGrace: 0})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +263,7 @@ func TestInputCancellationAndCloseUnblockPendingWrites(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("pending input write did not observe stdin closure")
 	}
-	if err := process.Stop(context.Background(), 0); err != nil {
+	if err := process.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 }
@@ -253,7 +282,8 @@ func TestImmediateStopFencesChildAndReleasesOwner(t *testing.T) {
 			t.Fatalf("acquire owner lock on attempt %d: %v", attempt, err)
 		}
 		process, err := NewSubprocessSupervisor(owner).NewProcess(ProcessConfig{
-			Command: []string{"/bin/sleep", "60"},
+			Command:   []string{"/bin/sleep", "60"},
+			StopGrace: 0,
 		})
 		if err != nil {
 			_ = owner.Close()
@@ -271,7 +301,7 @@ func TestImmediateStopFencesChildAndReleasesOwner(t *testing.T) {
 			_, _ = process.Wait(context.Background())
 			t.Fatalf("native process did not inherit state ownership on attempt %d", attempt)
 		}
-		if err := process.Stop(context.Background(), 0); err != nil {
+		if err := process.Stop(context.Background()); err != nil {
 			t.Fatalf("stop on attempt %d: %v", attempt, err)
 		}
 		if !acquireOwnerLock(probe) {
@@ -286,7 +316,8 @@ func testProcessParentDeathFixture(t *testing.T) {
 	owner := acquireStateOwnerForFixture(t)
 	ignoringTerm := os.Getenv(processTestPIDEnv) + ".ignoring-term"
 	process, err := NewSubprocessSupervisor(owner).NewProcess(ProcessConfig{
-		Command: []string{"/bin/sh", "-c", `trap '' TERM; : > "$1"; exec /bin/sleep 60`, "native", ignoringTerm},
+		Command:   []string{"/bin/sh", "-c", `trap '' TERM; : > "$1"; exec /bin/sleep 60`, "native", ignoringTerm},
+		StopGrace: stopGrace,
 	})
 	if err != nil {
 		t.Fatal(err)

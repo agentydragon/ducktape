@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"golang.org/x/sync/errgroup"
@@ -47,7 +48,7 @@ func (r *Runner) Run(ctx context.Context, owner, script, cwd string, output func
 	for key, value := range r.harnessEnvironment {
 		env[key] = value
 	}
-	process, err := r.launchProcess(ctx, owner, supervision.ProcessConfig{Command: []string{"/bin/sh", "-eu"}, Dir: cwd, Env: env})
+	process, err := r.launchProcess(ctx, owner, supervision.ProcessConfig{Command: []string{"/bin/sh", "-eu"}, Dir: cwd, Env: env, StopGrace: 5 * time.Second})
 	if err != nil {
 		return 0, err
 	}

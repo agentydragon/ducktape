@@ -100,9 +100,10 @@ func NativeStart(config NativeConfig) Start {
 			return nil, errors.New("Codex exec-server supervisor is not configured")
 		}
 		process, err := config.Supervisor.NewProcess(supervision.ProcessConfig{
-			Command: []string{config.Binary, "exec-server", "--listen", config.Config.URL},
-			Dir:     config.StateDir,
-			Env:     env,
+			Command:   []string{config.Binary, "exec-server", "--listen", config.Config.URL},
+			Dir:       config.StateDir,
+			Env:       env,
+			StopGrace: executorStopGrace,
 		})
 		if err != nil {
 			return nil, err
@@ -130,7 +131,7 @@ func NativeStart(config NativeConfig) Start {
 		}()
 		return &supervision.Instance{
 			PID: process.PID(), Done: done,
-			Stop: func(ctx context.Context) error { return process.Stop(ctx, executorStopGrace) },
+			Stop: process.Stop,
 		}, nil
 	}
 }

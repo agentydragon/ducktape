@@ -68,7 +68,7 @@ func (b *subprocessBackend) start(ctx context.Context, p *Process) error {
 	}
 
 	extraFiles := []*os.File{livenessReader, reportWriter}
-	args := []string{SupervisorMode, "--parent-liveness-fd", "3", "--native-pid-fd", "4"}
+	args := []string{SupervisorMode, "--parent-liveness-fd", "3", "--native-pid-fd", "4", "--stop-grace", b.config.StopGrace.String()}
 	if b.stateOwnerFD != nil {
 		extraFiles = append(extraFiles, b.stateOwnerFD)
 		args = append(args, "--state-owner-fd", "5")
@@ -117,19 +117,11 @@ func (b *subprocessBackend) start(ctx context.Context, p *Process) error {
 	return nil
 }
 
-func (b *subprocessBackend) stop(ctx context.Context, p *Process, grace time.Duration) error {
+func (b *subprocessBackend) stop(ctx context.Context, p *Process) error {
 	if err := p.CloseStdin(); err != nil && !errors.Is(err, os.ErrClosed) {
 		return err
 	}
 	b.signalSupervisor(syscall.SIGTERM)
-	if p.PID() != 0 {
-		_ = unix.Kill(-p.PID(), unix.SIGTERM)
-	}
-	if grace < 0 {
-		grace = 0
-	}
-	timer := time.NewTimer(grace)
-	defer timer.Stop()
 	select {
 	case <-p.waitDone:
 		_, err := p.Wait(context.Background())
@@ -137,11 +129,7 @@ func (b *subprocessBackend) stop(ctx context.Context, p *Process, grace time.Dur
 	case <-ctx.Done():
 		b.escalate(p)
 		return ctx.Err()
-	case <-timer.C:
-		b.escalate(p)
 	}
-	_, err := p.Wait(ctx)
-	return err
 }
 
 func (b *subprocessBackend) description(p *Process) string { return p.ExitDescription() }
@@ -181,7 +169,7 @@ func (b *subprocessBackend) killSupervisor(p *Process) {
 	if b.liveness != nil {
 		_ = b.liveness.Close()
 	}
-	timer := time.NewTimer(stopGrace + time.Second)
+	timer := time.NewTimer(b.config.StopGrace + time.Second)
 	defer timer.Stop()
 	select {
 	case <-p.waitDone:

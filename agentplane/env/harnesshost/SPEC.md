@@ -11,6 +11,8 @@ its seal marker, runs Sandbox bootstrap or launches the Execution Service.
 `--listen-socket` and `--supervision subprocess|systemd`. Isolated execution also supplies
 `--execution-socket`. Both private sockets are local Unix sockets; Host creates its Session socket
 with mode 0600 in a private directory. Deployment mounts and filesystem access remain authoritative.
+Each native Session, shared Codex app-server and isolated workspace helper receives its 5-second
+stop grace at launch; later `Stop(ctx)` calls use that immutable process policy.
 
 The lifecycle stream begins with HostHello (Host boot ID and Session socket). Runtime sends a
 LifecycleIntent bound to Runtime boot ID, Host boot ID and nonzero generation. Host reports readiness,

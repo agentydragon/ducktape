@@ -3,7 +3,7 @@ load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/erofs:defs.bzl", "erofs_image")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # The k3s fixture's VM guest: a Debian cloud kernel booted directly by KubeVirt with a busybox
 # initramfs, and an erofs root disk holding systemd and both harnesses. Shared production systemd
@@ -223,10 +223,18 @@ pkg_tar(
     package_dir = "/usr/libexec/agentplane",
 )
 
+# The flattened Debian package tar can contain `./var/run/` after this fixture's path
+# compatibility links. Keep this override as the last root-tar dependency so EROFS sees
+# the intended symlink after normalizing that alias.
+pkg_tar(
+    name = "root_var_run_layout",
+    symlinks = {"var/run": "/run"},
+)
+
 # Debian's packages are /usr-merged; ELF interpreters and the init path name the top-level links. The
 # runner runs bootstrap scripts with /bin/sh.
 pkg_tar(
-    name = "root_tar",
+    name = "root_tar_base",
     empty_dirs = [
         "dev",
         "proc",
@@ -244,7 +252,6 @@ pkg_tar(
         "sbin": "usr/sbin",
         "usr/bin/sh": "busybox",
         "var/lock": "/run/lock",
-        "var/run": "/run",
     },
     deps = [
         ":root_acpi",
@@ -262,6 +269,14 @@ pkg_tar(
     ],
 )
 
+pkg_tar(
+    name = "root_tar",
+    deps = [
+        ":root_tar_base",
+        ":root_var_run_layout",
+    ],
+)
+
 erofs_image(
     name = "root_erofs",
     out = "root.img",
@@ -271,10 +286,18 @@ erofs_image(
 )
 
 pkg_tar(
-    name = "root_profile_tar",
+    name = "root_profile_tar_base",
     deps = [
         ":root_tar",
         "@trixie_vm_perf//:flat",
+    ],
+)
+
+pkg_tar(
+    name = "root_profile_tar",
+    deps = [
+        ":root_profile_tar_base",
+        ":root_var_run_layout",
     ],
 )
 
@@ -284,6 +307,29 @@ erofs_image(
     compress_lz4 = True,
     tar = ":root_profile_tar",
     volume_label = "guest",
+)
+
+py_test(
+    name = "root_layout_test",
+    srcs = ["root_layout_test.py"],
+    data = [
+        ":root_erofs",
+        ":root_profile_erofs",
+        "//devinfra/erofs:erofs_tool_bin",
+        "@trixie_erofs_utils//:flat",
+    ],
+    env = {
+        "EROFS_CLOSURE_RLOCATION": "$(rlocationpath @trixie_erofs_utils//:flat)",
+        "EROFS_TOOL_RLOCATION": "$(rlocationpath //devinfra/erofs:erofs_tool_bin)",
+        "ROOT_IMAGE_RLOCATION": "$(rlocationpath :root_erofs)",
+        "ROOT_PROFILE_IMAGE_RLOCATION": "$(rlocationpath :root_profile_erofs)",
+    },
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 # KubeVirt's qemu reads the containerDisk as uid 107.
