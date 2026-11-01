@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
@@ -28,7 +29,9 @@ type failingCloseHostLifetime struct {
 
 type uncertainCloseExecution struct{ fences atomic.Int32 }
 
-func (*uncertainCloseExecution) Executor() executorpb.ExecutorServer { return nil }
+func (*uncertainCloseExecution) Executor() executorpb.ExecutorServer {
+	return &executorpb.UnimplementedExecutorServer{}
+}
 func (e *uncertainCloseExecution) StopAndFence(context.Context) error {
 	e.fences.Add(1)
 	return errors.New("uncertain Execution backend fence")
@@ -38,11 +41,20 @@ func TestRuntimeCloseUncertainExecutionFenceRetainsOwner(t *testing.T) {
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
 	config.expectCloseError = true
-	r := newLifecycleRunner(t, config)
 	execution := &uncertainCloseExecution{}
+	config.CodexExecServer = &codexexecserver.Config{URL: "ws://unused"}
+	config.CodexBinary = "/bin/false"
+	config.HarnessEnvironment = map[string]string{}
+	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
+		return execution, nil
+	}
+	r := newLifecycleRunner(t, config)
 	r.mu.Lock()
-	r.executionOwner = execution
+	owned := r.executionOwner
 	r.mu.Unlock()
+	if owned != execution {
+		t.Fatal("Execution service was not installed through its COSI lifecycle")
+	}
 
 	for range 2 {
 		ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)

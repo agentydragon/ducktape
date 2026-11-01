@@ -52,6 +52,7 @@ type executionState struct {
 	Lost             bool
 	Demand           uint64
 	AwaitDemand      bool
+	LossBinding      uint64
 }
 
 func (value executionInput) DeepCopy() executionInput { return value }
@@ -238,7 +239,7 @@ func (h *executionLifecycle) take() (executionEvent, bool) {
 	return event, true
 }
 
-func (h *executionLifecycle) launch(uid string, demand uint64, recovery bool) {
+func (h *executionLifecycle) launch(uid string, demand uint64, recovery bool, lossBinding uint64) {
 	h.r.lifecycleWorkers.Add(1)
 	go func() {
 		defer h.r.lifecycleWorkers.Done()
@@ -285,7 +286,7 @@ func (h *executionLifecycle) launch(uid string, demand uint64, recovery bool) {
 			return
 		}
 		h.r.mu.Lock()
-		allowed := !h.r.closing && (!recovery || h.r.intent != nil && h.r.intent.Mode == runtimepb.LifecycleIntent_RUNNING && h.r.intent.IncarnationUid == uid)
+		allowed := !h.r.closing && (!recovery || h.r.intent != nil && h.r.intent.Mode == runtimepb.LifecycleIntent_RUNNING && h.r.intent.IncarnationUid == uid && h.r.intent.GetBinding().GetGeneration() == lossBinding)
 		h.r.mu.Unlock()
 		if !allowed {
 			h.signal(executionEvent{kind: executionStarted, uid: uid, demand: demand, skipped: true})
@@ -304,7 +305,7 @@ func (h *executionLifecycle) launch(uid string, demand uint64, recovery bool) {
 		}
 		if err == nil && handle != nil {
 			h.r.mu.Lock()
-			stale := h.r.closing || recovery && (h.r.intent == nil || h.r.intent.Mode != runtimepb.LifecycleIntent_RUNNING || h.r.intent.IncarnationUid != uid)
+			stale := h.r.closing || recovery && (h.r.intent == nil || h.r.intent.Mode != runtimepb.LifecycleIntent_RUNNING || h.r.intent.IncarnationUid != uid || h.r.intent.GetBinding().GetGeneration() != lossBinding)
 			h.r.mu.Unlock()
 			latest, latestFound, readErr := cosi.Read(context.Background(), h.state, executionInputResource(executionInput{}))
 			if readErr != nil {
@@ -571,6 +572,11 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				current.Error = event.err.Error()
 			}
 			h.r.mu.Lock()
+			if h.r.intent == nil || h.r.intent.Mode != runtimepb.LifecycleIntent_RUNNING || h.r.intent.IncarnationUid != event.uid {
+				current.AwaitDemand = true
+			} else {
+				current.LossBinding = h.r.intent.GetBinding().GetGeneration()
+			}
 			h.r.executionServer = nil
 			h.r.executionRecovering = true
 			h.r.idleSince = nil
@@ -591,6 +597,14 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				h.r.fail(errors.New(current.Error))
 			} else {
 				current.Phase, current.FencedGeneration = executionStopped, current.Generation
+				if current.Lost {
+					h.r.mu.Lock()
+					allowed := !h.r.closing && h.r.intent != nil && h.r.intent.Mode == runtimepb.LifecycleIntent_RUNNING && h.r.intent.IncarnationUid == current.UID && h.r.intent.GetBinding().GetGeneration() == current.LossBinding
+					h.r.mu.Unlock()
+					if !allowed {
+						current.AwaitDemand = true
+					}
+				}
 				h.mu.Lock()
 				h.handle = nil
 				if h.watchCancel != nil {
@@ -642,10 +656,14 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		recovery := current.Lost && input.UID == current.UID && input.Demand == current.Demand
 		if recovery {
 			h.r.mu.Lock()
-			allowed := !h.r.closing && h.r.intent != nil && h.r.intent.Mode == runtimepb.LifecycleIntent_RUNNING && h.r.intent.IncarnationUid == input.UID
+			allowed := !h.r.closing && h.r.intent != nil && h.r.intent.Mode == runtimepb.LifecycleIntent_RUNNING && h.r.intent.IncarnationUid == input.UID && h.r.intent.GetBinding().GetGeneration() == current.LossBinding
 			h.r.mu.Unlock()
 			if !allowed {
-				return nil
+				// Quiescing or closing consumed this loss. A later RUNNING
+				// intent needs a new admission demand; the old one cannot
+				// authorize recovery after the fact.
+				current.AwaitDemand = true
+				return write()
 			}
 		}
 		current.Phase, current.UID, current.Generation, current.Error, current.Lost = executionStarting, input.UID, current.Generation+1, "", false
@@ -654,7 +672,7 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		if err := write(); err != nil {
 			return err
 		}
-		h.launch(input.UID, input.Demand, recovery)
+		h.launch(input.UID, input.Demand, recovery, current.LossBinding)
 		return nil
 	}
 	return write()

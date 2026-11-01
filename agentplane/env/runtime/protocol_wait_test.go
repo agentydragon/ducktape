@@ -15,7 +15,9 @@ import (
 
 type uncertainFenceHandle struct{ calls atomic.Int32 }
 
-func (*uncertainFenceHandle) Executor() executorpb.ExecutorServer { return nil }
+func (*uncertainFenceHandle) Executor() executorpb.ExecutorServer {
+	return &executorpb.UnimplementedExecutorServer{}
+}
 
 func (h *uncertainFenceHandle) StopAndFence(context.Context) error {
 	h.calls.Add(1)
@@ -25,13 +27,18 @@ func (h *uncertainFenceHandle) StopAndFence(context.Context) error {
 func TestUncertainExecutionFenceIsNotRetriedForBinding(t *testing.T) {
 	binding := &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1}
 	handle := &uncertainFenceHandle{}
-	r := &Runtime{
-		changes: make(chan struct{}), fatal: make(chan error, 1), executionOwner: handle,
-		host: &hostLink{connected: true, report: &runtimepb.HostReport{
-			Binding: binding, Ready: true, NativeStopped: true,
-		}},
-		intent: &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_QUIESCING},
+	r := newExecutionControllerRuntime(t, func(context.Context, Config, string) (executionHandle, error) {
+		return handle, nil
+	})
+	if err := r.startExecutionForUID(t.Context(), "incarnation"); err != nil {
+		t.Fatal(err)
 	}
+	r.mu.Lock()
+	r.host = &hostLink{connected: true, report: &runtimepb.HostReport{
+		Binding: binding, Ready: true, NativeStopped: true,
+	}}
+	r.intent = &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_QUIESCING}
+	r.mu.Unlock()
 	r.maybeFenceExecution(binding)
 	select {
 	case <-r.fatal:
@@ -47,6 +54,17 @@ func TestUncertainExecutionFenceIsNotRetriedForBinding(t *testing.T) {
 	r.maybeFenceExecution(binding)
 	if got := handle.calls.Load(); got != 1 {
 		t.Fatalf("fence calls = %d, want 1", got)
+	}
+}
+
+func TestUnmanagedExecutionOwnerCannotClaimFence(t *testing.T) {
+	handle := &uncertainFenceHandle{}
+	r := &Runtime{executionOwner: handle}
+	if err := r.stopExecution(t.Context()); err == nil {
+		t.Fatal("unmanaged Execution owner claimed fence proof")
+	}
+	if r.executionOwner != handle || handle.calls.Load() != 0 {
+		t.Fatal("unmanaged Execution owner was stopped or discarded")
 	}
 }
 

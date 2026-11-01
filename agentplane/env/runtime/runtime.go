@@ -724,6 +724,12 @@ func (r *Runtime) requestBootstrap(ctx context.Context) error {
 
 func (r *Runtime) stopExecution(ctx context.Context) error {
 	if r.executionLifecycle == nil {
+		r.mu.Lock()
+		unmanaged := r.executionOwner != nil || r.config.CodexExecServer != nil
+		r.mu.Unlock()
+		if unmanaged {
+			return errors.New("embedded Execution owner has no lifecycle controller or fence proof")
+		}
 		return nil
 	}
 	demand, err := r.executionLifecycle.request(context.Background(), "")
