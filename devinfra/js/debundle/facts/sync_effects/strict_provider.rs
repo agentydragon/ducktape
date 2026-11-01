@@ -137,6 +137,101 @@ mod tests {
     use crate::facts::item_views::top_level_item_views;
     use swc_ecma_ast::{Decl, Expr, ModuleItem, Stmt};
 
+    fn query(source: &str, syntax_covered: bool) -> Option<DerivedForeignCall> {
+        let module = js_ast::parse_js_module("provider.js", source)
+            .unwrap()
+            .module;
+        let key = match &module.body[0] {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Fn(function))) => function.function.span.lo.0,
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(variable))) => {
+                let Expr::Arrow(arrow) = variable.decls[0].init.as_deref().unwrap() else {
+                    panic!("arrow fixture");
+                };
+                arrow.span.lo.0
+            }
+            _ => panic!("provider fixture"),
+        };
+        let views = top_level_item_views(&module.body);
+        let prepared = super::super::prepare_callable_capabilities(
+            &views,
+            StableArraySpreadShapes::default(),
+            BTreeSet::from(["make".into()]),
+            Vec::new(),
+            Vec::new(),
+            Default::default(),
+            Default::default(),
+        );
+        assert_eq!(
+            prepared.index.callables[&key].allocation_return.is_some(),
+            syntax_covered,
+            "{source}"
+        );
+        derive(&prepared.index, key)
+    }
+
+    #[test]
+    fn strict_operators_and_terminal_branches_use_the_central_query() {
+        js_ast::with_swc_globals(|| {
+            for (expression, retained) in [
+                (
+                    "{ type: input, compare: compare === void 0 ? null : compare }",
+                    BTreeSet::from([0, 1]),
+                ),
+                ("{ value: input !== compare }", BTreeSet::new()),
+                ("{ value: void input }", BTreeSet::new()),
+                ("{ value: input ? null : compare }", BTreeSet::from([1])),
+            ] {
+                for source in [
+                    format!("function make(input, compare) {{ return {expression}; }}"),
+                    format!("const make = (input, compare) => ({expression});"),
+                ] {
+                    let summary =
+                        query(&source, true).expect("shared strict transfer, no legacy evaluator");
+                    assert_eq!(
+                        summary.returns,
+                        BTreeSet::from([ForeignReturn::FreshAllocation])
+                    );
+                    assert_eq!(summary.retained_arguments, retained, "{source}");
+                }
+            }
+            for expression in ["void input", "input === compare", "input !== compare"] {
+                let summary = query(
+                    &format!("function make(input, compare) {{ return {expression}; }}"),
+                    true,
+                )
+                .unwrap();
+                assert_eq!(summary.returns, BTreeSet::from([ForeignReturn::Primitive]));
+                assert!(summary.retained_arguments.is_empty());
+            }
+            // Covered syntax can still exceed the terminal-arm transfer. It
+            // must decline centrally, not retry the unmigrated evaluator.
+            assert!(
+                query(
+                    "function make(input) { return input ? { input } : {}; }",
+                    true
+                )
+                .is_none()
+            );
+            assert!(query("function make(input) { return input === missing; }", true).is_none());
+            for expression in [
+                "input == 1",
+                "void input()",
+                "input.value === 1",
+                "input() ? null : input",
+                "true ? input : input()",
+                "void (input(), input)",
+            ] {
+                assert!(
+                    query(
+                        &format!("function make(input) {{ return {expression}; }}"),
+                        false
+                    )
+                    .is_none()
+                );
+            }
+        });
+    }
+
     #[test]
     fn function_and_const_arrow_keys_reach_the_central_query() {
         js_ast::with_swc_globals(|| {
@@ -144,35 +239,7 @@ mod tests {
                 "function make(input) { return { input }; }",
                 "const make = input => ({ input });",
             ] {
-                let module = js_ast::parse_js_module("provider.js", source)
-                    .unwrap()
-                    .module;
-                let key = match &module.body[0] {
-                    ModuleItem::Stmt(Stmt::Decl(Decl::Fn(function))) => function.function.span.lo.0,
-                    ModuleItem::Stmt(Stmt::Decl(Decl::Var(variable))) => {
-                        let Expr::Arrow(arrow) = variable.decls[0].init.as_deref().unwrap() else {
-                            panic!("arrow fixture");
-                        };
-                        arrow.span.lo.0
-                    }
-                    _ => panic!("provider fixture"),
-                };
-                let views = top_level_item_views(&module.body);
-                let prepared = super::super::prepare_callable_capabilities(
-                    &views,
-                    StableArraySpreadShapes::default(),
-                    BTreeSet::from(["make".into()]),
-                    Vec::new(),
-                    Vec::new(),
-                    Default::default(),
-                    Default::default(),
-                );
-                assert!(
-                    prepared.index.callables[&key].allocation_return.is_some(),
-                    "{source}"
-                );
-                let summary =
-                    derive(&prepared.index, key).expect("central query, without legacy fallback");
+                let summary = query(source, true).expect("central query, without legacy fallback");
                 assert_eq!(
                     summary.returns,
                     BTreeSet::from([ForeignReturn::FreshAllocation])

@@ -392,6 +392,13 @@ pub(super) enum ValueExpr {
     /// value-kind fact, not a purity claim: keep operands so calls and
     /// unavailable reads inside them still flow through the evaluator.
     Primitive(Vec<Self>),
+    /// Both strict equality operators produce an unknown Boolean without coercion.
+    StrictEquality(Box<Self>, Box<Self>),
+    Void(Box<Self>),
+    Conditional {
+        test: Box<Self>,
+        alternatives: Box<[Self; 2]>,
+    },
     Alternatives(Vec<Self>),
     Unknown,
 }
@@ -511,6 +518,15 @@ fn set_iterator_prototype_expression(call: &CallExpr) -> bool {
 }
 
 impl ValueExpr {
+    /// Possible returned values; the conditional test is evaluated separately.
+    pub(super) fn result_alternatives(&self) -> Option<&[Self]> {
+        match self {
+            Self::Alternatives(values) => Some(values),
+            Self::Conditional { alternatives, .. } => Some(alternatives.as_slice()),
+            _ => None,
+        }
+    }
+
     pub(super) fn from_expr(expr: &Expr) -> Self {
         Self::from_expr_with_coverage(expr).0
     }
@@ -530,10 +546,15 @@ impl ValueExpr {
             Expr::Ident(_)
                 | Expr::Object(_)
                 | Expr::Array(_)
+                | Expr::Cond(_)
                 | Expr::Lit(
                     Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_)
                 )
-        ) {
+        ) && !matches!(expr.unwrap_parens(), Expr::Bin(bin)
+            if matches!(bin.op, BinaryOp::EqEqEq | BinaryOp::NotEqEq))
+            && !matches!(expr.unwrap_parens(), Expr::Unary(unary)
+                if unary.op == UnaryOp::Void)
+        {
             *covered = false;
         }
         match expr.unwrap_parens() {
@@ -721,10 +742,19 @@ impl ValueExpr {
                     new_expr.span.into(),
                 )
             }
-            Expr::Cond(cond) => Self::Alternatives(vec![
-                Self::lower(&cond.cons, covered),
-                Self::lower(&cond.alt, covered),
-            ]),
+            Expr::Cond(cond) => Self::Conditional {
+                test: Box::new(Self::lower(&cond.test, covered)),
+                alternatives: Box::new([
+                    Self::lower(&cond.cons, covered),
+                    Self::lower(&cond.alt, covered),
+                ]),
+            },
+            Expr::Bin(bin) if matches!(bin.op, BinaryOp::EqEqEq | BinaryOp::NotEqEq) => {
+                Self::StrictEquality(
+                    Box::new(Self::lower(&bin.left, covered)),
+                    Box::new(Self::lower(&bin.right, covered)),
+                )
+            }
             Expr::Bin(bin)
                 if matches!(
                     bin.op,
@@ -740,6 +770,9 @@ impl ValueExpr {
                 Self::lower(&bin.left, covered),
                 Self::lower(&bin.right, covered),
             ]),
+            Expr::Unary(unary) if unary.op == UnaryOp::Void => {
+                Self::Void(Box::new(Self::lower(&unary.arg, covered)))
+            }
             Expr::Unary(unary) => Self::Primitive(vec![Self::lower(&unary.arg, covered)]),
             Expr::Update(update) => Self::Primitive(vec![Self::lower(&update.arg, covered)]),
             Expr::Seq(seq) => seq
@@ -766,8 +799,18 @@ impl ValueExpr {
             Self::Binding(id) => {
                 result.insert(id.clone());
             }
-            Self::ArrayIteratorPrototype(expression) | Self::SetIteratorPrototype(expression) => {
-                expression.bindings(result)
+            Self::ArrayIteratorPrototype(expression)
+            | Self::SetIteratorPrototype(expression)
+            | Self::Void(expression) => expression.bindings(result),
+            Self::StrictEquality(left, right) => {
+                left.bindings(result);
+                right.bindings(result);
+            }
+            Self::Conditional { test, alternatives } => {
+                test.bindings(result);
+                for alternative in alternatives.iter() {
+                    alternative.bindings(result);
+                }
             }
             Self::Member(object, _, _) => object.bindings(result),
             Self::Call(callee, args, _) | Self::New(callee, args, _) => {
@@ -808,8 +851,10 @@ impl ValueExpr {
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.carries_namespace(id, aliases)),
-            Self::Primitive(_) => false,
-            Self::Alternatives(options) => options
+            Self::Primitive(_) | Self::StrictEquality(..) | Self::Void(_) => false,
+            Self::Alternatives(_) | Self::Conditional { .. } => self
+                .result_alternatives()
+                .expect("alternative expression")
                 .iter()
                 .any(|value| value.carries_namespace(id, aliases)),
             Self::Member(object, _, _) => {
@@ -897,7 +942,9 @@ impl ValueExpr {
                 visiting.remove(binding);
                 possible
             }
-            Self::Alternatives(values) => values
+            Self::Alternatives(_) | Self::Conditional { .. } => self
+                .result_alternatives()
+                .expect("alternative expression")
                 .iter()
                 .any(|value| value.may_equal_namespace(id, aliases, facts, visiting)),
             Self::Member(object, Some(property), MemberKey::Static) => {
@@ -930,7 +977,7 @@ impl ValueExpr {
                     visiting_classes,
                 )
             }
-            Self::Primitive(_) => false,
+            Self::Primitive(_) | Self::StrictEquality(..) | Self::Void(_) => false,
             Self::ObjectLiteral(_, properties) => properties.iter().any(|(_, value)| {
                 value.may_publish_namespace_inner(
                     id,
@@ -940,15 +987,19 @@ impl ValueExpr {
                     visiting_classes,
                 )
             }),
-            Self::Alternatives(options) => options.iter().any(|value| {
-                value.may_publish_namespace_inner(
-                    id,
-                    aliases,
-                    facts,
-                    visiting_bindings,
-                    visiting_classes,
-                )
-            }),
+            Self::Alternatives(_) | Self::Conditional { .. } => self
+                .result_alternatives()
+                .expect("alternative expression")
+                .iter()
+                .any(|value| {
+                    value.may_publish_namespace_inner(
+                        id,
+                        aliases,
+                        facts,
+                        visiting_bindings,
+                        visiting_classes,
+                    )
+                }),
             Self::Member(object, property, is_static) => {
                 let projected = property
                     .as_deref()
@@ -1082,18 +1133,22 @@ impl ValueExpr {
                     facts,
                 )
             }
-            Self::Primitive(_) => false,
+            Self::Primitive(_) | Self::StrictEquality(..) | Self::Void(_) => false,
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.carries_namespace(id, aliases)),
-            Self::Alternatives(options) => options.iter().any(|value| {
-                value.may_be_namespace_mutation_receiver_with_alias_query(
-                    id,
-                    aliases,
-                    receiver_alias,
-                    facts,
-                )
-            }),
+            Self::Alternatives(_) | Self::Conditional { .. } => self
+                .result_alternatives()
+                .expect("alternative expression")
+                .iter()
+                .any(|value| {
+                    value.may_be_namespace_mutation_receiver_with_alias_query(
+                        id,
+                        aliases,
+                        receiver_alias,
+                        facts,
+                    )
+                }),
             Self::Member(object, property, is_static) => {
                 if let Some(value) = property
                     .as_deref()
@@ -1307,7 +1362,9 @@ impl NamespaceValueFacts {
                 visiting.remove(binding);
                 result
             }
-            ValueExpr::Alternatives(values) => values
+            ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => value
+                .result_alternatives()
+                .expect("alternative expression")
                 .iter()
                 .any(|value| self.may_be_local_class_value(value, visiting)),
             ValueExpr::Member(object, _, _) => {

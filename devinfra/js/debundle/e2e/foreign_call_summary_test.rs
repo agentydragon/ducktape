@@ -115,6 +115,131 @@ fn central_direct_return_migration_preserves_literal_input_retention() {
 }
 
 #[test]
+fn strict_expression_returns_preserve_runtime_values_and_retained_arguments() {
+    for (returned, use_result, expected, retained) in [
+        (
+            "{ type: input, compare: compare === void 0 ? null : compare }",
+            "console.log(make(() => 42).compare === null); const value = make(() => 42, () => 7); console.log(value.type(), value.compare());",
+            "true\n42 7\n",
+            vec![0, 1],
+        ),
+        (
+            "{ chosen: input ? null : compare }",
+            "console.log(make(false, () => 42).chosen()); console.log(make(true, () => 7).chosen);",
+            "42\nnull\n",
+            vec![1],
+        ),
+        (
+            "{ value: input === compare }",
+            "const value = { get hidden() { throw Error('getter'); }, [Symbol.toPrimitive]() { throw Error('coercion'); } }; console.log(make(value, value).value, make(value, {}).value);",
+            "true false\n",
+            vec![],
+        ),
+        (
+            "input !== compare",
+            "const value = { [Symbol.toPrimitive]() { throw Error('coercion'); } }; console.log(make(value, value), make(value, {}));",
+            "false true\n",
+            vec![],
+        ),
+        (
+            "void input",
+            "let calls = 0; console.log(make(() => ++calls) === undefined, calls);",
+            "true 0\n",
+            vec![],
+        ),
+    ] {
+        let source = format!("import {{ make }} from './peer.js';\n{use_result}\n");
+        let provider = format!("export function make(input, compare) {{ return {returned}; }}\n");
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![]).with_extra_chunks(&[("static/peer", &provider)]),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        let report: serde_json::Value =
+            read_json(&fixture.report_root.join("static/app/modules.json"));
+        let summary = &report["imported_callables"]["make"]["foreign_call"];
+        assert!(!summary.is_null(), "strict return: {returned}");
+        assert_eq!(summary["retained_arguments"], serde_json::json!(retained));
+        assert!(
+            fixture.dependency_graph().nodes.iter().any(|node| node
+                .synchronous_execution
+                .as_ref()
+                .is_some_and(|execution| execution
+                    .inference_uses
+                    .iter()
+                    .any(|usage| usage.conclusion == InferenceRule::ForeignCallSummary))),
+            "summary must be consumed: {returned}"
+        );
+    }
+}
+
+#[test]
+fn strict_expression_children_keep_observable_effects_and_throws() {
+    for (returned, setup, expected) in [
+        (
+            "input == 1",
+            "const input = { valueOf() { ++globalThis.calls; return 1; } };",
+            "true 1\n",
+        ),
+        (
+            "+input",
+            "const input = { valueOf() { ++globalThis.calls; return 1; } };",
+            "1 1\n",
+        ),
+        (
+            "input.value === 1",
+            "const input = { get value() { ++globalThis.calls; return 1; } };",
+            "true 1\n",
+        ),
+        (
+            "void input()",
+            "const input = () => { ++globalThis.calls; };",
+            "undefined 1\n",
+        ),
+        (
+            "input() ? null : input",
+            "const input = () => { ++globalThis.calls; return true; };",
+            "null 1\n",
+        ),
+        (
+            "input ? input() : null",
+            "const input = () => { ++globalThis.calls; return 7; };",
+            "7 1\n",
+        ),
+        ("true ? input : input()", "const input = 7;", "7 0\n"),
+        (
+            "void (globalThis.calls++, input)",
+            "const input = 7;",
+            "undefined 1\n",
+        ),
+        (
+            "input.value === 1",
+            "const input = { get value() { ++globalThis.calls; throw new RangeError(); } };",
+            "RangeError 1\n",
+        ),
+        (
+            "missing === input",
+            "const input = 7;",
+            "ReferenceError 0\n",
+        ),
+    ] {
+        let source = format!(
+            "import {{ make }} from './peer.js';\nglobalThis.calls = 0;\n{setup}\ntry {{ console.log(make(input), globalThis.calls); }} catch (error) {{ console.log(error.name, globalThis.calls); }}\n"
+        );
+        let provider = format!("export function make(input) {{ return {returned}; }}\n");
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![]).with_extra_chunks(&[("static/peer", &provider)]),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        let report: serde_json::Value =
+            read_json(&fixture.report_root.join("static/app/modules.json"));
+        assert!(
+            report["imported_callables"]["make"]["foreign_call"].is_null(),
+            "effectful return: {returned}"
+        );
+    }
+}
+
+#[test]
 fn erased_or_uncovered_provider_operations_do_not_get_a_strict_summary() {
     // Conservative coverage controls, not baseline-failing regressions. In
     // particular, a global store can be absent from SynchronousCalls despite

@@ -119,7 +119,8 @@ fn contained_roots(
                 roots.extend(contained_roots(argument, aliases, index, declared));
             }
         }
-        ValueExpr::Alternatives(options) => {
+        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => {
+            let options = value.result_alternatives().expect("alternative expression");
             for option in options {
                 roots.extend(contained_roots(option, aliases, index, declared));
             }
@@ -184,13 +185,16 @@ fn contained_root_bindings(value: &ValueExpr, index: &ExecutionIndex, bindings: 
                 contained_root_bindings(argument, index, bindings);
             }
         }
-        ValueExpr::Alternatives(options) => {
+        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => {
+            let options = value.result_alternatives().expect("alternative expression");
             for option in options {
                 contained_root_bindings(option, index, bindings);
             }
         }
         ValueExpr::Binding(_)
         | ValueExpr::Primitive(_)
+        | ValueExpr::StrictEquality(..)
+        | ValueExpr::Void(_)
         | ValueExpr::Undefined
         | ValueExpr::NonCallable(_)
         | ValueExpr::Unknown

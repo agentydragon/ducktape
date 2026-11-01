@@ -1531,6 +1531,13 @@ The unmigrated source evaluator remains responsible for its other supported
 cases. This slice adds no provider publication premise, purity fact or public
 shape schema, and does not use Outcome.complete as an effect ledger.
 
+The same transfer also handles strict equality (unknown Boolean, no coercion),
+`void` (evaluate then discard), and conditionals with terminal value arms.
+Conditional lowering retains the test; the strict query joins both covered
+arms without inferring truthiness or runtime identity. Operand and test access
+evidence and possible abrupt outcomes remain even when their values are not
+returned. Other operators and effectful children keep conservative execution.
+
 Callable own/prototype properties are not tracked as ordinary object records.
 Installing nonprimitive values through a recognized callable receiver or local
 alias therefore promotes the supplied callbacks conservatively at the write.

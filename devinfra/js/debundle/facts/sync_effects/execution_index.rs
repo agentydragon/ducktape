@@ -2101,7 +2101,9 @@ fn receiver_uses_intrinsic_alias(
     match value {
         ValueExpr::Binding(id) => aliases.contains_key(id),
         ValueExpr::Member(base, ..) => receiver_uses_intrinsic_alias(base, aliases),
-        ValueExpr::Alternatives(options) => options
+        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => value
+            .result_alternatives()
+            .expect("alternative expression")
             .iter()
             .any(|option| receiver_uses_intrinsic_alias(option, aliases)),
         _ => false,
@@ -2268,7 +2270,8 @@ fn intrinsic_roots(
             }
             out
         }
-        ValueExpr::Alternatives(options) => {
+        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => {
+            let options = value.result_alternatives().expect("alternative expression");
             let mut combined = NativeReceiverRoots::new();
             let mut unknown_arm = false;
             let mut ordinary_refs = BTreeSet::new();
@@ -2300,7 +2303,11 @@ fn intrinsic_roots(
                 if option_roots.is_empty()
                     && !matches!(
                         option,
-                        ValueExpr::Undefined | ValueExpr::NonCallable(_) | ValueExpr::Primitive(_)
+                        ValueExpr::Undefined
+                            | ValueExpr::NonCallable(_)
+                            | ValueExpr::Primitive(_)
+                            | ValueExpr::StrictEquality(..)
+                            | ValueExpr::Void(_)
                     )
                 {
                     unknown_arm = true;
@@ -2987,7 +2994,7 @@ fn evaluate_receiver_value(
             result.fact.safe = true;
             result.fact.complete = true;
         }
-        ValueExpr::Primitive(_) => {
+        ValueExpr::Primitive(_) | ValueExpr::StrictEquality(..) | ValueExpr::Void(_) => {
             result.fact.safe = true;
             result.fact.complete = true;
         }
@@ -3013,7 +3020,8 @@ fn evaluate_receiver_value(
                 ));
             }
         }
-        ValueExpr::Alternatives(options) => {
+        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => {
+            let options = value.result_alternatives().expect("alternative expression");
             result.fact.safe = true;
             result.fact.complete = true;
             for option in options {
@@ -5079,7 +5087,9 @@ fn exposes_global_receiver(value: &ValueExpr, names: &BTreeSet<&str>) -> bool {
                 exposes_global_receiver(receiver, names)
             }
         }
-        ValueExpr::Alternatives(values) => values
+        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => value
+            .result_alternatives()
+            .expect("alternative expression")
             .iter()
             .any(|value| exposes_global_receiver(value, names)),
         ValueExpr::ObjectLiteral(_, properties) => properties
@@ -5091,7 +5101,7 @@ fn exposes_global_receiver(value: &ValueExpr, names: &BTreeSet<&str>) -> bool {
         // Operators can inspect or coerce their operands, but their result
         // cannot be the global object. Calls arising from those operands are
         // checked separately below.
-        ValueExpr::Primitive(_) => false,
+        ValueExpr::Primitive(_) | ValueExpr::StrictEquality(..) | ValueExpr::Void(_) => false,
         _ => false,
     }
 }
@@ -5187,10 +5197,16 @@ fn same_property_or_fresh(value: &ValueExpr, alias: &Id, property: &str) -> bool
             true
         }
         ValueExpr::ObjectLiteral(_, properties) => properties.is_empty(),
-        ValueExpr::Alternatives(options) => options
+        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => value
+            .result_alternatives()
+            .expect("alternative expression")
             .iter()
             .all(|value| same_property_or_fresh(value, alias, property)),
-        ValueExpr::NonCallable(_) | ValueExpr::Undefined | ValueExpr::Primitive(_) => true,
+        ValueExpr::NonCallable(_)
+        | ValueExpr::Undefined
+        | ValueExpr::Primitive(_)
+        | ValueExpr::StrictEquality(..)
+        | ValueExpr::Void(_) => true,
         _ => false,
     }
 }
@@ -5283,7 +5299,11 @@ fn confined_prepublication_alias(
             // finishes before publication. Only primitive writes can survive.
             matches!(
                 write.value,
-                ValueExpr::NonCallable(_) | ValueExpr::Undefined | ValueExpr::Primitive(_)
+                ValueExpr::NonCallable(_)
+                    | ValueExpr::Undefined
+                    | ValueExpr::Primitive(_)
+                    | ValueExpr::StrictEquality(..)
+                    | ValueExpr::Void(_)
             )
         } else {
             !uses_any_binding(&write.value, &derived)
@@ -5531,7 +5551,9 @@ fn stored_global_alias(
         GlobalMutationPath::Prototype => include_prototypes,
         GlobalMutationPath::Descendant => false,
         GlobalMutationPath::Unrelated => match value {
-            ValueExpr::Alternatives(values) => values
+            ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => value
+                .result_alternatives()
+                .expect("alternative expression")
                 .iter()
                 .any(|value| stored_global_alias(value, names, bindings, include_prototypes)),
             ValueExpr::ObjectLiteral(_, properties) => properties
@@ -5986,9 +6008,12 @@ impl BundleGlobalContext<'_> {
         match value {
             ValueExpr::ObjectLiteral(..)
             | ValueExpr::Primitive(_)
+            | ValueExpr::StrictEquality(..)
+            | ValueExpr::Void(_)
             | ValueExpr::Undefined
             | ValueExpr::NonCallable(_) => true,
-            ValueExpr::Alternatives(options) => {
+            ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => {
+                let options = value.result_alternatives().expect("alternative expression");
                 options.iter().all(|option| self.keeps(option, slot))
             }
             // A keyed collection the program never replaces allocates a fresh
@@ -6226,6 +6251,17 @@ impl ExecutionIndex {
             ValueExpr::Primitive(values) | ValueExpr::Alternatives(values) => {
                 for value in values {
                     self.global_property_reads(value, context, reads);
+                }
+            }
+            ValueExpr::StrictEquality(left, right) => {
+                self.global_property_reads(left, context, reads);
+                self.global_property_reads(right, context, reads);
+            }
+            ValueExpr::Void(child) => self.global_property_reads(child, context, reads),
+            ValueExpr::Conditional { test, alternatives } => {
+                self.global_property_reads(test, context, reads);
+                for alternative in alternatives.iter() {
+                    self.global_property_reads(alternative, context, reads);
                 }
             }
             ValueExpr::Binding(_)
