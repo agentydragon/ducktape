@@ -834,7 +834,7 @@ ts_library(
         "//agentplane/history_service:history_service_pb",
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:event_pb",
-        "//agentplane/proto:runner_pb",
+        "//agentplane/proto:session_pb",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
