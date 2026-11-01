@@ -55,7 +55,7 @@ type config struct {
 }
 
 // delegationConfig is an independent trust grant. It does not inherit the direct caller or wake
-// allowlists, and its method list contains full gRPC method names.
+// allowlists, and its method list contains exact full gRPC method names served by this process.
 type delegationConfig struct {
 	Actor            auth.Account `mapstructure:"actor"`
 	CallerNamespaces []string     `mapstructure:"caller_namespaces"`

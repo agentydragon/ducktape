@@ -62,8 +62,9 @@ follows it; code that differs converges on it.
   proof, `Public` only for the health service via `auth.HealthMethods`). A method it does not list is
   refused before its bearer is read, so a new RPC is closed until its Rule is written. The package
   owning a servicer exports its `Methods`; the handler reads the admitted identity with
-  `auth.Caller` or `auth.AdmittedReviewedCaller` as appropriate. Tests iterate
-  the generated `ServiceDesc` with `agentplane/testing/grpcmethods`.
+  `auth.Caller`, `auth.AdmittedReviewedCaller`, or `auth.EffectiveCaller` as appropriate. Delegation
+  is added to exact served methods through `Methods.WithDelegation`; tests iterate the generated
+  `ServiceDesc` with `agentplane/testing/grpcmethods`.
 - A door that authorizes on more than the account calls `Resolver.Resolve` itself (the runner
   ingress binds a Session to its writer; runner control resolves the Sandbox Pod). Services never
   carry their own copy of the bearer parsing.
@@ -77,7 +78,8 @@ remains available. `Admitted` returns a typed direct or delegated admission, whi
 legacy `Caller` accessor stays Pod-bound and is not populated for delegated requests. The
 `workload_auth/grpc` client reads its destination token for each call and has no ordinary Bearer
 fallback. These shared primitives do not opt a production method or client into delegation by
-themselves; Action Service and SessionDispatcher integration remains a separate change.
+themselves. The Runner Gateway's explicitly configured method list includes EnvironmentDiscovery
+reads; Action Service adapter integration remains separate.
 
 ## Errors
 

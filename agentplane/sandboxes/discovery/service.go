@@ -56,8 +56,9 @@ func New(
 	return &Service{namespace: namespace, sandboxes: sandboxes, runtime: runtime, wakeCallers: wake}, nil
 }
 
-// Methods admits only TokenReview-verified ServiceAccounts in the configured Resolver namespaces.
-// Object-level authority is decided by the handler using the live account UID.
+// Methods admits direct TokenReview-verified ServiceAccounts in the configured Resolver namespaces.
+// The composition root may enable the shared delegated mode on selected methods; object-level
+// authority is decided by the handler using the effective caller's live account UID.
 func Methods(resolver *auth.Resolver) auth.Methods {
 	rule := auth.ReviewedServiceAccount(resolver)
 	return auth.Methods{
@@ -67,15 +68,14 @@ func Methods(resolver *auth.Resolver) auth.Methods {
 }
 
 func caller(ctx context.Context) (auth.ServiceAccountPrincipal, error) {
-	reviewed, err := auth.AdmittedReviewedCaller(ctx)
+	identity, err := auth.EffectiveCaller(ctx)
 	if err != nil {
 		return auth.ServiceAccountPrincipal{}, err
 	}
-	account := reviewed.ServiceAccount
-	if account.Account.Namespace == "" || account.Account.Name == "" || account.ServiceAccountUID == "" {
-		return auth.ServiceAccountPrincipal{}, status.Error(codes.Unauthenticated, "reviewed ServiceAccount identity is incomplete")
+	if identity.Account.Namespace == "" || identity.Account.Name == "" || identity.ServiceAccountUID == "" {
+		return auth.ServiceAccountPrincipal{}, status.Error(codes.Unauthenticated, "effective ServiceAccount identity is incomplete")
 	}
-	return account, nil
+	return identity, nil
 }
 
 func callerMatches(caller auth.ServiceAccountPrincipal, execution sandboxreader.ServiceAccountIdentity) bool {

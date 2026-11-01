@@ -1,9 +1,11 @@
 # Runner Gateway
 
-The Runner Gateway combines durable Session Dispatcher admission and delivery with a
-Sandbox-fenced Runner proxy. The Gateway dials each Runner's native gRPC server on private port
-`9090`. Its public `listen_address` serves Dispatcher and proxies for the Runner and optional Executor services with the existing
-caller authorization. The Sandbox Controller owns `Sandbox.status`.
+The Runner Gateway combines durable Session Dispatcher admission and delivery, read-only
+`EnvironmentDiscovery`, and a Sandbox-fenced Runner proxy. Discovery and Dispatcher share the
+Gateway listener and Dispatcher TokenReview audience. The Gateway dials each Runner's native gRPC
+server on private port `9090`. Its public `listen_address` serves Dispatcher and proxies for the
+Runner and optional Executor services with the existing caller authorization. The Sandbox
+Controller owns `Sandbox.status`.
 
 Cluster and k3s Gateways and Runners use certificates from cert-manager and roots distributed by
 trust-manager. Required `runner_security.mode: mtls` uses a `tls` block naming the Gateway's client
@@ -36,7 +38,9 @@ conversation and from Runner admission.
 - `main.go`, `config.go`: process and listener wiring, and the settings (a YAML file named by
   `AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` plus `AGENTPLANE_RUNNER_GATEWAY_*` environment variables;
   [`settings.py`](settings.py) is the authoring schema), including the optional `http_listen_address`
-  for the Dispatcher's HTTP/JSON facade (none when unset).
+  for the Dispatcher's HTTP/JSON facade (none when unset). The independent `delegation` policy names
+  an Actions actor, caller namespace scope, and exact full RPC methods; it can include the two
+  `EnvironmentDiscovery` read methods without delegating other Gateway methods.
 - `gateway/`: Runner connections, authenticated proxy, Sandbox/Pod validation and connection ownership.
 - `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
 - `migrations/`: Goose migrations for the Dispatcher database.

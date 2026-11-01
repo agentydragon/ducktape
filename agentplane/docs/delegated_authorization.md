@@ -1,8 +1,8 @@
 # Delegated authorization
 
 Status: **approved contract; shared protocol primitives, durable Action caller-UID retention, and the
-Runner Gateway Dispatcher and History Service receiving paths are implemented. Caller-delegating Action
-adapters and their end-to-end use remain separate work.**
+Runner Gateway Dispatcher, EnvironmentDiscovery, and History Service receiving paths are implemented.
+Caller-delegating Action adapters and their end-to-end use remain separate work.**
 Use this contract when an Agentplane service invokes another service on behalf of a ServiceAccount.
 The first consumer is routine caller-privilege Actions. Direct callers continue using the
 [workload authentication](workload_authentication.md) contract.
@@ -108,7 +108,8 @@ Shared middleware in `workload_auth/auth`, composed with the existing per-method
 5. Admit a typed direct or delegated context. Preserve the actor's proven Pod identity separately
    from the caller's account identity; never manufacture Pod proof for the original caller.
 6. Run the method's normal resource/policy checks for the effective caller. For example,
-   `SubmitInput` checks that caller against the Session's immutable execution principal.
+   `SubmitInput` checks that caller against the Session's immutable execution principal, while
+   `EnvironmentDiscovery` compares it with the exact live Sandbox-owned ServiceAccount UID.
 
 The handler consumes the admitted context, not raw identity headers, tool arguments or labels.
 No handler-specific copy of delegation parsing or privileged fallback is allowed. A delegated
@@ -171,6 +172,8 @@ Before exposing the delegated path, demonstrate:
 
 - Direct and delegated calls by the same effective caller receive the same ordinary access checks;
   an actor's privileged membership cannot widen delegated access.
+- Delegated EnvironmentDiscovery exposes only its exact list/get methods and returns the same target
+  facts as direct access for the same ServiceAccount UID; foreign targets remain hidden as `NOT_FOUND`.
 - Forged callers from ordinary accounts, disallowed methods/namespaces, UID replacement,
   malformed/duplicate metadata and direct/delegated mode confusion are refused before effects.
 - Missing required identity/policy state fails closed; watch rechecks and reconnects preserve the
