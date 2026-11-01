@@ -262,7 +262,9 @@ def test_runner_template_renders_mtls_server_listener(scratch_app: App) -> None:
     runner = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
     config = _runner_configuration(docs, pod)
 
-    assert runner["ports"] == [{"name": "environment-runtime-control", "containerPort": 9090}]
+    assert len(runner["ports"]) == 1
+    assert len(runner["ports"][0]["name"]) <= 15  # Kubernetes port names are limited to 15 characters.
+    assert runner["ports"][0]["containerPort"] == 9090
     assert config["control"] == {
         "listen_address": "0.0.0.0:9090",
         "security": {

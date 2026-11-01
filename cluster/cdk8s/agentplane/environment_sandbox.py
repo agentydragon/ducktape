@@ -510,9 +510,7 @@ class EnvironmentSandboxTemplate(Construct):
                 requests={"cpu": k8s.Quantity.from_string("500m"), "memory": k8s.Quantity.from_string("1Gi")},
                 limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("4Gi")},
             ),
-            ports=[
-                k8s.ContainerPort(name="environment-runtime-control", container_port=ENVIRONMENT_RUNTIME_SERVICE_PORT)
-            ],
+            ports=[k8s.ContainerPort(name="env-runtime", container_port=ENVIRONMENT_RUNTIME_SERVICE_PORT)],
             volume_mounts=[
                 *self._execution_mounts(),
                 k8s.VolumeMount(

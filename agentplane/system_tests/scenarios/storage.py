@@ -356,6 +356,17 @@ async def fresh_workspace_storage_survives_replacement(
                 evidence["readiness_snapshot"] = await _readiness_snapshot(cluster, name)
             except Exception as diagnostic_error:
                 evidence["readiness_snapshot_error"] = str(diagnostic_error)
+            try:
+                evidence["sandbox_controller_logs"] = await cluster.kubectl(
+                    "logs",
+                    "deployment/sandbox-controller",
+                    "--all-pods=true",
+                    "--all-containers=true",
+                    "--tail=200",
+                    "--since=10m",
+                )
+            except Exception as diagnostic_error:
+                evidence["sandbox_controller_logs_error"] = str(diagnostic_error)
             save()
             raise
         with tracer.start_as_current_span(

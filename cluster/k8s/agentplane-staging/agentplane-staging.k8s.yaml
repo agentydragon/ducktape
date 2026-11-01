@@ -4870,7 +4870,7 @@ spec:
           name: environment-runtime
           ports:
             - containerPort: 9090
-              name: environment-runtime-control
+              name: env-runtime
           resources:
             limits:
               cpu: "2"
