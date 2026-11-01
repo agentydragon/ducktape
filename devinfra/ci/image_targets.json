@@ -280,8 +280,8 @@
       "registry": "forgejo"
     },
     "agentplane-runner-disk": {
-      "target": "//agentplane/runner:disk_image",
-      "test": "//agentplane/runner/...",
+      "target": "//agentplane/env/images:disk_image",
+      "test": "//agentplane/runner/... //agentplane/env/images:test_disk",
       "registry": "forgejo"
     },
     "agentplane-notification-service": {

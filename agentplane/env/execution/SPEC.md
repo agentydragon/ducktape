@@ -10,12 +10,12 @@ One standalone service owns one immutable Sandbox UID and incarnation and one na
 lifetime. Access to its private Unix socket grants that environment's execution authority. Every
 call carries the destination, incarnation and attributing Session; a foreign destination or stale
 incarnation is rejected before native dispatch. The service cannot adopt another environment or
-advance a Runner watch epoch. Production embedding delegates admission to Runner's authenticated
-watch and lifecycle barrier; Gateway retains remote authorization and routing in either model.
-When the expected incarnation is stale, Gateway or Runner may attach the typed
-`SandboxIncarnationChanged` status detail only after verifying the same destination Sandbox UID and
-observing a nonempty current incarnation. Invalid or foreign destinations and unavailable
-incarnations carry no rebind detail.
+advance a Runner watch epoch. Harness Host supplies the current Session and incarnation context over
+its private connection; Environment Runtime owns service health and lifecycle fencing. Gateway
+retains remote authorization and routing. When the expected incarnation is stale, Gateway or
+Environment Runtime may attach the typed `SandboxIncarnationChanged` status detail only after
+verifying the same destination Sandbox UID and observing a nonempty current incarnation. Invalid or
+foreign destinations and unavailable incarnations carry no rebind detail.
 
 The state-directory owner lock precedes socket replacement and native startup. Pod ownership is
 PID 1 plus its private process namespace. On ordinary release, the companion stops exec-server,

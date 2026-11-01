@@ -73,10 +73,9 @@ _RUNNER_TLS_PATH = "/run/agentplane/runner-tls"
 # Shared by the Runner configuration, its container volumeMount, and the
 # SandboxTemplate's state volume -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
-# The runner disk image's `bin/` (//agentplane/runner:disk_image): Environment Runtime, the
-# execution service and `agentplane`, mounted read-only the way the VM guest mounts the same image's
-# erofs. The main container starts Environment Runtime; the Codex companion starts the execution
-# service.
+# The environment disk image's `bin/` (//agentplane/env/images:disk_image): Environment Runtime,
+# Harness Host, Execution Service and `agentplane`, mounted read-only the way the VM guest mounts its
+# erofs. Runtime is Pod PID 1; the Execution Service companion gets a separate PID namespace.
 _RUNNER_VOLUME_NAME = "runner"
 _RUNNER_DIR = "/run/agentplane/runner"
 _ENVIRONMENT_RUNTIME_BINARY = f"{_RUNNER_DIR}/bin/agentplane-environment-runtime"

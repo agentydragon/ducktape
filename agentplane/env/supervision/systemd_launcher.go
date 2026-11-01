@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	runnerUnit              = "agentplane-runner.service"
-	runnerLifetimeDirectory = "/run/agentplane-runner-lifetime"
+	runtimeUnit              = "agentplane-environment-runtime.service"
+	runtimeLifetimeDirectory = "/run/agentplane-environment-runtime-lifetime"
 )
 
 // SystemdScopeID selects the process namespace used for stale-unit fencing.
@@ -136,10 +136,10 @@ func systemdMissing(err error) bool {
 	return errors.As(err, &e) && (e.Name == "org.freedesktop.systemd1.NoSuchUnit" || e.Name == "org.freedesktop.systemd1.LoadFailed" || e.Name == "org.freedesktop.DBus.Error.UnknownObject")
 }
 
-// Prepare preserves the Runner's systemd owner and lifetime directory.
+// Prepare uses the environment Runtime's legacy native-process scope.
 func (p *SystemdLauncher) Prepare(stateDir, sandboxUID string) (*Supervisor, error) {
 	return p.PrepareForOwner(stateDir, sandboxUID, SystemdOwner{
-		Unit: runnerUnit, LifetimeDirectory: runnerLifetimeDirectory, ScopeID: SystemdRunnerScopeID,
+		Unit: runtimeUnit, LifetimeDirectory: runtimeLifetimeDirectory, ScopeID: SystemdRunnerScopeID,
 	})
 }
 
@@ -366,5 +366,5 @@ func (p *SystemdLauncher) parentUnit() string {
 	if p.lifetimeUnit != "" {
 		return p.lifetimeUnit
 	}
-	return runnerUnit
+	return runtimeUnit
 }

@@ -74,7 +74,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 
 	t.Run("stale_runner_invocation_cannot_execute", func(t *testing.T) {
 		stale := *launcher
-		stale.lifetimeMarker = filepath.Join(runnerLifetimeDirectory, strings.ReplaceAll(uuid.NewString(), "-", ""))
+		stale.lifetimeMarker = filepath.Join(runtimeLifetimeDirectory, strings.ReplaceAll(uuid.NewString(), "-", ""))
 		effect := filepath.Join(dir, "stale-runner-effect")
 		p, err := stale.newSupervisor().NewProcess(ProcessConfig{Command: []string{"/bin/busybox", "touch", effect}, Dir: dir, Env: map[string]string{}})
 		if err != nil {

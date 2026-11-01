@@ -1,4 +1,4 @@
-"""The shared environment disk supplies the binaries that Pods and VMs start."""
+"""The environment disk supplies each independently runnable process and the CLI."""
 
 import os
 import subprocess
@@ -9,7 +9,7 @@ import pytest_bazel
 from util.bazel.runfiles import get_required_path
 
 
-def test_runner_disk_holds_the_executables(tmp_path: Path) -> None:
+def test_environment_disk_holds_the_executables(tmp_path: Path) -> None:
     subprocess.run(
         [
             get_required_path("_main/devinfra/erofs/erofs_tool_bin"),
@@ -17,7 +17,7 @@ def test_runner_disk_holds_the_executables(tmp_path: Path) -> None:
             "fsck.erofs",
             f"--extract={tmp_path}",
             "--preserve-perms",
-            get_required_path("_main/agentplane/runner/runner.img"),
+            get_required_path("_main/agentplane/env/images/runner.img"),
         ],
         check=True,
     )

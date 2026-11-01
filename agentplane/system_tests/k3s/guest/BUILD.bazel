@@ -185,12 +185,12 @@ pkg_tar(
 pkg_tar(
     name = "root_shared_systemd",
     srcs = [
-        "//agentplane/runner/systemd:agentplane.slice",
-        "//agentplane/runner/systemd:agentplane-environment-runtime.service",
-        "//agentplane/runner/systemd:agentplane-execution-service.service",
-        "//agentplane/runner/systemd:agentplane-executors.slice",
-        "//agentplane/runner/systemd:agentplane-harness-host.service",
-        "//agentplane/runner/systemd:agentplane-workloads.slice",
+        "//agentplane/env/images/systemd:agentplane.slice",
+        "//agentplane/env/images/systemd:agentplane-environment-runtime.service",
+        "//agentplane/env/images/systemd:agentplane-execution-service.service",
+        "//agentplane/env/images/systemd:agentplane-executors.slice",
+        "//agentplane/env/images/systemd:agentplane-harness-host.service",
+        "//agentplane/env/images/systemd:agentplane-workloads.slice",
     ],
     mode = "0644",
     package_dir = "/usr/lib/systemd/system",
@@ -198,7 +198,7 @@ pkg_tar(
 
 pkg_tar(
     name = "root_resource_limits",
-    srcs = ["//agentplane/runner/systemd:apply-resource-limits"],
+    srcs = ["//agentplane/env/images/systemd:apply-resource-limits"],
     mode = "0755",
     package_dir = "/usr/libexec/agentplane",
 )

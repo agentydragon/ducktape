@@ -1,7 +1,7 @@
 # Codex model catalog served by LLM ingress
 
 Checked 2026-10-19 on Codex **0.157.0** (the Bazel pin of the scripted harness tests) and **0.163.0** (latest
-release), with a mock Responses and catalog server. The runner image runs nixpkgs' `codex` (`runner/image.nix`),
+release), with a mock Responses and catalog server. The runner image runs nixpkgs' `codex` (`agentplane/env/images/image.nix`),
 0.162.1 at the locked `flake.lock` revision; that version was not run. Sources:
 [`rust-v0.157.0`](https://github.com/openai/codex/tree/rust-v0.157.0/codex-rs),
 [`rust-v0.163.0`](https://github.com/openai/codex/tree/rust-v0.163.0/codex-rs) (line anchors below are

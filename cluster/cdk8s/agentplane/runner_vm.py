@@ -1,4 +1,4 @@
-"""The runner's VM SandboxTemplate: the runner on the NixOS guest (agentplane/runner/vm.nix), in a
+"""The runner's VM SandboxTemplate: the runner on the NixOS guest (agentplane/env/images/vm.nix), in a
 KubeVirt VM the Sandbox Controller makes from `spec.vm` (agentplane/sandbox_controller/SPEC.md § VMs).
 
 The guest gets what a runner Pod's container gets, as the disks vm.nix reads by serial: the public

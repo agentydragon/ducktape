@@ -110,7 +110,7 @@ group: PKI during KubeVirt installation, service images during PKI readiness, an
 fixture application. Each workload waits for its own images before being applied, preventing registry
 pulls. Imports remain serial, and the importer joins before k3s teardown even when startup fails.
 
-The Pod runner uses the production `//agentplane/runner:disk_image` volume at `/run/agentplane/runner`, with a
+The Pod runner uses the production `//agentplane/env/images:disk_image` volume at `/run/agentplane/runner`, with a
 tools image for the rest. Pod suites import `:runner_harnesses_image`, which adds pinned Claude Code and Codex.
 VM-only targets omit the Pod runner image:
 their Sandboxes use the runner disk and test guest images. Image volumes need containerd 2.1 or later and the
@@ -161,7 +161,7 @@ The template boots the [test guest](guest/BUILD.bazel) instead of production's N
 in a private registry and would boot for minutes without KVM: a Debian cloud kernel that KubeVirt boots
 directly, a BusyBox initramfs that mounts an erofs root under a tmpfs overlay, and real systemd as
 PID 1. The guest installs the same runner service and resource slices as
-[`vm.nix`](../../runner/vm.nix), with fixture-specific tool paths and mount/network preparation.
+[`vm.nix`](../../env/images/vm.nix), with fixture-specific tool paths and mount/network preparation.
 The root image includes a hardware database compiled from its Debian package closure, letting
 systemd skip rebuilding it at each boot before starting udev's device discovery.
 The runner comes from the production runner disk, as in a Pod; both harnesses, Git and `findmnt`

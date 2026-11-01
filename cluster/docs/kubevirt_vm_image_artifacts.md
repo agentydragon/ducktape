@@ -6,14 +6,15 @@ and uses the disk as the VM's ephemeral root. This is the pattern used by the
 CPAP gateway and Agentplane runner images:
 
 - Build recipes: <../../cpap/gateway/container-disk.nix> and
-  <../../agentplane/runner/container-disk.nix>.
+  <../../agentplane/env/images/container-disk.nix>.
 - Publishing workflows: <../../.github/workflows/cpap-gateway-image.yml> and
   <../../.github/workflows/agentplane-runner-vm-image.yml>.
 - KubeVirt definitions: <../cdk8s/cpap_sync/app.py> and the Agentplane staging
   SandboxTemplate in <../cdk8s/agentplane/staging.py>.
 
-The Agentplane runner VM attaches two: the guest root and a small read-only erofs disk with the
-runner and the `agentplane` command (`//agentplane/runner:disk_image`, built by Bazel and published
+The Agentplane VM attaches two: the guest root and a small read-only erofs disk with the
+Environment Runtime, Harness Host, Execution service and `agentplane` command
+(`//agentplane/env/images:disk_image`, built by Bazel and published
 by the `push-images` workflow from <../../devinfra/ci/image_targets.json>), so a runner release does
 not republish the guest.
 

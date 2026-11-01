@@ -3,7 +3,7 @@
 A `SandboxTemplate` with `vm` runs its Sandbox's runner in a NixOS guest under KubeVirt instead of
 in a Pod. The Sandbox Controller owns the lifecycle
 ([`SPEC.md` § VMs](../sandbox_controller/SPEC.md)); the guest is
-[`runner/vm.nix`](../runner/vm.nix) and its shared configuration schema is [`runner/configuration.py`](../runner/configuration.py);
+[`env/images/vm.nix`](../env/images/vm.nix) and its shared configuration schema is [`runner/configuration.py`](../runner/configuration.py);
 the template is [`runner_vm.py`](../../cluster/cdk8s/agentplane/runner_vm.py) and the egress relay is
 [`launcher_relay.py`](../../cluster/cdk8s/agentplane/launcher_relay.py). The traffic diagram is in
 [`agentplane/README.md`](../README.md). The Gateway dials the guest's private mTLS gRPC listener through KubeVirt's forwarded runner port
@@ -58,7 +58,7 @@ lost.
   `/run/agentplane`. A file keeps its ConfigMap's mode, which must stay world-readable: harnesses
   run as uid 107 and read the CA bundle and kubeconfig.
 - The runner and the `agentplane` command are not in the guest image. They arrive on the runner disk,
-  a read-only erofs on a second `containerDisk` (`//agentplane/runner:disk_image`, [`runner/BUILD.bazel`](../runner/BUILD.bazel)),
+  a read-only erofs on a second `containerDisk` (`//agentplane/env/images:disk_image`, [`env/images/BUILD.bazel`](../env/images/BUILD.bazel)),
   mounted at `/run/agentplane/runner`, and the harness `PATH` lists its `bin` after the system
   profile. The guest system profile also installs the same `preCommitPackages` as the
   `runner-ducktape` Pod image, so the repository hooks and build clients are available on either
@@ -175,7 +175,7 @@ The subsequent conversation-recovery failure is addressed separately in
 - [Tool memory isolation](harness_tool_memory_isolation.md) records optional research on putting
   tighter resource limits around a tool child. That would be a separate resource policy, not a change
   to the Sandbox security boundary.
-- Systemd owns native service cgroups and stops them on Runner death. After acquiring the state-owner
+- Systemd owns native service cgroups and stops them when their owning service exits. After acquiring the state-owner
   lock, a replacement fences its prior owned services before opening Session stores and journals
   ([runner supervision](../runner/docs/supervision.md#completion-and-crash-fencing)).
 - Agent processes get no unrestricted guest root and no cgroup administration, so they cannot alter

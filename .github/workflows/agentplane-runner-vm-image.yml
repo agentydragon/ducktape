@@ -2,7 +2,7 @@
 name: Agentplane Runner VM Image
 
 # The runner and `agentplane` command are not in this image: they ship on the runner disk
-# (//agentplane/runner:disk_image), so their artifact pins do not trigger this build.
+# (//agentplane/env/images:disk_image), so their artifact pins do not trigger this build.
 # Keep automatic triggers on Nix/image inputs.
 on:
   push:
@@ -12,8 +12,9 @@ on:
       - ".github/workflows/agentplane-runner-vm-image.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"
       - "agentplane/images/tools.nix"
-      - "agentplane/runner/container-disk.nix"
-      - "agentplane/runner/vm.nix"
+      - "agentplane/env/images/container-disk.nix"
+      - "agentplane/env/images/systemd/**"
+      - "agentplane/env/images/vm.nix"
       - "devinfra/ci/pr_mergeability.py"
       - "flake.lock"
       - "flake.nix"
@@ -33,9 +34,10 @@ on:
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-runner-vm-image.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"
+      - "agentplane/env/images/container-disk.nix"
+      - "agentplane/env/images/systemd/**"
+      - "agentplane/env/images/vm.nix"
       - "agentplane/images/tools.nix"
-      - "agentplane/runner/container-disk.nix"
-      - "agentplane/runner/vm.nix"
       - "devinfra/ci/pr_mergeability.py"
       - "flake.lock"
       - "flake.nix"
@@ -58,9 +60,10 @@ on:
       - ".github/workflows/agentplane-runner-vm-image.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"
       - ".github/workflows/trusted-fork-pr-context.yml"
+      - "agentplane/env/images/container-disk.nix"
+      - "agentplane/env/images/systemd/**"
+      - "agentplane/env/images/vm.nix"
       - "agentplane/images/tools.nix"
-      - "agentplane/runner/container-disk.nix"
-      - "agentplane/runner/vm.nix"
       - "devinfra/ci/pr_mergeability.py"
       - "flake.lock"
       - "flake.nix"

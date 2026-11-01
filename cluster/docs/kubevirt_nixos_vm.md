@@ -9,7 +9,7 @@ examples.
 
 1. Build the guest disk as an OCI image using an existing recipe such as
    <../../cpap/gateway/container-disk.nix> or
-   <../../agentplane/runner/container-disk.nix>.
+   <../../agentplane/env/images/container-disk.nix>.
 2. Publish it to the Forgejo OCI registry from a GitHub Actions workflow; use
    the repository's image automation to update the manifest tag.
 3. Set the VM root volume's `containerDisk.image` to that registry reference.

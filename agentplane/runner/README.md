@@ -37,7 +37,7 @@ last acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays hi
 
 Shared process machinery is in `env/supervision`; one-shot operation bookkeeping is in
 `env/oneoff`, shell execution in `env/scripts`, and Go deployment parsing in `env/configuration`.
-Host owns workspace containment and helpers in `env/harnesshost/workspace`. The existing `runner/` directory retains wire contracts, deployment assets and cross-process integration tests.
+Host owns workspace containment and helpers in `env/harnesshost/workspace`. The existing `runner/` directory retains wire contracts and cross-process integration tests; image and VM packaging lives in `env/images/`.
 
 Runtime and Host read the same `--config` and `--launch-file`. Runtime launches the Host with
 private lifecycle and Session socket paths and an explicit `--supervision subprocess|systemd`.
@@ -53,7 +53,7 @@ History acknowledgements. Losing the control stream closes native admission and 
 creating a seal. An abnormal Pod Host exit requires the outer container fence before replacement.
 See [Host contract](../env/harnesshost/SPEC.md) and [lifecycle](docs/lifecycle.md).
 
-The three executables ship with the `agentplane` CLI in `//agentplane/runner:disk_image`.
+The three executables ship with the `agentplane` CLI in `//agentplane/env/images:disk_image`.
 Native Claude/Codex executables, workspace tools and CA certificates come from the runtime image.
 
 ## Codex executor container
@@ -101,7 +101,7 @@ same process topology.
 
 ## Release and image inputs
 
-Bazel builds the runner disk image (`//agentplane/runner:disk_image`) from source at the same commit
+Bazel builds the runner disk image (`//agentplane/env/images:disk_image`) from source at the same commit
 as the runner. The VM guest does not embed the runner: the image packs it, the executor companion
 and the `agentplane` command into a read-only erofs (`disk/runner.img`) that the `runner-vm` template
 attaches beside the guest; the same image also carries them as plain files under `bin/`, which the

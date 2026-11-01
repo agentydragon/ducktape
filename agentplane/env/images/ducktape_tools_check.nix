@@ -16,8 +16,8 @@ pkgs.runCommand "runner-ducktape-tools-check"
     mkdir -p "$HOME" work
     cd work
     git init -q
-    cp ${../../.pre-commit-config.yaml} .pre-commit-config.yaml
-    cp ${../../ruff.toml} ruff.toml
+    cp ${../../../.pre-commit-config.yaml} .pre-commit-config.yaml
+    cp ${../../../ruff.toml} ruff.toml
     chmod u+w .pre-commit-config.yaml ruff.toml
 
     bbr --help
