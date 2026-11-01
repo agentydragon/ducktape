@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 
 import pytest
@@ -11,18 +12,16 @@ from playwright.async_api import Response, async_playwright, expect
 
 from cluster.skills.grafana import piraeus_metrics
 from cluster.skills.grafana.visual_harness import grafana_dashboard
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import FROZEN_NOW_MS, deterministic_browser_context
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_capture import VisualPage
-
-DASHBOARD = "cluster/cdk8s/monitoring/dashboards/piraeus-storage.json"
 
 
 @pytest.mark.asyncio
 async def test_piraeus_dashboard_visual(tmp_path: Path) -> None:
     with grafana_dashboard(
-        tmp_path, get_required_path(own_repo_rlocation(DASHBOARD)), piraeus_metrics.samples()
+        tmp_path, get_required_path(os.environ["GRAFANA_DASHBOARD_RLOCATION"]), piraeus_metrics.samples()
     ) as base_url:
         async with async_playwright() as playwright:
             async with deterministic_browser_context(

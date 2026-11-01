@@ -14,6 +14,7 @@ def grafana_dashboard_visual_test(name, src, dashboard, fixture, deps = []):
         srcs = [src],
         main = src,
         data = [dashboard],
+        env = {"GRAFANA_DASHBOARD_RLOCATION": "$(rlocationpath %s)" % dashboard},
         requires_docker = True,
         tags = ["visual"],
         deps = [
