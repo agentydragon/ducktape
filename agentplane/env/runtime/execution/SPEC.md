@@ -8,11 +8,9 @@ Codex exec-server; running a native agent harness or app-server is not required.
 
 One Execution API lifetime owns one immutable Sandbox UID and incarnation and one native backend
 lifetime. In the normal topology it runs inside Environment Runtime; a standalone binary remains
-available for isolated use. Embedded Runtime calls the adapter directly after its backend readiness probe;
-its private Unix socket serves health only for Runtime's startup verification and remains bound for
-the embedded service lifetime. Host asks Runtime for in-process readiness. Runtime publishes the adapter
-only after a backend readiness probe and a successful health check on that socket. Standalone mode serves Executor RPCs
-on that socket, where filesystem access grants the environment's execution authority. Every
+available for isolated use. Embedded Runtime calls the adapter directly after the native backend
+readiness probe; Host asks Runtime for in-process readiness. Standalone mode serves Executor RPCs
+on its private Unix socket, where filesystem access grants the environment's execution authority. Every
 call carries the destination, incarnation and attributing Session; a foreign destination or stale
 incarnation is rejected before native dispatch. The service cannot adopt another environment or
 advance a Runner watch epoch. Callers supply Session and incarnation context with each request;

@@ -15,7 +15,7 @@ import (
 func TestRuntimeExecutionServiceConfigCarriesResolvedReadiness(t *testing.T) {
 	want := codexexecserver.Readiness{Timeout: 725 * time.Millisecond, ProbeTimeout: 55 * time.Millisecond, ProbeInterval: 130 * time.Millisecond}
 	config := Config{
-		StateDir: "/state", ExecutionSocket: "/run/execution.sock", Supervision: "subprocess",
+		StateDir: "/state", Supervision: "subprocess",
 		Launch:             configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test-namespace", Name: "test-sandbox", UID: "test-sandbox-uid"}},
 		HarnessEnvironment: map[string]string{"PATH": "/usr/bin"},
 		CodexExecServer: &codexexecserver.Config{
@@ -37,8 +37,8 @@ func TestRuntimeExecutionReadyTimeoutPreservesConfiguredWindow(t *testing.T) {
 		probeWindow time.Duration
 		want        time.Duration
 	}{
-		{name: "default window plus setup and health", probeWindow: 20 * time.Second, want: 145 * time.Second},
-		{name: "override above former fixed cap", probeWindow: 45 * time.Second, want: 170 * time.Second},
+		{name: "default window plus setup", probeWindow: 20 * time.Second, want: 140 * time.Second},
+		{name: "override above former fixed cap", probeWindow: 45 * time.Second, want: 165 * time.Second},
 		{name: "saturates instead of overflowing", probeWindow: time.Duration(1<<63 - 1), want: time.Duration(1<<63 - 1)},
 	} {
 		t.Run(test.name, func(t *testing.T) {

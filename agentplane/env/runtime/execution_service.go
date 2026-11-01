@@ -173,7 +173,7 @@ func runtimeExecutionServiceConfig(config Config, incarnationUID string) (servic
 	serviceConfig := service.Config{
 		Namespace: config.Launch.Sandbox.Namespace, SandboxName: config.Launch.Sandbox.Name,
 		SandboxUID: config.Launch.Sandbox.UID, IncarnationUID: incarnationUID,
-		StateDir: filepath.Join(config.StateDir, "execution"), SocketPath: config.ExecutionSocket,
+		StateDir:    filepath.Join(config.StateDir, "execution"),
 		ExecutorURL: config.CodexExecServer.URL, Environment: config.HarnessEnvironment,
 		Readiness: config.CodexExecServer.Readiness,
 	}
@@ -205,16 +205,12 @@ func runtimeExecutionServiceConfig(config Config, incarnationUID string) (servic
 }
 
 // executionServiceReadyTimeout covers setup before the configured executor probe
-// window and the embedded Health.Check afterward. Its 120s setup allowance covers
+// window. Its 120s setup allowance covers
 // the companion's process-domain fence (up to 90s) plus owner preparation, claim or
 // native startup. This is one outer allowance rather than separate phase deadlines;
 // an expired deadline still requires StopAndFence proof before return.
 func executionServiceReadyTimeout(probeWindow time.Duration) time.Duration {
-	return addExecutionDurationsSaturating(
-		probeWindow,
-		executionServiceSetupAllowance,
-		service.EmbeddedHealthReadinessTimeout,
-	)
+	return addExecutionDurationsSaturating(probeWindow, executionServiceSetupAllowance)
 }
 
 func addExecutionDurationsSaturating(values ...time.Duration) time.Duration {

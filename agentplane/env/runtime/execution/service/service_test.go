@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -244,7 +243,7 @@ func TestRunReturnsFencedBackendLossOnlyAfterCleanupFence(t *testing.T) {
 	}
 }
 
-func TestEmbeddedServicePublishesDirectAdapterAndHealthOnlySocket(t *testing.T) {
+func TestEmbeddedServicePublishesDirectAdapterWithoutSocket(t *testing.T) {
 	endpoint := testExecutorEndpoint(t)
 	config := Config{
 		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
@@ -270,20 +269,8 @@ func TestEmbeddedServicePublishesDirectAdapterAndHealthOnlySocket(t *testing.T) 
 	case <-time.After(5 * time.Second):
 		t.Fatal("embedded service did not publish readiness")
 	}
-	conn, err := grpc.NewClient("unix://"+config.Socket(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	checkCtx, finishCheck := context.WithTimeout(ctx, 5*time.Second)
-	defer finishCheck()
-	health, err := healthpb.NewHealthClient(conn).Check(checkCtx, &healthpb.HealthCheckRequest{})
-	if err != nil || health.GetStatus() != healthpb.HealthCheckResponse_SERVING {
-		t.Fatalf("embedded health = %v, err=%v", health, err)
-	}
-	_, err = executorpb.NewExecutorClient(conn).StartProcess(checkCtx, &executorpb.StartProcessRequest{})
-	if status.Code(err) != codes.Unimplemented {
-		t.Fatalf("private Executor RPC = %v, want Unimplemented", err)
+	if _, err := os.Stat(config.Socket()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("embedded Execution socket stat = %v, want absent socket", err)
 	}
 	cancel()
 	select {
@@ -296,144 +283,55 @@ func TestEmbeddedServicePublishesDirectAdapterAndHealthOnlySocket(t *testing.T) 
 	}
 }
 
-func TestEmbeddedReadinessWaitsForServingHealth(t *testing.T) {
-	config := Config{ExecutorURL: testExecutorEndpoint(t), SocketPath: filepath.Join(t.TempDir(), "e.sock")}
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	servingAllowed := make(chan struct{})
-	serveEntered := make(chan struct{})
-	ready := make(chan struct{}, 1)
-	finished := make(chan error, 1)
-	go func() {
-		finished <- runWithServer(ctx, config, func(context.Context) (*supervision.Instance, error) {
-			return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { return nil }}, nil
-		}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(server *grpc.Server, listener net.Listener) error {
-			close(serveEntered)
-			select {
-			case <-servingAllowed:
-				return server.Serve(listener)
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		})
-	}()
-	select {
-	case <-serveEntered:
-	case err := <-finished:
-		t.Fatalf("service exited before Serve was entered: %v", err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("service did not reach Serve")
-	}
-	select {
-	case <-ready:
-		t.Fatal("adapter published before Health.Check could be served")
-	case <-time.After(200 * time.Millisecond):
-	}
-	close(servingAllowed)
-	select {
-	case <-ready:
-	case err := <-finished:
-		t.Fatalf("service exited before healthy publication: %v", err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("adapter was not published after Health.Check could be served")
-	}
-	cancel()
-	select {
-	case err := <-finished:
+func TestEmbeddedBackendLossDuringReadinessKeepsFenceEvidence(t *testing.T) {
+	attempted := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		attempted <- struct{}{}
+		connection, err := websocket.Accept(writer, request, nil)
 		if err != nil {
-			t.Fatalf("service shutdown: %v", err)
+			return
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("service did not join after cancellation")
-	}
-}
-
-func TestEmbeddedServeFailureDoesNotPublishBeforeBackendFence(t *testing.T) {
-	config := Config{ExecutorURL: testExecutorEndpoint(t), SocketPath: filepath.Join(t.TempDir(), "e.sock")}
-	serveErr := errors.New("health server failed to start")
-	ready := make(chan struct{}, 1)
-	stopEntered := make(chan struct{})
-	releaseStop := make(chan struct{})
-	finished := make(chan error, 1)
-	go func() {
-		finished <- runWithServer(t.Context(), config, func(context.Context) (*supervision.Instance, error) {
-			return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error {
-				close(stopEntered)
-				<-releaseStop
-				return nil
-			}}, nil
-		}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(*grpc.Server, net.Listener) error { return serveErr })
-	}()
-	select {
-	case <-stopEntered:
-	case err := <-finished:
-		t.Fatalf("service returned before backend fence: %v", err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("service did not enter backend fence after Serve failure")
-	}
-	select {
-	case <-ready:
-		t.Fatal("adapter published after health server failed")
-	case err := <-finished:
-		t.Fatalf("service returned before backend fence: %v", err)
-	default:
-	}
-	close(releaseStop)
-	select {
-	case err := <-finished:
-		if !errors.Is(err, serveErr) {
-			t.Fatalf("service error = %v, want Serve failure", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("service did not join after backend fence")
-	}
-}
-
-func TestEmbeddedBackendLossDuringHealthWaitKeepsFenceEvidence(t *testing.T) {
-	config := Config{ExecutorURL: testExecutorEndpoint(t), SocketPath: filepath.Join(t.TempDir(), "e.sock")}
+		defer connection.CloseNow()
+		_, _, _ = connection.Read(request.Context())
+		<-request.Context().Done()
+	}))
+	t.Cleanup(server.Close)
 	backendDone := make(chan error, 1)
-	serveEntered := make(chan struct{})
-	releaseServe := make(chan struct{})
 	stopEntered := make(chan struct{})
 	releaseStop := make(chan struct{})
 	ready := make(chan struct{}, 1)
 	finished := make(chan error, 1)
 	go func() {
-		finished <- runWithServer(t.Context(), config, func(context.Context) (*supervision.Instance, error) {
+		finished <- runWithReady(t.Context(), Config{ExecutorURL: "ws" + strings.TrimPrefix(server.URL, "http")}, func(context.Context) (*supervision.Instance, error) {
 			return &supervision.Instance{Done: backendDone, Stop: func(context.Context) error {
 				close(stopEntered)
 				<-releaseStop
 				return nil
 			}}, nil
-		}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(*grpc.Server, net.Listener) error {
-			close(serveEntered)
-			<-releaseServe
-			return nil
-		})
+		}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} })
 	}()
 	select {
-	case <-serveEntered:
+	case <-attempted:
 	case err := <-finished:
-		t.Fatalf("service exited before health wait: %v", err)
+		t.Fatalf("service exited before native readiness probe: %v", err)
 	case <-time.After(5 * time.Second):
-		t.Fatal("service did not enter health wait")
+		t.Fatal("native readiness probe did not start")
 	}
 	backendDone <- errors.Join(codexexecserver.ErrExecutionBackendLost, errors.New("native backend exited"))
 	select {
 	case <-stopEntered:
 	case err := <-finished:
-		t.Fatalf("service returned before native fence: %v", err)
-	case <-time.After(10 * time.Second):
-		t.Fatal("backend loss did not begin native fence")
+		t.Fatalf("service returned before backend fence: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("backend loss did not start native fence")
 	}
 	select {
 	case <-ready:
-		t.Fatal("adapter published despite backend loss during health wait")
+		t.Fatal("service published an adapter after backend loss")
 	case err := <-finished:
-		t.Fatalf("service returned before native fence: %v", err)
+		t.Fatalf("service returned before backend fence: %v", err)
 	default:
 	}
-	close(releaseServe)
 	close(releaseStop)
 	select {
 	case err := <-finished:
@@ -442,97 +340,6 @@ func TestEmbeddedBackendLossDuringHealthWaitKeepsFenceEvidence(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("service did not return after native fence")
-	}
-}
-
-func TestEmbeddedOwnerStopDuringHealthWaitJoinsBackendFence(t *testing.T) {
-	config := Config{ExecutorURL: testExecutorEndpoint(t), SocketPath: filepath.Join(t.TempDir(), "e.sock")}
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	serveEntered := make(chan struct{})
-	releaseServe := make(chan struct{})
-	stopEntered := make(chan struct{})
-	releaseStop := make(chan struct{})
-	ready := make(chan struct{}, 1)
-	finished := make(chan error, 1)
-	go func() {
-		finished <- runWithServer(ctx, config, func(context.Context) (*supervision.Instance, error) {
-			return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error {
-				close(stopEntered)
-				<-releaseStop
-				return nil
-			}}, nil
-		}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(*grpc.Server, net.Listener) error {
-			close(serveEntered)
-			<-releaseServe
-			return nil
-		})
-	}()
-	select {
-	case <-serveEntered:
-	case err := <-finished:
-		t.Fatalf("service exited before health wait: %v", err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("service did not enter health wait")
-	}
-	cancel()
-	select {
-	case <-stopEntered:
-	case err := <-finished:
-		t.Fatalf("service returned before native fence: %v", err)
-	case <-time.After(10 * time.Second):
-		t.Fatal("owner stop did not begin native fence")
-	}
-	select {
-	case <-ready:
-		t.Fatal("adapter published after owner requested stop")
-	case err := <-finished:
-		t.Fatalf("service returned before native fence: %v", err)
-	default:
-	}
-	close(releaseServe)
-	close(releaseStop)
-	select {
-	case err := <-finished:
-		if err != nil {
-			t.Fatalf("clean owner stop after native fence = %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("service did not return after native fence")
-	}
-}
-
-func TestEmbeddedHealthReadinessTimeoutRemainsFailure(t *testing.T) {
-	config := Config{ExecutorURL: testExecutorEndpoint(t), SocketPath: filepath.Join(t.TempDir(), "e.sock")}
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	ready := make(chan struct{}, 1)
-	finished := make(chan error, 1)
-	releaseServe := make(chan struct{})
-	defer close(releaseServe)
-	go func() {
-		finished <- runWithServer(ctx, config, func(context.Context) (*supervision.Instance, error) {
-			return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { return nil }}, nil
-		}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(*grpc.Server, net.Listener) error {
-			<-releaseServe
-			return nil
-		})
-	}()
-	select {
-	case err := <-finished:
-		if !errors.Is(err, context.DeadlineExceeded) {
-			t.Fatalf("independent health readiness timeout = %v, want deadline failure", err)
-		}
-		if ctx.Err() != nil {
-			t.Fatalf("owner context canceled before independent readiness timeout: %v", ctx.Err())
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("health readiness did not time out")
-	}
-	select {
-	case <-ready:
-		t.Fatal("adapter published despite health readiness timeout")
-	default:
 	}
 }
 
@@ -596,11 +403,9 @@ func TestConfiguredReadinessControlsEmbeddedBackendProbes(t *testing.T) {
 	ready := make(chan struct{}, 1)
 	finished := make(chan error, 1)
 	go func() {
-		finished <- runWithServer(ctx, config, func(context.Context) (*supervision.Instance, error) {
+		finished <- runWithReady(ctx, config, func(context.Context) (*supervision.Instance, error) {
 			return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { return nil }}, nil
-		}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(server *grpc.Server, listener net.Listener) error {
-			return server.Serve(listener)
-		})
+		}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} })
 	}()
 	var first time.Time
 	select {
@@ -665,11 +470,9 @@ func TestConfiguredReadinessDeadlineAndCancellationFenceBackend(t *testing.T) {
 		finished := make(chan error, 1)
 		started := time.Now()
 		go func() {
-			finished <- runWithServer(ctx, config, func(context.Context) (*supervision.Instance, error) {
+			finished <- runWithReady(ctx, config, func(context.Context) (*supervision.Instance, error) {
 				return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { close(stopped); return nil }}, nil
-			}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(server *grpc.Server, listener net.Listener) error {
-				return server.Serve(listener)
-			})
+			}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} })
 		}()
 		select {
 		case err := <-finished:
@@ -721,11 +524,9 @@ func TestConfiguredReadinessDeadlineAndCancellationFenceBackend(t *testing.T) {
 		cleanupErr := errors.New("backend fence failed")
 		finished := make(chan error, 1)
 		go func() {
-			finished <- runWithServer(ctx, config, func(context.Context) (*supervision.Instance, error) {
+			finished <- runWithReady(ctx, config, func(context.Context) (*supervision.Instance, error) {
 				return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { close(stopped); return cleanupErr }}, nil
-			}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(server *grpc.Server, listener net.Listener) error {
-				return server.Serve(listener)
-			})
+			}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} })
 		}()
 		select {
 		case <-attempted:

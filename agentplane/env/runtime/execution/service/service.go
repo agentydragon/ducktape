@@ -18,7 +18,6 @@ import (
 	"github.com/sethvargo/go-retry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
@@ -31,10 +30,6 @@ import (
 // replace the API process without replacing the Harness Host.
 var ErrFencedBackendLoss = errors.New("execution backend loss was fenced")
 
-// EmbeddedHealthReadinessTimeout bounds the private Health.Check after the executor
-// passes its configured readiness probes.
-const EmbeddedHealthReadinessTimeout = 5 * time.Second
-
 // Run owns the backend from startup fencing until shutdown. The caller must be
 // PID 1 for the direct pod backend: returning lets the container runtime fence escaped descendants.
 // Systemd callers supply an owner unit and lifetime directory; death of that
@@ -43,9 +38,8 @@ func Run(ctx context.Context, config Config) (result error) {
 	return runOwned(ctx, config, nil)
 }
 
-// RunEmbedded keeps the native backend and private health socket under the
-// Runtime process lifetime. The ready callback publishes the typed adapter to
-// Runtime after native readiness; the Executor RPC is not served on this socket.
+// RunEmbedded keeps the native backend under the Runtime process lifetime. The
+// ready callback publishes the typed adapter after native readiness.
 func RunEmbedded(ctx context.Context, config Config, ready func(executorpb.ExecutorServer, context.Context)) error {
 	if ready == nil {
 		return errors.New("embedded Execution API requires a ready callback")
@@ -137,12 +131,6 @@ func run(ctx context.Context, config Config, start codexexecserver.Start) (resul
 }
 
 func runWithReady(ctx context.Context, config Config, start codexexecserver.Start, ready func(executorpb.ExecutorServer, context.Context)) (result error) {
-	return runWithServer(ctx, config, start, ready, func(server *grpc.Server, listener net.Listener) error {
-		return server.Serve(listener)
-	})
-}
-
-func runWithServer(ctx context.Context, config Config, start codexexecserver.Start, ready func(executorpb.ExecutorServer, context.Context), serve func(*grpc.Server, net.Listener) error) (result error) {
 	readinessConfig, err := config.Readiness.Resolve()
 	if err != nil {
 		return err
@@ -222,38 +210,35 @@ func runWithServer(ctx context.Context, config Config, start codexexecserver.Sta
 		return err
 	}
 	defer adapter.Close()
-	// Only the state-directory lock holder may replace the previous socket.
-	if err := os.Remove(config.Socket()); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	listener, err := net.Listen("unix", config.Socket())
-	if err != nil {
-		return err
-	}
-	defer listener.Close()
-	if err := os.Chmod(config.Socket(), 0600); err != nil {
-		return err
-	}
-	server := grpc.NewServer()
+	var server *grpc.Server
+	var healthServer *health.Server
+	var served <-chan error
 	if ready == nil {
+		// Only the state-directory lock holder may replace the previous socket.
+		if err := os.Remove(config.Socket()); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		listener, err := net.Listen("unix", config.Socket())
+		if err != nil {
+			return err
+		}
+		defer listener.Close()
+		if err := os.Chmod(config.Socket(), 0600); err != nil {
+			return err
+		}
+		server = grpc.NewServer()
 		executorpb.RegisterExecutorServer(server, adapter)
-	}
-	healthServer := health.NewServer()
-	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
-	if ready == nil {
+		healthServer = health.NewServer()
+		healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 		healthServer.SetServingStatus(executorpb.Executor_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
-	}
-	healthpb.RegisterHealthServer(server, healthServer)
-	served := make(chan error, 1)
-	go func() { served <- serve(server, listener) }()
-	if ready != nil {
-		err = waitEmbeddedHealth(lifetime, config.Socket(), served)
-		if err == nil {
-			ready(adapter, lifetime)
-		} else if errors.Is(err, context.Canceled) {
-			// Backend loss cancels lifetime after publishing its exact loss
-			// evidence. Preserve that evidence even when the health probe was
-			// still waiting; otherwise a fenced loss becomes an unproven exit.
+		healthpb.RegisterHealthServer(server, healthServer)
+		serveResult := make(chan error, 1)
+		served = serveResult
+		go func() { serveResult <- server.Serve(listener) }()
+	} else {
+		// A lost backend must not be published as ready. Its stop still has to
+		// prove the process-domain fence before this service returns.
+		if lifetime.Err() != nil {
 			select {
 			case backendErr := <-backendDone:
 				if backendErr == nil {
@@ -262,15 +247,12 @@ func runWithServer(ctx context.Context, config Config, start codexexecserver.Sta
 					err = backendErr
 				}
 			default:
-				// A Runtime-requested stop cancels the parent context. The
-				// native Stop below still has to prove the backend fence, but
-				// the interrupted health probe is not itself a service failure.
-				// An independent readiness deadline leaves ctx live and keeps
-				// its error.
-				if ctx.Err() != nil {
-					err = nil
+				if ctx.Err() == nil {
+					err = lifetime.Err()
 				}
 			}
+		} else {
+			ready(adapter, lifetime)
 		}
 	}
 	if err == nil {
@@ -293,61 +275,22 @@ func runWithServer(ctx context.Context, config Config, start codexexecserver.Sta
 	// Cancel sessions before draining RPCs: OpenSession streams are held until
 	// explicitly canceled, and a canceled unary call alone never stops native work.
 	cancel()
-	healthServer.Shutdown()
+	if healthServer != nil {
+		healthServer.Shutdown()
+	}
 	if closeErr := adapter.Close(); closeErr != nil {
 		err = errors.Join(err, closeErr)
 	}
-	shutdown, finish := context.WithTimeout(context.Background(), 5*time.Second)
-	defer finish()
-	graceful.Stop(shutdown, server)
+	if server != nil {
+		shutdown, finish := context.WithTimeout(context.Background(), 5*time.Second)
+		defer finish()
+		graceful.Stop(shutdown, server)
+	}
 	return err
 }
 
-func waitEmbeddedHealth(ctx context.Context, socket string, served <-chan error) error {
-	conn, err := grpc.NewClient("unix://"+socket, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return fmt.Errorf("connect to embedded Execution health socket: %w", err)
-	}
-	defer conn.Close()
-	client := healthpb.NewHealthClient(conn)
-	readiness, cancel := context.WithTimeout(ctx, EmbeddedHealthReadinessTimeout)
-	defer cancel()
-	err = retry.Do(readiness, retry.NewConstant(20*time.Millisecond), func(ctx context.Context) error {
-		select {
-		case serveErr := <-served:
-			if serveErr == nil {
-				serveErr = errors.New("health server stopped")
-			}
-			return fmt.Errorf("embedded Execution health server exited before readiness: %w", serveErr)
-		default:
-		}
-		checkCtx, finish := context.WithTimeout(ctx, 100*time.Millisecond)
-		defer finish()
-		response, err := client.Check(checkCtx, &healthpb.HealthCheckRequest{})
-		if err != nil {
-			return retry.RetryableError(err)
-		}
-		if response.GetStatus() != healthpb.HealthCheckResponse_SERVING {
-			return retry.RetryableError(errors.New("embedded Execution health is not serving"))
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("embedded Execution health readiness: %w", err)
-	}
-	select {
-	case serveErr := <-served:
-		if serveErr == nil {
-			serveErr = errors.New("health server stopped")
-		}
-		return fmt.Errorf("embedded Execution health server exited at readiness: %w", serveErr)
-	default:
-	}
-	return nil
-}
-
 // Filesystem access to the standalone Executor socket authenticates the environment owner.
-// Embedded mode serves only health there. Remote caller authorization and routing remain with Gateway. This service
+// Remote caller authorization and routing remain with Gateway. This service
 // checks one immutable incarnation; it cannot adopt or replace a Runner epoch.
 func (c Config) admit(ctx context.Context, scope *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
 	if scope == nil || scope.Destination == nil || scope.Destination.Owner == nil || scope.SessionId == "" || len(scope.SessionId) > 128 {

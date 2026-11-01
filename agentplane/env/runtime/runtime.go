@@ -54,7 +54,6 @@ type Config struct {
 	InitializationCwd  string
 	HostConfig         harnesshost.Config
 	HostIngress        configuration.Endpoint
-	ExecutionSocket    string
 }
 
 type hostLifetime interface {
@@ -188,16 +187,6 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	}
 	if config.CodexExecServer != nil && (config.CodexBinary == "" || config.HarnessEnvironment == nil) {
 		return nil, errors.New("execution service requires Codex binary and resolved harness environment")
-	}
-	if config.ExecutionSocket == "" {
-		if config.Supervision == "systemd" {
-			config.ExecutionSocket = filepath.Join(config.StateDir, "execution", "execution.sock")
-		} else {
-			config.ExecutionSocket = filepath.Join(config.StateDir, "e.sock")
-		}
-	}
-	if !filepath.IsAbs(config.ExecutionSocket) {
-		return nil, errors.New("Execution socket path must be absolute")
 	}
 	owner, err := openEnvironmentOwner(config.StateDir)
 	if err != nil {

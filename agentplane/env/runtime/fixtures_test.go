@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -46,7 +45,7 @@ func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string
 	t.Helper()
 	root := t.TempDir()
 	launch := configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}, Bootstrap: bootstrap}
-	config := Config{StateDir: root, Launch: launch, Supervision: "subprocess", InitializationCwd: workspace, Control: insecureControl(), ExecutionSocket: filepath.Join(root, "execution.sock")}
+	config := Config{StateDir: root, Launch: launch, Supervision: "subprocess", InitializationCwd: workspace, Control: insecureControl()}
 	return runtimeTestConfig{Config: config, host: harnesshost.Config{StateDir: root, Launch: launch, WorkspaceRoot: workspace, InitializationCwd: workspace, Claude: &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test"}, HTTPClient: http.DefaultClient}}
 }
 
@@ -57,7 +56,6 @@ func insecureControl() configuration.EnvironmentRuntimeControlConfiguration {
 // The fixture composes production Runtime and Host through their direct coordinator.
 func newLifecycleRunner(t *testing.T, config runtimeTestConfig) *Runtime {
 	t.Helper()
-	config.ExecutionSocket = filepath.Join(t.TempDir(), "execution.sock")
 	r, err := newRuntime(config.Config, nil, config.deps)
 	if err != nil {
 		t.Fatal(err)
