@@ -118,6 +118,7 @@ TENANTS = {
     "monitoring",  # monitoring/mimir.py, monitoring/tempo.py, monitoring/grafana_instance.py
     "nix-cache",  # nix_cache/attic.py
     "ntfy",  # ntfy.py
+    "oci-cache",  # oci_cache/zot.py
     "plaid-mcp",  # plaid_mcp/db.py
     "public-coder-agent",  # public_coder/backup.py
     "session-backup",  # session_backup.py
