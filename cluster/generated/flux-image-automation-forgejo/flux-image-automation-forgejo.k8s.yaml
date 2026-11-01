@@ -126,6 +126,31 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
+  name: agentplane-environment-vm
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/agentplane-environment-vm
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: agentplane-environment-vm
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: agentplane-environment-vm
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
   name: agentplane-frontend
   namespace: flux-system
 spec:
@@ -344,31 +369,6 @@ spec:
     pattern: ^devel-\d{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-runner-gateway
-  policy:
-    alphabetical:
-      order: asc
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
-  name: agentplane-runner-vm
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/agentplane-runner-vm
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: agentplane-runner-vm
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: agentplane-runner-vm
   policy:
     alphabetical:
       order: asc
@@ -769,6 +769,31 @@ spec:
     pattern: ^devel-\d{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: cpap-sync
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: environment-tools
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/environment-tools
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: environment-tools
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: environment-tools
   policy:
     alphabetical:
       order: asc
@@ -1344,31 +1369,6 @@ spec:
     pattern: ^devel-\d{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: rtl-tcp
-  policy:
-    alphabetical:
-      order: asc
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
-  name: runner-ducktape
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/runner-ducktape
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: runner-ducktape
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: runner-ducktape
   policy:
     alphabetical:
       order: asc

@@ -4,7 +4,7 @@
 # artifact pin bump rebuilds it. The runner and `agentplane` are not in the image: they come from
 # the runner disk image. Fork PR builds use pull_request_target with the trusted-fork review gate;
 # the reusable workflow never publishes from that event.
-name: Runner Ducktape Image
+name: Agentplane Environment Tools Image
 
 on:
   push:

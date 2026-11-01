@@ -1,5 +1,5 @@
 # Build the NixOS Agentplane runner guest and publish its qcow2 containerDisk.
-name: Agentplane Runner VM Image
+name: Agentplane Environment VM Image
 
 # The runner and `agentplane` command are not in this image: they ship on the runner disk
 # (//agentplane/env/images:disk_image), so their artifact pins do not trigger this build.
