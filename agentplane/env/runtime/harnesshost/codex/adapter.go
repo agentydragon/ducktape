@@ -293,9 +293,11 @@ func (a *codexAdapter) Submit(ctx context.Context, commandID, text string) error
 	if modelChange != nil {
 		model = modelChange.value
 	}
-	effort := snapshot.ReasoningEffort
+	var effort *string
 	if effortChange != nil {
-		effort = effortChange.value
+		effort = &effortChange.value
+	} else if snapshot.ReasoningEffort != "" {
+		effort = &snapshot.ReasoningEffort
 	}
 	a.mu.Lock()
 	threadID := a.threadID
@@ -325,7 +327,7 @@ func (a *codexAdapter) Submit(ctx context.Context, commandID, text string) error
 		ID: requestID, Method: "turn/start",
 		Params: protocol.TurnStartParams{
 			ThreadID: threadID, Input: []protocol.UserInput{{Type: "text", Text: &text}},
-			Model: &model, Effort: &effort,
+			Model: &model, Effort: effort,
 		},
 	}); err != nil {
 		if !errors.Is(err, harness.ErrNativeResponsePending) {

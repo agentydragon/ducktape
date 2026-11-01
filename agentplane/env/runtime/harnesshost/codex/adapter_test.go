@@ -244,6 +244,60 @@ func TestCodexHandshakeOmitsUnspecifiedReasoningEffort(t *testing.T) {
 	}
 }
 
+func TestCodexSubmitOmitsUnspecifiedEffortAndPreservesSelectedEffort(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		sessionEffort  string
+		pendingEffort  string
+		wantEffort     string
+		wantEffortFlag bool
+	}{
+		{name: "unspecified"},
+		{name: "session selection", sessionEffort: "high", wantEffort: "high", wantEffortFlag: true},
+		{name: "pending selection", pendingEffort: "medium", wantEffort: "medium", wantEffortFlag: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			base := newAdapterTestHost()
+			base.SessionState.Resuming = false
+			base.SessionState.ReasoningEffort = test.sessionEffort
+			host := &adapterHandshakeHost{Host: base}
+			adapter := New(host)
+			if _, err := adapter.Handshake(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if test.pendingEffort != "" {
+				if err := adapter.ChangeReasoningEffort(ctx, "effort-1", test.pendingEffort); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := adapter.Submit(ctx, "input-1", "hello"); err != nil {
+				t.Fatal(err)
+			}
+			if len(base.NativeWrites) != 1 {
+				t.Fatalf("Codex native writes = %d, want one turn/start", len(base.NativeWrites))
+			}
+			var start struct {
+				Params struct {
+					Effort *string `json:"effort"`
+				} `json:"params"`
+			}
+			if err := json.Unmarshal(base.NativeWrites[0], &start); err != nil {
+				t.Fatal(err)
+			}
+			if !test.wantEffortFlag {
+				if start.Params.Effort != nil {
+					t.Fatalf("turn/start effort = %q, want omitted", *start.Params.Effort)
+				}
+				return
+			}
+			if start.Params.Effort == nil || *start.Params.Effort != test.wantEffort {
+				t.Fatalf("turn/start effort = %v, want %q", start.Params.Effort, test.wantEffort)
+			}
+		})
+	}
+}
+
 func TestCodexIgnoresChildFramesAndKeepsUnknownItemFields(t *testing.T) {
 	ctx := context.Background()
 	host := newAdapterTestHost()
