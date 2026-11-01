@@ -96,7 +96,7 @@ func requestView(request store.ActionRequest) (*action_servicepb.ActionRequest, 
 		Id: request.ID.String(), IdempotencyKey: request.IdempotencyKey,
 		Action:    &action_servicepb.ActionIdentity{Group: request.Action.Group, Name: request.Action.Name},
 		Arguments: arguments, Title: request.Title, Description: request.Description,
-		Caller: request.Caller.Proto(), State: request.State, Version: request.Version,
+		Caller: request.Caller.Proto(), CallerUid: request.CallerUID, State: request.State, Version: request.Version,
 		CreatedAt: timestamppb.New(request.CreatedAt), UpdatedAt: timestamppb.New(request.UpdatedAt),
 		Decision: decision, Execution: execution,
 	}, nil
@@ -203,9 +203,11 @@ func validateActionActor(actor *action_servicepb.Principal) error {
 		return nil
 	}
 	if caller := actor.GetCaller(); caller != nil && caller.GetNamespace() != "" && caller.GetName() != "" {
-		return nil
+		if actor.CallerUid == nil || *actor.CallerUid != "" {
+			return nil
+		}
 	}
-	if operator := actor.GetOperator(); operator != nil && operator.GetIssuer() != "" && operator.GetSubject() != "" {
+	if operator := actor.GetOperator(); operator != nil && operator.GetIssuer() != "" && operator.GetSubject() != "" && actor.CallerUid == nil {
 		return nil
 	}
 	return fmt.Errorf("an Action actor needs a caller account or an operator issuer and subject")

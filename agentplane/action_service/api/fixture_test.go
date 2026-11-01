@@ -76,7 +76,7 @@ var (
 )
 
 func principal(account auth.Account) store.CallerPrincipal {
-	return store.CallerPrincipal{Account: store.ServiceAccount{Namespace: account.Namespace, Name: account.Name}}
+	return store.CallerPrincipal{Account: store.ServiceAccount{Namespace: account.Namespace, Name: account.Name}, ServiceAccountUID: "test-uid-" + account.Name}
 }
 
 func useAPIServer(server *kubeapiserver.Server) error {

@@ -235,7 +235,7 @@ var testOperator = store.OperatorPrincipal{Issuer: "https://issuer.test.example"
 // allow submits action as caller and allows it.
 func (r running) allow(t *testing.T, caller store.ServiceAccount, action store.ActionIdentity, arguments string) uuid.UUID {
 	t.Helper()
-	pending, err := r.store.Submit(t.Context(), store.CallerPrincipal{Account: caller}, store.ActionRequestInput{
+	pending, err := r.store.Submit(t.Context(), store.CallerPrincipal{Account: caller, ServiceAccountUID: "test-caller-uid"}, store.ActionRequestInput{
 		IdempotencyKey: "test-dispatched", Action: action, Arguments: json.RawMessage(arguments), Title: "test title",
 	}, store.Admission{RequestID: uuid.New()})
 	if err != nil {
@@ -461,7 +461,7 @@ func TestTheServiceFinishesALinkAndAnOAuthGroupFollowsItsLinkage(t *testing.T) {
 
 func TestTheServiceAnswersAReadersReadsOverGRPCAndHTTP(t *testing.T) {
 	service := start(t, kube.Config, &catalog.Catalog{})
-	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-agentplane", Name: "test-caller"}},
+	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-agentplane", Name: "test-caller"}, ServiceAccountUID: "test-caller-uid"},
 		store.ActionRequestInput{
 			IdempotencyKey: "test-read", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
 			Arguments: json.RawMessage(`{}`), Title: "test title",
@@ -631,7 +631,7 @@ func TestTheServiceAdmitsAWorkloadWhileItsServiceAccountCarriesTheCallerLabel(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}},
+	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, ServiceAccountUID: "test-caller-uid"},
 		store.ActionRequestInput{
 			IdempotencyKey: "test-own", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
 			Arguments: json.RawMessage(`{}`), Title: "test title",

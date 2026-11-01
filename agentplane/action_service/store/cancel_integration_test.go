@@ -51,7 +51,7 @@ func TestAPendingCancellationIsDurableAndIdempotent(t *testing.T) {
 	if err := proto.Unmarshal(encodedActor, &storedActor); err != nil {
 		t.Fatal(err)
 	}
-	wantActor := &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: caller.Account.Proto()}}
+	wantActor := &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: caller.Account.Proto()}, CallerUid: &caller.ServiceAccountUID}
 	if !proto.Equal(&storedActor, wantActor) {
 		t.Errorf("protobuf actor = %v, want %v", &storedActor, wantActor)
 	}

@@ -22,9 +22,11 @@ the environment's rolling deployment profile, and a startup probe waits for migr
 initialization before normal health checks begin. Goose serializes concurrent starts with its
 PostgreSQL session lock. Schema changes must remain compatible with old and new replicas during a
 roll. Version 7 creates the typed schema for a fresh database or adopts a complete version 6
-schema without rewriting data. Older and incomplete schemas are rejected; existing Goose history
-remains intact. A database created at version 7 requires a version-7-aware rollback image or a
-coordinated restore.
+schema without rewriting data. Version 8 adds nullable caller UID provenance without rewriting
+requests; NULL means the caller incarnation is unknown. During a rolling update, older writers may
+still insert NULL; new readers preserve it as unknown. Older and incomplete schemas are rejected;
+existing Goose history remains intact. A database created at version 8 requires a version-8-aware
+rollback image or a coordinated restore.
 
 ## Built-in input contracts
 
@@ -65,10 +67,21 @@ admission refuses subsequent MCP authority resolution. Revoking an old grant can
 replacement, and no Connection or grant history is deleted.
 
 The core receives a ServiceAccount principal and has no Connection authority or grant provenance.
-Requests and idempotency keys are scoped to the submitting account. Connections acting as the
-same account share its receipt reads; different accounts remain isolated. Rebinding changes only
-future submissions, not the account of an existing Action. Revoking a Connection stops further
-requests; it does not cancel an Action the core has already accepted.
+At admission it stores the TokenReview-verified UID beside the ServiceAccount's namespace and name.
+The UID pins the exact account incarnation in receipts and execution payloads. Requests whose
+admitting writer did not store a UID remain explicitly unknown, including writes by older replicas
+during a roll. The service never looks up a same-name live account to fill it in, and a
+caller-delegating executor must refuse those requests.
+
+Ownership reads, PolicySet subject matching, and submission idempotency remain scoped by the
+ServiceAccount namespace and name. A same-name replacement therefore shares the existing read and
+idempotency scope: it can read the retained request and reusing its key is refused, while that
+request still carries its original UID and does not become a request from the replacement account.
+Connections acting as the same account share its receipt reads; different accounts remain isolated.
+Rebinding changes only future submissions, not the account identity recorded on an existing Action.
+Revoking a Connection stops further requests; it does not cancel an Action the core has already
+accepted. Decisions stay linked to their ActionRequest rather than duplicating its caller identity;
+caller-authored event actors record their verified UID when known.
 
 ## Action policies
 

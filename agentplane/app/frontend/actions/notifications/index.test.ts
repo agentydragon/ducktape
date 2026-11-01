@@ -11,6 +11,7 @@ function actionRequest(
     idempotency_key: "notification-format-test",
     ...fields,
     caller: { namespace: "test-namespace", name: "test-account" },
+    caller_uid: null,
     state: "decision_pending",
     version: 1,
     created_at: "2026-10-09T12:00:00Z",

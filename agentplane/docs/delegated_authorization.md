@@ -64,9 +64,12 @@ and valid request/execution UUIDs. Neither the actor nor its credentials appear 
 The Action execution ID is the existing execution record's ID, never its lease token.
 
 Actions constructs the envelope from its authenticated, durable request and execution records.
-Tool arguments cannot supply or override it. The original agent token need not survive until
-execution; Actions uses its own rotating token for the destination and retains the verified caller
-identity instead. No caller-token minting or new signing service is needed for this path.
+Tool arguments cannot supply or override it. Admission stores the verified caller UID with the
+request and the existing execution UUID with the dispatch payload. A historical request without a
+stored caller UID remains unknown and cannot be delegated, including when an older replica wrote it
+during rollout; Actions never fills it from a live same-name ServiceAccount. The original agent token need not survive until execution; Actions uses
+its own rotating token for the destination and retains the verified caller identity instead. No
+caller-token minting or new signing service is needed for this path.
 
 ### Authentication modes and rollout
 

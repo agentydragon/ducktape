@@ -46,6 +46,7 @@ export function request(state: ActionState, index: number): ActionRequestView {
     description: `test description adding what the ${state} title leaves out`,
     idempotency_key: `request-${index}`,
     caller: { namespace: "agentplane-test", name: "test-agent" },
+    caller_uid: null,
     state,
     version: decided ? 2 : 1,
     created_at: "2026-09-05T12:00:00Z",

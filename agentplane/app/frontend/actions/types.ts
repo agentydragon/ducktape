@@ -76,6 +76,7 @@ export interface ActionRequestView {
   title: string;
   description: string | null;
   caller: ServiceAccountRef;
+  caller_uid: string | null;
   state: ActionState;
   version: number;
   created_at: string;

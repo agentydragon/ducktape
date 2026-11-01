@@ -261,6 +261,7 @@ function actionRequestMessage(value: ActionRequestView): ActionRequest {
     title: value.title,
     description: value.description ?? undefined,
     caller: { namespace: value.caller.namespace, name: value.caller.name },
+    callerUid: value.caller_uid ?? undefined,
     state: actionState(value.state),
     version: safeInt64(value.version, "ActionRequest.version"),
     createdAt: timestamp(value.created_at),
