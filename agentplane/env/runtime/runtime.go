@@ -32,7 +32,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -105,7 +104,6 @@ type Runtime struct {
 	activeTransitionCtx      context.Context
 	activeTransitionCancel   context.CancelFunc
 	activeTransitionSequence uint64
-	activeQuiesceIdleSince   *timestamppb.Timestamp
 	owner                    *environmentOwner
 	state                    *EnvironmentState
 	lifecycleState           state.State
