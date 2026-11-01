@@ -1,9 +1,59 @@
+load("@aspect_bazel_lib//lib:directory_path.bzl", "directory_path")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+load(":typescript_proto.bzl", "typescript_proto_compile")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
+
+directory_path(
+    name = "protoc_gen_es_entry",
+    directory = "//:node_modules/@bufbuild/protoc-gen-es/dir",
+    path = "bin/protoc-gen-es",
+)
+
+js_binary(
+    name = "protoc_gen_es",
+    data = ["//:node_modules/@bufbuild/protoc-gen-es"],
+    entry_point = ":protoc_gen_es_entry",
+)
+
+# Generate this API's full imported schema closure so Google HTTP annotations and
+# notification messages have one consistent Protobuf-ES module graph.
+typescript_proto_compile(
+    name = "notification_operator_proto_generated",
+    options = ["json_types=true"],
+    protos = ["//agentplane/notification_service:notifications_operator_proto"],
+)
+
+js_library(
+    name = "notification_operator_proto_js",
+    srcs = [":notification_operator_proto_generated"],
+    deps = ["//:node_modules/@bufbuild/protobuf"],
+)
+
+js_test(
+    name = "notification_operator_proto_runtime_test",
+    data = [":notification_operator_proto_js"],
+    entry_point = "notification_operator_proto_runtime_test.mjs",
+)
+
+ts_config(
+    name = "notification_operator_proto_tsconfig",
+    src = "notification_operator_proto_tsconfig.json",
+)
+
+ts_library(
+    name = "notification_operator_proto_json_types_consumer",
+    testonly = True,
+    srcs = ["notification_operator_proto_json_types_consumer.ts"],
+    tsconfig = ":notification_operator_proto_tsconfig",
+    deps = [":notification_operator_proto_js"],
+)
 
 proto_library(
     name = "runner_state_proto",
