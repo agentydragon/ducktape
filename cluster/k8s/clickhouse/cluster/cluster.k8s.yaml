@@ -629,7 +629,7 @@ spec:
             - name: tcp
               port: 9000
           selector:
-            clickhouse.altinity.com/replica: "1"
+            statefulset.kubernetes.io/pod-name: chi-clickhouse-default-0-1-0
           type: ClusterIP
 ---
 apiVersion: monitoring.coreos.com/v1
@@ -669,7 +669,7 @@ spec:
     clickhouse.altinity.com/chi: clickhouse
     clickhouse.altinity.com/namespace: clickhouse
     clickhouse.altinity.com/ready: "yes"
-    clickhouse.altinity.com/replica: "1"
+    statefulset.kubernetes.io/pod-name: chi-clickhouse-default-0-1-0
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
