@@ -149,6 +149,8 @@ fn run_spec_validate(args: ValidateArgs) -> Result<ValidateReport> {
         &cli,
         TransformRunOptions {
             output: RunOutput::DryRun,
+            artifacts: pipeline::RunArtifacts::Program,
+            graph_reports: lowering::GraphReportSelection::None,
             keep_going,
             report_dir_override: Some(capture.path().to_path_buf()),
             list_template_identifiers: true,

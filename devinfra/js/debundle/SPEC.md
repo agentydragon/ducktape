@@ -97,12 +97,29 @@ rewritten HTML, and enumerates copied assets. Invalid loading topology rejects
 the plan before any accepted output is written, including during a dry run.
 The browser writer materializes those decisions without rediscovering entries.
 
+### Report output selection
+
+Normal runs omit full dependency/program graph serialization and emit
+`graph_summary.json` with exact graph counts and validation verdicts. `--graphs`
+selects full graphs independently of diagnostic detail and effect-conflict
+streams. Both selections retain all analysis facts, generated edges, premises,
+gate/TV checks and final reconstructed-program validation.
+
+`--reports-only <OUT_ROOT>` requires `--analysis` and writes reports without
+program/browser/vendor output. It follows the same canonical materializer and
+final validator; it cannot turn a rejected program into success. It conflicts
+with dry-run and inconsistent output roots. With emit-on-rejection, a gate-only
+rejection preserves typed exit 3 and a truthful marker; other errors fail.
+The Bazel pipeline's default output excludes full graphs even with
+split_dependency_graphs enabled. A separate on-demand export action consumes
+the exact same Analyze artifact for its dependency_graphs output group.
+
 ### Reading-only output on gate rejection
 
 `debundle run --emit-on-rejection` changes only what a realizability-gate
 rejection writes; it is mutually exclusive with `--dry-run`. The selector pass,
-the gate and its evidence reports (`dependency_graph.json.gz`, `cycles.json` /
-`atomic_group_conflicts.json` under `reports/tree/<chunk>/`) are unchanged,
+the gate and its evidence reports (`cycles.json` / `atomic_group_conflicts.json`
+under `reports/tree/<chunk>/`, plus explicitly selected full graphs) are unchanged,
 and the run still exits nonzero with the gate's diagnostic. An accepted spec
 produces exactly the output it produces without the flag.
 

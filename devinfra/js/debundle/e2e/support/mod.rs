@@ -214,7 +214,10 @@ pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
 pub fn run_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> Fixture {
     let setup = prepare_fixture(&opts);
 
-    let result = spawn_transform_with_args(&setup.spec_path, extra_args);
+    let args = std::iter::once("--graphs")
+        .chain(extra_args.iter().copied())
+        .collect::<Vec<_>>();
+    let result = spawn_transform_with_args(&setup.spec_path, &args);
     assert!(
         result.status.success(),
         "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
@@ -446,7 +449,10 @@ pub fn run_rejection_fixture_with_args(
 ) -> RejectedFixture {
     let setup = prepare_fixture(&opts);
 
-    let result = spawn_transform_with_args(&setup.spec_path, extra_args);
+    let args = std::iter::once("--graphs")
+        .chain(extra_args.iter().copied())
+        .collect::<Vec<_>>();
+    let result = spawn_transform_with_args(&setup.spec_path, &args);
     assert_eq!(
         result.status.code(),
         Some(exit_code),
@@ -1399,6 +1405,14 @@ impl TreeRun {
 
 /// Writes `fixture` and runs `debundle run` on it in tree form with
 /// `extra_args`, writing the JS tree.
+/// A tree fixture for tests whose queries require full graph reports.
+pub fn run_tree_graph_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeRun {
+    let args = std::iter::once("--graphs")
+        .chain(extra_args.iter().copied())
+        .collect::<Vec<_>>();
+    run_tree_fixture(fixture, &args)
+}
+
 pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeRun {
     let root = TempDir::with_prefix(current_test_prefix()).expect("create tempdir");
     let snapshot = root.path().join("snapshot");

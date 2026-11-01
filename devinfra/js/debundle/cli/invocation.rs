@@ -86,6 +86,8 @@ pub enum WriteScope {
     FlatSpec { spec: PathBuf },
     /// Tree transforms write into their explicitly selected output root.
     TreeOutput { root: PathBuf },
+    /// Explicit report-only output; canonical validation still runs.
+    PipelineReports { root: PathBuf },
     /// A spec authoring command may update YAML below this module tree.
     ModuleTree { root: PathBuf },
     /// The CLI writes this invocation record before dispatching the command.
@@ -573,7 +575,9 @@ fn classify_write_scope(
         return scopes;
     }
     if command == ["run"] {
-        if flag_value(arguments, "dry_run") {
+        if let Some(root) = get_path(&["reports_only"]) {
+            scopes.push(WriteScope::PipelineReports { root });
+        } else if flag_value(arguments, "dry_run") {
             scopes.push(WriteScope::ConditionalPipelineReports {
                 spec: get_path(&["spec", "tree_config"]),
                 output_root: get_path(&["out_root"]),
@@ -639,6 +643,8 @@ fn is_path_argument(name: &str, env: Option<&OsStr>) -> bool {
             | "modules"
             | "modules_root"
             | "out_root"
+            | "reports_only"
+            | "analysis"
             | "packages_root"
             | "path"
             | "paths"

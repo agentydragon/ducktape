@@ -2,7 +2,7 @@
 
 use debundle_e2e_support::{
     GraphFixture, TreeFixture, assert_module_exports, assert_node_output, debundler_path,
-    run_tree_fixture,
+    run_tree_graph_fixture,
 };
 use serde_json::json;
 use std::fs;
@@ -61,7 +61,7 @@ fn applies_renamed_multi_declarator_with_cross_initializer_reference() {
 
 #[test]
 fn apply_ignores_modules_owned_by_other_chunks() {
-    let run = run_tree_fixture(
+    let run = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[
                 ("main", "const a = { value: 4 };\nconsole.log(a.value);\n"),
@@ -148,7 +148,7 @@ fn apply_ignores_modules_owned_by_other_chunks() {
 
 #[test]
 fn apply_preserves_case_sensitive_chunk_root() {
-    let run = run_tree_fixture(
+    let run = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[("main", "const a = { value: 4 };\nconsole.log(a.value);\n")],
             module_roots: &[("chunks/Main", "main")],
@@ -221,7 +221,7 @@ fn apply_preserves_case_sensitive_chunk_root() {
     assert!(!modules.join("chunks/main/services/foo.yaml").exists());
     let out_root = run.root().join("rerun");
     let emitted = Command::new(debundler_path())
-        .args(["run", "--tree-config"])
+        .args(["run", "--graphs", "--tree-config"])
         .arg(&config)
         .arg("--tree-modules")
         .arg(&modules)

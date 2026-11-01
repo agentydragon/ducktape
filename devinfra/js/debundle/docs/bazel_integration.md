@@ -46,27 +46,22 @@ the build. A gate-rejected output is marked by `GATE_REJECTED` at its
 `write_js_tree` root and is never a runnable bundle (<../SPEC.md> § Reading-only
 output on gate rejection), so name the target for it, e.g. `debundle_readable`.
 
-`split_dependency_graphs = True` moves every `reports/**/dependency_graph.json.gz`,
-and the `program_graph.json.gz` they reference, out of `<target>.out` into `<target>.dependency_graphs/` at the same relative
-path, served as the `dependency_graphs` output group
-(`--output_groups=+dependency_graphs`). On a large corpus the graphs are most of
-the output (gigabytes against megabytes of modules); paths in reports and the
-`GATE_REJECTED` marker still name their original location.
-The mover also recognizes historical plain `.json` graphs from an explicitly
-selected older debundler. It moves existing files without changing their
-encoding or relative program-graph reference.
+Default builds write small reports and emitted modules without full graph
+serialization, including when `split_dependency_graphs = True`. That attr
+registers a separate `DebundleExportGraphs` action and the `dependency_graphs`
+output group (`--output_groups=+dependency_graphs`). The action consumes the
+same projection/Analyze artifact as the normal pipeline, with the same source,
+spec and census inputs; it does not rerun interpreter/fact analysis. Its
+`<target>.dependency_graphs/reports/tree/` contains full graphs and run diagnostics.
+Graph selection does not enable full effect-conflict JSONL or other full-detail
+evidence. The default output group never depends on this export action.
 
-To export full effect-conflict rows, set `effect_conflicts_jsonl = True`.
-Optionally restrict the JSONL sinks with
-`effect_conflicts_chunks = ["main", "worker"]`; an empty list selects every
-materialized chunk. The CLI validates the IDs and requires the export flag
-when a filter is supplied. These attrs affect only the final pipeline action:
-the analysis projection, analyzed inputs, graphs and bounded reports retain
-their existing scope. JSONL files stay beside the other chunk reports under
-`<target>.out/reports/`, including when dependency graphs are split out. No
-additional output group is needed. Export is disabled by default; report
-availability and gate rejection follow the existing CLI policy described in
-[Running the pipeline](cli.md#running-the-pipeline).
+A graph-consuming filegroup selects `output_group = "dependency_graphs"`.
+Adapters should request that group only for graph refresh/query work; normal
+validation and source regeneration remain small. Gate-rejected reading trees
+retain their `GATE_REJECTED` marker and exit-3 contract. Without an exported
+graph their diagnostics explain how to request one instead of naming a
+nonexistent graph file.
 
 ## Integration boundary
 

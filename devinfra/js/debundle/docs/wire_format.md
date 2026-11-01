@@ -11,6 +11,16 @@ are consumed by:
 
 This doc states the convention these files follow.
 
+## Graph report selection
+
+Default runs write `graph_summary.json` per chunk: exact source-unit, edge,
+edge-kind, atomic-group/conflict and cycle counts, gate/legacy-TV verdicts, and
+whether full graphs were exported. It has no node/edge table. Full dependency
+and program graphs require `run --graphs` or Bazel's `dependency_graphs` output
+group. Their schema and provenance checks remain authoritative for graph-backed
+queries; a summary is not a substitute graph. This selection is independent of
+full diagnostic evidence and effect-conflict JSONL.
+
 ## Convention: `Atom`-only on the wire
 
 Every JSON file carries binding identities as `Atom`s (interned

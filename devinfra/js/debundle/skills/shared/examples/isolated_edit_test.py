@@ -45,6 +45,7 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(tmp_path: P
         [
             engine,
             "run",
+            "--graphs",
             "--tree-config",
             str(original / "spec_config.yaml"),
             "--tree-modules",

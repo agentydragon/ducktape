@@ -37,7 +37,8 @@ exchange.
 
 Before starting a round, the project adapter should identify:
 
-- debundle target and graph-refresh command
+- debundle target and explicit graph-refresh command (`run --graphs` or the
+  Bazel `dependency_graphs` output group; normal build/regen outputs omit graphs)
 - modules directory, patch stream if any, emitted JS root, and source root
 - dependency graph, root/chunk reports, directory reports, and cycle report
   locations

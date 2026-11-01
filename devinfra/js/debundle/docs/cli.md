@@ -450,8 +450,21 @@ If the spec is unrealizable, `debundle run` rejects and emits structured
 side outputs (`cycles.json`, `atomic_group_conflicts.json`) under
 `reports/tree/<chunk-id>/`. `debundle run --dry-run` runs pipeline
 parse/facts/gate checks without writing emitted JS or reports; a gate
-rejection still writes `dependency_graph.json.gz` plus the rejection evidence, so
-the `gate` queries work on the rejection that was just reported.
+rejection still writes its rejection evidence. Full graph serialization is
+opt-in with `--graphs`, including for rejected runs. Graph-backed queries require
+that export; the default `graph_summary.json` has exact source-unit/edge/kind/atom
+counts and gate/legacy-TV verdicts, with no node/edge table. All internal analysis,
+gate and translation-validation checks run in either mode.
+
+`debundle run --analysis <artifact> --reports-only <out-root> [--graphs]`
+runs the same canonical materialization and final program validation, writing
+only reports under `<out-root>/reports/tree`. It writes no JS, browser or vendor
+assets and requires a precomputed analysis artifact. The reports-only output
+mode is independent of graph and effect-stream selection. It conflicts with
+`--dry-run`; an explicit `--out-root` must name the same root. With
+`--emit-on-rejection`, a gate-only rejection retains typed exit 3 and writes a
+truthful `GATE_REJECTED` marker at the reports-only root. Other errors remain
+failures, and accepted exports exit 0. Existing output directories must be empty.
 
 `debundle run --emit-on-rejection` (exclusive with `--dry-run`) additionally
 writes the logical-module tree of a gate-rejected spec for reading, naming and
