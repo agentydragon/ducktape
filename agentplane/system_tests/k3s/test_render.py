@@ -363,11 +363,19 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations() -> None:
     assert clients["test-mcp-linkage"]["redirectURIs"] == [f"{_MCP.app_origin}/mcp-linkage/callback"]
     mintable_accounts = edge_config["mintable_accounts"]
     assert mintable_accounts
-    for account in mintable_accounts:
-        namespace, name = account.split("/")
-        caller = _resource(docs, "ServiceAccount", name)
-        assert caller["metadata"]["namespace"] == namespace
-        assert caller["metadata"]["labels"]["agentplane.allegedly.works/use-action-service"] == "true"
+    chart_service_accounts = {
+        f"{doc['metadata']['namespace']}/{doc['metadata']['name']}": doc
+        for doc in docs
+        if doc["kind"] == "ServiceAccount"
+    }
+    static_account = f"{fixture.namespace}/mcp-edge-test-caller"
+    sandbox_account = f"{fixture.namespace}/systest-delegation-caller"
+    assert set(mintable_accounts) == {static_account, sandbox_account}
+    # The static OAuth fixture caller is chart-owned and must remain labeled for Actions.
+    assert set(mintable_accounts) & chart_service_accounts.keys() == {static_account}
+    caller = chart_service_accounts[static_account]
+    assert caller["metadata"]["labels"]["agentplane.allegedly.works/use-action-service"] == "true"
+    # The Sandbox controller creates and labels this account after chart rendering.
     token_rules = [
         rule for rule in _resource(docs, "Role", "mcp-edge")["rules"] if "serviceaccounts/token" in rule["resources"]
     ]
