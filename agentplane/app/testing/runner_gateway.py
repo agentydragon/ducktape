@@ -125,7 +125,9 @@ async def runner(
         listen_address="127.0.0.1:9090",
         security=MTLS(
             mode="mtls",
-            tls=gateway_service.issue_runner_tls(sandbox.runner_identity_uri, tmp_path / "runner-transport"),
+            tls=gateway_service.issue_environment_runtime_tls(
+                sandbox.environment_runtime_identity_uri, tmp_path / "environment-runtime-transport"
+            ),
         ),
     )
     ingress = Endpoint(target=history_service.ingress_target, bearer=await history_service.writer_token(sandbox.owner))

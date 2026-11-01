@@ -167,7 +167,9 @@ async def scripted_runner(
     """`source`'s scripted runner, connected to the Runner Gateway as `sandbox`'s runner."""
     async with runner_server(
         "127.0.0.1:9090",
-        gateway_service.issue_runner_tls(sandbox.runner_identity_uri, tmp_path / "runner-transport"),
+        gateway_service.issue_environment_runtime_tls(
+            sandbox.environment_runtime_identity_uri, tmp_path / "environment-runtime-transport"
+        ),
         partial(add_replication_source, source),
     ):
         await gateway_service.wait_for_runner(sandbox_control, sandbox.destination)

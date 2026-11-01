@@ -20,7 +20,7 @@ from agentplane.sandboxes.launch import SandboxIdentity
 from agentplane.sandboxes.testing.reader import SandboxReader
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from agentplane.testing.tls import runner_identity_uri
+from agentplane.testing.tls import environment_runtime_identity_uri
 from util.kubernetes import CustomObjectsClient
 
 # gazelle:include_dep @pypi//protobuf
@@ -59,8 +59,8 @@ class SandboxCluster:
         )
 
     @property
-    def runner_identity_uri(self) -> str:
-        return runner_identity_uri(self.namespace, self.uid, _RUNNER_CREDENTIAL_ID)
+    def environment_runtime_identity_uri(self) -> str:
+        return environment_runtime_identity_uri(self.namespace, self.uid, _RUNNER_CREDENTIAL_ID)
 
     async def pod_token(self, audience: str) -> str:
         """A token bound to the runner Pod, as its runner container holds one."""
