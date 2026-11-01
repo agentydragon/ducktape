@@ -171,14 +171,13 @@ scheduled-wake implementation feed the daily CI capstone. Small `SESSION_LAUNCH_
 remain alongside these tracks as capacity permits. This is a scheduling preference, not additional
 dependency edges.
 
-**Selected systemd reliability work, 2026-11-01.** Shared typed cleanup and stopped-unit recovery
-are in review in [#13458](https://github.com/agentydragon/ducktape/pull/13458); the latest reported
-Bazel check is pending. Native shutdown is in review in
-[#13462](https://github.com/agentydragon/ducktape/pull/13462), based on #13458. Focused local
-supervision/runtime checks passed and the fixture built; it has not been exercised against a real
-systemd guest. `/root` reviews integration, successor admission, uncertain launches and the
-distinction between process cleanup and graceful application completion. Broad disruption exercises
-remain deferred.
+**Selected systemd reliability work, 2026-11-01.** Shared typed cleanup, stopped-unit recovery and
+native shutdown are combined in [#13458](https://github.com/agentydragon/ducktape/pull/13458), after
+[#13462](https://github.com/agentydragon/ducktape/pull/13462) merged into that branch. The
+[native shutdown task](#systemd_native_shutdown--let-systemd-perform-native-termination) tracks the
+launch-time grace repair and actual guest validation. `/root` reviews integration, successor
+admission, uncertain launches and the distinction between process cleanup and graceful application
+completion. Broad disruption exercises remain deferred.
 
 Draft [#13442](https://github.com/agentydragon/ducktape/pull/13442), which reconstructs a cleared
 cgroup path, remains held while these changes replace that approach. Its original native-cleanup
