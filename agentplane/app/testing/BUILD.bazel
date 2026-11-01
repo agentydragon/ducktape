@@ -124,6 +124,10 @@ py_library(
     name = "thread_view_marks",
     srcs = ["thread_view_marks.py"],
     data = ["thread_view_marks.js"],
+    visibility = [
+        "//agentplane/app:__pkg__",
+        "//agentplane/app/frontend/testing:__pkg__",
+    ],
     deps = [
         "//util/bazel:runfiles",
         "@pypi//playwright",
