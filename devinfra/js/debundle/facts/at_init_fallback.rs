@@ -6,28 +6,37 @@ use crate::facts::abstract_domain::heap::sees_only_element;
 /// `%Array.prototype%` `forEach`/`map`/`filter` with call-free callbacks
 /// that run no user code on the elements, so nothing reachable through the
 /// array runs and the array adds nothing to the statement's fallback reach.
+/// `settled` is what each plain-array binding the statement reads holds at
+/// its program point (`SynchronousCalls::settled_array_elements`).
 pub(crate) fn safe_plain_array_at_init_fallback_sources(
     item: &ModuleItem,
     shadowed: &BTreeSet<&'static str>,
     graph: &ChunkCodeGraph,
+    settled: &BTreeMap<Id, SettledElements>,
 ) -> BTreeSet<Id> {
+    let arrays = PlainArrays {
+        graph,
+        settled,
+        mentions: root_mentions(item),
+    };
     let mut out = BTreeSet::new();
     if let Some(var) = var_decl_of_item(item) {
         for decl in &var.decls {
             let Some(init) = decl.init.as_deref() else {
                 continue;
             };
-            if let Some(root) = object_from_entries_plain_array_chain_root(init, shadowed, graph) {
+            if let Some(root) = object_from_entries_plain_array_chain_root(init, shadowed, &arrays)
+            {
                 out.insert(root);
             }
-            if let Some(stage) = plain_array_chain(init, Consumer::Values, graph) {
+            if let Some(stage) = plain_array_chain(init, Consumer::Values, &arrays) {
                 out.insert(stage.root);
             }
-            collect_array_literal_plain_array_spread_roots(init, graph, &mut out);
+            collect_array_literal_plain_array_spread_roots(init, &arrays, &mut out);
         }
     }
     if let ModuleItem::Stmt(Stmt::Expr(expr)) = item
-        && let Some(root) = plain_array_for_each_root(&expr.expr, graph)
+        && let Some(root) = plain_array_for_each_root(&expr.expr, &arrays)
     {
         out.insert(root);
     }
@@ -37,7 +46,7 @@ pub(crate) fn safe_plain_array_at_init_fallback_sources(
 fn object_from_entries_plain_array_chain_root(
     expr: &Expr,
     shadowed: &BTreeSet<&'static str>,
-    graph: &ChunkCodeGraph,
+    graph: &PlainArrays<'_>,
 ) -> Option<Id> {
     let Expr::Call(call) = expr.unwrap_parens() else {
         return None;
@@ -63,7 +72,7 @@ fn object_from_entries_plain_array_chain_root(
 
 fn collect_array_literal_plain_array_spread_roots(
     expr: &Expr,
-    graph: &ChunkCodeGraph,
+    graph: &PlainArrays<'_>,
     out: &mut BTreeSet<Id>,
 ) {
     let Expr::Array(array) = expr.unwrap_parens() else {
@@ -88,16 +97,69 @@ enum Consumer {
     Entries,
 }
 
-/// A plain-array chain: its root binding and whether the elements reaching
-/// this point are the root's primitive elements.
+/// The plain-array bindings a statement can admit, and what each holds where
+/// the statement starts.
+struct PlainArrays<'a> {
+    graph: &'a ChunkCodeGraph,
+    settled: &'a BTreeMap<Id, SettledElements>,
+    /// How many times the statement names each identifier.
+    mentions: BTreeMap<Id, usize>,
+}
+
+impl PlainArrays<'_> {
+    /// The elements a chain rooted at `root` reads, when it is a plain array.
+    /// Object elements count only when the chain is the statement's one
+    /// mention of the root: no other part of the statement reaches them.
+    fn elements(&self, root: &Ident) -> Option<Elements> {
+        let id = root.to_id();
+        if !self.graph.is_plain_array(root.sym.as_ref()) {
+            return None;
+        }
+        Some(match self.settled.get(&id) {
+            Some(SettledElements::Primitive) => Elements::Primitive,
+            Some(SettledElements::Records { shared_keys })
+                if self.mentions.get(&id) == Some(&1) =>
+            {
+                Elements::Records(shared_keys.clone())
+            }
+            _ if self.graph.is_primitive_element_array(root.sym.as_ref()) => Elements::Primitive,
+            _ => Elements::Opaque,
+        })
+    }
+}
+
+fn root_mentions(item: &ModuleItem) -> BTreeMap<Id, usize> {
+    struct Mentions(BTreeMap<Id, usize>);
+    impl Visit for Mentions {
+        fn visit_ident(&mut self, ident: &Ident) {
+            *self.0.entry(ident.to_id()).or_default() += 1;
+        }
+    }
+    let mut mentions = Mentions(BTreeMap::new());
+    item.visit_with(&mut mentions);
+    mentions.0
+}
+
+/// What a chain stage knows about the elements reaching it.
+#[derive(Clone, PartialEq, Eq)]
+enum Elements {
+    Primitive,
+    /// Plain-data records, each holding a primitive under every one of the
+    /// keys as an own property.
+    Records(BTreeSet<String>),
+    Opaque,
+}
+
+/// A plain-array chain: its root binding and what the elements reaching this
+/// point are.
 struct Stage {
     root: Id,
-    primitive: bool,
+    elements: Elements,
 }
 
 /// The stage `call` reads its elements from: a plain-array binding, or the
 /// result of an earlier admitted stage.
-fn receiver_stage(call: &CallExpr, method: &[&str], graph: &ChunkCodeGraph) -> Option<Stage> {
+fn receiver_stage(call: &CallExpr, method: &[&str], graph: &PlainArrays<'_>) -> Option<Stage> {
     if call.args.len() != 1 || call.args[0].spread.is_some() {
         return None;
     }
@@ -114,26 +176,26 @@ fn receiver_stage(call: &CallExpr, method: &[&str], graph: &ChunkCodeGraph) -> O
         return None;
     }
     match member.obj.as_ref().unwrap_parens() {
-        Expr::Ident(recv) if graph.is_plain_array(recv.sym.as_ref()) => Some(Stage {
+        Expr::Ident(recv) => Some(Stage {
             root: recv.to_id(),
-            primitive: graph.is_primitive_element_array(recv.sym.as_ref()),
+            elements: graph.elements(recv)?,
         }),
         other => plain_array_chain(other, Consumer::Values, graph),
     }
 }
 
-fn plain_array_for_each_root(expr: &Expr, graph: &ChunkCodeGraph) -> Option<Id> {
+fn plain_array_for_each_root(expr: &Expr, graph: &PlainArrays<'_>) -> Option<Id> {
     let Expr::Call(call) = expr.unwrap_parens() else {
         return None;
     };
     let input = receiver_stage(call, &["forEach"], graph)?;
-    callback_is_silent_on_elements(&call.args[0].expr, input.primitive, Use::Value)
+    callback_is_silent_on_elements(&call.args[0].expr, &input.elements, Use::Value)
         .then_some(input.root)
 }
 
 /// A `map`/`filter` chain over a plain array whose callbacks, and the
 /// chain's `consumer`, run no user code on the elements.
-fn plain_array_chain(expr: &Expr, consumer: Consumer, graph: &ChunkCodeGraph) -> Option<Stage> {
+fn plain_array_chain(expr: &Expr, consumer: Consumer, graph: &PlainArrays<'_>) -> Option<Stage> {
     let Expr::Call(call) = expr.unwrap_parens() else {
         return None;
     };
@@ -146,18 +208,22 @@ fn plain_array_chain(expr: &Expr, consumer: Consumer, graph: &ChunkCodeGraph) ->
     );
     let silent = if filter {
         // `filter` passes elements through: an entry read needs them primitive.
-        callback_is_silent_on_elements(callback, input.primitive, Use::Value)
-            && (consumer == Consumer::Values || input.primitive)
+        callback_is_silent_on_elements(callback, &input.elements, Use::Value)
+            && (consumer == Consumer::Values || input.elements == Elements::Primitive)
     } else {
         let returned = match consumer {
             Consumer::Values => Use::Value,
             Consumer::Entries => Use::Entry,
         };
-        callback_is_silent_on_elements(callback, input.primitive, returned)
+        callback_is_silent_on_elements(callback, &input.elements, returned)
     };
     silent.then_some(Stage {
         root: input.root,
-        primitive: filter && input.primitive,
+        elements: if filter {
+            input.elements
+        } else {
+            Elements::Opaque
+        },
     })
 }
 
@@ -178,11 +244,14 @@ enum Use {
 /// Whether a call-free element callback runs no user code on the elements
 /// it receives. Primitive elements make every step silent under A11;
 /// otherwise each element-derived value may only be stored, returned,
-/// compared strictly or tested for truthiness.
-fn callback_is_silent_on_elements(callback: &Expr, primitive: bool, returned: Use) -> bool {
-    if primitive {
-        return true;
-    }
+/// compared strictly or tested for truthiness. A record element's own key,
+/// read statically, is a primitive and may be used any way.
+fn callback_is_silent_on_elements(callback: &Expr, elements: &Elements, returned: Use) -> bool {
+    let record_keys = match elements {
+        Elements::Primitive => return true,
+        Elements::Records(keys) => keys.clone(),
+        Elements::Opaque => BTreeSet::new(),
+    };
     let (params, body): (Vec<&Pat>, ElementCallbackBody<'_>) = match callback.unwrap_parens() {
         Expr::Arrow(arrow) => (
             arrow.params.iter().collect(),
@@ -212,7 +281,11 @@ fn callback_is_silent_on_elements(callback: &Expr, primitive: bool, returned: Us
         Some(_) => return false,
         None => None,
     };
-    let check = ElementUses { element, returned };
+    let check = ElementUses {
+        element,
+        returned,
+        record_keys,
+    };
     match body {
         ElementCallbackBody::Expr(expr) => check.expr(expr, returned),
         ElementCallbackBody::Stmts(stmts) => check.stmts(stmts),
@@ -229,6 +302,9 @@ enum ElementCallbackBody<'a> {
 struct ElementUses {
     element: Option<String>,
     returned: Use,
+    /// Own keys of every record element: a static read of one is a
+    /// primitive, so it runs no accessor and converts silently.
+    record_keys: BTreeSet<String>,
 }
 
 impl ElementUses {
@@ -374,11 +450,20 @@ impl ElementUses {
     /// A member read or write target: its receiver may run accessors, and a
     /// computed key runs `ToPropertyKey`.
     fn member(&self, member: &MemberExpr) -> bool {
+        if self.record_member(member) {
+            return true;
+        }
         self.expr(&member.obj, Use::Coerce)
             && match &member.prop {
                 MemberProp::Computed(key) => self.expr(&key.expr, Use::Coerce),
                 MemberProp::Ident(_) | MemberProp::PrivateName(_) => true,
             }
+    }
+
+    /// A static read of an own key of every record element.
+    fn record_member(&self, member: &MemberExpr) -> bool {
+        matches!(member.obj.unwrap_parens(), Expr::Ident(receiver) if self.is_element(receiver))
+            && matches!(&member.prop, MemberProp::Ident(key) if self.record_keys.contains(key.sym.as_ref()))
     }
 
     fn prop_name(&self, name: &PropName) -> bool {

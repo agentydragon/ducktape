@@ -221,6 +221,9 @@ pub(crate) struct SynchronousCalls {
     /// conservative paths contributed, each with the first such path.
     pub fallback_only: FallbackOnlyEffects,
     pub complete: bool,
+    /// What each plain-array binding the statement reads holds at its program
+    /// point, when its elements are known.
+    pub(crate) settled_array_elements: BTreeMap<Id, SettledElements>,
     /// Heap-content cells of the callables this statement invoked.
     pub(crate) heap_contents: HeapContentCells,
     pub precision_losses: Vec<crate::reports::schema::ExecutionPrecisionLoss>,
@@ -403,6 +406,20 @@ pub enum EffectCell {
 pub struct StatementEffectSummary {
     pub writes: BTreeSet<EffectCell>,
     pub reads: BTreeSet<EffectCell>,
+}
+
+/// The elements a plain-array binding holds where a statement starts, as
+/// synchronous execution settled them. Every element is untainted at that
+/// point (design § Heap taint).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum SettledElements {
+    /// Every element is a primitive.
+    Primitive,
+    /// Every element is an untainted plain-data object literal with static
+    /// keys; `shared_keys` are the own keys every object element
+    /// has and holds a primitive under. No value the statement otherwise reads
+    /// reaches those objects.
+    Records { shared_keys: BTreeSet<String> },
 }
 
 /// Heap-content cells one body touches: allocations it performs, cells it

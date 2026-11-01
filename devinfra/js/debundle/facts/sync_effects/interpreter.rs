@@ -31,7 +31,8 @@ use crate::facts::semantic_inference::{
 use crate::facts::source_unit_read_closure::SourceUnitReadClosure;
 use crate::facts::statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryUseFact,
-    HeapContentCells, ReturnedRecordUseFact, StatementFacts, StatementKind, SynchronousCalls,
+    HeapContentCells, ReturnedRecordUseFact, SettledElements, StatementFacts, StatementKind,
+    SynchronousCalls,
 };
 use crate::facts::sync_effects::property_inference::{
     CapturedPropertyDescriptor, OwnPropertyProjection, OwnPropertyProof, OwnPropertyRequest,
@@ -8618,6 +8619,14 @@ pub(crate) fn annotate_synchronous_calls(
     for effects in &statement_effects {
         effects.coerce_bindings(&mut needed);
     }
+    // A plain array's settled elements decide its at-init fallback.
+    needed.extend(
+        facts
+            .iter()
+            .flat_map(|fact| fact.reads.eager.iter())
+            .filter(|binding| proofs.graph.is_plain_array(binding.0.as_ref()))
+            .cloned(),
+    );
     // Member reads of a `PlainData` binding resolve against its settled
     // allocations' own properties.
     needed.extend(
@@ -8891,10 +8900,129 @@ impl Executor<'_, '_> {
                 uncertain_execution: self.state.uncertain_native_execution,
             });
     }
+    /// The elements of each plain-array binding `fact` reads, settled at its
+    /// program point: no element is tainted, and none is reachable from any
+    /// other binding the statement reads, eagerly or in a nested body.
+    fn settled_array_elements(&self, fact: &StatementFacts) -> BTreeMap<Id, SettledElements> {
+        let inputs = self.inputs;
+        let reachable = |exclude: &Id| {
+            let mut pending: Vec<AbstractValue> = fact
+                .reads
+                .eager
+                .iter()
+                .chain(&fact.reads.lazy)
+                .filter(|binding| *binding != exclude)
+                .filter_map(|binding| self.state.prefix_values.get(binding))
+                .flatten()
+                .cloned()
+                .collect();
+            let mut seen = BTreeSet::new();
+            while let Some(value) = pending.pop() {
+                if seen.insert(value.clone()) {
+                    self.visit_stored_references(&value, true, |reference| {
+                        pending.push(reference.clone());
+                    });
+                }
+            }
+            seen
+        };
+        let mut settled = BTreeMap::new();
+        for root in &fact.reads.eager {
+            if !inputs.graph.is_plain_array(root.0.as_ref())
+                || !inputs.single_writer_bindings.contains(root)
+                || !inputs.needed_bindings.contains(root)
+                || !self.state.initialized_bindings.contains(root)
+            {
+                continue;
+            }
+            let Some(values) = self.state.prefix_values.get(root) else {
+                continue;
+            };
+            let mut elements = Values::new();
+            let arrays = values.iter().all(|value| match value {
+                AbstractValue::Value(Value::Alloc(Kind::Object, array)) => {
+                    match self.state.dense_arrays.get(array) {
+                        Some(dense) if !self.state.tainted_objects.contains(array) => {
+                            elements.extend(dense.slots.iter().flatten().cloned());
+                            true
+                        }
+                        _ => false,
+                    }
+                }
+                _ => false,
+            });
+            if !arrays || values.is_empty() {
+                continue;
+            }
+            if elements.iter().all(AbstractValue::is_primitive) {
+                settled.insert(root.clone(), SettledElements::Primitive);
+                continue;
+            }
+            let others = reachable(root);
+            let mut shared_keys: Option<BTreeSet<String>> = None;
+            // A primitive element's keys live on its prototype, so a record
+            // array has only object elements.
+            let records = elements.iter().all(|element| match element {
+                AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                    let Some(properties) = self.state.prefix_object_properties.get(object) else {
+                        return false;
+                    };
+                    if !inputs.index.plain_data_objects.contains(object)
+                        || self.state.tainted_objects.contains(object)
+                        || self.state.applied_accessors.contains_key(object)
+                        || self.state.dense_arrays.contains_key(object)
+                        || others.contains(element)
+                        || properties.contains_key(&None)
+                    {
+                        return false;
+                    }
+                    let keys: BTreeSet<String> = properties
+                        .iter()
+                        .filter(|(_, values)| values.iter().all(AbstractValue::is_primitive))
+                        .filter_map(|(key, _)| key.clone())
+                        .collect();
+                    shared_keys = Some(match shared_keys.take() {
+                        Some(shared) => shared.intersection(&keys).cloned().collect(),
+                        None => keys,
+                    });
+                    true
+                }
+                _ => false,
+            });
+            if records {
+                settled.insert(
+                    root.clone(),
+                    SettledElements::Records {
+                        shared_keys: shared_keys.unwrap_or_default(),
+                    },
+                );
+            }
+        }
+        settled
+    }
+
+    /// An execution that could not complete may have run any code its reads
+    /// reach: every value of a binding the statement or its summarized
+    /// callees read becomes tainted (design § Heap taint).
+    fn taint_incomplete_reach(&mut self, fact: &StatementFacts, effects: &SynchronousCalls) {
+        let values: Values = fact
+            .reads
+            .eager
+            .iter()
+            .chain(&fact.reads.lazy)
+            .chain(effects.reads.iter().map(|(binding, _)| binding))
+            .filter_map(|binding| self.state.prefix_values.get(binding))
+            .flatten()
+            .cloned()
+            .collect();
+        self.taint_objects(&values);
+    }
+
     pub(super) fn execute_owner(&mut self, owner: SourceUnitOrdinal) -> SynchronousCalls {
         let inputs = self.inputs;
         let index = inputs.index;
         let fact = &inputs.facts[owner.0];
+        let settled_array_elements = self.settled_array_elements(fact);
         let calls = &index.top_calls[owner.0];
         let assignments = &index.top_assignments[owner.0];
         let needed = &inputs.needed_bindings;
@@ -9137,6 +9265,10 @@ impl Executor<'_, '_> {
             outcome.unsupported(ExecutionOperation::OpaqueExecution, fact.ordinal, DUMMY_SP);
         }
         outcome.effects.complete = outcome.complete;
+        outcome.effects.settled_array_elements = settled_array_elements;
+        if !outcome.complete {
+            self.taint_incomplete_reach(fact, &outcome.effects);
+        }
         // A failed runtime path forfeits the prevalidated private-result proof.
         // Keep the actual execution/effect outcome in either case.
         if !self.state.private_constructor_result_owners.is_empty()

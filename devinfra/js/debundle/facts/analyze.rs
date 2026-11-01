@@ -950,7 +950,13 @@ fn settle_statement_purity(
         fact.at_init_unresolved_sources.clear();
         fact.at_init_unresolved_inline_fn = false;
     } else {
-        let safe_array_sources = safe_plain_array_at_init_fallback_sources(item, shadowed, graph);
+        let no_settled_elements = BTreeMap::new();
+        let settled = fact
+            .synchronous_calls
+            .as_ref()
+            .map_or(&no_settled_elements, |calls| &calls.settled_array_elements);
+        let safe_array_sources =
+            safe_plain_array_at_init_fallback_sources(item, shadowed, graph, settled);
         for id in &safe_array_sources {
             fact.at_init_unresolved_sources.remove(id);
         }
