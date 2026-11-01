@@ -246,7 +246,11 @@ swapped conflicting pairs, not only the first.
 Each step keeps today's gate authoritative until the comparison is clean.
 Step 1 has landed: TV over today's edges runs beside the gate, writes
 `translation_validation.json`, and agrees with the gate on every e2e fixture
-and on both canonical inputs.
+and on both canonical inputs. Its default wire report now retains exact category
+counts and twenty deterministic examples per category. The same checker can
+stream every result with `run --full-report translation-validation`; the
+complete legacy pair set remains available to effect-TV comparison. Neither
+acceptance nor the comparison derives facts from those sampled examples.
 
 2. **Effect-set conflicts.** Switch the sweep to effect sets (needs
    abstract-interpreter step 7) and report the differences against the

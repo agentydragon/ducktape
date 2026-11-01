@@ -3895,3 +3895,14 @@ rosters live in the directories, not here):
   foundation; if a future change breaks the theorem (e.g.
   introduces an emit strategy that bypasses it), the proof
   needs revision and any dependent claims need re-checking.
+
+### Validation diagnostic retention
+
+The edge-TV checker visits every ordering/placement result and preserves exact
+category totals and its complete legacy conflict-pair set. Diagnostic retention
+is bounded independently: twenty deterministic examples per category, with exact
+totals and explicit truncation. The gate/TV oracle and effect-TV comparison never
+read sampled-vector emptiness. An optional complete-evidence visitor on the same
+checker streams full TV rows; it does not add a second evaluator or change source
+scope. Full diagnostic evidence and graph export are independent sink policies.
+See [the wire contract](wire_format.md#translation-validation).

@@ -40,6 +40,7 @@ def _pipeline_report_flags_test_impl(ctx):
         )
     command = actions["DebundlePipeline"].argv[-1]
     asserts.false(env, "--effect-conflicts" in baseline["DebundlePipeline"].argv[-1])
+    asserts.false(env, "--full-report" in baseline["DebundlePipeline"].argv[-1])
     asserts.equals(env, ctx.attr.readable, '[ "$status" -eq 3 ] || exit "$status"' in command)
 
     # Streams stay in the existing output tree; graph splitting creates only

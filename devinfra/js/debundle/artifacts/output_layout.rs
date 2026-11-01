@@ -35,6 +35,7 @@ pub const EXPORT_REENTRY_REPORT: &str = "export_reentry.json";
 pub const EFFECT_CONFLICTS_JSONL: &str = "effect_conflicts.jsonl";
 pub const EFFECT_TRANSLATION_VALIDATION_REPORT: &str = "effect_translation_validation.json";
 pub const TRANSLATION_VALIDATION_REPORT: &str = "translation_validation.json";
+pub const TRANSLATION_VALIDATION_FULL_REPORT: &str = "translation_validation.full.jsonl";
 pub const INDEX_REPORT: &str = "index.json";
 
 #[derive(Debug, Clone)]

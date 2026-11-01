@@ -24,6 +24,7 @@ mod static_imports;
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, CommandFactory, FromArgMatches, Parser, Subcommand};
 use graph_provenance::{GraphMismatch, GraphMismatchReason};
+use lowering::FullReportKind;
 use peel::{AtomicGroupsArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs, print_report};
 use pipeline::{
     AnalyzeArgs, GATE_REJECTED_EXIT_CODE, GateRejected, RunOutput, TransformArgs,
@@ -363,6 +364,12 @@ pub(crate) struct RunArgs {
     /// and bounded reports still cover the full configured input.
     #[arg(long = "effect-conflicts-chunk", requires = "effect_conflicts_jsonl", value_parser = artifact::paths::normalize_module_path)]
     pub(crate) effect_conflicts_chunks: Vec<String>,
+    /// Stream complete diagnostic evidence independently of full graphs (repeatable).
+    #[arg(long = "full-report", value_name = "KIND")]
+    pub(crate) full_reports: Vec<FullReportKind>,
+    /// Select only these full-report sinks; all summaries and checks stay exact.
+    #[arg(long = "full-report-chunk", requires = "full_reports", value_parser = artifact::paths::normalize_module_path)]
+    pub(crate) full_report_chunks: Vec<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -511,6 +518,8 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
             analysis,
             effect_conflicts_jsonl,
             effect_conflicts_chunks,
+            full_reports,
+            full_report_chunks,
         }) => {
             let output = args.run_output()?;
             let keep_going = !args.fail_fast;
@@ -524,6 +533,8 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
                     list_template_identifiers: false,
                     effect_conflicts_jsonl,
                     effect_conflicts_chunks: effect_conflicts_chunks.into_iter().collect(),
+                    full_reports: full_reports.into_iter().collect(),
+                    full_report_chunks: full_report_chunks.into_iter().collect(),
                 },
                 analysis.as_deref(),
             )?;

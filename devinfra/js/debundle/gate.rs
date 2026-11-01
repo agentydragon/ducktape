@@ -25,8 +25,9 @@ pub use esm_import_order::EsmImportOrder;
 pub use realizability::{
     EffectConflictCell, EffectConflictDisposition, EffectConflictRow, EffectOpacity,
     EffectTranslationValidationReport, LadderDecision, ModuleAssignmentDelta, RealizabilityIndex,
-    RealizabilityVerdict, SccDiagnosis, SccRejection, TranslationValidationReport,
-    check_realizability, check_realizability_touching, simulated_evaluation_post_order,
+    RealizabilityVerdict, SccDiagnosis, SccRejection, TranslationValidationEvidenceReport,
+    TranslationValidationReport, TranslationValidationResult, check_realizability,
+    check_realizability_touching, simulated_evaluation_post_order,
 };
 pub use validation::{
     AssignmentReport, AtInitReadPosition, BlockingRejection, BlockingSccEntry, CutEdgeExplanation,
