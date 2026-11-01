@@ -326,7 +326,7 @@ func TestFencedExecutionLossRestartsAPIForSameIncarnation(t *testing.T) {
 	waitRuntime(t, r, func() bool {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		return r.executionOwner == replacement && r.executionServer != nil && !r.executionRecovering
+		return r.executionOwner != nil && r.executionOwner.handle == replacement && r.executionOwner.executor("test-incarnation") != nil
 	}, "replacement Execution API readiness")
 
 	newStream, err := client.open(client.callCtx, "session-after-loss", "open-after-loss")
