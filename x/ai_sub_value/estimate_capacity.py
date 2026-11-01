@@ -17,6 +17,12 @@ from scipy.optimize import nnls
 
 from x.ai_sub_value.analyze import Poll, discontinuity, read_rows
 from x.ai_sub_value.bootstrap import BlockMethod, compare_blocks, resample_coefficients, resampling_units
+from x.ai_sub_value.plan_history import (
+    CodexPlanPeriod,
+    codex_plan_at,
+    read_codex_plan_history,
+    validate_reported_codex_plan_types,
+)
 
 
 @dataclass(frozen=True)
@@ -533,8 +539,10 @@ def build_estimates(
     sensitivity_samples: int,
     chunk_minutes: int,
     scoped_quota_rows: list[dict[str, Any]] | None = None,
+    codex_plan_periods: list[CodexPlanPeriod] | None = None,
 ) -> dict[str, Any]:
-    groups: dict[tuple[str, int, str], list[Poll]] = defaultdict(list)
+    groups: dict[tuple[str, int, str, CodexPlanPeriod | None], list[Poll]] = defaultdict(list)
+    reported_plan_types: dict[tuple[str, int, str, CodexPlanPeriod | None], set[str]] = defaultdict(set)
     seen = set()
     for row in quota_rows:
         identity = (row["event_id"], row["provider"], row["window_seconds"], row["window_name"])
@@ -543,13 +551,25 @@ def build_estimates(
         seen.add(identity)
         if row["window_seconds"] not in (18000, 604800):
             continue
-        groups[(row["provider"], row["window_seconds"], row["window_name"])].append(
-            Poll(
-                parse_utc(row["observed_at"]),
-                row["used_percent"],
-                parse_utc(row["reset_at"]) if row["reset_at"] else None,
-            )
-        )
+        at = parse_utc(row["observed_at"])
+        plan_period = None
+        if row["provider"] == "codex" and not row["window_name"]:
+            if not codex_plan_periods:
+                raise ValueError("Codex quota estimates require a timestamped --codex-plan-history input")
+            plan_period = codex_plan_at(at, codex_plan_periods)
+            if plan_period is None:
+                raise ValueError(
+                    f"Codex quota poll at {at.isoformat()} is outside the supplied plan history; "
+                    "extend the history so every Codex poll has an exact plan label"
+                )
+        group = (row["provider"], row["window_seconds"], row["window_name"], plan_period)
+        groups[group].append(Poll(at, row["used_percent"], parse_utc(row["reset_at"]) if row["reset_at"] else None))
+        reported = row.get("reported_plan_type")
+        if reported:
+            reported_plan_types[group].add(str(reported))
+    for (*_, plan_period), reported in reported_plan_types.items():
+        if plan_period is not None:
+            validate_reported_codex_plan_types(plan_period, reported)
     scoped_audit: dict[str, int] = defaultdict(int)
     for row in scoped_quota_rows or []:
         scoped_audit["observed_polls"] += 1
@@ -569,7 +589,7 @@ def build_estimates(
             scoped_audit["duplicate_polls"] += 1
             continue
         seen.add(identity)
-        groups[("claude", 604800, "Fable")].append(
+        groups[("claude", 604800, "Fable", None)].append(
             Poll(
                 parse_utc(row["observed_at"]),
                 row["used_percent"],
@@ -578,21 +598,46 @@ def build_estimates(
         )
         scoped_audit["included_polls"] += 1
     results = []
-    for (provider, seconds, name), polls in sorted(groups.items()):
+    for (provider, seconds, name, plan_period), polls in sorted(
+        groups.items(),
+        key=lambda item: (
+            item[0][0],
+            item[0][1],
+            item[0][2],
+            item[0][3].start if item[0][3] else datetime.min.replace(tzinfo=UTC),
+        ),
+    ):
         if name and name != "Fable":
             continue
         account_provider = {"claude": "anthropic", "codex": "openai"}[provider]
         relevant = [row for row in bins if row.provider == account_provider]
+        if plan_period is not None:
+            relevant = [
+                row
+                for row in relevant
+                if row.at >= plan_period.start and (plan_period.end is None or row.at < plan_period.end)
+            ]
         if name == "Fable":
             relevant = [row for row in relevant if "fable" in row.model.lower()]
         if not relevant:
-            results.append({"provider": provider, "window_seconds": seconds, "name": name, "status": "no_usage_source"})
+            results.append(
+                {
+                    "provider": provider,
+                    "window_seconds": seconds,
+                    "name": name,
+                    "subscription_plan": plan_period.plan if plan_period else None,
+                    "status": "no_usage_source",
+                }
+            )
             continue
         first, last = min(row.at for row in relevant), max(row.at for row in relevant) + timedelta(minutes=5)
         other_windows = [
             other_polls
-            for (other_provider, other_seconds, other_name), other_polls in groups.items()
-            if other_provider == provider and (other_seconds, other_name) != (seconds, name) and not other_name
+            for (other_provider, other_seconds, other_name, other_plan), other_polls in groups.items()
+            if other_provider == provider
+            and (other_seconds, other_name, other_plan) != (seconds, name, plan_period)
+            and not other_name
+            and other_plan == plan_period
         ]
         runs, rejected = select_monotonic_runs(
             polls, companions=other_windows, money=money.get(provider, []), usage_start=first, usage_end=last
@@ -646,6 +691,10 @@ def build_estimates(
                 "provider": provider,
                 "window_seconds": seconds,
                 "name": name,
+                "subscription_plan": plan_period.plan if plan_period else None,
+                "subscription_plan_start": plan_period.start.isoformat() if plan_period else None,
+                "subscription_plan_end": plan_period.end.isoformat() if plan_period and plan_period.end else None,
+                "provider_reported_plan_types": sorted(reported_plan_types[(provider, seconds, name, plan_period)]),
                 "gauge_scope": "reported Fable weekly_scoped gauge percent"
                 if name == "Fable"
                 else "general provider gauge percent",
@@ -684,6 +733,7 @@ def build_estimates(
             "Source-family maximum is an overlap sensitivity, not a population lower bound; source sum can double count cross-system requests",
             "The reported Fable scoped gauge is its own percent scale; is_active semantics and its relationship to the general weekly gauge are unknown. Scoped policy may change, and general-weekly coefficients may mix effects of simultaneous scoped limits",
             "Unknown native/cloud billing scope is included under the user's overwhelmingly subscription traffic assumption; this is not a measured per-request payment attribution",
+            "Codex quota calibrations are split by the manually timestamped exact-plan history; the provider's reported plan_type is only a generic account category and cannot distinguish Pro tiers",
         ],
         "bootstrap_samples": bootstrap_samples,
         "scoped_quota_audit": dict(scoped_audit),
@@ -696,6 +746,11 @@ def main() -> None:
     parser.add_argument("--quota", type=Path, required=True)
     parser.add_argument("--accounting", type=Path, required=True)
     parser.add_argument("--usage", type=Path, nargs="+", required=True)
+    parser.add_argument(
+        "--codex-plan-history",
+        type=Path,
+        help="JSON with exact Codex plan periods; required when estimating Codex because provider plan_type is only generic",
+    )
     parser.add_argument("--scoped-quota", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--bootstrap-samples", type=int, default=500)
@@ -716,6 +771,7 @@ def main() -> None:
         sensitivity_samples=args.sensitivity_samples,
         chunk_minutes=args.chunk_minutes,
         scoped_quota_rows=read_rows(args.scoped_quota) if args.scoped_quota else None,
+        codex_plan_periods=read_codex_plan_history(args.codex_plan_history) if args.codex_plan_history else None,
     )
     result["input_audit"] = audit
     args.output.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")
