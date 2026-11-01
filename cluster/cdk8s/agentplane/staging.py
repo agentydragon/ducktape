@@ -56,12 +56,12 @@ from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
     command_sandbox,
+    environment_vm,
     llm_ingress,
     mcp_edge,
     notifications,
     policy_controller,
     policy_controller_rbac,
-    environment_vm,
     staging_config,
     staging_grants,
 )
