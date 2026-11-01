@@ -74,7 +74,7 @@ func TestConnectionRecordsRejectForeignObjects(t *testing.T) {
 				if kind == "EndpointSlice" {
 					objects = append(objects, &coordinationv1.Lease{
 						ObjectMeta: metav1.ObjectMeta{
-							Name: sandbox.Name + sandboxlease.RunnerLeaseSuffix, Namespace: testNamespace,
+							Name: sandbox.Name + sandboxlease.EnvironmentRuntimeLeaseSuffix, Namespace: testNamespace,
 							UID: leaseUID, OwnerReferences: []metav1.OwnerReference{owner},
 						},
 						Spec: coordinationv1.LeaseSpec{HolderIdentity: stringPointer("gateway"), LeaseTransitions: int32Pointer(1)},
@@ -261,7 +261,7 @@ func TestControlRouteRecoversAfterLeaseRecreation(t *testing.T) {
 	oldLeaseUID := types.UID("fixture-old-lease")
 	oldLease := &coordinationv1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: testSandbox + sandboxlease.RunnerLeaseSuffix, Namespace: testNamespace,
+			Name: testSandbox + sandboxlease.EnvironmentRuntimeLeaseSuffix, Namespace: testNamespace,
 			UID: oldLeaseUID, OwnerReferences: []metav1.OwnerReference{sandboxOwnerReference(identity)},
 		},
 		Spec: coordinationv1.LeaseSpec{
@@ -361,7 +361,7 @@ func TestDelayedRoutePublicationCannotRegressRecreatedLeaseRoute(t *testing.T) {
 	oldLeaseUID := types.UID("fixture-old-lease")
 	oldLease := &coordinationv1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: testSandbox + sandboxlease.RunnerLeaseSuffix, Namespace: testNamespace,
+			Name: testSandbox + sandboxlease.EnvironmentRuntimeLeaseSuffix, Namespace: testNamespace,
 			UID: oldLeaseUID, OwnerReferences: []metav1.OwnerReference{sandboxOwnerReference(identity)},
 		},
 		Spec: coordinationv1.LeaseSpec{

@@ -281,7 +281,7 @@ func (r *connectionRecords) controlRouteEpoch(ctx context.Context, sandbox sandb
 
 func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox sandboxreader.Identity, leaseUID types.UID, epoch uint64) error {
 	name := sandbox.Name + sandboxapi.ControlServiceSuffix
-	leaseName := sandbox.Name + sandboxlease.RunnerLeaseSuffix
+	leaseName := sandbox.Name + sandboxlease.EnvironmentRuntimeLeaseSuffix
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		lease, err := r.coordination.Leases(r.namespace).Get(ctx, leaseName, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
