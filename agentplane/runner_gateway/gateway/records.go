@@ -110,6 +110,7 @@ func newConnectionRecords(
 func (r *connectionRecords) claim(ctx context.Context, sandbox sandboxreader.Identity, podUID string) (uint64, error) {
 	leaseName := sandbox.Name + sandboxlease.RunnerLeaseSuffix
 	var epoch uint64
+	var leaseUID types.UID
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		current, err := r.coordination.Leases(r.namespace).Get(ctx, leaseName, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
@@ -117,7 +118,11 @@ func (r *connectionRecords) claim(ctx context.Context, sandbox sandboxreader.Ide
 		} else if err != nil {
 			return err
 		}
-		var next int32 = 1
+		routeEpoch, err := r.controlRouteEpoch(ctx, sandbox)
+		if err != nil {
+			return err
+		}
+		next := routeEpoch + 1
 		if current != nil {
 			if !ownsSandbox(current.OwnerReferences, sandbox) || !current.DeletionTimestamp.IsZero() {
 				return fmt.Errorf("refusing to adopt Lease %s: foreign or being deleted", leaseName)
@@ -127,13 +132,16 @@ func (r *connectionRecords) claim(ctx context.Context, sandbox sandboxreader.Ide
 				return errRunnerOwned
 			}
 			if current.Spec.LeaseTransitions != nil {
-				if *current.Spec.LeaseTransitions == math.MaxInt32 {
-					return fmt.Errorf("connection epoch exhausted")
+				if *current.Spec.LeaseTransitions < 0 {
+					return fmt.Errorf("connection Lease %s has invalid transition epoch %d", leaseName, *current.Spec.LeaseTransitions)
 				}
-				next = *current.Spec.LeaseTransitions + 1
-			} else {
-				next = 1
+				if uint64(*current.Spec.LeaseTransitions) >= next {
+					next = uint64(*current.Spec.LeaseTransitions) + 1
+				}
 			}
+		}
+		if next == 0 || next > math.MaxInt32 {
+			return fmt.Errorf("connection epoch exhausted")
 		}
 		lease := &coordinationv1.Lease{
 			TypeMeta: metav1.TypeMeta{APIVersion: "coordination.k8s.io/v1", Kind: "Lease"},
@@ -146,30 +154,35 @@ func (r *connectionRecords) claim(ctx context.Context, sandbox sandboxreader.Ide
 			Spec: coordinationv1.LeaseSpec{
 				HolderIdentity:       stringPointer(r.holder.name),
 				LeaseDurationSeconds: int32Pointer(leaseDurationSeconds),
-				LeaseTransitions:     int32Pointer(next),
+				LeaseTransitions:     int32Pointer(int32(next)),
 				RenewTime:            &metav1.MicroTime{Time: r.now().UTC()},
 			},
 		}
 		if current == nil {
-			_, err = r.coordination.Leases(r.namespace).Create(ctx, lease, metav1.CreateOptions{})
+			lease, err = r.coordination.Leases(r.namespace).Create(ctx, lease, metav1.CreateOptions{})
 		} else {
 			lease.ResourceVersion = current.ResourceVersion
+			lease.UID = current.UID
 			if uid := sandboxlease.LastConnectedPodUID(current.Annotations); uid != "" {
 				lease.Annotations[sandboxlease.LastConnectedPodUIDAnnotation] = uid
 			}
-			_, err = r.coordination.Leases(r.namespace).Update(ctx, lease, metav1.UpdateOptions{})
+			lease, err = r.coordination.Leases(r.namespace).Update(ctx, lease, metav1.UpdateOptions{})
 		}
 		if err != nil {
 			return err
 		}
-		epoch = uint64(next)
+		if lease.UID == "" {
+			return fmt.Errorf("connection Lease %s has no UID", leaseName)
+		}
+		leaseUID = lease.UID
+		epoch = next
 		return nil
 	})
 	if err != nil {
 		return 0, fmt.Errorf("accept runner connection: %w", err)
 	}
 	r.observed.forget(leaseName)
-	if err := r.pointControlEndpoints(ctx, sandbox, epoch); err != nil {
+	if err := r.pointControlEndpoints(ctx, sandbox, leaseUID, epoch); err != nil {
 		return 0, fmt.Errorf("point Sandbox control Service at connection holder: %w", err)
 	}
 	return epoch, nil
@@ -244,9 +257,44 @@ func (r *connectionRecords) renew(
 	return nil
 }
 
-func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox sandboxreader.Identity, epoch uint64) error {
+func (r *connectionRecords) controlRouteEpoch(ctx context.Context, sandbox sandboxreader.Identity) (uint64, error) {
 	name := sandbox.Name + sandboxapi.ControlServiceSuffix
+	current, err := r.discovery.EndpointSlices(r.namespace).Get(ctx, name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	if !ownsSandbox(current.OwnerReferences, sandbox) || !current.DeletionTimestamp.IsZero() {
+		return 0, fmt.Errorf("refusing to adopt EndpointSlice %s: foreign or being deleted", name)
+	}
+	routeEpoch, err := parseControlRouteEpoch(current)
+	if err != nil {
+		return 0, fmt.Errorf("refusing to adopt EndpointSlice %s with invalid connection epoch: %w", name, err)
+	}
+	if routeEpoch >= math.MaxInt32 {
+		return 0, fmt.Errorf("connection epoch exhausted")
+	}
+	return routeEpoch, nil
+}
+
+func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox sandboxreader.Identity, leaseUID types.UID, epoch uint64) error {
+	name := sandbox.Name + sandboxapi.ControlServiceSuffix
+	leaseName := sandbox.Name + sandboxlease.RunnerLeaseSuffix
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		lease, err := r.coordination.Leases(r.namespace).Get(ctx, leaseName, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return errSupersededConnection
+		}
+		if err != nil {
+			return err
+		}
+		if !ownsSandbox(lease.OwnerReferences, sandbox) || !lease.DeletionTimestamp.IsZero() || lease.UID != leaseUID ||
+			lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity != r.holder.name ||
+			lease.Spec.LeaseTransitions == nil || uint64(*lease.Spec.LeaseTransitions) != epoch {
+			return errSupersededConnection
+		}
 		current, err := r.discovery.EndpointSlices(r.namespace).Get(ctx, name, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
 			current = nil
@@ -257,7 +305,11 @@ func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox s
 			if !ownsSandbox(current.OwnerReferences, sandbox) || !current.DeletionTimestamp.IsZero() {
 				return fmt.Errorf("refusing to adopt EndpointSlice %s: foreign or being deleted", name)
 			}
-			if currentEpoch, err := strconv.ParseUint(current.Annotations[sandboxlease.ConnectionEpochAnnotation], 10, 64); err == nil && currentEpoch >= epoch {
+			currentEpoch, err := parseControlRouteEpoch(current)
+			if err != nil {
+				return fmt.Errorf("refusing to update EndpointSlice %s with invalid connection epoch: %w", name, err)
+			}
+			if currentEpoch >= epoch {
 				return nil
 			}
 		}
@@ -271,7 +323,10 @@ func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox s
 					"kubernetes.io/service-name":             name,
 					"endpointslice.kubernetes.io/managed-by": endpointSliceManager,
 				},
-				Annotations:     map[string]string{sandboxlease.ConnectionEpochAnnotation: strconv.FormatUint(epoch, 10)},
+				Annotations: map[string]string{
+					sandboxlease.ConnectionEpochAnnotation:    strconv.FormatUint(epoch, 10),
+					sandboxlease.ConnectionLeaseUIDAnnotation: string(leaseUID),
+				},
 				OwnerReferences: []metav1.OwnerReference{sandboxOwnerReference(sandbox)},
 			},
 			AddressType: discoveryv1.AddressTypeIPv4,
@@ -291,6 +346,16 @@ func (r *connectionRecords) pointControlEndpoints(ctx context.Context, sandbox s
 		}
 		return err
 	})
+}
+
+// An EndpointSlice created before connection epochs were recorded has no prior high-water mark.
+// Preserve that legacy baseline, but never overwrite a present malformed value.
+func parseControlRouteEpoch(slice *discoveryv1.EndpointSlice) (uint64, error) {
+	annotation := slice.Annotations[sandboxlease.ConnectionEpochAnnotation]
+	if annotation == "" {
+		return 0, nil
+	}
+	return strconv.ParseUint(annotation, 10, 64)
 }
 
 func sandboxOwnerReference(sandbox sandboxreader.Identity) metav1.OwnerReference {
