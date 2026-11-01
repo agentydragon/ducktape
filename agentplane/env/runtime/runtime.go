@@ -106,7 +106,10 @@ type Runtime struct {
 	lifecycleEngine      *cosiruntime.Runtime
 	lifecycleCancel      context.CancelFunc
 	lifecycleDone        chan struct{}
+	lifecycleRunErr      error
 	lifecycleWorkers     sync.WaitGroup
+	closeCoordinator     *runtimeCloseController
+	closeControllerErr   error
 	processes            *supervision.Host
 	scripts              *scripts.Runner
 	bootstrapHost        *bootstrap.Host
@@ -287,10 +290,21 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	if err := engine.RegisterQController(r.bootstrapHost.Controller()); err != nil {
 		return err
 	}
+	r.closeCoordinator = &runtimeCloseController{r: r}
+	if err := engine.RegisterController(r.closeCoordinator); err != nil {
+		return err
+	}
 	go func() {
 		defer close(r.lifecycleDone)
-		if err := engine.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			r.fail(fmt.Errorf("environment Runtime lifecycle engine stopped: %w", err))
+		if err := engine.Run(ctx); ctx.Err() == nil {
+			if err == nil {
+				err = errors.New("engine returned without shutdown")
+			}
+			runErr := fmt.Errorf("environment Runtime lifecycle engine stopped: %w", err)
+			r.mu.Lock()
+			r.lifecycleRunErr = runErr
+			r.mu.Unlock()
+			r.fail(runErr)
 		}
 	}()
 	return nil
@@ -332,122 +346,82 @@ func (r *Runtime) Close(ctx context.Context) error {
 
 func (r *Runtime) finishClose() error {
 	r.mu.Lock()
-	r.desired = lifecycle.Desired{Mode: lifecycle.Closing, Generation: r.desired.Generation + 1}
-	publishErr := lifecycle.PublishDesired(context.Background(), r.lifecycleState, r.desired)
-	snapshot := r.state.Snapshot()
-	sealUID := ""
-	if snapshot.Quiesced {
-		sealUID = snapshot.IncarnationUID
-	}
-	if sealedUID, sealed, err := r.state.SealedUID(); err != nil {
+	desired := lifecycle.Desired{Mode: lifecycle.Closing, Generation: r.desired.Generation + 1}
+	if err := lifecycle.PublishDesired(context.Background(), r.lifecycleState, desired); err != nil {
 		r.mu.Unlock()
-		return fmt.Errorf("read environment seal during shutdown: %w", err)
-	} else if sealed {
-		sealUID = sealedUID
+		return fmt.Errorf("publish Runtime closing state: %w", err)
 	}
-	incarnationUID := snapshot.IncarnationUID
-	if r.intent != nil && incarnationUID == "" {
-		incarnationUID = r.intent.IncarnationUid
-	}
-	if sealUID != "" {
-		incarnationUID = sealUID
-	}
-	connected := r.host != nil && r.host.connected && !r.hostExited
-	executionExists := r.executionOwner != nil
-	hostLifetimeExists := r.hostLifetime != nil
-	var binding *runtimepb.Binding
-	var intentMode runtimepb.LifecycleIntent_Mode
-	if connected {
-		intentMode = runtimepb.LifecycleIntent_CLOSING
-		if sealUID != "" {
-			intentMode = runtimepb.LifecycleIntent_QUIESCING
-		}
-		if sealUID != "" && r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_QUIESCING && r.intent.SealUid == sealUID {
-			binding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
-		} else {
-			intent := r.setIntentLocked(intentMode, incarnationUID, sealUID, false)
-			binding = proto.Clone(intent.Binding).(*runtimepb.Binding)
-		}
-	}
+	r.desired = desired
+	r.changedLocked()
 	r.mu.Unlock()
 
-	if publishErr != nil {
-		return fmt.Errorf("publish Runtime closing state: %w", publishErr)
-	}
-	fenceCtx, cancelFence := context.WithTimeout(context.Background(), executionFenceGrace)
-	defer cancelFence()
-	var hostRunErr error
-	if connected {
-		if err := r.waitForHostNativeStopped(fenceCtx, binding); err != nil {
-			return fmt.Errorf("Harness Host did not prove native work stopped: %w", err)
+	// The aggregate controller owns all component shutdown steps. Close waits for
+	// its exact generation; a failed or superseded generation cannot release the
+	// environment owner. Caller cancellation affects only the outer wait.
+	for {
+		r.mu.Lock()
+		changed := r.changes
+		controllerErr := r.closeControllerErr
+		r.mu.Unlock()
+		if controllerErr != nil {
+			return controllerErr
 		}
-		r.maybeFenceExecution(binding)
-		if err := r.waitForExecutionFenced(fenceCtx, binding); err != nil {
-			return fmt.Errorf("embedded Execution API did not prove its backend fence: %w", err)
+		current, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
+		if err != nil {
+			return fmt.Errorf("read Runtime Close status: %w", err)
 		}
-		if sealUID != "" {
-			if err := r.waitForHostQuiesced(fenceCtx, binding); err != nil {
-				return fmt.Errorf("Harness Host did not flush the sealed generation: %w", err)
+		if found && current.Generation == desired.Generation {
+			switch current.Stage {
+			case lifecycle.RuntimeCloseFailed:
+				return errors.New(current.Error)
+			case lifecycle.RuntimeCloseReadyToJoin:
+				return r.joinClose()
 			}
 		}
-	} else if hostLifetimeExists {
-		// A lost private channel is still a service failure, but the embedded
-		// Host can prove cleanup directly. Join it before fencing Execution.
-		if err := r.hostLifetime.Stop(fenceCtx); err != nil {
-			return fmt.Errorf("Runtime lost its Host lifecycle connection and native cleanup is unproved: %w", err)
+		select {
+		case <-changed:
+		case <-r.lifecycleDone:
+			r.mu.Lock()
+			failure := r.failureLocked()
+			r.mu.Unlock()
+			if failure != nil {
+				return failure
+			}
+			return errors.New("Runtime lifecycle engine exited before Close completed")
 		}
-		_, hostRunErr = r.hostLifetime.Wait(fenceCtx)
-		r.cancelExecutionCalls()
-		if err := r.waitForExecutionCalls(fenceCtx); err != nil {
-			return fmt.Errorf("drain Execution calls after Host lifecycle loss: %w", err)
-		}
-		if err := r.stopExecution(fenceCtx); err != nil {
-			return fmt.Errorf("fence Execution after Host lifecycle loss: %w", err)
-		}
-		hostRunErr = errors.Join(errors.New("Harness Host lifecycle connection was lost"), hostRunErr)
-	} else if executionExists {
-		return errors.New("Runtime lost its Host lifecycle connection before proving native cleanup")
 	}
+}
 
-	if connected {
-		if err := r.stopHost(fenceCtx); err != nil {
-			return fmt.Errorf("stop and fence Harness Host: %w", err)
-		}
-	}
-	r.mu.Lock()
-	if r.host != nil {
-		r.host.connected = false
-	}
-	r.mu.Unlock()
-	if err := r.waitBootstrapSettled(); err != nil {
-		return err
-	}
+func (r *Runtime) joinClose() error {
+	// The aggregate has stopped every component that can need the engine. Its
+	// terminal status means only that it is now safe to join that engine.
 	r.lifecycleCancel()
 	<-r.lifecycleDone
 	r.lifecycleWorkers.Wait()
+	r.mu.Lock()
+	lifecycleRunErr := r.lifecycleRunErr
+	r.mu.Unlock()
+	if lifecycleRunErr != nil {
+		return lifecycleRunErr
+	}
 	if r.config.Supervision == "pid1" {
-		// The Runtime owns the whole Pod PID namespace. Join both management
-		// controllers before killing any escaped native descendants, then retain
-		// the state-owner lock until the namespace fence has completed.
 		if err := r.supervisor.FenceNamespace(context.Background()); err != nil {
 			return fmt.Errorf("fence Pod PID namespace: %w", err)
 		}
 	}
-	var errs []error
 	if r.bootstrapHost != nil {
-		errs = append(errs, r.bootstrapHost.CloseLog())
+		if err := r.bootstrapHost.CloseLog(); err != nil {
+			return err
+		}
 	}
-	if err := errors.Join(errs...); err != nil {
-		return err
-	}
-	return errors.Join(hostRunErr, r.owner.Close())
+	return errors.Join(r.closeCoordinator.plan.hostRunErr, r.owner.Close())
 }
 
-func (r *Runtime) waitBootstrapSettled() error {
+func (r *Runtime) waitBootstrapSettled(ctx context.Context) error {
 	if r.bootstrapHost == nil || !r.bootstrapHost.Configured() {
 		return nil
 	}
-	input, found, err := bootstrap.ReadInput(context.Background(), r.lifecycleState)
+	input, found, err := bootstrap.ReadInput(ctx, r.lifecycleState)
 	if err != nil {
 		return fmt.Errorf("read accepted bootstrap state during shutdown: %w", err)
 	}
@@ -456,8 +430,11 @@ func (r *Runtime) waitBootstrapSettled() error {
 	}
 	// A terminal bootstrap error is its durable outcome, not a failure to fence the
 	// Runtime-owned process. Settled checks that the accepted operation and cleanup ended.
-	_ = r.bootstrapHost.Wait(context.Background())
-	settled, err := r.bootstrapHost.Settled(context.Background())
+	_ = r.bootstrapHost.Wait(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	settled, err := r.bootstrapHost.Settled(ctx)
 	if err != nil {
 		return fmt.Errorf("observe accepted bootstrap cleanup: %w", err)
 	}

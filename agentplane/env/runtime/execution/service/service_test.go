@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -140,6 +142,38 @@ func TestSystemdExecutionRequiresExplicitOwnerLifetime(t *testing.T) {
 	config.Systemd.LifetimeDirectory = "/run/agentplane-environment-runtime-lifetime"
 	if err := config.Validate(); err != nil {
 		t.Fatalf("runtime-owned systemd execution config = %v", err)
+	}
+}
+
+func TestExecutionConfigResolvesCompatibleReadinessDefaultsAndRejectsInvalidWindows(t *testing.T) {
+	config := Config{
+		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
+		IncarnationUID: "test-incarnation", StateDir: "/state/execution", SocketPath: "/state/e.sock",
+		Binary: "/bin/codex", WorkingDirectory: "/state", ExecutorURL: "ws://127.0.0.1:4501", Backend: "pod",
+	}
+	resolved, err := config.Resolve()
+	if err != nil {
+		t.Fatalf("resolve standalone config defaults: %v", err)
+	}
+	want := codexexecserver.Readiness{Timeout: 20 * time.Second, ProbeTimeout: 2 * time.Second, ProbeInterval: 100 * time.Millisecond}
+	if resolved.Readiness != want {
+		t.Fatalf("resolved readiness = %+v, want compatible defaults %+v", resolved.Readiness, want)
+	}
+	for _, test := range []struct {
+		name      string
+		readiness codexexecserver.Readiness
+	}{
+		{name: "timeout", readiness: codexexecserver.Readiness{Timeout: -time.Millisecond}},
+		{name: "probe timeout", readiness: codexexecserver.Readiness{ProbeTimeout: -time.Millisecond}},
+		{name: "probe interval", readiness: codexexecserver.Readiness{ProbeInterval: -time.Millisecond}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			invalid := config
+			invalid.Readiness = test.readiness
+			if _, err := invalid.Resolve(); err == nil {
+				t.Fatal("resolved negative readiness duration")
+			}
+		})
 	}
 }
 
@@ -500,6 +534,226 @@ func TestEmbeddedHealthReadinessTimeoutRemainsFailure(t *testing.T) {
 		t.Fatal("adapter published despite health readiness timeout")
 	default:
 	}
+}
+
+func TestConfiguredReadinessControlsEmbeddedBackendProbes(t *testing.T) {
+	const (
+		probeTimeout  = 70 * time.Millisecond
+		probeInterval = 270 * time.Millisecond
+	)
+	var probes atomic.Int32
+	probeTimes := make(chan time.Time, 8)
+	firstProbeRead := make(chan struct{})
+	releaseFirstProbe := make(chan struct{})
+	var releaseFirst sync.Once
+	t.Cleanup(func() { releaseFirst.Do(func() { close(releaseFirstProbe) }) })
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		probe := probes.Add(1)
+		probeTimes <- time.Now()
+		connection, err := websocket.Accept(writer, request, nil)
+		if err != nil {
+			return
+		}
+		defer connection.CloseNow()
+		for {
+			_, payload, err := connection.Read(request.Context())
+			if err != nil {
+				return
+			}
+			if probe == 1 {
+				select {
+				case <-firstProbeRead:
+				default:
+					close(firstProbeRead)
+				}
+				select {
+				case <-releaseFirstProbe:
+					return
+				case <-request.Context().Done():
+					return
+				}
+			}
+			response := ""
+			switch {
+			case strings.Contains(string(payload), `"id":1`):
+				response = `{"id":1,"result":{"sessionId":"health-session"}}`
+			case strings.Contains(string(payload), `"id":2`):
+				response = `{"id":2,"result":{"status":"ready"}}`
+			}
+			if response != "" && connection.Write(request.Context(), websocket.MessageText, []byte(response)) != nil {
+				return
+			}
+		}
+	}))
+	t.Cleanup(server.Close)
+	endpoint := "ws" + strings.TrimPrefix(server.URL, "http")
+	config := Config{
+		ExecutorURL: endpoint, SocketPath: filepath.Join(t.TempDir(), "e.sock"),
+		Readiness: codexexecserver.Readiness{Timeout: 900 * time.Millisecond, ProbeTimeout: probeTimeout, ProbeInterval: probeInterval},
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	ready := make(chan struct{}, 1)
+	finished := make(chan error, 1)
+	go func() {
+		finished <- runWithServer(ctx, config, func(context.Context) (*supervision.Instance, error) {
+			return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { return nil }}, nil
+		}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(server *grpc.Server, listener net.Listener) error {
+			return server.Serve(listener)
+		})
+	}()
+	var first time.Time
+	select {
+	case first = <-probeTimes:
+	case err := <-finished:
+		t.Fatalf("service exited before first configured probe: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("backend probe did not start")
+	}
+	select {
+	case <-firstProbeRead:
+	case err := <-finished:
+		t.Fatalf("service exited before the first probe blocked: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("first backend probe did not reach its response wait")
+	}
+	var second time.Time
+	select {
+	case second = <-probeTimes:
+	case err := <-finished:
+		t.Fatalf("service exited before retrying the backend probe: %v", err)
+	case <-time.After(750 * time.Millisecond):
+		t.Fatal("backend did not retry within its configured readiness window")
+	}
+	if delay := second.Sub(first); delay < 250*time.Millisecond || delay > 750*time.Millisecond {
+		t.Fatalf("second backend probe started after %s; want configured probe timeout and interval", delay)
+	}
+	releaseFirst.Do(func() { close(releaseFirstProbe) })
+	select {
+	case <-ready:
+	case err := <-finished:
+		t.Fatalf("service exited before publishing configured readiness: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("service did not publish after the configured retry succeeded")
+	}
+	cancel()
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatalf("service shutdown: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("service did not join after cancellation")
+	}
+}
+
+func TestConfiguredReadinessDeadlineAndCancellationFenceBackend(t *testing.T) {
+	t.Run("deadline", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			writer.WriteHeader(http.StatusServiceUnavailable)
+		}))
+		t.Cleanup(server.Close)
+		endpoint := "ws" + strings.TrimPrefix(server.URL, "http")
+		config := Config{
+			ExecutorURL: endpoint, SocketPath: filepath.Join(t.TempDir(), "e.sock"),
+			Readiness: codexexecserver.Readiness{Timeout: 150 * time.Millisecond, ProbeTimeout: 80 * time.Millisecond, ProbeInterval: 20 * time.Millisecond},
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		ready := make(chan struct{}, 1)
+		stopped := make(chan struct{})
+		finished := make(chan error, 1)
+		started := time.Now()
+		go func() {
+			finished <- runWithServer(ctx, config, func(context.Context) (*supervision.Instance, error) {
+				return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { close(stopped); return nil }}, nil
+			}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(server *grpc.Server, listener net.Listener) error {
+				return server.Serve(listener)
+			})
+		}()
+		select {
+		case err := <-finished:
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("backend readiness error = %v, want configured deadline", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("backend readiness did not honor the configured deadline")
+		}
+		if elapsed := time.Since(started); elapsed < 120*time.Millisecond || elapsed > 500*time.Millisecond {
+			t.Fatalf("backend readiness failed after %s, want about 150ms", elapsed)
+		}
+		if ctx.Err() != nil {
+			t.Fatalf("owner context canceled by independent readiness deadline: %v", ctx.Err())
+		}
+		select {
+		case <-stopped:
+		default:
+			t.Fatal("backend was not stopped after readiness timeout")
+		}
+		select {
+		case <-ready:
+			t.Fatal("adapter published after backend readiness timeout")
+		default:
+		}
+	})
+
+	t.Run("caller cancellation", func(t *testing.T) {
+		attempted := make(chan struct{}, 1)
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			attempted <- struct{}{}
+			connection, err := websocket.Accept(writer, request, nil)
+			if err != nil {
+				return
+			}
+			defer connection.CloseNow()
+			_, _, _ = connection.Read(request.Context())
+			<-request.Context().Done()
+		}))
+		t.Cleanup(server.Close)
+		endpoint := "ws" + strings.TrimPrefix(server.URL, "http")
+		config := Config{
+			ExecutorURL: endpoint, SocketPath: filepath.Join(t.TempDir(), "e.sock"),
+			Readiness: codexexecserver.Readiness{Timeout: 5 * time.Second, ProbeTimeout: 4 * time.Second, ProbeInterval: 1 * time.Second},
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		ready := make(chan struct{}, 1)
+		stopped := make(chan struct{})
+		cleanupErr := errors.New("backend fence failed")
+		finished := make(chan error, 1)
+		go func() {
+			finished <- runWithServer(ctx, config, func(context.Context) (*supervision.Instance, error) {
+				return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { close(stopped); return cleanupErr }}, nil
+			}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(server *grpc.Server, listener net.Listener) error {
+				return server.Serve(listener)
+			})
+		}()
+		select {
+		case <-attempted:
+		case err := <-finished:
+			t.Fatalf("service exited before backend probe: %v", err)
+		case <-time.After(time.Second):
+			t.Fatal("backend probe did not start")
+		}
+		cancel()
+		select {
+		case err := <-finished:
+			if !errors.Is(err, cleanupErr) || errors.Is(err, context.Canceled) {
+				t.Fatalf("canceled service error = %v, want only the failed backend fence", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("service did not join after caller cancellation")
+		}
+		select {
+		case <-stopped:
+		default:
+			t.Fatal("backend fence did not complete before service returned")
+		}
+		select {
+		case <-ready:
+			t.Fatal("adapter published after caller cancellation")
+		default:
+		}
+	})
 }
 
 func testExecutorEndpoint(t *testing.T) string {

@@ -15,11 +15,12 @@ import (
 )
 
 const (
-	Namespace           = "runner"
-	DesiredStateType    = "RunnerDesiredStates.agentplane"
-	AggregateStatusType = "RunnerRuntimes.agentplane"
-	ResourceID          = "runner"
-	HostOwner           = "runner-host"
+	Namespace              = "runner"
+	DesiredStateType       = "RunnerDesiredStates.agentplane"
+	AggregateStatusType    = "RunnerRuntimes.agentplane"
+	RuntimeCloseStatusType = "EnvironmentRuntimeCloses.agentplane"
+	ResourceID             = "runner"
+	HostOwner              = "runner-host"
 )
 
 type Mode uint8
@@ -96,6 +97,61 @@ type Status struct {
 	Stage      Stage
 	Error      string
 	Blocker    Blocker
+}
+
+// RuntimeCloseStage is the Runtime's ordered shutdown barrier. ReadyToJoin means
+// the COSI engine can stop; the caller still waits for worker joins and owner release.
+type RuntimeCloseStage uint8
+
+const (
+	RuntimeClosePreparing RuntimeCloseStage = iota
+	RuntimeCloseNativeStopping
+	RuntimeCloseExecutionFencing
+	RuntimeCloseHostFlushing
+	RuntimeCloseHostJoining
+	RuntimeCloseBootstrapSettling
+	RuntimeCloseReadyToJoin
+	RuntimeCloseFailed
+)
+
+type RuntimeCloseStatus struct {
+	Generation uint64
+	Stage      RuntimeCloseStage
+	Error      string
+}
+
+func (value RuntimeCloseStatus) DeepCopy() RuntimeCloseStatus { return value }
+
+type runtimeCloseStatusExtension struct{}
+
+func (runtimeCloseStatusExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
+	return spec.ResourceDefinitionSpec{Type: RuntimeCloseStatusType, DefaultNamespace: Namespace}
+}
+
+func ReadRuntimeCloseStatus(ctx context.Context, reader controller.Reader) (RuntimeCloseStatus, bool, error) {
+	value, err := safe.ReaderGetByID[*typed.Resource[RuntimeCloseStatus, runtimeCloseStatusExtension]](ctx, reader, ResourceID)
+	if state.IsNotFoundError(err) {
+		return RuntimeCloseStatus{}, false, nil
+	}
+	if err != nil {
+		return RuntimeCloseStatus{}, false, err
+	}
+	return *value.TypedSpec(), true, nil
+}
+
+// WriteRuntimeCloseStatus is exclusive to the Runtime aggregate controller.
+func WriteRuntimeCloseStatus(ctx context.Context, writer controller.ReaderWriter, value RuntimeCloseStatus) error {
+	current, found, err := ReadRuntimeCloseStatus(ctx, writer)
+	if err != nil || found && current == value {
+		return err
+	}
+	resource := typed.NewResource[RuntimeCloseStatus, runtimeCloseStatusExtension](
+		resource.NewMetadata(Namespace, RuntimeCloseStatusType, ResourceID, resource.VersionUndefined), value,
+	)
+	return safe.WriterModify(ctx, writer, resource, func(current *typed.Resource[RuntimeCloseStatus, runtimeCloseStatusExtension]) error {
+		*current.TypedSpec() = value
+		return nil
+	})
 }
 
 func (value Status) DeepCopy() Status { return value }
