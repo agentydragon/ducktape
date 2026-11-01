@@ -244,6 +244,12 @@ filegroup(
     visibility = ["//cluster/skills/grafana:__pkg__"],
 )
 
+filegroup(
+    name = "piraeus_dashboard",
+    srcs = ["dashboards/piraeus-storage.json"],
+    visibility = ["//cluster/skills/grafana:__pkg__"],
+)
+
 py_library(
     name = "rules",
     srcs = ["rules.py"],

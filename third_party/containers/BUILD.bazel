@@ -13,6 +13,22 @@ load("@rules_oci//oci:defs.bzl", "oci_load")
 load("//devinfra/oci:defs.bzl", "oci_image_py")
 load("//devinfra/python:defs.bzl", "RYUK_TAG", "py_library")
 
+oci_image_py(
+    name = "grafana_visual",
+    testonly = True,
+    image = "@grafana_visual_linux_amd64",
+    tag = "grafana/grafana:12.4.1",
+    visibility = ["//visibility:public"],
+)
+
+oci_image_py(
+    name = "prometheus_visual",
+    testonly = True,
+    image = "@prometheus_visual_linux_amd64",
+    tag = "prom/prometheus:v3.5.0",
+    visibility = ["//visibility:public"],
+)
+
 py_library(
     name = "fixtures",
     testonly = True,

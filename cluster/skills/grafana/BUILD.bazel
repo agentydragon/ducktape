@@ -39,6 +39,30 @@ py_test(
     ],
 )
 
+py_test(
+    name = "piraeus_dashboard_visual_test",
+    srcs = ["test_piraeus_dashboard_visual.py"],
+    data = ["//cluster/cdk8s/monitoring:piraeus_dashboard"],
+    main = "test_piraeus_dashboard_visual.py",
+    requires_docker = True,
+    tags = ["visual"],
+    deps = [
+        "//third_party/containers:grafana_visual",
+        "//third_party/containers:prometheus_visual",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:frontend_visual",
+        "//util/testing:undeclared_outputs",
+        "//util/testing:visual_capture",
+        "@pypi//docker",
+        "@pypi//httpx",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 skill_package(
     name = "grafana",
     srcs = [
