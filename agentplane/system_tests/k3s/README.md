@@ -4,7 +4,7 @@ The stack every [system test](../README.md) suite runs on: the Agentplane servic
 bare k3s inside the suite's own RBE action (no Cilium), which PR CI runs like any test.
 [`system_test_target.py`](system_test_target.py) is the pytest plugin that starts it and publishes it as
 the deployment under test, with LLM ingress forwarding to the scenario's scripted model on the node.
-Scripted targets take the `harnesses/runner_layout` image, which carries both pinned harnesses.
+Scripted targets take the `harnesses/environment_tools_layout` image, which carries both pinned harnesses.
 
 containerd keeps unpacked image layers (its overlayfs snapshotter's root) on a tmpfs, except on a stack
 with VM Sandboxes ([measurements](debug/stack_timings.md#image-layers-in-memory-2026-10-21)).

@@ -13,10 +13,10 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from agentplane.proto import event_pb2, session_pb2
 from agentplane.env.e2e.testing import events, launches
 from agentplane.env.e2e.testing.driver import RunnerDriver
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess
+from agentplane.proto import event_pb2, session_pb2
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 

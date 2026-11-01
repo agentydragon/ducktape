@@ -18,7 +18,13 @@ from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import OperatingMode
-from agentplane.system_tests.agent import TURN_SECONDS, WORKING_DIRECTORY, Agent, Turn, runner_startup_retries
+from agentplane.system_tests.agent import (
+    TURN_SECONDS,
+    WORKING_DIRECTORY,
+    Agent,
+    Turn,
+    environment_runtime_startup_retries,
+)
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
@@ -221,7 +227,7 @@ class _ResumeRun:
             self.view = resumed
             self.resumed_incarnation = resumed.pod.uid
             self.checks.append("same_sandbox_new_incarnation_same_volumes")
-            async for attempt in runner_startup_retries():
+            async for attempt in environment_runtime_startup_retries():
                 with attempt:
                     snapshot = await self.client.runner_status(self.view.name)
             assert snapshot.runner_boot_id != self.initial_boot_id

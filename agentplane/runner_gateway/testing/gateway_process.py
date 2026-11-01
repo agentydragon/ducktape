@@ -17,11 +17,11 @@ import httpx
 import yaml
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 
+from agentplane.environment_runtime_transport.config import MTLS, TLS
 from agentplane.grpc.calls import ServiceError, dial
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.settings import Settings
-from agentplane.environment_runtime_transport.config import MTLS, TLS
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
 from util.bazel.runfiles import get_required_path, own_repo_rlocation

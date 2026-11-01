@@ -3,9 +3,9 @@
 import pytest
 import pytest_bazel
 
+from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.grpc.calls import ServiceError
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
-from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 
