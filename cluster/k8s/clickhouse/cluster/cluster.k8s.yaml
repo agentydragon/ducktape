@@ -405,11 +405,7 @@ spec:
             - name: "0"
               replicasCount: 3
               replicas:
-                - name: "0"
-                  templates:
-                    podTemplate: clickhouse-piraeus-103711
-                    dataVolumeClaimTemplate: data-piraeus-hdd
-                - name: "1"
+                - name: 0-1
                   templates:
                     podTemplate: clickhouse-piraeus-103656
                     dataVolumeClaimTemplate: data-piraeus-hdd
@@ -417,6 +413,14 @@ spec:
                   templates:
                     podTemplate: clickhouse-piraeus-102453
                     dataVolumeClaimTemplate: data-piraeus-hdd
+                - name: 0-0
+                  templates:
+                    podTemplate: clickhouse-piraeus-103711
+                    dataVolumeClaimTemplate: data-piraeus-hdd
+          replicas:
+            - name: "1"
+            - name: "2"
+            - name: "0"
   templates:
     podTemplates:
       - name: clickhouse
