@@ -74,8 +74,26 @@ func TestNativeSystemdStopRequestSetsGraceAndReusesJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first != job || second != first {
-		t.Fatalf("stop completion channels first=%p second=%p, want same job %p", first, second, job)
+	if first == second {
+		t.Fatal("each stop observer must receive its own replayable completion channel")
+	}
+	job <- "done"
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := WaitSystemdJob(ctx, "native-test.service", "stop", first); err != nil {
+		t.Fatalf("first WaitSystemdJob() = %v, want shared successful result", err)
+	}
+	third, err := backend.requestStop(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third == first || third == second {
+		t.Fatal("a retried fence must receive a fresh completion channel")
+	}
+	for _, observer := range []<-chan string{second, third} {
+		if err := WaitSystemdJob(ctx, "native-test.service", "stop", observer); err != nil {
+			t.Fatalf("WaitSystemdJob() = %v, want shared successful result", err)
+		}
 	}
 	want := []string{"timeout:native-test.service:50000", "stop:native-test.service"}
 	if len(operations) != len(want) {
@@ -85,6 +103,38 @@ func TestNativeSystemdStopRequestSetsGraceAndReusesJob(t *testing.T) {
 		if operations[i] != want[i] {
 			t.Fatalf("operations=%v, want %v", operations, want)
 		}
+	}
+}
+
+func TestNativeSystemdReferenceOutlivesRPCContext(t *testing.T) {
+	bus := &fakeSystemdReferenceBus{connected: true}
+	var lifetime context.Context
+	backend := &systemdBackend{
+		name: "native-test.service",
+		referenceUnit: func(rpc context.Context, name string) (systemdUnitReference, error) {
+			return referenceSystemdUnitWith(rpc, name, func(life context.Context) (systemdReferenceBus, error) {
+				lifetime = life
+				return bus, nil
+			})
+		},
+	}
+	if err := backend.retainUnitReference(nil); err != nil {
+		t.Fatal(err)
+	}
+	if bus.rpcContext == nil || !errors.Is(bus.rpcContext.Err(), context.Canceled) {
+		t.Fatalf("RefUnit RPC context after retainUnitReference = %v, want canceled setup context", bus.rpcContext)
+	}
+	if lifetime == nil || lifetime.Err() != nil || !bus.Connected() || bus.closed {
+		t.Fatalf("retained unit reference lifetime=%v connected=%t closed=%t; want live until explicit Close", lifetime, bus.Connected(), bus.closed)
+	}
+	if len(backend.unitReferences) != 1 {
+		t.Fatalf("retained references=%d, want 1", len(backend.unitReferences))
+	}
+	if err := backend.unitReferences[0].Close(); err != nil {
+		t.Fatal(err)
+	}
+	if lifetime.Err() == nil || bus.Connected() || !bus.closed {
+		t.Fatalf("after explicit Close: lifetime=%v connected=%t closed=%t; want canceled and closed", lifetime.Err(), bus.Connected(), bus.closed)
 	}
 }
 
@@ -129,6 +179,25 @@ func (r *fakeSystemdUnitReference) Connected() bool { return r.connected }
 func (r *fakeSystemdUnitReference) Close() error {
 	r.closed = true
 	r.connected = false
+	return nil
+}
+
+type fakeSystemdReferenceBus struct {
+	connected  bool
+	closed     bool
+	rpcContext context.Context
+}
+
+func (b *fakeSystemdReferenceBus) Connected() bool { return b.connected }
+
+func (b *fakeSystemdReferenceBus) Close() error {
+	b.closed = true
+	b.connected = false
+	return nil
+}
+
+func (b *fakeSystemdReferenceBus) refUnit(ctx context.Context, _ string) error {
+	b.rpcContext = ctx
 	return nil
 }
 

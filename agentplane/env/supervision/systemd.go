@@ -33,7 +33,7 @@ type systemdBackend struct {
 	updateErrors chan error
 
 	stopMu                  sync.Mutex
-	stopRequests            map[*systemd.Conn]<-chan string
+	stopRequests            map[*systemd.Conn]*nativeSystemdStopJob
 	requestedStopTimeout    uint64
 	hasRequestedStopTimeout bool
 	setStopTimeout          func(context.Context, *systemd.Conn, string, uint64) error
@@ -46,6 +46,83 @@ type systemdBackend struct {
 type systemdUnitReference interface {
 	Connected() bool
 	Close() error
+}
+
+type systemdReferenceBus interface {
+	systemdUnitReference
+	refUnit(context.Context, string) error
+}
+
+type dbusSystemdReferenceBus struct{ conn *dbus.Conn }
+
+func (b dbusSystemdReferenceBus) Connected() bool { return b.conn.Connected() }
+
+func (b dbusSystemdReferenceBus) Close() error { return b.conn.Close() }
+
+func (b dbusSystemdReferenceBus) refUnit(ctx context.Context, name string) error {
+	return b.conn.Object("org.freedesktop.systemd1", "/org/freedesktop/systemd1").CallWithContext(
+		ctx, "org.freedesktop.systemd1.Manager.RefUnit", 0, name,
+	).Err
+}
+
+type retainedSystemdUnitReference struct {
+	bus       systemdReferenceBus
+	cancel    context.CancelFunc
+	closeOnce sync.Once
+	closeErr  error
+}
+
+func (r *retainedSystemdUnitReference) Connected() bool { return r.bus.Connected() }
+
+func (r *retainedSystemdUnitReference) Close() error {
+	r.closeOnce.Do(func() {
+		r.cancel()
+		r.closeErr = r.bus.Close()
+	})
+	return r.closeErr
+}
+
+type nativeSystemdStopJob struct {
+	done     chan struct{}
+	cancel   context.CancelFunc
+	result   string
+	observed bool
+}
+
+// go-systemd delivers one result to one channel. Cache that result so retries
+// of the systemd fence each receive an independent, replayable observation.
+func newNativeSystemdStopJob(completed <-chan string) *nativeSystemdStopJob {
+	ctx, cancel := context.WithCancel(context.Background())
+	job := &nativeSystemdStopJob{done: make(chan struct{}), cancel: cancel}
+	go func() {
+		defer close(job.done)
+		if completed == nil {
+			return
+		}
+		select {
+		case result, ok := <-completed:
+			if ok {
+				job.result = result
+				job.observed = true
+			}
+		case <-ctx.Done():
+		}
+	}()
+	return job
+}
+
+func (j *nativeSystemdStopJob) completion() <-chan string {
+	completed := make(chan string, 1)
+	go func() {
+		<-j.done
+		if j.observed {
+			completed <- j.result
+		} else {
+			completed <- "completion not observed"
+		}
+		close(completed)
+	}()
+	return completed
 }
 
 func (b *systemdBackend) validate() error {
@@ -210,6 +287,11 @@ func (b *systemdBackend) release() {
 	_ = b.conn.ResetFailedUnitContext(ctx, b.name)
 	b.conn.Close()
 	b.cancel()
+	b.stopMu.Lock()
+	for _, job := range b.stopRequests {
+		job.cancel()
+	}
+	b.stopMu.Unlock()
 	b.referenceMu.Lock()
 	for _, reference := range b.unitReferences {
 		_ = reference.Close()
@@ -325,18 +407,30 @@ func (b *systemdBackend) retainUnitReference(manager *systemd.Conn) error {
 }
 
 func referenceSystemdUnit(ctx context.Context, name string) (systemdUnitReference, error) {
-	conn, err := dbus.ConnectSystemBus(dbus.WithContext(ctx))
+	// godbus.WithContext controls the connection lifetime, so keep it separate
+	// from ctx, which bounds only the RefUnit RPC.
+	return referenceSystemdUnitWith(ctx, name, func(lifetime context.Context) (systemdReferenceBus, error) {
+		conn, err := dbus.ConnectSystemBus(dbus.WithContext(lifetime))
+		if err != nil {
+			return nil, err
+		}
+		return dbusSystemdReferenceBus{conn: conn}, nil
+	})
+}
+
+func referenceSystemdUnitWith(ctx context.Context, name string, dial func(context.Context) (systemdReferenceBus, error)) (systemdUnitReference, error) {
+	lifetime, cancel := context.WithCancel(context.Background())
+	bus, err := dial(lifetime)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
-	call := conn.Object("org.freedesktop.systemd1", "/org/freedesktop/systemd1").CallWithContext(
-		ctx, "org.freedesktop.systemd1.Manager.RefUnit", 0, name,
-	)
-	if call.Err != nil {
-		_ = conn.Close()
-		return nil, call.Err
+	reference := &retainedSystemdUnitReference{bus: bus, cancel: cancel}
+	if err := bus.refUnit(ctx, name); err != nil {
+		_ = reference.Close()
+		return nil, err
 	}
-	return conn, nil
+	return reference, nil
 }
 
 func (b *systemdBackend) requestStop(ctx context.Context, conn *systemd.Conn, grace *time.Duration) (<-chan string, error) {
@@ -346,10 +440,10 @@ func (b *systemdBackend) requestStop(ctx context.Context, conn *systemd.Conn, gr
 		return nil, err
 	}
 	if b.stopRequests == nil {
-		b.stopRequests = make(map[*systemd.Conn]<-chan string)
+		b.stopRequests = make(map[*systemd.Conn]*nativeSystemdStopJob)
 	}
-	if completed, ok := b.stopRequests[conn]; ok {
-		return completed, nil
+	if job, ok := b.stopRequests[conn]; ok {
+		return job.completion(), nil
 	}
 	if grace != nil {
 		b.requestedStopTimeout = systemdStopTimeout(*grace)
@@ -376,8 +470,9 @@ func (b *systemdBackend) requestStop(ctx context.Context, conn *systemd.Conn, gr
 	if err != nil {
 		return nil, err
 	}
-	b.stopRequests[conn] = completed
-	return completed, nil
+	job := newNativeSystemdStopJob(completed)
+	b.stopRequests[conn] = job
+	return job.completion(), nil
 }
 
 func systemdStopTimeout(grace time.Duration) uint64 {
