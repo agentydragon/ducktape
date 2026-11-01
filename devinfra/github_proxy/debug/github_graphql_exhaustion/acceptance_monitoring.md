@@ -2,7 +2,9 @@
 
 Investigation: [#5213](https://github.com/agentydragon/ducktape/issues/5213).
 The temporary Desktop route block has causal suppression/reversal evidence;
-that is not a completed multi-day reliability result. Keep the issue open.
+that is not a completed multi-day reliability result. The October 10 review
+found exhaustion in both planned windows and again in the recent week. Keep
+the issue open; the account counter does not identify the caller.
 
 ## Acceptance boundary
 
@@ -12,10 +14,9 @@ broken Desktop operation and is not the representative-use acceptance window.
 
 The operator accepted Desktop functionality at the **2026-09-06T08:43:00Z**
 checkpoint (Unix `1788684180`) and asked to wind down active debugging while
-keeping **another 1–2 weeks** under observation. Review on or after
-**September 13, 08:43 UTC** (`1789288980`); extend through
-**September 20, 08:43 UTC** (`1789893780`) when coverage or representative use
-is insufficient. Do not automatically close #5213 at either date.
+keeping **another 1–2 weeks** under observation. Those review endpoints have
+passed; their results and the October follow-up are recorded below. Do not
+automatically close #5213 based on a quiet or incompletely covered window.
 
 Require normal representative Desktop use, no observed exhaustion, independent
 account-counter coverage, and verified mitigation/capture coverage. A quiet
@@ -28,11 +29,32 @@ evidence or extend the covered observation window. A recurrence with the block
 verified active requires attribution of the residual consumer, not declaring
 the mitigation successful because average usage fell.
 
+## Latest review: 2026-10-10
+
+The issue's October 10 review found a minimum of **0** remaining points at
+both the September 13 seven-day and September 20 fourteen-day endpoints. The
+fourteen-day window had **98.29%** fresh-grid coverage (19,808 raw samples), so
+it also contained monitoring gaps. In the seven days before October 10 at
+approximately 19:07 UTC, the minimum was again **0**; the latest retained zero
+was **October 5 at 11:11:01 UTC**, and fresh-grid coverage was **96.99%**. At
+the review instant the account had 3,678 points remaining, a snapshot within
+its reset window rather than evidence of sustained recovery.
+
+These samples establish account-level exhaustion, not which client spent the
+points. The September 6 block/reversal still implicates Desktop's cloud
+batch-status route as a major contributor, but the October recurrence does not
+show whether that route was covered at the time or identify another caller.
+The issue remains open. No later runtime correlation result is recorded in
+that review.
+
 ## Confirmation round
 
-Active debugging is paused at the operator's request. Existing collection and
-mitigation remain deployed; no new scheduled agent job or automatic issue
-closure was created. For pickup:
+For the next review, re-verify the live configuration and correlate the
+October 5 zero and any newer recurrence before starting another observation
+window. The September 6 handoff reported the central relay and exact-route
+mitigation deployed, with collection continuing; those are dated deployment
+claims and need current runtime verification. No automatic issue closure was
+created. For pickup:
 
 1. Confirm normal Desktop use remained functional and whether any quota errors
    recurred. Re-check the actual image, relay, and enabled exact-route block.
@@ -48,7 +70,7 @@ closure was created. For pickup:
    attribution. Rugged activation, residual caller attribution, notification
    delivery, and deferred local-key/GC-root cleanup remain separate follow-ups.
 
-At the seven-day endpoint set the query API's `time=1789288980`:
+For a new seven-day endpoint, set the query API's `time` to that endpoint:
 
 ```promql
 min(min_over_time(github_graphql_rate_remaining{github_account="agentydragon"}[7d]))
@@ -60,9 +82,9 @@ Fresh quota coverage on a one-minute grid, allowing 90-second sample age:
 avg_over_time((max((time()-timestamp(github_graphql_rate_remaining{github_account="agentydragon"})) < bool 90) or vector(0))[7d:1m])
 ```
 
-For the two-week endpoint use `time=1789893780` and `14d`. Inspect raw retained
-timestamps and exporter success separately, as in the historical examples
-below; an empty exhaustion query alone is insufficient.
+For a two-week endpoint use the corresponding `time` and `14d`. Inspect raw
+retained timestamps and exporter success separately, as in the historical
+examples below; an empty exhaustion query alone is insufficient.
 
 ## Deployed measurement contract
 
