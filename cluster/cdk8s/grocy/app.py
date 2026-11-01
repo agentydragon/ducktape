@@ -47,6 +47,7 @@ _LABELS = {"app.kubernetes.io/name": _NAME}
 _IMAGE = "lscr.io/linuxserver/grocy:v4.6.0-ls318"
 _CONFIG_CLAIM = "grocy-config-piraeus"
 _BACKUP = "grocy-config-ovh-backup"
+_PIRAEUS_BACKUP = "grocy-config-piraeus-backup"
 _HTTP = Port(name="http", number=80)
 # grocy/mcp.py and grocy/user_perms.py render one of theirs per household too.
 HOUSEHOLDS = ("sf", "vallejo")
@@ -303,30 +304,30 @@ def household_chart(app: App, *, household: str) -> Chart:
             ),
         ),
     )
-    # Periodic backup of the Piraeus-backed primary into a SeaweedFS-backed PVC.
-    #
-    # Direction: Piraeus HDD (primary, hot) → seaweedfs-ovh (cold, SeaweedFS replicates
-    # across kimsufi nodes).
-    #
-    # copyMethod: Direct (no VolumeSnapshotClass installed). Mover and live grocy pod both
-    # access the live primary; backups may catch torn SQLite writes occasionally — acceptable
-    # for crash-consistent restore.
+    _backup(chart, namespace, name=_BACKUP, storage_class="seaweedfs-ovh")
+    # Keep the existing backup until the Piraeus copy has completed and been checked.
+    _backup(chart, namespace, name=_PIRAEUS_BACKUP, storage_class="piraeus-ssd-2-autodiskful")
+    return chart
+
+
+def _backup(chart: Chart, namespace: str, *, name: str, storage_class: str) -> None:
+    # A direct copy of a live SQLite database can capture inconsistent writes.
     k8s.KubePersistentVolumeClaim(
         chart,
-        "backup-claim",
-        metadata=k8s.ObjectMeta(name=_BACKUP, namespace=namespace),
+        f"{name}-claim",
+        metadata=k8s.ObjectMeta(name=name, namespace=namespace),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
-            storage_class_name="seaweedfs-ovh",
+            storage_class_name=storage_class,
             resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("2Gi")}),
         ),
     )
     ReplicationDestination(
         chart,
-        "backup-destination",
-        metadata=ApiObjectMetadata(name=_BACKUP, namespace=namespace),
+        f"{name}-destination",
+        metadata=ApiObjectMetadata(name=name, namespace=namespace),
         rsync_tls=ReplicationDestinationSpecRsyncTls(
-            destination_pvc=_BACKUP,
+            destination_pvc=name,
             copy_method=ReplicationDestinationSpecRsyncTlsCopyMethod.DIRECT,
             service_type="ClusterIP",
             mover_security_context=_destination_mover_security_context(),
@@ -335,19 +336,18 @@ def household_chart(app: App, *, household: str) -> Chart:
     )
     ReplicationSource(
         chart,
-        "backup-source",
-        metadata=ApiObjectMetadata(name=_BACKUP, namespace=namespace),
+        f"{name}-source",
+        metadata=ApiObjectMetadata(name=name, namespace=namespace),
         source_pvc=_CONFIG_CLAIM,
         trigger=ReplicationSourceSpecTrigger(schedule=_BACKUP_SCHEDULE),
         mover=ReplicationSourceSpecRsyncTls(
             copy_method=ReplicationSourceSpecRsyncTlsCopyMethod.DIRECT,
-            key_secret=f"volsync-rsync-tls-{_BACKUP}",
-            address=f"volsync-rsync-tls-dst-{_BACKUP}.{namespace}.svc",
+            key_secret=f"volsync-rsync-tls-{name}",
+            address=f"volsync-rsync-tls-dst-{name}.{namespace}.svc",
             port=8000,
             mover_security_context=_source_mover_security_context(),
         ),
     )
-    return chart
 
 
 def write_manifests(root: Path, household: str, *, mcp_dir: str) -> None:
