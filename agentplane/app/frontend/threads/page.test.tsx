@@ -1397,7 +1397,9 @@ it("shows a future numeric delivery state as unknown rather than a known Dispatc
   const row = pendingRow(container, waiting.commandId);
   expect(row.querySelector('[data-stage="unknown"]')).not.toBeNull();
   expect(progressLabel(container, waiting.commandId)).toBe("Outcome unknown: Unrecognized delivery state 999");
-  expect(row.querySelector(".transcript-user-bubble")?.getAttribute("data-message-phase")).not.toBe("failed");
+  const bubble = row.querySelector(".transcript-user-bubble");
+  expect(bubble).not.toBeNull();
+  expect(bubble?.getAttribute("data-message-phase")).not.toBe("failed");
   expect(watch.signal?.aborted).toBe(false);
 
   await act(async () =>
