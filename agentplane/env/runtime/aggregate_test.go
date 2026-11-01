@@ -2,10 +2,12 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
@@ -37,6 +39,40 @@ func TestFreshSessionAdmissionInvalidatesIdleToken(t *testing.T) {
 	}
 	if _, err := r.Quiesce(context.Background(), &sessionpb.QuiesceRequest{IfIdleSince: after.IdleSince}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEmbeddedHostLifecycleLossStillFencesExecution(t *testing.T) {
+	url, _, _ := startNativeExecutionTestServer(t, false)
+	config := executionRuntimeConfig(t, url, nil)
+	config.expectCloseError = true
+	started := make(chan *localExecutionHandle, 1)
+	startExecution := config.deps.startExecution
+	config.deps.startExecution = func(ctx context.Context, cfg Config, uid string) (executionHandle, error) {
+		handle, err := startExecution(ctx, cfg, uid)
+		if err == nil {
+			started <- handle.(*localExecutionHandle)
+		}
+		return handle, err
+	}
+	r := newLifecycleRunner(t, config)
+	var execution *localExecutionHandle
+	select {
+	case execution = <-started:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("Execution service did not start")
+	}
+	r.mu.Lock()
+	host := r.host
+	r.mu.Unlock()
+	r.disconnectHost(host, errors.New("simulated Host lifecycle loss"))
+	closeCtx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+	defer cancel()
+	if err := r.Close(closeCtx); err == nil {
+		t.Fatal("Runtime silently accepted lost Host lifecycle")
+	}
+	if !execution.stopRequested() {
+		t.Fatal("Runtime skipped Execution fence after Host lifecycle loss")
 	}
 }
 

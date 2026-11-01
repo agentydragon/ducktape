@@ -30,7 +30,6 @@ from util.bazel.runfiles import get_required_path
 CLAUDE_BINARY = "claude_code_cli_linux_x64/claude"
 CODEX_BINARY = "agentplane_codex_cli_linux_x64/bin/codex"
 RUNTIME_BINARY = "_main/agentplane/env/runtime/cmd/agentplane-environment-runtime_/agentplane-environment-runtime"
-HOST_BINARY = "_main/agentplane/env/runtime/harnesshost/cmd/agentplane-harness-host_/agentplane-harness-host"
 EXECUTION_BINARY = (
     "_main/agentplane/env/runtime/execution/cmd/agentplane-execution-service_/agentplane-execution-service"
 )
@@ -143,10 +142,6 @@ def runner_command(
     path.write_text(config.model_dump_json(exclude_none=True))
     return [
         str(runner_binary or get_required_path(RUNTIME_BINARY)),
-        "--harness-host-binary",
-        str(get_required_path(HOST_BINARY)),
-        "--execution-service-binary",
-        str(get_required_path(EXECUTION_BINARY)),
         "--config",
         str(path),
         "--launch-file",
@@ -189,14 +184,4 @@ def command(config: RunnerTestConfig, *, control: EnvironmentRuntimeControl, ing
     )
     path = config.state_dir.parent / f"{config.state_dir.name}-environment-runtime.json"
     path.write_text(file.model_dump_json(exclude_none=True))
-    return [
-        str(get_required_path(RUNTIME_BINARY)),
-        "--harness-host-binary",
-        str(get_required_path(HOST_BINARY)),
-        "--execution-service-binary",
-        str(get_required_path(EXECUTION_BINARY)),
-        "--config",
-        str(path),
-        "--launch-file",
-        str(launch_file),
-    ]
+    return [str(get_required_path(RUNTIME_BINARY)), "--config", str(path), "--launch-file", str(launch_file)]

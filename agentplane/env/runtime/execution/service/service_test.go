@@ -125,6 +125,23 @@ func TestSocketPathCanBeShortenedIndependentlyOfOwnerState(t *testing.T) {
 	}
 }
 
+func TestSystemdExecutionRequiresExplicitOwnerLifetime(t *testing.T) {
+	config := Config{
+		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
+		IncarnationUID: "test-incarnation", StateDir: "/state/execution", SocketPath: "/state/e.sock",
+		Binary: "/bin/codex", WorkingDirectory: "/state", ExecutorURL: "ws://127.0.0.1:4501",
+		Backend: "systemd", Systemd: &SystemdConfig{},
+	}
+	if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "explicit owner unit") {
+		t.Fatalf("missing systemd owner = %v, want explicit owner rejection", err)
+	}
+	config.Systemd.OwnerUnit = "agentplane-environment-runtime.service"
+	config.Systemd.LifetimeDirectory = "/run/agentplane-environment-runtime-lifetime"
+	if err := config.Validate(); err != nil {
+		t.Fatalf("runtime-owned systemd execution config = %v", err)
+	}
+}
+
 func TestRunReturnsFencedBackendLossOnlyAfterCleanupFence(t *testing.T) {
 	for _, test := range []struct {
 		name       string

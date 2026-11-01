@@ -20,8 +20,8 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
   integration app and the Notification service.
 - [Environment Runtime](env/README.md) and [native drivers](native/README.md): manage the Sandbox
   environment and run Claude Code or Codex through Harness Host, which journals Session activity.
-- [Environment execution service](env/runtime/execution/README.md): standalone typed process/filesystem API
-  managed by Environment Runtime and used by Harness Host.
+- [Environment execution service](env/runtime/execution/README.md): typed process/filesystem API
+  hosted by Environment Runtime; also available as a standalone service.
 - [Egress proxy](egress/README.md): authenticates sandbox workloads and substitutes credentials.
 - [Policy Controller](policy_controller/README.md): expires `PolicyBinding`s and keeps the
   RoleBindings they grant.
@@ -49,8 +49,8 @@ The Go Action Service, MCP edge, relay, LLM ingress, Runner Gateway/Dispatcher, 
 Controller, egress proxy and egress sidecar build with `pure = "on"` on the pinned
 `gcr.io/distroless/static-debian13:nonroot` base (CA certificates and timezone data, no shell), with
 explicit UID/GID `1000:1000` and working directory `/`. LLM ingress also keeps the repository's
-explicit CA bundle layer. The Environment Runtime, Harness Host and Execution Service use the environment Nix images; Python services use their own
-runtime images.
+explicit CA bundle layer. Environment Runtime uses the environment Nix images; Python services use
+their own runtime images.
 
 ## System overview
 
@@ -84,9 +84,11 @@ flowchart LR
     subgraph runtimes[Sandbox environments]
       direction LR
       subgraph sandbox[Sandbox Pod]
-        runtime[Environment Runtime: PID1]
-        runner[Harness Host + native drivers]
-        execution[Execution Service]
+        subgraph pod_runtime[Environment Runtime process: PID1]
+          runtime[Environment lifecycle]
+          runner[Harness Host + native drivers]
+          execution[Execution API]
+        end
         runtime -->|private lifecycle and native RPC| runner
         runtime -->|lifecycle and execution RPC| execution
         execution -->|companion ownership| podexec
@@ -95,15 +97,17 @@ flowchart LR
         sidecar[Egress sidecar]
       end
       subgraph vm_guest[VM guest]
-        vmruntime[Environment Runtime]
-        guest[Harness Host + native drivers]
-        vmexecution[Execution Service]
+        subgraph vm_runtime[Environment Runtime process]
+          vmruntime[Environment lifecycle]
+          guest[Harness Host + native drivers]
+          vmexecution[Execution API]
+        end
         vmruntime -->|private lifecycle and native RPC| guest
         vmruntime -->|lifecycle and execution RPC| vmexecution
         guest_agent[Managed agent process and CLI]
         manager[systemd manager]
         vmexec[Codex executor service]
-        vmruntime -->|service lifetime| manager
+        vmruntime -->|process lifetime| manager
         guest -->|native supervision| manager
         vmexecution -->|executor supervision| manager
         manager -->|service lifetime and cgroup| vmexec

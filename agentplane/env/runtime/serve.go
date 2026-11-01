@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"google.golang.org/grpc"
@@ -18,9 +18,8 @@ import (
 
 const hostStartupTimeout = 90 * time.Second
 
-// Run starts the private Host channel and the Gateway-facing control server. The Host
-// receives the configuration paths and resolves its own ingress endpoint; Runtime owns
-// only the environment lifecycle and child-service process boundaries.
+// Run starts the embedded Host, its private lifecycle channel, and the Gateway-facing
+// control server. Runtime owns the environment lifecycle and management-process lifetime.
 func (r *Runtime) Run(ctx context.Context) error {
 	listener, err := r.listenRuntimeSocket()
 	if err != nil {
@@ -111,75 +110,89 @@ func removeSocket(path string) error {
 }
 
 func (r *Runtime) startHost(ctx context.Context) error {
-	if r.config.Supervision == "systemd" {
-		invocation, err := r.deps.startUnit(ctx, HostUnitName)
-		if invocation.reference != nil || invocation.ID != "" {
-			r.mu.Lock()
-			r.hostUnit = invocation
-			r.mu.Unlock()
-		}
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-	binary := r.config.HostBinary
-	if binary == "" {
-		executable, err := os.Executable()
-		if err != nil {
-			return fmt.Errorf("resolve Harness Host sibling binary: %w", err)
-		}
-		binary = filepath.Join(filepath.Dir(executable), "agentplane-harness-host")
-	}
-	hostMode := "subprocess"
-	command := []string{
-		binary, "--config", r.config.ConfigPath, "--launch-file", r.config.LaunchPath,
-		"--runtime-socket", r.config.RuntimeSocket, "--listen-socket", r.config.HostSocket,
-		"--supervision", hostMode,
-	}
+	config := r.config.HostConfig
+	config.RuntimeSocket = r.config.RuntimeSocket
+	config.ListenSocket = r.config.HostSocket
+	config.ExecutionSocket = r.config.ExecutionSocket
 	if r.config.CodexExecServer != nil {
-		command = append(command, "--execution-socket", r.config.ExecutionSocket)
+		config.ExecServerURL = r.config.CodexExecServer.URL
 	}
-	process, err := r.deps.startChild(r.supervisor, supervision.ProcessConfig{Command: command, Dir: r.config.StateDir, Env: inheritedEnvironment(), StopGrace: 30 * time.Second})
+	if r.config.Supervision == "systemd" {
+		config.VMProcessOwner = supervision.SystemdOwner{
+			Unit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: HostScopeID,
+		}
+	} else if r.config.Supervision == "pid1" {
+		// One PID1 reaper owns all child waits in the container. A subprocess
+		// supervisor would race it for native and workspace-helper exits.
+		config.ProcessSupervisor = r.supervisor
+	}
+	host, err := harnesshost.New(config)
 	if err != nil {
 		return err
 	}
-	if err := process.Start(ctx); err != nil {
-		return errors.Join(err, process.Stop(context.Background()))
-	}
+	hostCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	process := &embeddedHostLifetime{host: host, cancel: cancel, done: make(chan struct{})}
 	r.mu.Lock()
-	r.hostProcess = process
+	r.hostLifetime = process
 	r.hostExit = make(chan childExit, 1)
 	r.mu.Unlock()
-	for _, output := range []io.Reader{process.Stdout(), process.Stderr()} {
-		if output == nil {
-			continue
-		}
-		r.processOutputWait.Add(1)
-		go func(reader io.Reader) {
-			defer r.processOutputWait.Done()
-			_, _ = io.Copy(os.Stderr, reader)
-		}(output)
-	}
 	go func() {
+		process.err = host.Run(hostCtx, r.config.HostIngress)
+		close(process.done)
 		code, err := process.Wait(context.Background())
 		exit := childExit{code: code, err: err}
 		r.mu.Lock()
 		exitChannel := r.hostExit
 		closing := r.closing
+		r.hostExited = true
 		r.mu.Unlock()
 		if exitChannel != nil {
 			exitChannel <- exit
 		}
 		if !closing {
 			if err != nil {
-				r.fail(fmt.Errorf("Harness Host process exited before Runtime shutdown (status=%d): %w", code, err))
+				r.fail(fmt.Errorf("Harness Host stopped before Runtime shutdown (status=%d): %w", code, err))
 			} else {
-				r.fail(fmt.Errorf("Harness Host process exited before Runtime shutdown (status=%d)", code))
+				r.fail(fmt.Errorf("Harness Host stopped before Runtime shutdown (status=%d)", code))
 			}
 		}
 	}()
 	return nil
+}
+
+// embeddedHostLifetime keeps Runtime's existing stop-and-join fence while Host
+// runs in the same management process. Its context is independent of the
+// Runtime Run caller, so a signal cannot bypass the coordinated drain.
+type embeddedHostLifetime struct {
+	host   *harnesshost.Runner
+	cancel context.CancelFunc
+	done   chan struct{}
+	err    error
+}
+
+func (p *embeddedHostLifetime) Stop(ctx context.Context) error {
+	p.cancel()
+	select {
+	case <-p.done:
+		// Run joins its own workers before returning. Close's cached result
+		// distinguishes successful native cleanup from a lifecycle-channel
+		// failure that caused Run to return an error.
+		return p.host.Close(ctx)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (p *embeddedHostLifetime) Wait(ctx context.Context) (int, error) {
+	select {
+	case <-p.done:
+		if p.err != nil {
+			return 1, p.err
+		}
+		return 0, nil
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
 }
 
 func (r *Runtime) waitForInitialHost(ctx context.Context) error {

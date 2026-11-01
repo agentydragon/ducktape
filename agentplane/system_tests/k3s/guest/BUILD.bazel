@@ -193,9 +193,7 @@ pkg_tar(
     srcs = [
         "//agentplane/env/images/systemd:agentplane.slice",
         "//agentplane/env/images/systemd:agentplane-environment-runtime.service",
-        "//agentplane/env/images/systemd:agentplane-execution-service.service",
         "//agentplane/env/images/systemd:agentplane-executors.slice",
-        "//agentplane/env/images/systemd:agentplane-harness-host.service",
         "//agentplane/env/images/systemd:agentplane-workloads.slice",
     ],
     mode = "0644",

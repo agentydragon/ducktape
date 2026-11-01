@@ -228,7 +228,7 @@ func TestFencedExecutionLossDuringQuiesceDoesNotRestartAndClearsOwner(t *testing
 	_ = got.Close()
 }
 
-func TestSystemdHealthLossFencesInvocationBeforeReplacement(t *testing.T) {
+func TestEmbeddedExecutionLossFencesBackendBeforeReplacement(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -254,7 +254,7 @@ func TestSystemdHealthLossFencesInvocationBeforeReplacement(t *testing.T) {
 
 	events := make(chan string, 4)
 	releaseFence := make(chan struct{})
-	old := &supervisedExecutionHandle{conn: oldConn, exited: make(chan childExit, 1)}
+	old := &executionServiceHandle{conn: oldConn, exited: make(chan childExit, 1)}
 	old.fence = func(ctx context.Context) error {
 		events <- "fence-start"
 		select {
@@ -265,13 +265,9 @@ func TestSystemdHealthLossFencesInvocationBeforeReplacement(t *testing.T) {
 			return ctx.Err()
 		}
 	}
-	healthCtx, cancelHealth := context.WithCancel(context.Background())
-	defer cancelHealth()
-	old.healthCancel = cancelHealth
-	go old.monitorHealth(healthCtx, 5*time.Millisecond, 100*time.Millisecond, 1)
 
 	var starts atomic.Int32
-	var replacementHandle *supervisedExecutionHandle
+	var replacementHandle *executionServiceHandle
 	r := &Runtime{
 		config:         Config{CodexExecServer: &codexexecserver.Config{URL: "ws://executor.invalid"}},
 		executionOwner: old, executionConn: oldConn, executionUID: "test-incarnation",
@@ -289,26 +285,26 @@ func TestSystemdHealthLossFencesInvocationBeforeReplacement(t *testing.T) {
 				_ = conn.Close()
 				return nil, err
 			}
-			replacementHandle = &supervisedExecutionHandle{conn: conn, exited: make(chan childExit, 1)}
+			replacementHandle = &executionServiceHandle{conn: conn, exited: make(chan childExit, 1)}
 			events <- "replacement-ready"
 			return replacementHandle, nil
 		}},
 	}
 	go r.watchExecutionProcess(old, "test-incarnation", old)
-	healthServer.SetServingStatus(executorpb.Executor_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_NOT_SERVING)
+	old.exited <- childExit{}
 	select {
 	case event := <-events:
 		if event != "fence-start" {
 			t.Fatalf("first recovery event = %q, want fence-start", event)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("systemd Execution health monitor did not request an invocation fence")
+		t.Fatal("embedded Execution loss did not request a backend fence")
 	}
 	r.mu.Lock()
 	ownerBeforeFence := r.executionOwner
 	r.mu.Unlock()
 	if ownerBeforeFence != old || starts.Load() != 0 {
-		t.Fatal("Runtime replaced or released the systemd owner before invocation fence proof")
+		t.Fatal("Runtime replaced or released the embedded owner before backend fence proof")
 	}
 	close(releaseFence)
 	select {
@@ -317,7 +313,7 @@ func TestSystemdHealthLossFencesInvocationBeforeReplacement(t *testing.T) {
 			t.Fatalf("event after fence release = %q, want fence-complete", event)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("systemd invocation fence did not complete")
+		t.Fatal("backend fence did not complete")
 	}
 	select {
 	case event := <-events:
@@ -359,7 +355,7 @@ func TestSystemdHealthLossFencesInvocationBeforeReplacement(t *testing.T) {
 	_ = newOwner.Close()
 }
 
-func TestSystemdHealthLossFenceFailureRetainsOwnerAndIsFatal(t *testing.T) {
+func TestEmbeddedExecutionFenceFailureRetainsOwnerAndIsFatal(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -383,13 +379,9 @@ func TestSystemdHealthLossFenceFailureRetainsOwnerAndIsFatal(t *testing.T) {
 	cancelReady()
 
 	fenceFailure := errors.New("systemd invocation cgroup remained populated")
-	old := &supervisedExecutionHandle{conn: conn, exited: make(chan childExit, 1), fence: func(context.Context) error {
+	old := &executionServiceHandle{conn: conn, exited: make(chan childExit, 1), fence: func(context.Context) error {
 		return fenceFailure
 	}}
-	healthCtx, cancelHealth := context.WithCancel(context.Background())
-	defer cancelHealth()
-	old.healthCancel = cancelHealth
-	go old.monitorHealth(healthCtx, 5*time.Millisecond, 100*time.Millisecond, 1)
 	starts := atomic.Int32{}
 	r := &Runtime{
 		config:         Config{CodexExecServer: &codexexecserver.Config{URL: "ws://executor.invalid"}},
@@ -403,20 +395,20 @@ func TestSystemdHealthLossFenceFailureRetainsOwnerAndIsFatal(t *testing.T) {
 		}},
 	}
 	go r.watchExecutionProcess(old, "test-incarnation", old)
-	healthServer.SetServingStatus(executorpb.Executor_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_NOT_SERVING)
+	old.exited <- childExit{}
 	select {
 	case err := <-r.fatal:
 		if !errors.Is(err, fenceFailure) {
 			t.Fatalf("Runtime failure = %v, want exact invocation fence failure %v", err, fenceFailure)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("Runtime did not fail after systemd invocation fence failed")
+		t.Fatal("Runtime did not fail after embedded backend fence failed")
 	}
 	r.mu.Lock()
 	owner, uid := r.executionOwner, r.executionUID
 	r.mu.Unlock()
 	if owner != old || uid != "test-incarnation" {
-		t.Fatal("Runtime released systemd ownership without process fence proof")
+		t.Fatal("Runtime released embedded ownership without process fence proof")
 	}
 	if got := starts.Load(); got != 0 {
 		t.Fatalf("Runtime started %d replacements after fence failure, want none", got)

@@ -98,8 +98,6 @@ py_test(
     srcs = ["test_restart.py"],
     data = [
         "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
-        "//agentplane/env/runtime/execution/cmd:agentplane-execution-service",
-        "//agentplane/env/runtime/harnesshost/cmd:agentplane-harness-host",
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
         "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
     ],
@@ -400,8 +398,6 @@ py_test(
     srcs = ["test_pid1_container.py"],
     data = [
         "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
-        "//agentplane/env/runtime/execution/cmd:agentplane-execution-service",
-        "//agentplane/env/runtime/harnesshost/cmd:agentplane-harness-host",
         "//agentplane/env/runtime/supervision:runner_pid1_fixture",
     ],
     env = NATIVE_RUNNER_DOCKER_ENV,
@@ -415,13 +411,20 @@ py_test(
         "//agentplane/env/e2e/testing:gateway",
         "//agentplane/env/e2e/testing:launches",
         "//agentplane/env/e2e/testing:process_fixtures",
+        "//agentplane/env/runtime/control:environment_runtime_pb2",
         "//agentplane/environment_runtime_transport:config",
+        "//agentplane/history_service:session_ingress_pb2",
+        "//agentplane/history_service:session_ingress_pb2_grpc",
+        "//agentplane/proto:session_pb2",
         "//third_party/containers:debian_slim",
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:container_logs",
         "//util/testing:undeclared_outputs",
+        "@pypi//grpcio",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )

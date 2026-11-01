@@ -29,6 +29,9 @@ py_test(
 py_library(
     name = "codex_exec_server_container",
     srcs = ["codex_exec_server_container.py"],
+    data = [
+        "//agentplane/env/runtime/execution/cmd:agentplane-execution-service",  # keep: companion process launched by the fixture
+    ],
     visibility = [
         "//agentplane/central_sampler:__pkg__",
         "//agentplane/env/e2e:__pkg__",

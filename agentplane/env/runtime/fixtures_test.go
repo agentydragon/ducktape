@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -41,15 +40,16 @@ func TestMain(m *testing.M) {
 
 type runtimeTestConfig struct {
 	Config
-	host harnesshost.Config
-	deps runtimeDeps
+	host             harnesshost.Config
+	deps             runtimeDeps
+	expectCloseError bool
 }
 
 func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string, binary string) runtimeTestConfig {
 	t.Helper()
 	root := t.TempDir()
 	launch := configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}, Bootstrap: bootstrap}
-	config := Config{StateDir: root, Launch: launch, Supervision: "subprocess", ConfigPath: filepath.Join(root, "config.json"), LaunchPath: filepath.Join(root, "launch.json"), InitializationCwd: workspace, Control: insecureControl(), RuntimeSocket: filepath.Join(root, "runtime.sock"), HostSocket: filepath.Join(root, "host.sock"), ExecutionSocket: filepath.Join(root, "execution.sock")}
+	config := Config{StateDir: root, Launch: launch, Supervision: "subprocess", InitializationCwd: workspace, Control: insecureControl(), RuntimeSocket: filepath.Join(root, "runtime.sock"), HostSocket: filepath.Join(root, "host.sock"), ExecutionSocket: filepath.Join(root, "execution.sock")}
 	return runtimeTestConfig{Config: config, host: harnesshost.Config{StateDir: root, Launch: launch, WorkspaceRoot: workspace, InitializationCwd: workspace, RuntimeSocket: config.RuntimeSocket, ListenSocket: config.HostSocket, Claude: &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test"}, HTTPClient: http.DefaultClient}}
 }
 
@@ -87,19 +87,19 @@ func newLifecycleRunner(t *testing.T, config runtimeTestConfig) *Runtime {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	child := &localHostProcess{cancel: cancel, done: make(chan struct{})}
-	r.hostProcess = child
+	child := &localHostLifetime{host: host, cancel: cancel, done: make(chan struct{})}
+	r.hostLifetime = child
 	go func() { child.err = host.Run(ctx, configuration.Endpoint{Target: historyTarget}); close(child.done) }()
 	t.Cleanup(func() {
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 		defer closeCancel()
-		if err := r.Close(closeCtx); err != nil {
-			t.Errorf("Runtime close: %v", err)
+		if err := r.Close(closeCtx); (err != nil) != config.expectCloseError {
+			t.Errorf("Runtime close error=%v, expected error=%v", err, config.expectCloseError)
 		}
 		cancel()
 		select {
 		case <-child.done:
-			if child.err != nil {
+			if child.err != nil && !config.expectCloseError {
 				t.Errorf("Host close: %v", child.err)
 			}
 		case <-closeCtx.Done():
@@ -180,14 +180,14 @@ func waitClose(t *testing.T, done <-chan error) error {
 	}
 }
 
-type localHostProcess struct {
+type localHostLifetime struct {
+	host   *harnesshost.Runner
 	cancel context.CancelFunc
 	done   chan struct{}
 	err    error
 }
 
-func (p *localHostProcess) Start(context.Context) error { return nil }
-func (p *localHostProcess) Wait(ctx context.Context) (int, error) {
+func (p *localHostLifetime) Wait(ctx context.Context) (int, error) {
 	select {
 	case <-p.done:
 		return 0, p.err
@@ -196,10 +196,12 @@ func (p *localHostProcess) Wait(ctx context.Context) (int, error) {
 	}
 }
 
-func (p *localHostProcess) Stop(ctx context.Context) error {
+func (p *localHostLifetime) Stop(ctx context.Context) error {
 	p.cancel()
-	_, err := p.Wait(ctx)
-	return err
+	select {
+	case <-p.done:
+		return p.host.Close(ctx)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
-func (p *localHostProcess) Stdout() io.Reader { return strings.NewReader("") }
-func (p *localHostProcess) Stderr() io.Reader { return strings.NewReader("") }

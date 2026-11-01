@@ -133,8 +133,6 @@ py_library(
     srcs = ["process.py"],
     data = [
         "//agentplane/env/runtime/cmd:agentplane-environment-runtime",  # keep: production Runtime subprocess
-        "//agentplane/env/runtime/execution/cmd:agentplane-execution-service",  # keep: Runtime child
-        "//agentplane/env/runtime/harnesshost/cmd:agentplane-harness-host",  # keep: Runtime child
     ],
     deps = [
         ":config",

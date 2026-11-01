@@ -2,7 +2,7 @@
 
 The Environment Runtime is the authority for one Sandbox environment's identity, bootstrap,
 environment-owner lock, durable quiesce marker, Gateway control listener, and lifecycle of its
-Harness Host and standalone Execution service. It serves `EnvironmentRuntime.Connect` to the Host
+Harness Host and embedded Execution API. It serves `EnvironmentRuntime.Connect` to the Host
 on a private Unix socket and the `EnvironmentRuntime` API to the existing Runner Gateway. The Host
 owns Session records, journals, native harnesses and its separate owner lock.
 
@@ -29,7 +29,7 @@ Requests carry the three binding values as metadata; Host checks them inside its
 
 For quiesce and replacement, Runtime first asks Host to stop admissions and drain native work.
 `native_stopped` is reported only after admitted setup, Session calls, shared app-server work and
-native-process finalizers settle. Runtime then stops and fences the Execution service and publishes
+native-process finalizers settle. Runtime then stops and fences the embedded Execution API and publishes
 `execution_fenced` for that same generation. Host can seal and flush Session journals only after
 both facts match the requested binding. Runtime treats the History seal acknowledgement as a
 separate required boundary. It never infers a seal or flush from process exit or an Execution fence.
@@ -38,7 +38,7 @@ Runtime tracks in-flight public admissions synchronously so a newly admitted Ses
 an idle-quiesce token before Host facts are sampled. A canceled Gateway waiter does not cancel
 accepted bootstrap work or leave a canceled drain half-applied: a reconnect must finish the
 current Host native stop and Execution fence before reopening, even when the incarnation UID is
-unchanged. Replacement never starts a successor Execution service before the previous one is
+unchanged. Replacement never starts a successor Execution API lifetime before the previous one is
 fenced.
 
 SIGTERM follows the same Host drain and Execution fence path. When shutdown does not have an
@@ -49,10 +49,9 @@ itself make process cleanup fail.
 While bootstrap is running, Runtime reports the `Bootstrap` autosuspend blocker; it clears when the
 bootstrap reaches a terminal state.
 
-VM Host and Execution units, their transient process units, and their resource slices do not receive
-implicit shutdown-target stop jobs. Runtime owns their stop order, draining Host and fencing
-Execution before stopping either service; each transient process is bound to its owning service. The
-Runtime unit holds state and workspace mounts until those stops finish. Its systemd stop timeout is
+The VM transient process units and resource slices do not receive implicit shutdown-target stop
+jobs. Runtime drains Host and fences Execution before stopping Host; all native transient processes
+are bound to its service lifetime. The Runtime unit holds state and workspace mounts until those stops finish. Its systemd stop timeout is
 unlimited because accepted bootstrap work is joined to durable settlement; the lifecycle fence itself
 has a 150-second deadline.
 
@@ -68,37 +67,29 @@ Each managed process receives a non-negative `StopGrace` in its launch configura
 uses that fixed value for the process lifetime. Systemd sets `TimeoutStopUSec` when it starts a
 transient process unit, while the subprocess helper receives the same duration over its private
 launch arguments and owns TERM-to-KILL escalation. PID1 applies the same launch-time deadline.
-Host native processes retain the 5-second policy, the Runtime-managed Host process uses 30 seconds,
-and the standalone Execution service uses 110 seconds. Callers cannot change a process's stop grace
+Host native processes retain the 5-second policy.
+The embedded Execution API allows 90 seconds to fence its native backend. Callers cannot change a process's stop grace
 after launch.
 
 ## Process topology and fence proof
 
-The executable names below are fixed package contracts. Their systemd definitions live in
-`../images/systemd/` for the VM service units.
+| Mode                              | Runtime and Host                                                                                   | Execution API                                                                                                               | Fence evidence                                                                                                                                                                                                                                              |
+| --------------------------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Production Pod (`pid1`)           | Runtime is PID 1; embedded Host shares its child reaper.                                           | Embedded Execution claims the Codex companion in a separate PID-1 container.                                                | Replacement requires Host `native_stopped`, adapter shutdown and a fresh idle companion generation. A fenced backend loss can restart the API lifetime; unproven loss fails Runtime. Abnormal Runtime exit requires the outer container fence.              |
+| VM (`systemd`)                    | Runtime and Host share the Runtime service; Host native services use `agentplane-workloads.slice`. | Embedded Execution supervises Codex transient units in `agentplane-executors.slice`, bound to the Runtime service lifetime. | Backend loss permits same-incarnation API recovery only after the native unit is stopped and its process domain is proven empty. Failed or uncertain fences fail Runtime. The 150-second lifecycle fence deadline covers the API's 90-second backend fence. |
+| Explicit local/RBE (`subprocess`) | Host is embedded; native processes use subprocess supervision.                                     | The API is embedded; companion topology remains externally configured.                                                      | The API joins its companion fence. This mode does not claim production Pod cgroup containment.                                                                                                                                                              |
 
-| Mode                              | Runtime and Host                                                                                                                                     | Execution service                                                                                                                                    | Fence evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Production Pod (`pid1`)           | Runtime is container PID 1 and supervises Harness Host as an explicit subprocess.                                                                    | Runtime supervises the standalone Execution API process. The Codex companion is a separate Kubernetes container running as PID 1.                    | Normal replacement requires Host `native_stopped`, Execution service's clean fenced exit, and Runtime's process waits. An unexpected clean Execution exit triggers a same-incarnation replacement only after the old child is joined; nonzero exits fail Runtime. An abnormal Host exit fails Runtime without seal authorization; Runtime exits so the container runtime fences the whole Pod process cgroup before replacement.                                                                                 |
-| VM (`systemd`)                    | Runtime, Host and Execution service are separate systemd units. Runtime starts them over D-Bus and retains each exact invocation ID and cgroup path. | Execution service's own unit uses the configured systemd backend for Codex and has `Restart=no`; Runtime monitors its named Executor Health service. | A health loss starts recovery only after the exact old unit invocation is inactive, its process domain is proven empty, and systemd reports that exact invocation successful. Runtime then starts a replacement and waits for named Health to be `SERVING` before admitting new calls. A failed/nonzero invocation, changed or unobservable invocation, or fence error fails Runtime and retains the old owner. The 150-second Runtime fence deadline covers the Execution Service unit's 120-second stop bound. |
-| Explicit local/RBE (`subprocess`) | Runtime starts Host as a child process. It is a test/development mode and does not imply PID 1 containment.                                          | Runtime starts the Execution API as a child process; companion topology remains externally configured.                                               | Only normal child waits and reported native-stop facts are available. This mode does not claim production Pod cgroup containment.                                                                                                                                                                                                                                                                                                                                                                                |
+Native supervision retains systemd manager references, exact invocation IDs and cgroup paths until
+the corresponding process-domain fences are proven.
 
-Runtime pins each systemd service unit over D-Bus before start and holds its manager reference,
-exact invocation ID and cgroup path until its process-domain fence is proven.
-
-VM units are `agentplane-environment-runtime.service`,
-`agentplane-harness-host.service`, and `agentplane-execution-service.service`. The Runtime keeps the
-legacy `agentplane-runner` scope identity during cutover; Host and Execution use the explicit scope
-IDs `harness-host` and `execution-service`. Their lifetime directories are respectively
-`/run/agentplane-environment-runtime-lifetime`, `/run/agentplane-harness-host-lifetime`, and
-`/run/agentplane-execution-lifetime`. Runtime does not enable or start the Codex companion unit;
+The VM management unit is `agentplane-environment-runtime.service`. Runtime keeps its legacy scope
+identity; Host uses `harness-host` and Codex transient units use `execution-service`. All bind to
+the Runtime unit and `/run/agentplane-environment-runtime-lifetime`. Runtime does not enable or start the Codex companion unit;
 Pod orchestration owns that separate container.
 
 The fixed VM service commands use the mounted configuration at
 `/run/agentplane/config/environment-runtime.json` and launch identity at
-`/run/agentplane/sandbox/launch.json`. Runtime also accepts optional
-`--harness-host-binary` and `--execution-service-binary` overrides for tests; production resolves
-the sibling binaries from its mounted disk. `--vm-resource-properties <environment-runtime.json>` remains the
+`/run/agentplane/sandbox/launch.json`. `--vm-resource-properties <environment-runtime.json>` remains the
 systemd prestart interface for calculating the environment resource envelope.
 
 ## Configuration and startup
@@ -106,14 +97,14 @@ systemd prestart interface for calculating the environment resource envelope.
 Runtime accepts `--config <environment-runtime.json> --launch-file <launch.json>`. Resolved supervision is
 explicit: `pid1` requires a Pod PID namespace, `systemd` requires the VM `SystemdLauncher`, and
 `subprocess` is selected explicitly for local/integration runs. Runtime never silently falls back
-between them. The same immutable config files are passed to Host; Runtime writes the per-incarnation
-Execution service config with mode `0600`.
+between them. The same immutable config files are passed to Host; Runtime constructs the
+per-incarnation Execution API config in memory.
 
 For Pod and explicit subprocess modes, Runtime and Host use short private sockets directly under
 `StateDir` (`r.sock`, `h.sock`, `e.sock`) so test and deployment state paths remain within the
 Unix-domain socket path limit. Execution keeps its ownership lock under `StateDir/execution` and
-binds the configured `e.sock` path. VM mode retains the existing explicit `/state/runtime`,
-`/state/harness-host` and `/state/execution` socket locations used by its systemd unit arguments.
+binds the configured `e.sock` path. VM mode uses `/state/runtime`, `/state/harness-host` and
+`/state/execution` socket locations.
 
 On startup Runtime locks the legacy owner inode before opening the old Session directory, fences
 previous Host and Execution owners, binds its private lifecycle UDS with mode `0600`, starts Host,

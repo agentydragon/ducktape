@@ -30,8 +30,8 @@ func TestSystemdScopeIdentity(t *testing.T) {
 		t.Fatalf("Runtime scope identity = %q, want legacy identity %q", runnerIdentity, want)
 	}
 	runtime := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: "agentplane-environment-runtime.service", LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: SystemdEnvironmentRuntimeScopeID})
-	harness := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: "agentplane-harness-host.service", LifetimeDirectory: "/run/agentplane-harness-host-lifetime", ScopeID: "harness-host"})
-	execution := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: "agentplane-execution-service.service", LifetimeDirectory: "/run/agentplane-execution-lifetime", ScopeID: "execution-service"})
+	harness := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: runtimeUnit, LifetimeDirectory: runtimeLifetimeDirectory, ScopeID: "harness-host"})
+	execution := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: runtimeUnit, LifetimeDirectory: runtimeLifetimeDirectory, ScopeID: "execution-service"})
 	if runtime != runnerIdentity || harness == runtime || execution == runtime || execution == harness {
 		t.Fatal("distinct systemd owners shared a native process scope")
 	}
@@ -44,7 +44,7 @@ func TestPrepareSystemdOwner(t *testing.T) {
 	if err := os.Chmod(directory, 0700); err != nil {
 		t.Fatal(err)
 	}
-	owner := SystemdOwner{Unit: "agentplane-execution-service.service", LifetimeDirectory: directory, ScopeID: "execution-service"}
+	owner := SystemdOwner{Unit: runtimeUnit, LifetimeDirectory: directory, ScopeID: "execution-service"}
 	launcher := &SystemdLauncher{}
 	if err := launcher.prepareOwner(owner); err != nil {
 		t.Fatal(err)

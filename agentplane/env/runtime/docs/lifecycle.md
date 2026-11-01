@@ -89,16 +89,15 @@ until its Host and Execution domains are fenced.
 
 ## Process domains
 
-Production Pod Runtime is PID1 and supervises Host as a child. Host uses the explicit subprocess
-backend; its native helpers can occupy separate process groups. A normal `native_stopped` report
-proves Host cleanup. Abnormal Host exit alone cannot prove those groups are empty: Runtime fails the
-environment and replacement requires the outer container fence. Explicit subprocess mode remains
+Production Pod Runtime is PID1; the embedded Host shares its PID1 reaper. Native helpers can occupy
+separate process groups. A normal `native_stopped` report proves Host cleanup. An abnormal Runtime
+exit alone cannot prove those groups are empty; replacement requires the outer container fence.
+Explicit subprocess mode remains
 available for local fixtures, with its parent-liveness and inherited owner-descriptor barrier.
 
-VM Runtime, Host and Execution use separate systemd service invocations, scope IDs and lifetime
-markers. Runtime preserves its legacy scope hash so it can discover pre-rename transient units.
-Owner-lock paths changed, so all pre-rename VMs must stop before reusing their state volumes. Host uses scope
-`harness-host`; each native service is bound to its owning unit. Completion requires service state
+VM Runtime, Host and Execution use distinct native scope IDs bound to the Runtime service invocation
+and lifetime marker. Runtime preserves its legacy scope hash, while Host uses `harness-host` and
+Execution uses `execution-service`. Completion requires service state
 and an empty execution domain, including descendants. Manager disconnect and uncertain fence results
 block successors. See [supervision](../supervision/docs/supervision.md).
 

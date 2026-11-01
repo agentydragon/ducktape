@@ -1,11 +1,10 @@
-// Package runtime owns one Sandbox environment's identity, bootstrap and child service lifecycle.
+// Package runtime owns one Sandbox environment's identity, bootstrap and component lifecycles.
 package runtime
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -18,6 +17,7 @@ import (
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
@@ -41,14 +41,9 @@ import (
 )
 
 const (
-	RuntimeUnitName                                 = "agentplane-environment-runtime.service"
-	HostUnitName                                    = "agentplane-harness-host.service"
-	ExecutionUnitName                               = "agentplane-execution-service.service"
-	HostLifetimeDir                                 = "/run/agentplane-harness-host-lifetime"
-	ExecutionLifetimeDir                            = "/run/agentplane-execution-lifetime"
-	RuntimeScopeID       supervision.SystemdScopeID = supervision.SystemdEnvironmentRuntimeScopeID
-	HostScopeID          supervision.SystemdScopeID = "harness-host"
-	ExecutionScopeID     supervision.SystemdScopeID = "execution-service"
+	RuntimeUnitName                            = "agentplane-environment-runtime.service"
+	RuntimeScopeID  supervision.SystemdScopeID = supervision.SystemdEnvironmentRuntimeScopeID
+	HostScopeID     supervision.SystemdScopeID = "harness-host"
 )
 
 const (
@@ -57,9 +52,7 @@ const (
 	generationMetadata  = "agentplane-environment-generation"
 )
 
-// Config contains the resolved environment configuration and the two existing configuration-file
-// paths. Runtime and Host read the same immutable config/launch inputs; Runtime writes only the
-// per-incarnation standalone Execution config under StateDir/runtime.
+// Config contains the resolved environment and embedded Host configuration.
 type Config struct {
 	Control            configuration.EnvironmentRuntimeControlConfiguration
 	StateDir           string
@@ -71,35 +64,26 @@ type Config struct {
 	CodexBinary        string
 	HarnessEnvironment map[string]string
 	InitializationCwd  string
-	ConfigPath         string
-	LaunchPath         string
-	HostBinary         string
-	ExecutionBinary    string
+	HostConfig         harnesshost.Config
+	HostIngress        configuration.Endpoint
 	RuntimeSocket      string
 	HostSocket         string
 	ExecutionSocket    string
 }
 
-type childProcess interface {
-	Start(context.Context) error
-	Wait(context.Context) (int, error)
+type hostLifetime interface {
 	Stop(context.Context) error
-	Stdout() io.Reader
-	Stderr() io.Reader
+	Wait(context.Context) (int, error)
 }
 
 type childExit struct {
-	code          int
-	err           error
-	healthFailure bool
+	code int
+	err  error
 }
 
 type runtimeDeps struct {
 	prepareSupervisor func(Config, *os.File) (*supervision.Supervisor, error)
 	dialHost          func(string) (*grpc.ClientConn, error)
-	startUnit         func(context.Context, string) (unitInvocation, error)
-	fenceUnit         func(context.Context, string, unitInvocation) error
-	startChild        func(*supervision.Supervisor, supervision.ProcessConfig) (childProcess, error)
 	listen            func(string) (net.Listener, error)
 	waitBootstrap     func(context.Context) error
 	startExecution    func(context.Context, Config, string) (executionHandle, error)
@@ -161,9 +145,6 @@ type Runtime struct {
 	execStreams          map[uint64]context.CancelFunc
 	execCalls            map[uint64]context.CancelFunc
 	execCallID           uint64
-	execution            childProcess
-	executionUnit        unitInvocation
-	hostUnit             unitInvocation
 	executionFence       bool
 	fenceInFlight        *runtimepb.Binding
 	closing              bool
@@ -174,9 +155,9 @@ type Runtime struct {
 	failureErr           error
 	control              *control.Server
 	waitBootstrap        func(context.Context) error
-	hostProcess          childProcess
+	hostLifetime         hostLifetime
+	hostExited           bool
 	hostExit             chan childExit
-	processOutputWait    sync.WaitGroup
 	closeOnce            sync.Once
 	closeDone            chan struct{}
 	closeErr             error
@@ -198,9 +179,6 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	}
 	if err := configuration.ValidateControlIdentity(config.Control, config.Launch.Sandbox); err != nil {
 		return nil, err
-	}
-	if config.ConfigPath == "" || config.LaunchPath == "" {
-		return nil, errors.New("environment Runtime requires config and launch file paths")
 	}
 	if config.Supervision != "pid1" && config.Supervision != "subprocess" && config.Supervision != "systemd" {
 		return nil, errors.New("environment Runtime requires explicit pid1, subprocess or systemd supervision")
@@ -271,20 +249,11 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 		_ = owner.Close()
 		return nil, err
 	}
-	if deps.startChild == nil {
-		deps.startChild = startSupervisedChild
-	}
 	if deps.dialHost == nil {
 		deps.dialHost = dialUnix
 	}
 	if deps.listen == nil {
 		deps.listen = func(address string) (net.Listener, error) { return net.Listen("unix", address) }
-	}
-	if deps.startUnit == nil {
-		deps.startUnit = startSystemdUnit
-	}
-	if deps.fenceUnit == nil {
-		deps.fenceUnit = fenceSystemdUnit
 	}
 	lifecycleState := injectedState
 	if lifecycleState == nil {
@@ -422,10 +391,9 @@ func (r *Runtime) finishClose() error {
 	if sealUID != "" {
 		incarnationUID = sealUID
 	}
-	connected := r.host != nil && r.host.connected
-	executionExists := r.executionOwner != nil || r.executionUnit.ID != "" || r.executionUnit.reference != nil
-	hostProcessExists := r.hostProcess != nil
-	hostUnitExists := r.hostUnit.ID != "" || r.hostUnit.reference != nil
+	connected := r.host != nil && r.host.connected && !r.hostExited
+	executionExists := r.executionOwner != nil
+	hostLifetimeExists := r.hostLifetime != nil
 	var binding *runtimepb.Binding
 	var intentMode runtimepb.LifecycleIntent_Mode
 	if connected {
@@ -447,41 +415,64 @@ func (r *Runtime) finishClose() error {
 	}
 	fenceCtx, cancelFence := context.WithTimeout(context.Background(), executionFenceGrace)
 	defer cancelFence()
+	var hostRunErr error
 	if connected {
 		if err := r.waitForHostNativeStopped(fenceCtx, binding); err != nil {
 			return fmt.Errorf("Harness Host did not prove native work stopped: %w", err)
 		}
 		r.maybeFenceExecution(binding)
 		if err := r.waitForExecutionFenced(fenceCtx, binding); err != nil {
-			return fmt.Errorf("standalone Execution service did not prove its process fence: %w", err)
+			return fmt.Errorf("embedded Execution API did not prove its backend fence: %w", err)
 		}
 		if sealUID != "" {
 			if err := r.waitForHostQuiesced(fenceCtx, binding); err != nil {
 				return fmt.Errorf("Harness Host did not flush the sealed generation: %w", err)
 			}
 		}
-	} else if executionExists || hostProcessExists || hostUnitExists {
+	} else if hostLifetimeExists {
+		// A lost private channel is still a service failure, but the embedded
+		// Host can prove cleanup directly. Join it before fencing Execution.
+		if err := r.hostLifetime.Stop(fenceCtx); err != nil {
+			return fmt.Errorf("Runtime lost its Host lifecycle connection and native cleanup is unproved: %w", err)
+		}
+		_, hostRunErr = r.hostLifetime.Wait(fenceCtx)
+		r.cancelExecutionCalls()
+		if err := r.waitForExecutionCalls(fenceCtx); err != nil {
+			return fmt.Errorf("drain Execution calls after Host lifecycle loss: %w", err)
+		}
+		if err := r.stopExecution(fenceCtx); err != nil {
+			return fmt.Errorf("fence Execution after Host lifecycle loss: %w", err)
+		}
+		hostRunErr = errors.Join(errors.New("Harness Host lifecycle connection was lost"), hostRunErr)
+	} else if executionExists {
 		return errors.New("Runtime lost its Host lifecycle connection before proving native cleanup")
 	}
 
-	if err := r.stopHost(fenceCtx); err != nil {
-		return fmt.Errorf("stop and fence Harness Host: %w", err)
-	}
 	if connected {
-		r.mu.Lock()
-		if r.host != nil && r.host.conn != nil {
-			_ = r.host.conn.Close()
-			r.host.connected = false
+		if err := r.stopHost(fenceCtx); err != nil {
+			return fmt.Errorf("stop and fence Harness Host: %w", err)
 		}
-		r.mu.Unlock()
 	}
+	r.mu.Lock()
+	if r.host != nil && r.host.conn != nil {
+		_ = r.host.conn.Close()
+		r.host.connected = false
+	}
+	r.mu.Unlock()
 	if err := r.waitBootstrapSettled(); err != nil {
 		return err
 	}
 	r.lifecycleCancel()
 	<-r.lifecycleDone
 	r.lifecycleWorkers.Wait()
-	r.processOutputWait.Wait()
+	if r.config.Supervision == "pid1" {
+		// The Runtime owns the whole Pod PID namespace. Join both management
+		// controllers before killing any escaped native descendants, then retain
+		// the state-owner lock until the namespace fence has completed.
+		if err := r.supervisor.FenceNamespace(context.Background()); err != nil {
+			return fmt.Errorf("fence Pod PID namespace: %w", err)
+		}
+	}
 	var errs []error
 	if r.bootstrapHost != nil {
 		errs = append(errs, r.bootstrapHost.CloseLog())
@@ -489,7 +480,7 @@ func (r *Runtime) finishClose() error {
 	if err := errors.Join(errs...); err != nil {
 		return err
 	}
-	return r.owner.Close()
+	return errors.Join(hostRunErr, r.owner.Close())
 }
 
 func (r *Runtime) waitBootstrapSettled() error {
@@ -518,19 +509,8 @@ func (r *Runtime) waitBootstrapSettled() error {
 
 func (r *Runtime) stopHost(ctx context.Context) error {
 	r.mu.Lock()
-	process, invocation := r.hostProcess, r.hostUnit
+	process := r.hostLifetime
 	r.mu.Unlock()
-	if invocation.ID != "" || invocation.reference != nil {
-		if err := r.deps.fenceUnit(ctx, HostUnitName, invocation); err != nil {
-			return err
-		}
-		r.mu.Lock()
-		if r.hostUnit.reference == invocation.reference && r.hostUnit.ID == invocation.ID {
-			r.hostUnit = unitInvocation{}
-		}
-		r.mu.Unlock()
-		return nil
-	}
 	if process == nil {
 		return nil
 	}
@@ -760,7 +740,7 @@ func (r *Runtime) startExecutionForUIDLocked(ctx context.Context, uid string) er
 	r.mu.Unlock()
 	if current != nil && currentUID == uid {
 		if recovering {
-			return status.Error(codes.Unavailable, "standalone Execution service is recovering after a fenced backend loss")
+			return status.Error(codes.Unavailable, "Execution API is recovering after a fenced backend loss")
 		}
 		return nil
 	}
@@ -840,22 +820,14 @@ func (r *Runtime) stopExecution(ctx context.Context) error {
 
 func (r *Runtime) stopExecutionLocked(ctx context.Context) error {
 	r.mu.Lock()
-	handle, invocation := r.executionOwner, r.executionUnit
+	handle := r.executionOwner
 	r.mu.Unlock()
 	if handle == nil {
-		if invocation.ID == "" && invocation.reference == nil {
-			return nil
-		}
-		if err := r.deps.fenceUnit(ctx, ExecutionUnitName, invocation); err != nil {
-			return err
-		}
-		r.clearExecutionUnit(invocation)
 		return nil
 	}
 	if err := handle.StopAndFence(ctx); err != nil {
 		return err
 	}
-	r.clearExecutionUnit(invocation)
 	if err := handle.Close(); err != nil {
 		return err
 	}
@@ -867,15 +839,6 @@ func (r *Runtime) stopExecutionLocked(ctx context.Context) error {
 	}
 	r.mu.Unlock()
 	return nil
-}
-
-func (r *Runtime) clearExecutionUnit(invocation unitInvocation) {
-	r.mu.Lock()
-	if r.executionUnit.reference == invocation.reference && r.executionUnit.ID == invocation.ID &&
-		r.executionUnit.ControlGroup == invocation.ControlGroup {
-		r.executionUnit = unitInvocation{}
-	}
-	r.mu.Unlock()
 }
 
 func (r *Runtime) watchExecutionProcess(handle executionHandle, uid string, monitor interface {
@@ -893,12 +856,12 @@ func (r *Runtime) watchExecutionProcess(handle executionHandle, uid string, moni
 		r.mu.Unlock()
 		return
 	}
-	if !exit.healthFailure && (exit.code != 0 || exit.err != nil) {
+	if exit.code != 0 || exit.err != nil {
 		r.mu.Unlock()
-		r.fail(fmt.Errorf("standalone Execution service exited without a successful backend fence (status=%d): %v", exit.code, exit.err))
+		r.fail(fmt.Errorf("embedded Execution API exited without a successful backend fence (status=%d): %v", exit.code, exit.err))
 		return
 	}
-	// A clean child exit (or a systemd health loss) still needs an exact fence
+	// A fenced backend loss still needs an exact fence
 	// when the environment is already draining. Recovery owns that fence and
 	// clears the old handle before a same-incarnation RUNNING transition can
 	// reuse it. It only starts a replacement if RUNNING is still current after
@@ -1196,10 +1159,6 @@ func (r *Runtime) closeOwner() error { return r.owner.Close() }
 
 func dialUnix(path string) (*grpc.ClientConn, error) {
 	return grpc.NewClient("unix://"+path, observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-}
-
-func startSupervisedChild(supervisor *supervision.Supervisor, config supervision.ProcessConfig) (childProcess, error) {
-	return supervisor.NewProcess(config)
 }
 
 var (

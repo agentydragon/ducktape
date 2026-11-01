@@ -72,10 +72,17 @@ func newRunner(config Config, lifecycleState state.State) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	supervisor := supervision.NewSubprocessSupervisor(owner.File())
+	supervisor := config.ProcessSupervisor
+	if supervisor == nil && config.VMProcessLauncher == nil {
+		supervisor = supervision.NewSubprocessSupervisor(owner.File())
+	}
 	var workspaceSupervisor *supervision.Supervisor
 	if config.VMProcessLauncher != nil {
-		supervisor, err = config.VMProcessLauncher.PrepareForOwner(config.StateDir, config.Launch.Sandbox.UID, supervision.SystemdOwner{Unit: "agentplane-harness-host.service", LifetimeDirectory: "/run/agentplane-harness-host-lifetime", ScopeID: "harness-host"})
+		if config.ProcessSupervisor != nil {
+			_ = owner.Close()
+			return nil, errors.New("VM Host cannot combine a supplied process supervisor with its systemd launcher")
+		}
+		supervisor, err = config.VMProcessLauncher.PrepareForOwner(config.StateDir, config.Launch.Sandbox.UID, config.VMProcessOwner)
 		if err != nil {
 			_ = owner.Close()
 			return nil, err

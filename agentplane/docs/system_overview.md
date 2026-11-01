@@ -117,20 +117,22 @@ harnesses keep their current local sampling, execution and persistence paths. Se
 ```mermaid
 flowchart LR
     gateway[Runner Gateway]
-    runtime[Environment Runtime]
-    host[Harness Host]
-    execution[Execution Service]
+    subgraph environment_runtime[Environment Runtime process]
+      runtime[Environment lifecycle]
+      host[Harness Host]
+      execution[Execution API]
+    end
     bootstrap[Sandbox bootstrap]
     history[History ingress]
     gateway -->|mTLS Runner / Executor / WatchState| runtime
     runtime <-->|private binding / lifecycle intents / reports| host
     runtime -->|private native Session RPC| host
-    runtime -->|private Executor RPC / process fence| execution
+    runtime -->|private Executor RPC / backend fence| execution
     runtime --> bootstrap
     host -.->|durable journal push and ACK| history
 ```
 
-Runtime owns environment identity, bootstrap, health and aggregate lifecycle. Host owns native Session
+The components share one process. Runtime owns environment identity, bootstrap, health and aggregate lifecycle. Host owns native Session
 admission, state and journals; it rechecks Runtime boot, Host boot and generation before durable work.
 Host reports native stop before Runtime acknowledges Execution fencing, then seals and flushes exact
 History cursors. Public connection Leases and epoch fencing remain in Runtime's control endpoint.
@@ -141,23 +143,27 @@ Central sampler remains a separate control-plane process outside the environment
 ```mermaid
 flowchart LR
     subgraph pod[Sandbox Pod]
-        runtime[Environment Runtime: PID1]
-        host[Harness Host: subprocess owner]
-        execution[Execution Service]
+        subgraph pod_runtime[Environment Runtime process: PID1]
+          runtime[Environment lifecycle]
+          host[Harness Host]
+          execution[Execution API]
+        end
         exec[Companion container and exec-server]
-        runtime -->|child lifetime| host
-        runtime -->|child lifetime| execution
+        runtime -->|component lifecycle| host
+        runtime -->|component lifecycle| execution
         execution -->|Unix ownership connection| exec
         host -->|shared app-server WebSocket tools| exec
     end
     subgraph vm[VM guest]
-        vmruntime[Environment Runtime unit]
-        vmhost[Harness Host unit]
-        vmexecution[Execution Service unit]
+        subgraph vm_runtime[Environment Runtime service]
+          vmruntime[Environment lifecycle]
+          vmhost[Harness Host]
+          vmexecution[Execution API]
+        end
         manager[systemd manager]
         harness[Codex app-server: workload slice]
         vmexec[exec-server: executor slice]
-        vmruntime -->|unit lifecycle / fence| manager
+        vmruntime -->|service lifetime| manager
         vmhost -->|native launch / fence| manager
         vmexecution -->|executor launch / fence| manager
         manager -->|service lifetime and cgroup| vmexec
@@ -169,8 +175,8 @@ flowchart LR
 The Pod executor has a private PID namespace and Kubernetes resource limits. VM native processes use
 separate service scopes and slice budgets. Both share Sandbox identity and filesystem paths with the
 harness. Runtime aggregates process fence proof; Host cannot restart or fence Execution. An abnormal
-Pod Host exit requires the outer container fence before replacement. Local tools remain a deployment
-mode. See [executor isolation](../runner/docs/codex_executor.md).
+Runtime exit requires the outer container fence before replacement. Local tools remain a deployment
+mode. See [executor isolation](../env/runtime/execution/docs/codex_executor.md).
 
 ## Standalone execution service
 

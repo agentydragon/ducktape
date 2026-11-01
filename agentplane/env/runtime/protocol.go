@@ -192,11 +192,11 @@ func (r *Runtime) maybeFenceExecution(binding *runtimepb.Binding) {
 				r.fenceInFlight = nil
 			}
 			r.mu.Unlock()
-			r.fail(fmt.Errorf("fence standalone Execution service: %w", err))
+			r.fail(fmt.Errorf("fence embedded Execution API: %w", err))
 			return
 		}
 		if err := r.setExecutionFenced(binding); err != nil {
-			r.fail(fmt.Errorf("publish standalone Execution fence: %w", err))
+			r.fail(fmt.Errorf("publish embedded Execution fence: %w", err))
 		}
 		r.mu.Lock()
 		if proto.Equal(r.fenceInFlight, binding) {
@@ -224,7 +224,7 @@ func (r *Runtime) cancelExecutionCalls() {
 func (r *Runtime) waitForExecutionCalls(ctx context.Context) error {
 	for {
 		r.mu.Lock()
-		if failure := r.failureLocked(); failure != nil {
+		if failure := r.failureLocked(); failure != nil && !r.closing {
 			r.mu.Unlock()
 			return failure
 		}
