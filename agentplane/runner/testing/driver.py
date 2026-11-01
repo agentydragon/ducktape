@@ -14,8 +14,8 @@ import pytest
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.history_service.settled_cursors import unstored_ranges
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, wait_for_history_session
+from agentplane.history_service.testing.unstored_ranges import unstored_ranges
 from agentplane.proto import event_log_pb2, runner_pb2, runner_state_pb2
 from agentplane.runner import runner_service_pb2
 from agentplane.runner.configuration import Endpoint
