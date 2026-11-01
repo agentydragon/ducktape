@@ -114,17 +114,21 @@ async def test_federation_preflight_withholds_response_and_transport_details(
     assert capsys.readouterr() == ("", "")
 
 
-def _mcp_authorization() -> str:
+def _oauth_authorization(callback_path: str = "/mcp-linkage/callback") -> str:
     return (
         f"{DEX}/dex/auth?client_id=test-mcp-linkage&response_type=code&"
-        f"redirect_uri={APP}/mcp-linkage/callback&state=bff-state&"
+        f"redirect_uri={APP}{callback_path}&state=bff-state&"
         "code_challenge=bff-pkce&code_challenge_method=S256"
     )
 
 
 async def _follow_mcp_linkage(browser: httpx.AsyncClient) -> tuple[str, str]:
     return await follow_dex_authorization(
-        _mcp_authorization(), browser, CREDENTIALS, callback_app=httpx.URL(APP), callback_path="/mcp-linkage/callback"
+        _oauth_authorization(),
+        browser,
+        CREDENTIALS,
+        callback_origin=httpx.URL(APP),
+        callback_path="/mcp-linkage/callback",
     )
 
 
@@ -243,9 +247,11 @@ async def test_dex_login_uses_simple_local_form_and_preserves_app_oidc_flow() ->
     ]
 
 
-async def test_dex_linkage_uses_a_fresh_local_form_and_preserves_bff_state_pkce() -> None:
-    authorization = _mcp_authorization()
+@pytest.mark.parametrize("callback_path", ["/mcp-linkage/callback", "/auth/callback"])
+async def test_dex_authorization_preserves_state_pkce_and_allowed_callback(callback_path: str) -> None:
+    authorization = _oauth_authorization(callback_path)
     steps: list[str] = []
+    redirect_uri = f"{APP}{callback_path}"
 
     def respond(request: httpx.Request) -> httpx.Response:
         steps.append(f"{request.method} {request.url.path}")
@@ -257,7 +263,7 @@ async def test_dex_linkage_uses_a_fresh_local_form_and_preserves_bff_state_pkce(
                 302,
                 headers={
                     "location": "/dex/auth/local?client_id=test-mcp-linkage&response_type=code&"
-                    f"redirect_uri={APP}/mcp-linkage/callback&state=bff-state&"
+                    f"redirect_uri={redirect_uri}&state=bff-state&"
                     "code_challenge=bff-pkce&code_challenge_method=S256"
                 },
             )
@@ -265,7 +271,7 @@ async def test_dex_linkage_uses_a_fresh_local_form_and_preserves_bff_state_pkce(
             assert dict(request.url.params) == {
                 "client_id": "test-mcp-linkage",
                 "response_type": "code",
-                "redirect_uri": f"{APP}/mcp-linkage/callback",
+                "redirect_uri": redirect_uri,
                 "state": "bff-state",
                 "code_challenge": "bff-pkce",
                 "code_challenge_method": "S256",
@@ -281,14 +287,35 @@ async def test_dex_linkage_uses_a_fresh_local_form_and_preserves_bff_state_pkce(
             assert request.headers["origin"] == DEX
             assert request.headers["referer"] == f"{DEX}/dex/auth/local/login?state=dex-request&back="
             assert request.content == b"login=test-user%40example.invalid&password=test-password"
-            return httpx.Response(
-                303, headers={"location": f"{APP}/mcp-linkage/callback?state=bff-state&code=provider-code"}
-            )
+            return httpx.Response(303, headers={"location": f"{redirect_uri}?state=bff-state&code=provider-code"})
         raise AssertionError(f"unexpected request: {request.url}")
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond), follow_redirects=False) as browser:
-        assert await _follow_mcp_linkage(browser) == ("bff-state", "provider-code")
+        result = await follow_dex_authorization(
+            authorization, browser, CREDENTIALS, callback_origin=httpx.URL(APP), callback_path=callback_path
+        )
+        assert result == ("bff-state", "provider-code")
     assert steps == ["GET /dex/auth", "GET /dex/auth/local", "GET /dex/auth/local/login", "POST /dex/auth/local/login"]
+
+
+async def test_dex_authorization_rejects_unowned_callback_path_without_request() -> None:
+    requests = 0
+
+    def respond(_request: httpx.Request) -> httpx.Response:
+        nonlocal requests
+        requests += 1
+        return httpx.Response(500)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond), follow_redirects=False) as browser:
+        with pytest.raises(LoginBlockedError, match="OAuth callback path is not allowed"):
+            await follow_dex_authorization(
+                _oauth_authorization(),
+                browser,
+                CREDENTIALS,
+                callback_origin=httpx.URL(APP),
+                callback_path="/auth/callback/extra",
+            )
+    assert requests == 0
 
 
 async def test_dex_linkage_refuses_nonlocal_form_targets_without_sending_credentials() -> None:
