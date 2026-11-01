@@ -43,17 +43,16 @@ def test_shared_client_services_select_the_same_replica_during_incident(scratch_
     assert {port["name"] for port in template["spec"]["ports"]} == {"http", "tcp"}
 
 
-def test_reordering_hosts_preserves_host_and_replica_names(scratch_app: App) -> None:
+def test_retiring_full_node_preserves_surviving_host_and_replica_names(scratch_app: App) -> None:
     docs = CdkTesting.synth(installation.clickhouse_chart(scratch_app))
     chi = next(doc for doc in docs if doc["kind"] == "ClickHouseInstallation")
     layout = chi["spec"]["configuration"]["clusters"][0]["layout"]
-    assert layout["replicasCount"] == 3
-    assert [replica["name"] for replica in layout["replicas"]] == ["1", "2", "0"]
+    assert layout["replicasCount"] == 2
+    assert [replica["name"] for replica in layout["replicas"]] == ["1", "2"]
     hosts = layout["shards"][0]["replicas"]
     assert [(host["name"], host["templates"]["podTemplate"]) for host in hosts] == [
         ("0-1", "clickhouse-piraeus-103656"),
         ("0-3", "clickhouse-piraeus-102453"),
-        ("0-0", "clickhouse-piraeus-103711"),
     ]
     assert all(host["templates"]["dataVolumeClaimTemplate"] == "data-piraeus-hdd" for host in hosts)
 
