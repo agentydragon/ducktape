@@ -44,7 +44,9 @@ func TestEmbeddedExecutionBackendLossRequiresFencedResult(t *testing.T) {
 		{name: "unrequested clean exit", code: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			handle := newExecutionServiceHandle(service.Config{}, func(context.Context, service.Config, func(executorpb.ExecutorServer)) error { return test.err })
+			handle := newExecutionServiceHandle(service.Config{}, func(context.Context, service.Config, func(executorpb.ExecutorServer, context.Context)) error {
+				return test.err
+			})
 			exit := <-handle.ProcessExit()
 			if exit.code != test.code {
 				t.Fatalf("exit code = %d, want %d (error: %v)", exit.code, test.code, exit.err)
@@ -61,7 +63,7 @@ func TestEmbeddedExecutionBackendLossRequiresFencedResult(t *testing.T) {
 
 func TestEmbeddedExecutionStopJoinsServiceBeforeFenceProof(t *testing.T) {
 	allowFence := make(chan struct{})
-	handle := newExecutionServiceHandle(service.Config{}, func(ctx context.Context, _ service.Config, _ func(executorpb.ExecutorServer)) error {
+	handle := newExecutionServiceHandle(service.Config{}, func(ctx context.Context, _ service.Config, _ func(executorpb.ExecutorServer, context.Context)) error {
 		<-ctx.Done()
 		<-allowFence
 		return nil

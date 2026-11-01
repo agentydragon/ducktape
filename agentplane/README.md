@@ -89,7 +89,7 @@ flowchart LR
           runner[Harness Host + native drivers]
           execution[Execution API]
         end
-        runtime -->|private lifecycle and native RPC| runner
+        runtime -->|direct lifecycle and Session calls| runner
         runtime -->|lifecycle and execution RPC| execution
         execution -->|companion ownership| podexec
         agent[Managed agent process and CLI]
@@ -102,7 +102,7 @@ flowchart LR
           guest[Harness Host + native drivers]
           vmexecution[Execution API]
         end
-        vmruntime -->|private lifecycle and native RPC| guest
+        vmruntime -->|direct lifecycle and Session calls| guest
         vmruntime -->|lifecycle and execution RPC| vmexecution
         guest_agent[Managed agent process and CLI]
         manager[systemd manager]

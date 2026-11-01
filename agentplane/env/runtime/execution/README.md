@@ -9,9 +9,11 @@ admission and recovery guarantees.
 [Isolation and resources](ISOLATION.md) describes protection goals, the current shared Codex
 backend, process placement, collective resource limits and failure scope.
 
-Environment Runtime runs this service in-process and calls its adapter directly. Harness Host uses
-the private Unix socket for health checks; Runtime owns startup, health, shutdown and fencing. In
-Pods, the `companion` subcommand runs as PID 1 in the isolated Codex container and owns the native
+Environment Runtime runs this service in-process and calls its adapter directly. Host asks Runtime
+for in-process readiness before starting its shared Codex app-server; Runtime owns startup, health,
+shutdown and fencing. The embedded service keeps a health-only Unix socket throughout its lifetime
+for Runtime's startup verification. In Pods, the `companion` subcommand runs as PID 1 in the isolated
+Codex container and owns the native
 exec-server namespace. Gateway and the central sampler continue to use the unchanged `Executor` wire
 protocol. The independent service is exercised by
 `//agentplane/env/runtime/execution/testing:test_service` using its actual executable as container PID 1,

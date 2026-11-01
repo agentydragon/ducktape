@@ -42,14 +42,14 @@ func Run(ctx context.Context, config Config) (result error) {
 // RunEmbedded keeps the native backend and private health socket under the
 // Runtime process lifetime. The ready callback publishes the typed adapter to
 // Runtime after native readiness; the Executor RPC is not served on this socket.
-func RunEmbedded(ctx context.Context, config Config, ready func(executorpb.ExecutorServer)) error {
+func RunEmbedded(ctx context.Context, config Config, ready func(executorpb.ExecutorServer, context.Context)) error {
 	if ready == nil {
 		return errors.New("embedded Execution API requires a ready callback")
 	}
 	return runOwned(ctx, config, ready)
 }
 
-func runOwned(ctx context.Context, config Config, ready func(executorpb.ExecutorServer)) (result error) {
+func runOwned(ctx context.Context, config Config, ready func(executorpb.ExecutorServer, context.Context)) (result error) {
 	if err := config.Validate(); err != nil {
 		return err
 	}
@@ -130,13 +130,13 @@ func run(ctx context.Context, config Config, start codexexecserver.Start) (resul
 	return runWithReady(ctx, config, start, nil)
 }
 
-func runWithReady(ctx context.Context, config Config, start codexexecserver.Start, ready func(executorpb.ExecutorServer)) (result error) {
+func runWithReady(ctx context.Context, config Config, start codexexecserver.Start, ready func(executorpb.ExecutorServer, context.Context)) (result error) {
 	return runWithServer(ctx, config, start, ready, func(server *grpc.Server, listener net.Listener) error {
 		return server.Serve(listener)
 	})
 }
 
-func runWithServer(ctx context.Context, config Config, start codexexecserver.Start, ready func(executorpb.ExecutorServer), serve func(*grpc.Server, net.Listener) error) (result error) {
+func runWithServer(ctx context.Context, config Config, start codexexecserver.Start, ready func(executorpb.ExecutorServer, context.Context), serve func(*grpc.Server, net.Listener) error) (result error) {
 	lifetime, cancel := context.WithCancel(ctx)
 	defer cancel()
 	instance, err := start(lifetime)
@@ -219,7 +219,7 @@ func runWithServer(ctx context.Context, config Config, start codexexecserver.Sta
 	if ready != nil {
 		err = waitEmbeddedHealth(lifetime, config.Socket(), served)
 		if err == nil {
-			ready(adapter)
+			ready(adapter, lifetime)
 		} else if errors.Is(err, context.Canceled) {
 			// Backend loss cancels lifetime after publishing its exact loss
 			// evidence. Preserve that evidence even when the health probe was

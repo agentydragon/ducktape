@@ -1,9 +1,9 @@
 # Environment lifecycle ownership
 
-The environment has three process owners. Environment Runtime owns identity, bootstrap, public
+The environment has three component owners in one management process. Environment Runtime owns identity, bootstrap, public
 control and coordinated drain. Harness Host owns native Sessions, setup, app-server, journals and
 History ingress. Execution Service owns typed execution and the native exec-server. Each component
-has its own lifecycle state; no COSI engine crosses the process boundary.
+has its own lifecycle state; no COSI engine crosses the component boundary.
 
 ```mermaid
 flowchart LR

@@ -84,6 +84,10 @@ func (r *Runtime) connectHost(ctx context.Context, client *harnesshost.Runner, p
 		case err := <-intentResults:
 			return err
 		case <-intentApplied:
+			// Applying an intent can clear Runtime's report without changing
+			// any Host report fields (notably the same-generation fence).
+			// Re-observe even when Host's value is byte-identical.
+			lastReport = nil
 		case <-hostChanged:
 		}
 	}
@@ -110,6 +114,7 @@ func (r *Runtime) applyHostIntents(ctx context.Context, host *hostLink, peer hos
 			r.mu.Lock()
 			if r.host == host && host.connected {
 				host.intent = proto.Clone(current).(*runtimepb.LifecycleIntent)
+				r.changedLocked()
 			}
 			r.mu.Unlock()
 			select {
@@ -295,6 +300,9 @@ func (r *Runtime) HostExecutionReady(ctx context.Context) (bool, error) {
 	if r.config.CodexExecServer == nil {
 		return true, nil
 	}
+	if service, ok := r.executionOwner.(*executionServiceHandle); ok && !service.serving() {
+		return false, nil
+	}
 	if stopping, ok := r.executionOwner.(interface{ stopRequested() bool }); ok && stopping.stopRequested() {
 		return false, nil
 	}
@@ -349,7 +357,10 @@ func (r *Runtime) waitForExecutionFenced(ctx context.Context, binding *runtimepb
 			r.mu.Unlock()
 			return status.Error(codes.Unavailable, "Harness Host connection was lost before Execution fence")
 		}
-		if r.intent != nil && proto.Equal(r.intent.Binding, binding) && r.intent.ExecutionFenced {
+		// Publishing the fence locally is not enough: stopping Host before it
+		// applies this update can make Close reject the delayed intent.
+		if r.intent != nil && proto.Equal(r.intent.Binding, binding) && r.intent.ExecutionFenced &&
+			r.host.intent != nil && proto.Equal(r.host.intent.Binding, binding) && r.host.intent.ExecutionFenced {
 			r.mu.Unlock()
 			return nil
 		}

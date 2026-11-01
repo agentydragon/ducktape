@@ -15,10 +15,13 @@ import (
 )
 
 type heldHostPeer struct {
-	mu      sync.Mutex
-	applied *runtimepb.LifecycleIntent
-	started chan struct{}
-	release chan struct{}
+	mu           sync.Mutex
+	applied      *runtimepb.LifecycleIntent
+	started      chan struct{}
+	release      chan struct{}
+	holdFenced   bool
+	fenceStarted chan struct{}
+	fenceRelease chan struct{}
 }
 
 func (p *heldHostPeer) BootID() string                { return "host" }
@@ -39,10 +42,76 @@ func (p *heldHostPeer) ApplyIntent(ctx context.Context, intent *runtimepb.Lifecy
 			return ctx.Err()
 		}
 	}
+	if p.holdFenced && intent.ExecutionFenced {
+		select {
+		case p.fenceStarted <- struct{}{}:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		select {
+		case <-p.fenceRelease:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	p.mu.Lock()
 	p.applied = proto.Clone(intent).(*runtimepb.LifecycleIntent)
 	p.mu.Unlock()
 	return nil
+}
+
+func TestDirectHostFenceWaitsForHostToApplyIt(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
+	defer cancel()
+	r := &Runtime{
+		config: Config{Launch: configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{UID: "sandbox"}}},
+		bootID: "runtime", changes: make(chan struct{}),
+	}
+	initialRelease := make(chan struct{})
+	close(initialRelease)
+	peer := &heldHostPeer{
+		started: make(chan struct{}, 1), release: initialRelease,
+		holdFenced: true, fenceStarted: make(chan struct{}, 1), fenceRelease: make(chan struct{}),
+	}
+	done := make(chan error, 1)
+	go func() { done <- r.connectHost(ctx, nil, peer) }()
+	waitRuntime(t, r, func() bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.host != nil && r.host.report != nil && r.host.report.Ready
+	}, "initial direct Host report")
+	r.mu.Lock()
+	binding := proto.Clone(r.intent.Binding).(*runtimepb.Binding)
+	r.mu.Unlock()
+	if err := r.setExecutionFenced(binding); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-peer.fenceStarted:
+	case <-ctx.Done():
+		t.Fatal("fenced intent was not sent to Host")
+	}
+	probe, cancelProbe := context.WithCancel(ctx)
+	cancelProbe()
+	if err := r.waitForExecutionFenced(probe, binding); !errors.Is(err, context.Canceled) {
+		t.Fatalf("unapplied Execution fence acknowledged: %v", err)
+	}
+	close(peer.fenceRelease)
+	if err := r.waitForExecutionFenced(ctx, binding); err != nil {
+		t.Fatalf("Host-applied Execution fence was not acknowledged: %v", err)
+	}
+	// The peer deliberately returns the same report bytes after the fence.
+	// Runtime cleared its copy when publishing the fence, so the coordinator
+	// must deliver an identical report again after Host applies the intent.
+	waitRuntime(t, r, func() bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.host != nil && r.host.report != nil && r.host.report.Ready && proto.Equal(r.host.report.Binding, binding)
+	}, "same-generation Host report after Execution fence")
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("coordinator exit = %v, want cancellation", err)
+	}
 }
 
 func (p *heldHostPeer) Report() (*runtimepb.HostReport, error) {
@@ -143,5 +212,24 @@ func TestDirectHostExecutionReadinessFollowsOwnerLifetime(t *testing.T) {
 	ready, err = r.HostExecutionReady(t.Context())
 	if err != nil || ready {
 		t.Fatalf("readiness during fenced recovery = %t, %v", ready, err)
+	}
+
+	r.executionRecovering = false
+	backendLife, backendLost := context.WithCancel(t.Context())
+	service := &executionServiceHandle{done: make(chan struct{}), backendLife: backendLife}
+	r.executionOwner = service
+	ready, err = r.HostExecutionReady(t.Context())
+	if err != nil || !ready {
+		t.Fatalf("readiness while embedded service is running = %t, %v", ready, err)
+	}
+	backendLost()
+	ready, err = r.HostExecutionReady(t.Context())
+	if err != nil || ready {
+		t.Fatalf("readiness after backend loss before service exit = %t, %v", ready, err)
+	}
+	close(service.done)
+	ready, err = r.HostExecutionReady(t.Context())
+	if err != nil || ready {
+		t.Fatalf("readiness after backend exit before owner removal = %t, %v", ready, err)
 	}
 }

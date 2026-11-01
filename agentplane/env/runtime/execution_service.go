@@ -31,14 +31,22 @@ type executionServiceHandle struct {
 	cancel       context.CancelFunc
 	done         chan struct{}
 	result       childExit
-	ready        chan executorpb.ExecutorServer
+	ready        chan executionReadyState
+	backendLife  context.Context
 }
 
-func newExecutionServiceHandle(config service.Config, run func(context.Context, service.Config, func(executorpb.ExecutorServer)) error) *executionServiceHandle {
+type executionReadyState struct {
+	executor executorpb.ExecutorServer
+	lifetime context.Context
+}
+
+func newExecutionServiceHandle(config service.Config, run func(context.Context, service.Config, func(executorpb.ExecutorServer, context.Context)) error) *executionServiceHandle {
 	lifetime, cancel := context.WithCancel(context.Background())
-	h := &executionServiceHandle{cancel: cancel, done: make(chan struct{}), exited: make(chan childExit, 1), ready: make(chan executorpb.ExecutorServer, 1)}
+	h := &executionServiceHandle{cancel: cancel, done: make(chan struct{}), exited: make(chan childExit, 1), ready: make(chan executionReadyState, 1)}
 	go func() {
-		err := run(lifetime, config, func(executor executorpb.ExecutorServer) { h.ready <- executor })
+		err := run(lifetime, config, func(executor executorpb.ExecutorServer, backendLife context.Context) {
+			h.ready <- executionReadyState{executor: executor, lifetime: backendLife}
+		})
 		h.mu.Lock()
 		switch {
 		case errors.Is(err, service.ErrFencedBackendLoss):
@@ -103,6 +111,23 @@ func (h *executionServiceHandle) stopRequested() bool {
 	return h.expectedStop
 }
 
+func (h *executionServiceHandle) serving() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.expectedStop {
+		return false
+	}
+	if h.backendLife != nil && h.backendLife.Err() != nil {
+		return false
+	}
+	select {
+	case <-h.done:
+		return false
+	default:
+		return true
+	}
+}
+
 func (r *Runtime) startExecutionService(ctx context.Context, config Config, incarnationUID string) (executionHandle, error) {
 	serviceConfig := service.Config{
 		Namespace: config.Launch.Sandbox.Namespace, SandboxName: config.Launch.Sandbox.Name,
@@ -142,8 +167,9 @@ func (r *Runtime) startExecutionService(ctx context.Context, config Config, inca
 	readyCtx, cancel := context.WithTimeout(ctx, executionReadyWait)
 	defer cancel()
 	select {
-	case executor := <-handle.ready:
-		handle.executor = executor
+	case ready := <-handle.ready:
+		handle.executor = ready.executor
+		handle.backendLife = ready.lifetime
 	case <-handle.done:
 		return stopUnready(errors.Join(errors.New("Execution API exited before readiness"), handle.result.err))
 	case <-readyCtx.Done():

@@ -224,7 +224,7 @@ func TestEmbeddedServicePublishesDirectAdapterAndHealthOnlySocket(t *testing.T) 
 	go func() {
 		finished <- runWithReady(ctx, config, func(context.Context) (*supervision.Instance, error) {
 			return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { return nil }}, nil
-		}, func(executor executorpb.ExecutorServer) { ready <- executor })
+		}, func(executor executorpb.ExecutorServer, _ context.Context) { ready <- executor })
 	}()
 	select {
 	case executor := <-ready:
@@ -273,7 +273,7 @@ func TestEmbeddedReadinessWaitsForServingHealth(t *testing.T) {
 	go func() {
 		finished <- runWithServer(ctx, config, func(context.Context) (*supervision.Instance, error) {
 			return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { return nil }}, nil
-		}, func(executorpb.ExecutorServer) { ready <- struct{}{} }, func(server *grpc.Server, listener net.Listener) error {
+		}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(server *grpc.Server, listener net.Listener) error {
 			close(serveEntered)
 			select {
 			case <-servingAllowed:
@@ -328,7 +328,7 @@ func TestEmbeddedServeFailureDoesNotPublishBeforeBackendFence(t *testing.T) {
 				<-releaseStop
 				return nil
 			}}, nil
-		}, func(executorpb.ExecutorServer) { ready <- struct{}{} }, func(*grpc.Server, net.Listener) error { return serveErr })
+		}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(*grpc.Server, net.Listener) error { return serveErr })
 	}()
 	select {
 	case <-stopEntered:
@@ -371,7 +371,7 @@ func TestEmbeddedBackendLossDuringHealthWaitKeepsFenceEvidence(t *testing.T) {
 				<-releaseStop
 				return nil
 			}}, nil
-		}, func(executorpb.ExecutorServer) { ready <- struct{}{} }, func(*grpc.Server, net.Listener) error {
+		}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(*grpc.Server, net.Listener) error {
 			close(serveEntered)
 			<-releaseServe
 			return nil
@@ -428,7 +428,7 @@ func TestEmbeddedOwnerStopDuringHealthWaitJoinsBackendFence(t *testing.T) {
 				<-releaseStop
 				return nil
 			}}, nil
-		}, func(executorpb.ExecutorServer) { ready <- struct{}{} }, func(*grpc.Server, net.Listener) error {
+		}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(*grpc.Server, net.Listener) error {
 			close(serveEntered)
 			<-releaseServe
 			return nil
@@ -479,7 +479,7 @@ func TestEmbeddedHealthReadinessTimeoutRemainsFailure(t *testing.T) {
 	go func() {
 		finished <- runWithServer(ctx, config, func(context.Context) (*supervision.Instance, error) {
 			return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { return nil }}, nil
-		}, func(executorpb.ExecutorServer) { ready <- struct{}{} }, func(*grpc.Server, net.Listener) error {
+		}, func(executorpb.ExecutorServer, context.Context) { ready <- struct{}{} }, func(*grpc.Server, net.Listener) error {
 			<-releaseServe
 			return nil
 		})
