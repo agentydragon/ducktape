@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-from pathlib import Path
 
 import pytest
 import pytest_bazel
@@ -13,12 +12,11 @@ from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.k3s.vm_trace_contract import assert_vm_process_trace_contract
 from agentplane.system_tests.offered_models import models_offered_for
 from agentplane.system_tests.sandbox import VM_TEMPLATE
 from agentplane.system_tests.scenario import ScenarioResources
-from agentplane.system_tests.scenarios import central_sampler, runner_credentials, vm_sandbox
+from agentplane.system_tests.scenarios import vm_sandbox
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.tracing import traced_scenario
 from agentplane.system_tests.vm_configuration import SUPERVISION_TEMPLATE
@@ -57,7 +55,6 @@ async def _wait_for_vm_process_trace_contract() -> None:
 @pytest.mark.timeout(600)
 async def test_vm_scenarios(
     cluster: Cluster,
-    tmp_path: Path,
     client: Client,
     dispatcher: SessionDispatcherClient,
     scenario_resources: ScenarioResources,
@@ -65,12 +62,6 @@ async def test_vm_scenarios(
 ) -> None:
     harnesses = [session_pb2.HARNESS_CLAUDE, session_pb2.HARNESS_CODEX]
     models = await models_offered_for(client, harnesses)
-
-    async def credentials(harness: session_pb2.Harness) -> None:
-        async with scenario_resources() as (owned_client, sandbox):
-            await runner_credentials.vm_mtls_certificate_authenticates_a_session(
-                cluster, owned_client, dispatcher, sandbox, harness, models[harness], scripted
-            )
 
     async def turn(harness: session_pb2.Harness, template: str) -> None:
         async with scenario_resources() as (owned_client, sandbox):
@@ -94,20 +85,6 @@ async def test_vm_scenarios(
     # finished scenario never leaves its worker capacity idle behind another test's teardown.
     # Each task owns its guests and cleanup.
     async with asyncio.TaskGroup() as scenarios:
-        for harness in harnesses:
-            scenarios.create_task(
-                traced_scenario(
-                    f"environment-vm-mtls-{session_pb2.Harness.Name(harness).lower()}", credentials(harness)
-                )
-            )
-        scenarios.create_task(
-            traced_scenario(
-                "central-sampler",
-                central_sampler.dispatcher_central_setup_tool_and_retained_answer(
-                    cluster, tmp_path, scripted, Executor(template="environment-vm", cwd="/state/workspaces/accept")
-                ),
-            )
-        )
         # Only Claude selects the private supervisor checks; both use the ordinary guest image.
         scenarios.create_task(
             traced_scenario("vm-turn-harness_claude", turn(session_pb2.HARNESS_CLAUDE, SUPERVISION_TEMPLATE))

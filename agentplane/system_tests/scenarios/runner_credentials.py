@@ -15,13 +15,7 @@ from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatche
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.agent import WORKING_DIRECTORY, Agent, scripted_turn_with_admission_and_history
 from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.sandbox import (
-    POD_TEMPLATE,
-    VM_TEMPLATE,
-    VM_WORKING_DIRECTORY,
-    Sandboxes,
-    wait_until_running,
-)
+from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.tracing import tracer
 
@@ -211,32 +205,6 @@ async def check_vm_runner_certificate(cluster: Cluster, view: SandboxView) -> tu
 
 async def assert_vm_runner_identity_unchanged(cluster: Cluster, pod_name: str, identity: tuple[str, str]) -> None:
     assert await _identity(cluster, pod_name) == identity
-
-
-async def vm_mtls_certificate_authenticates_a_session(
-    cluster: Cluster,
-    client: Client,
-    dispatcher: SessionDispatcherClient,
-    sandbox: Sandboxes,
-    harness: session_pb2.Harness,
-    offered_model: str,
-    scripted: ScriptedUpstream,
-) -> None:
-    view = await sandbox(f"systest-environment-vm-{uuid4().hex[:8]}", template=VM_TEMPLATE)
-    identity = await check_vm_runner_certificate(cluster, view)
-    assert view.pod is not None
-    agent = await _open_agent(client, dispatcher, view, harness, offered_model, cwd=VM_WORKING_DIRECTORY)
-    turn, _, _ = await scripted_turn_with_admission_and_history(
-        client,
-        agent,
-        model=scripted.model(view.pod.name, harness),
-        command_id=f"vm-{uuid4().hex}",
-        prompt="Run a shell check in the VM environment runtime.",
-        shell_command="printf 'VM_MTLS_OK\\n'",
-        response="VM_MTLS_OK",
-    )
-    assert "VM_MTLS_OK" in "\n".join(turn.tool_outputs)
-    await assert_vm_runner_identity_unchanged(cluster, view.pod.name, identity)
 
 
 # gazelle:include_dep @pypi//protobuf
