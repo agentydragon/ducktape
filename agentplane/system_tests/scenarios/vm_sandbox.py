@@ -16,7 +16,7 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 from agentplane.app.testing.client import Client
 from agentplane.native.codex import wire
 from agentplane.native.codex.testing import frames, responses_sse
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.agent import TURN_SECONDS, Agent, Turn, scripted_turn_with_admission_and_history
 from agentplane.system_tests.cluster import Cluster
@@ -167,7 +167,7 @@ async def vm_sandbox_turn(
     client: Client,
     dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
     template: str,
@@ -182,7 +182,7 @@ async def vm_sandbox_turn(
                 assert systemd_supervision_passed(view.pod.uid), "Missing this VM's supervisor check receipt"
     model = scripted.model(view.pod.name, harness)
     with tracer.start_as_current_span(
-        "system_test.session.open", attributes={"harness": runner_pb2.Harness.Name(harness), "sandbox.name": view.name}
+        "system_test.session.open", attributes={"harness": session_pb2.Harness.Name(harness), "sandbox.name": view.name}
     ):
         agent = await session_setup_is_supervised(client, dispatcher, view.name, view.uid, harness, offered_model)
     with tracer.start_as_current_span("system_test.turn"):
@@ -202,7 +202,7 @@ async def vm_sandbox_turn(
     assert "VM_PID1 systemd" in output_text, turn.transcript
     (cgroup_line,) = [line for line in output_text.splitlines() if line.startswith("VM_CGROUP ")]
     cgroup = cgroup_line.removeprefix("VM_CGROUP ")
-    subtree = "agentplane-executors.slice" if harness == runner_pb2.HARNESS_CODEX else "agentplane-workloads.slice"
+    subtree = "agentplane-executors.slice" if harness == session_pb2.HARNESS_CODEX else "agentplane-workloads.slice"
     _assert_native_service_cgroup(cgroup, subtree)
     assert "VM_SYSTEMCTL_UNEXPECTED_SUCCESS" not in output_text, turn.transcript
     systemctl_denial = re.search(
@@ -247,7 +247,7 @@ async def codex_tool_oom(
 ) -> None:
     view = await sandbox("systest-vm-codex-oom", template=OOM_TEMPLATE)
     assert view.pod is not None
-    model = scripted.model(view.pod.name, runner_pb2.HARNESS_CODEX)
+    model = scripted.model(view.pod.name, session_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)
     evidence: dict[str, Any] = {}
     try:
@@ -259,7 +259,7 @@ async def codex_tool_oom(
                 dispatcher,
                 sandbox=view.name,
                 sandbox_uid=view.uid,
-                harness=runner_pb2.HARNESS_CODEX,
+                harness=session_pb2.HARNESS_CODEX,
                 model=offered_model,
                 cwd=VM_WORKING_DIRECTORY,
             )
@@ -301,7 +301,7 @@ async def codex_tool_oom(
             # Inspect the Runner before a follow-up could lazily start a replacement harness.
             survived = await client.runner_status(view.name)
             evidence["runner_after_oom"] = survived.model_dump(mode="json")
-            assert survived.runner_boot_id == original.runner_boot_id
+            assert survived.environment_runtime_boot_id == original.environment_runtime_boot_id
             assert survived.processes == original.processes
             assert survived.sessions[0].native_session_id == session.native_session_id
             assert survived.sessions[0].execution_state == "SESSION_EXECUTION_STATE_READY"
@@ -332,7 +332,7 @@ async def codex_tool_oom(
             assert execution.exit_code == 0
             final = await client.runner_status(view.name)
             evidence["runner_after_followup"] = final.model_dump(mode="json")
-            assert final.runner_boot_id == original.runner_boot_id
+            assert final.environment_runtime_boot_id == original.environment_runtime_boot_id
             assert final.processes == original.processes
             assert final.sessions[0].native_session_id == session.native_session_id
             current = await client.sandbox(view.name)

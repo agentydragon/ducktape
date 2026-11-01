@@ -104,11 +104,7 @@ async def test_vm_scenarios(
             traced_scenario(
                 "central-sampler",
                 central_sampler.dispatcher_central_setup_tool_and_retained_answer(
-                    cluster,
-                    tmp_path,
-                    scripted,
-                    Executor(template="environment-vm", cwd="/state/workspaces/accept"),
-                    central_sampler.VM_EXECUTION,
+                    cluster, tmp_path, scripted, Executor(template="environment-vm", cwd="/state/workspaces/accept")
                 ),
             )
         )

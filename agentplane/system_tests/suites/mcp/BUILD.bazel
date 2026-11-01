@@ -17,7 +17,7 @@ k3s_suite(
         ":conftest",
         "//:conftest",
         "//agentplane/app/testing:client",
-        "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/system_tests:cluster",
         "//agentplane/system_tests:conftest",

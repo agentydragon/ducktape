@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from agentplane.app.testing.client import Client
 from agentplane.env.harnesshost.harness import Harness
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import OperatingMode
@@ -68,7 +68,7 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
     )
 
     assert view.pod is not None
-    model = scripted.model(view.pod.name, runner_pb2.HARNESS_CODEX)
+    model = scripted.model(view.pod.name, session_pb2.HARNESS_CODEX)
     agent = Agent(
         client,
         dispatcher,
@@ -155,5 +155,5 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         assert local.model == local_model
 
 
-# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf

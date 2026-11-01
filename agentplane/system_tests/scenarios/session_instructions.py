@@ -20,7 +20,7 @@ import asyncio
 
 from agentplane.app.testing.client import Client
 from agentplane.app.testing.models import SandboxView
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.sandbox import Sandboxes
@@ -44,7 +44,7 @@ PROMPT = "In one short sentence, say what a checksum is. Do not use any tool."
 
 
 async def the_model_obeys_the_standing_instruction_its_session_was_opened_with(
-    client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
+    client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes, harness: session_pb2.Harness, model: str
 ) -> None:
     """The instruction reaches the model, and the marker is the model's own doing rather than its
     habit: two sessions on one sandbox, the same prompt, differing only in whether the session was
@@ -89,7 +89,7 @@ async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session
     client: Client,
     dispatcher: SessionDispatcherClient,
     view: SandboxView,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:
@@ -131,5 +131,5 @@ async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session
             await model.reply(request, Text("A checksum detects corrupted data."))
 
 
-# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf

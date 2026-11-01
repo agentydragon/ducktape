@@ -12,7 +12,6 @@ from uuid import UUID
 import pytest
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app.testing.dispatcher_client import SessionDispatcherClient
 from agentplane.env.config import Endpoint, EnvironmentRuntimeControl
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.failure_journal import FailureEvidence
@@ -23,6 +22,7 @@ from agentplane.grpc.calls import bearer, dial
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.subjects import ServiceAccountRef

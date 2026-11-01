@@ -4,7 +4,7 @@ import shlex
 from uuid import UUID, uuid4
 
 from agentplane.app.testing.client import Client
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.session_setup import run_setup
@@ -46,7 +46,7 @@ async def session_setup_is_supervised(
     dispatcher: SessionDispatcherClient,
     sandbox_name: str,
     sandbox_uid: UUID,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     model: str,
 ) -> Agent:
     session_id = uuid4()

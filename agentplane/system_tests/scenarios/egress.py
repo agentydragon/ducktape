@@ -35,7 +35,7 @@ from agentplane.app.testing.client import Client
 from agentplane.app.testing.models import SandboxView
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.decisions import Decision, Outcome
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 from agentplane.system_tests import probe_credential, runtime_grant
@@ -130,7 +130,7 @@ async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     client: Client,
     dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     model: str,
 ) -> None:
     """The whole path in one turn: the agent asks what it may reach, uses the credential it is told
@@ -168,7 +168,7 @@ async def the_model_call_itself_goes_through_the_proxy(
     client: Client,
     dispatcher: SessionDispatcherClient,
     view: SandboxView,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:
@@ -235,7 +235,7 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
     client: Client,
     dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:
@@ -269,5 +269,5 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
                 assert admitted.policy == runtime_grant.POLICY_SET, f"{admitted!r}"
 
 
-# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf

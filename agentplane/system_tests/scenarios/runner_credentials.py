@@ -10,16 +10,22 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.app.testing.models import SandboxView
-from agentplane.proto import runner_pb2
+from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.agent import WORKING_DIRECTORY, Agent, scripted_turn_with_admission_and_history
 from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
+from agentplane.system_tests.sandbox import (
+    POD_TEMPLATE,
+    VM_TEMPLATE,
+    VM_WORKING_DIRECTORY,
+    Sandboxes,
+    wait_until_running,
+)
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.tracing import tracer
 
-_RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/runner-credential"
+_RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/environment-runtime-credential"
 _SANDBOX_LABEL = "agentplane.allegedly.works/sandbox"
 
 
@@ -79,7 +85,7 @@ async def _open_agent(
     client: Client,
     dispatcher: SessionDispatcherClient,
     view: SandboxView,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     model_name: str,
     *,
     cwd: str = WORKING_DIRECTORY,
@@ -137,7 +143,7 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
     client: Client,
     dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
+    harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:
@@ -205,6 +211,32 @@ async def check_vm_runner_certificate(cluster: Cluster, view: SandboxView) -> tu
 
 async def assert_vm_runner_identity_unchanged(cluster: Cluster, pod_name: str, identity: tuple[str, str]) -> None:
     assert await _identity(cluster, pod_name) == identity
+
+
+async def vm_mtls_certificate_authenticates_a_session(
+    cluster: Cluster,
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    sandbox: Sandboxes,
+    harness: session_pb2.Harness,
+    offered_model: str,
+    scripted: ScriptedUpstream,
+) -> None:
+    view = await sandbox(f"systest-environment-vm-{uuid4().hex[:8]}", template=VM_TEMPLATE)
+    identity = await check_vm_runner_certificate(cluster, view)
+    assert view.pod is not None
+    agent = await _open_agent(client, dispatcher, view, harness, offered_model, cwd=VM_WORKING_DIRECTORY)
+    turn, _, _ = await scripted_turn_with_admission_and_history(
+        client,
+        agent,
+        model=scripted.model(view.pod.name, harness),
+        command_id=f"vm-{uuid4().hex}",
+        prompt="Run a shell check in the VM environment runtime.",
+        shell_command="printf 'VM_MTLS_OK\\n'",
+        response="VM_MTLS_OK",
+    )
+    assert "VM_MTLS_OK" in "\n".join(turn.tool_outputs)
+    await assert_vm_runner_identity_unchanged(cluster, view.pod.name, identity)
 
 
 # gazelle:include_dep @pypi//protobuf

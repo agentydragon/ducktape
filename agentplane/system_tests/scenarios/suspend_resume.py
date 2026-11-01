@@ -15,7 +15,7 @@ from agentplane.app.testing.client import Client
 from agentplane.app.testing.models import SandboxView
 from agentplane.env.harnesshost.harness import Harness
 from agentplane.native.codex.testing import responses_sse
-from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.agent import (
@@ -34,7 +34,7 @@ from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Text
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
 
 POD_TRANSITION_SECONDS = 300.0
@@ -117,9 +117,9 @@ class _ResumeRun:
     template: str
     original_incarnation: str
     storage_volumes: dict[str, tuple[str, str]]
-    agents: dict[runner_pb2.Harness, Agent] = field(default_factory=dict)
-    seeded_history: dict[runner_pb2.Harness, list[event_log_pb2.EventEntry]] = field(default_factory=dict)
-    suspended_history: dict[runner_pb2.Harness, list[event_log_pb2.EventEntry]] = field(default_factory=dict)
+    agents: dict[session_pb2.Harness, Agent] = field(default_factory=dict)
+    seeded_history: dict[session_pb2.Harness, list[event_log_pb2.EventEntry]] = field(default_factory=dict)
+    suspended_history: dict[session_pb2.Harness, list[event_log_pb2.EventEntry]] = field(default_factory=dict)
     native_session_ids: dict[str, str] = field(default_factory=dict)
     initial_boot_id: str | None = None
     resumed_incarnation: str | None = None
@@ -151,9 +151,9 @@ class _ResumeRun:
         assert self.view.pod is not None
         return self.view.pod.name
 
-    async def open(self, harness: runner_pb2.Harness, *, cwd: str, instructions: str = "") -> Agent:
+    async def open(self, harness: session_pb2.Harness, *, cwd: str, instructions: str = "") -> Agent:
         """A Thread on the first model the deployment offers `harness`, with no native process yet."""
-        harness_name = runner_pb2.Harness.Name(harness)
+        harness_name = session_pb2.Harness.Name(harness)
         offered = (await self.client.models()).harnesses[Harness(harness_name)]
         assert offered, f"the deployment offers no model for {harness_name}"
         agent = await Agent.open(
@@ -167,15 +167,15 @@ class _ResumeRun:
             instructions=instructions,
         )
         snapshot = await self.client.runner_status(self.view.name)
-        self.initial_boot_id = snapshot.runner_boot_id
+        self.initial_boot_id = snapshot.environment_runtime_boot_id
         reserved = next(row for row in snapshot.sessions if row.session_id == str(agent.thread_id))
         assert reserved.process_id is None, "OpenSession unexpectedly started a native harness"
         self.agents[harness] = agent
         return agent
 
-    async def seeded(self, harness: runner_pb2.Harness, seed: Turn) -> None:
+    async def seeded(self, harness: session_pb2.Harness, seed: Turn) -> None:
         """Check the seed turn and the native session it started."""
-        assert seed.input_confirmed, f"{runner_pb2.Harness.Name(harness)} did not confirm the seed input"
+        assert seed.input_confirmed, f"{session_pb2.Harness.Name(harness)} did not confirm the seed input"
         agent = self.agents[harness]
         self.seeded_history[harness] = await _history(self.client, agent.thread_id, completed_turns=1)
         snapshot = await self.client.runner_status(self.view.name)
@@ -230,7 +230,7 @@ class _ResumeRun:
             async for attempt in environment_runtime_startup_retries():
                 with attempt:
                     snapshot = await self.client.runner_status(self.view.name)
-            assert snapshot.runner_boot_id != self.initial_boot_id
+            assert snapshot.environment_runtime_boot_id != self.initial_boot_id
             assert {row.session_id for row in snapshot.sessions} == set(self.native_session_ids)
             for row in snapshot.sessions:
                 if row.session_id in self.native_session_ids:
@@ -240,9 +240,9 @@ class _ResumeRun:
             self.checks.append("new_runner_retains_dormant_sessions_without_native_processes")
             self.save()
 
-    async def continued(self, harness: runner_pb2.Harness, turn: Turn) -> None:
+    async def continued(self, harness: session_pb2.Harness, turn: Turn) -> None:
         """Check the first turn after the resume: the native session resumed and the journal continued."""
-        harness_name = runner_pb2.Harness.Name(harness)
+        harness_name = session_pb2.Harness.Name(harness)
         assert turn.resumed, f"{harness_name} did not report native session resume"
         assert turn.input_confirmed, f"{harness_name} did not confirm the resumed input"
         agent = self.agents[harness]
@@ -280,7 +280,7 @@ class _ResumeRun:
             "old_incarnation": self.original_incarnation,
             "new_incarnation": self.resumed_incarnation,
             "threads": {
-                runner_pb2.Harness.Name(harness): str(agent.thread_id) for harness, agent in self.agents.items()
+                session_pb2.Harness.Name(harness): str(agent.thread_id) for harness, agent in self.agents.items()
             },
             "sessions": self.sessions,
             "checks": self.checks,
@@ -289,8 +289,8 @@ class _ResumeRun:
         (undeclared_outputs_dir() / f"{self.template}-resume.json").write_text(json.dumps(evidence, indent=2) + "\n")
 
 
-def _marker(harness: runner_pb2.Harness) -> str:
-    return f"{runner_pb2.Harness.Name(harness)}-{uuid4().hex}"
+def _marker(harness: session_pb2.Harness) -> str:
+    return f"{session_pb2.Harness.Name(harness)}-{uuid4().hex}"
 
 
 async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
@@ -304,7 +304,7 @@ async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
     """One replacement of the Sandbox's Pod, or of a VM's launcher, exercises both native stores."""
     template, cwd = executor.template, executor.cwd
     run = await _ResumeRun.start(cluster, client, dispatcher, sandbox, template=template)
-    markers = {harness: _marker(harness) for harness in (runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX)}
+    markers = {harness: _marker(harness) for harness in (session_pb2.HARNESS_CLAUDE, session_pb2.HARNESS_CODEX)}
     models = {harness: scripted.model(run.pod_name, harness) for harness in markers}
     for harness, marker in markers.items():
         agent = await run.open(harness, cwd=cwd)
@@ -340,8 +340,8 @@ async def codex_standing_instructions_after_suspend_and_compact(
 ) -> None:
     standing = "SESSION_STANDING_ORDER: consult Agentplane before declaring access unavailable."
     run = await _ResumeRun.start(cluster, client, dispatcher, sandbox, template=POD_TEMPLATE)
-    agent = await run.open(runner_pb2.HARNESS_CODEX, cwd=WORKING_DIRECTORY, instructions=standing)
-    model = scripted.model(run.pod_name, runner_pb2.HARNESS_CODEX)
+    agent = await run.open(session_pb2.HARNESS_CODEX, cwd=WORKING_DIRECTORY, instructions=standing)
+    model = scripted.model(run.pod_name, session_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)
     async with asyncio.TaskGroup() as turns:
         seed = turns.create_task(agent.run("Remember SEEDED_CONTEXT_MARKER and reply ACK."))
@@ -349,10 +349,10 @@ async def codex_standing_instructions_after_suspend_and_compact(
         assert standing in seed_request.system_text
         assert "# Agentplane environment" in seed_request.system_text
         await model.reply(seed_request, Text("ACK"))
-    await run.seeded(runner_pb2.HARNESS_CODEX, seed.result())
+    await run.seeded(session_pb2.HARNESS_CODEX, seed.result())
     await run.suspend_and_resume()
 
-    model = scripted.model(run.pod_name, runner_pb2.HARNESS_CODEX)
+    model = scripted.model(run.pod_name, session_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)
     async with asyncio.TaskGroup() as turns:
         recall = turns.create_task(agent.run(RECALL_PROMPT))
@@ -367,7 +367,7 @@ async def codex_standing_instructions_after_suspend_and_compact(
                     usage={"input_tokens": 1_000_000, "output_tokens": 5, "total_tokens": 1_000_005},
                 ).events
             )
-    await run.continued(runner_pb2.HARNESS_CODEX, recall.result())
+    await run.continued(session_pb2.HARNESS_CODEX, recall.result())
 
     async with asyncio.TaskGroup() as turns:
         turns.create_task(agent.run("Continue after checkpoint and reply CONTINUED_OK."))
