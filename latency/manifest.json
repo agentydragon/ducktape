@@ -1,7 +1,14 @@
 {
-  "source_devel_commit": "61d18e604e37757ebc9838404a292fec6348181f",
+  "source_devel_commit": "4e01c8387b206e213f3c4cc11d22e484cf27ce2b",
   "window_start_utc": "2026-10-31T08:30:00Z",
   "window_end_utc": "2026-10-31T12:30:00Z",
-  "published_at_utc": "2026-10-31T14:36:13.878722+00:00",
-  "attribution": "not collected"
+  "published_at_utc": "2026-11-01T02:33:09.647368+00:00",
+  "attribution": "not collected",
+  "cohort_source_devel_commit": "61d18e604e37757ebc9838404a292fec6348181f",
+  "cohort_report_commit": "bef8766ed5b7a42ba5c63526f63a7f6e58063564",
+  "update_scope": "Targeted workspace boot follow-up on 1 November; original cohort window and metrics retained unchanged.",
+  "followup_invocations": [
+    "347b6930-c685-4637-9850-17eb82d9c18e",
+    "e15d7eb9-1828-5a36-ba23-6b67e8646887"
+  ]
 }
