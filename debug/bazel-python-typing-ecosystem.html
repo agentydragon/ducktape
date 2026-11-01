@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bazel Python Typing Ecosystem State</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #171717;
+      --muted: #5f6368;
+      --line: #d8dadd;
+      --soft: #f3f4f5;
+      --panel: #ffffff;
+      --good: #176b3a;
+      --good-bg: #eaf6ee;
+      --warn: #8a5100;
+      --warn-bg: #fff5df;
+      --bad: #9b2525;
+      --bad-bg: #fff0f0;
+      --accent: #264c77;
+      --shadow: 0 2px 16px rgba(23, 23, 23, .06);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: #eceeef;
+      color: var(--ink);
+      font: 15px/1.55 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    a { color: var(--accent); }
+    a:hover { color: #123b65; }
+    .page { max-width: 1240px; margin: 0 auto; background: var(--panel); min-height: 100vh; }
+    header {
+      padding: 52px 64px 38px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(135deg, #fff 0%, #f7f8f9 100%);
+    }
+    h1, h2, h3 { line-height: 1.2; letter-spacing: -.02em; }
+    h1 { max-width: 850px; margin: 0 0 16px; font-size: clamp(32px, 5vw, 54px); font-weight: 750; }
+    h2 { margin: 0 0 18px; font-size: 28px; }
+    h3 { margin: 0 0 10px; font-size: 19px; }
+    p { margin: 0 0 14px; }
+    .lede { max-width: 860px; color: #3d4247; font-size: 19px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 22px; color: var(--muted); font-size: 13px; }
+    nav {
+      position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 4px 20px;
+      padding: 12px 64px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.96);
+      backdrop-filter: blur(8px); font-size: 13px;
+    }
+    nav a { text-decoration: none; color: #40454a; }
+    nav a:hover { text-decoration: underline; }
+    main { padding: 42px 64px 68px; }
+    section { scroll-margin-top: 60px; margin-bottom: 54px; }
+    .section-intro { max-width: 900px; color: #4c5156; }
+    .callout { padding: 18px 20px; border: 1px solid var(--line); border-left: 5px solid var(--accent); border-radius: 8px; background: #fafafa; }
+    .callout.good { border-left-color: var(--good); background: var(--good-bg); }
+    .callout.warn { border-left-color: var(--warn); background: var(--warn-bg); }
+    .callout.bad { border-left-color: var(--bad); background: var(--bad-bg); }
+    .verdict-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 22px 0; }
+    .card { padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: #fff; box-shadow: var(--shadow); }
+    .card p:last-child { margin-bottom: 0; }
+    .label { margin-bottom: 8px; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .big { font-size: 22px; font-weight: 700; }
+    .status { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+    .status.good { color: var(--good); background: var(--good-bg); }
+    .status.warn { color: var(--warn); background: var(--warn-bg); }
+    .status.bad { color: var(--bad); background: var(--bad-bg); }
+    .status.neutral { color: #4b5157; background: #e9ebed; }
+    table { width: 100%; border-collapse: collapse; margin: 18px 0; font-size: 14px; }
+    th, td { padding: 11px 12px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
+    th { background: var(--soft); color: #373b3f; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+    tr:last-child td { border-bottom: 0; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+    .table-wrap table { margin: 0; min-width: 850px; }
+    .candidate { font-weight: 700; min-width: 145px; }
+    .evidence-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .evidence-grid .card { box-shadow: none; }
+    .probe { margin-top: 10px; padding: 10px 12px; border-radius: 6px; background: #f5f6f7; color: #34383c; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+    .result { margin-top: 12px; padding: 10px 12px; border-radius: 6px; }
+    .result.good { background: var(--good-bg); color: #14562f; }
+    .result.bad { background: var(--bad-bg); color: #7d1d1d; }
+    .result.warn { background: var(--warn-bg); color: #704100; }
+    .source-list { padding-left: 22px; }
+    .source-list li { margin: 8px 0; }
+    .cite { display: inline-block; margin-left: 3px; font-size: 12px; font-weight: 700; text-decoration: none; }
+    .small { color: var(--muted); font-size: 13px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }
+    ol { padding-left: 24px; }
+    li { margin: 9px 0; }
+    footer { padding: 22px 64px 30px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+    @media (max-width: 800px) {
+      header, nav, main, footer { padding-left: 22px; padding-right: 22px; }
+      .verdict-grid, .evidence-grid { grid-template-columns: 1fr; }
+      h1 { font-size: 36px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>Bazel Python Typing Ecosystem State</h1>
+      <p class="lede">A decision report on whether Ducktape should replace its Bazel-integrated mypy checker with Pyrefly, Pyright, pytype, Pyre, or ty.</p>
+      <div class="meta">
+        <span>Evidence snapshot: 2026-09-13</span>
+        <span>Ducktape baseline: <span class="mono">origin/devel</span> at <span class="mono">d3a4de32a</span></span>
+        <span>Validation: Bazel/BuildBuddy RBE probes plus source review</span>
+      </div>
+    </header>
+
+    <nav aria-label="Report sections">
+      <a href="#decision">Decision</a>
+      <a href="#landscape">Landscape</a>
+      <a href="#probes">Ducktape probes</a>
+      <a href="#house-style">House style</a>
+      <a href="#tradeoffs">Trade-offs</a>
+      <a href="#plan">Evaluation plan</a>
+      <a href="#sources">Sources</a>
+    </nav>
+
+    <main>
+      <section id="decision">
+        <h2>Decision in one page</h2>
+        <div class="callout good">
+          <h3>Recommendation: keep mypy as the required checker; do not switch globally today.</h3>
+          <p>Ducktape already has the strongest production-shaped integration: an official Bazel aspect, explicit target dependencies, RBE-compatible execution, centralized configuration, and a working override/plugin model. The upstream <span class="mono">rules_mypy</span> runner update is worth taking independently; it removes the local fork without changing the checker decision.</p>
+          <p>Pyrefly is the only alternative that currently merits a serious side-by-side experiment. Its official Bazel rules integrate as a toolchain and aspect, and the mechanical adoption probe worked. However, two of six representative targets failed immediately on existing Docker and mautrix typing patterns. That is promising infrastructure, not switch-ready compatibility.</p>
+        </div>
+        <div class="verdict-grid">
+          <div class="card">
+            <div class="label">Best current CI choice</div>
+            <div class="big">Mypy + upstream rules</div>
+            <p>Highest compatibility and lowest migration risk. Land the already-validated upstream runner cleanup.</p>
+          </div>
+          <div class="card">
+            <div class="label">Best alternative to investigate</div>
+            <div class="big">Pyrefly</div>
+            <p>Native-looking Bazel shape and likely speed upside, but the rules are experimental and diagnostics are not yet compatible with Ducktape.</p>
+          </div>
+          <div class="card">
+            <div class="label">Best editor companion</div>
+            <div class="big">Pyright</div>
+            <p>The existing LSP is useful for Nix/stdlib code. It is not currently a credible hermetic Bazel CI replacement.</p>
+          </div>
+        </div>
+        <div class="callout warn">
+          <h3>What would justify revisiting the switch?</h3>
+          <p>A full-repository Pyrefly run with target-equivalent dependency resolution, a stable config/suppression migration, and measured cold/warm RBE results. The decision should be based on compatible findings and changed-target latency, not a vendor speed claim or a small clean sample.</p>
+        </div>
+      </section>
+
+      <section id="landscape">
+        <h2>Candidate landscape</h2>
+        <p class="section-intro">“Bazel support” here means more than being able to invoke a binary from a Bazel action. A useful replacement must understand the target graph, consume the Python provider information and declared dependencies, participate in output groups, run hermetically on RBE, and preserve enough of Ducktape’s existing configuration and typing semantics.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Candidate</th>
+                <th>Bazel shape</th>
+                <th>Current maturity</th>
+                <th>Ducktape adoption result</th>
+                <th>Decision</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="candidate">Mypy<br><span class="mono">rules_mypy</span></td>
+                <td>Official aspect for <span class="mono">py_*</span> rules; cache propagation, third-party type/stub handling, Bzlmod, and a customizable <span class="mono">mypy_cli</span> are built into the ruleset.<a class="cite" href="https://github.com/bazel-contrib/rules_mypy">[S1]</a></td>
+                <td><span class="status good">Established</span><br>0.41.0 is the current release reviewed.<a class="cite" href="https://github.com/bazel-contrib/rules_mypy/releases">[S2]</a></td>
+                <td>Current wiring passes the representative baseline. The upstream runner replacement also passed focused targets; it removes Ducktape’s local cache/symlink fork.</td>
+                <td><span class="status good">Keep</span><br>Take the upstream runner cleanup.</td>
+              </tr>
+              <tr>
+                <td class="candidate">Pyrefly<br><span class="mono">rules_pyrefly</span></td>
+                <td>Official experimental Bazel integration with a Bzlmod toolchain extension, aspect, Python-version/platform settings, severity/suppression options, and a type-check-only output group.<a class="cite" href="https://github.com/facebook/rules_pyrefly">[S4]</a></td>
+                <td><span class="status warn">Experimental</span><br>0.1.0 is the current BCR release; it brings its own Pyrefly 1.2.0 toolchain.<a class="cite" href="https://registry.bazel.build/modules/rules_pyrefly/0.1.0/">[S5]</a></td>
+                <td>Aspect wiring passed. Four of six representative targets passed; Docker typing and mautrix stub behavior failed.</td>
+                <td><span class="status warn">Investigate</span><br>Good side-by-side candidate, not a replacement yet.</td>
+              </tr>
+              <tr>
+                <td class="candidate">Pyright<br><span class="mono">rules_pyright</span></td>
+                <td>Community ruleset with an aspect and a cquery-based config generator, but the reviewed aspect only forwards source files; it does not wire target deps/PyInfo or a config input. The repository has no release and only two commits at review time.<a class="cite" href="https://github.com/agoessling/rules_pyright">[S9]</a></td>
+                <td><span class="status bad">Not production-shaped</span></td>
+                <td>Module loading failed before target analysis: the checked-in pnpm lockfile is v6, while Ducktape’s current <span class="mono">aspect_rules_js</span> requires lockfile v9+.</td>
+                <td><span class="status bad">No</span><br>Keep as LSP/editor tooling only.</td>
+              </tr>
+              <tr>
+                <td class="candidate">Basedpyright</td>
+                <td>Pyright-compatible checker variant. No maintained, first-party Bazel aspect surfaced in this review; adopting it in CI would inherit the same runner/config/dependency problem.</td>
+                <td><span class="status neutral">Runner only</span></td>
+                <td>No independent Bazel adoption path to test. The missing aspect is itself the blocker against Ducktape’s house style.</td>
+                <td><span class="status neutral">Defer</span></td>
+              </tr>
+              <tr>
+                <td class="candidate">pytype</td>
+                <td>Static inference checker with its own CLI/config model; no maintained user-facing Bazel aspect was found. The fact that pytype’s own source is built with Bazel does not provide target-level integration for another repository.</td>
+                <td><span class="status neutral">Runner only</span></td>
+                <td>No hermetic Bazel target/aspect exists to adopt. Its inference-first, annotation-optional and intentionally lenient model is also not a drop-in semantic replacement for mypy.<a class="cite" href="https://github.com/google/pytype/blob/main/docs/index.md">[S8]</a></td>
+                <td><span class="status neutral">Defer</span></td>
+              </tr>
+              <tr>
+                <td class="candidate">Pyre</td>
+                <td>Powerful static analyzer with a Facebook/Buck-oriented ecosystem; no credible maintained Bazel aspect surfaced in this review.</td>
+                <td><span class="status neutral">Runner/build-system gap</span></td>
+                <td>Adoption would start by designing and maintaining a new aspect, dependency exporter, and config contract. That is a new product-sized integration rather than a checker swap.<a class="cite" href="https://github.com/facebook/pyre">[S11]</a></td>
+                <td><span class="status neutral">Defer</span></td>
+              </tr>
+              <tr>
+                <td class="candidate">ty</td>
+                <td>Fast standalone Rust CLI with project/virtual-environment discovery; no maintained Bazel rules/aspect surfaced. Its public API and diagnostics are still beta/0.0.x.</td>
+                <td><span class="status warn">Beta</span><a class="cite" href="https://docs.astral.sh/ty/type-checking/">[S12]</a><a class="cite" href="https://raw.githubusercontent.com/astral-sh/ty/main/README.md">[S13]</a></td>
+                <td>No hermetic Bazel adoption path exists to exercise. A wrapper would need to package the binary, materialize the correct source/import tree, and define target-scoped dependencies, all outside the current rules.</td>
+                <td><span class="status neutral">Defer</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small">Screened out: <span class="mono">bazel-mypy-integration</span> is an older mypy integration, not an alternative checker; its own project points users toward <span class="mono">rules_mypy</span>. Core <span class="mono">rules_python</span> supplies Python targets/providers but is not a typing checker.<a class="cite" href="https://github.com/bazel-contrib/bazel-mypy-integration">[S15]</a><a class="cite" href="https://github.com/bazel-contrib/rules_python">[S16]</a></p>
+      </section>
+
+      <section id="probes">
+        <h2>What happened in Ducktape</h2>
+        <p class="section-intro">The alternate-aspect probes ran through <span class="mono">bbr build</span> against BuildBuddy RBE. They used <span class="mono">--config=nolint</span> and requested only the candidate’s output group so the result isolates the candidate checker rather than mixing it with Ducktape’s existing default aspects.</p>
+        <div class="evidence-grid">
+          <article class="card">
+            <h3>Mypy baseline and upstream runner</h3>
+            <p>The existing mypy wiring passed a 13-target representative build. The same family of targets also passed with the upstream <span class="mono">rules_mypy</span> 0.41.0 runner in the focused cleanup change. This establishes a working baseline for the comparison.</p>
+            <div class="result good"><strong>Result:</strong> compatible with current target graph and house configuration.</div>
+            <p class="small">Baseline evidence: <a href="https://app.buildbuddy.io/invocation/fd4985a3-a1db-4519-bfaa-f06de7b0b0c5">13-target BuildBuddy invocation</a>. Upstream-runner evidence: <a href="https://app.buildbuddy.io/invocation/9d79d602-6b60-42b4-ace2-65318ac7aff0">focused representative targets</a> and <a href="https://app.buildbuddy.io/invocation/ea7f9aa4-084a-466f-8f73-c5d5219811b3"><span class="mono">//util:kubernetes</span></a>.</p>
+            <p>Important local context: the current fork sets <span class="mono">cache=False</span> because its cache merge/symlink path has been troublesome. That is a real infrastructure downside, but it is being addressed by the upstream runner change rather than by changing checkers.</p>
+          </article>
+
+          <article class="card">
+            <h3>Pyrefly: integration works</h3>
+            <p>The official rules were added as a temporary Bzlmod/toolchain/aspect probe. The toolchain registered, the aspect traversed Ducktape Python targets, and the type-check output group behaved as expected.</p>
+            <div class="probe">bbr build --config=nolint --aspects=...pyrefly_aspect --output_groups=pyrefly TARGETS</div>
+            <div class="result good"><strong>Passes:</strong> <span class="mono">//util:kubernetes</span>, <span class="mono">//finance/augur/fit:scoring</span>, <span class="mono">//skills/freecad/examples:render_dxf</span>, <span class="mono">//x/genome_analyzer:genome_analyzer</span>.</div>
+            <p class="small">Pass evidence: <a href="https://app.buildbuddy.io/invocation/6e31c9eb-ae31-480c-9ba0-5b9a055f3a59">first two targets</a> and <a href="https://app.buildbuddy.io/invocation/6b49bdb1-82cf-48d2-a9fa-1788de8a03b2">second two targets</a>.</p>
+          </article>
+
+          <article class="card">
+            <h3>Pyrefly: current typing incompatibilities</h3>
+            <p><span class="mono">//x/inop/runners:containerized_claude</span> failed on a return from Docker’s dynamic client: Pyrefly inferred <span class="mono">Model | Unknown</span> where Ducktape declares <span class="mono">Container</span>. This may be a stub precision or checker-compatibility issue; it is not an aspect wiring failure.</p>
+            <p><span class="mono">//x/ember:matrix_client</span> failed with ten <span class="mono">not-async</span> diagnostics where mautrix stubs expose <span class="mono">AsyncGenerator</span> values that the code awaits. Ducktape’s existing mypy configuration has a targeted <span class="mono">mypy-mautrix</span> override, and the current mypy path accepts this target.</p>
+            <div class="result bad"><strong>Representative result:</strong> 4/6 passed; 2/6 failed on already-known third-party/dynamic-library edges.</div>
+            <p class="small">Failure evidence: <a href="https://app.buildbuddy.io/invocation/2c292a53-ad12-4700-a6e7-2e827618974c">Docker client diagnostic</a> and <a href="https://app.buildbuddy.io/invocation/833c8de3-e630-4bee-86f7-6203b5d77608">mautrix diagnostics</a>.</p>
+          </article>
+
+          <article class="card">
+            <h3>Pyright: blocked before target analysis</h3>
+            <p>The available community rules were added through a temporary Bzlmod/git override because the repository has no release. The module extension failed while loading its checked-in pnpm lockfile: Ducktape’s pinned <span class="mono">aspect_rules_js</span> 3.4.1 requires lockfile version 9 or newer, while the ruleset supplies version 6.</p>
+            <div class="probe">fail: npm_translate_lock requires lock_version at least 9.0, but found 6.0</div>
+            <div class="result bad"><strong>Result:</strong> no Pyright target was analyzed. Fixing the lockfile would only clear the first blocker.</div>
+            <p class="small">Evidence: <a href="https://app.buildbuddy.io/invocation/cb590184-b89d-45ac-806c-c1b2a2c33136">BuildBuddy module-loading failure</a>.</p>
+            <p>The aspect source itself only passes <span class="mono">ctx.rule.files.srcs</span> to Pyright. It does not use the target’s Python provider/dependency graph, which is incompatible with Ducktape’s explicit-deps and hermetic-import expectations.</p>
+          </article>
+        </div>
+        <div class="callout" style="margin-top: 18px">
+          <h3>What was not “tested” as a false green</h3>
+          <p>For pytype, Pyre, ty, and standalone/basedpyright, the blocker is upstream integration rather than a failed type check: no maintained Bazel aspect or hermetic Bazel package was found to add to Ducktape. A hand-written shell wrapper would test a new adapter that does not yet exist, not adoption of the ecosystem’s supported Bazel path. Those candidates are therefore recorded as runner/build-system gaps, not as passing checkers.</p>
+        </div>
+      </section>
+
+      <section id="house-style">
+        <h2>Fit with Ducktape’s house style</h2>
+        <p class="section-intro">The important local contract is target-scoped, explicit, hermetic checking. Ducktape uses one Python library per source, explicit <span class="mono">deps</span>, Bazel-managed third-party packages, centralized checker configuration, and RBE-backed aspects. A candidate that only understands a filesystem project is operationally worse even if its standalone CLI is attractive.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>House-style requirement</th><th>Mypy</th><th>Pyrefly</th><th>Pyright rules / runner-only tools</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Target graph and explicit deps</strong><br><span class="small">Checker sees what the Bazel target declares, not an accidental workspace.</span></td>
+                <td><span class="status good">Fit</span><br>Existing aspect and <span class="mono">mypy_cli</span> are integrated with Ducktape’s Python rules.</td>
+                <td><span class="status good">Promising</span><br>Official aspect/toolchain shape is designed for Bazel targets.</td>
+                <td><span class="status bad">Fail / absent</span><br>Reviewed Pyright aspect forwards sources only; runner-only tools need a new dependency exporter.</td>
+              </tr>
+              <tr>
+                <td><strong>Hermetic RBE execution</strong><br><span class="small">Tool and imports are declared and available on remote workers.</span></td>
+                <td><span class="status good">Proven</span></td>
+                <td><span class="status good">Proven mechanically</span><br>Toolchain ran through BuildBuddy; full compatibility remains open.</td>
+                <td><span class="status bad">Not proven</span><br>Pyright rules fail module loading; wrappers would be custom infrastructure.</td>
+              </tr>
+              <tr>
+                <td><strong>Central configuration</strong><br><span class="small">One reviewable source of truth, no machine-specific paths.</span></td>
+                <td><span class="status good">Fit</span><br>Uses the existing root mypy config and Bazel customization.</td>
+                <td><span class="status warn">Migration needed</span><br>Bazel integration does not read <span class="mono">pyrefly.toml</span>; settings belong on the aspect/toolchain.</td>
+                <td><span class="status bad">Poor fit today</span><br>Pyright’s useful config generator writes output-base paths and needs an external trigger; runner-only tools likewise require a new contract.</td>
+              </tr>
+              <tr>
+                <td><strong>Third-party stubs and plugins</strong><br><span class="small">Current pydantic/sqlalchemy plugin and targeted stub overrides matter.</span></td>
+                <td><span class="status good">Proven</span><br>Current overrides make known problematic packages workable.</td>
+                <td><span class="status warn">Open compatibility</span><br>mautrix is a concrete failure; equivalent suppression or semantic support must be designed.</td>
+                <td><span class="status warn">Unproven</span><br>Standalone Pyright has configuration support, but the reviewed Bazel aspect does not establish dependency/config/plugin parity.</td>
+              </tr>
+              <tr>
+                <td><strong>Python 3.14 / current toolchain</strong></td>
+                <td><span class="status good">Current path works</span></td>
+                <td><span class="status good">Probe works</span><br>Aspect tested with Python 3.14/Linux settings.</td>
+                <td><span class="status warn">Unproven</span><br>Ruleset’s bundled Pyright dependency is older than Ducktape’s Nix LSP version and target analysis did not start.</td>
+              </tr>
+              <tr>
+                <td><strong>Aspects and output groups</strong><br><span class="small">Checker is naturally part of <span class="mono">bazel build</span> and can be isolated when needed.</span></td>
+                <td><span class="status good">Fit</span></td>
+                <td><span class="status good">Fit</span><br>Explicit <span class="mono">pyrefly</span> output group worked.</td>
+                <td><span class="status bad">Insufficient</span><br>Nominal aspect exists, but its provider/dependency behavior is too thin for this repository.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Pyrefly’s own documentation is explicit that the Bazel integration does not consume <span class="mono">pyrefly.toml</span>; the aspect is configured separately. That can be clean, but it means a mypy-to-Pyrefly migration cannot simply preserve the root config file as the source of truth.<a class="cite" href="https://pyrefly.org/en/docs/configuration/">[S6]</a> Pyrefly documents a mypy configuration migration path for its CLI, but the mapping is a conceptual migration, not proof of Bazel-aspect parity.<a class="cite" href="https://pyrefly.org/en/docs/migrate/mypy/config/">[S7]</a></p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>Where alternatives are worse than mypy today</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Dimension</th><th>Current mypy position</th><th>Alternative downside</th><th>How to measure or resolve it</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><strong>Compatibility</strong></td>
+                <td>Known Ducktape patterns are already covered by targeted overrides, including mautrix and dynamic Docker APIs.</td>
+                <td>Pyrefly rejects both patterns in a small six-target sample. Pyright’s available aspect does not even import the target graph.</td>
+                <td>Build a diagnostic mapping for a broad target sample. Treat each suppression as a reviewed compatibility decision, not a blanket disable.</td>
+              </tr>
+              <tr>
+                <td><strong>Configuration continuity</strong></td>
+                <td>Root <span class="mono">mypy.ini</span>, Bazel aspect settings, and the custom CLI are already understood by the repository.</td>
+                <td>Pyrefly’s Bazel settings live outside <span class="mono">pyrefly.toml</span>; Pyright requires config/extra-path generation; runner-only tools need a new source of truth.</td>
+                <td>Prototype one generated, checked-in or reproducible config contract before considering migration.</td>
+              </tr>
+              <tr>
+                <td><strong>Plugin and stub ecosystem</strong></td>
+                <td>Mypy’s plugin and override mechanisms are imperfect but exercised in this codebase.</td>
+                <td>No tested equivalent for Ducktape’s pydantic/sqlalchemy plugin setup and mautrix workaround was established for the alternatives.</td>
+                <td>Inventory plugin-dependent targets and test them explicitly. Do not infer parity from clean stdlib targets.</td>
+              </tr>
+              <tr>
+                <td><strong>Operational maturity</strong></td>
+                <td>Official rules are released, Bzlmod-aware, and already part of the CI architecture.</td>
+                <td><span class="mono">rules_pyrefly</span> is experimental; <span class="mono">rules_pyright</span> is unreleased and currently incompatible with the pinned JS lockfile; the others have no maintained Bazel path.</td>
+                <td>Require a maintained release, reproducible toolchain, and a clear owner before making it a required check.</td>
+              </tr>
+              <tr>
+                <td><strong>Performance</strong></td>
+                <td>Mypy’s known local cost includes cache behavior and a conservative <span class="mono">cache=False</span> setting.</td>
+                <td>Pyrefly and ty may be faster, but public speed claims are not Ducktape measurements. A faster checker that adds config or false-positive maintenance can be a net loss.</td>
+                <td>Compare cold and warm RBE actions, changed-target latency, remote-cache hit rate, and developer-visible diagnostics on the same target set.</td>
+              </tr>
+              <tr>
+                <td><strong>Semantic continuity</strong></td>
+                <td>Mypy is the checker against which existing annotations, ignores, overrides, and review expectations have evolved.</td>
+                <td>pytype’s inference-first/lenient model is deliberately different; Pyrefly/Pyright/ty diagnostics and narrowing behavior will differ even when both are “correct.”</td>
+                <td>Define a compatibility policy: what counts as a required finding, an accepted difference, or a code change.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="plan">
+        <h2>Recommended path</h2>
+        <ol>
+          <li><strong>Land the upstream mypy runner cleanup.</strong> It is an independently useful maintenance change and removes the local cache/symlink patch without taking on checker migration risk. The focused validation is already green; PR <a href="https://github.com/agentydragon/ducktape/pull/6817">#6817</a> is the relevant change.</li>
+          <li><strong>Keep Pyrefly opt-in.</strong> Retain a temporary or experimental Bazel aspect configuration, but do not add it to the required default aspect set. Expand from the six-target probe to targets selected by typing risk: third-party stubs, pydantic/sqlalchemy, Docker clients, async code, and generated code.</li>
+          <li><strong>Resolve the semantic failures one by one.</strong> Determine whether the Docker diagnostic is a stub issue, a Pyrefly inference difference, or a real annotation defect. For mautrix, compare available stubs and decide whether a narrow Pyrefly suppression is acceptable. Preserve the existing mypy check while doing this.</li>
+          <li><strong>Measure the actual economics.</strong> On equivalent target sets, record cold/warm RBE action counts, wall time, changed-target latency, cache behavior, and diagnostic volume. Include the cost of maintaining two configs during the experiment.</li>
+          <li><strong>Revisit Pyright only if its Bazel integration changes materially.</strong> The minimum bar is a maintained release whose aspect consumes Python providers and deps, has a reproducible config story, and works with Ducktape’s current Bzlmod/JS pins.</li>
+        </ol>
+        <div class="callout good">
+          <h3>Bottom line</h3>
+          <p>It is worth investigating Pyrefly as a faster second checker. It is not yet worth replacing mypy in Ducktape CI. The likely near-term win is upstreaming the mypy runner fix and using Pyrefly as an evidence-generating sidecar until its target compatibility and configuration story catch up.</p>
+        </div>
+      </section>
+
+      <section id="limits">
+        <h2>Scope and limitations</h2>
+        <p>This report evaluates the current publicly available Bazel paths and a representative Ducktape probe, not every checker feature or a full-repository benchmark. The Pyrefly runs intentionally isolated its output group from Ducktape’s existing default aspects. The Pyright result is a real adoption failure at module loading, and source inspection found a second provider/dependency limitation; it is not evidence that the Pyright checker itself is poor.</p>
+        <p>“No maintained aspect found” means no credible current path surfaced in this review. It does not prove that no private, experimental, or newly published integration exists. The ecosystem moves quickly, especially for Pyrefly and ty; re-check release maturity before acting on a future migration proposal.</p>
+      </section>
+
+      <section id="sources">
+        <h2>Sources and evidence</h2>
+        <ol class="source-list">
+          <li id="s1"><a href="https://github.com/bazel-contrib/rules_mypy">rules_mypy official repository</a> — aspect, cache propagation, third-party typing support, Bzlmod, and CLI customization.</li>
+          <li id="s2"><a href="https://github.com/bazel-contrib/rules_mypy/releases">rules_mypy releases</a> — current 0.41.0 release reviewed, including Bazel 9/PyInfo and path-separator updates.</li>
+          <li id="s3"><a href="https://registry.bazel.build/modules/rules_mypy">Bazel Central Registry: rules_mypy</a> — module metadata and tested dependency/platform context.</li>
+          <li id="s4"><a href="https://github.com/facebook/rules_pyrefly">rules_pyrefly official repository</a> — experimental Bazel aspect/toolchain design and options.</li>
+          <li id="s5"><a href="https://registry.bazel.build/modules/rules_pyrefly/0.1.0/">Bazel Central Registry: rules_pyrefly 0.1.0</a> — current module release and dependencies.</li>
+          <li id="s6"><a href="https://pyrefly.org/en/docs/configuration/">Pyrefly configuration documentation</a> — Bazel configuration is separate from <span class="mono">pyrefly.toml</span>.</li>
+          <li id="s7"><a href="https://pyrefly.org/en/docs/migrate/mypy/config/">Pyrefly mypy configuration migration</a> — documented migration concepts and mappings.</li>
+          <li id="s8"><a href="https://github.com/google/pytype/blob/main/docs/index.md">pytype documentation</a> — inference-first checker model and CLI/configuration surface.</li>
+          <li id="s9"><a href="https://github.com/agoessling/rules_pyright">rules_pyright repository</a> — reviewed unreleased Bazel integration and aspect source.</li>
+          <li id="s10"><a href="https://microsoft.github.io/pyright/">Pyright documentation</a> — standalone configuration and execution-environment model.</li>
+          <li id="s11"><a href="https://github.com/facebook/pyre">Pyre official repository</a> — upstream project/build-system context.</li>
+          <li id="s12"><a href="https://docs.astral.sh/ty/type-checking/">ty type-checking documentation</a> — current CLI/project behavior.</li>
+          <li id="s13"><a href="https://raw.githubusercontent.com/astral-sh/ty/main/README.md">ty README</a> — beta status and project positioning.</li>
+          <li id="s14"><a href="https://registry.bazel.build/modules/rules_python/">Bazel Central Registry: rules_python</a> — current rules_python module context; Ducktape’s pin is older.</li>
+          <li id="s15"><a href="https://github.com/bazel-contrib/bazel-mypy-integration">bazel-mypy-integration</a> — legacy integration and pointer toward rules_mypy.</li>
+          <li id="s16"><a href="https://github.com/bazel-contrib/rules_python">rules_python official repository</a> — Python Bazel rules/providers, not a type checker.</li>
+          <li><a href="https://app.buildbuddy.io/invocation/fd4985a3-a1db-4519-bfaa-f06de7b0b0c5">Ducktape mypy baseline probe</a> — 13-target representative build.</li>
+          <li><a href="https://app.buildbuddy.io/invocation/6e31c9eb-ae31-480c-9ba0-5b9a055f3a59">Ducktape Pyrefly probe 1</a>, <a href="https://app.buildbuddy.io/invocation/6b49bdb1-82cf-48d2-a9fa-1788de8a03b2">probe 2</a> — passing Pyrefly targets.</li>
+          <li><a href="https://app.buildbuddy.io/invocation/2c292a53-ad12-4700-a6e7-2e827618974c">Ducktape Pyrefly Docker failure</a>, <a href="https://app.buildbuddy.io/invocation/833c8de3-e630-4bee-86f7-6203b5d77608">mautrix failure</a> — failing Pyrefly targets.</li>
+          <li><a href="https://app.buildbuddy.io/invocation/cb590184-b89d-45ac-806c-c1b2a2c33136">Ducktape Pyright rules probe</a> — module-loading failure from the pnpm lockfile mismatch.</li>
+        </ol>
+        <p class="small">Local repository evidence is anchored to the baseline commit shown above, including Ducktape’s Bazel aspect configuration and <a href="https://github.com/agentydragon/ducktape/blob/d3a4de32ae3a793d012a39e7d48a3da647697fae/devinfra/pyright/NOTES.md">existing Pyright integration notes</a>.</p>
+      </section>
+    </main>
+
+    <footer>
+      Prepared as a decision artifact from current upstream documentation, repository inspection, and bounded Bazel/RBE adoption probes.
+    </footer>
+  </div>
+</body>
+</html>
