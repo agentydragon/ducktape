@@ -635,7 +635,7 @@ def generate_manifests(root: Path) -> None:
             root,
             clickhouse_artifact,
             *clickhouse_installation.CHARTS,
-            siblings=(*clickhouse_installation.SOPS_FILES, "retired-volume-reclaim.yaml"),
+            siblings=clickhouse_installation.SOPS_FILES,
         ),
         clickhouse_operator_kustomization,
         external_secrets_operator_kustomization,

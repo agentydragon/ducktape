@@ -7,4 +7,3 @@ resources:
   - langfuse-credentials.sops.yaml
   - grafana-credentials.sops.yaml
   - public-coder-credentials.sops.yaml
-  - retired-volume-reclaim.yaml
