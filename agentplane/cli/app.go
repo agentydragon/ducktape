@@ -124,11 +124,11 @@ func (s *seconds) String() string { return s.d.String() }
 
 func (s *seconds) Type() string { return "seconds" }
 
-const rootHelp = `agentplane calls the Action Service and Session Dispatcher APIs, reads History for sessions observe-input,
-and calls the HTTP APIs a Sandbox already reaches through the egress proxy: the Notification Service (notifications)
-and the Egress rules API (egress). The environments group reads the co-hosted Runner Gateway discovery API. It adds
-no authority and keeps no state. Each group reads its AGENTPLANE_*_URL and AGENTPLANE_*_CREDENTIAL pair (the
-placeholder bearer) and fails alone with exit 2 when they are missing; environments uses AGENTPLANE_SESSIONS_URL
+const rootHelp = `agentplane calls the Action Service and Session Dispatcher APIs, reads History for sessions get, read-turns,
+and observe-input, and calls the HTTP APIs a Sandbox already reaches through the egress proxy: the Notification Service
+(notifications) and the Egress rules API (egress). The environments group reads the co-hosted Runner Gateway discovery
+API. It adds no authority and keeps no state. Each group reads its AGENTPLANE_*_URL and AGENTPLANE_*_CREDENTIAL pair
+(the placeholder bearer) and fails alone with exit 2 when they are missing; environments uses AGENTPLANE_SESSIONS_URL
 and AGENTPLANE_SESSIONS_CREDENTIAL.
 
 With --json stdout is the service's own JSON, unmodified: one value, or one per line for a list. Text

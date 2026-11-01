@@ -76,7 +76,11 @@ go_test(
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/grpc/facade",
+        "//agentplane/history_service:history_service_go_proto",
         "//agentplane/notification_service:notifications_go_proto",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",

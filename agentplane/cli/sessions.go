@@ -13,23 +13,117 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sessionclient "github.com/agentydragon/ducktape/agentplane/session_client"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const sessionsHelp = `Calls the SessionDispatcher gRPC API (AGENTPLANE_SESSIONS_URL, AGENTPLANE_SESSIONS_CREDENTIAL).
-observe-input also reads retained History (AGENTPLANE_HISTORY_URL, AGENTPLANE_HISTORY_CREDENTIAL).
+get and observe-input also read retained History (AGENTPLANE_HISTORY_URL, AGENTPLANE_HISTORY_CREDENTIAL).
+read-turns reads retained History only.
 
 This group opens and directs Sessions in an existing Sandbox and can observe an input's correlated
-History result. It does not provision an environment. The caller must already be authorized by each
-backend it reads.`
+History result or snapshot. It does not provision an environment or read a live environment. The caller
+must already be authorized by each backend it reads.`
 
 type sessionCall func(context.Context, dispatcherpb.SessionDispatcherClient, []string) error
 
 func (a *app) sessionsCommand() *cobra.Command {
 	return group("sessions", "Open and direct Sessions in an existing Sandbox", sessionsHelp,
 		a.openSessionCommand(), a.submitInputCommand(), a.getOpeningCommand(), a.getDispatchCommand(),
-		a.cancelInputCommand(), a.interruptTurnCommand(), a.observeInputCommand())
+		a.cancelInputCommand(), a.interruptTurnCommand(), a.getSessionCommand(), a.readTurnsCommand(), a.observeInputCommand())
+}
+
+func (a *app) getSessionCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "get SESSION_ID",
+		Short: "Read a Session opening and retained History summary",
+		Long: `Reads SessionDispatcher.GetSessionOpening and HistoryService.GetSessionSummary independently.
+The result keeps missing and unavailable sources distinct; it does not query a live environment.
+Both backends authorize this caller independently.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if args[0] == "" {
+				return usageFailure("SESSION_ID must not be empty")
+			}
+			sessionID, err := uuid.Parse(args[0])
+			if err != nil {
+				return usageFailure("SESSION_ID must be a UUID")
+			}
+			dispatcherConnection, err := a.connectGRPC("SESSIONS")
+			if err != nil {
+				return err
+			}
+			defer dispatcherConnection.Close()
+			historyConnection, err := a.connectGRPC("HISTORY")
+			if err != nil {
+				return err
+			}
+			defer historyConnection.Close()
+			ctx, cancel := a.deadline()
+			defer cancel()
+			result, err := sessionclient.GetSession(
+				ctx,
+				dispatcherpb.NewSessionDispatcherClient(dispatcherConnection),
+				historypb.NewHistoryServiceClient(historyConnection),
+				sessionID,
+			)
+			if err != nil {
+				return grpcFailure(ctx, err)
+			}
+			body, err := json.Marshal(result)
+			if err != nil {
+				return invalidResponse("marshal Session snapshot: %v", err)
+			}
+			return a.showOne(body, sessionSnapshotLine)
+		},
+	}
+}
+
+func (a *app) readTurnsCommand() *cobra.Command {
+	var count uint32 = 20
+	var pageCursor string
+	command := &cobra.Command{
+		Use:   "read-turns SESSION_ID [--count N] [--page-cursor TOKEN]",
+		Short: "Read a bounded page of retained Session turns",
+		Long: `Reads retained History only, through a pinned cursor snapshot. Pages resume after complete turns;
+an unfinished final turn is returned without a terminal status. Gaps and source errors remain explicit.
+The page cursor is opaque, Session-scoped and carries no authority.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if args[0] == "" {
+				return usageFailure("SESSION_ID must not be empty")
+			}
+			sessionID, err := uuid.Parse(args[0])
+			if err != nil {
+				return usageFailure("SESSION_ID must be a UUID")
+			}
+			if count < 1 || count > 100 {
+				return usageFailure("--count must be between 1 and 100")
+			}
+			connection, err := a.connectGRPC("HISTORY")
+			if err != nil {
+				return err
+			}
+			defer connection.Close()
+			ctx, cancel := a.deadline()
+			defer cancel()
+			result, err := sessionclient.ReadTurns(ctx, historypb.NewHistoryServiceClient(connection), sessionclient.ReadTurnsRequest{
+				SessionID: sessionID, Count: count, PageCursor: pageCursor,
+			})
+			if err != nil {
+				return grpcFailure(ctx, err)
+			}
+			body, err := json.Marshal(result)
+			if err != nil {
+				return invalidResponse("marshal retained turns: %v", err)
+			}
+			return a.showOne(body, turnPageLine)
+		},
+	}
+	command.Flags().Uint32Var(&count, "count", count, "maximum completed turns to return (1-100)")
+	command.Flags().StringVar(&pageCursor, "page-cursor", "", "opaque cursor returned by the prior page for this Session")
+	return command
 }
 
 func (a *app) observeInputCommand() *cobra.Command {
@@ -458,6 +552,56 @@ func inputObservationLine(raw json.RawMessage) (string, error) {
 	}
 	if observation.Observation.Error != nil {
 		line += fields("history error", observation.Observation.Error.Code)
+	}
+	return line, nil
+}
+
+func sessionSnapshotLine(raw json.RawMessage) (string, error) {
+	snapshot, err := decode[sessionclient.SessionSnapshot](raw)
+	if err != nil {
+		return "", err
+	}
+	line := fields(snapshot.SessionID.String(), "dispatcher "+string(snapshot.Opening.Kind), "history "+string(snapshot.History.Kind))
+	if snapshot.Opening.Error != nil {
+		line += fields("dispatcher error " + snapshot.Opening.Error.Code)
+	}
+	if snapshot.History.Error != nil {
+		line += fields("history error " + snapshot.History.Error.Code)
+	}
+	if len(snapshot.History.Value) > 0 {
+		summary := &historypb.SessionSummary{}
+		if err := protojson.Unmarshal(snapshot.History.Value, summary); err != nil {
+			return "", invalidResponse("History summary: %v", err)
+		}
+		line += fields("history cursor "+strconv.FormatUint(summary.GetCommittedCursor(), 10), enumSuffix(summary.GetFeedStatus().String(), "FEED_STATUS_"))
+	}
+	return line, nil
+}
+
+func turnPageLine(raw json.RawMessage) (string, error) {
+	page, err := decode[sessionclient.TurnPage](raw)
+	if err != nil {
+		return "", err
+	}
+	line := fields(page.SessionID.String(), "history through "+page.ThroughCursor, fmt.Sprintf("%d turns", len(page.Turns)))
+	if page.NextCursor != "" {
+		line += fields("more turns available")
+	}
+	if len(page.Gaps) > 0 {
+		line += fields(fmt.Sprintf("history gaps %d", len(page.Gaps)))
+	}
+	if page.Error != nil {
+		line += fields("history error " + page.Error.Code)
+	}
+	for _, turn := range page.Turns {
+		statusText := "status not observed"
+		if turn.Status != nil {
+			statusText = string(*turn.Status)
+		}
+		line += "\n" + fields(string(turn.TurnID), statusText, fmt.Sprintf("%d inputs", len(turn.Input)), fmt.Sprintf("%d tool calls", len(turn.ToolCalls)))
+		if turn.FinalAssistantMessage != nil {
+			line += fields("message", strconv.Quote(firstLine(*turn.FinalAssistantMessage)))
+		}
 	}
 	return line, nil
 }
