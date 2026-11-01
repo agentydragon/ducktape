@@ -77,16 +77,18 @@ async def test_remote_output_remains_pollable_after_foreground_exit(
                     assert started.exit_code is None, started
                     assert started.output == "", started
                     os.write(gate_fd, b"release\n")
+                    poll = json.dumps({"session_id": started.session_id, "chars": "", "yield_time_ms": 1000})
+                    collect = (
+                        f"let result = await tools.write_stdin({poll});\n"
+                        "while (result.session_id != null) {\n"
+                        "  const next = await tools.write_stdin({session_id: result.session_id, chars: '', yield_time_ms: 1000});\n"
+                        "  result = {...next, output: result.output + next.output};\n"
+                        "}\n"
+                        "text('RESULT ' + JSON.stringify(result));"
+                    )
                     await exchange.send(
                         *responses_sse.response_stream(
-                            [
-                                responses_sse.CustomToolCall(
-                                    "collect",
-                                    "exec",
-                                    f"text('RESULT ' + JSON.stringify(await tools.write_stdin({json.dumps({'session_id': started.session_id, 'chars': '', 'yield_time_ms': 1000})})));",
-                                )
-                            ],
-                            model=MODEL,
+                            [responses_sse.CustomToolCall("collect", "exec", collect)], model=MODEL
                         ).events
                     )
                 async with await openai_responses.await_next_request() as exchange:

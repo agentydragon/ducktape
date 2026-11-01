@@ -62,4 +62,7 @@ scheduler interleaving. The original VM/OOM scenario remains a separate CI accep
 With 0.166.0, [candidate 6399e4ae](https://app.buildbuddy.io/invocation/6399e4ae-bead-4486-9534-4945bbc8dc38)
 passes this regression and `//agentplane/native/codex:test_tools`. The candidate also changes the
 central sampler's JavaScript host because that executable shares the archive; its stdio protocol
-changes are additive, but service compatibility and the VM scenario still require their CI results.
+changes are additive. The existing nested-command service check also passes in
+[865b92cb](https://app.buildbuddy.io/invocation/865b92cb-36ee-45bb-9e98-d861955f6032)
+(`test_service -k test_nested_command_inherits_executor_environment`). Full service coverage and
+the VM scenario still require their CI results.
