@@ -1703,7 +1703,10 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
 def _posted_input(request: Request) -> command_pb2.Command:
     assert request.post_data is not None
     body = json.loads(request.post_data)
-    assert set(body) == {"commandId", "text"}
+    assert set(body) == {"commandId", "text", "sandbox", "sandboxUid"}
+    assert body["sandbox"] == SANDBOX
+    assert isinstance(body["sandboxUid"], str)
+    assert body["sandboxUid"]
     return command_pb2.Command(command_id=body["commandId"], submit_input=command_pb2.SubmitInput(text=body["text"]))
 
 
@@ -1736,6 +1739,7 @@ async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(t
     redelivery = await redelivered.value
     assert redelivery.post_data is not None
     assert _posted_input(redelivery) == command
+    assert json.loads(redelivery.post_data) == json.loads(original.post_data)
     async with asyncio.timeout(15):
         assert await source.runner.commands.get() == command
     await expect_pending_message_bubble(page, command.submit_input.text)
@@ -1850,9 +1854,11 @@ async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(th
     await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     requests: asyncio.Queue[command_pb2.Command] = asyncio.Queue()
+    submitted_bodies: list[dict[str, object]] = []
 
     async def lose_receipt(route: Route) -> None:
         assert route.request.post_data is not None
+        submitted_bodies.append(json.loads(route.request.post_data))
         requests.put_nowait(_posted_input(route.request))
         await route.fulfill(status=504, content_type="application/json", body='{"detail":"outcome uncertain"}')
 
@@ -1875,6 +1881,7 @@ async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(th
         retry = await retried.value
         assert retry.post_data is not None
         assert _posted_input(retry) == original
+        assert json.loads(retry.post_data) == submitted_bodies[0]
         async with asyncio.timeout(15):
             assert await source.runner.commands.get() == original
         await expect_pending_message_bubble(page, original.submit_input.text)
