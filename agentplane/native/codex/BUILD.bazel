@@ -378,3 +378,27 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_code_mode_output",
+    size = "medium",
+    srcs = ["test_code_mode_output.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: pinned app-server and remote exec-server
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":wire",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/codex/testing:harness",
+        "//agentplane/native/codex/testing:model",
+        "//agentplane/native/codex/testing:model_catalog",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/native/codex/testing:responses_sse",
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+    ],
+)
