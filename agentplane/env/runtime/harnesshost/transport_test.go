@@ -170,7 +170,7 @@ func TestIngressSupervisorPublishesSealedAcknowledgementToQuiesce(t *testing.T) 
 
 func newBareRunner(t *testing.T) *Runner {
 	t.Helper()
-	runner, err := New(Config{StateDir: t.TempDir(), RuntimeSocket: "unused-runtime", ListenSocket: "unused-host"})
+	runner, err := New(Config{StateDir: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}

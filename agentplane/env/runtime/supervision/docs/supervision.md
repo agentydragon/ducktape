@@ -24,11 +24,11 @@ Launch callbacks and native handles stay in the registry. Teardown joins an in-f
 fences any instance it returns before releasing the finalizer. Owners check remaining process
 intents before acknowledging cleanup; a reader observing leader exit cannot hide a failed fence.
 
-Runtime coordinates the process owners over private sockets. Host reports native stop against the
+Runtime coordinates its embedded process owners with direct calls. Host reports native stop against the
 exact Runtime/Host boot IDs and lifecycle generation. Runtime fences Execution before authorizing
 Host sealing and waits for the matching seal/History ACK before completing quiesce. The
 [Host protocol](../../harnesshost/SPEC.md) and [environment lifecycle](../../docs/lifecycle.md) define those
-barriers. Transport loss closes admission and drains native work without inventing a seal.
+barriers. Host lifetime loss closes admission and drains native work without inventing a seal.
 
 ## VM services
 

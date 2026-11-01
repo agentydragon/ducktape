@@ -2,16 +2,15 @@ package runtime
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	runtimecontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
@@ -23,9 +22,9 @@ type executionProxy struct {
 
 func newExecutionProxy(r *Runtime) *executionProxy { return &executionProxy{runtime: r} }
 
-func (r *Runtime) authorizeHostCall(ctx context.Context, mutation bool) (environmentruntimepb.EnvironmentRuntimeClient, context.Context, func(), error) {
-	var client environmentruntimepb.EnvironmentRuntimeClient
-	var outgoing context.Context
+func (r *Runtime) authorizeHostCall(ctx context.Context, mutation bool) (*harnesshost.Runner, context.Context, func(), error) {
+	var client *harnesshost.Runner
+	var binding *runtimepb.Binding
 	var admitted bool
 	err := r.control.Admit(ctx, func(epoch *runtimecontrol.Epoch) error {
 		r.mu.Lock()
@@ -43,7 +42,7 @@ func (r *Runtime) authorizeHostCall(ctx context.Context, mutation bool) (environ
 			return status.Error(codes.Aborted, "control epoch does not match the active environment generation")
 		}
 		client = r.host.client
-		outgoing = r.hostContext(ctx, r.intent.Binding)
+		binding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
 		if mutation {
 			r.activeAdmissions++
 			r.idleSince = nil
@@ -66,85 +65,65 @@ func (r *Runtime) authorizeHostCall(ctx context.Context, mutation bool) (environ
 		r.changedLocked()
 		r.mu.Unlock()
 	}
-	return client, outgoing, finish, nil
+	// The Host's ingress check runs after Runtime releases its mutex. Its
+	// native admission check repeats under the Host mutex before any write.
+	bound, err := client.BoundContext(ctx, binding)
+	if err != nil {
+		finish()
+		return nil, nil, nil, err
+	}
+	return client, bound, finish, nil
 }
 
-func (r *Runtime) hostContext(ctx context.Context, binding *runtimepb.Binding) context.Context {
-	return metadata.NewOutgoingContext(ctx, metadata.Pairs(
-		runtimeBootMetadata, binding.RuntimeBootId,
-		hostBootMetadata, binding.HostBootId,
-		generationMetadata, strconv.FormatUint(binding.Generation, 10),
-	))
+// invokeHost preserves the protobuf transport's immutable request/response
+// boundary while invoking the typed Host implementation in this process.
+func invokeHost[Request proto.Message, Response proto.Message](r *Runtime, ctx context.Context, request Request, mutation bool, call func(*harnesshost.Runner, context.Context, Request) (Response, error)) (Response, error) {
+	var zero Response
+	client, bound, finish, err := r.authorizeHostCall(ctx, mutation)
+	if err != nil {
+		return zero, err
+	}
+	defer finish()
+	response, err := call(client, bound, proto.Clone(request).(Request))
+	if err != nil {
+		return zero, err
+	}
+	return proto.Clone(response).(Response), nil
 }
 
 func (r *Runtime) ListSessions(ctx context.Context, request *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
-	client, outgoing, finish, err := r.authorizeHostCall(ctx, false)
-	if err != nil {
-		return nil, err
-	}
-	defer finish()
-	return client.ListSessions(outgoing, request)
+	return invokeHost(r, ctx, request, false, (*harnesshost.Runner).ListSessions)
 }
 
 func (r *Runtime) GetStatus(ctx context.Context, request *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
-	client, outgoing, finish, err := r.authorizeHostCall(ctx, false)
+	response, err := invokeHost(r, ctx, request, false, (*harnesshost.Runner).GetStatus)
 	if err != nil {
 		return nil, err
 	}
-	defer finish()
-	response, err := client.GetStatus(outgoing, request)
-	if err != nil {
-		return nil, err
-	}
-	// EnvironmentRuntimeBootId is the public control-server identity used by Gateway fencing. Host has
-	// its own private process boot ID, which stays within the Runtime-to-Host lifecycle binding.
+	// The public boot ID fences the Gateway epoch; Host's private boot ID
+	// stays inside its lifecycle binding.
 	response.EnvironmentRuntimeBootId = r.bootID
 	return response, nil
 }
 
 func (r *Runtime) OpenSession(ctx context.Context, request *environmentruntimepb.OpenSessionRequest) (*environmentruntimepb.OpenSessionResponse, error) {
-	client, outgoing, finish, err := r.authorizeHostCall(ctx, true)
-	if err != nil {
-		return nil, err
-	}
-	defer finish()
-	return client.OpenSession(outgoing, request)
+	return invokeHost(r, ctx, request, true, (*harnesshost.Runner).OpenSession)
 }
 
 func (r *Runtime) SubmitInput(ctx context.Context, request *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
-	client, outgoing, finish, err := r.authorizeHostCall(ctx, true)
-	if err != nil {
-		return nil, err
-	}
-	defer finish()
-	return client.SubmitInput(outgoing, request)
+	return invokeHost(r, ctx, request, true, (*harnesshost.Runner).SubmitInput)
 }
 
 func (r *Runtime) ChangeModel(ctx context.Context, request *environmentruntimepb.ChangeModelRequest) (*environmentruntimepb.ChangeModelResponse, error) {
-	client, outgoing, finish, err := r.authorizeHostCall(ctx, true)
-	if err != nil {
-		return nil, err
-	}
-	defer finish()
-	return client.ChangeModel(outgoing, request)
+	return invokeHost(r, ctx, request, true, (*harnesshost.Runner).ChangeModel)
 }
 
 func (r *Runtime) ChangeReasoningEffort(ctx context.Context, request *environmentruntimepb.ChangeReasoningEffortRequest) (*environmentruntimepb.ChangeReasoningEffortResponse, error) {
-	client, outgoing, finish, err := r.authorizeHostCall(ctx, true)
-	if err != nil {
-		return nil, err
-	}
-	defer finish()
-	return client.ChangeReasoningEffort(outgoing, request)
+	return invokeHost(r, ctx, request, true, (*harnesshost.Runner).ChangeReasoningEffort)
 }
 
 func (r *Runtime) InterruptTurn(ctx context.Context, request *environmentruntimepb.InterruptTurnRequest) (*environmentruntimepb.InterruptTurnResponse, error) {
-	client, outgoing, finish, err := r.authorizeHostCall(ctx, true)
-	if err != nil {
-		return nil, err
-	}
-	defer finish()
-	return client.InterruptTurn(outgoing, request)
+	return invokeHost(r, ctx, request, true, (*harnesshost.Runner).InterruptTurn)
 }
 
 func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.ExecutionScope) (executorpb.ExecutorServer, context.Context, func(), error) {

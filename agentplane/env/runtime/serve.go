@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
@@ -18,41 +15,21 @@ import (
 
 const hostStartupTimeout = 90 * time.Second
 
-// Run starts the embedded Host, its private lifecycle channel, and the Gateway-facing
-// control server. Runtime owns the environment lifecycle and management-process lifetime.
+// Run starts the embedded Host coordinator and Gateway-facing control server.
+// Runtime owns the environment lifecycle and management-process lifetime.
 func (r *Runtime) Run(ctx context.Context) error {
-	listener, err := r.listenRuntimeSocket()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = listener.Close()
-		_ = removeSocket(r.config.RuntimeSocket)
-	}()
-	privateServer := grpc.NewServer()
-	runtimepb.RegisterEnvironmentRuntimeServer(privateServer, r)
-	privateServeErr := make(chan error, 1)
-	go func() {
-		if err := privateServer.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			privateServeErr <- err
-		}
-	}()
-
 	if err := r.startHost(ctx); err != nil {
-		privateServer.Stop()
 		return errors.Join(fmt.Errorf("start Harness Host: %w", err), r.Close(context.Background()))
 	}
 	startupCtx, cancelStartup := context.WithTimeout(ctx, hostStartupTimeout)
-	err = r.waitForInitialHost(startupCtx)
+	err := r.waitForInitialHost(startupCtx)
 	cancelStartup()
 	if err != nil {
-		privateServer.Stop()
 		return errors.Join(fmt.Errorf("wait for initial Harness Host drain: %w", err), r.Close(context.Background()))
 	}
 
 	publicListener, publicServer, err := r.control.Listen(r.executorProxy)
 	if err != nil {
-		privateServer.Stop()
 		return errors.Join(fmt.Errorf("listen for Gateway control: %w", err), r.Close(context.Background()))
 	}
 	publicServeErr := make(chan error, 1)
@@ -67,53 +44,15 @@ func (r *Runtime) Run(ctx context.Context) error {
 	case <-ctx.Done():
 	case runErr = <-r.fatal:
 	case runErr = <-publicServeErr:
-	case runErr = <-privateServeErr:
 	}
 	publicServer.Stop()
 	_ = publicListener.Close()
 	closeErr := r.Close(context.Background())
-	privateServer.Stop()
 	return errors.Join(runErr, closeErr)
-}
-
-func (r *Runtime) listenRuntimeSocket() (net.Listener, error) {
-	if err := os.MkdirAll(filepath.Dir(r.config.RuntimeSocket), 0o700); err != nil {
-		return nil, err
-	}
-	if err := removeSocket(r.config.RuntimeSocket); err != nil {
-		return nil, err
-	}
-	listener, err := r.deps.listen(r.config.RuntimeSocket)
-	if err != nil {
-		return nil, err
-	}
-	if err := os.Chmod(r.config.RuntimeSocket, 0o600); err != nil {
-		_ = listener.Close()
-		_ = removeSocket(r.config.RuntimeSocket)
-		return nil, err
-	}
-	return listener, nil
-}
-
-func removeSocket(path string) error {
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if info.Mode()&os.ModeSocket == 0 {
-		return fmt.Errorf("refusing to remove non-socket path %s", path)
-	}
-	return os.Remove(path)
 }
 
 func (r *Runtime) startHost(ctx context.Context) error {
 	config := r.config.HostConfig
-	config.RuntimeSocket = r.config.RuntimeSocket
-	config.ListenSocket = r.config.HostSocket
-	config.ExecutionSocket = r.config.ExecutionSocket
 	if r.config.CodexExecServer != nil {
 		config.ExecServerURL = r.config.CodexExecServer.URL
 	}
@@ -137,7 +76,7 @@ func (r *Runtime) startHost(ctx context.Context) error {
 	r.hostExit = make(chan childExit, 1)
 	r.mu.Unlock()
 	go func() {
-		process.err = host.Run(hostCtx, r.config.HostIngress)
+		process.err = host.Run(hostCtx, r.config.HostIngress, r)
 		close(process.done)
 		code, err := process.Wait(context.Background())
 		exit := childExit{code: code, err: err}

@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,11 +16,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/workspace"
-	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"google.golang.org/grpc"
 )
 
 const lifecycleTestTimeout = 10 * time.Second
@@ -49,38 +46,23 @@ func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string
 	t.Helper()
 	root := t.TempDir()
 	launch := configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}, Bootstrap: bootstrap}
-	config := Config{StateDir: root, Launch: launch, Supervision: "subprocess", InitializationCwd: workspace, Control: insecureControl(), RuntimeSocket: filepath.Join(root, "runtime.sock"), HostSocket: filepath.Join(root, "host.sock"), ExecutionSocket: filepath.Join(root, "execution.sock")}
-	return runtimeTestConfig{Config: config, host: harnesshost.Config{StateDir: root, Launch: launch, WorkspaceRoot: workspace, InitializationCwd: workspace, RuntimeSocket: config.RuntimeSocket, ListenSocket: config.HostSocket, Claude: &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test"}, HTTPClient: http.DefaultClient}}
+	config := Config{StateDir: root, Launch: launch, Supervision: "subprocess", InitializationCwd: workspace, Control: insecureControl(), ExecutionSocket: filepath.Join(root, "execution.sock")}
+	return runtimeTestConfig{Config: config, host: harnesshost.Config{StateDir: root, Launch: launch, WorkspaceRoot: workspace, InitializationCwd: workspace, Claude: &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test"}, HTTPClient: http.DefaultClient}}
 }
 
 func insecureControl() configuration.EnvironmentRuntimeControlConfiguration {
 	return configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: environmentruntimetransport.Security{Mode: environmentruntimetransport.Insecure}}
 }
 
-// The fixture composes production Runtime and Host endpoints through real private
-// Unix sockets. The Host's private state is never exposed to Runtime assertions.
+// The fixture composes production Runtime and Host through their direct coordinator.
 func newLifecycleRunner(t *testing.T, config runtimeTestConfig) *Runtime {
 	t.Helper()
-	// Restarts reuse durable state but each fixture owns its own live transports.
-	sockets := t.TempDir()
-	config.RuntimeSocket = filepath.Join(sockets, "runtime.sock")
-	config.HostSocket = filepath.Join(sockets, "host.sock")
-	config.ExecutionSocket = filepath.Join(sockets, "execution.sock")
-	config.host.RuntimeSocket = config.RuntimeSocket
-	config.host.ListenSocket = config.HostSocket
-	config.host.ExecutionSocket = config.ExecutionSocket
+	config.ExecutionSocket = filepath.Join(t.TempDir(), "execution.sock")
 	r, err := newRuntime(config.Config, nil, config.deps)
 	if err != nil {
 		t.Fatal(err)
 	}
 	historyTarget := startAcknowledgingHistory(t)
-	private, err := net.Listen("unix", config.RuntimeSocket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer()
-	runtimepb.RegisterEnvironmentRuntimeServer(server, r)
-	go func() { _ = server.Serve(private) }()
 	config.host.StateDir = config.StateDir
 	host, err := harnesshost.New(config.host)
 	if err != nil {
@@ -89,7 +71,7 @@ func newLifecycleRunner(t *testing.T, config runtimeTestConfig) *Runtime {
 	ctx, cancel := context.WithCancel(context.Background())
 	child := &localHostLifetime{host: host, cancel: cancel, done: make(chan struct{})}
 	r.hostLifetime = child
-	go func() { child.err = host.Run(ctx, configuration.Endpoint{Target: historyTarget}); close(child.done) }()
+	go func() { child.err = host.Run(ctx, configuration.Endpoint{Target: historyTarget}, r); close(child.done) }()
 	t.Cleanup(func() {
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 		defer closeCancel()
@@ -105,8 +87,6 @@ func newLifecycleRunner(t *testing.T, config runtimeTestConfig) *Runtime {
 		case <-closeCtx.Done():
 			t.Error("Host failed to join")
 		}
-		server.Stop()
-		_ = private.Close()
 	})
 	waitRuntime(t, r, func() bool {
 		r.mu.Lock()

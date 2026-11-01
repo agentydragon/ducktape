@@ -590,7 +590,6 @@ func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string
 	t.Helper()
 	return Config{
 		StateDir:      filepath.Join(t.TempDir(), "state"),
-		RuntimeSocket: "unused-runtime", ListenSocket: "unused-host",
 		Launch:        configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}, Bootstrap: bootstrap},
 		WorkspaceRoot: workspace, InitializationCwd: workspace,
 		Claude:     &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test-token"},
@@ -659,8 +658,7 @@ func TestScriptRunPreservesEnvironmentStreamsAndExitStatus(t *testing.T) {
 	t.Setenv("SCRIPT_RUNNER_INHERITED", "before")
 	t.Setenv("SCRIPT_RUNNER_CONFIG", "ambient")
 	r, err := New(Config{
-		StateDir:      t.TempDir(),
-		RuntimeSocket: "unused-runtime", ListenSocket: "unused-host",
+		StateDir:           t.TempDir(),
 		HarnessEnvironment: map[string]string{"SCRIPT_RUNNER_CONFIG": "configured"},
 	})
 	if err != nil {

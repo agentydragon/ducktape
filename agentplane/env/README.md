@@ -17,17 +17,17 @@ Shared process machinery is in `env/runtime/supervision`; one-shot operation boo
 `env/oneoff`, shell execution in `env/scripts`, and Go deployment parsing in `env/configuration`.
 Host owns workspace containment and helpers in `env/runtime/harnesshost/workspace`. The `env/e2e/` contains cross-service integration tests; image and VM packaging lives in `env/images/`.
 
-Runtime constructs Host from the same `--config` and `--launch-file` and coordinates it over
-private lifecycle and Session sockets. Production Pod Runtime is PID1 and Host shares its reaper.
+Runtime constructs Host from the same `--config` and `--launch-file` and coordinates its lifecycle
+and Session calls directly in the process. Production Pod Runtime is PID1 and Host shares its reaper.
 In VMs, native harnesses and executors use separate systemd service cgroups in the workload and
 executor slices, bound to the Runtime service lifetime. Runtime retains the environment owner inode; Host locks
 `<state_dir>/harness-host/.agentplane-harness-host-owner`. Session state stays under `<state_dir>/sessions`
 and the shared Codex home stays under `<state_dir>/codex`.
 
-The private lifecycle protocol binds every intent/report to the same process boots and generation.
+The lifecycle coordinator binds every intent/report to the same process boots and generation.
 Host drains admitted work and native processes before reporting `native_stopped`. Runtime fences
 Execution before acknowledging `execution_fenced`; only then may Host seal journals and report exact
-History acknowledgements. Losing the control stream closes native admission and drains Host without
+History acknowledgements. Losing the Host lifetime closes native admission and drains Host without
 creating a seal. An abnormal Pod Runtime exit requires the outer container fence before replacement.
 See [Host contract](runtime/harnesshost/SPEC.md) and [lifecycle](runtime/docs/lifecycle.md).
 
