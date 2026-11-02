@@ -377,6 +377,11 @@ func (r *Runtime) Close(ctx context.Context) error {
 	select {
 	case <-r.closeDone:
 		return r.closeErr
+	default:
+	}
+	select {
+	case <-r.closeDone:
+		return r.closeErr
 	case <-ctx.Done():
 		return ctx.Err()
 	}
