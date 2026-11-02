@@ -45,6 +45,7 @@ py_library(
     deps = [
         ":artifacts",
         ":collection",
+        ":render_common",
         ":targets",
         "//util/bazel:workspace",
     ],

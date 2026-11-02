@@ -10,11 +10,19 @@ from uuid import UUID
 import pytest
 import pytest_bazel
 
-from devinfra.pr_visuals.collection import CollectedOutputs, OutputKey, OutputObservation, ResultCoverage, ResultKey
+from devinfra.pr_visuals.collection import (
+    CollectedOutputs,
+    CollectionIssue,
+    OutputKey,
+    OutputObservation,
+    ResultCoverage,
+    ResultKey,
+)
 from devinfra.pr_visuals.determinism import (
     Execution,
     Findings,
     Render,
+    Roster,
     analyze,
     from_collection,
     observe,
@@ -51,7 +59,7 @@ def _coverage(
     shard: int | None = 1,
     attempt: int | None = 1,
     selected: bool = True,
-    issues: tuple[str, ...] = (),
+    issues: tuple[CollectionIssue, ...] = (),
     retried_by: int | None = None,
 ) -> ResultCoverage:
     result = ResultKey(invocation, target, configuration, run, shard, attempt)
@@ -82,7 +90,7 @@ def _collection(
     *,
     outputs: tuple[OutputObservation, ...] = (),
     results: tuple[ResultCoverage, ...] | None = None,
-    issues: tuple[str, ...] = (),
+    issues: tuple[CollectionIssue, ...] = (),
     complete: bool = True,
 ) -> CollectedOutputs:
     if results is None:
@@ -111,7 +119,10 @@ def test_identical_successful_screenshot_observations_compare_by_digest() -> Non
     assert analyze(observed) == Findings([], [])
     assert observed.screenshots[screenshot].runs_present == 2
     assert observed.screenshots[screenshot].by_digest == {
-        hashlib.sha256(b"same").hexdigest(): ["`run-1` (run 1)", "`run-2` (run 1)"]
+        hashlib.sha256(b"same").hexdigest(): [
+            Roster(_TARGET, "run-1", "config-a", 1),
+            Roster(_TARGET, "run-2", "config-a", 1),
+        ]
     }
 
 
@@ -154,7 +165,14 @@ def test_output_absence_is_reported_only_across_complete_successful_rosters() ->
 def test_failed_target_is_reported_separately_and_not_counted_as_missing() -> None:
     invocations = ["passed", "failed"]
     screenshot = Render(_TARGET, "dialog/mobile", "expanded", "screenshot")
-    results = (_coverage("passed"), _coverage("failed", selected=False, issues=("terminal failed",)))
+    results = (
+        _coverage("passed"),
+        _coverage(
+            "failed",
+            selected=False,
+            issues=(CollectionIssue("terminal failed", result=ResultKey("failed", _TARGET, "config-a", 1, 1, 1)),),
+        ),
+    )
     observed = from_collection(
         _collection(invocations, outputs=(_output("passed", "same"),), results=results, complete=False),
         invocations,
@@ -164,7 +182,11 @@ def test_failed_target_is_reported_separately_and_not_counted_as_missing() -> No
 
     assert analyze(observed) == Findings([], [])
     assert len(observed.complete_rosters[_TARGET]) == 1
-    assert any("failed" in issue and "test target failed" in issue for issue in observed.incomplete_rosters)
+    failures = [issue for issue in observed.incomplete_rosters if "test target failed" in issue.message]
+    assert len(failures) == 1
+    assert failures[0].invocation == "failed"
+    assert failures[0].target == _TARGET
+    assert failures[0].result is None
     assert screenshot not in analyze(observed).missing
 
 
@@ -177,7 +199,7 @@ def test_retry_attempts_are_not_extra_rosters_and_terminal_success_is_used() -> 
             invocations,
             outputs=(_output("run-1", "same", attempt=2), _output("run-2", "same")),
             results=(first_attempt, terminal_attempt, _coverage("run-2")),
-            issues=("ResultKey(... attempt=1): retried by attempt 2",),
+            issues=(CollectionIssue("retried by attempt 2", result=ResultKey("run-1", _TARGET, "config-a", 1, 1, 1)),),
         ),
         invocations,
         [_TARGET],
@@ -186,7 +208,9 @@ def test_retry_attempts_are_not_extra_rosters_and_terminal_success_is_used() -> 
 
     assert analyze(observed) == Findings([], [])
     assert len(observed.complete_rosters[_TARGET]) == 2
-    assert observed.issues == ("ResultKey(... attempt=1): retried by attempt 2",)
+    assert observed.issues == (
+        CollectionIssue("retried by attempt 2", result=ResultKey("run-1", _TARGET, "config-a", 1, 1, 1)),
+    )
 
 
 def test_disjoint_shards_form_one_roster_without_counting_each_shard_as_a_run() -> None:
@@ -218,7 +242,7 @@ def test_duplicate_identity_across_shards_invalidates_roster_instead_of_faking_d
 
     assert len(observed.complete_rosters[_TARGET]) == 1
     assert analyze(observed) == Findings([], [])
-    assert any("duplicate screenshot identity across shards" in issue for issue in observed.incomplete_rosters)
+    assert any("duplicate screenshot identity across shards" in issue.message for issue in observed.incomplete_rosters)
 
 
 def test_multiple_configurations_fail_closed_without_comparing_digests() -> None:
@@ -240,7 +264,7 @@ def test_multiple_configurations_fail_closed_without_comparing_digests() -> None
 
     assert observed.complete_rosters == {}
     assert analyze(observed) == Findings([], [])
-    assert any("no declared comparison profile" in issue for issue in observed.incomplete_rosters)
+    assert any("no declared comparison profile" in issue.message for issue in observed.incomplete_rosters)
 
 
 def test_non_screenshot_roles_are_informational_and_never_diffed() -> None:
@@ -273,7 +297,7 @@ def test_complete_visual_roster_without_a_screenshot_fails(diagnostic_only: bool
     )
 
     assert not observed.complete_rosters.get(_TARGET)
-    assert any("emitted no screenshot outputs" in issue for issue in observed.incomplete_rosters)
+    assert any("emitted no screenshot outputs" in issue.message for issue in observed.incomplete_rosters)
     assert analyze(observed) == Findings([], [])
 
 
@@ -289,7 +313,10 @@ def test_incomplete_roster_does_not_skip_the_next_valid_roster() -> None:
     assert len(observed.complete_rosters[_TARGET]) == 1
     assert observed.complete_rosters[_TARGET][0].invocation == "present"
     assert next(iter(observed.screenshots.values())).runs_present == 1
-    assert any("empty" in issue and "no screenshot outputs" in issue for issue in observed.incomplete_rosters)
+    assert any(
+        issue.result is not None and issue.result.invocation == "empty" and "no screenshot outputs" in issue.message
+        for issue in observed.incomplete_rosters
+    )
 
 
 def test_case_checkpoint_role_and_target_are_all_part_of_render_identity() -> None:
@@ -342,6 +369,76 @@ def test_report_separates_unavailable_invocation_from_missing_screenshots() -> N
     assert "BuildBuddy has no invocation record" in summary
     assert "Insufficient complete repeated runs" in summary
     assert "absent from complete rosters" not in summary
+    assert "invocation 1: BuildBuddy has no invocation record; bbr exited 19." in summary
+    assert "Command: `bbr test --invocation_id=missing`" in summary
+    assert "[invocation 1](https://app.buildbuddy.io/invocation/missing)" not in summary
+    assert "[invocation 2](https://app.buildbuddy.io/invocation/present)" in summary
+
+
+def test_report_links_compact_result_refs_and_aggregates_shards() -> None:
+    invocation = "run/with space"
+    shared_config_prefix = "12345678"
+    issues = (
+        *(
+            CollectionIssue(
+                "repeated collector issue",
+                result=ResultKey(invocation, _TARGET, "abcdef0123456789", 1, shard, 2),
+                record="test.outputs/test-outputs/records/duplicate.json",
+            )
+            for shard in (1, 2, 3, 5)
+        ),
+        CollectionIssue(
+            "first configuration issue", result=ResultKey(invocation, _TARGET, shared_config_prefix + "aaaa", 1, 6, 1)
+        ),
+        CollectionIssue(
+            "second configuration issue", result=ResultKey(invocation, _TARGET, shared_config_prefix + "bbbb", 1, 7, 1)
+        ),
+        CollectionIssue(
+            "output identity also claimed across shards",
+            result=ResultKey(invocation, _TARGET, "config-a", 1, 2, 1),
+            related_results=(ResultKey(invocation, _TARGET, "config-a", 1, 1, 1),),
+            output=OutputKey(_REPOSITORY, _TARGET, "dialog/mobile", None, "screenshot"),
+        ),
+    )
+    observed = from_collection(
+        _collection([invocation], outputs=(_output(invocation, "same"),), issues=issues),
+        [invocation],
+        [_TARGET],
+        _target_runs([invocation]),
+    )
+    summary = report(observed, [invocation], {_TARGET: [_test_run()]})
+
+    assert "[invocation 1](https://app.buildbuddy.io/invocation/run%2Fwith%20space)" in summary
+    assert (
+        "shards 1-3, 5, attempt 2, record `test.outputs/test-outputs/records/duplicate.json`: repeated collector issue"
+    ) in summary
+    assert "shards 1-2, attempt 1, case `dialog/mobile`, checkpoint `<default>`, role `screenshot`" in summary
+    assert "config `12345678a…`" in summary
+    assert "config `12345678b…`" in summary
+    assert "abcdef0123456789" not in summary
+    assert "12345678aaaa" not in summary
+    assert "12345678bbbb" not in summary
+    assert "ResultKey(" not in summary
+    assert "OutputKey(" not in summary
+
+
+def test_report_numbers_available_invocations_missing_from_execution_rows() -> None:
+    invocation = "available-only"
+    observed = from_collection(
+        _collection([invocation], outputs=(_output(invocation, "same"),)),
+        [invocation],
+        [_TARGET],
+        _target_runs([invocation]),
+    )
+
+    summary = report(
+        observed,
+        [invocation],
+        {_TARGET: [_test_run()]},
+        executions=[Execution("different-attempt", ("bbr", "test"), 0)],
+    )
+
+    assert "2. [invocation 2](https://app.buildbuddy.io/invocation/available-only)" in summary
 
 
 def test_observe_passes_expected_targets_to_collector(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -373,7 +470,7 @@ def test_output_collection_error_is_reported_as_incomplete_not_as_missing(monkey
 
     assert analyze(observed) == Findings([], [])
     assert not observed.collection_complete
-    assert observed.issues == ("output collection failed: artifact listing unavailable",)
+    assert observed.issues == (CollectionIssue("output collection failed: artifact listing unavailable"),)
 
 
 def test_run_once_hands_the_invocation_id_to_bbr_rather_than_reading_it_back() -> None:

@@ -134,7 +134,29 @@ def test_same_identity_across_shards_conflicts_even_with_same_payload_uri(tmp_pa
     )
     assert not collected.complete
     assert len(collected.observations) == 2
-    assert any("also claimed by shard" in issue for issue in collected.issues)
+    assert {(item.result.shard, item.key.case_id) for item in collected.selected} == {(1, "same"), (2, "same")}
+    issue = next(issue for issue in collected.issues if "claimed across shards" in issue.message)
+    assert issue.result == ResultKey("invocation", "//ui:visual", "config-a", 1, 2, 1)
+    assert issue.related_results == (ResultKey("invocation", "//ui:visual", "config-a", 1, 1, 1),)
+    assert issue.output is not None
+    assert issue.output.case_id == "same"
+    assert "OutputKey(" not in issue.message
+
+
+def test_duplicate_output_records_keep_the_record_path_in_structured_issue(tmp_path: Path) -> None:
+    first, first_blobs = _pair("same", "a")
+    second, second_blobs = _pair("same", "b")
+    collected = collect_outputs(
+        ["invocation"], "agentydragon/ducktape", tmp_path, run=_run(first + second, first_blobs | second_blobs, [])
+    )
+
+    issue = next(issue for issue in collected.issues if issue.message == "duplicate output identity")
+    assert not collected.complete
+    assert not collected.selected
+    assert issue.result == ResultKey("invocation", "//ui:visual", "config-a", 1, 1, 1)
+    assert issue.output is not None
+    assert issue.output.case_id == "same"
+    assert issue.record == "test.outputs/test-outputs/records/b.json"
 
 
 def test_same_identity_in_distinct_configurations_is_kept_separate(tmp_path: Path) -> None:
@@ -161,7 +183,10 @@ def test_retries_and_runs_remain_separate_and_failed_attempt_is_not_selected(tmp
     assert collected.complete
     assert len(collected.observations) == 3
     assert {(item.result.run, item.result.attempt) for item in collected.selected} == {(1, 2), (2, 1)}
-    assert any("retried by attempt 2" in issue for issue in collected.issues)
+    assert any("retried by attempt 2" in issue.message for issue in collected.issues)
+    retry_issue = next(issue for issue in collected.issues if "retried by attempt 2" in issue.message)
+    assert retry_issue.result == ResultKey("invocation", "//ui:visual", "config-a", 1, 1, 1)
+    assert "ResultKey(" not in retry_issue.message
     assert [(result.result.attempt, result.retried_by) for result in collected.results if result.retried_by] == [(1, 2)]
 
 
@@ -211,7 +236,7 @@ def test_summary_count_exposes_missing_result_attempt(tmp_path: Path) -> None:
     collected = collect_outputs(["invocation"], "agentydragon/ducktape", tmp_path, run=_run(artifacts, blobs, []))
     assert not collected.complete
     assert not collected.selected
-    assert any("listed 1 result attempts but summary reports 2" in issue for issue in collected.issues)
+    assert any("listed 1 result attempts but summary reports 2" in issue.message for issue in collected.issues)
 
 
 def test_unknown_terminal_status_keeps_outputs_but_does_not_select(tmp_path: Path) -> None:
@@ -247,7 +272,7 @@ def test_missing_payload_is_incomplete_and_cannot_borrow_another_attempt(tmp_pat
     assert not collected.complete
     assert len(collected.observations) == 1
     assert not collected.selected
-    assert any("absent from this exact result" in issue for issue in collected.issues)
+    assert any("absent from this exact result" in issue.message for issue in collected.issues)
 
 
 @pytest.mark.parametrize("reverse_listing", [False, True])
@@ -268,7 +293,7 @@ def test_missing_payload_cannot_borrow_same_named_file_from_another_shard(
     assert not collected.complete
     assert [(item.key.case_id, item.result.shard) for item in collected.observations] == [("first", 1)]
     assert [(item.key.case_id, item.result.shard) for item in collected.selected] == [("first", 1)]
-    assert any("absent from this exact result" in issue for issue in collected.issues)
+    assert any("absent from this exact result" in issue.message for issue in collected.issues)
 
 
 def test_failed_bulk_download_preserves_partial_records_without_selecting_them(tmp_path: Path) -> None:
@@ -291,7 +316,7 @@ def test_failed_bulk_download_preserves_partial_records_without_selecting_them(t
     assert len(collected.observations) == 1
     assert not collected.selected
     assert not collected.complete
-    assert all("partial transfer" in result.issues[0] for result in collected.results)
+    assert all("partial transfer" in result.issues[0].message for result in collected.results)
 
     # A second collection into the same destination must not use the first one's record.
     def no_records(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -366,7 +391,7 @@ def test_materialized_source_rejects_untrusted_payload_digest(tmp_path: Path, di
     collected = collect_materialized_outputs([replace(source, files=files)], "agentydragon/ducktape")
     assert not collected.complete
     assert not collected.selected
-    assert any("no trusted content digest and size" in issue for issue in collected.issues)
+    assert any("no trusted content digest and size" in issue.message for issue in collected.issues)
 
 
 def test_materialized_source_verifies_advertised_record_digest(tmp_path: Path) -> None:
@@ -384,7 +409,7 @@ def test_materialized_source_verifies_advertised_record_digest(tmp_path: Path) -
     collected = collect_materialized_outputs([replace(source, files=files)], "agentydragon/ducktape")
     assert not collected.complete
     assert not collected.selected
-    assert any("does not match its advertised digest or size" in issue for issue in collected.issues)
+    assert any("does not match its advertised digest or size" in issue.message for issue in collected.issues)
 
 
 def test_local_source_rejects_symlinked_payload(tmp_path: Path) -> None:
