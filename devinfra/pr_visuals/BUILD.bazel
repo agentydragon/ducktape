@@ -169,6 +169,7 @@ py_test(
     name = "test_publisher",
     srcs = ["test_publisher.py"],
     deps = [
+        ":artifacts",
         ":publisher",
         ":pull_request",
         "//:conftest",

@@ -28,8 +28,37 @@ class BESFile(BaseModel):
     uri: str
 
 
+class BESConfigurationId(BaseModel):
+    id: str
+
+
+@dataclass(frozen=True)
+class TestResultIdentity:
+    """The BES identity that separates test results with the same output path."""
+
+    label: str
+    configuration_id: str | None
+    run: int | None
+    shard: int | None
+    attempt: int | None
+
+
 class BESLabelId(BaseModel):
     label: str
+    configuration: BESConfigurationId | None = None
+    run: int | None = None
+    shard: int | None = None
+    attempt: int | None = None
+
+    @property
+    def result_identity(self) -> TestResultIdentity:
+        return TestResultIdentity(
+            label=self.label,
+            configuration_id=self.configuration.id if self.configuration else None,
+            run=self.run,
+            shard=self.shard,
+            attempt=self.attempt,
+        )
 
 
 class BESArtifactId(BaseModel):
@@ -47,6 +76,10 @@ class BuildBuddyArtifact(BaseModel):
         if target is None:
             raise ValueError("artifact has neither test result nor target completion ID")
         return target.label
+
+    @property
+    def test_result_identity(self) -> TestResultIdentity | None:
+        return self.id.test_result.result_identity if self.id.test_result else None
 
 
 @dataclass(frozen=True)

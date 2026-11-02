@@ -30,7 +30,7 @@ from more_itertools import one
 from pydantic import BaseModel, Field
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
-from devinfra.pr_visuals.artifacts import ListedArtifact, Runner, list_ci_artifacts
+from devinfra.pr_visuals.artifacts import ListedArtifact, Runner, TestResultIdentity, list_ci_artifacts
 from devinfra.pr_visuals.check_run import upsert_check_run
 from devinfra.pr_visuals.pull_request import find_reviewable_pull_request
 from util.visual_diff import compare_pngs
@@ -405,7 +405,7 @@ def _download_all(downloads: list[_Download], *, bbapi: Path, run: Runner) -> No
 
 def _merge_manifests(
     target_label: str, downloads: list[_Download], parsed: list[VisualReviewManifest]
-) -> tuple[VisualReviewManifest, dict[str, str]]:
+) -> tuple[VisualReviewManifest, dict[str, tuple[str, TestResultIdentity | None]]]:
     """One review per target, from however many results published a manifest.
 
     Two different things produce several manifests for one label, and they reconcile differently.
@@ -417,19 +417,50 @@ def _merge_manifests(
     for the same target, and their union is a review that looks complete while taking each shot
     from whichever run happened to be listed first.
 
-    Returns the merged manifest and, per asset path, the invocation whose result declared it.
+    Returns the merged manifest and, per asset path, the invocation and exact test result that
+    declared it. A repeated path from different shards is ambiguous even if the manifest entries
+    and content-addressed image URIs happen to match; a repeated attempt of one shard remains a
+    valid duplicate.
     """
     titles = {manifest.title for manifest in parsed}
     if len(titles) != 1:
         raise ValueError(f"{target_label} exposed conflicting visual-review titles: {sorted(titles)}")
 
     rosters: dict[str, dict[str, VisualReviewAsset]] = {}
+    declared_by_invocation: dict[str, dict[str, TestResultIdentity | None]] = {}
+    result_owner_by_path: dict[tuple[str, str], tuple[str | None, int | None]] = {}
     for download, manifest in zip(downloads, parsed, strict=True):
-        roster = rosters.setdefault(download.listed.invocation_id, {})
+        invocation_id = download.listed.invocation_id
+        roster = rosters.setdefault(invocation_id, {})
+        declared_by = declared_by_invocation.setdefault(invocation_id, {})
+        result_identity = download.listed.artifact.test_result_identity
         for asset in manifest.assets:
             if (previous := roster.get(asset.path)) is not None and previous != asset:
                 raise ValueError(f"{target_label} exposed conflicting visual-review entries for {asset.path}")
             roster.setdefault(asset.path, asset)
+            declared_by.setdefault(asset.path, result_identity)
+
+            # Different configurations or shards write the same output path independently. The
+            # name and manifest metadata cannot say which image is intended, so reject the
+            # collision before downloading any candidate image. Runs and attempts of one
+            # configuration/shard remain valid repeats.
+            if result_identity is not None:
+                result_owner = (result_identity.configuration_id, result_identity.shard)
+                owner_key = (invocation_id, asset.path)
+                if owner_key in result_owner_by_path and result_owner_by_path[owner_key] != result_owner:
+                    previous_configuration, previous_shard = result_owner_by_path[owner_key]
+                    dimension = (
+                        "configurations" if previous_configuration != result_identity.configuration_id else "shards"
+                    )
+                    previous = previous_configuration if dimension == "configurations" else previous_shard
+                    current = (
+                        result_identity.configuration_id if dimension == "configurations" else result_identity.shard
+                    )
+                    raise ValueError(
+                        f"{target_label} declared visual asset {asset.path} from multiple {dimension} in "
+                        f"invocation {invocation_id} ({previous} and {current})"
+                    )
+                result_owner_by_path.setdefault(owner_key, result_owner)
 
     canonical_id = min(rosters)
     canonical = rosters[canonical_id]
@@ -444,7 +475,7 @@ def _merge_manifests(
             )
     return (
         VisualReviewManifest(title=one(titles), assets=list(canonical.values())),
-        dict.fromkeys(canonical, canonical_id),
+        {asset_path: (canonical_id, declared_by_invocation[canonical_id][asset_path]) for asset_path in canonical},
     )
 
 
@@ -507,12 +538,22 @@ def download_visual_tests(
             candidates = listings.get(f"test.outputs/{asset.path}")
             if candidates is None:
                 raise ValueError(f"{plan.target_label} visual manifest references missing artifact {asset.path}")
-            # A retried target lists one asset name from several invocations: take the shot from
-            # the result whose manifest named it, so image and manifest come from the same run.
-            declaring = declared_by[asset.path]
-            asset_downloads.append(
-                _Download(min(candidates, key=lambda item: item.invocation_id != declaring), test_dir / asset.path)
-            )
+            # A retried target lists one asset name from several invocations. Keep the image tied
+            # to the exact test result whose manifest declared it; target label and invocation
+            # alone do not distinguish output files from different shards or attempts.
+            declaring_invocation, declaring_result = declared_by[asset.path]
+            matching = [
+                candidate
+                for candidate in candidates
+                if candidate.invocation_id == declaring_invocation
+                and candidate.artifact.test_result_identity == declaring_result
+            ]
+            if not matching:
+                raise ValueError(
+                    f"{plan.target_label} visual manifest references missing artifact {asset.path} "
+                    f"in test result {declaring_result}"
+                )
+            asset_downloads.append(_Download(matching[0], test_dir / asset.path))
         tests.append(DownloadedVisualTest(plan.target_label, plan.slug, manifest, test_dir))
     _download_all(asset_downloads, bbapi=bbapi, run=run)
     return tests
