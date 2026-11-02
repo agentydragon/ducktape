@@ -1,0 +1,70 @@
+# `propose-commutations` budget failure on PR #13639
+
+The rebased PR head `eb968bb41aaf6e6e0f29efc57cf6a785b558e97f` failed only
+`//devinfra/js/debundle/e2e:propose_commutations_budget_test` in its 228-test
+hosted run (BuildBuddy invocation `6461aa1a-40a7-5abd-a9aa-39a2fdcef842`).
+The command took 63.142852994 seconds against the test's unchanged 30-second
+budget; the whole test took 169.23 seconds. The assertion failed before
+checking the JSON report's proposal count, so this run does not establish
+whether the command produced the expected 4094 or more candidates.
+
+The same target passed on nearby `devel` head `8592017f203a0474d495b345c241d5f59776bae8`:
+BuildBuddy invocation `953a1d20-bafb-5e3e-a559-7c278b915539` records an
+81.66-second test. Its command duration is not printed in the passing test
+log, but the 30-second assertion passed. BuildBuddy target history returned
+217 passing entries and no failures in the retrieved page; many entries
+share cached results, so they are not 217 independent measurements.
+
+The next normal hosted run on PR head
+`34a7588a96e3fc57f55644562915a2097a74c432` failed the same target again
+(BuildBuddy invocation `05355d06-b729-58b5-9763-a91ede9b02c8`, GitHub run
+`41377958308`). BuildBuddy recorded 227 passing tests and one failure out of
+228; its invocation reports tested commit
+`807e9eeee446eeab2510a1cfeeed0f2fb74331ed`. The command took
+51.204735239 seconds and the whole test took 158.53 seconds. The assertion
+again failed before checking the proposal count. This second independent
+budget failure makes a one-off slow execution less persuasive, but does not
+identify which work made the command slower.
+
+PR #13657 subsequently removed a duplicate source clone and AST parse from
+selector synthesis. Its reviewed head `cf2e329c71608c9496220f94a6329bb3c1f34714`
+passed all 198 selected hosted tests, including the unchanged proposal budget,
+in BuildBuddy invocation `ef2f3a82-562b-5678-a1cf-7892dc2ceaf2`. It merged as
+`3466c544b202165d471f7ff5a0d74d1fc9d859f8`; this diagnostic branch now includes
+that source change. Its own integrated result remains to be checked. This is
+no measured savings claim or causal attribution of the earlier failures.
+
+## Code-path boundary
+
+This fixture creates 4096 alternating sequenced steps and 96 readers, adding
+393216 unrelated lazy reads. `propose-commutations` receives neither
+`--modules` nor `--all`, so it emits at most 50 proposals. Its current code
+indexes graph edges once in `Analysis::new`, groups constraining edges by
+source-unit pair in `collect_candidates`, and synthesizes declared-binding
+selectors only while filling the output limit. The added
+`resolved_logical_members` scan from #13617 runs when resolving an authored
+commuting premise during graph construction. This fixture supplies no such
+premise, and the timed command reads an already built graph. The F10 branch
+adds refusal metadata to effect-coverage reports without changing effect
+coverage or these candidate loops.
+
+The first failure's 169.23-second total includes about 106 seconds outside the
+timed command interval; the second's 158.53-second total includes about 107
+seconds outside it. The prior passing run's 81.66-second total includes its
+entire command plus JSON checks. Both fixture generation and command execution
+can therefore contribute to the difference. Existing logs lack command phase
+durations, generated graph sizes, and worker load; they do not distinguish a
+graph-shape change from a slower remote worker. Two real budget failures do
+not justify weakening the budget or changing the algorithm without a causal
+path.
+
+## F14: locate proposal-budget slowdowns from hosted evidence
+
+The failing test published only `test.log` and `test.xml`, not its generated
+graph. At the next permitted evidence collection, preserve graph node/edge
+counts for a failing and passing run and compare remote execution worker
+metadata, then trace the specific code path.
+Do not launch profiling,
+benchmark, standalone corpus or controlled-comparison jobs under the current
+no-measurement direction. Keep the 30-second assertion until a cause is
+established; an unexplained slow run is not proof of a flake.

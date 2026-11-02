@@ -1,6 +1,7 @@
 //! Whole-original-unit coverage for a small, non-invoking initializer subset.
 
 use super::value_model::{AbstractValue, ValueExpr, Values};
+use crate::facts::OwnerInitializationCoverageRefusalReason;
 use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
 use crate::facts::item_views::TopLevelItemView;
 use serde::{Deserialize, Serialize};
@@ -94,28 +95,54 @@ fn record_inputs(expression: &Expr, reads: &mut BTreeSet<Id>) -> Option<()> {
 }
 
 impl OriginalInitializer {
-    pub(super) fn collect(item: &TopLevelItemView<'_>, owner: SourceUnitOrdinal) -> Option<Self> {
-        // Owned views can be split comma declarations: they cannot prove the
-        // original statement's complete eager evaluation envelope.
-        let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration)))) = item
-        else {
-            return None;
+    pub(super) fn collect(
+        item: &TopLevelItemView<'_>,
+        owner: SourceUnitOrdinal,
+    ) -> Result<Self, OwnerInitializationCoverageRefusalReason> {
+        // Owned views are the canonical split of a comma declaration. They
+        // cannot prove the original statement's complete eager evaluation
+        // envelope.
+        let TopLevelItemView::Borrowed(item) = item else {
+            return Err(OwnerInitializationCoverageRefusalReason::SplitDeclaration);
+        };
+        let ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration))) = item else {
+            return Err(
+                if matches!(
+                    item,
+                    ModuleItem::ModuleDecl(
+                        ModuleDecl::ExportDecl(_)
+                            | ModuleDecl::ExportNamed(_)
+                            | ModuleDecl::ExportDefaultDecl(_)
+                            | ModuleDecl::ExportDefaultExpr(_)
+                            | ModuleDecl::ExportAll(_)
+                            | ModuleDecl::TsExportAssignment(_)
+                            | ModuleDecl::TsNamespaceExport(_)
+                    )
+                ) {
+                    OwnerInitializationCoverageRefusalReason::ExportedOwner
+                } else {
+                    OwnerInitializationCoverageRefusalReason::UnsupportedOwnerKind
+                },
+            );
         };
         let [declarator] = declaration.decls.as_slice() else {
-            return None;
+            return Err(OwnerInitializationCoverageRefusalReason::SplitDeclaration);
         };
         let Pat::Ident(binding) = &declarator.name else {
-            return None;
+            return Err(OwnerInitializationCoverageRefusalReason::UnsupportedBindingShape);
         };
         if declaration.declare || declarator.definite || !ordinary_parameter(&declarator.name) {
-            return None;
+            return Err(OwnerInitializationCoverageRefusalReason::UnsupportedBindingShape);
         }
-        let initializer = declarator.init.as_deref()?;
+        let Some(initializer) = declarator.init.as_deref() else {
+            return Err(OwnerInitializationCoverageRefusalReason::MissingInitializer);
+        };
         let leaf = match initializer.unwrap_parens() {
             Expr::Ident(binding) => Leaf::Binding(binding.to_id()),
             Expr::Object(record) => {
                 let mut reads = BTreeSet::new();
-                record_inputs(initializer, &mut reads)?;
+                record_inputs(initializer, &mut reads)
+                    .ok_or(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer)?;
                 Leaf::Record {
                     allocation: record.span.lo.0,
                     reads,
@@ -127,7 +154,9 @@ impl OriginalInitializer {
                 Lit::Bool(_) => PrimKinds::BOOLEAN,
                 Lit::Null(_) => PrimKinds::NULL,
                 Lit::BigInt(_) => PrimKinds::BIGINT,
-                _ => return None,
+                _ => {
+                    return Err(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer);
+                }
             }),
             Expr::Fn(expression)
                 if !expression.function.is_async
@@ -150,9 +179,9 @@ impl OriginalInitializer {
             {
                 Leaf::Function(expression.span.lo.0)
             }
-            _ => return None,
+            _ => return Err(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer),
         };
-        Some(Self {
+        Ok(Self {
             owner,
             binding: binding.id.to_id(),
             initializer_span: initializer.span(),

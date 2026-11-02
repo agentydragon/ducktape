@@ -9,7 +9,8 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, btree_map};
 use std::ops::Bound::{Excluded, Unbounded};
 
 use analysis::facts::{
-    InitializationEffectEvidence, InitializationEffects, StatementFacts, UnknownEffectCoverage,
+    InitializationEffectEvidence, InitializationEffects, OwnerInitializationCoverageRefusal,
+    OwnerInitializationCoverageRefusalReason, StatementFacts, UnknownEffectCoverage,
 };
 use analysis::graph::EffectCellReport;
 use analysis::ids::ModuleId;
@@ -43,6 +44,7 @@ pub struct EffectConflictCounts {
 pub struct EffectCoverageReport {
     pub statement_count: usize,
     pub unknown_coverage: BTreeMap<UnknownEffectCoverage, usize>,
+    pub owner_coverage_refusals: BTreeMap<OwnerInitializationCoverageRefusalReason, usize>,
     pub legacy_dataflow_opaque_statements: usize,
     pub incomplete_execution_statements: usize,
     pub precision_loss_statements: usize,
@@ -78,6 +80,10 @@ pub struct EffectConflictExample {
     pub havoc: bool,
     pub disposition: EffectConflictDisposition,
     pub premise_locations: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_owner_coverage_refusal: Option<OwnerInitializationCoverageRefusal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub later_owner_coverage_refusal: Option<OwnerInitializationCoverageRefusal>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -139,6 +145,8 @@ pub struct EffectOpacity<'a> {
     pub incomplete_execution: bool,
     pub execution_losses: &'a [analysis::reports::schema::ExecutionPrecisionLoss],
     pub opaque_heap: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_coverage_refusal: Option<&'a OwnerInitializationCoverageRefusal>,
 }
 
 impl<'a> From<&'a InitializationEffects> for EffectOpacity<'a> {
@@ -149,6 +157,7 @@ impl<'a> From<&'a InitializationEffects> for EffectOpacity<'a> {
             incomplete_execution: effects.incomplete_execution,
             execution_losses: &effects.execution_losses,
             opaque_heap: effects.opaque_heap,
+            owner_coverage_refusal: effects.owner_coverage_refusal.as_ref(),
         }
     }
 }
@@ -197,6 +206,8 @@ impl EffectConflictRow<'_> {
             havoc: self.havoc,
             disposition: self.disposition,
             premise_locations: self.premise_locations.clone(),
+            first_owner_coverage_refusal: self.first_opacity.owner_coverage_refusal.cloned(),
+            later_owner_coverage_refusal: self.later_opacity.owner_coverage_refusal.cloned(),
         }
     }
 }
@@ -268,6 +279,7 @@ pub fn effect_translation_validate<E>(
     let mut coverage = EffectCoverageReport {
         statement_count: effects.len(),
         unknown_coverage: BTreeMap::new(),
+        owner_coverage_refusals: BTreeMap::new(),
         legacy_dataflow_opaque_statements: 0,
         incomplete_execution_statements: 0,
         precision_loss_statements: 0,
@@ -277,6 +289,12 @@ pub fn effect_translation_validate<E>(
     for effect in effects.values() {
         for domain in &effect.unknown_coverage {
             *coverage.unknown_coverage.entry(*domain).or_default() += 1;
+        }
+        if let Some(refusal) = &effect.owner_coverage_refusal {
+            *coverage
+                .owner_coverage_refusals
+                .entry(refusal.reason)
+                .or_default() += 1;
         }
         coverage.legacy_dataflow_opaque_statements +=
             usize::from(!effect.dataflow_opacity.is_empty());
