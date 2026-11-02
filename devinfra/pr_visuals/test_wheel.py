@@ -29,6 +29,7 @@ def test_wheel_contains_import_closure_templates_and_runnable_entry_points(tmp_p
             "devinfra/pr_visuals/publisher.py",
             "devinfra/pr_visuals/collection.py",
             "devinfra/pr_visuals/artifacts.py",
+            "devinfra/pr_visuals/github_comment.md.j2",
             "devinfra/pr_visuals/gallery.css",
             "devinfra/pr_visuals/gallery_sort.js",
             "devinfra/pr_visuals/gallery_slider.css",

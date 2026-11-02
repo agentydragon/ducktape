@@ -48,6 +48,14 @@ def main() -> None:
     assert (bundle / "gallery_slider.js").is_file()
     assert (bundle / "gallery.css").is_file()
     assert (bundle / "gallery_sort.js").is_file()
+    comment = publisher.success_comment_body(
+        repository="owner/repo",
+        commit_sha="0123456789abcdef0123456789abcdef01234567",
+        url="https://visuals.example/",
+        review_tests=[],
+    )
+    assert "<h2>Visual review for" in comment
+    assert '<a href="https://visuals.example/index.html">Open visual review</a>' in comment
     test_page = (
         bundle / "tests" / publisher.target_slug("//smoke:test", repository="owner/repo") / "index.html"
     ).read_text()

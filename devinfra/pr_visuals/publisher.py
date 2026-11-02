@@ -830,7 +830,11 @@ def write_baseline_pointers(slugs: list[str], *, commit_sha: str, bucket: str, c
 
 def _is_current_success_comment(*, body: str, repository: str, commit_sha: str) -> bool:
     commit_url = f"https://github.com/{repository}/commit/{commit_sha}"
-    return f"## Visual review for [`{commit_sha[:8]}`]({commit_url})" in body and "[Open visual review](" in body
+    html_heading = f'<h2>Visual review for <a href="{commit_url}"><code>{commit_sha[:8]}</code></a></h2>'
+    markdown_heading = f"## Visual review for [`{commit_sha[:8]}`]({commit_url})"
+    return (html_heading in body and ">Open visual review</a>" in body) or (
+        markdown_heading in body and "[Open visual review](" in body
+    )
 
 
 def _find_pull_request_comment(issue: Any) -> Any | None:
