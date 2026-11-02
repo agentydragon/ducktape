@@ -25,8 +25,9 @@
       "title": "Untangle checker-only provider dependencies from runtime libraries",
       "refresh_status": "present_at_refresh",
       "related_pull_request": 11497,
-      "related_pull_request_status": "open_rebase_in_progress",
-      "related_pull_request_scope": "Python and mypy rules plus Props targets; eval-infra and Haku remain follow-up."
+      "related_pull_request_status": "open_rebased_checks_running",
+      "related_pull_request_scope": "Python and mypy rules plus Props targets; eval-infra and Haku remain follow-up.",
+      "related_pull_request_head": "8476362b721d38a150c681f0df2965b2977ebaca"
     },
     {
       "id": "K",
