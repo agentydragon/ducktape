@@ -903,6 +903,7 @@ ts_library(
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/app/frontend/testing:model_catalog",
+        "//agentplane/app/frontend/testing:runner_status",
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:local_commands",
