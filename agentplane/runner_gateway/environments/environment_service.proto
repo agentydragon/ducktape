@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package agentplane.sandboxes.environments;
 
-option go_package = "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb;environmentpb";
+option go_package = "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb;environmentpb";
 
 import "agentplane/proto/environment_lifecycle.proto";
 import "agentplane/proto/sandboxes.proto";

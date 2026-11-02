@@ -12,7 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 

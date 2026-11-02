@@ -8,8 +8,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
 	sandboxview "github.com/agentydragon/ducktape/agentplane/sandboxes/view"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"

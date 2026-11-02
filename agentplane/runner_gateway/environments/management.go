@@ -6,7 +6,7 @@ import (
 	"log/slog"
 
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"

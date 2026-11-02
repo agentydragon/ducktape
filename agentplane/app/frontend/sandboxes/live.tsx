@@ -1,7 +1,7 @@
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
 import type { Sandbox } from "../../../proto/sandboxes_pb";
-import { WatchEnvironmentsResponseSchema } from "../../../sandboxes/environments/environment_service_pb";
+import { WatchEnvironmentsResponseSchema } from "../../../runner_gateway/environments/environment_service_pb";
 import { followWatch } from "../watch_stream";
 import { type StreamConnection } from "../stream_reader";
 import { useStreamStatus } from "../stream_status";

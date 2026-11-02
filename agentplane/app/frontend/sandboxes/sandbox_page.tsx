@@ -31,7 +31,7 @@ import {
   sessionOpeningNotVisible,
   suspendEnvironment,
 } from "./client";
-import type { TargetHandle } from "../../../sandboxes/environments/environment_service_pb";
+import type { TargetHandle } from "../../../runner_gateway/environments/environment_service_pb";
 import { ActionPolicySection } from "../actions/policy";
 import { EgressLog } from "./egress";
 import { liveSandboxUrl, sandboxInventoryFresh, useRequiredSandboxesLive, type SandboxSnapshot } from "./live";
