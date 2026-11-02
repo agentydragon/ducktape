@@ -316,8 +316,15 @@ def test_sparse_tender_appreciation_is_shrunk_toward_stock_like_forward_prior(tm
     )
 
     artifact = fit_private_equity_model(observations, config)
+    unshrunk_artifact = fit_private_equity_model(
+        observations,
+        config.model_copy(
+            update={"priors": config.priors.model_copy(update={"stock_like_monthly_log_return_mu_weight_months": 0.0})}
+        ),
+    )
 
-    assert artifact.provenance["empirical_monthly_log_return_mu"] > 0.35
+    assert unshrunk_artifact.monthly_log_return_mu > 0.35
+    assert artifact.monthly_log_return_mu > config.priors.stock_like_monthly_log_return_mu
     assert artifact.monthly_log_return_mu < 0.02
     assert artifact.monthly_log_return_sigma < 0.12
 
