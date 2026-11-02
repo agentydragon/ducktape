@@ -7,6 +7,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -31,6 +32,7 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 			{Namespace: lifecycle.Namespace, Type: lifecycle.AggregateStatusType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: codexappserver.StatusType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: InspectionStatusType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: retained.IngressAckType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: LifecycleStatusType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(c.manager.workers)),
@@ -38,7 +40,7 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 }
 
 func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
-	if ptr.Type() == OwnerStatusType || ptr.Type() == InspectionStatusType {
+	if ptr.Type() == OwnerStatusType || ptr.Type() == InspectionStatusType || ptr.Type() == retained.IngressAckType {
 		return []resource.Pointer{resource.NewMetadata(lifecycle.Namespace, ReconcileSnapshotType, ptr.ID(), resource.VersionUndefined)}, nil
 	}
 	rows, err := safe.ReaderListAll[*typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]](ctx, r)
@@ -100,6 +102,10 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		current.Sealed = false
 		current.SealUID = ""
 		current.SealCursor = 0
+		current.Delivered = false
+		current.AcknowledgementPresent = false
+		current.AcknowledgementSealed = false
+		current.AcknowledgementCursor = 0
 	}
 	current.AdmissionClosed = s.admissionClosed()
 	if op, done := s.takeOperation(&s.setupJob); done {
@@ -304,10 +310,25 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 				sealingPending = true
 			}
 		}
-		if seal := s.journal.SealState(); seal != nil && !sealingPending && current.Phase == Halted && current.ProcessStopped && inspected && fenceReady && seal.IncarnationUID == desiredState.SealUID {
+		current.Sealed = false
+		current.SealUID = ""
+		current.SealCursor = 0
+		current.Delivered = false
+		current.AcknowledgementPresent = false
+		current.AcknowledgementSealed = false
+		current.AcknowledgementCursor = 0
+		if seal := s.journal.SealState(); seal != nil && !sealingPending && current.Phase == Halted && current.ProcessStopped && inspected && fenceReady && desiredState.SealUID != "" && seal.IncarnationUID == desiredState.SealUID {
 			current.Sealed = true
 			current.SealUID = seal.IncarnationUID
 			current.SealCursor = seal.Cursor
+			ack, found, err := retained.ReadAcknowledgement(ctx, r, s.id)
+			if err != nil {
+				return err
+			}
+			current.AcknowledgementPresent = found
+			current.AcknowledgementSealed = ack.Sealed
+			current.AcknowledgementCursor = ack.Cursor
+			current.Delivered = found && ack.Sealed && ack.Cursor == seal.Cursor
 		}
 		return write()
 	}

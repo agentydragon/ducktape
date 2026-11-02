@@ -45,12 +45,12 @@ flowchart LR
   ED --> RC
   API -.->|"typed transition request"| RC
   RC -.->|"operation and exact-generation Close completion"| API
-  ED & Count & OwnerStatus & Inspect & SS & AS & PS & Ack & EI --> Agg
+  ED & Count & OwnerStatus & Inspect & SS & AS & PS & EI --> Agg
   Agg --> Aggregate
   SR --> SOwner --> OwnerStatus
   API --> Retry --> SOwner
   SOwner --> SI
-  SI & OwnerStatus & Inspect & ED & Count & Aggregate & AS --> SC
+  SI & OwnerStatus & Inspect & ED & Count & Aggregate & AS & Ack --> SC
   SC --> SS
   AI & ED & Count & Aggregate & ES --> AC
   AC --> AS

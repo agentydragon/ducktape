@@ -378,9 +378,30 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	if err != nil || !found || !progress.Sealed || progress.EnvironmentGeneration != environmentDesired(r).Generation || progress.SealUID != seal.IncarnationUID || progress.SealCursor != seal.Cursor {
 		t.Fatalf("Session seal status = %+v, found=%t err=%v; journal seal = %+v", progress, found, err, seal)
 	}
+	assertDeliveryPending := func(ack retained.Acknowledgement, present bool) {
+		t.Helper()
+		waitLifecycle(t, r, func() bool {
+			status, found, err := session.ReadLifecycleStatus(context.Background(), r.lifecycleState, s.ID())
+			return err == nil && found && status.Sealed && status.SealUID == seal.IncarnationUID &&
+				status.SealCursor == seal.Cursor && !status.Delivered &&
+				status.AcknowledgementPresent == present && status.AcknowledgementSealed == ack.Sealed &&
+				status.AcknowledgementCursor == ack.Cursor && currentSessionLifecycleStatus(r).Stage == lifecycle.Flushing
+		}, "Session delivery to remain pending")
+	}
+	assertDeliveryPending(retained.Acknowledgement{}, false)
+	for _, ack := range []retained.Acknowledgement{
+		{Cursor: seal.Cursor, Sealed: false},
+		{Cursor: seal.Cursor + 1, Sealed: true},
+	} {
+		if err := r.store.WriteAcknowledgement(s.ID(), ack); err != nil {
+			t.Fatal(err)
+		}
+		assertDeliveryPending(ack, true)
+	}
 	if err := r.store.WriteAcknowledgement(s.ID(), retained.Acknowledgement{Cursor: seal.Cursor - 1, Sealed: true}); err != nil {
 		t.Fatal(err)
 	}
+	assertDeliveryPending(retained.Acknowledgement{Cursor: seal.Cursor - 1, Sealed: true}, true)
 	waitLifecycle(t, r, func() bool {
 		current := currentSessionLifecycleStatus(r)
 		return current.Stage == lifecycle.Flushing && current.Blocker.Kind == lifecycle.IngressAcknowledgementPending &&
@@ -410,6 +431,10 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitLifecycle(t, r, func() bool { return currentSessionLifecycleStatus(r).Stage == lifecycle.Quiesced }, "exact sealed cursor acknowledgement")
+	status, found, err := session.ReadLifecycleStatus(context.Background(), r.lifecycleState, s.ID())
+	if err != nil || !found || !status.Delivered || status.SealUID != seal.IncarnationUID || status.SealCursor != seal.Cursor {
+		t.Fatalf("Session delivery = %+v, found %t, err %v", status, found, err)
+	}
 	quiesced := sessionLifecycleSnapshot(t, r)
 	if quiesced.Stage != sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_QUIESCED || quiesced.Blocker != nil {
 		t.Fatalf("GetStatus after exact acknowledgement = %+v, want QUIESCED without a blocker", quiesced)
@@ -420,6 +445,41 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	}
 	if facts.QuiesceStage != environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED {
 		t.Fatalf("facts after exact sealed cursor acknowledgement = %s, want QUIESCED", facts.QuiesceStage)
+	}
+}
+
+func TestSessionDeliveryCompleteRequiresCurrentGenerationAndSealUID(t *testing.T) {
+	desired := lifecycle.EnvironmentDesired{Generation: 7, SealUID: "current"}
+	status := session.LifecycleStatus{EnvironmentGeneration: 7, Sealed: true, SealUID: "current", SealCursor: 0, Delivered: true}
+	if !sessionDeliveryComplete(status, true, desired) {
+		t.Fatal("exact current-generation zero-cursor delivery was rejected")
+	}
+	for name, check := range map[string]func() bool{
+		"missing": func() bool { return sessionDeliveryComplete(status, false, desired) },
+		"stale generation": func() bool {
+			stale := status
+			stale.EnvironmentGeneration--
+			return sessionDeliveryComplete(stale, true, desired)
+		},
+		"stale UID": func() bool {
+			stale := status
+			stale.SealUID = "previous"
+			return sessionDeliveryComplete(stale, true, desired)
+		},
+		"unsealed": func() bool {
+			unsealed := status
+			unsealed.Sealed = false
+			return sessionDeliveryComplete(unsealed, true, desired)
+		},
+		"undelivered": func() bool {
+			pending := status
+			pending.Delivered = false
+			return sessionDeliveryComplete(pending, true, desired)
+		},
+	} {
+		if check() {
+			t.Errorf("%s status completed delivery", name)
+		}
 	}
 }
 
