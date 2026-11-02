@@ -21,7 +21,7 @@ type sessionLifecycleController struct{ runtime *Runtime }
 func (*sessionLifecycleController) Name() string { return sessionLifecycleControllerName }
 func (*sessionLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{lifecycle.EnvironmentDesiredStateType, lifecycle.ExecutionStatusType, executionSignalType, lifecycle.AdmissionCountType, session.InspectionStatusType, session.LifecycleStatusType, journalSealType, retained.IngressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
+	for _, kind := range []string{lifecycle.EnvironmentDesiredStateType, executionSignalType, lifecycle.AdmissionCountType, session.InspectionStatusType, session.LifecycleStatusType, journalSealType, retained.IngressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: lifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs

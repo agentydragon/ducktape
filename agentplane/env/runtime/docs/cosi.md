@@ -43,7 +43,7 @@ flowchart LR
   ED & TR --> RC
   RC --> TS & Close
   RC -.->|"settle transitions and shutdown"| API
-  ED & Count & Inspect & SS & AS & PS & Seal & ES & EI --> Agg
+  ED & Count & Inspect & SS & AS & PS & Seal & EI --> Agg
   Agg --> Aggregate
   SI & ED & Count & Aggregate & AS & SO --> SC
   SC --> SS
@@ -60,15 +60,15 @@ flowchart LR
 
 ## Writers and subscriptions
 
-| Controller                      | Watched inputs                                                                                                                                                             | Exclusive output and effect boundary                                                                         |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `environment-runtime-lifecycle` | Environment desired state and transition requests; its worker-completion channels                                                                                          | Close and transition statuses; Runtime-owned workers perform blocking transition/shutdown steps              |
-| `environment-session-lifecycle` | Environment desired state, admission accounting, inspection and Session statuses, journal seals, ACKs, app-server status, process desired/status, Execution status/signals | Aggregate Session status; native cleanup, exact fence, seal and durable ACK predicates                       |
-| `session-lifecycle`             | Session snapshot (primary); desired state, accepted admissions, aggregate status, app-server status and operation states (mapped)                                          | Session lifecycle status; guarded per-Session prepare/dispatch registration and one-off halt/seal operations |
-| `codex-app-server-lifecycle`    | App-server signal (primary); desired state, accepted admissions, aggregate status, operation states and Execution status (mapped)                                          | App-server status; guarded initialization, cleanup and a separate live Execution-owner readiness check       |
-| `execution-lifecycle`           | Execution signal (primary), Execution status (mapped)                                                                                                                      | Execution status; exact-attempt start/loss/fence observations, retaining an unfenced owner on failure        |
-| `bootstrap-lifecycle`           | Bootstrap request (primary), status and operation state (mapped)                                                                                                           | Bootstrap status; selected bytes and durable event sequence govern one accepted attempt                      |
-| `process-lifecycle`             | Process desired state (primary), observation (mapped)                                                                                                                      | Process status; one attempt finalizer remains until its native domain is fenced                              |
+| Controller                      | Watched inputs                                                                                                                                                      | Exclusive output and effect boundary                                                                         |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `environment-runtime-lifecycle` | Environment desired state and transition requests; its worker-completion channels                                                                                   | Close and transition statuses; Runtime-owned workers perform blocking transition/shutdown steps              |
+| `environment-session-lifecycle` | Environment desired state, admission accounting, inspection and Session statuses, journal seals, ACKs, app-server status, process desired/status, Execution signals | Aggregate Session status; native cleanup, exact fence, seal and durable ACK predicates                       |
+| `session-lifecycle`             | Session snapshot (primary); desired state, accepted admissions, aggregate status, app-server status and operation states (mapped)                                   | Session lifecycle status; guarded per-Session prepare/dispatch registration and one-off halt/seal operations |
+| `codex-app-server-lifecycle`    | App-server signal (primary); desired state, accepted admissions, aggregate status, operation states and Execution status (mapped)                                   | App-server status; guarded initialization, cleanup and a separate live Execution-owner readiness check       |
+| `execution-lifecycle`           | Execution signal (primary), Execution status (mapped)                                                                                                               | Execution status; exact-attempt start/loss/fence observations, retaining an unfenced owner on failure        |
+| `bootstrap-lifecycle`           | Bootstrap request (primary), status and operation state (mapped)                                                                                                    | Bootstrap status; selected bytes and durable event sequence govern one accepted attempt                      |
+| `process-lifecycle`             | Process desired state (primary), observation (mapped)                                                                                                               | Process status; one attempt finalizer remains until its native domain is fenced                              |
 
 Controller settings are authoritative for primary/mapped subscriptions. Synchronous reads can also
 inspect resources without subscribing to them. Registration is in [`runtime.go`](../runtime.go) and
