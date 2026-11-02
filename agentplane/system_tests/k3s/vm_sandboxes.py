@@ -13,6 +13,7 @@ from typing import Any
 import yaml
 from more_itertools import one
 
+from agentplane.system_tests.k3s.release_manifests import load_release_manifest
 from agentplane.system_tests.tracing import tracer
 from agentplane.system_tests.vm_configuration import OOM_TEMPLATE
 from util.bazel.runfiles import get_required_path
@@ -59,7 +60,7 @@ def select_boot_evidence(objects: list[dict[str, Any]], *, enabled: bool) -> Non
 
 
 def _manifest(variable: str) -> list[dict[str, Any]]:
-    return [doc for doc in yaml.safe_load_all(get_required_path(os.environ[variable]).read_text()) if doc]
+    return load_release_manifest(get_required_path(os.environ[variable]), variable)
 
 
 def _kubevirt_operator() -> list[dict[str, Any]]:

@@ -7,6 +7,7 @@ from typing import Any
 import yaml
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
+from agentplane.system_tests.k3s.release_manifests import load_release_manifest
 from agentplane.system_tests.tracing import tracer
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -17,7 +18,7 @@ READY_SECONDS = 180
 
 
 def _manifest(variable: str) -> list[dict[str, Any]]:
-    return [doc for doc in yaml.safe_load_all(get_required_path(os.environ[variable]).read_text()) if doc]
+    return load_release_manifest(get_required_path(os.environ[variable]), variable)
 
 
 def releases() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
