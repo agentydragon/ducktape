@@ -1,26 +1,20 @@
 {
-  "source_devel_commit": "f342c9f7fd5fcfc9fe66afb530e12e022e32af7f",
-  "window_start_utc": "2026-11-01T02:30:00Z",
-  "window_end_utc": "2026-11-02T03:26:20Z",
-  "published_at_utc": "2026-11-02T03:38:30.056180+00:00",
+  "source_devel_commit": "af8af96aad38422b26670a08652e9b271aad05b8",
+  "window_start_utc": "2026-11-02T03:17:13Z",
+  "window_end_utc": "2026-11-02T08:34:00Z",
+  "published_at_utc": "2026-11-02T09:06:50.287063+00:00",
   "attribution": "not collected",
-  "previous_report_branch_commit": "f6975b41fae3c634568ca454f0c38921ec3595df",
-  "report_html_sha256": "0e8e13316fc0736bfd3aeaefbbb8eb14feb0d81642e612ea7af95cbaadf9bbfb",
-  "evidence_sha256": "70eac8627c8b8d18b44b29b7ab855d325e7e3f46027c437a0d30a742e226f71d",
-  "visual_validation_invocation": "8501eaf9-b57c-4c01-9cd8-b9f4fc7c3c90",
-  "fleet_arrival_window_utc": [
+  "previous_report_branch_commit": "e412ed891dc2893b7af93d2d74ccbb688cb9f602",
+  "report_html_sha256": "ac5c16c10dbeea997a6be708e6a9299e38792507c0195b56a5b47c620c6fc986",
+  "evidence_sha256": "f50fdfdd52a760c88400128d160e5ab55375cca96504ab9fa8b146424ebdc24f",
+  "visual_validation_invocation": "588ddfb5-2144-4762-8081-a6d5f410b7ef",
+  "implementation_merge_commit": "53012e85ee611a902667601f135f9631da935b1b",
+  "post_merge_soak_measurement": "early five-hour follow-up measured; 48-hour checkpoint pending",
+  "first_soak_checkpoint_not_before_utc": "2026-11-04T03:17:13Z",
+  "sampling_design": "Chronological exact-head PR arrival cohort plus a separate bounded completed mainline originating-physical-action cohort; not a matched fleet treatment estimate.",
+  "historical_baseline_report_commit": "e412ed891dc2893b7af93d2d74ccbb688cb9f602",
+  "historical_baseline_window_utc": [
     "2026-11-01T02:30:00Z",
     "2026-11-01T21:45:00Z"
-  ],
-  "fleet_source_devel_commit": "de5f671002f516e952c3dfafcbf06659a4bc731b",
-  "historical_pod_experiment_window_utc": [
-    "2026-11-01T22:15:00Z",
-    "2026-11-01T23:12:25.941Z"
-  ],
-  "rollout_update_observed_at_utc": "2026-11-02T03:26:20Z",
-  "implementation_merge_commit": "53012e85ee611a902667601f135f9631da935b1b",
-  "implementation_merged_at_utc": "2026-11-02T03:17:13Z",
-  "sampling_design": "Retains the prior fleet census and Pod-concurrency experiment. Adds merged all-k3s intervention, reviewed experimental pairs and lifecycle validation, and a pending soak plan. No post-merge fleet census or treatment-effect measurement.",
-  "post_merge_soak_measurement": "pending",
-  "first_soak_checkpoint_not_before_utc": "2026-11-04T03:17:13Z"
+  ]
 }
