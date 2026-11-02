@@ -77278,9 +77278,72 @@
       },
       "source_prs": {
         "13969": "Pre-commit and imports green; full exact-head CI pending",
-        "13967": "Pre-commit and imports green; full exact-head CI and separate VM repair validation pending"
+        "13967": "Full separate ordinary VM suite and artifact audit passed; pre-commit and imports green; exact-head enclosing CI still pending"
       },
-      "timing_scope": "Separate validation; excluded from experiment cohort and treatment costs"
+      "timing_scope": "Separate validation; excluded from experiment cohort and treatment costs",
+      "observed_at_utc": "2026-11-02T19:29:00Z"
+    },
+    "separate_monitor_repair_validation": {
+      "source_pr": 13967,
+      "source_head": "c0d17ddbd3f834a046039235db2f67821da51e15",
+      "invocation": "11a4607d-3aa7-47eb-b082-1bff4c744036",
+      "target": "//agentplane/system_tests/suites:test_vm",
+      "full_target_passed": true,
+      "baseline_outcome": "warm",
+      "cleanup": "complete",
+      "workspace_loop_devices_released": 3,
+      "physical_totals": {
+        "execution_seconds": 394.175072,
+        "worker_seconds": 396.643165,
+        "cpu_seconds": 1348.629288,
+        "requested_8unit_execution_seconds_proxy": 3153.400576
+      },
+      "oom": {
+        "passed": true,
+        "kill_before": 0,
+        "kill_after": 1,
+        "exit_code": 137,
+        "followup_exit_code": 0,
+        "same_runtime": true,
+        "same_cgroup": true
+      },
+      "journals": [
+        {
+          "artifact": "vm-artifacts/journals/pvc-0ae2b810-368f-4dd5-86cb-feae9b4e534e_systest_systest-vm-codex-oom-state/f45de7b4a9c04d899a363d9707636ddf/1028884-system.journal",
+          "verify_exit_code": 0
+        },
+        {
+          "artifact": "vm-artifacts/journals/pvc-bbc2f74f-d183-436b-a00a-c33eab0d9128_systest_systest-vm-2-state/d8f302dda19343a89c6b9b32ff73009b/1028886-system.journal",
+          "verify_exit_code": 0
+        },
+        {
+          "artifact": "vm-artifacts/journals/pvc-033420da-a2e8-4d7c-b91f-26a7e15277b1_systest_systest-vm-1-state/52a55873d4d84b6b8a2cb7f69670baa1/1028882-system.journal",
+          "verify_exit_code": 0
+        }
+      ],
+      "shutdown_receipt_count": 3,
+      "monitor_verification": [
+        {
+          "journal": "vm-artifacts/journals/pvc-0ae2b810-368f-4dd5-86cb-feae9b4e534e_systest_systest-vm-codex-oom-state/f45de7b4a9c04d899a363d9707636ddf/1028884-system.journal",
+          "observer_enabled": true,
+          "udev_header_journal_receipt_monotonic_usec": 28798960,
+          "kernel_header_journal_receipt_monotonic_usec": 28798960,
+          "readiness_receipt_journal_monotonic_usec": 28798960,
+          "pid1_started_monitor_monotonic_usec": 28474878,
+          "pid1_starting_coldplug_monotonic_usec": 28518982,
+          "kernel_and_udev_events_present": true,
+          "barrier_error_absent": true
+        },
+        {
+          "journal": "vm-artifacts/journals/pvc-bbc2f74f-d183-436b-a00a-c33eab0d9128_systest_systest-vm-2-state/d8f302dda19343a89c6b9b32ff73009b/1028886-system.journal",
+          "observer_enabled": false
+        },
+        {
+          "journal": "vm-artifacts/journals/pvc-033420da-a2e8-4d7c-b91f-26a7e15277b1_systest_systest-vm-1-state/52a55873d4d84b6b8a2cb7f69670baa1/1028882-system.journal",
+          "observer_enabled": false
+        }
+      ],
+      "scope": "Post-experiment validation only; excluded from CPU/heartbeat treatment comparison. Native journal timestamps measure receipt at journald, not original producer emission times."
     }
   },
   "latest_inspected_devel_commit": "f1e187cbb483e534db543bcadc1141f4fa55e6bd"

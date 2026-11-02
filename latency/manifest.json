@@ -6,7 +6,7 @@
   "attribution": "not collected",
   "previous_report_branch_commit": "080c0a4880a98f57b464631631f35183256f3a9a",
   "report_html_sha256": "3337fd022c95fcaaddf7ebbd29f0ebaecb7c135fa1cee0ec8bc2ffe8ae59077e",
-  "evidence_sha256": "089eec8f2d8e3e9ef26117043b01541e66556d0821f45a6a92e13886edb12ad3",
+  "evidence_sha256": "7f46a2f31c847c55af33fdd9bc2ff402c115f0ed8e883496bd1d24f9ca081884",
   "visual_validation_invocation": "48e3da5d-2e4d-4885-9f68-53c170d35b5b",
   "visual_validation": {
     "viewports": [
@@ -92,5 +92,10 @@
     "controlled_observer_pr_head": "a328fa887401074aa76af527ad8ba3907f887f06",
     "handler_heartbeat_experiment": "Completed bounded trial was inconclusive: both arms rebuilt cold, the warm-only refresh path never ran, and both targets failed guest boot-evidence teardown. No handler restart implementation or latency gain is claimed.",
     "controlled_observer_merge_commit": "2e141fd38a7ea6217c0af932c309ac1d5eea3624"
+  },
+  "separate_monitor_repair_validation": {
+    "invocation": "11a4607d-3aa7-47eb-b082-1bff4c744036",
+    "full_vm_suite_and_artifact_audit_passed": true,
+    "included_in_treatment_timing_comparison": false
   }
 }
