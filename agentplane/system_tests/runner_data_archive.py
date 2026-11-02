@@ -39,6 +39,9 @@ def _add_tree(output: tarfile.TarFile, source: Path, arcname: str, excluded: set
     if source in excluded:
         return
     member = output.gettarinfo(source, arcname=arcname)
+    if member is None:
+        # Match tarfile.add: sockets and other unsupported types have no tar member.
+        return
     if member.isfile():
         identity = source.stat(follow_symlinks=False)
         with source.open("rb") as contents:

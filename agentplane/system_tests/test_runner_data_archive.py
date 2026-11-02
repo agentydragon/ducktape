@@ -1,6 +1,7 @@
 """Regressions for archiving a live runner data mount."""
 
 import json
+import socket
 import sqlite3
 import tarfile
 from pathlib import Path
@@ -111,6 +112,22 @@ def test_archive_still_fails_for_unbacked_disappearing_files(
     assert manifest["archive"] == "partial_or_failed"
     assert "FileNotFoundError" in manifest["archive_error"]
     assert not (tmp_path / "data.tar").exists()
+
+
+def test_archive_preserves_tar_socket_handling(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    plan = _plan(tmp_path, [])
+    mount = tmp_path / "mount"
+    (mount / "durable.txt").write_text("preserve durable file")
+    # A relative bind avoids the Unix-domain socket path length limit in Bazel tempdirs.
+    monkeypatch.chdir(mount)
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+        listener.bind("harness.sock")
+        assert runner_data_archive.capture(plan) == 0
+    with tarfile.open(tmp_path / "data.tar") as archive:
+        contents = archive.extractfile("state/durable.txt")
+        assert contents is not None
+        assert contents.read() == b"preserve durable file"
+        assert "state/harness.sock" not in archive.getnames()
 
 
 @pytest.mark.parametrize("journal_mode", ["DELETE", "WAL"])
