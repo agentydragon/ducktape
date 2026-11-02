@@ -428,6 +428,10 @@ func TestProcessControllerRetainsSystemdObservationsAcrossFence(t *testing.T) {
 		observe := <-observers
 		observe(SystemdObservation{Revision: 3, Unit: "old.service", Snapshot: SystemdUnitSnapshot{InvocationID: "old", ActiveState: "failed"}, Error: "manager disconnected"})
 		observe(SystemdObservation{Revision: 2, Unit: "old.service", Snapshot: SystemdUnitSnapshot{InvocationID: "old", ActiveState: "active"}})
+		input, found, err := readResource[inputSpec](f.ctx, f.state, processTestNamespace, id)
+		if err != nil || !found || input.Systemd.Revision != 3 || input.Systemd.Snapshot.ActiveState != "failed" {
+			t.Fatalf("process input lost newest systemd observation: input=%+v found=%t err=%v", input, found, err)
+		}
 		current := waitProcessStatus(t, f, id, "newest systemd observation", func(status Status) bool {
 			return status.Systemd.Revision == 3
 		})
@@ -460,6 +464,9 @@ func TestProcessControllerRetainsSystemdObservationsAcrossFence(t *testing.T) {
 		synctest.Wait()
 		if _, found := f.status(t, id); found {
 			t.Fatal("stale observation recreated retired process status")
+		}
+		if _, found, err := readResource[inputSpec](f.ctx, f.state, processTestNamespace, id); err != nil || found {
+			t.Fatalf("stale observation recreated process input: found=%t err=%v", found, err)
 		}
 	})
 }

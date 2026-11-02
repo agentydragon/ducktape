@@ -36,7 +36,10 @@ type DesiredState struct {
 }
 
 type inputSpec struct {
+	// Revision wakes reconciliation for host-owned start, exit, and stop slots.
 	Revision uint64
+	// Systemd is an observed fact, not evidence that the process domain is fenced.
+	Systemd SystemdObservation
 }
 
 type Phase uint8
