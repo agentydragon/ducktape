@@ -385,8 +385,8 @@ applications").
   `cluster/k8s/haku/forgejo-tea/` rather than parked with the rest.
 - **Agentplane repository index**: `cluster/cdk8s/agentplane_index/` — removed from the
   active bundle 2026-10-20 and its namespace and CNPG data deleted (disposable: it rebuilds
-  from Git and Ollama). The cdk8s module, image build and image pins stay for revival; see
-  its README.
+  from Git and Ollama). The cdk8s module and image build stay for revival; automatic image
+  publication, Flux tracking, and the unused image pin were removed. See its README.
 - **Paperless**: `cluster/parked/paperless/` — decommissioned; third-party
   (`ghcr.io/paperless-ngx/paperless-ngx`), no ducktape source.
 - **Firecrawl**: `cluster/parked/firecrawl/` — its namespace, database, and app

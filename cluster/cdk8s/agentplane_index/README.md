@@ -6,6 +6,16 @@ calling `workers.agentplane_index` from `generate_manifests.py` again (Kustomiza
 `loki_read_proxy.py`, the `kubernetes-forgejo-images-secret-store` namespaces
 (`external_secrets/config.py`) and the `haku-forgejo-git` mirror (`haku/workspaces.py`).
 
+The image target `//agentplane/x/indexing:image` remains buildable, but CI no longer publishes
+it and Flux no longer scans or updates it. Before restoring the deployment, run
+`bbr test //agentplane/x/indexing/...` and publish a deliberate tag to
+`git.allegedly.works/ducktape-ci/agentplane-index`. Restore the entry in
+`devinfra/ci/image_targets.json` if automatic publication is wanted. For automatic tag
+tracking, also restore the `agentplane-index` entry in
+`forgejo_registry/image_automation.py` and an `agentplane-index-image-pins` Component with
+an `$imagepolicy` marker, then include the Component in the regenerated deployment artifact.
+Otherwise, replace the workers' `:unset` image tag with the published tag before deploying.
+
 `workers.py` deploys one single-repository index worker
 ([service contract](../../../agentplane/x/indexing/SPEC.md)) per indexed branch into namespace
 `agentplane-index`:
@@ -26,9 +36,9 @@ dimensions); the query instruction matches Qwen's query/document asymmetry. Work
 PostgreSQL run in OVH and Ollama on the GPU node, so embedding and search depend on that
 node.
 
-ESO generates the read token and distributes the image-pull credential. ImagePolicy
-`flux-system/agentplane-index` advances both workers. They need no Kubernetes API access and
-mount no ServiceAccount token.
+ESO generates the read token and distributes the image-pull credential. When revived, both
+workers need an explicit published image tag or a restored Flux image pin. They need no
+Kubernetes API access and mount no ServiceAccount token.
 
 ## Access
 

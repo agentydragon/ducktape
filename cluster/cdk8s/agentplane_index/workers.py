@@ -2,8 +2,8 @@
 worker per indexed repository (ducktape, haku-state), and its Flux Kustomization. Operation:
 README.md beside this module.
 
-The image tag is a placeholder; the hand-written `PINS_DIR` Component, which the
-kustomization includes across the roots, overrides it via Flux's image-automation marker.
+The image tag is a placeholder while this service is parked. Before re-enabling its
+generator, publish the image deliberately and set its tag as described in README.md.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.forgejo import app as forgejo  # a bare `app.HTTP` would not say whose
 from cluster.cdk8s.forgejo_registry import pull_credentials
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cnpg.database import Database
 from cluster.cdk8s.secret_ref import SecretRef
@@ -43,7 +43,6 @@ from util.settings_contract import env_name
 
 NAME = "agentplane-index"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
-PINS_DIR = f"{HAND_WRITTEN_ROOT}/agentplane-index-image-pins"
 DATABASE = cnpg.PostgresRef.generated(name=f"{NAME}-db", namespace=NAME)
 _DB_OWNER = "indexer"
 _READ_TOKEN = SecretRef(namespace=NAME, name=f"{NAME}-read-token").key("token")

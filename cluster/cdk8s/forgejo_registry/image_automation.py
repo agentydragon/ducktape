@@ -44,7 +44,6 @@ IMAGES = (
     "agentplane-environment-vm",
     "agentplane-frontend",
     "agentplane-history-service",
-    "agentplane-index",
     "agentplane-llm-ingress",
     "agentplane-mcp-edge",
     "agentplane-notification-service",
