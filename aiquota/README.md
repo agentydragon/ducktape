@@ -171,8 +171,9 @@ shows `unavailable`. The prepaid response is retained under its own raw-capture
 key and is available at `/v1/providers/claude/prepaid-balance/raw`.
 
 OpenAI Platform credit grants are a separate API billing pool from Codex paid
-credits. The CLI, browser board, and GNOME popup label the total as an OpenAI
-API credit balance and label its rows as API credit grants.
+credits. The CLI, browser board, and GNOME popup show the available API credit
+balance alongside the OpenAI API heading and summarize grants by remaining
+amount and expiry.
 
 Anthropic Platform credits use the private platform-session proxy and the
 separate `/api/organizations` and per-organization

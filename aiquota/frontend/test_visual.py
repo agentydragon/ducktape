@@ -51,8 +51,11 @@ async def test_dashboard(view: VisualPage, scene: str) -> None:
         await expect(view.page.locator(".aiquota-strip-resets .aiquota-strip-line")).to_contain_text("2 banked resets")
         await expect(view.page.get_by_text("expiry dates unavailable", exact=True)).to_be_visible()
     if scene == "openai_platform_credits":
-        await expect(view.page.get_by_text("OpenAI API credit balance · $125.75 available", exact=True)).to_be_visible()
-        await expect(view.page.get_by_text("API credit grant", exact=False).first).to_be_visible()
+        await expect(view.page.get_by_role("heading", name="OpenAI API · $125.75 API credit")).to_be_visible()
+        grants = view.page.get_by_text("API credit grants:", exact=False).first
+        await expect(grants).to_contain_text("$100.00 expires")
+        await expect(grants).to_contain_text("$25.75 expires")
+        await expect(grants).not_to_contain_text("/ $100.00")
     if scene == "anthropic_platform_credits":
         await expect(
             view.page.get_by_text("Main org · Anthropic API credit balance · $123.45 available", exact=True)

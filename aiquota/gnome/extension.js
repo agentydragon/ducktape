@@ -110,6 +110,10 @@ function formatCompactDollars(usd) {
   return `$${roundHalfToEven(usd)}`;
 }
 
+function formatUsdCurrency(usd) {
+  return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(Number(usd));
+}
+
 // The "currently burning extra" decision lives in the Python view model
 // (see aiquota/render/view_model.py) and is delivered to us by the desktop
 // daemon as state.currentlyOverPlan. Don't
@@ -344,6 +348,7 @@ const QuotaIndicator = GObject.registerClass(
           '<method name="SetSyncState"><arg type="d" direction="in" name="lastAttemptAt"/><arg type="d" direction="in" name="nextRetryAt"/><arg type="d" direction="in" name="now"/></method>' +
           '<method name="GetStreamStatus"><arg type="s" direction="out" name="status"/></method>' +
           '<method name="GetPrepaidText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetHeaderText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetWindowRows"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="rows"/></method>' +
           '<method name="SetViewForTest"><arg type="s" direction="in" name="view"/></method>' +
           '<method name="ConnectDaemon"/>' +
@@ -365,6 +370,10 @@ const QuotaIndicator = GObject.registerClass(
           GetPrepaidText: (provider) => {
             const item = this._providers.find(({ id }) => id === provider)?.prepaidRow;
             return item?._summaryLabel.get_text() ?? "";
+          },
+          GetHeaderText: (provider) => {
+            const item = this._providers.find(({ id }) => id === provider)?.header;
+            return item?.label.get_text() ?? "";
           },
           GetWindowRows: (provider) => {
             const rows = this._providers
@@ -934,9 +943,14 @@ const QuotaIndicator = GObject.registerClass(
         availableResetCreditExpiries,
         resetCreditExpiryLookupFailed,
         staleAge,
+        openaiPlatformCredits,
       } = effectiveState(state);
       const haveWindows = windows.length > 0;
-      const parts = [title];
+      const titleWithBalance =
+        title === "OpenAI API" && openaiPlatformCredits
+          ? `${title} · ${formatUsdCurrency(openaiPlatformCredits.total_available_usd)} API credit`
+          : title;
+      const parts = [titleWithBalance];
       if (state.error) {
         parts.push(formatCheckFailure(state.error, state.lastCheck, haveWindows));
         item.label.add_style_class_name("quota-popup-header-error");
@@ -970,17 +984,13 @@ const QuotaIndicator = GObject.registerClass(
     _renderPrepaidRow(item, state) {
       const effective = effectiveState(state);
       const openaiPlatformCredits = effective.openaiPlatformCredits;
-      const money = (value) =>
-        new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(Number(value));
-      const lines = openaiPlatformCredits
-        ? [
-            `OpenAI API credit balance · ${money(openaiPlatformCredits.total_available_usd)} available`,
-            ...openaiPlatformCredits.grants.map(
-              (grant) =>
-                `API credit grant ${money(Number(grant.granted_usd) - Number(grant.used_usd))} / ${money(grant.granted_usd)} · expires ${grant.expires_at ? new Date(grant.expires_at).toLocaleString() : "unknown"}${grant.is_scheduled ? " · scheduled" : grant.is_held_for_prepaid_transition ? " · held" : ""}`
-            ),
-          ]
-        : [];
+      const openaiGrants = openaiPlatformCredits?.grants
+        .map(
+          (grant) =>
+            `${formatUsdCurrency(Number(grant.granted_usd) - Number(grant.used_usd))} expires ${grant.expires_at ? new Date(grant.expires_at).toLocaleString() : "unknown"}${grant.is_scheduled ? " · scheduled" : grant.is_held_for_prepaid_transition ? " · held" : ""}`
+        )
+        .join("; ");
+      const lines = openaiGrants ? [`API credit grants: ${openaiGrants}`] : [];
       lines.push(...formatAnthropicPlatformCredits(effective.anthropicPlatformCredits));
       const prepaid = formatPrepaidBalance(effective.prepaidBalance);
       if (prepaid) lines.push(prepaid);

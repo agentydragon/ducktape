@@ -96,10 +96,8 @@
 # ---
 # name: test_renders_shared_fixture[openai_platform_credits]
   '''
-  OpenAI API
-    OpenAI API credit balance · $125.75 available
-    API credit grant $100.00 / $100.00 · expires 2026-02-01 00:00 UTC
-    API credit grant $25.75 / $30.00 · expires 2026-12-01 00:00 UTC
+  OpenAI API · $125.75 API credit
+    API credit grants: $100.00 expires 2026-02-01 00:00 UTC; $25.75 expires 2026-12-01 00:00 UTC
   '''
 # ---
 # name: test_renders_shared_fixture[paid_credits]

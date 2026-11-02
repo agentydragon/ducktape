@@ -128,12 +128,14 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
         elif fixture_name == "claude_prepaid_balance_unavailable":
             assert string_reply(session.call("GetPrepaidText", "claude")) == "Claude prepaid balance unavailable"
         elif fixture_name == "openai_platform_credits":
+            header = string_reply(session.call("GetHeaderText", "openai_platform"))
             credits = string_reply(session.call("GetPrepaidText", "openai_platform"))
-            assert "OpenAI API credit balance" in credits
-            assert "$125.75 available" in credits
-            assert "API credit grant" in credits
-            assert "$125.75" in credits
-            assert "expires" in credits
+            assert "OpenAI API" in header
+            assert "$125.75 API credit" in header
+            assert credits.startswith("API credit grants:")
+            assert "$100.00 expires" in credits
+            assert "$25.75 expires" in credits
+            assert "/ $100.00" not in credits
         elif fixture_name == "anthropic_platform_credits":
             credits = string_reply(session.call("GetPrepaidText", "anthropic_platform"))
             assert "Main org" in credits

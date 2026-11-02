@@ -212,8 +212,11 @@ def test_openai_platform_grants_survive_a_failed_refresh_as_stale() -> None:
     )
     rendered = human.render(_quotas(quota), now=_FETCHED_AT, tz=UTC)
     assert "proxy unavailable" in rendered
-    assert "OpenAI API credit balance · $125.75 available (stale)" in rendered
-    assert "API credit grant $100.00 / $100.00 · expires 2026-02-01 00:00 UTC (stale)" in rendered
+    assert "OpenAI API · $125.75 API credit" in rendered
+    assert (
+        "API credit grants: $100.00 expires 2026-02-01 00:00 UTC; $25.75 expires 2026-12-01 00:00 UTC (stale)"
+        in rendered
+    )
     assert "expires 2026-02-01 00:00 UTC" in rendered
 
 

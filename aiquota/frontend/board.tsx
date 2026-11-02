@@ -66,6 +66,9 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
         <h2 className="aiquota-card-title">
           <span className={`aiquota-dot aiquota-tint-${tint}`} aria-hidden="true" />
           {PROVIDER_NAMES[provider.provider] ?? provider.provider}
+          {provider.provider === "openai_platform" && quota.openaiPlatformCredits
+            ? ` · ${formatUsd(Number(quota.openaiPlatformCredits.total_available_usd))} API credit`
+            : null}
         </h2>
         <div className="aiquota-card-status">
           {quota.staleSince !== null && (
@@ -85,21 +88,11 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
       {quota.prepaidBalance && (
         <PrepaidBalanceStrip balance={quota.prepaidBalance} staleSince={quota.prepaidStaleSince} now={now} />
       )}
-      {quota.openaiPlatformCredits && (
-        <div className="aiquota-aside">
-          <p>
-            OpenAI API credit balance · {formatUsd(Number(quota.openaiPlatformCredits.total_available_usd))} available
-          </p>
-          {quota.openaiPlatformCredits.grants.map((grant, index) => (
-            <p key={index}>
-              API credit grant {formatUsd(Number(grant.granted_usd) - Number(grant.used_usd))} /{" "}
-              {formatUsd(Number(grant.granted_usd))} · expires{" "}
-              {grant.expires_at ? new Date(grant.expires_at).toLocaleString() : "unknown"}
-              {grant.is_scheduled ? " · scheduled" : grant.is_held_for_prepaid_transition ? " · held" : ""}
-            </p>
-          ))}
-        </div>
-      )}
+      {quota.openaiPlatformCredits?.grants.length ? (
+        <p className="aiquota-aside">
+          API credit grants: {formatOpenaiPlatformGrantSummary(quota.openaiPlatformCredits.grants)}
+        </p>
+      ) : null}
       {quota.anthropicPlatformCredits && <AnthropicPlatformCreditsStrip credits={quota.anthropicPlatformCredits} />}
       {quota.resetCredits !== null && (
         <ResetCreditsStrip
@@ -314,6 +307,18 @@ function AnthropicPlatformCreditsStrip({
       })}
     </div>
   );
+}
+
+function formatOpenaiPlatformGrantSummary(
+  grants: NonNullable<EffectiveQuota["openaiPlatformCredits"]>["grants"]
+): string {
+  return grants
+    .map((grant) => {
+      const expiry = grant.expires_at ? new Date(grant.expires_at).toLocaleString() : "unknown";
+      const status = grant.is_scheduled ? " · scheduled" : grant.is_held_for_prepaid_transition ? " · held" : "";
+      return `${formatUsd(Number(grant.granted_usd) - Number(grant.used_usd))} expires ${expiry}${status}`;
+    })
+    .join("; ");
 }
 
 function anthropicTrancheLines(

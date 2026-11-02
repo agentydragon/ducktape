@@ -12,6 +12,7 @@ from aiquota.models import (
     AnthropicPlatformScope,
     ExtraSpend,
     FetchSuccess,
+    OpenAIPlatformCredits,
     PaidCredits,
     PrepaidBalance,
     PrepaidBalanceAvailable,
@@ -76,18 +77,7 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
     prepaid_balance, prepaid_stale_age = _effective_prepaid_balance(pv, now)
     prepaid_balance_line = _format_prepaid_balance(prepaid_balance, prepaid_stale_age)
     openai_platform_credits = pv.display_openai_platform_credits
-    openai_platform_lines = []
-    if openai_platform_credits:
-        openai_platform_lines.append(
-            f"OpenAI API credit balance · ${openai_platform_credits.total_available_usd:,.2f} available"
-        )
-        for grant in openai_platform_credits.grants:
-            expiry = grant.expires_at.astimezone(tz).strftime("%Y-%m-%d %H:%M %Z") if grant.expires_at else "unknown"
-            status = " · scheduled" if grant.is_scheduled else " · held" if grant.is_held_for_prepaid_transition else ""
-            remaining = grant.granted_usd - grant.used_usd
-            openai_platform_lines.append(
-                f"API credit grant ${remaining:,.2f} / ${grant.granted_usd:,.2f} · expires {expiry}{status}"
-            )
+    openai_platform_grants_line = _format_openai_platform_grants(openai_platform_credits, tz)
     anthropic_lines = _format_anthropic_platform_credits(pv.display_anthropic_platform_credits, tz)
 
     if error and not windows:
@@ -102,10 +92,11 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
                 reset_credit_expiry_lookup_failed,
                 stale_age,
                 tz,
+                openai_platform_credits=openai_platform_credits,
             )
             + (f"  {credit_line}" if credit_line else "")
             + (f"\n  {prepaid_balance_line}" if prepaid_balance_line else "")
-            + ("".join(f"\n  {line} (stale)" for line in openai_platform_lines))
+            + (f"\n  {openai_platform_grants_line} (stale)" if openai_platform_grants_line else "")
             + ("".join(f"\n  {line} (stale)" for line in anthropic_lines))
         )
 
@@ -113,11 +104,13 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
         # Mirror the GNOME popup's text-only active-extra view: while burning,
         # bars are noise, but both reset countdowns still matter.
         lines = [
-            f"{_provider_label(pv.provider, reset_credits, reset_credit_expiries, tz, reset_credit_expiry_lookup_failed)}  "
+            f"{_provider_label(pv.provider, reset_credits, reset_credit_expiries, tz, reset_credit_expiry_lookup_failed, openai_platform_credits)}  "
             f"{credit_line if pv.paid_credits_active else _format_extra_active(extra)}"
         ]
         if prepaid_balance_line:
             lines.append(f"  {prepaid_balance_line}")
+        if openai_platform_grants_line:
+            lines.append(f"  {openai_platform_grants_line}")
         lines.append(_active_windows_line(windows))
         lines.extend(_burn_lines(pv, now, tz))
         return Text("\n".join(lines))
@@ -133,13 +126,15 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
             reset_credit_expiry_lookup_failed,
             stale_age,
             tz,
+            openai_platform_credits=openai_platform_credits,
         )
     ]
     if credit_line:
         lines.append(f"  {credit_line}")
     if prepaid_balance_line:
         lines.append(f"  {prepaid_balance_line}")
-    lines.extend(f"  {line}" for line in openai_platform_lines)
+    if openai_platform_grants_line:
+        lines.append(f"  {openai_platform_grants_line}")
     lines.extend(f"  {line}" for line in anthropic_lines)
     lines.extend(_burn_lines(pv, now, tz))
     parts = [Text(line) for line in lines]
@@ -160,13 +155,25 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
         not windows
         and extra_line is None
         and prepaid_balance_line is None
-        and not openai_platform_lines
+        and openai_platform_credits is None
         and not anthropic_lines
     ):
         # Gate on "nothing substantive was reported", not on line count — the
         # burn schedule adds lines without saying anything about quota.
         parts.append(Text("  no data"))
     return Text("\n").join(parts)
+
+
+def _format_openai_platform_grants(credits: OpenAIPlatformCredits | None, tz: tzinfo | None) -> str | None:
+    if credits is None or not credits.grants:
+        return None
+    grants = []
+    for grant in credits.grants:
+        expiry = grant.expires_at.astimezone(tz).strftime("%Y-%m-%d %H:%M %Z") if grant.expires_at else "unknown"
+        status = " · scheduled" if grant.is_scheduled else " · held" if grant.is_held_for_prepaid_transition else ""
+        remaining = grant.granted_usd - grant.used_usd
+        grants.append(f"${remaining:,.2f} expires {expiry}{status}")
+    return f"API credit grants: {'; '.join(grants)}"
 
 
 def _effective_prepaid_balance(pv: ProviderView, now: datetime) -> tuple[PrepaidBalance | None, str | None]:
@@ -227,8 +234,18 @@ def _header(
     reset_credit_expiry_lookup_failed: bool,
     stale_age: str | None,
     tz: tzinfo | None,
+    openai_platform_credits: OpenAIPlatformCredits | None = None,
 ) -> str:
-    parts = [_provider_label(provider, reset_credits, reset_credit_expiries, tz, reset_credit_expiry_lookup_failed)]
+    parts = [
+        _provider_label(
+            provider,
+            reset_credits,
+            reset_credit_expiries,
+            tz,
+            reset_credit_expiry_lookup_failed,
+            openai_platform_credits,
+        )
+    ]
     if error is None:
         if stale_age is not None:
             parts.append(f"(stale {stale_age})")
@@ -247,9 +264,12 @@ def _provider_label(
     reset_credit_expiries: list[datetime],
     tz: tzinfo | None,
     reset_credit_expiry_lookup_failed: bool,
+    openai_platform_credits: OpenAIPlatformCredits | None = None,
 ) -> str:
     if provider == "openai_platform":
         provider = "OpenAI API"
+        if openai_platform_credits is not None:
+            provider += f" · ${openai_platform_credits.total_available_usd:,.2f} API credit"
     if provider == "anthropic_platform":
         provider = "Anthropic API"
     if reset_credits is None:
