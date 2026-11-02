@@ -66,14 +66,17 @@ func exitWith(code int) error {
 	return outcome(code)
 }
 
-// apiError is the error envelope's body. Absent values are null, not omitted.
+// apiError is the error envelope's body. Common absent fields are null; lifecycle details appear
+// only when the resume backend supplies them.
 type apiError struct {
-	Code              string  `json:"code"`
-	Message           string  `json:"message"`
-	Source            string  `json:"source"`
-	HTTPStatus        *int    `json:"http_status"`
-	Reason            *string `json:"reason"`
-	RetryAfterSeconds *int    `json:"retry_after_seconds"`
+	Code              string          `json:"code"`
+	Message           string          `json:"message"`
+	Source            string          `json:"source"`
+	HTTPStatus        *int            `json:"http_status"`
+	Reason            *string         `json:"reason"`
+	RetryAfterSeconds *int            `json:"retry_after_seconds"`
+	ResumeEligibility json.RawMessage `json:"resume_eligibility,omitempty"`
+	WakeAssessment    json.RawMessage `json:"wake_assessment,omitempty"`
 }
 
 type envelope struct {

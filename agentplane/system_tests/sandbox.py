@@ -98,22 +98,24 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
             preset: str | None = None,
             bootstrap: str = "",
             inbox_tags: Sequence[str] = (),
+            idle_suspend_after_seconds: int | None = None,
         ) -> SandboxView:
             if template is None:
                 template = POD_TEMPLATE
             with phase_tracer.start_as_current_span(
                 "system_test.sandbox.create", attributes={"sandbox.name": name, "sandbox.template": template}
             ):
-                view = await client.create_sandbox(
-                    NewSandbox(
-                        name=name,
-                        template=template,
-                        preset=preset,
-                        policy_sets=policies or [],
-                        inbox_tags=list(inbox_tags),
-                        bootstrap=bootstrap,
-                    )
+                request = NewSandbox(
+                    name=name,
+                    template=template,
+                    preset=preset,
+                    policy_sets=policies or [],
+                    inbox_tags=list(inbox_tags),
+                    bootstrap=bootstrap,
                 )
+                if idle_suspend_after_seconds is not None:
+                    request.idle_suspend_after_seconds = idle_suspend_after_seconds
+                view = await client.create_sandbox(request)
             # Register before readiness so failed boots are released too.
             owned.append((view.name, view.uid))
             return await wait_until_running(client, view.name, expected_uid=view.uid)

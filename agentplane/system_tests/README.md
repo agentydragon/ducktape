@@ -265,6 +265,14 @@ It does not delete an existing Sandbox. This completed-turn scenario does not co
 command checkpoint or interrupted setup; deterministic coverage for those boundaries lives in
 `//agentplane/env/e2e:test_restart` and `//agentplane/env/e2e:test_attach`.
 
+`test_pod` also runs one focused explicit-resume acceptance. It waits for a single Pod Sandbox to
+be suspended by the controller's idle timer, resumes it through the authenticated `agentplane`
+CLI as its exact execution ServiceAccount, and observes the same Sandbox UID with a new Ready Pod
+UID before sending a new shell command. The prior failed turn remains byte-for-byte retained and
+its command ID is admitted only once; the new command has a distinct ID and succeeds. The scenario
+sets `resumePolicy.allowOwnServiceAccount` only on its own test Sandbox and writes the observed
+identities and command IDs to `test.outputs/explicit-resume-idle-pod.json`.
+
 ## Agent messaging
 
 The `messaging` scenario has one agent message another, each in its own Sandbox, on each harness. The

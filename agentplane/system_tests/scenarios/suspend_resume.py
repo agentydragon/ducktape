@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import subprocess
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
@@ -13,11 +14,12 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.testing.client import Client
 from agentplane.app.testing.models import SandboxView
+from agentplane.crd_group import GROUP
 from agentplane.env.runtime.harnesshost.harness import Harness
 from agentplane.native.codex.testing import responses_sse
-from agentplane.proto import event_log_pb2, session_pb2
+from agentplane.proto import event_log_pb2, event_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.sandbox_resource import OperatingMode
+from agentplane.sandbox_resource import OperatingMode, SuspendedBy
 from agentplane.system_tests.agent import (
     TURN_SECONDS,
     WORKING_DIRECTORY,
@@ -26,12 +28,14 @@ from agentplane.system_tests.agent import (
     environment_runtime_startup_retries,
 )
 from agentplane.system_tests.cluster import Cluster
+from agentplane.system_tests.dispatcher_transport import TOKEN_AUDIENCE, forward
 from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.tracing import tracer
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Text
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
@@ -101,6 +105,217 @@ async def _wait_until_suspended_without_pod(client: Client, name: str) -> None:
             view = await client.sandbox(name)
             assert view.operating_mode is OperatingMode.SUSPENDED, f"{name} is still {view.operating_mode}"
             assert view.pod is None, f"{name} still has its old Pod: {view.pod}"
+
+
+async def _wait_until_idle_suspended_without_pod(client: Client, name: str) -> SandboxView:
+    """Wait for the controller's idle suspension, distinguishing it from an operator stop."""
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(POD_TRANSITION_SECONDS),
+        wait=wait_fixed(1),
+        retry=retry_if_exception_type(AssertionError),
+        reraise=True,
+    ):
+        with attempt:
+            view = await client.sandbox(name)
+            assert view.operating_mode is OperatingMode.SUSPENDED, f"{name} is still {view.operating_mode}"
+            assert view.suspended_by is SuspendedBy.IDLE, f"{name} stopped for {view.suspended_by}, not idleness"
+            assert view.pod is None, f"{name} still has its old Pod: {view.pod}"
+            return view
+    raise AssertionError("unreachable")
+
+
+async def _run_cli(environment: dict[str, str], *arguments: str) -> dict[str, object]:
+    binary = get_required_path(own_repo_rlocation("agentplane/cli/agentplane_/agentplane"))
+    process = await asyncio.create_subprocess_exec(
+        str(binary),
+        "--json",
+        *arguments,
+        env=environment,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        async with asyncio.timeout(45):
+            stdout, stderr = await process.communicate()
+    except BaseException:
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+        raise
+    if process.returncode != 0:
+        raise AssertionError(f"agentplane {' '.join(arguments[:2])} failed: {stderr.decode().strip()}")
+    try:
+        result = json.loads(stdout)
+    except json.JSONDecodeError as error:
+        raise AssertionError(f"agentplane {' '.join(arguments[:2])} returned invalid JSON: {stdout!r}") from error
+    assert isinstance(result, dict), f"agentplane {' '.join(arguments[:2])} returned {type(result).__name__}"
+    return result
+
+
+async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
+    cluster: Cluster,
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    sandbox: Sandboxes,
+    scripted: ScriptedUpstream,
+) -> None:
+    """An authenticated ordinary-account RPC resumes an idle Pod before a fresh command is sent."""
+    view = await sandbox(
+        f"systest-explicit-resume-{uuid4().hex[:8]}", template=POD_TEMPLATE, idle_suspend_after_seconds=60
+    )
+    assert view.pod is not None
+    old_pod = view.pod
+    assert view.service_account.namespace == view.namespace
+
+    # The app API intentionally does not expose lifecycle policy edits. Set the opt-in only on this
+    # test-owned Sandbox, fencing the JSON Patch by the immutable Sandbox UID.
+    await cluster.kubectl(
+        "patch",
+        f"sandboxes.{GROUP}",
+        view.name,
+        "--type=json",
+        "-p",
+        json.dumps(
+            [
+                {"op": "test", "path": "/metadata/uid", "value": str(view.uid)},
+                {"op": "add", "path": "/spec/resumePolicy", "value": {"allowOwnServiceAccount": True}},
+            ]
+        ),
+    )
+
+    harness = session_pb2.HARNESS_CODEX
+    model_name = (await client.models()).harnesses[Harness.CODEX][0]
+    agent = await Agent.open(
+        client,
+        dispatcher,
+        sandbox=view.name,
+        sandbox_uid=view.uid,
+        harness=harness,
+        model=model_name,
+        cwd=WORKING_DIRECTORY,
+    )
+    model = scripted.model(old_pod.name, harness)
+    failed_prompt = "Reply with exactly MODEL_HTTP_ERROR."
+    failed_task = asyncio.create_task(agent.run(failed_prompt))
+    for _ in range(3):
+        request = await model.request()
+        assert request.user_texts[-1] == failed_prompt
+        await model.http_error(request)
+    try:
+        await failed_task
+    except AssertionError as error:
+        if "TURN_STATUS_FAILED" not in str(error):
+            raise AssertionError(f"unexpected failure for the original command: {error}") from error
+    else:
+        raise AssertionError("the scripted upstream errors did not fail the original command")
+
+    failed_history = await _history(client, agent.thread_id, completed_turns=1)
+    (failed_entry,) = [entry for entry in failed_history if entry.event.HasField("command_admitted")]
+    failed_command_id = failed_entry.event.command_admitted.command.command_id
+    (failed_turn_entry,) = [
+        entry
+        for entry in failed_history
+        if entry.event.HasField("turn_completed") and entry.event.turn_completed.status == event_pb2.TURN_STATUS_FAILED
+    ]
+
+    async with asyncio.timeout(POD_TRANSITION_SECONDS + 120):
+        suspended = await _wait_until_idle_suspended_without_pod(client, view.name)
+    assert suspended.uid == view.uid
+
+    service_account = json.loads(
+        await cluster.kubectl("get", "serviceaccounts", view.service_account.name, "-o", "json")
+    )
+    account_meta = service_account["metadata"]
+    assert account_meta["namespace"] == view.service_account.namespace
+    account_uid = account_meta["uid"]
+    token = await cluster.kubectl(
+        "create", "token", view.service_account.name, f"--audience={TOKEN_AUDIENCE}", "--duration=600s"
+    )
+
+    async with forward(cluster) as target:
+        environment = os.environ.copy()
+        environment["AGENTPLANE_SESSIONS_URL"] = f"http://{target}"
+        environment["AGENTPLANE_SESSIONS_CREDENTIAL"] = token
+        descriptor = await _run_cli(environment, "environments", "get", view.namespace, view.name, str(view.uid))
+        eligibility = descriptor["resume_eligibility"]
+        assert isinstance(eligibility, dict), descriptor
+        assert eligibility["state"] == "RESUME_ELIGIBILITY_STATE_AVAILABLE", descriptor
+        assert descriptor["execution_account"] == {
+            "namespace": view.service_account.namespace,
+            "name": view.service_account.name,
+            "uid": account_uid,
+        }, descriptor
+        resume_token = descriptor["resume_token"]
+        assert isinstance(resume_token, str)
+        assert resume_token
+
+        response = await _run_cli(
+            environment,
+            "environments",
+            "resume",
+            view.namespace,
+            view.name,
+            str(view.uid),
+            "--resume-token",
+            resume_token,
+        )
+    assert response["outcome"] == "RESUME_OUTCOME_REQUESTED", response
+    resumed_target = response["target"]
+    assert isinstance(resumed_target, dict), response
+    assert resumed_target["uid"] == str(view.uid), response
+
+    resumed = await wait_until_running(client, view.name, expected_uid=view.uid)
+    assert resumed.pod is not None
+    assert resumed.pod.uid != old_pod.uid
+    assert resumed.operating_mode is OperatingMode.RUNNING
+
+    resumed_model = scripted.model(resumed.pod.name, harness)
+    fresh_turn = await agent.run_shell(resumed_model, "printf 'EXPLICIT_RESUME_EXEC_OK\\n'")
+    assert fresh_turn.input_confirmed
+    assert fresh_turn.resumed
+    assert any("EXPLICIT_RESUME_EXEC_OK" in output for output in fresh_turn.tool_outputs), fresh_turn.transcript
+
+    resumed_history = await _history(client, agent.thread_id, completed_turns=2)
+    _assert_prefix(failed_history, resumed_history)
+    admitted = [
+        entry.event.command_admitted.command.command_id
+        for entry in resumed_history
+        if entry.event.HasField("command_admitted")
+    ]
+    assert len(admitted) == 2, f"expected one failed command and one fresh command, got {admitted}"
+    assert admitted[0] == failed_command_id
+    fresh_turn_command_id = admitted[1]
+    assert fresh_turn_command_id != failed_command_id
+    (retained_failed_turn,) = [
+        entry
+        for entry in resumed_history
+        if entry.event.HasField("turn_completed") and entry.event.turn_completed.status == event_pb2.TURN_STATUS_FAILED
+    ]
+    assert retained_failed_turn.SerializeToString() == failed_turn_entry.SerializeToString()
+
+    (undeclared_outputs_dir() / "explicit-resume-idle-pod.json").write_text(
+        json.dumps(
+            {
+                "sandbox": {"namespace": view.namespace, "name": view.name, "uid": str(view.uid)},
+                "execution_account": {
+                    "namespace": view.service_account.namespace,
+                    "name": view.service_account.name,
+                    "uid": account_uid,
+                },
+                "old_pod_uid": old_pod.uid,
+                "new_pod_uid": resumed.pod.uid,
+                "resume_outcome": response["outcome"],
+                "failed_command_id": failed_command_id,
+                "failed_turn_id": failed_turn_entry.event.turn_completed.turn_id,
+                "fresh_command_id": fresh_turn_command_id,
+                "fresh_exec_output": [
+                    output for output in fresh_turn.tool_outputs if "EXPLICIT_RESUME_EXEC_OK" in output
+                ],
+            },
+            indent=2,
+        )
+        + "\n"
+    )
 
 
 @dataclass
