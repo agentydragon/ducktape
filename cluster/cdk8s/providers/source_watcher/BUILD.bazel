@@ -5,7 +5,7 @@ load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 
 cdk8s_import(
     name = "artifactgenerator",
-    crd = "//cluster/k8s/flux/flux-system:source_watcher_crd_bundle",
+    crd = "//cluster/k8s/flux/flux-system:gotk-components.yaml",
     crd_name = "artifactgenerators.source.extensions.fluxcd.io",
     crd_version = "v1beta1",
     module_name = "source_watcher_crds",
