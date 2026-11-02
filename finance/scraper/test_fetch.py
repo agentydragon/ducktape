@@ -9,9 +9,10 @@ import pygit2
 import pytest
 import pytest_bazel
 
+from finance.evidence.manifest import EVIDENCE_META_FILENAME, EvidenceManifest
 from finance.evidence.markets import MarketEntry, Platform
 from finance.evidence.sources import EVIDENCE_SOURCES, EvidenceKind, EvidenceSource
-from finance.scraper.fetch import EVIDENCE_META_FILENAME, EvidenceManifest, commit_and_push, run_scrape, write_sources
+from finance.scraper.fetch import commit_and_push, run_scrape, write_sources
 from finance.scraper.http_fetch import HttpGet, _ca_file
 from finance.scraper.market_mirror import KALSHI_API, MANIFOLD_API
 

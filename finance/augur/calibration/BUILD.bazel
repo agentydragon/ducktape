@@ -254,9 +254,11 @@ py_library(
         ":platform",
         ":quote",
         "//finance/evidence:kalshi",
+        "//finance/evidence:manifest",
         "//finance/evidence:manifold",
         "//finance/evidence:markets",
         "//finance/evidence:polymarket",
+        "@pypi//pydantic",
     ],
 )
 
@@ -275,6 +277,7 @@ py_test(
         ":quote",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/evidence:manifest",
         "//finance/evidence:markets",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

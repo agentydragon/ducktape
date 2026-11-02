@@ -23,9 +23,9 @@ py_library(
     deps = [
         ":http_fetch",
         ":market_mirror",
+        "//finance/evidence:manifest",
         "//finance/evidence:markets",
         "//finance/evidence:sources",
-        "@pypi//pydantic",
         "@pypi//pygit2",
     ],
 )
@@ -84,6 +84,7 @@ py_test(
         ":http_fetch",
         ":market_mirror",
         "//:conftest",
+        "//finance/evidence:manifest",
         "//finance/evidence:markets",
         "//finance/evidence:sources",
         "@pypi//httpx",

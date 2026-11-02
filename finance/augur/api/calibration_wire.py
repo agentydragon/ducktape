@@ -8,7 +8,7 @@ on the wire (the frontend camelizes), exported to the frontend Zod schema via
 
 from __future__ import annotations
 
-from pydantic import Field, PositiveInt
+from pydantic import Field, NonNegativeInt, PositiveInt
 
 from finance.augur.api.schemas import ApiModel
 from finance.augur.calibration.calibration import CalibrationResult, MarkFan
@@ -70,6 +70,14 @@ class CalibrationRunRequest(ApiModel):
     horizon_months: PositiveInt = Field(default=120, le=MAX_HORIZON_MONTHS)
     rollouts: PositiveInt = Field(default=2000, description="Number of rollout paths (one seed each).")
     seed: int = Field(default=1701, ge=0, description="First rollout seed; seeds run [seed, seed + rollouts).")
+    market_evidence_max_age_seconds: NonNegativeInt | None = Field(
+        default=None,
+        description=(
+            "Optional maximum age of every catalog market's last successful scraper fetch. "
+            "Unset means no age requirement; unknown timestamps fail when a limit is set. "
+            "This is fetch liveness metadata, not a source observation time."
+        ),
+    )
 
 
 class CalibrationRunResponse(ApiModel):
