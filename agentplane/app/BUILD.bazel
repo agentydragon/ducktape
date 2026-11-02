@@ -13,6 +13,17 @@ package(default_visibility = [
     "//agentplane/system_tests:__subpackages__",
 ])
 
+# Both browser suites load this image family, so either can seed the shared snapshot.
+# Frontend images change independently and use the normal digest-checked loader.
+_BROWSER_IMAGE_EXEC_PROPERTIES = {
+    "test.runner-recycling-key": "thread-browser-images-v1-" + "-".join([
+        POSTGRES_18_DIGEST,
+        ELECTRIC_1_8_1_DIGEST,
+        RYUK_DIGEST,
+        NGINX_UNPRIVILEGED_DIGEST,
+    ]),
+}
+
 proto_library(
     name = "app_service_proto",
     srcs = ["app_service.proto"],
@@ -336,16 +347,7 @@ py_test(
     name = "test_thread_browser",
     size = "medium",
     srcs = ["test_thread_browser.py"],
-    exec_properties = {
-        # Keep snapshots seeded by this suite; infrastructure repins select a new baseline.
-        # Frontend images change independently and use the normal digest-checked loader.
-        "test.runner-recycling-key": "thread-browser-images-v1-" + "-".join([
-            POSTGRES_18_DIGEST,
-            ELECTRIC_1_8_1_DIGEST,
-            RYUK_DIGEST,
-            NGINX_UNPRIVILEGED_DIGEST,
-        ]),
-    },
+    exec_properties = _BROWSER_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     shard_count = 16,
     tags = ["visual"],
@@ -457,6 +459,7 @@ py_test(
     name = "test_thread_window_browser",
     size = "medium",
     srcs = ["test_thread_window_browser.py"],
+    exec_properties = _BROWSER_IMAGE_EXEC_PROPERTIES,
     main = "test_thread_window_browser.py",
     requires_docker = True,
     deps = [
