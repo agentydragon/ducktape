@@ -1,9 +1,12 @@
 # Explicit environment resume and message-wake authority
 
-Draft for operator review, updated 2026-11-02. Implementation is not selected by this document.
-The DAG owns `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN` and the blocked `EXEC_SUSPENDED_RESUME` outcome.
+Approved for implementation by the operator, 2026-11-02. Work is dispatched in
+[draft PR #13546](https://github.com/agentydragon/ducktape/pull/13546); implementation and checks
+are in progress. This approval does not authorize merge or deployment.
+The [DAG](task_dag.md#environment_lifecycle_backend--own-resume-policy-and-guarded-state-changes)
+owns implementation status and the `EXEC_SUSPENDED_RESUME` acceptance outcome.
 
-## Recommendation to review
+## Selected policy
 
 1. Allow the exact execution ServiceAccount to request resume under an explicit target policy.
    Use the object-shaped opt-in `resumePolicy: { allowOwnServiceAccount: true }`. The boolean
@@ -18,11 +21,10 @@ The DAG owns `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN` and the blocked `EXEC_SUSP
    typed wake assessment through its receipt and watches, including whether the sender lacks resume
    authority. Queuing succeeds even when automatic wake cannot proceed.
 
-These are review decisions. Alternatives include broker-only resume, a separate message-wake grant
-independent of explicit-resume permission, resume without a target opt-in, and allowing agents to
-override requested stops. This revision recommends shared resume authorization; the earlier draft
-allowed same-account message wake independently of the explicit-resume opt-in. The operator's
-object-shape direction does not by itself select these remaining policy choices.
+The operator selected this shared resume authorization and the implementation sequence below.
+Broker-only resume, independent message-wake authority, ordinary resume without a target opt-in,
+and agent overrides of requested stops are not selected. The earlier draft's independent
+same-account message-wake grant is superseded.
 
 ### Target policy shape
 
@@ -35,10 +37,9 @@ resumePolicy:
 
 "Own ServiceAccount" means the environment's exact live execution account, including namespace,
 name and UID. An absent policy, an empty object, or `allowOwnServiceAccount: false` leaves this
-ordinary-account resume permission disabled. Under the revised recommendation, the permission is
+ordinary-account resume permission disabled. The permission is
 checked for both explicit and automatic resume. `wakeOnSend` controls whether queued delivery
-requests it automatically. Neither field authorizes editing policy. Selecting the caller,
-message-wake and manual-stop rules remains a separate review outcome.
+requests it automatically. Neither field authorizes editing policy.
 
 ## Current implementation and ownership
 
@@ -62,7 +63,7 @@ message-wake and manual-stop rules remains a separate review outcome.
   Neither the [Session Dispatcher proto](../runner_gateway/dispatcher/session_dispatcher.proto) nor
   the [Environment Runtime proto](../env/runtime/control/environment_runtime.proto) currently has
   public suspend/resume lifecycle RPCs. Runtime `Quiesce` is one teardown step, not an environment
-  suspend API. `EnvironmentLifecycle` below is proposed.
+  suspend API. `EnvironmentLifecycle` below is the selected addition.
 - The Gateway already has a [direct Runtime proxy](../runner_gateway/gateway/proxy.go), including
   `SubmitInput`, that bypasses the Dispatcher queue and performs no automatic wake. Its caller policy
   is separate from Dispatcher admission. This is not a selectable queue-free mode on today's
@@ -71,7 +72,7 @@ message-wake and manual-stop rules remains a separate review outcome.
 
 Make lifecycle authorization and the guarded desired-state change one backend responsibility,
 initially a logical `EnvironmentLifecycle` service in the existing Gateway binary. Extract the
-shared mutation/policy machinery for Dispatcher wake and the operator suspend/resume paths to use. This
+shared mutation/policy machinery for Dispatcher wake and the operator resume path to use. This
 does not choose a new Deployment or the later Session/Environment dispatch grouping.
 
 ## Layering: admission, optional wake, lifecycle and execution
@@ -100,14 +101,14 @@ Dispatcher/Gateway/Actions actor privileges do not become the sender's fallback 
 All target references include namespace, name and Sandbox UID. Normal account comparison includes
 namespace, name and live SA UID; a same-name replacement is a different account.
 
-| Caller / trigger                                   | Explicit resume                                                  | Wake caused by input                                                           |
-| -------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Exact execution SA, direct workload                | `resumePolicy.allowOwnServiceAccount=true`; idle suspension only | Independent send admission, the same resume permission, and `wakeOnSend`       |
-| External MCP caller with the same verified account | Same rule through delegated authorization                        | Same effective-caller rule; Actions' identity adds no permission               |
-| Different ordinary SA                              | Denied; broader lifecycle grants are later work                  | Existing send grants still apply; no new wake grant follows from sending       |
-| Configured privileged broker                       | Its explicitly reviewed lifecycle authority                      | Its own resume authority plus `wakeOnSend` and the selected manual-stop policy |
-| Operator through its authenticated operator API    | May resume a requested stop                                      | Its existing send/broker contract remains explicit                             |
-| Scheduler or other automation                      | Uses its verified account and this same matrix                   | No wake authority is inferred from being a scheduler                           |
+| Caller / trigger                                   | Explicit resume                                                  | Wake caused by input                                                                        |
+| -------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Exact execution SA, direct workload                | `resumePolicy.allowOwnServiceAccount=true`; idle suspension only | Independent send admission, the same resume permission, and `wakeOnSend`                    |
+| External MCP caller with the same verified account | Same rule through delegated authorization                        | Same effective-caller rule; Actions' identity adds no permission                            |
+| Different ordinary SA                              | Denied; broader lifecycle grants are later work                  | Existing send grants still apply; no new wake grant follows from sending                    |
+| Existing configured wake broker                    | Existing `wake_callers` grants no new explicit-resume scope      | Retain that restricted automatic-wake grant, plus `wakeOnSend`; requested stops stay sticky |
+| Operator through its authenticated operator API    | May resume a requested stop                                      | Its existing send/broker contract remains explicit                                          |
+| Scheduler or other automation                      | Uses its verified account and this same matrix                   | No wake authority is inferred from being a scheduler                                        |
 
 Use the existing [delegated authorization](../docs/delegated_authorization.md) machinery for
 Action-backed calls. Actor trust, effective caller, target eligibility and trigger policy remain
@@ -115,11 +116,17 @@ separate. Add the lifecycle method to a delegator's explicit method scope; ordin
 actor admission must never become the effective caller's permission. A caller cannot edit its own
 `resumePolicy`, `wakeOnSend`, execution account or wake budget through the resume tool.
 
-## Proposed API and tools
+The existing `wake_callers` list remains a restricted broker grant for automatic wake; this change
+does not widen it into explicit resume. The shared backend checks it against the original effective
+caller, rather than the Actions actor or an enqueue-time boolean. The new ordinary-agent path uses
+the same `resumePolicy` authority for explicit and automatic resume. Neither path can automatically
+override an operator-requested stop.
+
+## Selected API and tools
 
 Resume needs an environment, not a Session. Support Pod and VM targets that implement it; other
 environment kinds may truthfully return an unsupported capability. The initial public names below
-are proposed, not existing callable operations.
+are implementation contracts; they are not deployed callable operations yet.
 
 | Surface                                                           | Request                                                      | Response / role                                                                                                                                     |
 | ----------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -128,10 +135,13 @@ are proposed, not existing callable operations.
 | `agentplane environments resume`                                  | Same target/token contract                                   | Direct gRPC client with the same authorization; return acceptance separately from readiness                                                         |
 | `EnvironmentLifecycle.SuspendEnvironment`                         | Exact target; suspend retry/precondition contract for review | Proposed operator-authorized companion; no agent suspend permission follows from resume permission                                                  |
 
-The operator's suspend/resume facade becomes a client of the lifecycle owner; backend-required
+The operator's resume facade becomes a client of the lifecycle owner; backend-required
 state changes cannot call the app. Explicit resume is the selected first implementation. A public
 suspend RPC can follow when its authority and retry contract are reviewed; it is not a prerequisite
-for resume, and this draft does not invent a generic agent suspend grant.
+for resume. No generic agent suspend grant is selected. The existing app authenticates the human
+before making its direct, Pod-bound backend call; only its separately configured operator identity
+may override a requested stop. Dispatcher/Notifications caller admission grants no such override,
+and delegated agent calls always retain the agent's own authority.
 
 The resume token is a precondition binding the target UID and observed wake generation, not a
 capability or an execution-incarnation fence. Discovery supplies it; agents copy it rather than
@@ -188,7 +198,7 @@ outcomes. An MCP caller can use this Action-backed observer without its own envi
 
 Extend the existing receipt with shared protobuf-defined delivery-blocker and wake-observation
 records. Keep `DeliveryState` for where the command is; do not replace it with a wake result or
-require agents to parse English errors. The initial proposed wake states distinguish not evaluated,
+require agents to parse English errors. The selected wake states distinguish not evaluated,
 not needed, automatic wake disabled, denied, rate limited, requested, failed and outcome unknown.
 Denial reasons distinguish sender authority from a manual stop or unsupported resume capability.
 Use generated enum names, an observation timestamp and target generation where observed, a bounded
@@ -200,16 +210,16 @@ For example, the following is a **proposed** receipt fragment, not today's schem
 ```json
 {
   "state": "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-  "delivery_blocker": { "kind": "DELIVERY_BLOCKER_ENVIRONMENT_SUSPENDED" },
+  "delivery_blocker": { "kind": "DELIVERY_BLOCKER_KIND_ENVIRONMENT_SUSPENDED" },
   "wake": {
     "state": "WAKE_STATE_DENIED",
-    "reason": "WAKE_DENIAL_CALLER_NOT_AUTHORIZED",
+    "reason": "WAKE_REASON_CALLER_NOT_AUTHORIZED",
     "observed_at": "2026-11-02T03:00:00Z"
   }
 }
 ```
 
-An initial enqueue reply may precede wake assessment. The proposed wake field then says not evaluated;
+An initial enqueue reply may precede wake assessment. The wake field then says not evaluated;
 `GetDispatch`/`WatchDispatches` and `sessions__observe_input` expose the later assessment even when
 the command remains queued. Store and publish changes to these facts transactionally, including
 updates where the delivery state does not change. The current watch's state/reason change filter
@@ -287,13 +297,26 @@ the additions described above. An operator-requested stop remains a structured b
 Session that needs no environment to receive input bypasses automatic wake and can accept the input
 while its execution environment stays suspended.
 
-## Implementation and acceptance after review
+## Implementation sequence and dispatch
 
-Implement the shared lifecycle policy/mutation owner, then its authenticated RPC, Discovery
-projection, typed queued wake observations and CLI/Action surfaces. Update the operator path and
-Dispatcher wake deliberately; their current allowlist/manual-stop semantics change only with the
-reviewed matrix. Use new Goose
-migrations if moving existing budget records requires a schema change, preserving retained state.
+**Dispatched by the operator, 2026-11-02; coordinator status 03:04 UTC.** All three workers contribute
+to #13546, which stays draft while implementation and checks proceed. The policy decision is
+complete. The implementation contract is shared protobuf types, with no Discovery dependency in
+the common observation messages.
+
+| Step | Outcome                                                                                                                                   | Owner / dependency                                                                                               |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 1    | Shared lifecycle policy and guarded desired-state mutation, exact caller/target checks, object policy, generation token and shared budget | `resume_lifecycle_core`, in flight                                                                               |
+| 2    | Authenticated resume RPC, Discovery eligibility/token/readiness, CLI and existing operator resume client                                  | Core + `resume_agent_surfaces`; uses step 1                                                                      |
+| 3    | Typed queued delivery-blocker/wake persistence, reads, watches and agent observation                                                      | `resume_queue_observability`, in flight against the shared type contract; does not wait for the complete backend |
+| 4    | Dispatcher automatic wake invokes the same backend with retained effective caller                                                         | Receipt worker; uses steps 1 and 3                                                                               |
+| 5    | Resume Action/MCP adapter, exact `basic` approval, destination configuration and progressive guidance                                     | Surfaces worker; uses step 2; adapters proceed once its contract is fixed                                        |
+| 6    | Integrated suspended-environment recovery and queued-wake acceptance; review configuration activation                                     | Coordinator; uses steps 2, 4 and 5 and existing focused/system checks                                            |
+
+Steps 2 and 3 can proceed independently after their common contracts are fixed. Use new Goose
+migrations for stored schema changes, preserving retained state. No new binary, lifecycle database
+or command queue is required. Operator suspend, fresh environment provisioning, template ownership,
+broader access grants and Session/Environment dispatch regrouping remain separate work.
 
 Focused coverage must include same-account and delegated success, foreign/recreated accounts,
 target replacement, operator stop racing resume, concurrent tokens, budget exhaustion, lost replies,
@@ -304,6 +327,7 @@ before wake, and receipt updates without delivery-state changes. Direct transpor
 be reported as known non-admission. Existing no-replay and process-domain fences remain binding;
 broad disruption exercises are still deferred.
 
-Review outcome needed: select shared versus independent resume/message-wake authority, target
-opt-in and sticky-stop rules, and review the receipt contract above. Record any rejected alternative
-before implementation; this draft authorizes no rollout or queue-free API redesign.
+Focused regression tests and existing system checks are authorized. Broad sampler disruption
+exercises and a real-model usability exercise are not gates for this work. Merge and deployment
+remain separate operator actions. The public suspend companion's authority/retry contract and any
+queue-free API redesign still require their own review.
