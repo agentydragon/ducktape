@@ -27,8 +27,3 @@ def test_outputs(request: pytest.FixtureRequest) -> BoundTestOutputs:
             request.node.path, request.node.nodeid, repo_root=Path(__file__).resolve().parents[2]
         ),
     )
-
-
-@pytest.fixture
-def case_id(test_outputs: BoundTestOutputs) -> str:
-    return test_outputs.case_id

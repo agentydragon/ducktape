@@ -12,7 +12,14 @@ import pytest_bazel
 from playwright.async_api import BrowserContext, Page, Playwright, expect
 
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
-from util.testing.frontend_visual.capture import HarnessConfig, InlinePage, VisualHarness, VisualPage, playwright_trace
+from util.testing.frontend_visual.capture import (
+    HarnessConfig,
+    InlinePage,
+    VisualHarness,
+    VisualPage,
+    open_visual_page,
+    playwright_trace,
+)
 from util.testing.frontend_visual.viewports import Viewport
 from util.testing.output_records import output_key
 from util.testing.output_writer import BoundTestOutputs
@@ -57,8 +64,27 @@ async def test_visual_page_preserves_existing_failure(page: Page, tmp_path: Path
     assert any("browser crash" in note for note in getattr(caught.value, "__notes__", []))
 
 
+async def test_open_visual_page_monitors_navigation_and_closes_page(page: Page, tmp_path: Path) -> None:
+    outputs = BoundTestOutputs(tmp_path, "example::test")
+    captured_page: Page | None = None
+
+    async def navigate_to_crash() -> None:
+        nonlocal captured_page
+        async with open_visual_page(page.context, outputs, title="Example") as view:
+            captured_page = view.page
+            async with view.page.expect_event("pageerror"):
+                await view.page.goto("data:text/html,<script>throw new Error('load crash')</script>")
+
+    with pytest.raises(AssertionError, match="load crash"):
+        await navigate_to_crash()
+    assert captured_page is not None
+    assert captured_page.is_closed()
+
+
 @pytest.fixture
-def harness(playwright: Playwright, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case_id: str) -> VisualHarness:
+def harness(
+    playwright: Playwright, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, test_outputs: BoundTestOutputs
+) -> VisualHarness:
     monkeypatch.setenv("VISUAL_TRACE", "0")
     bundle = tmp_path / "harness.js"
     bundle.write_text(
@@ -71,7 +97,7 @@ def harness(playwright: Playwright, tmp_path: Path, monkeypatch: pytest.MonkeyPa
     return VisualHarness(
         playwright,
         HarnessConfig(harness_path=bundle, title="API test", expected_font_family=None),
-        BoundTestOutputs(tmp_path / "out", case_id),
+        BoundTestOutputs(tmp_path / "out", test_outputs.case_id),
     )
 
 
@@ -87,8 +113,13 @@ async def test_test_owns_interaction_and_capture(harness: VisualHarness) -> None
     assert _record(harness.output_dir, role="screenshot", checkpoint=None)["label"] == "Opened panel"
 
 
+async def test_harness_passes_explicit_query_to_the_document(harness: VisualHarness) -> None:
+    async with harness.open(query={"page": "scene & detail"}) as view:
+        assert await view.page.evaluate("new URLSearchParams(location.search).get('page')") == "scene & detail"
+
+
 async def test_page_outputs_publish_additional_role_under_capture_case(harness: VisualHarness) -> None:
-    async with harness.open("plain") as view:
+    async with harness.open() as view:
         assert view.outputs.output_dir == view.output_dir
         assert view.outputs.case_id == view.case_id
         extra = view.outputs.publish(
@@ -110,7 +141,7 @@ async def test_page_outputs_publish_additional_role_under_capture_case(harness: 
 
 
 async def test_multiple_checkpoints_have_distinct_outputs(harness: VisualHarness) -> None:
-    async with harness.open("plain") as view:
+    async with harness.open() as view:
         first = await view.capture(target=view.page.locator("#shot"))
         await view.page.get_by_role("button", name="Open").click()
         second = await view.capture("opened", target=view.page.locator("#shot"))
@@ -121,38 +152,38 @@ async def test_multiple_checkpoints_have_distinct_outputs(harness: VisualHarness
 
 
 async def test_trace_default_opt_out_selection_and_failure_retention(
-    harness: VisualHarness, monkeypatch: pytest.MonkeyPatch, case_id: str
+    harness: VisualHarness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("VISUAL_TRACE", raising=False)
     monkeypatch.delenv("VISUAL_TRACE_CAPTURE_NAME", raising=False)
-    async with harness.open("plain", trace_checkpoint="default"):
+    async with harness.open(trace_checkpoint="default"):
         pass
     assert zipfile.is_zipfile(_payload(harness.output_dir, role="trace", checkpoint="default"))
 
     monkeypatch.setenv("VISUAL_TRACE", "0")
-    async with harness.open("plain", trace_checkpoint="disabled"):
+    async with harness.open(trace_checkpoint="disabled"):
         pass
     assert not any(r.get("checkpoint") == "disabled" for r in _records(harness.output_dir))
 
     monkeypatch.setenv("VISUAL_TRACE", "1")
     monkeypatch.setenv("VISUAL_TRACE_CAPTURE_NAME", "another/case.py::test_other")
-    async with harness.open("plain", trace_checkpoint="unmatched"):
+    async with harness.open(trace_checkpoint="unmatched"):
         pass
     assert not any(r.get("checkpoint") == "unmatched" for r in _records(harness.output_dir))
 
-    monkeypatch.setenv("VISUAL_TRACE_CAPTURE_NAME", case_id)
-    async with harness.open("plain", trace_checkpoint="selected") as view:
+    monkeypatch.setenv("VISUAL_TRACE_CAPTURE_NAME", harness.case_id)
+    async with harness.open(trace_checkpoint="selected") as view:
         await view.page.get_by_role("button", name="Open").click()
     assert zipfile.is_zipfile(_payload(harness.output_dir, role="trace", checkpoint="selected"))
 
     with pytest.raises(RuntimeError, match="trace this failure"):
-        async with harness.open("plain", trace_checkpoint="failing"):
+        async with harness.open(trace_checkpoint="failing"):
             raise RuntimeError("trace this failure")
     assert zipfile.is_zipfile(_payload(harness.output_dir, role="trace", checkpoint="failing"))
 
     monkeypatch.setenv("VISUAL_TRACE", "invalid")
     with pytest.raises(ValueError, match="VISUAL_TRACE must be 0 or 1"):
-        async with harness.open("plain"):
+        async with harness.open():
             pass
 
 
@@ -230,7 +261,10 @@ async def test_concurrent_traces_claim_identity_once(tmp_path: Path, monkeypatch
         async with playwright_trace(cast(BrowserContext, FakeContext(payload)), outputs, "shared"):
             pass
 
-    results = await asyncio.gather(write_trace(b"first trace"), write_trace(b"second trace"), return_exceptions=True)
+    async with asyncio.timeout(10):
+        results = await asyncio.gather(
+            write_trace(b"first trace"), write_trace(b"second trace"), return_exceptions=True
+        )
     failures = [result for result in results if isinstance(result, BaseException)]
     assert len(failures) == 1
     assert isinstance(failures[0], FileExistsError)
@@ -254,10 +288,8 @@ async def test_concurrent_traces_claim_identity_once(tmp_path: Path, monkeypatch
     }
 
 
-async def test_capture_diagnostics_cover_viewport_and_crop_without_page_text(
-    harness: VisualHarness, case_id: str
-) -> None:
-    async with harness.open("plain", viewport=Viewport(width=300, height=200, device_scale_factor=2)) as view:
+async def test_capture_diagnostics_cover_viewport_and_crop_without_page_text(harness: VisualHarness) -> None:
+    async with harness.open(viewport=Viewport(width=300, height=200, device_scale_factor=2)) as view:
         fixture = get_required_path(
             own_repo_rlocation("util/testing/frontend_visual/capture-diagnostics-fixture.js")
         ).read_text(encoding="utf-8")
@@ -266,7 +298,7 @@ async def test_capture_diagnostics_cover_viewport_and_crop_without_page_text(
         await view.capture("cropped", target=view.page.locator(".entry"), scale="css")
 
     viewport = json.loads(_payload(harness.output_dir, role="diagnostics", checkpoint="viewport").read_text())
-    assert viewport["case_id"] == case_id
+    assert viewport["case_id"] == harness.case_id
     assert viewport["checkpoint"] == "viewport"
     assert viewport["sample"] == "before_screenshot"
     assert viewport["scale"] == "css"
@@ -306,7 +338,7 @@ async def test_unnamed_capture_uses_case_identity(harness: VisualHarness) -> Non
 
 
 async def test_ambiguous_crop_fails_before_publication(harness: VisualHarness) -> None:
-    async with harness.open("plain") as view:
+    async with harness.open() as view:
         with pytest.raises(ValueError, match="exactly one"):
             await view.capture("ambiguous", target=view.page.locator("div"))
     assert not harness.output_dir.exists()
@@ -314,16 +346,28 @@ async def test_ambiguous_crop_fails_before_publication(harness: VisualHarness) -
 
 async def test_no_capture_can_hide_a_page_error(harness: VisualHarness) -> None:
     async def crash() -> None:
-        async with harness.open("plain") as view, view.page.expect_event("pageerror"):
+        async with harness.open() as view, view.page.expect_event("pageerror"):
             await view.page.add_script_tag(content="throw new Error('deliberate crash')")
 
     with pytest.raises(AssertionError, match="deliberate crash"):
         await crash()
 
 
+async def test_harness_preserves_existing_failure_and_attaches_browser_errors(harness: VisualHarness) -> None:
+    async def crash() -> None:
+        async with harness.open() as view:
+            async with view.page.expect_event("pageerror"):
+                await view.page.evaluate("() => setTimeout(() => { throw new Error('browser crash') }, 0)")
+            raise ValueError("original failure")
+
+    with pytest.raises(ValueError, match="original failure") as caught:
+        await crash()
+    assert any("browser crash" in note for note in getattr(caught.value, "__notes__", []))
+
+
 async def test_external_request_fails_before_publication(harness: VisualHarness) -> None:
     async def escape() -> None:
-        async with harness.open("plain") as view:
+        async with harness.open() as view:
             await view.page.evaluate("() => fetch('https://escaped.test/').catch(() => {})")
             await view.capture("escaped")
 
@@ -333,10 +377,10 @@ async def test_external_request_fails_before_publication(harness: VisualHarness)
 
 
 async def test_new_page_is_isolated_and_pixels_repeat(harness: VisualHarness) -> None:
-    async with harness.open("plain", viewport=Viewport(width=300, height=200)) as view:
+    async with harness.open(viewport=Viewport(width=300, height=200)) as view:
         first = await view.capture("first", target=view.page.locator("#shot"))
         await view.page.get_by_role("button", name="Open").click()
-    async with harness.open("plain", viewport=Viewport(width=300, height=200)) as view:
+    async with harness.open(viewport=Viewport(width=300, height=200)) as view:
         await expect(view.page.locator("#shot")).to_have_text("Closed")
         second = await view.capture("second", target=view.page.locator("#shot"))
     assert first.read_bytes() == second.read_bytes()
@@ -360,7 +404,7 @@ def inline_harness(harness: VisualHarness, tmp_path: Path) -> VisualHarness:
 
 async def test_inline_bootstrap_preserves_values_and_pins_animation(inline_harness: VisualHarness) -> None:
     value = "</script><p>Not markup</p>"
-    async with inline_harness.open("inline", window_globals={"__VALUE__": value}) as view:
+    async with inline_harness.open(window_globals={"__VALUE__": value}) as view:
         assert await view.page.evaluate("window.__VALUE__") == value
         await view.check(context="inline")
         assert await view.page.locator("#shot").evaluate(
@@ -387,7 +431,7 @@ async def test_inline_origin_and_mock_frame(inline_harness: VisualHarness, tmp_p
         ),
         inline_harness.outputs,
     )
-    async with harness.open("framed") as view:
+    async with harness.open() as view:
         await expect(view.page.frame_locator("iframe").locator("main")).to_have_text("Mock frame")
         assert await view.page.evaluate("localStorage.getItem('probe')") == "present"
         await view.capture("framed")
@@ -397,14 +441,14 @@ async def test_undeclared_named_font_fails_before_publication(harness: VisualHar
     harness = VisualHarness(
         harness.playwright, replace(harness.config, expected_font_family="Absent Font"), harness.outputs
     )
-    async with harness.open("plain") as view:
+    async with harness.open() as view:
         with pytest.raises(AssertionError, match=r"Absent Font font did not load.*undeclared"):
             await view.capture("missing-font")
     assert not harness.output_dir.exists()
 
 
 async def test_capture_modes_are_mutually_exclusive(harness: VisualHarness) -> None:
-    async with harness.open("plain") as view:
+    async with harness.open() as view:
         with pytest.raises(ValueError, match="not both"):
             await view.capture("invalid", target=view.page.locator("#shot"), full_page=True)
     assert not harness.output_dir.exists()

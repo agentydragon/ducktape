@@ -8,7 +8,7 @@ from typing import Literal
 
 import pytest
 import pytest_bazel
-from playwright.async_api import Locator, expect
+from playwright.async_api import Locator, Page, expect
 
 from agentplane.app.frontend.testing.app import IDLE_THREAD, AgentplaneFixture, Scene
 from agentplane.app.frontend.testing.history_interactions import frames, holding_still, read_at, tool_call_in, wheel
@@ -17,6 +17,49 @@ from util.testing.frontend_visual.viewports import DESKTOP, MOBILE, Viewport
 
 pytest_plugins = ("util.testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
+
+
+async def _select_command_line(page: Page, command: Locator, line_text: str) -> None:
+    line = command.locator(".cm-line").filter(has_text=line_text)
+    await expect(line).to_have_count(1)
+    await line.evaluate(
+        """line => {
+            const range = document.createRange();
+            range.selectNodeContents(line);
+            const selection = window.getSelection();
+            if (!selection) throw new Error("the document has no text selection");
+            selection.removeAllRanges();
+            selection.addRange(range);
+        }"""
+    )
+    assert await page.evaluate("() => window.getSelection()?.toString()") == line_text
+
+
+async def _first_character_left(block: Locator) -> float:
+    line = block.locator(".cm-line").first
+    await expect(line).to_be_visible()
+    return float(
+        await line.evaluate(
+            """line => {
+            const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+            let text = walker.nextNode();
+            while (text && !text.textContent) text = walker.nextNode();
+            if (!text) throw new Error('code block has no text to measure');
+            const range = document.createRange();
+            range.setStart(text, 0);
+            range.setEnd(text, 1);
+            return range.getBoundingClientRect().left;
+        }"""
+        )
+    )
+
+
+async def _summary_label_left(heading: Locator) -> float:
+    label = heading.locator(".ui-disclosure-summary-content")
+    await expect(label).to_be_visible()
+    bounds = await label.bounding_box()
+    assert bounds is not None
+    return bounds["x"]
 
 
 @pytest.mark.parametrize("color_scheme", ["light", "dark"], ids=["light", "dark"])
@@ -63,50 +106,10 @@ async def test_expanded_command_stays_collapsible(
     editor = await command.locator(".cm-editor").element_handle()
     assert editor is not None
 
-    async def select_command_line(line_text: str) -> None:
-        line = command.locator(".cm-line").filter(has_text=line_text)
-        await expect(line).to_have_count(1)
-        await line.evaluate(
-            """line => {
-                const range = document.createRange();
-                range.selectNodeContents(line);
-                const selection = window.getSelection();
-                if (!selection) throw new Error("the document has no text selection");
-                selection.removeAllRanges();
-                selection.addRange(range);
-            }"""
-        )
-        assert await page.evaluate("() => window.getSelection()?.toString()") == line_text
-
-    async def first_character_left(block: Locator) -> float:
-        line = block.locator(".cm-line").first
-        await expect(line).to_be_visible()
-        return float(
-            await line.evaluate(
-                """line => {
-                const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
-                let text = walker.nextNode();
-                while (text && !text.textContent) text = walker.nextNode();
-                if (!text) throw new Error('code block has no text to measure');
-                const range = document.createRange();
-                range.setStart(text, 0);
-                range.setEnd(text, 1);
-                return range.getBoundingClientRect().left;
-            }"""
-            )
-        )
-
-    async def summary_label_left(heading: Locator) -> float:
-        label = heading.locator(".ui-disclosure-summary-content")
-        await expect(label).to_be_visible()
-        bounds = await label.bounding_box()
-        assert bounds is not None
-        return bounds["x"]
-
     for repeat in range(2):
-        await select_command_line("echo command line 0")
-        command_text_before = await first_character_left(command)
-        output_text_before = await first_character_left(output)
+        await _select_command_line(page, command, "echo command line 0")
+        command_text_before = await _first_character_left(command)
+        output_text_before = await _first_character_left(output)
         await show_all.click()
         # Deliver layout/ResizeObserver callbacks: the old observer measured a detached node and
         # removed the collapse control after the first render of the expanded block.
@@ -115,17 +118,17 @@ async def test_expanded_command_stays_collapsible(
         await expect(command.locator(".ui-clamped-disclosure .ui-disclosure-heading button")).to_have_count(1)
         assert await editor.evaluate("node => node.isConnected"), "expanding remounted the CodeMirror editor"
         assert await page.evaluate("() => window.getSelection()?.toString()") == "echo command line 0"
-        command_text_after = await first_character_left(command)
-        output_text_after = await first_character_left(output)
+        command_text_after = await _first_character_left(command)
+        output_text_after = await _first_character_left(output)
         assert abs(command_text_after - command_text_before) <= 1, (command_text_before, command_text_after)
         assert abs(output_text_after - output_text_before) <= 1, (output_text_before, output_text_after)
 
         command_heading = command.locator(".ui-disclosure-heading").first
         output_heading = call.locator(".agentplane-output-disclosure .ui-disclosure-heading").first
         call_heading = call.locator(":scope > .ui-disclosure-item > .ui-disclosure-heading")
-        command_label_left = await summary_label_left(command_heading)
-        output_label_left = await summary_label_left(output_heading)
-        call_label_left = await summary_label_left(call_heading)
+        command_label_left = await _summary_label_left(command_heading)
+        output_label_left = await _summary_label_left(output_heading)
+        call_label_left = await _summary_label_left(call_heading)
         assert abs(command_text_after - command_label_left) <= 1, (command_text_after, command_label_left)
         assert abs(output_text_after - output_label_left) <= 1, (output_text_after, output_label_left)
         command_inset = command_text_after - call_label_left
@@ -133,7 +136,7 @@ async def test_expanded_command_stays_collapsible(
         assert abs(command_inset - output_inset) <= 1, (command_inset, output_inset)
         await read_at(page, command.locator(".cm-line").filter(has_text="echo command line 20"), 0.5)
         await expect(collapse).to_be_in_viewport()
-        await select_command_line("echo command line 20")
+        await _select_command_line(page, command, "echo command line 20")
         if repeat == 0:  # review outputs are unique per name
             await view.capture(
                 f"thread-command-expanded-{viewport_name}{color_suffix}",

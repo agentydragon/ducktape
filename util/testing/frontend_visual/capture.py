@@ -12,7 +12,7 @@ import shutil
 import sys
 import tempfile
 from collections.abc import AsyncIterator, Mapping
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import TracebackType
@@ -320,6 +320,24 @@ class VisualPage:
         )
 
 
+@asynccontextmanager
+async def open_visual_page(
+    context: BrowserContext, outputs: BoundTestOutputs, *, title: str, trace: bool = False
+) -> AsyncIterator[VisualPage]:
+    """Create a monitored page in an existing context, before any navigation.
+
+    The caller owns the browser context and can configure routes, cookies, and other
+    app-specific state on the yielded page. Tracing follows the shared output policy.
+    """
+    async with AsyncExitStack() as stack:
+        if trace:
+            await stack.enter_async_context(playwright_trace(context, outputs))
+        page = await context.new_page()
+        stack.push_async_callback(page.close)
+        with VisualPage(page, outputs=outputs, title=title) as view:
+            yield view
+
+
 class VisualHarness:
     def __init__(self, playwright: Playwright, config: HarnessConfig, outputs: BoundTestOutputs) -> None:
         self.playwright = playwright
@@ -337,7 +355,6 @@ class VisualHarness:
     @asynccontextmanager
     async def open(
         self,
-        name: str | None = None,
         *,
         viewport: Viewport | None = None,
         color_scheme: Literal["light", "dark"] = "light",
@@ -391,10 +408,9 @@ class VisualHarness:
             ) as view:
                 await fence.install(page)
                 if config.inline_page is None:
-                    parameters = query if query is not None else ({"page": name} if name is not None else {})
                     url = config.harness_url
-                    if parameters:
-                        url += f"?{urlencode(parameters)}"
+                    if query:
+                        url += f"?{urlencode(query)}"
                     await page.goto(url, wait_until="domcontentloaded")
                 else:
                     html = inline_page_html(
@@ -409,11 +425,5 @@ class VisualHarness:
 
                         await page.route(config.inline_page.url, fulfill)
                         await page.goto(config.inline_page.url, wait_until="load")
-                try:
-                    yield view
-                except Exception:
-                    # Prefer a recorded crash to a secondary timeout waiting for the crashed component.
-                    view.errors.assert_none(context=name or "visual page")
-                    raise
-                else:
-                    await view.check(context=name or "visual page")
+                yield view
+                await view.check(context=self.case_id)

@@ -26,38 +26,25 @@ fixture opens its menu and screenshots successfully.
 
 from __future__ import annotations
 
-import ast
 import json
-import logging
-import re
-import shlex
-import time
 import zipfile
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 import pytest_bazel
-from testcontainers.core.container import DockerContainer
 
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_view_fixture
 from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
-from util.testing.gnome import GnomeMenuCapture, GnomeSession, exec_output
+from util.testing.gnome.fake_daemon import fake_daemon
+from util.testing.gnome.session import GnomeMenuCapture, GnomeSession, gnome_session, string_reply, wait_until
 from util.testing.output_writer import BoundTestOutputs
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-
-logger = logging.getLogger(__name__)
-
 
 _GNOME_SHELL_TEST = OciImage("_main/gnome/test_image/gnome_shell_test.rloc", "gnome-shell-test:pinned")
 _EXTENSION_ZIP = "_main/aiquota/gnome/aiquota.zip"
 _EXTENSION_UUID = "aiquota@allegedly.works"
-
-# Xvfb dims must match boot.sh — the combined panel+menu crop extends to
-# the right edge, so the test driver needs to know it.
-
-# gnome-shell ExtensionState (see js/misc/extensionUtils.js).
 
 _TEST_DBUS_DEST = "works.allegedly.AiQuotaTest"
 _TEST_DBUS_PATH = "/works/allegedly/AiQuotaTest"
@@ -103,38 +90,17 @@ def fixture_json_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def session(
     gnome_shell_test_image: str, extension_dir: Path, fixture_json_dir: Path, tmp_path_factory: pytest.TempPathFactory
 ) -> Iterator[GnomeSession]:
-    """Long-lived container + gnome-shell shared across the whole matrix.
-
-    boot.sh starts Xvfb + a long-lived dbus session bus inside the
-    container; we then launch gnome-shell once with one of the fixtures
-    set as initial state (so the extension's test DBus interface is
-    exported), wait for it to reach ENABLED, and yield the session. Each parametrized test calls
-    Reload + screenshots, leaving the shell process alone.
-    """
-    out_dir = tmp_path_factory.mktemp("ai-quota-renders")
-    out_dir.chmod(0o777)  # gnome-shell writes the screenshot as a different uid
-
-    container = DockerContainer(gnome_shell_test_image)
-    container.with_volume_mapping(str(extension_dir), f"/usr/share/gnome-shell/extensions/{_EXTENSION_UUID}", "ro")
-    container.with_volume_mapping(str(fixture_json_dir), "/fixtures", "ro")
-    container.with_volume_mapping(str(get_required_path(_FAKE_DBUS_SERVICE)), "/fake-daemon.js", "ro")
-    container.with_volume_mapping(str(out_dir), "/out", "rw")
-
-    with container:
-        session = GnomeSession(
-            container.get_wrapped_container(),
-            screenshot_dir=out_dir,
-            extension=_EXTENSION_UUID,
-            destination=_TEST_DBUS_DEST,
-            object_path=_TEST_DBUS_PATH,
-        )
-        try:
-            session.boot()
-            session.start(environment={"AI_QUOTA_FIXTURE": f"/fixtures/{FIXTURE_NAMES[0]}.json"})
-            session.wait_for_paint()
-        except AssertionError, TimeoutError, RuntimeError:
-            session.save_log(undeclared_outputs_dir() / "startup.shell.log")
-            raise
+    with gnome_session(
+        gnome_shell_test_image,
+        extension_dir=extension_dir,
+        extension=_EXTENSION_UUID,
+        fixture_dir=fixture_json_dir,
+        fake_daemon_script=get_required_path(_FAKE_DBUS_SERVICE),
+        screenshot_dir=tmp_path_factory.mktemp("gnome-renders"),
+        destination=_TEST_DBUS_DEST,
+        object_path=_TEST_DBUS_PATH,
+        environment={"AI_QUOTA_FIXTURE": f"/fixtures/{FIXTURE_NAMES[0]}.json"},
+    ) as session:
         yield session
 
 
@@ -156,13 +122,13 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
         session.close_menu()
         session.reload(f"/fixtures/{fixture_name}.json")
         if fixture_name == "claude_prepaid_balance":
-            prepaid_text = _string_reply(session.call("GetPrepaidText", "claude"))
+            prepaid_text = string_reply(session.call("GetPrepaidText", "claude"))
             assert prepaid_text.startswith("Claude prepaid balance")
             assert prepaid_text.endswith("$123.45")
         elif fixture_name == "claude_prepaid_balance_unavailable":
-            assert _string_reply(session.call("GetPrepaidText", "claude")) == "Claude prepaid balance unavailable"
+            assert string_reply(session.call("GetPrepaidText", "claude")) == "Claude prepaid balance unavailable"
         elif fixture_name == "wire_fields":
-            rows = json.loads(_string_reply(session.call("GetWindowRows", "codex")))
+            rows = json.loads(string_reply(session.call("GetWindowRows", "codex")))
             assert len(rows) == 1
             assert rows[0].startswith("visible (5h):")
             assert "45m" in rows[0]
@@ -187,11 +153,11 @@ def test_render_disconnected_stream(
         session.call("SetStreamStatus", "disconnected", "Connection to quota API was lost")
         session.call("SetSyncState", "958", "1019", "1000")
         session.wait_for_paint()
-        stream_status = _string_reply(session.call("GetStreamStatus")).lower()
+        stream_status = string_reply(session.call("GetStreamStatus")).lower()
         assert "desktop sync attempt 42s ago" in stream_status
         assert "retry in 19s" in stream_status
         session.call("SetSyncState", "958", "1019", "1001")
-        stream_status = _string_reply(session.call("GetStreamStatus")).lower()
+        stream_status = string_reply(session.call("GetStreamStatus")).lower()
         assert "desktop sync attempt 43s ago" in stream_status
         assert "retry in 18s" in stream_status
         session.call("SetSyncState", "958", "1019", "1000")
@@ -226,101 +192,44 @@ def test_render_disconnected_without_snapshot(
         pytest.fail(f"stream disconnected without snapshot: {e}")
 
 
-def _string_reply(reply: bytes) -> str:
-    output = reply.decode().strip()
-    parsed = ast.literal_eval(output)
-    if not isinstance(parsed, tuple) or len(parsed) != 1 or not isinstance(parsed[0], str):
-        raise RuntimeError(f"Unexpected D-Bus string reply: {output!r}")
-    return parsed[0]
-
-
-def _fake_daemon_call(session: GnomeSession, method: str, *args: str) -> bytes:
-    result = session.exec(
-        f"gdbus call --session --timeout 10 --dest {shlex.quote(_FAKE_DBUS_DEST)} "
-        f"--object-path {shlex.quote(_FAKE_DBUS_PATH)} "
-        f"--method {shlex.quote(_FAKE_DBUS_DEST + '.' + method)} " + " ".join(shlex.quote(arg) for arg in args)
-    )
-    stdout, stderr = exec_output(result)
-    if result.exit_code != 0:
-        raise RuntimeError(f"fake daemon {method} failed: {(stdout + stderr).decode(errors='replace')}")
-    return stdout
-
-
-def _fake_daemon_counters(session: GnomeSession) -> tuple[int, int, int]:
-    output = _fake_daemon_call(session, "GetCounters")
-    match = re.search(rb"\(uint32 (\d+), uint32 (\d+), uint32 (\d+)\)", output)
-    if match is None:
-        raise RuntimeError(f"fake daemon returned invalid counters: {output!r}")
-    return int(match.group(1)), int(match.group(2)), int(match.group(3))
-
-
-def _wait_until(check: Callable[[], bool], description: str) -> None:
-    deadline = time.monotonic() + 15
-    while True:
-        if check():
-            return
-        if time.monotonic() >= deadline:
-            raise TimeoutError(description)
-        time.sleep(0.2)
-
-
 def _view_json(revision: int) -> str:
     return json.dumps({"fetched_at": f"2026-10-18T12:00:0{revision}Z", "providers": []})
 
 
 def test_view_signal_wins_getter_and_owner_restart_invalidates_reply(session: GnomeSession) -> None:
-    session.exec("gjs -m /fake-daemon.js >/tmp/aiquota-fake-daemon.log 2>&1 &")
-    try:
-        _wait_until(
-            lambda: (
-                session.exec(
-                    f"gdbus introspect --session --dest {shlex.quote(_FAKE_DBUS_DEST)} "
-                    f"--object-path {shlex.quote(_FAKE_DBUS_PATH)}"
-                ).exit_code
-                == 0
-            ),
-            "fake AIQuota D-Bus service did not start",
-        )
+    with fake_daemon(session, destination=_FAKE_DBUS_DEST, object_path=_FAKE_DBUS_PATH) as daemon:
         session.call("ConnectDaemon")
-        _wait_until(lambda: _fake_daemon_counters(session)[0] == 1, "extension did not request initial view")
+        wait_until(lambda: daemon.counters()[0] == 1, "extension did not request initial view")
 
         signal_view = _view_json(2)
-        _fake_daemon_call(session, "SetView", signal_view)
-        _wait_until(
-            lambda: _string_reply(session.call("GetCurrentView")) == signal_view, "extension did not adopt ViewChanged"
+        daemon.call("SetView", signal_view)
+        wait_until(
+            lambda: string_reply(session.call("GetCurrentView")) == signal_view, "extension did not adopt ViewChanged"
         )
-        _fake_daemon_call(session, "ReleaseGetView")
-        assert _string_reply(session.call("GetCurrentView")) == signal_view
-        assert _fake_daemon_counters(session) == (1, 1, 0)
+        daemon.call("ReleaseGetView")
+        assert string_reply(session.call("GetCurrentView")) == signal_view
+        assert daemon.counters() == (1, 1, 0)
 
-        _fake_daemon_call(session, "SetViewSilently", _view_json(3))
+        daemon.call("SetViewSilently", _view_json(3))
         session.call("FetchView")
-        _wait_until(lambda: _fake_daemon_counters(session)[0] == 2, "extension did not start second getter")
-        _fake_daemon_call(session, "SetViewSilently", _view_json(4))
-        _fake_daemon_call(session, "ReleaseName")
-        _wait_until(
-            lambda: _string_reply(session.call("GetDaemonOwner")) == "", "extension did not observe daemon shutdown"
+        wait_until(lambda: daemon.counters()[0] == 2, "extension did not start second getter")
+        daemon.call("SetViewSilently", _view_json(4))
+        daemon.call("ReleaseName")
+        wait_until(
+            lambda: string_reply(session.call("GetDaemonOwner")) == "", "extension did not observe daemon shutdown"
         )
-        _fake_daemon_call(session, "ReleaseGetView")
-        assert _string_reply(session.call("GetCurrentView")) == signal_view
+        daemon.call("ReleaseGetView")
+        assert string_reply(session.call("GetCurrentView")) == signal_view
 
-        _fake_daemon_call(session, "AcquireName")
-        _wait_until(lambda: _fake_daemon_counters(session)[0] == 3, "extension did not rehydrate after restart")
-        _fake_daemon_call(session, "ReleaseGetView")
+        daemon.call("AcquireName")
+        wait_until(lambda: daemon.counters()[0] == 3, "extension did not rehydrate after restart")
+        daemon.call("ReleaseGetView")
         restarted_view = _view_json(4)
-        _wait_until(
-            lambda: _string_reply(session.call("GetCurrentView")) == restarted_view,
+        wait_until(
+            lambda: string_reply(session.call("GetCurrentView")) == restarted_view,
             "extension did not adopt restarted daemon's current view",
         )
-        assert _fake_daemon_counters(session) == (3, 3, 0)
-    finally:
-        session.exec(
-            f"if gdbus introspect --session --dest {shlex.quote(_FAKE_DBUS_DEST)} "
-            f"--object-path {shlex.quote(_FAKE_DBUS_PATH)} >/dev/null 2>&1; then "
-            f"gdbus call --session --dest {shlex.quote(_FAKE_DBUS_DEST)} "
-            f"--object-path {shlex.quote(_FAKE_DBUS_PATH)} "
-            f"--method {shlex.quote(_FAKE_DBUS_DEST + '.Stop')} >/dev/null; fi"
-        )
+        assert daemon.counters() == (3, 3, 0)
 
 
 if __name__ == "__main__":

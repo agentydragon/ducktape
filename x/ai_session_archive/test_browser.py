@@ -8,7 +8,8 @@ import base64
 import hashlib
 import json
 import time
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Iterator, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -47,13 +48,28 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 _PARSER_VERSION = "jsonl-v1"
 
 
-async def test_authenticated_browser_reads_archived_transcript(
-    playwright_driver: Playwright, tmp_path: Path, test_outputs: BoundTestOutputs
-) -> None:
+@dataclass(frozen=True)
+class Archive:
+    engine: Engine
+    session_id: UUID
+    child_id: UUID
+    older_id: UUID
+    latest_id: UUID
+
+
+@pytest.fixture
+def archive(tmp_path: Path) -> Iterator[Archive]:
     engine = create_engine(f"sqlite:///{tmp_path / 'archive.sqlite'}")
-    Base.metadata.create_all(engine)
-    session_id, child_id, older_id, latest_id = _seed_archive(engine)
-    settings = WebSettings(
+    try:
+        Base.metadata.create_all(engine)
+        yield Archive(engine, *_seed_archive(engine))
+    finally:
+        engine.dispose()
+
+
+@pytest.fixture
+def archive_settings() -> WebSettings:
+    return WebSettings(
         database_url="sqlite://",
         public_base_url="http://127.0.0.1",
         oidc_issuer="https://identity.example.invalid",
@@ -62,157 +78,164 @@ async def test_authenticated_browser_reads_archived_transcript(
         oidc_session_secret="archive-test-session-secret",
         oidc_allowed_subject="archive-test-owner",
     )
-    app = create_app(engine=engine, settings=settings)
 
-    async with serve_app(app) as origin:
-        async with httpx.AsyncClient() as unauthenticated:
-            response = await unauthenticated.get(f"{origin}/api/machines")
-        assert response.status_code == 401
 
-        session_cookie = _owner_session_cookie(settings)
-        async with deterministic_browser_context(
-            playwright_driver, viewport={"width": 1440, "height": 1000}, frozen_now_ms=1_767_264_000_000
-        ) as context:
-            await context.add_init_script(disable_animations_script())
-            await context.add_cookies(
-                [
-                    {
-                        "name": "ai-session-archive",
-                        "value": session_cookie,
-                        "url": origin,
-                        "httpOnly": True,
-                        "sameSite": "Lax",
-                    }
-                ]
-            )
-            page = await context.new_page()
-            browser_errors: list[str] = []
-            page.on("pageerror", lambda error: browser_errors.append(str(error)))
-            page.on("console", lambda message: browser_errors.append(message.text) if message.type == "error" else None)
-            api_responses: list[tuple[str, int]] = []
-            page.on(
-                "response",
-                lambda response: (
-                    api_responses.append((response.url, response.status)) if "/api/" in response.url else None
-                ),
-            )
-            with VisualPage(page, outputs=test_outputs, title="Authenticated workstation session archive") as visual:
-                await page.goto(origin, wait_until="domcontentloaded")
-                try:
-                    await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
-                except AssertionError:
-                    output_dir = undeclared_outputs_dir()
-                    (output_dir / "browser-startup-errors.json").write_text(
-                        json.dumps(
-                            {
-                                "url": page.url,
-                                "body": await page.locator("body").inner_text(),
-                                "errors": browser_errors,
-                            },
-                            indent=2,
-                        )
+@pytest.fixture
+async def archive_origin(archive: Archive, archive_settings: WebSettings) -> AsyncIterator[str]:
+    async with serve_app(create_app(engine=archive.engine, settings=archive_settings)) as origin:
+        yield origin
+
+
+async def test_authenticated_browser_reads_archived_transcript(
+    playwright_driver: Playwright,
+    archive: Archive,
+    archive_settings: WebSettings,
+    archive_origin: str,
+    test_outputs: BoundTestOutputs,
+) -> None:
+    async with httpx.AsyncClient() as unauthenticated:
+        response = await unauthenticated.get(f"{archive_origin}/api/machines")
+    assert response.status_code == 401
+
+    session_cookie = _owner_session_cookie(archive_settings)
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1440, "height": 1000}, frozen_now_ms=1_767_264_000_000
+    ) as context:
+        await context.add_init_script(disable_animations_script())
+        await context.add_cookies(
+            [
+                {
+                    "name": "ai-session-archive",
+                    "value": session_cookie,
+                    "url": archive_origin,
+                    "httpOnly": True,
+                    "sameSite": "Lax",
+                }
+            ]
+        )
+        page = await context.new_page()
+        browser_errors: list[str] = []
+        page.on("pageerror", lambda error: browser_errors.append(str(error)))
+        page.on("console", lambda message: browser_errors.append(message.text) if message.type == "error" else None)
+        api_responses: list[tuple[str, int]] = []
+        page.on(
+            "response",
+            lambda response: api_responses.append((response.url, response.status)) if "/api/" in response.url else None,
+        )
+        with VisualPage(page, outputs=test_outputs, title="Authenticated workstation session archive") as visual:
+            await page.goto(archive_origin, wait_until="domcontentloaded")
+            try:
+                await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
+            except AssertionError:
+                output_dir = undeclared_outputs_dir()
+                (output_dir / "browser-startup-errors.json").write_text(
+                    json.dumps(
+                        {"url": page.url, "body": await page.locator("body").inner_text(), "errors": browser_errors},
+                        indent=2,
                     )
-                    await page.screenshot(path=output_dir / "browser-startup.png")
-                    raise
-                await expect(page.get_by_text("Atlas", exact=True).first).to_be_visible()
-
-                transcript = page.locator('[aria-label="Session transcript"]')
-                session_list = page.locator('[aria-label="Session list"]')
-                await expect(page.get_by_role("checkbox", name="Main sessions", exact=True)).to_be_checked()
-                await expect(page.get_by_role("checkbox", name="Unknown", exact=True)).to_be_checked()
-                await expect(session_list.get_by_role("link", name="Review subagent notes")).to_have_count(0)
-                await expect(session_list.get_by_role("link", name="Guardian fixture")).to_have_count(0)
-                await page.get_by_role("checkbox", name="Guardian", exact=True).click()
-                await expect(page.get_by_role("checkbox", name="Guardian", exact=True)).to_be_checked()
-                await expect(session_list.get_by_role("link", name="Guardian fixture")).to_be_visible()
-                await page.get_by_role("checkbox", name="Subagents", exact=True).click()
-                await expect(page.get_by_role("checkbox", name="Subagents", exact=True)).to_be_checked()
-                await expect(session_list.get_by_role("link", name="Review subagent notes")).to_be_visible()
-                await expect(page.get_by_role("link", name="Review archived conversation")).to_be_visible()
-                await expect(transcript.get_by_role("heading", name="Review archived conversation")).to_be_visible()
-                await expect(transcript).to_contain_text("Latest transcript from the archived version.")
-                history = page.get_by_role("region", name="Conversation records")
-                await expect(history).to_have_attribute("data-layout-settled", "true")
-                assert await history.evaluate(
-                    "element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop) <= 1"
                 )
-                assert any("direction=backward" in url for url, _status in api_responses)
-                await history.hover()
-                async with page.expect_response(
-                    lambda response: f"/versions/{latest_id}/events?" in response.url and "cursor=" in response.url
-                ) as earlier_page:
-                    await page.mouse.wheel(0, -(await history.evaluate("element => element.scrollHeight")))
-                earlier_response = await earlier_page.value
-                assert earlier_response.ok
-                assert (await earlier_response.json())["data"][0]["ordinal"] == 0
-                await expect(history).to_have_attribute("data-layout-settled", "true")
+                await page.screenshot(path=output_dir / "browser-startup.png")
+                raise
+            await expect(page.get_by_text("Atlas", exact=True).first).to_be_visible()
 
-                version_menu = page.get_by_role("button", name="Conversation options")
-                await page.goto(f"{origin}/sessions/{session_id}?version={older_id}", wait_until="domcontentloaded")
-                await expect(transcript).to_contain_text("Earlier transcript capture.")
-                await version_menu.click()
-                older_capture = page.locator(f'[role="menuitemradio"][data-version-id="{older_id}"]')
-                await expect(older_capture).to_have_attribute("aria-checked", "true")
-                latest_capture = page.locator(f'[role="menuitemradio"][data-version-id="{latest_id}"]')
-                await latest_capture.click()
-                await expect(transcript).to_contain_text("Latest transcript from the archived version.")
-                assert page.url == f"{origin}/sessions/{session_id}"
-                await page.go_back()
-                await expect(transcript).to_contain_text("Earlier transcript capture.")
-                await page.go_forward()
-                await expect(transcript).to_contain_text("Latest transcript from the archived version.")
-                await page.reload(wait_until="domcontentloaded")
-                await expect(transcript).to_contain_text("Latest transcript from the archived version.")
-                await expect(transcript).to_contain_text("This JSONL line could not be parsed")
-                malformed_record = transcript.locator('[data-event-ordinal="104"]')
-                await malformed_record.hover()
-                await malformed_record.get_by_role("button", name="Raw JSONL record", exact=True).click()
-                await malformed_record.get_by_role(
-                    "region", name="Raw JSONL record", exact=True
-                ).scroll_into_view_if_needed()
-                await expect(malformed_record).to_contain_text('{"type":"assistant","message":')
+            transcript = page.locator('[aria-label="Session transcript"]')
+            session_list = page.locator('[aria-label="Session list"]')
+            await expect(page.get_by_role("checkbox", name="Main sessions", exact=True)).to_be_checked()
+            await expect(page.get_by_role("checkbox", name="Unknown", exact=True)).to_be_checked()
+            await expect(session_list.get_by_role("link", name="Review subagent notes")).to_have_count(0)
+            await expect(session_list.get_by_role("link", name="Guardian fixture")).to_have_count(0)
+            await page.get_by_role("checkbox", name="Guardian", exact=True).click()
+            await expect(page.get_by_role("checkbox", name="Guardian", exact=True)).to_be_checked()
+            await expect(session_list.get_by_role("link", name="Guardian fixture")).to_be_visible()
+            await page.get_by_role("checkbox", name="Subagents", exact=True).click()
+            await expect(page.get_by_role("checkbox", name="Subagents", exact=True)).to_be_checked()
+            await expect(session_list.get_by_role("link", name="Review subagent notes")).to_be_visible()
+            await expect(page.get_by_role("link", name="Review archived conversation")).to_be_visible()
+            await expect(transcript.get_by_role("heading", name="Review archived conversation")).to_be_visible()
+            await expect(transcript).to_contain_text("Latest transcript from the archived version.")
+            history = page.get_by_role("region", name="Conversation records")
+            await expect(history).to_have_attribute("data-layout-settled", "true")
+            assert await history.evaluate(
+                "element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop) <= 1"
+            )
+            assert any("direction=backward" in url for url, _status in api_responses)
+            await history.hover()
+            async with page.expect_response(
+                lambda response: f"/versions/{archive.latest_id}/events?" in response.url and "cursor=" in response.url
+            ) as earlier_page:
+                await page.mouse.wheel(0, -(await history.evaluate("element => element.scrollHeight")))
+            earlier_response = await earlier_page.value
+            assert earlier_response.ok
+            assert (await earlier_response.json())["data"][0]["ordinal"] == 0
+            await expect(history).to_have_attribute("data-layout-settled", "true")
 
-                related_toggle = page.locator(".session-browser-related-trigger")
-                await related_toggle.click()
-                related = page.get_by_role("region", name="Related sessions")
-                await expect(related).to_contain_text("Review subagent notes")
-                await related.get_by_role("link", name="Review subagent notes").click()
-                await expect(transcript.get_by_role("heading", name="Review subagent notes")).to_be_visible()
-                await expect(transcript).to_contain_text("Child answer loaded from archived records.")
-                await related_toggle.click()
-                await expect(related).to_contain_text("Parent inferred from Claude subagent path")
-                await expect(related).to_contain_text("Review archived conversation")
+            version_menu = page.get_by_role("button", name="Conversation options")
+            await page.goto(
+                f"{archive_origin}/sessions/{archive.session_id}?version={archive.older_id}",
+                wait_until="domcontentloaded",
+            )
+            await expect(transcript).to_contain_text("Earlier transcript capture.")
+            await version_menu.click()
+            older_capture = page.locator(f'[role="menuitemradio"][data-version-id="{archive.older_id}"]')
+            await expect(older_capture).to_have_attribute("aria-checked", "true")
+            latest_capture = page.locator(f'[role="menuitemradio"][data-version-id="{archive.latest_id}"]')
+            await latest_capture.click()
+            await expect(transcript).to_contain_text("Latest transcript from the archived version.")
+            assert page.url == f"{archive_origin}/sessions/{archive.session_id}"
+            await page.go_back()
+            await expect(transcript).to_contain_text("Earlier transcript capture.")
+            await page.go_forward()
+            await expect(transcript).to_contain_text("Latest transcript from the archived version.")
+            await page.reload(wait_until="domcontentloaded")
+            await expect(transcript).to_contain_text("Latest transcript from the archived version.")
+            await expect(transcript).to_contain_text("This JSONL line could not be parsed")
+            malformed_record = transcript.locator('[data-event-ordinal="104"]')
+            await malformed_record.hover()
+            await malformed_record.get_by_role("button", name="Raw JSONL record", exact=True).click()
+            await malformed_record.get_by_role(
+                "region", name="Raw JSONL record", exact=True
+            ).scroll_into_view_if_needed()
+            await expect(malformed_record).to_contain_text('{"type":"assistant","message":')
 
-                session_list = page.locator('[aria-label="Session list"]')
-                await session_list.get_by_role("link", name="Inspect conflicting Codex metadata").click()
-                await expect(transcript).to_contain_text("Conflicting native session IDs")
-                await expect(transcript).to_contain_text("Native session ID candidates: thread-child-a, thread-child-b")
-                await related_toggle.click()
-                await expect(related).to_contain_text("Conflicting Codex parent_thread_id values")
-                await expect(related).to_contain_text(
-                    "Conflicting native parent ID candidates: thread-parent-a, thread-parent-b"
-                )
-                await expect(related).to_contain_text("Parent session could not be resolved to a captured session.")
+            related_toggle = page.locator(".session-browser-related-trigger")
+            await related_toggle.click()
+            related = page.get_by_role("region", name="Related sessions")
+            await expect(related).to_contain_text("Review subagent notes")
+            await related.get_by_role("link", name="Review subagent notes").click()
+            await expect(transcript.get_by_role("heading", name="Review subagent notes")).to_be_visible()
+            await expect(transcript).to_contain_text("Child answer loaded from archived records.")
+            await related_toggle.click()
+            await expect(related).to_contain_text("Parent inferred from Claude subagent path")
+            await expect(related).to_contain_text("Review archived conversation")
 
-                await session_list.get_by_role("link", name="Review archived conversation", exact=False).click()
-                await expect(transcript).to_contain_text("Latest transcript from the archived version.")
-                malformed_record = transcript.locator('[data-event-ordinal="104"]')
-                await malformed_record.hover()
-                await malformed_record.get_by_role("button", name="Raw JSONL record", exact=True).click()
-                await malformed_record.get_by_role(
-                    "region", name="Raw JSONL record", exact=True
-                ).scroll_into_view_if_needed()
-                await expect(malformed_record).to_contain_text('{"type":"assistant","message":')
+            session_list = page.locator('[aria-label="Session list"]')
+            await session_list.get_by_role("link", name="Inspect conflicting Codex metadata").click()
+            await expect(transcript).to_contain_text("Conflicting native session IDs")
+            await expect(transcript).to_contain_text("Native session ID candidates: thread-child-a, thread-child-b")
+            await related_toggle.click()
+            await expect(related).to_contain_text("Conflicting Codex parent_thread_id values")
+            await expect(related).to_contain_text(
+                "Conflicting native parent ID candidates: thread-parent-a, thread-parent-b"
+            )
+            await expect(related).to_contain_text("Parent session could not be resolved to a captured session.")
 
-                assert api_responses
-                failed_responses = [(url, status) for url, status in api_responses if status != 200]
-                assert not failed_responses, f"API requests failed: {failed_responses!r}"
-                assert any(f"/api/sessions/{session_id}/versions" in url for url, _ in api_responses)
-                assert any(f"/api/sessions/{child_id}/versions" in url for url, _ in api_responses)
-                await page.mouse.move(0, 0)
-                await visual.capture(target=page.locator("#root"))
+            await session_list.get_by_role("link", name="Review archived conversation", exact=False).click()
+            await expect(transcript).to_contain_text("Latest transcript from the archived version.")
+            malformed_record = transcript.locator('[data-event-ordinal="104"]')
+            await malformed_record.hover()
+            await malformed_record.get_by_role("button", name="Raw JSONL record", exact=True).click()
+            await malformed_record.get_by_role(
+                "region", name="Raw JSONL record", exact=True
+            ).scroll_into_view_if_needed()
+            await expect(malformed_record).to_contain_text('{"type":"assistant","message":')
 
-    engine.dispose()
+            assert api_responses
+            failed_responses = [(url, status) for url, status in api_responses if status != 200]
+            assert not failed_responses, f"API requests failed: {failed_responses!r}"
+            assert any(f"/api/sessions/{archive.session_id}/versions" in url for url, _ in api_responses)
+            assert any(f"/api/sessions/{archive.child_id}/versions" in url for url, _ in api_responses)
+            await page.mouse.move(0, 0)
+            await visual.capture(target=page.locator("#root"))
 
 
 def _seed_archive(engine: Engine) -> tuple[UUID, UUID, UUID, UUID]:

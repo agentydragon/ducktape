@@ -223,19 +223,6 @@ async def assert_network_settled(page: Page, *, context: str, timeout_ms: int = 
         raise AssertionError(f"{context}: network violations:\n  " + "\n  ".join(violations))
 
 
-async def screenshot_element(page: Page, selector: str, *, context: str) -> bytes:
-    """Screenshot the element `selector` matches, failing by name when it matches none.
-
-    The element's box is rounded to the nearest pixel, not outward as Playwright's own element
-    screenshot does: a fractional height such as 1630.4 would otherwise publish one row taller.
-    An element taller than the viewport is captured whole.
-    """
-    locator = page.locator(selector)
-    if await locator.count() == 0:
-        raise LookupError(f"{context}: {selector=} matched no element")
-    return await screenshot_locator(page, locator, context=context)
-
-
 async def screenshot_locator(
     page: Page,
     target: Locator,

@@ -200,17 +200,6 @@ py_test(
 )
 
 py_library(
-    name = "gnome",
-    srcs = ["gnome.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":output_writer",
-        "@pypi//docker",
-        "@pypi//pillow",
-    ],
-)
-
-py_library(
     name = "sqlalchemy_engines",
     testonly = True,
     srcs = ["sqlalchemy_engines.py"],

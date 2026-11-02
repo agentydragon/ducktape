@@ -5,11 +5,12 @@ import json
 import subprocess
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import TypedDict, Unpack
 
 import pytest
 import pytest_bazel
 
+from devinfra.pr_visuals.artifacts import BuildBuddyArtifact, Runner
 from devinfra.pr_visuals.collection import (
     ResultKey,
     SourceSummary,
@@ -17,6 +18,8 @@ from devinfra.pr_visuals.collection import (
     collect_outputs,
     local_output_result,
 )
+from devinfra.pr_visuals.testing.outputs import Blob, result_artifact
+from util.testing.output_records import SCHEMA, OutputRecord
 
 
 def _artifact(
@@ -34,61 +37,61 @@ def _artifact(
     attempt_count: int = 1,
     total_run_count: int | None = None,
     overall_status: str = "PASSED",
-) -> dict[str, Any]:
-    return {
-        "id": {
-            "testResult": {
-                "label": target,
-                "configuration": {"id": configuration},
-                "run": run,
-                "shard": shard,
-                "attempt": attempt,
-            }
-        },
-        "file": {"name": name, "uri": uri},
-        "status": status,
-        "testSummary": {
-            "overallStatus": overall_status,
-            "runCount": run_count,
-            "shardCount": shard_count,
-            "attemptCount": attempt_count,
-            "totalRunCount": total_run_count if total_run_count is not None else run_count * shard_count,
-        },
-    }
+) -> BuildBuddyArtifact:
+    return result_artifact(
+        name,
+        uri,
+        result=ResultKey("invocation", target, configuration, run, shard, attempt),
+        summary=SourceSummary(
+            overall_status,
+            run_count,
+            shard_count,
+            attempt_count,
+            total_run_count if total_run_count is not None else run_count * shard_count,
+        ),
+        status=status,
+    )
 
 
 def _record(case: str, path: str, *, checkpoint: str | None = None, role: str = "screenshot") -> bytes:
-    return json.dumps(
-        {
-            "schema": "ducktape.test-output.v1",
-            "case_id": case,
-            "checkpoint": checkpoint,
-            "role": role,
-            "path": path,
-            "label": "Readable name",
-        }
-    ).encode()
+    return (
+        OutputRecord(schema_=SCHEMA, case_id=case, checkpoint=checkpoint, role=role, path=path, label="Readable name")
+        .model_dump_json(by_alias=True)
+        .encode()
+    )
+
+
+class ResultOptions(TypedDict, total=False):
+    target: str
+    configuration: str
+    run: int
+    shard: int
+    attempt: int
+    status: str | None
+    run_count: int
+    shard_count: int
+    attempt_count: int
+    total_run_count: int | None
+    overall_status: str
 
 
 def _pair(
-    case: str, tag: str, *, path: str | None = None, **identity: Any
-) -> tuple[list[dict[str, Any]], dict[str, bytes]]:
+    case: str, tag: str, *, path: str | None = None, **identity: Unpack[ResultOptions]
+) -> tuple[list[BuildBuddyArtifact], dict[str, bytes]]:
     path = path or f"files/{tag}.png"
     record_bytes = _record(case, path)
-    record_uri = (
-        f"bytestream://remote.buildbuddy.io/blobs/{hashlib.sha256(record_bytes).hexdigest()}/{len(record_bytes)}"
-    )
-    payload_uri = f"bytestream://remote.buildbuddy.io/blobs/{hashlib.sha256(('payload-' + tag).encode()).hexdigest()}/2"
+    record = Blob(record_bytes)
+    payload = Blob(f"payload-{tag}".encode())
     return (
         [
-            _artifact(f"test.outputs/test-outputs/records/{tag}.json", record_uri, **identity),
-            _artifact(f"test.outputs/test-outputs/{path}", payload_uri, **identity),
+            _artifact(f"test.outputs/test-outputs/records/{tag}.json", record.uri, **identity),
+            _artifact(f"test.outputs/test-outputs/{path}", payload.uri, **identity),
         ],
-        {record_uri: record_bytes},
+        {record.uri: record.contents, payload.uri: payload.contents},
     )
 
 
-def _run(artifacts: list[dict[str, Any]], blobs: dict[str, bytes], calls: list[list[str]]) -> Any:
+def _run(artifacts: list[BuildBuddyArtifact], blobs: dict[str, bytes], calls: list[list[str]]) -> Runner:
     def fake(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         words = [str(part) for part in command]
         calls.append(words)
@@ -97,7 +100,9 @@ def _run(artifacts: list[dict[str, Any]], blobs: dict[str, bytes], calls: list[l
             for item in manifest:
                 Path(item["destination"]).write_bytes(blobs[item["uri"]])
             return subprocess.CompletedProcess(command, 0, "", "")
-        return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
+        return subprocess.CompletedProcess(
+            command, 0, json.dumps([artifact.model_dump(by_alias=True) for artifact in artifacts]), ""
+        )
 
     return fake
 
@@ -116,14 +121,14 @@ def test_direct_protocol_collects_exact_result_and_one_record_download_wave(tmp_
     assert {item.digest for item in collected.selected} == {
         hashlib.sha256(f"payload-{tag}".encode()).hexdigest() for tag in ("a", "b")
     }
-    assert {item.size for item in collected.selected} == {2}
+    assert {item.size for item in collected.selected} == {len(b"payload-a")}
     assert len([call for call in calls if "blob" in call]) == 1
 
 
 def test_same_identity_across_shards_conflicts_even_with_same_payload_uri(tmp_path: Path) -> None:
     first, blobs_a = _pair("same", "a", shard=1, shard_count=2)
     second, blobs_b = _pair("same", "b", shard=2, shard_count=2)
-    second[1]["file"]["uri"] = first[1]["file"]["uri"]
+    second[1].file.uri = first[1].file.uri
     collected = collect_outputs(
         ["invocation"], "agentydragon/ducktape", tmp_path, run=_run(first + second, blobs_a | blobs_b, [])
     )
@@ -219,7 +224,11 @@ def test_unknown_terminal_status_keeps_outputs_but_does_not_select(tmp_path: Pat
 @pytest.mark.parametrize("path", ["../other.png", "/absolute.png", "files//a.png", "records/x.json"])
 def test_rejects_noncanonical_or_record_payload_paths(path: str, tmp_path: Path) -> None:
     artifacts, blobs = _pair("same", "a", path="files/a.png")
-    blobs[artifacts[0]["file"]["uri"]] = _record("same", path)
+    invalid = json.loads(blobs[artifacts[0].file.uri])
+    invalid["path"] = path
+    record = Blob(json.dumps(invalid).encode())
+    blobs[record.uri] = record.contents
+    artifacts[0].file.uri = record.uri
     collected = collect_outputs(["invocation"], "agentydragon/ducktape", tmp_path, run=_run(artifacts, blobs, []))
     assert not collected.complete
     assert not collected.observations
@@ -250,7 +259,9 @@ def test_failed_bulk_download_preserves_partial_records_without_selecting_them(t
             manifest = json.loads(Path(words[words.index("--manifest") + 1]).read_text())
             Path(manifest[0]["destination"]).write_bytes(blobs[manifest[0]["uri"]])
             return subprocess.CompletedProcess(command, 1, "", "partial transfer")
-        return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
+        return subprocess.CompletedProcess(
+            command, 0, json.dumps([artifact.model_dump(by_alias=True) for artifact in artifacts]), ""
+        )
 
     collected = collect_outputs(["invocation"], "agentydragon/ducktape", tmp_path, run=interrupted)
     assert len(collected.observations) == 1
@@ -263,7 +274,9 @@ def test_failed_bulk_download_preserves_partial_records_without_selecting_them(t
         words = [str(part) for part in command]
         if "blob" in words:
             return subprocess.CompletedProcess(command, 1, "", "no transfer")
-        return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
+        return subprocess.CompletedProcess(
+            command, 0, json.dumps([artifact.model_dump(by_alias=True) for artifact in artifacts]), ""
+        )
 
     repeated = collect_outputs(["invocation"], "agentydragon/ducktape", tmp_path, run=no_records)
     assert not repeated.observations

@@ -1,10 +1,12 @@
 """Headless GNOME session mechanics shared by extension render tests."""
 
+import ast
 import re
 import shlex
 import tempfile
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -12,8 +14,11 @@ from typing import cast
 
 from docker.models.containers import Container, ExecResult
 from PIL import Image
+from testcontainers.core.container import DockerContainer
 
+from util.bazel.runfiles import get_required_path
 from util.testing.output_writer import BoundTestOutputs
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 def exec_output(result: ExecResult) -> tuple[bytes, bytes]:
@@ -21,7 +26,7 @@ def exec_output(result: ExecResult) -> tuple[bytes, bytes]:
     return stdout or b"", stderr or b""
 
 
-def _wait(check: Callable[[], bool], *, timeout: float, description: str) -> None:
+def wait_until(check: Callable[[], bool], description: str, *, timeout: float = 15) -> None:
     deadline = time.monotonic() + timeout
     while True:
         if check():
@@ -56,7 +61,7 @@ class GnomeSession:
 
     def boot(self) -> None:
         self.container.exec_run(["/usr/local/bin/boot.sh"], detach=True)
-        _wait(
+        wait_until(
             lambda: self.container.exec_run(["test", "-f", "/tmp/boot.ready"]).exit_code == 0,
             timeout=30,
             description="container boot.sh never produced /tmp/boot.ready",
@@ -70,7 +75,7 @@ class GnomeSession:
             f"{('export ' + exports + '; ') if exports else ''}nohup gnome-shell --x11 >/tmp/shell.log 2>&1 &",
             detach=True,
         )
-        _wait(
+        wait_until(
             lambda: (
                 self.exec("gdbus introspect --session --dest org.gnome.Shell --object-path /org/gnome/Shell").exit_code
                 == 0
@@ -87,8 +92,8 @@ class GnomeSession:
             stdout, _ = exec_output(result)
             return result.exit_code == 0 and b"'state': <1.0>" in stdout
 
-        _wait(enabled, timeout=10, description=f"extension {self.extension} never reached ENABLED")
-        _wait(
+        wait_until(enabled, timeout=10, description=f"extension {self.extension} never reached ENABLED")
+        wait_until(
             lambda: (
                 self.exec(
                     f"gdbus introspect --session --dest {shlex.quote(self.destination)} --object-path {shlex.quote(self.object_path)}"
@@ -99,16 +104,19 @@ class GnomeSession:
             description=f"test D-Bus interface {self.destination} was not exported",
         )
 
-    def call(self, method: str, *args: str) -> bytes:
+    def dbus_call(self, destination: str, object_path: str, method: str, *args: str) -> bytes:
         result = self.exec(
-            f"gdbus call --session --timeout 10 --dest {shlex.quote(self.destination)} "
-            f"--object-path {shlex.quote(self.object_path)} --method {shlex.quote(self.destination + '.' + method)} "
+            f"gdbus call --session --timeout 10 --dest {shlex.quote(destination)} "
+            f"--object-path {shlex.quote(object_path)} --method {shlex.quote(destination + '.' + method)} "
             + " ".join(shlex.quote(arg) for arg in args)
         )
         stdout, stderr = exec_output(result)
         if result.exit_code != 0:
-            raise RuntimeError(f"{method} failed: {(stdout + stderr).decode(errors='replace')}")
+            raise RuntimeError(f"{destination}.{method} failed: {(stdout + stderr).decode(errors='replace')}")
         return stdout
+
+    def call(self, method: str, *args: str) -> bytes:
+        return self.dbus_call(self.destination, self.object_path, method, *args)
 
     def reload(self, fixture_path: str) -> None:
         self.call("Reload", fixture_path)
@@ -148,6 +156,62 @@ class GnomeSession:
 
     def save_log(self, path: Path) -> None:
         path.write_bytes(self.log())
+
+
+@contextmanager
+def gnome_session(
+    image: str,
+    *,
+    extension_dir: Path,
+    extension: str,
+    fixture_dir: Path,
+    fake_daemon_script: Path,
+    screenshot_dir: Path,
+    destination: str,
+    object_path: str,
+    environment: Mapping[str, str],
+) -> Iterator[GnomeSession]:
+    screenshot_dir.chmod(0o777)  # GNOME writes screenshots as a different uid.
+    container = DockerContainer(image)
+    container.with_volume_mapping(str(extension_dir), f"/usr/share/gnome-shell/extensions/{extension}", "ro")
+    container.with_volume_mapping(str(fixture_dir), "/fixtures", "ro")
+    container.with_volume_mapping(str(fake_daemon_script), "/fake-daemon.js", "ro")
+    container.with_volume_mapping(
+        str(get_required_path("_main/util/testing/gnome/fake-daemon.js")), "/gnome-fake-daemon.js", "ro"
+    )
+    container.with_volume_mapping(str(screenshot_dir), "/out", "rw")
+    with container:
+        session = GnomeSession(
+            container.get_wrapped_container(),
+            screenshot_dir=screenshot_dir,
+            extension=extension,
+            destination=destination,
+            object_path=object_path,
+        )
+        failure: BaseException | None = None
+        try:
+            session.boot()
+            session.start(environment=environment)
+            session.wait_for_paint()
+            yield session
+        except BaseException as error:
+            failure = error
+            raise
+        finally:
+            try:
+                session.save_log(undeclared_outputs_dir() / "session.shell.log")
+            except Exception as log_error:
+                if failure is None:
+                    raise
+                failure.add_note(f"GNOME session log capture failed: {log_error!r}")
+
+
+def string_reply(reply: bytes) -> str:
+    output = reply.decode().strip()
+    parsed = ast.literal_eval(output)
+    if not isinstance(parsed, tuple) or len(parsed) != 1 or not isinstance(parsed[0], str):
+        raise RuntimeError(f"Unexpected D-Bus string reply: {output!r}")
+    return parsed[0]
 
 
 def crop_panel_menu(full: Image.Image, geometry: tuple[int, int, int, int]) -> Image.Image:

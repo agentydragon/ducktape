@@ -15,9 +15,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 @pytest.mark.parametrize("width", [1440, 390], ids=["desktop", "mobile"])
 async def test_claude_paired_steps(visual: VisualHarness, width: int) -> None:
-    async with visual.open(
-        "claude-paired-steps", viewport=Viewport(width=width, height=1000), color_scheme="light"
-    ) as view:
+    async with visual.open(viewport=Viewport(width=width, height=1000), color_scheme="light") as view:
         page = view.page
         await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
         if width < 600:

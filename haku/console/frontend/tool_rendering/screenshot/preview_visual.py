@@ -42,7 +42,6 @@ async def test_preview(
 ) -> None:
     name = f"preview-{fixture.slug}-{variant}-{color_scheme}"
     async with visual.open(
-        name,
         viewport=Viewport(width=1200, height=900, device_scale_factor=2),
         color_scheme=color_scheme,
         window_globals={"__FIXTURE__": fixture.index, "__VARIANT__": variant},

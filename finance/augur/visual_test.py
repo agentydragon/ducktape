@@ -31,7 +31,7 @@ from finance.augur.dev_server import build_dev_app
 from finance.evidence.markets import Platform
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
-from util.testing.frontend_visual.capture import VisualPage
+from util.testing.frontend_visual.capture import VisualPage, open_visual_page
 from util.testing.frontend_visual.context import deterministic_browser_context
 from util.testing.frontend_visual.page_capture import wait_for_stable
 from util.testing.output_writer import BoundTestOutputs
@@ -416,18 +416,11 @@ def augur_server(augur_config: Config, hermetic_prices: dict[Platform, dict[str,
 
 
 @pytest.fixture
-async def page(playwright: Playwright) -> AsyncIterator[Page]:
-    async with deterministic_browser_context(
-        playwright, viewport=SCREENSHOT_VIEWPORT, frozen_now_ms=FROZEN_NOW_MS
-    ) as context:
-        page = await context.new_page()
-
-        yield page
-
-
-@pytest.fixture
-async def view(page: Page, test_outputs: BoundTestOutputs) -> AsyncIterator[VisualPage]:
-    with VisualPage(page, outputs=test_outputs, title="Augur pages") as view:
+async def view(playwright: Playwright, test_outputs: BoundTestOutputs) -> AsyncIterator[VisualPage]:
+    async with (
+        deterministic_browser_context(playwright, viewport=SCREENSHOT_VIEWPORT, frozen_now_ms=FROZEN_NOW_MS) as context,
+        open_visual_page(context, test_outputs, title="Augur pages") as view,
+    ):
         yield view
 
 

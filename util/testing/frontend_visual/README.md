@@ -40,7 +40,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 async def test_details(visual: VisualHarness) -> None:
-    async with visual.open("example") as view:
+    async with visual.open() as view:
         await view.page.get_by_role("button", name="Details").click()
         panel = view.page.get_by_role("region", name="Details")
         await expect(panel).to_be_visible()
@@ -61,7 +61,7 @@ setup APIs, configure the mocks and mount the component from Python before asser
 readiness. Do not add a name-to-recipe registry just to open a page.
 
 `visual.open()` accepts browser geometry (`util/testing/frontend_visual/viewports.py`), color scheme,
-query parameters and an optional frozen instant. Inline harnesses use `window_globals`
+explicit query parameters and an optional frozen instant. Inline harnesses use `window_globals`
 instead of a query. The macro's `page_url` gives an inline document an origin for
 storage; `served_documents` supplies mock iframe documents.
 
@@ -70,9 +70,15 @@ The shared pytest plugin also provides a per-test `view` yield fixture, with ord
 an unnamed harness and closes its isolated browser context after the test. App-specific
 fixtures can depend on it to prepare reusable state without hiding test interactions.
 
+For a real server or an otherwise app-owned browser context, use
+`async with open_visual_page(context, test_outputs, title="...") as view:`. It creates
+and closes the page, records load errors before navigation, and optionally enables the
+shared trace policy with `trace=True`. The caller owns the context, cookies, routes,
+and navigation.
+
 The root pytest configuration provides `test_outputs`, a generic fixture bound to the full
 repository-relative pytest node ID, including parameter IDs. It can publish any output role via
-`test_outputs.publish(...)`; `case_id` exposes the same ID for browser and native UI
+`test_outputs.publish(...)`; `test_outputs.case_id` exposes the same ID for browser and native UI
 helpers. The function-scoped `visual` fixture binds that ID to its `VisualHarness`, while
 the session-scoped Playwright driver remains shared. With `view`, `await view.capture()`
 writes the default screenshot (`checkpoint=None`) for that case. Use readable parameter IDs.

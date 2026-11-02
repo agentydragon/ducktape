@@ -32,6 +32,7 @@ js_library(
     name = "fake_daemon",
     testonly = True,
     srcs = ["fake-daemon.js"],
+    deps = ["//util/testing/gnome:fake_daemon_js"],
 )
 
 eslint_test(
@@ -56,11 +57,10 @@ py_test(
         "//finance/plaid/spend:conftest",
         "//util:oci",
         "//util/bazel:runfiles",
-        "//util/testing:gnome",
         "//util/testing:output_writer",
-        "//util/testing:undeclared_outputs",
+        "//util/testing/gnome:fake_daemon",
+        "//util/testing/gnome:session",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//testcontainers",
     ],
 )

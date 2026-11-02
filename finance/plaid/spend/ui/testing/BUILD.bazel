@@ -1,0 +1,16 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_testonly = True)
+
+py_library(
+    name = "visual_data",
+    srcs = ["visual_data.py"],
+    visibility = ["//finance/plaid/spend/ui:__pkg__"],
+    deps = [
+        "//finance/plaid/spend:allowance",
+        "//finance/plaid/spend:models",
+        "//finance/plaid/spend:portfolio_models",
+        "//finance/plaid/spend:reconciliation",
+        "//finance/plaid/spend:sustainability",
+    ],
+)
