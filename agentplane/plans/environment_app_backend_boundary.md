@@ -23,3 +23,7 @@ protobuf-backed service contracts for shared resource data and operations.
 
 Move or remove package-specific errors with their actual owners as callers migrate. Presentation
 derivations such as status labels remain local to the UI.
+
+Thread command recovery still stores a separate browser-local Sandbox destination shape. Migrate it
+to the canonical target handle without dropping unconfirmed user input or replaying an uncertain
+command; the retained destination must continue to fence the original Sandbox incarnation.
