@@ -19,7 +19,9 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
 /// checking gzip trailers and rejecting trailing garbage.
 pub fn read_json_gzip<T: DeserializeOwned>(path: &Path) -> Result<T> {
     let file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
-    serde_json::from_reader(MultiGzDecoder::new(BufReader::new(file)))
+    // serde_json's small reads need buffering after decompression as well as before it.
+    let decoder = MultiGzDecoder::new(BufReader::new(file));
+    serde_json::from_reader(BufReader::new(decoder))
         .with_context(|| format!("parsing gzip JSON report {}", path.display()))
 }
 
