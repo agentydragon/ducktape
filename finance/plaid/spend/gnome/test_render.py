@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from finance.plaid.spend.allowance import PaceAlert, PeriodId
+from finance.plaid.spend.allowance import PeriodId
 from finance.plaid.spend.models import SpendView
 from finance.plaid.spend.testing import dashboard
 from util.bazel.runfiles import get_required_path
@@ -64,32 +64,15 @@ def extension_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def allowance_scenarios() -> dict[str, SpendView]:
     dashboard_url = "https://spend.example.test/"
     ready = dashboard.spend_view()
-    allowance = ready.allowance
-    assert allowance is not None
-    # The one-cent boundary uses a $499.99 credit against $500.00 of active-cycle spend, with no carry.
-    assert allowance.prior_carry_minor_units == 0
-    exhausted = allowance.model_copy(
-        update={
-            "monthly_minor_units": 49999,
-            "daily_reference_minor_units": 1643,
-            "available_minor_units": -1,
-            "forecast": allowance.forecast.model_copy(
-                update={
-                    "projected_cycle_end_minor_units": -12501,
-                    "estimated_exhaustion_at": ready.generated_at,
-                    "alert_state": PaceAlert.EXCEEDED,
-                }
-            ),
-            "spending_signal": PaceAlert.EXCEEDED,
-        }
-    )
     return {
         "allowance_paced": ready.model_copy(update={"dashboard_url": dashboard_url}),
         "allowance_warning": dashboard.spend_view(estimate_period_id=PeriodId.ROLLING_30D).model_copy(
             update={"dashboard_url": dashboard_url}
         ),
         "allowance_warming": dashboard.spend_view(warmup=True).model_copy(update={"dashboard_url": dashboard_url}),
-        "allowance_exhausted": ready.model_copy(update={"allowance": exhausted, "dashboard_url": dashboard_url}),
+        "allowance_exhausted": dashboard.spend_view(monthly_minor_units=49999).model_copy(
+            update={"dashboard_url": dashboard_url}
+        ),
     }
 
 

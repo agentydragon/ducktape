@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from finance.plaid.spend.allowance import (
     AllOf,
-    AllowanceSpendPeriod,
-    AllowanceView,
+    AllowancePolicy,
     AmountExact,
     AmountSign,
     AnalysisCategory,
@@ -16,20 +17,18 @@ from finance.plaid.spend.allowance import (
     DateRange,
     EstimatePeriodId,
     FieldExact,
-    ForecastView,
     Kind,
     NameContains,
     NamePrefix,
-    PaceAlert,
-    Period,
     PeriodId,
-    RecordedPacePeriod,
     ReversalPair,
     Rule,
     RuleScope,
-    Status,
-    UnmatchedCharges,
+    Transaction,
+    TransactionDecision,
+    calculate,
 )
+from finance.plaid.spend.configuration import CardConfig, SpendConfiguration
 from finance.plaid.spend.models import (
     AlertState,
     AllowanceConfigurationView,
@@ -39,12 +38,13 @@ from finance.plaid.spend.models import (
     SpendConfigurationView,
     SpendView,
     StatementCycle,
+    StatementReason,
 )
+from finance.plaid.spend.reconciliation_views import allowance_view
+from finance.plaid.spend.testing import ledger
 
-# Ordered exactly as the allowance matcher reads them. Transaction fixtures reuse these
-# definitions so their reported classifications describe the configured policy.
-RULES = {
-    "funding": Rule(
+RULES = [
+    Rule(
         condition=AllOf(
             conditions=[
                 NameContains(field="name", substring="EXAMPLE FUNDING"),
@@ -56,7 +56,7 @@ RULES = {
         id="example-funding-transfer",
         description="Own-account funding leg, confirmed by the owner 2026-10-04.",
     ),
-    "reversed_original": Rule(
+    Rule(
         condition=AllOf(
             conditions=[
                 NameContains(field="name", substring="EXAMPLE OWN ACCOUNT TRANSFER"),
@@ -69,39 +69,39 @@ RULES = {
         analysis_category="own_transfers",
         description="Second leg of one own-account transfer, confirmed by the owner 2026-10-12.",
     ),
-    "reversal": Rule(
+    Rule(
         condition=NamePrefix(field="name", prefix="EXAMPLE OWN ACCOUNT"),
         kind=Kind.REVIEW,
         analysis_category="own_transfers",
         description="Synthetic rule classification retained as context for the reversal.",
     ),
-    "own_transfer": Rule(
+    Rule(
         condition=NamePrefix(field="name", prefix="EXAMPLE OWN TRANSFER"),
         kind=Kind.EXCLUDED,
         analysis_category="own_transfers",
         description="Synthetic own-account transfer excluded from the allowance.",
     ),
-    "tax": Rule(
+    Rule(
         condition=NamePrefix(field="name", prefix="EXAMPLE TAX"),
         kind=Kind.EXCLUDED,
         analysis_category="taxes",
         description="Synthetic tax payment accounted for separately.",
     ),
-    "shipping": Rule(
+    Rule(
         condition=NamePrefix(field="name", prefix="UPS"),
         kind=Kind.FIXED,
         analysis_category="shipping",
         description="Required document shipping for a synthetic example.",
     ),
-    "travel": Rule(
+    Rule(
         condition=NamePrefix(field="name", prefix="EXAMPLE TRAVEL"),
         kind=Kind.FLEXIBLE,
         analysis_category="travel",
         description="Synthetic discretionary trip purchase.",
     ),
-    "groceries": Rule(condition=NamePrefix(field="name", prefix="EXAMPLE GROCERIES"), kind=Kind.FLEXIBLE),
-    "pre_activation": Rule(condition=NamePrefix(field="name", prefix="EXAMPLE PURCHASE"), kind=Kind.FLEXIBLE),
-    "refund_review": Rule(
+    Rule(condition=NamePrefix(field="name", prefix="EXAMPLE GROCERIES"), kind=Kind.FLEXIBLE),
+    Rule(condition=NamePrefix(field="name", prefix="EXAMPLE PURCHASE"), kind=Kind.FLEXIBLE),
+    Rule(
         condition=AllOf(
             conditions=[
                 AmountSign(sign="negative"),
@@ -117,8 +117,7 @@ RULES = {
         analysis_category="refund_review",
         description="Unverified credit; inspect the earlier purchase before netting it.",
     ),
-}
-RULE_NUMBERS = {name: number for number, name in enumerate(RULES, 1)}
+]
 
 
 def full_reversal_pair() -> ReversalPair:
@@ -163,140 +162,155 @@ def unresolved_reversal_pair() -> ReversalPair:
     )
 
 
-def allowance(warmup: bool = False, estimate_period_id: EstimatePeriodId | None = None) -> AllowanceView:
-    today = date(2026, 10, 15)
-    estimate_period_id = estimate_period_id or PeriodId.ROLLING_7D
-    activation = today if warmup else date(2026, 9, 25)
-    daily_pace = 1250 if estimate_period_id == PeriodId.ROLLING_7D else 2380
-    alert = PaceAlert.NORMAL if estimate_period_id == PeriodId.ROLLING_7D else PaceAlert.WARNING
-    spend_amounts = {
-        PeriodId.CREDIT_CYCLE: 50000,
-        PeriodId.CALENDAR_MONTH: 50000,
-        PeriodId.YEAR_TO_DATE: 50000,
-        PeriodId.ROLLING_7D: 8750,
-        PeriodId.ROLLING_30D: 50000,
-    }
-    spend_periods = []
-    for period_id, amount in spend_amounts.items():
-        period = Period.for_id(period_id, today, activation)
-        spend_periods.append(
-            AllowanceSpendPeriod(
-                period=period, counted_from=max(period.start, activation), spend_minor_units=0 if warmup else amount
-            )
-        )
-    return AllowanceView(
-        status=Status.ACTIVE,
-        time_zone="UTC",
+def policy(*, warmup: bool = False, monthly_minor_units: int = 70000) -> AllowancePolicy:
+    return AllowancePolicy(
+        monthly_minor_units=monthly_minor_units,
+        activation_at=ledger.NOW.date() if warmup else date(2026, 9, 25),
+        spending_account_ids={"warmup-checking"} if warmup else {ledger.CARD, ledger.CHECKING},
         currency="USD",
-        monthly_minor_units=70000,
-        daily_reference_minor_units=2300,
-        activation_at=activation,
-        available_minor_units=70000 if warmup else 20000,
-        next_credit_at=datetime(2026, 11, 15, tzinfo=UTC) if warmup else datetime(2026, 10, 25, tzinfo=UTC),
-        posted_minor_units=0 if warmup else 48500,
-        pending_minor_units=0 if warmup else 1500,
-        review_minor_units=0 if warmup else 1500,
-        review_transaction_count=0 if warmup else 1,
-        unmatched_refunds_minor_units=0 if warmup else 4200,
-        spend_periods=spend_periods,
-        recorded_pace_periods=[
-            RecordedPacePeriod(
-                period=Period.for_id(period_id, today),
-                observed_daily_minor_units=None if warmup else observed,
-                unmatched_charges=UnmatchedCharges(count=0 if warmup else 1, amount_minor_units=0 if warmup else 1500),
-            )
-            for period_id, observed in ((PeriodId.ROLLING_7D, 1250), (PeriodId.ROLLING_30D, 1833))
-        ],
-        forecast=ForecastView(
-            basis_period=Period.for_id(estimate_period_id, today),
-            daily_pace_minor_units=None if warmup else daily_pace,
-            projected_cycle_end_minor_units=None
-            if warmup
-            else (7500 if estimate_period_id == PeriodId.ROLLING_7D else -3800),
-            estimated_exhaustion_at=None
-            if warmup
-            else datetime(2026, 10, 15, 12, tzinfo=UTC) + timedelta(days=20000 / daily_pace),
-            alert_state=PaceAlert.UNAVAILABLE if warmup else alert,
-        ),
-        spending_signal=PaceAlert.UNAVAILABLE if warmup else alert,
-        last_synced_at=datetime(2026, 10, 15, 11, tzinfo=UTC),
-        prior_carry_minor_units=0,
-        note="Provisional: Reversal pair example-reversal-needs-review: "
-        "Original selector matched 0 retained transactions; exactly one is required.",
+        max_sync_age_hours=72,
+        forecast_basis_period_id=PeriodId.ROLLING_7D,
+        rules=RULES,
+        reversal_pairs=[] if warmup else [full_reversal_pair(), unresolved_reversal_pair()],
+        analysis_categories={
+            "unclassified": AnalysisCategory(label="Unclassified", color="#D97706"),
+            "refund_review": AnalysisCategory(label="Refund review", color="#B45309"),
+            "shipping": AnalysisCategory(label="Document shipping", color="#0F766E"),
+            "travel": AnalysisCategory(label="Holiday travel", color="#7C3AED"),
+            "own_transfers": AnalysisCategory(label="Own-account transfers", color="#64748B"),
+            "taxes": AnalysisCategory(label="Taxes", color="#B45309"),
+        },
     )
 
 
-def spend_view(warmup: bool = False, estimate_period_id: EstimatePeriodId | None = None) -> SpendView:
-    synced = datetime(2026, 10, 15, 11, tzinfo=UTC)
-    return SpendView(
-        generated_at=datetime(2026, 10, 15, 12, tzinfo=UTC),
-        allowance=allowance(warmup, estimate_period_id),
+@dataclass(frozen=True)
+class Scenario:
+    configuration: SpendConfiguration
+    transactions: list[Transaction]
+    decisions: list[TransactionDecision]
+    statement_decisions: dict[tuple[str, str], tuple[StatementReason, int]]
+    view: SpendView
+
+
+def scenario(
+    warmup: bool = False, estimate_period_id: EstimatePeriodId | None = None, *, monthly_minor_units: int = 70000
+) -> Scenario:
+    configuration = spend_configuration(warmup=warmup, monthly_minor_units=monthly_minor_units)
+    transactions = ledger.transactions()
+    decisions: list[TransactionDecision] = []
+    assert configuration.allowance is not None
+    allowance = allowance_view(
+        calculate(
+            configuration.allowance,
+            transactions,
+            time_zone=configuration.time_zone,
+            now=ledger.NOW,
+            last_synced_at=ledger.LAST_SYNCED,
+            estimate_period_id=estimate_period_id,
+            decisions=decisions,
+        )
+    )
+    configured_cards = {card.account_id: card for card in configuration.cards}
+    cards = [
+        CardView(
+            account_id=ledger.CARD,
+            label=configured_cards[ledger.CARD].label,
+            account_name="Example card",
+            institution_name="Sample Bank",
+            mask="0000",
+            currency="USD",
+            statement_period=StatementCycle(start=date(2026, 10, 1), through=ledger.NOW.date()),
+            spend_minor_units=22000,
+            posted_minor_units=20500,
+            pending_minor_units=1500,
+            limit_minor_units=configured_cards[ledger.CARD].limit_minor_units,
+            alert_threshold_percent=configured_cards[ledger.CARD].alert_threshold_percent,
+            spend_percent=Decimal(22),
+            alert_state=AlertState.NORMAL,
+            last_synced_at=ledger.LAST_SYNCED,
+        ),
+        CardView(
+            account_id=ledger.NEW_CARD,
+            label=configured_cards[ledger.NEW_CARD].label,
+            account_name="New example card",
+            institution_name="Sample Credit Union",
+            mask="1111",
+            currency="USD",
+            statement_period=ProvisionalCardPeriod(start=date(2026, 10, 10), through=ledger.NOW.date()),
+            spend_minor_units=3900,
+            posted_minor_units=3900,
+            pending_minor_units=0,
+            limit_minor_units=configured_cards[ledger.NEW_CARD].limit_minor_units,
+            alert_threshold_percent=configured_cards[ledger.NEW_CARD].alert_threshold_percent,
+            spend_percent=None,
+            alert_state=AlertState.UNAVAILABLE,
+            last_synced_at=ledger.LAST_SYNCED,
+        ),
+    ]
+    # These synthetic card transactions all count toward their statement totals.
+    statement_decisions = {
+        (transaction.account_id, transaction.transaction_id): (StatementReason.COUNTED, int(transaction.amount * 100))
+        for transaction in transactions
+        if transaction.account_id in {ledger.CARD, ledger.NEW_CARD}
+    }
+    return Scenario(
+        configuration=configuration,
+        transactions=transactions,
+        decisions=decisions,
+        statement_decisions=statement_decisions,
+        view=SpendView(generated_at=ledger.NOW, allowance=allowance, cards=cards),
+    )
+
+
+def spend_view(
+    warmup: bool = False, estimate_period_id: EstimatePeriodId | None = None, *, monthly_minor_units: int = 70000
+) -> SpendView:
+    return scenario(warmup, estimate_period_id, monthly_minor_units=monthly_minor_units).view
+
+
+def spend_configuration(*, warmup: bool = False, monthly_minor_units: int = 70000) -> SpendConfiguration:
+    return SpendConfiguration(
+        time_zone=ZoneInfo("UTC"),
         cards=[
-            CardView(
-                account_id="synthetic-card",
-                label="Example card",
-                account_name="Example card",
-                mask="0000",
-                institution_name="Sample Bank",
-                currency="USD",
-                statement_period=StatementCycle(start=date(2026, 10, 1), through=date(2026, 10, 15)),
-                alert_state=AlertState.NORMAL,
-                alert_threshold_percent=None,
-                spend_minor_units=22000,
-                limit_minor_units=100000,
-                spend_percent=Decimal(22),
-                pending_minor_units=1500,
-                posted_minor_units=20500,
-                last_synced_at=synced,
+            CardConfig(
+                account_id=ledger.CARD, label=ledger.ACCOUNT_LABELS[ledger.CARD], enabled=True, limit_minor_units=100000
             ),
-            CardView(
-                account_id="synthetic-new-card",
-                label="New example card",
-                account_name="New example card",
-                mask="1111",
-                institution_name="Sample Credit Union",
-                currency="USD",
-                statement_period=ProvisionalCardPeriod(start=date(2026, 10, 10), through=date(2026, 10, 15)),
-                alert_state=AlertState.UNAVAILABLE,
-                alert_threshold_percent=None,
-                spend_minor_units=3900,
+            CardConfig(
+                account_id=ledger.NEW_CARD,
+                label=ledger.ACCOUNT_LABELS[ledger.NEW_CARD],
+                enabled=True,
                 limit_minor_units=100000,
-                spend_percent=None,
-                pending_minor_units=0,
-                posted_minor_units=3900,
-                last_synced_at=synced,
             ),
         ],
+        allowance=policy(warmup=warmup, monthly_minor_units=monthly_minor_units),
+        account_labels={} if warmup else {ledger.CHECKING: ledger.ACCOUNT_LABELS[ledger.CHECKING]},
     )
 
 
 def configuration() -> SpendConfigurationView:
+    config = spend_configuration()
+    allowance = config.allowance
+    assert allowance is not None
     return SpendConfigurationView(
-        time_zone="UTC",
+        time_zone=config.time_zone.key,
         cards=[
             CardConfigurationView(
-                label="Example card", enabled=True, limit_minor_units=100000, alert_threshold_percent=None
-            ),
-            CardConfigurationView(
-                label="New example card", enabled=True, limit_minor_units=100000, alert_threshold_percent=None
-            ),
+                label=card.label,
+                enabled=card.enabled,
+                limit_minor_units=card.limit_minor_units,
+                alert_threshold_percent=card.alert_threshold_percent,
+            )
+            for card in config.cards
         ],
         allowance=AllowanceConfigurationView(
-            monthly_minor_units=70000,
-            activation_at=date(2026, 9, 25),
-            currency="USD",
-            spending_account_count=2,
-            max_sync_age_hours=72,
-            forecast_basis_period_id=PeriodId.ROLLING_7D,
-            rules=list(RULES.values()),
-            analysis_categories={
-                "unclassified": AnalysisCategory(label="Unclassified", color="#D97706"),
-                "refund_review": AnalysisCategory(label="Refund review", color="#B45309"),
-                "shipping": AnalysisCategory(label="Document shipping", color="#0F766E"),
-                "travel": AnalysisCategory(label="Holiday travel", color="#7C3AED"),
-                "own_transfers": AnalysisCategory(label="Own-account transfers", color="#64748B"),
-                "taxes": AnalysisCategory(label="Taxes", color="#B45309"),
-            },
-            reversal_pairs=[full_reversal_pair(), unresolved_reversal_pair()],
+            monthly_minor_units=allowance.monthly_minor_units,
+            activation_at=allowance.activation_at,
+            currency=allowance.currency,
+            spending_account_count=len(allowance.spending_account_ids),
+            max_sync_age_hours=allowance.max_sync_age_hours,
+            forecast_basis_period_id=allowance.forecast_basis_period_id,
+            rules=allowance.rules,
+            analysis_categories=allowance.analysis_categories,
+            reversal_pairs=allowance.reversal_pairs,
         ),
     )

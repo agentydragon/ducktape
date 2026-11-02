@@ -21,6 +21,7 @@ py_library(
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:models",
         "//finance/plaid/spend/testing:dashboard",
+        "//finance/plaid/spend/testing:ledger",
     ],
 )
 
