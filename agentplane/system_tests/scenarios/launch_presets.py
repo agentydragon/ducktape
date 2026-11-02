@@ -29,15 +29,15 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
     with tracer.start_as_current_span(
         "system_test.launch_preset.resolve", record_exception=False, set_status_on_exception=False
     ):
-        configured = {preset.name: preset for preset in await client.presets()}
+        configured = {preset.name: preset for preset in (await client.presets()).presets}
         preset = configured[launch_preset.SANDBOX_PRESET]
-    assert preset.session_defaults.harness is Harness.CODEX
+    assert preset.session_defaults.harness == session_pb2.HARNESS_CODEX
 
     view = await sandbox(
         "systest-test-preset",
         template=preset.template,
         preset=launch_preset.SANDBOX_PRESET,
-        policies=preset.policy_sets,
+        policies=list(preset.policy_sets),
         bootstrap=preset.bootstrap,
     )
     assert view.preset == launch_preset.SANDBOX_PRESET
@@ -61,10 +61,13 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         )
         await client.wait_for_session_admission(view.name, first_id, opening=opening, timeout_s=RUNNER_ANSWERS_SECONDS)
         first = await client.wait_for_thread_feed(first_id, timeout_s=RUNNER_ANSWERS_SECONDS)
+    expected_reasoning_effort = (
+        preset.session_defaults.reasoning_effort if preset.session_defaults.HasField("reasoning_effort") else None
+    )
     assert (first.harness, first.model, first.reasoning_effort) == (
         Harness.CODEX,
         preset.session_defaults.model,
-        preset.session_defaults.reasoning_effort,
+        expected_reasoning_effort,
     )
 
     assert view.pod is not None

@@ -11,6 +11,8 @@ from types import TracebackType
 from typing import Any
 from uuid import UUID
 
+from google.protobuf.json_format import MessageToDict
+from google.protobuf.message import Message
 from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
@@ -228,7 +230,12 @@ async def _write_cleanup_diagnostics(cluster: Cluster, client: Client, name: str
     async def app_state(key: str, operation: Callable[[], Coroutine[Any, Any, Any]]) -> None:
         try:
             async with asyncio.timeout(10):
-                diagnostic[key] = (await operation()).model_dump(mode="json")
+                value = await operation()
+                diagnostic[key] = (
+                    MessageToDict(value, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
+                    if isinstance(value, Message)
+                    else value.model_dump(mode="json")
+                )
         except Exception as error:
             diagnostic[f"{key}_error"] = repr(error)
 

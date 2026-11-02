@@ -435,6 +435,7 @@ py_library(
         "//agentplane/app/testing:models",
         "//util/testing:undeclared_outputs",
         "@pypi//opentelemetry_api",
+        "@pypi//protobuf",
     ],
 )
 

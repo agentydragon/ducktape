@@ -169,7 +169,7 @@ class _ResumeRun:
         snapshot = await self.client.runner_status(self.view.name)
         self.initial_boot_id = snapshot.environment_runtime_boot_id
         reserved = next(row for row in snapshot.sessions if row.session_id == str(agent.thread_id))
-        assert reserved.process_id is None, "OpenSession unexpectedly started a native harness"
+        assert not reserved.HasField("process_id"), "OpenSession unexpectedly started a native harness"
         self.agents[harness] = agent
         return agent
 
@@ -180,9 +180,9 @@ class _ResumeRun:
         self.seeded_history[harness] = await _history(self.client, agent.thread_id, completed_turns=1)
         snapshot = await self.client.runner_status(self.view.name)
         ready = next(row for row in snapshot.sessions if row.session_id == str(agent.thread_id))
-        assert ready.execution_state == "SESSION_EXECUTION_STATE_READY"
-        assert ready.process_id is not None
-        assert ready.native_session_id is not None
+        assert ready.execution_state == session_pb2.SESSION_EXECUTION_STATE_READY
+        assert ready.HasField("process_id")
+        assert ready.HasField("native_session_id")
         assert any(
             process.process_id == ready.process_id and ready.session_id in process.assigned_session_ids
             for process in snapshot.processes
@@ -234,8 +234,8 @@ class _ResumeRun:
             assert {row.session_id for row in snapshot.sessions} == set(self.native_session_ids)
             for row in snapshot.sessions:
                 if row.session_id in self.native_session_ids:
-                    assert row.execution_state == "SESSION_EXECUTION_STATE_DORMANT"
-                    assert row.process_id is None
+                    assert row.execution_state == session_pb2.SESSION_EXECUTION_STATE_DORMANT
+                    assert not row.HasField("process_id")
                     assert row.native_session_id == self.native_session_ids[row.session_id]
             self.checks.append("new_runner_retains_dormant_sessions_without_native_processes")
             self.save()
