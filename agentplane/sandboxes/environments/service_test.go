@@ -94,7 +94,7 @@ func serveDiscoveryWithDelegation(
 	delegatedMethods []string,
 ) environmentpb.EnvironmentServiceClient {
 	t.Helper()
-	service, err := New(discoveryNamespace, objects, catalog, nil)
+	service, err := New(discoveryNamespace, objects, catalog, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -573,7 +573,7 @@ func TestEveryGeneratedRPCRequiresReviewedServiceAccountAdmission(t *testing.T) 
 		return Methods(resolver)
 	}
 	register := func(server *grpc.Server) {
-		service, err := New(discoveryNamespace, baseReader(t), runtimeconfig.Catalog{}, nil)
+		service, err := New(discoveryNamespace, baseReader(t), runtimeconfig.Catalog{}, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -583,8 +583,12 @@ func TestEveryGeneratedRPCRequiresReviewedServiceAccountAdmission(t *testing.T) 
 	connection := grpcmethods.Serve(t, configured, register)
 	for _, method := range grpcmethods.Of(environmentpb.EnvironmentService_ServiceDesc) {
 		t.Run(method.Name, func(t *testing.T) {
-			if got := status.Code(method.Call(bearing(t, matchingToken), connection)); got != codes.InvalidArgument {
-				t.Errorf("account-only reviewed caller reached %s with code %v, want handler InvalidArgument", method.Name, got)
+			want := codes.InvalidArgument
+			if method.Name == environmentpb.EnvironmentService_WatchEnvironments_FullMethodName {
+				want = codes.OK
+			}
+			if got := status.Code(method.Call(bearing(t, matchingToken), connection)); got != want {
+				t.Errorf("account-only reviewed caller reached %s with code %v, want %v", method.Name, got, want)
 			}
 			if got := status.Code(method.Call(bearing(t, "unreviewed-token"), connection)); got != codes.Unauthenticated {
 				t.Errorf("unreviewed caller reached %s with code %v, want Unauthenticated", method.Name, got)
@@ -595,5 +599,63 @@ func TestEveryGeneratedRPCRequiresReviewedServiceAccountAdmission(t *testing.T) 
 				t.Errorf("unlisted RPC %s with reviewed caller got %v, want PermissionDenied", method.Name, got)
 			}
 		})
+	}
+}
+
+func TestInventoryReaderListAndGetAreBroadButOrdinaryCallersStayScoped(t *testing.T) {
+	other := sandboxObject("other-uid")
+	other.Name = "other"
+	objects := readerWithObjects(t, sandboxObject(sandboxUID), executionAccountObject(sandboxUID), other)
+	reader := auth.Account{Namespace: discoveryNamespace, Name: "actions"}
+	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, nil, map[auth.Account]struct{}{reader: {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := auth.NewResolver(testTokenReviews(), dispatcherAudience, []string{discoveryNamespace, foreignNamespace}, auth.WithVerdictTTL(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection := grpcmethods.Serve(t, Methods(resolver), func(server *grpc.Server) { environmentpb.RegisterEnvironmentServiceServer(server, service) })
+	rpc := environmentpb.NewEnvironmentServiceClient(connection)
+	own, err := rpc.ListEnvironments(bearing(t, matchingToken), &environmentpb.ListEnvironmentsRequest{Limit: 10})
+	if err != nil || len(own.GetItems()) != 1 || own.GetItems()[0].GetTarget().GetName() != sandboxName {
+		t.Fatalf("own list = %v, %v", own, err)
+	}
+	all, err := rpc.ListEnvironments(bearing(t, actionsToken), &environmentpb.ListEnvironmentsRequest{Limit: 10})
+	if err != nil || len(all.GetItems()) != 2 {
+		t.Fatalf("reader list = %v, %v", all, err)
+	}
+	target := &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: "other", Uid: "other-uid"}
+	if _, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{Target: target}); status.Code(err) != codes.NotFound {
+		t.Fatalf("own get = %v", err)
+	}
+	got, err := rpc.GetEnvironment(bearing(t, actionsToken), &environmentpb.GetEnvironmentRequest{Target: target})
+	if err != nil || got.GetTarget().GetName() != "other" || got.ExecutionAccount != nil {
+		t.Fatalf("reader get = %v, %v", got, err)
+	}
+}
+
+func TestDelegatedActorDoesNotLendInventoryReaderGrant(t *testing.T) {
+	actor := auth.Account{Namespace: discoveryNamespace, Name: "actions"}
+	other := sandboxObject("other-uid")
+	other.Name = "other"
+	service, err := New(discoveryNamespace, readerWithObjects(t, sandboxObject(sandboxUID), executionAccountObject(sandboxUID), other), runtimeconfig.Catalog{}, nil, map[auth.Account]struct{}{actor: {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := auth.NewResolver(testTokenReviews(), dispatcherAudience, []string{discoveryNamespace}, auth.WithVerdictTTL(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods, err := Methods(resolver).WithDelegation([]string{environmentpb.EnvironmentService_ListEnvironments_FullMethodName}, []auth.Delegator{{Account: actor, CallerNamespaces: []string{discoveryNamespace}}}, auth.ServiceAccountUIDReaderFunc(func(_ context.Context, _ auth.Account) (string, bool, error) { return executionUID, true, nil }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection := grpcmethods.Serve(t, methods, func(server *grpc.Server) { environmentpb.RegisterEnvironmentServiceServer(server, service) })
+	rpc := environmentpb.NewEnvironmentServiceClient(connection)
+	effective := auth.Account{Namespace: discoveryNamespace, Name: sandboxName}
+	response, err := rpc.ListEnvironments(delegatedBearing(t, actionsToken, effective, executionUID), &environmentpb.ListEnvironmentsRequest{Limit: 10})
+	if err != nil || len(response.GetItems()) != 1 || response.GetItems()[0].GetTarget().GetName() != sandboxName {
+		t.Fatalf("delegated list = %v, %v", response, err)
 	}
 }

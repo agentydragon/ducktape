@@ -81,6 +81,9 @@ class Settings(YamlFileSettings):
     dispatcher_callers: Set[ServiceAccountName] = Field(
         min_length=1, description="ServiceAccounts admitted as Dispatcher callers, as namespace/name."
     )
+    environment_readers: Set[ServiceAccountName] = Field(
+        default_factory=frozenset, description="ServiceAccounts granted read access to all managed Environments."
+    )
     delegation: DelegationSettings | None = Field(
         default=None,
         description="Independent Actions delegation trust; does not grant direct or privileged caller access.",

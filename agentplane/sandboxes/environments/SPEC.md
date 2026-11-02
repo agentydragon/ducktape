@@ -2,28 +2,29 @@
 
 ## Purpose
 
-Expose read-only discovery and observation of existing Agentplane Sandbox targets to the exact ServiceAccount
-that executes them. This service returns facts needed to choose a target and prepare a Session
+Expose read-only discovery and observation of existing Agentplane Sandbox targets to authorized callers. This service returns facts needed to choose a target and prepare a Session
 request. It does not create environments, attach Sessions, control lifecycle, or grant authorization.
 
 ## Caller and object authorization
 
 - Methods admit a direct TokenReview-verified ServiceAccount or an explicitly configured
   Actions delegation using the Runner Gateway's existing Dispatcher audience and served namespace
-  set. `ListEnvironments`, `GetEnvironment`, and `WatchEnvironment` may be added to the Gateway's exact delegated
+  set. `ListEnvironments`, `GetEnvironment`, `WatchEnvironment`, and `WatchEnvironments` may be added to the Gateway's exact delegated
   method list; the grant does not extend to Dispatcher writes or Gateway proxy methods.
 - The handler obtains the admitted effective caller from shared workload authentication and requires
   a complete ServiceAccount identity, including its UID. Direct calls retain their existing
   reviewed-account path.
-- For each candidate, `sandboxreader.Reader.ExecutionAccount` rereads the exact live Sandbox UID and
+- For ordinary callers, `sandboxreader.Reader.ExecutionAccount` rereads the exact live Sandbox UID and
   confirms its non-deleting ServiceAccount has the Sandbox's exact controlling owner reference.
-- A result is returned only if namespace, account name, and account UID all match the effective caller.
-- Get and watch require the complete Sandbox namespace/name/UID handle. Missing, replaced, deleting, or
-  foreign targets are hidden as `NOT_FOUND`.
+- An ordinary caller receives a result only if namespace, account name, and account UID all match the effective caller.
+- A directly authenticated ServiceAccount explicitly listed in `environment_readers` may read the entire configured
+  Sandbox namespace. This grant does not confer mutation or wake authority, and does not pass through delegation.
+- Get and watch require the complete Sandbox namespace/name/UID handle. Missing, replaced, deleting, or foreign targets are hidden as `NOT_FOUND` for ordinary callers.
+  Broad readers may see a deleting target and targets whose execution account is not yet present.
 - The page request/response remains compatible with bounded pagination. Current Sandbox-owned
   accounts resolve by the account's same-name Sandbox candidate, so the service emits no cursor.
-  It rejects nonempty unknown cursors and never forwards a namespace-wide Kubernetes token that
-  can expose a filtered Sandbox key.
+  Ordinary callers reject nonempty cursors and never receive namespace-wide Kubernetes tokens. Broad readers
+  may continue a page using the Kubernetes continuation token because their grant covers that namespace.
 
 Delegated calls keep the Actions actor separate from the effective caller. They receive the same
 live Sandbox-owned ServiceAccount UID checks as direct calls. The dispatcher still rechecks
@@ -46,10 +47,31 @@ An already admitted stream never follows a replacement target or execution accou
 This is a current-state subscription, not retained transition history. Intermediate states may be
 coalesced. Reconnecting starts with a current snapshot and has no cursor. Source closure, expiration,
 or failure ends the RPC with `UNAVAILABLE`; a client must reconnect to refresh its observation.
-Missing, replaced, deleting or no-longer-accessible targets end with `NOT_FOUND`. Last observations
+Missing, replaced or no-longer-accessible targets end with `NOT_FOUND`; deletion does so for ordinary callers. Last observations
 remain observations of their recorded time; silence or disconnection does not assert readiness.
 Client cancellation ends the stream and both source watches. Server writes have a five-second
 backpressure bound. A blocked write ends the RPC with `DEADLINE_EXCEEDED` and is not retried.
+
+## Collection watch
+
+`WatchEnvironments` begins with the caller-visible Sandbox set in bounded snapshot chunks followed
+by `snapshot_complete`. A client replaces its prior set only after completion, including for an
+empty snapshot; it discards incomplete snapshots on disconnect. After the initial snapshot, `upsert`
+replaces one Sandbox and `removed` removes the given namespace, name, and UID. A same-name
+replacement removes the prior UID before upserting the new one. Visibility loss also removes an item.
+Intermediate changes may be coalesced. Reconnecting starts a fresh snapshot; there is no replay cursor
+or transition history. The assembled view draws from multiple Kubernetes resources and does not
+promise a globally atomic point-in-time read.
+
+The service starts Sandbox, account, and Pod watches before reading the initial snapshot, and
+rereads affected Sandboxes on notifications. It indexes current incarnation Pod names, including VM
+Pods; unrelated Pod events do not reread the inventory. Ordinary callers see only their exact live
+owned target; explicitly granted direct readers see all targets, including creation and deletion
+before or after the account exists. A missing or stale Pod is never substituted for the
+controller-reported incarnation. Source loss ends the stream with `UNAVAILABLE`; the client
+reconnects for a fresh snapshot. The admitted credential is reviewed before each frame and
+periodically while idle, using the resolver's verdict cache. An expired or revoked credential ends
+the stream; a successful review leaves it open. A stalled send is bounded by five seconds.
 
 ## Returned facts
 
@@ -73,10 +95,10 @@ backpressure bound. A blocked write ends the RPC with `DEADLINE_EXCEEDED` and is
 
 `ListEnvironments.limit` is required and ranges from 1 through 100. The request and response retain
 the approved paged contract. The current Sandbox-owned account mapping looks up only the reviewed
-account's same-name candidate and returns no cursor. A nonempty cursor is rejected as invalid; the
-service does not expose foreign names or inventory counts through continuation state.
+account's same-name candidate and returns no cursor. A nonempty cursor is rejected for ordinary callers.
+Broad readers can continue namespace pages; their grant permits seeing all namespace names.
 
-Malformed requests and nonempty cursors fail `INVALID_ARGUMENT`. Object authorization failures fail
+Malformed requests and nonempty cursors from ordinary callers fail `INVALID_ARGUMENT`. Object authorization failures fail
 `NOT_FOUND`. Kubernetes reads for the exact candidate or its live ownership fail closed with
 `UNAVAILABLE` rather than returning partial facts.
 

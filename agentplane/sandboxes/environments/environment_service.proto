@@ -4,13 +4,19 @@ package agentplane.sandboxes.environments;
 
 option go_package = "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb;environmentpb";
 
+import "agentplane/proto/sandboxes.proto";
 import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
-// EnvironmentService is a same-ServiceAccount, exact-incarnation view of existing managed Sandboxes.
+// EnvironmentService exposes caller-authorized views of existing managed Sandboxes.
 service EnvironmentService {
   rpc ListEnvironments(ListEnvironmentsRequest) returns (ListEnvironmentsResponse) {
     option (google.api.http) = {get: "/v1/environments"};
+  }
+  // Sends an initial caller-visible snapshot, then coalesced updates and removals.
+  rpc WatchEnvironments(google.protobuf.Empty) returns (stream WatchEnvironmentsResponse) {
+    option (google.api.http) = {get: "/v1/environments:watch"};
   }
   rpc GetEnvironment(GetEnvironmentRequest) returns (EnvironmentDescriptor) {
     option (google.api.http) = {get: "/v1/environments/{target.namespace}/{target.name}"};
@@ -35,16 +41,31 @@ message AccountHandle {
 }
 
 message ListEnvironmentsRequest {
-  // Required, bounded to 1..100. The server inspects at most this many Sandbox objects per page.
+  // Required, bounded to 1..100. Broad readers receive one page of the inventory.
   uint32 limit = 1;
-  // Reserved for opaque, caller-scoped continuation when account mapping requires paging. The
-  // current Sandbox-owned account mapping resolves one direct candidate and returns no cursor.
+  // Opaque continuation for a broad reader. A Sandbox-owned account resolves one candidate.
   string page_token = 2;
 }
 
 message ListEnvironmentsResponse {
   repeated EnvironmentDescriptor items = 1;
   string next_page_token = 2;
+}
+
+message WatchEnvironmentsResponse {
+  // Snapshot chunks replace the previous view only when snapshot_complete arrives. Afterwards,
+  // upserts replace one Sandbox and removals remove the named UID. Reconnect starts a new snapshot.
+  oneof frame {
+    SandboxChunk snapshot = 1;
+    google.protobuf.Empty snapshot_complete = 2;
+    agentplane.proto.Sandbox upsert = 3;
+    // Deleted or no longer visible; the UID fences same-name replacement.
+    TargetHandle removed = 4;
+  }
+}
+
+message SandboxChunk {
+  repeated agentplane.proto.Sandbox sandboxes = 1;
 }
 
 message GetEnvironmentRequest {

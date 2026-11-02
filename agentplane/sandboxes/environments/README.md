@@ -6,15 +6,16 @@ listener. Its method paths are:
 
 - `/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments`
 - `/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment`
+- `/agentplane.sandboxes.environments.EnvironmentService/WatchEnvironments`
 - `/agentplane.sandboxes.environments.EnvironmentService/WatchEnvironment`
 
 All methods accept direct TokenReview-verified ServiceAccount credentials and the explicitly
 configured Actions delegation. Delegated calls use the existing Dispatcher audience and are opted
 into by exact full RPC method name. The handler checks the admitted effective caller's namespace,
-name, and immutable ServiceAccount UID, then returns only Sandboxes whose live, controller-owned
-execution ServiceAccount has that exact identity. A Sandbox's namespace/name or labels alone do
+name, and immutable ServiceAccount UID. Ordinary callers see only Sandboxes whose live, controller-owned
+execution ServiceAccount has that exact identity; explicitly configured direct readers see the namespace. A Sandbox's namespace/name or labels alone do
 not establish access. A target handle is the Sandbox namespace, name, and UID; get returns
-`NOT_FOUND` for an absent, replaced, deleting, or foreign target.
+`NOT_FOUND` for an absent or replaced target, and for a deleting or foreign target for ordinary callers.
 
 `GetEnvironment` returns the current descriptor immediately. `WatchEnvironment` accepts the same
 exact target and sends a current descriptor followed by changed snapshots. It observes Kubernetes
@@ -28,10 +29,8 @@ a lost Kubernetes source ends it with `UNAVAILABLE`. Clients retain their last o
 and reconnect to observe again. Waiting for readiness is a client operation over this stream;
 neither get nor watch requests resume. CLI and Action/MCP wait adapters are separate work.
 
-List requires a limit from 1..100 and retains the paged request/response shape. The current
-Sandbox-owned account mapping resolves the effective caller's same-name candidate directly, so it
-returns no continuation token. The service never sends a namespace-wide Kubernetes continuation
-token to a caller, because such a token can reveal the name of a filtered Sandbox.
+List requires a limit from 1..100. Ordinary callers resolve their same-name candidate and receive no
+continuation token; broad readers may page over the namespace using a Kubernetes continuation token.
 
 Workspace paths and harness/model/effort choices are deployment-configured facts. They are returned
 only when the target's exact SandboxTemplate has a published mapping; custom templates preserve
@@ -56,3 +55,10 @@ the Session, so a prior `mkdir` is unnecessary. On templates that omit a configu
 boundary, this path is guidance on the mounted workspace volume; the Runner's existing path checks
 remain authoritative. The target's workspace volume is shared by its Sessions; a distinct cwd is
 workflow organization, not isolation.
+
+`WatchEnvironments` sends an initial caller-visible inventory in bounded chunks and a completion
+marker, followed by per-Sandbox upserts and UID-fenced removals. Reconnection starts a new snapshot;
+intermediate changes may be coalesced. Direct ServiceAccounts named by the Gateway's
+`environment_readers` setting can read all Sandboxes; the grant does not authorize writes and is
+not inherited by delegated callers. Ordinary callers remain restricted to their exact owned Sandbox.
+An idle stream stays open while its credential remains valid and closes when revalidation fails.

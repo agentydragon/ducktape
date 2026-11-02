@@ -30,11 +30,13 @@ const maxLimit = 100
 type Service struct {
 	environmentpb.UnimplementedEnvironmentServiceServer
 
-	namespace   string
-	objects     client.WithWatch
-	sandboxes   *sandboxreader.Reader
-	runtime     runtimeconfig.Catalog
-	wakeCallers map[auth.Account]struct{}
+	namespace              string
+	objects                client.WithWatch
+	sandboxes              *sandboxreader.Reader
+	runtime                runtimeconfig.Catalog
+	wakeCallers            map[auth.Account]struct{}
+	readers                map[auth.Account]struct{}
+	collectionAuthInterval time.Duration
 }
 
 func New(
@@ -42,6 +44,7 @@ func New(
 	objects client.WithWatch,
 	runtime runtimeconfig.Catalog,
 	wakeCallers map[auth.Account]struct{},
+	readers map[auth.Account]struct{},
 ) (*Service, error) {
 	if namespace == "" || objects == nil {
 		return nil, errors.New("Sandbox namespace and uncached Kubernetes watch client are required")
@@ -54,7 +57,7 @@ func New(
 	for account := range wakeCallers {
 		wake[account] = struct{}{}
 	}
-	return &Service{namespace: namespace, objects: objects, sandboxes: sandboxes, runtime: runtime, wakeCallers: wake}, nil
+	return &Service{namespace: namespace, objects: objects, sandboxes: sandboxes, runtime: runtime, wakeCallers: wake, readers: readers, collectionAuthInterval: auth.DefaultVerdictTTL}, nil
 }
 
 // Methods admits direct TokenReview-verified ServiceAccounts in the configured Resolver namespaces.
@@ -63,9 +66,10 @@ func New(
 func Methods(resolver *auth.Resolver) auth.Methods {
 	rule := auth.ReviewedServiceAccount(resolver)
 	return auth.Methods{
-		environmentpb.EnvironmentService_ListEnvironments_FullMethodName: rule,
-		environmentpb.EnvironmentService_GetEnvironment_FullMethodName:   rule,
-		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName: rule,
+		environmentpb.EnvironmentService_ListEnvironments_FullMethodName:  rule,
+		environmentpb.EnvironmentService_WatchEnvironments_FullMethodName: rule,
+		environmentpb.EnvironmentService_GetEnvironment_FullMethodName:    rule,
+		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName:  rule,
 	}
 }
 
@@ -80,6 +84,19 @@ func caller(ctx context.Context) (auth.ServiceAccountPrincipal, error) {
 	return identity, nil
 }
 
+// broadReader applies only to direct credentials; delegated actors never lend their grants to a caller.
+func (s *Service) broadReader(ctx context.Context, identity auth.ServiceAccountPrincipal) bool {
+	admission, err := auth.Admitted(ctx)
+	if err != nil {
+		return false
+	}
+	if _, ok := admission.(auth.DirectAdmission); !ok {
+		return false
+	}
+	_, ok := s.readers[identity.Account]
+	return ok
+}
+
 func callerMatches(caller auth.ServiceAccountPrincipal, execution sandboxreader.ServiceAccountIdentity) bool {
 	return caller.Account.Namespace == execution.Namespace && caller.Account.Name == execution.Name &&
 		caller.ServiceAccountUID == execution.UID
@@ -92,6 +109,9 @@ func (s *Service) ListEnvironments(ctx context.Context, request *environmentpb.L
 	identity, err := caller(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if s.broadReader(ctx, identity) {
+		return s.listAll(ctx, request, identity)
 	}
 	if request.GetPageToken() != "" {
 		return nil, status.Error(codes.InvalidArgument, "page token is not valid for this inventory")
@@ -126,6 +146,33 @@ func (s *Service) ListEnvironments(ctx context.Context, request *environmentpb.L
 	return response, nil
 }
 
+// listAll is used only by a direct, explicitly granted inventory reader. Its Kubernetes
+// continuation may include names only that principal is authorized to discover.
+func (s *Service) listAll(ctx context.Context, request *environmentpb.ListEnvironmentsRequest, identity auth.ServiceAccountPrincipal) (*environmentpb.ListEnvironmentsResponse, error) {
+	var list api.SandboxList
+	opts := []client.ListOption{client.InNamespace(s.namespace), client.Limit(int64(request.GetLimit()))}
+	if request.GetPageToken() != "" {
+		opts = append(opts, client.Continue(request.GetPageToken()))
+	}
+	if err := s.objects.List(ctx, &list, opts...); err != nil {
+		return nil, status.Error(codes.Unavailable, "Sandbox inventory is unavailable")
+	}
+	response := &environmentpb.ListEnvironmentsResponse{NextPageToken: list.Continue}
+	for i := range list.Items {
+		object := &list.Items[i]
+		execution, found, err := s.sandboxes.ExecutionAccount(ctx, sandboxreader.Identity{Namespace: object.Namespace, Name: object.Name, UID: string(object.UID)})
+		if err != nil {
+			return nil, status.Error(codes.Unavailable, "Sandbox execution account is unavailable")
+		}
+		descriptor := s.describe(object, execution, identity)
+		if !found {
+			descriptor.ExecutionAccount = nil
+		}
+		response.Items = append(response.Items, descriptor)
+	}
+	return response, nil
+}
+
 func (s *Service) GetEnvironment(ctx context.Context, request *environmentpb.GetEnvironmentRequest) (*environmentpb.EnvironmentDescriptor, error) {
 	identity, err := caller(ctx)
 	if err != nil {
@@ -146,7 +193,7 @@ func (s *Service) GetEnvironment(ctx context.Context, request *environmentpb.Get
 		slog.ErrorContext(ctx, "Environment discovery Sandbox read failed", "error", err)
 		return nil, status.Error(codes.Unavailable, "Sandbox inventory is unavailable")
 	}
-	if view.Identity.UID != target.GetUid() || deleting(view.Resource) {
+	if view.Identity.UID != target.GetUid() || (deleting(view.Resource) && !s.broadReader(ctx, identity)) {
 		return nil, status.Error(codes.NotFound, "environment not found")
 	}
 	execution, found, err := s.sandboxes.ExecutionAccount(ctx, view.Identity)
@@ -154,10 +201,14 @@ func (s *Service) GetEnvironment(ctx context.Context, request *environmentpb.Get
 		slog.ErrorContext(ctx, "Environment discovery execution account read failed", "error", err)
 		return nil, status.Error(codes.Unavailable, "Sandbox execution account is unavailable")
 	}
-	if !found || !callerMatches(identity, execution) {
+	if !s.broadReader(ctx, identity) && (!found || !callerMatches(identity, execution)) {
 		return nil, status.Error(codes.NotFound, "environment not found")
 	}
-	return s.describe(view.Resource, execution, identity), nil
+	descriptor := s.describe(view.Resource, execution, identity)
+	if !found {
+		descriptor.ExecutionAccount = nil
+	}
+	return descriptor, nil
 }
 
 func deleting(object *api.Sandbox) bool {

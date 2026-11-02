@@ -10,6 +10,7 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 type ruleKind int
@@ -125,6 +126,35 @@ func Caller(ctx context.Context) (Principal, error) {
 
 type reviewedCallerKey struct{}
 
+type revalidateKey struct{}
+
+// RevalidateStream reviews the credentials originally admitted for this stream again.
+// A successful review must still prove the same direct or delegated identity.
+func RevalidateStream(ctx context.Context) error {
+	revalidate, ok := ctx.Value(revalidateKey{}).(func(context.Context) error)
+	if !ok {
+		return errNotAdmitted
+	}
+	return revalidate(ctx)
+}
+
+func sameAdmission(a, b Admission) bool {
+	switch first := a.(type) {
+	case DirectAdmission:
+		second, ok := b.(DirectAdmission)
+		if !ok || first.Caller != second.Caller || (first.Pod == nil) != (second.Pod == nil) {
+			return false
+		}
+		return first.Pod == nil || *first.Pod == *second.Pod
+	case DelegatedAdmission:
+		second, ok := b.(DelegatedAdmission)
+		return ok && first.Actor == second.Actor && first.EffectiveCaller == second.EffectiveCaller &&
+			proto.Equal(first.Provenance, second.Provenance)
+	default:
+		return false
+	}
+}
+
 // WithReviewedCaller stores the account proof and its separate optional Pod proof.
 func WithReviewedCaller(ctx context.Context, caller ReviewedCaller) context.Context {
 	return context.WithValue(ctx, reviewedCallerKey{}, caller)
@@ -154,6 +184,20 @@ func (m Methods) ServerOptions(admissionTimeout time.Duration) []grpc.ServerOpti
 			admitted, err := m.admit(stream.Context(), info.FullMethod, admissionTimeout)
 			if err != nil {
 				return err
+			}
+			if original, err := Admitted(admitted); err == nil {
+				revalidate := func(ctx context.Context) error {
+					current, err := m.admit(ctx, info.FullMethod, admissionTimeout)
+					if err != nil {
+						return err
+					}
+					identity, err := Admitted(current)
+					if err != nil || !sameAdmission(original, identity) {
+						return status.Error(codes.Unauthenticated, "stream caller changed")
+					}
+					return nil
+				}
+				admitted = context.WithValue(admitted, revalidateKey{}, revalidate)
 			}
 			return handler(server, admittedStream{ServerStream: stream, ctx: admitted})
 		}),

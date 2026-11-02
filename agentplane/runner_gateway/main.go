@@ -225,7 +225,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	if err != nil {
 		return err
 	}
-	environmentService, err := environments.New(c.Namespace, objects, c.RuntimeCatalog, accountSet(c.WakeCallers))
+	environmentService, err := environments.New(c.Namespace, objects, c.RuntimeCatalog, accountSet(c.WakeCallers), accountSet(c.EnvironmentReaders))
 	if err != nil {
 		return err
 	}
@@ -234,7 +234,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		delegatedActors = append(delegatedActors, c.Delegation.Actor)
 	}
 	dispatchAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.DispatcherAudience,
-		accountNamespaces(c.DispatcherCallers, &auth.Account{Namespace: c.Namespace}, delegatedActors...))
+		accountNamespaces(append(append([]auth.Account{}, c.DispatcherCallers...), c.EnvironmentReaders...), &auth.Account{Namespace: c.Namespace}, delegatedActors...))
 	if err != nil {
 		return err
 	}

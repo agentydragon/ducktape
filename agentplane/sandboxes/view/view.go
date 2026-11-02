@@ -1,4 +1,4 @@
-package sandboxes
+package view
 
 import (
 	"encoding/json"
@@ -12,6 +12,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+const PresetLabel = "agentplane.allegedly.works/preset"
 
 func sandboxView(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*sandboxespb.Sandbox, error) {
 	view := &sandboxespb.Sandbox{
