@@ -222,7 +222,7 @@ ts_library(
         ":thread_commands",
         ":thread_status",
         ":thread_sync",
-        ":thread_tab",
+        ":thread_favicon",
         ":virtualized_history",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -584,7 +584,7 @@ agentplane_vitest_test(
 )
 
 ts_library(
-    name = "thread_tab",
+    name = "thread_favicon",
     srcs = ["thread_favicon.ts"],
     tsconfig = TSCONFIG,
     deps = [
