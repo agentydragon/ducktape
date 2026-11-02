@@ -83,6 +83,105 @@ same identity fail even if the bytes match. Keep unrelated diagnostic outputs
 available in the test artifacts; the publication policy explicitly selects
 which roles become public review assets.
 
+## Example output layout
+
+One possible implementation uses a record per output, with the record as the
+atomic declaration. Each Bazel result has its own undeclared-output directory;
+these files are not shared by shards, runs, or attempts. The placeholders below
+stand for deterministic encodings of the local `(case ID, checkpoint, role)`
+identity, not counters or hashes of image bytes:
+
+```text
+$TEST_UNDECLARED_OUTPUTS_DIR/
+└── test-outputs/
+    ├── records/
+    │   ├── <mobile-expanded-screenshot-key>.json
+    │   ├── <mobile-expanded-diagnostics-key>.json
+    │   └── <desktop-expanded-screenshot-key>.json
+    └── files/
+        ├── <mobile-expanded-screenshot-key>.png
+        ├── <mobile-expanded-diagnostics-key>.json
+        └── <desktop-expanded-screenshot-key>.png
+```
+
+For example, the screenshot record could contain the following. The case ID is
+an opaque producer-supplied string; the format does not require a test framework
+or interpret the slash. `path` is relative to `test-outputs/`.
+
+```json
+{
+  "schema": "ducktape.test-output.v1",
+  "case_id": "dialog/mobile",
+  "checkpoint": ["expanded"],
+  "role": "screenshot",
+  "media_type": "image/png",
+  "path": "files/<mobile-expanded-screenshot-key>.png",
+  "label": "Expanded dialog on mobile"
+}
+```
+
+Its diagnostics record uses the same case and checkpoint with a different role
+and file, so it cannot be confused with the screenshot:
+
+```json
+{
+  "schema": "ducktape.test-output.v1",
+  "case_id": "dialog/mobile",
+  "checkpoint": ["expanded"],
+  "role": "diagnostics",
+  "media_type": "application/json",
+  "path": "files/<mobile-expanded-diagnostics-key>.json"
+}
+```
+
+The desktop screenshot would have `case_id` `dialog/desktop` and can reuse the
+`expanded` checkpoint. A pytest adapter would instead derive its case ID from the
+full node ID. A writer must create each payload completely before atomically
+publishing its record and fail a duplicate claim; the collector validates the
+full identity rather than trusting the placeholder key. This is a proposed
+layout and schema to validate, not the current `visual-review.json` format.
+
+The collector attaches the target and result provenance from its source, not
+from producer-controlled fields. Its materialized observation could look like:
+
+```json
+{
+  "scope": { "repository": "agentydragon/ducktape", "target": "//example:visual" },
+  "case_id": "dialog/mobile",
+  "checkpoint": ["expanded"],
+  "role": "screenshot",
+  "source": {
+    "invocation": "<invocation-id>",
+    "configuration": "<configuration-id>",
+    "run": 1,
+    "shard": 3,
+    "attempt": 1,
+    "status": "PASSED",
+    "uri": "<buildbuddy-cas-uri>"
+  }
+}
+```
+
+The corresponding publication has a separate content identity. For example:
+
+```text
+s3://pr-visuals/
+├── assets/
+│   ├── <candidate-png-sha256>.png
+│   ├── <baseline-png-sha256>.png
+│   └── <diff-png-sha256>.png
+└── reviews/<commit-sha>/
+    ├── metadata.json
+    ├── index.html
+    └── tests/<target-slug>/
+        ├── metadata.json
+        └── index.html
+```
+
+Review metadata links the logical identity to the candidate, baseline, and diff
+blob digests. Equal PNG bytes can share one blob without merging their logical
+identities. Records and diagnostics are not implicitly made public.
+
 ## Collection, storage, and presentation
 
 Keep these boundaries independently testable:
