@@ -121,6 +121,17 @@ def test_quest_bearer_is_only_substituted_for_read_only_operations(scratch_chart
             "credentialRef": {"name": "quest-read"},
         },
     ]
+    network = next(
+        obj
+        for obj in objects
+        if obj["kind"] == "CiliumNetworkPolicy" and obj["metadata"]["name"] == "egress-staging-credentials"
+    )
+    assert {
+        "toEndpoints": [
+            {"matchLabels": {"app": "quest-diagnostics", "k8s:io.kubernetes.pod.namespace": "quest-diagnostics"}}
+        ],
+        "toPorts": [{"ports": [{"port": "8082", "protocol": "TCP"}]}],
+    } in network["spec"]["egress"]
 
 
 if __name__ == "__main__":
