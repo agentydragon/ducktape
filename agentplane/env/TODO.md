@@ -47,15 +47,6 @@ disabled and a root shell when it is enabled.
   resources and joins a host worker barrier; those semantics are not automatically appropriate for
   the Runtime's coordinator-owned workers.
 
-## Persist the environment seal in COSI
-
-Replace `sessions/sealed` and the file-backed portion of `EnvironmentState` with one persistent
-COSI resource owned by the environment lifecycle. Record the sealed incarnation UID, and preserve
-the quiesce and adoption ordering: a restart must not reopen the same sealed incarnation, and the
-old incarnation's exact flush must complete before a successor is adopted. Exercise restarts,
-concurrent seal/adoption, persistence failures and successor adoption. Make a hard cutover; do not
-read or import the old marker.
-
 ## Store bootstrap events in COSI
 
 Replace `initialization/events.jsonl` with persistent protobuf COSI resources for the bootstrap

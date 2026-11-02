@@ -2,8 +2,6 @@ package harnesshost
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -12,6 +10,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
@@ -221,9 +220,9 @@ func TestHostSealsOnlyAfterMatchingExecutionFence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Runtime's retained marker is never read or cleared by Host.
-	marker := filepath.Join(r.config.StateDir, "sessions", "sealed")
-	if err := os.WriteFile(marker, []byte("runtime-owned"), 0600); err != nil {
+	// The Environment Runtime owns its persistent incarnation seal; Host drain
+	// handling must not change it.
+	if err := cosistate.WriteEnvironmentSeal(ctx, r.lifecycle.state, cosistate.EnvironmentSeal{IncarnationUID: "runtime-owned"}); err != nil {
 		t.Fatal(err)
 	}
 	drain := intentFor(r, 2, runtimepb.LifecycleIntent_QUIESCING)
@@ -265,8 +264,8 @@ func TestHostSealsOnlyAfterMatchingExecutionFence(t *testing.T) {
 	if err := r.lifecycle.wait(ctx, harnesshostlifecycle.Quiesced); err != nil {
 		t.Fatal(err)
 	}
-	if contents, err := os.ReadFile(marker); err != nil || string(contents) != "runtime-owned" {
-		t.Fatalf("Host mutated environment marker: %q, %v", contents, err)
+	if seal, found, err := cosistate.ReadEnvironmentSeal(ctx, r.lifecycle.state); err != nil || !found || seal.IncarnationUID != "runtime-owned" {
+		t.Fatalf("Host mutated environment seal: %+v, found=%t, err=%v", seal, found, err)
 	}
 }
 

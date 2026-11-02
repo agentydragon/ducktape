@@ -188,11 +188,6 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	if err != nil {
 		return nil, err
 	}
-	environmentState, err := NewEnvironmentState(config.StateDir)
-	if err != nil {
-		_ = owner.Close()
-		return nil, err
-	}
 	supervisor := (*supervision.Supervisor)(nil)
 	if deps.prepareSupervisor != nil {
 		supervisor, err = deps.prepareSupervisor(config, owner.file)
@@ -212,11 +207,19 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	lifecycleState := injectedState
 	var lifecycleStore io.Closer
 	if lifecycleState == nil {
-		lifecycleState, lifecycleStore, err = cosistate.Open(config.StateDir, lifecycle.Namespace, bootstrap.SelectionRegistration(), retained.SessionRecordRegistration(), retained.IngressAckRegistration())
+		lifecycleState, lifecycleStore, err = cosistate.Open(config.StateDir, lifecycle.Namespace, bootstrap.SelectionRegistration(), retained.SessionRecordRegistration(), retained.IngressAckRegistration(), cosistate.EnvironmentSealRegistration())
 		if err != nil {
 			_ = owner.Close()
 			return nil, err
 		}
+	}
+	environmentState, err := NewEnvironmentState(lifecycleState)
+	if err != nil {
+		if lifecycleStore != nil {
+			_ = lifecycleStore.Close()
+		}
+		_ = owner.Close()
+		return nil, err
 	}
 	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
 	r := &Runtime{

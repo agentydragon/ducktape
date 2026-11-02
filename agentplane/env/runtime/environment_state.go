@@ -1,40 +1,46 @@
 package runtime
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
 	"sync"
+
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
+	"github.com/cosi-project/runtime/pkg/state"
 )
 
-const sealedMarkerName = "sealed"
-
-// EnvironmentSnapshot is the environment identity the Runtime publishes to its Host.
-// Quiesced is backed by the legacy durable sealed marker so a Runtime restart cannot reopen
-// a Sandbox that was already quiesced.
+// EnvironmentSnapshot is the live environment identity the Runtime publishes to its Host.
+// Quiesced means a seal exists or seal persistence is uncertain; both states fail closed.
 type EnvironmentSnapshot struct {
 	IncarnationUID string
 	Known          bool
 	Quiesced       bool
 }
 
-// EnvironmentState owns environment identity and the durable quiesce marker. Session files
-// remain in the existing StateDir/sessions directory and are owned by the Harness Host.
+// EnvironmentState keeps the Gateway-bound incarnation in memory and restores the
+// sealed incarnation UID from COSI. Persistence errors block identity transitions until
+// Runtime restarts and reloads COSI's durable state.
 type EnvironmentState struct {
-	mu             sync.Mutex
-	root           string
-	incarnationUID string
-	incarnationSet bool
+	mu                 sync.Mutex
+	state              state.State
+	incarnationUID     string
+	incarnationSet     bool
+	sealedUID          string
+	sealed             bool
+	sealPersistenceErr error
 }
 
-func NewEnvironmentState(stateDir string) (*EnvironmentState, error) {
-	root := filepath.Join(stateDir, "sessions")
-	if err := ensureDirectory(root); err != nil {
+func NewEnvironmentState(lifecycleState state.State) (*EnvironmentState, error) {
+	seal, found, err := cosistate.ReadEnvironmentSeal(context.Background(), lifecycleState)
+	if err != nil {
 		return nil, err
 	}
-	return &EnvironmentState{root: root}, nil
+	environment := &EnvironmentState{state: lifecycleState}
+	if found {
+		environment.sealedUID, environment.sealed = seal.IncarnationUID, true
+	}
+	return environment, nil
 }
 
 func (s *EnvironmentState) Snapshot() EnvironmentSnapshot {
@@ -43,45 +49,30 @@ func (s *EnvironmentState) Snapshot() EnvironmentSnapshot {
 	return EnvironmentSnapshot{
 		IncarnationUID: s.incarnationUID,
 		Known:          s.incarnationSet,
-		Quiesced:       s.lameduckLocked(),
+		Quiesced:       s.sealed || s.sealPersistenceErr != nil,
 	}
 }
 
 func (s *EnvironmentState) Lameduck() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.lameduckLocked()
+	return s.sealed || s.sealPersistenceErr != nil
 }
 
-// SealedUID returns the durable legacy marker payload when the current state is sealed.
-// Runtime uses it to finish the old incarnation's exact flush before adopting a successor.
 func (s *EnvironmentState) SealedUID() (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	marker := filepath.Join(s.root, sealedMarkerName)
-	info, err := os.Stat(marker)
-	if errors.Is(err, os.ErrNotExist) {
+	if s.sealPersistenceErr != nil {
+		return "", false, s.uncertainSealErrorLocked()
+	}
+	if !s.sealed {
 		return "", false, nil
 	}
-	if err != nil {
-		return "", false, err
-	}
-	if !info.Mode().IsRegular() {
-		return "", false, nil
-	}
-	data, err := os.ReadFile(marker)
-	if err != nil {
-		return "", false, err
-	}
-	if len(data) == 0 {
-		return "", false, errors.New("legacy sealed marker has an empty incarnation UID")
-	}
-	return string(data), true, nil
+	return s.sealedUID, true, nil
 }
 
-func (s *EnvironmentState) lameduckLocked() bool {
-	info, err := os.Stat(filepath.Join(s.root, sealedMarkerName))
-	return err == nil && info.Mode().IsRegular()
+func (s *EnvironmentState) uncertainSealErrorLocked() error {
+	return fmt.Errorf("environment seal persistence outcome is uncertain; restart Runtime to reload COSI state: %w", s.sealPersistenceErr)
 }
 
 func (s *EnvironmentState) IncarnationUID() (string, bool) {
@@ -93,112 +84,54 @@ func (s *EnvironmentState) IncarnationUID() (string, bool) {
 func (s *EnvironmentState) RequireIncarnationUID() (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.sealPersistenceErr != nil {
+		return "", s.uncertainSealErrorLocked()
+	}
 	if !s.incarnationSet {
-		return "", errors.New("the runner cannot quiesce before the gateway names its incarnation UID")
+		return "", errors.New("the Runner cannot quiesce before the Gateway names its incarnation UID")
 	}
 	return s.incarnationUID, nil
 }
 
-// AdoptIncarnation clears a legacy seal only when the Gateway names a new workload
-// incarnation. The on-disk filename and UID payload match Runner's existing format.
 func (s *EnvironmentState) AdoptIncarnation(incarnationUID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if incarnationUID == "" {
-		return errors.New("runner incarnation UID is required")
+		return errors.New("Runner incarnation UID is required")
+	}
+	if s.sealPersistenceErr != nil {
+		return s.uncertainSealErrorLocked()
+	}
+	if s.incarnationSet && s.incarnationUID == incarnationUID && (!s.sealed || s.sealedUID == incarnationUID) {
+		return nil
+	}
+	if s.sealed && s.sealedUID != incarnationUID {
+		if err := cosistate.DeleteEnvironmentSeal(context.Background(), s.state, s.sealedUID); err != nil {
+			s.sealPersistenceErr = err
+			return s.uncertainSealErrorLocked()
+		}
+		s.sealedUID, s.sealed = "", false
 	}
 	s.incarnationUID, s.incarnationSet = incarnationUID, true
-	marker := filepath.Join(s.root, sealedMarkerName)
-	data, err := os.ReadFile(marker)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if string(data) == incarnationUID {
-		return nil
-	}
-	if err := os.Remove(marker); err != nil {
-		return err
-	}
-	return syncDirectory(s.root)
+	return nil
 }
 
 func (s *EnvironmentState) EnterLameduck() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.incarnationSet {
-		return errors.New("the runner cannot quiesce before the gateway names its incarnation UID")
+	if s.sealPersistenceErr != nil {
+		return s.uncertainSealErrorLocked()
 	}
-	marker := filepath.Join(s.root, sealedMarkerName)
-	info, err := os.Stat(marker)
-	if err == nil && info.Mode().IsRegular() {
+	if !s.incarnationSet {
+		return errors.New("the Runner cannot quiesce before the Gateway names its incarnation UID")
+	}
+	if s.sealed {
 		return nil
 	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+	if err := cosistate.WriteEnvironmentSeal(context.Background(), s.state, cosistate.EnvironmentSeal{IncarnationUID: s.incarnationUID}); err != nil {
+		s.sealPersistenceErr = err
+		return s.uncertainSealErrorLocked()
 	}
-	temporary := filepath.Join(s.root, sealedMarkerName+".tmp")
-	file, err := os.OpenFile(temporary, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o666)
-	if err != nil {
-		return err
-	}
-	_, writeErr := io.WriteString(file, s.incarnationUID)
-	syncErr := file.Sync()
-	closeErr := file.Close()
-	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
-		return err
-	}
-	if err := os.Rename(temporary, marker); err != nil {
-		return err
-	}
-	return syncDirectory(s.root)
-}
-
-func syncDirectory(path string) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open directory %s for sync: %w", path, err)
-	}
-	defer file.Close()
-	return file.Sync()
-}
-
-// ensureDirectory syncs each parent after creating its child, matching the retained
-// state directory durability contract without making Runtime depend on Host-owned storage.
-func ensureDirectory(path string) error {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return err
-	}
-	var missing []string
-	parent := filepath.Clean(abs)
-	for {
-		_, err := os.Stat(parent)
-		if err == nil {
-			break
-		}
-		if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		missing = append(missing, parent)
-		next := filepath.Dir(parent)
-		if next == parent {
-			return fmt.Errorf("no existing parent for %s", path)
-		}
-		parent = next
-	}
-	if err := syncDirectory(filepath.Dir(parent)); err != nil {
-		return err
-	}
-	for i := len(missing) - 1; i >= 0; i-- {
-		if err := os.Mkdir(missing[i], 0o777); err != nil && !errors.Is(err, os.ErrExist) {
-			return err
-		}
-		if err := syncDirectory(filepath.Dir(missing[i])); err != nil {
-			return err
-		}
-	}
+	s.sealedUID, s.sealed = s.incarnationUID, true
 	return nil
 }

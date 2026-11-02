@@ -28,3 +28,7 @@ message IngressAckSpec {
   uint64 cursor = 1;
   bool sealed = 2;
 }
+
+message EnvironmentSealSpec {
+  string incarnation_uid = 1;
+}

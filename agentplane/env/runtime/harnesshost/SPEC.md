@@ -50,6 +50,8 @@ cleanup retains Runtime ownership. A Pod Runtime exit does not by itself fence e
 abnormal replacement requires the outer container fence. VM native services use the Host's distinct
 systemd scope with the Runtime service's invocation marker.
 
-Runtime holds the environment owner until Host native cleanup, worker joins and journal close
-complete. Host records remain in `<state_dir>/sessions`; bootstrap waiters use Runtime's
-generation-bound bootstrap wait. Cancellation ends a waiter, never the bootstrap effect.
+Runtime owns the `EnvironmentSeals` COSI resource in `<state_dir>/runtime-resources.db` and holds
+the environment owner until Host native cleanup, worker joins and journal close complete. Host
+records remain in `<state_dir>/sessions`, journals keep their IDs/cursors, and native homes remain
+at their existing paths. Bootstrap waiters use Runtime's generation-bound bootstrap wait;
+cancellation ends a waiter, never the bootstrap effect.
