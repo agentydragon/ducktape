@@ -50,7 +50,7 @@ func TestCloseWaitersDoNotCancelSharedCleanup(t *testing.T) {
 		t.Fatalf("expired concurrent Close waiter = %v, want context.DeadlineExceeded", err)
 	}
 	if err := r.ctx.Err(); err != nil {
-		t.Fatalf("Close waiter canceled the Runner lifetime: %v", err)
+		t.Fatalf("Close waiter canceled the Host lifetime: %v", err)
 	}
 	owner, err := retained.OpenOwner(filepath.Join(r.config.StateDir, "harness-host"))
 	if err == nil {
@@ -78,7 +78,7 @@ func TestCloseReportsExitedLifecycleEngine(t *testing.T) {
 		State: state.WrapCore(namespaced.NewState(inmem.Build)), err: failure,
 	}
 	proxy := modelConfigServer(t)
-	r, err := newTestRunner(lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false"), store)
+	r, err := newTestHost(lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false"), store)
 	if err != nil {
 		t.Fatal(err)
 	}

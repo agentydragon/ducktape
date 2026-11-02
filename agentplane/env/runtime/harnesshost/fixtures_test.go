@@ -13,7 +13,7 @@ import (
 // by Runtime tests. Calls carry the exact in-process binding.
 type completedBootstrapBridge struct{}
 
-func (completedBootstrapBridge) ConnectHost(ctx context.Context, _ *Runner) error { return ctx.Err() }
+func (completedBootstrapBridge) ConnectHost(ctx context.Context, _ *Host) error { return ctx.Err() }
 
 func (completedBootstrapBridge) WaitHostBootstrap(ctx context.Context, _ *runtimepb.Binding) error {
 	return ctx.Err()
@@ -21,7 +21,7 @@ func (completedBootstrapBridge) WaitHostBootstrap(ctx context.Context, _ *runtim
 
 func (completedBootstrapBridge) HostExecutionReady(context.Context) (bool, error) { return true, nil }
 
-func bindHost(r *Runner, incarnation string) error {
+func bindHost(r *Host, incarnation string) error {
 	r.mu.Lock()
 	r.runtimeBridge = completedBootstrapBridge{}
 	generation := uint64(1)
@@ -32,13 +32,13 @@ func bindHost(r *Runner, incarnation string) error {
 	return r.ApplyIntent(r.ctx, &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "test-runtime", HostBootId: r.bootID, Generation: generation}, SandboxUid: r.config.Launch.Sandbox.UID, IncarnationUid: incarnation, Mode: runtimepb.LifecycleIntent_RUNNING})
 }
 
-func hostContext(r *Runner, ctx context.Context) context.Context {
+func hostContext(r *Host, ctx context.Context) context.Context {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return withBinding(ctx, r.intent.Binding)
 }
 
-func quiesceHost(ctx context.Context, r *Runner) (*sessionpb.QuiesceResponse, error) {
+func quiesceHost(ctx context.Context, r *Host) (*sessionpb.QuiesceResponse, error) {
 	r.mu.Lock()
 	intent := proto.Clone(r.intent).(*runtimepb.LifecycleIntent)
 	r.mu.Unlock()

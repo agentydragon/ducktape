@@ -31,7 +31,7 @@ func (l *lifecycle) publishAck(id string, ack retained.Acknowledgement) error {
 
 // Host publishers serialize compound snapshots; COSI handles conflicts and no-op updates.
 func publishLifecycle[T lifecycleSpec[T]](l *lifecycle, id string, value T) error {
-	return cosi.Publish(l.runner.ctx, l.state, lifecycleResourceFor(id, value), value, harnesshostlifecycle.HostOwner)
+	return cosi.Publish(l.host.ctx, l.state, lifecycleResourceFor(id, value), value, harnesshostlifecycle.HostOwner)
 }
 
 func (l *lifecycle) admissionCount(ctx context.Context) (int, error) {
@@ -44,7 +44,7 @@ func (l *lifecycle) admissionCount(ctx context.Context) (int, error) {
 
 // Caller holds the Harness Host admission lock: accounting must precede durable admission and serialize with closing.
 func (l *lifecycle) changeAdmissionsLocked(delta int) error {
-	_, err := safe.StateUpdateWithConflicts(l.runner.ctx, l.state, lifecycleResourceFor(harnesshostlifecycle.ResourceID, harnessHostInputSpec{}).Metadata(), func(value *typed.Resource[harnessHostInputSpec, lifecycleExtension[harnessHostInputSpec]]) error {
+	_, err := safe.StateUpdateWithConflicts(l.host.ctx, l.state, lifecycleResourceFor(harnesshostlifecycle.ResourceID, harnessHostInputSpec{}).Metadata(), func(value *typed.Resource[harnessHostInputSpec, lifecycleExtension[harnessHostInputSpec]]) error {
 		input := value.TypedSpec()
 		if input.Admissions+delta < 0 {
 			return errors.New("Harness Host admission count would become negative")

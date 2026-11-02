@@ -32,7 +32,7 @@ func (s *failedHostIntentPublishState) Modify(ctx context.Context, value resourc
 }
 
 func TestHostIntentPublicationFailureRevokesNativeConnection(t *testing.T) {
-	client := &harnesshost.Runner{}
+	client := &harnesshost.Host{}
 	client.SetRuntimeConnection("runtime", "host", true)
 	intent := &runtimepb.LifecycleIntent{Binding: &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1}}
 	r := &Runtime{

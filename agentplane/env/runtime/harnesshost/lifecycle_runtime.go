@@ -16,7 +16,7 @@ import (
 )
 
 type lifecycle struct {
-	runner     *Runner
+	host       *Host
 	state      state.State
 	engine     *cosiruntime.Runtime
 	engineDone <-chan struct{}
@@ -27,7 +27,7 @@ type lifecycle struct {
 	processes  *supervision.Host
 }
 
-func newLifecycle(r *Runner, store state.State, engine *cosiruntime.Runtime, engineDone <-chan struct{}, processes *supervision.Host) (*lifecycle, error) {
+func newLifecycle(r *Host, store state.State, engine *cosiruntime.Runtime, engineDone <-chan struct{}, processes *supervision.Host) (*lifecycle, error) {
 	if err := r.config.resolveSessionReconcileConcurrency(); err != nil {
 		return nil, err
 	}
@@ -36,7 +36,7 @@ func newLifecycle(r *Runner, store state.State, engine *cosiruntime.Runtime, eng
 	}
 	// Completion is separate from Harness Host cancellation: workers are joined only after the engine exits.
 	done, finish := context.WithCancelCause(context.WithoutCancel(r.ctx))
-	l := &lifecycle{runner: r, state: store, engine: engine, engineDone: engineDone, done: done, finish: finish}
+	l := &lifecycle{host: r, state: store, engine: engine, engineDone: engineDone, done: done, finish: finish}
 	l.processes = processes.Scope(r.ctx, supervision.HarnessDomain, &l.workers, r.fail)
 	if r.config.Codex != nil {
 		appServer, err := codexappserver.NewHost(*r.config.Codex, codexappserver.Dependencies{
@@ -54,7 +54,7 @@ func newLifecycle(r *Runner, store state.State, engine *cosiruntime.Runtime, eng
 			return nil, err
 		}
 	}
-	if err := harnesshostlifecycle.PublishDesired(l.runner.ctx, l.state, harnesshostlifecycle.Desired{Mode: harnesshostlifecycle.Quiescing}); err != nil {
+	if err := harnesshostlifecycle.PublishDesired(l.host.ctx, l.state, harnesshostlifecycle.Desired{Mode: harnesshostlifecycle.Quiescing}); err != nil {
 		return nil, err
 	}
 	if err := l.state.Create(r.ctx, lifecycleResourceFor(harnesshostlifecycle.ResourceID, harnessHostInputSpec{}), state.WithCreateOwner(harnesshostlifecycle.HostOwner)); err != nil {
@@ -69,20 +69,20 @@ func (l *lifecycle) observeSharedEngine() {
 }
 
 func (l *lifecycle) registerControllers() error {
-	if err := l.engine.RegisterController(&hostIntentController{runner: l.runner}); err != nil {
+	if err := l.engine.RegisterController(&hostIntentController{host: l.host}); err != nil {
 		return err
 	}
-	if err := l.engine.RegisterController(&hostReportController{runner: l.runner}); err != nil {
+	if err := l.engine.RegisterController(&hostReportController{host: l.host}); err != nil {
 		return err
 	}
 	if err := l.engine.RegisterController(&harnessHostLifecycleController{l: l}); err != nil {
 		return err
 	}
 	var controllers []controller.QController
-	if l.runner.codexAppServer != nil {
-		controllers = append(controllers, l.runner.codexAppServer.Controller())
+	if l.host.codexAppServer != nil {
+		controllers = append(controllers, l.host.codexAppServer.Controller())
 	}
-	controllers = append(controllers, l.runner.sessions.Controller())
+	controllers = append(controllers, l.host.sessions.Controller())
 	for _, c := range controllers {
 		if err := l.engine.RegisterQController(c); err != nil {
 			return err
@@ -94,15 +94,15 @@ func (l *lifecycle) registerControllers() error {
 // The owning controller has already admitted this operation. Accepted setup and
 // bootstrap work still finish if Close has since closed new admissions; their
 // operation slots keep shutdown from advancing until they settle.
-func (r *Runner) launchProcess(ctx context.Context, owner string, supervisor *supervision.Supervisor, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
+func (r *Host) launchProcess(ctx context.Context, owner string, supervisor *supervision.Supervisor, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
 	generation := r.lifecycle.desiredState().Generation
 	return r.lifecycle.processes.Launch(ctx, owner, generation, supervisor, config)
 }
 
 func (l *lifecycle) desiredState() harnesshostlifecycle.Desired {
-	value, _, err := harnesshostlifecycle.ReadDesired(l.runner.ctx, l.state)
+	value, _, err := harnesshostlifecycle.ReadDesired(l.host.ctx, l.state)
 	if err != nil {
-		l.runner.fail(err)
+		l.host.fail(err)
 		return harnesshostlifecycle.Desired{Mode: harnesshostlifecycle.Closing}
 	}
 	return value
@@ -118,11 +118,11 @@ func (l *lifecycle) setDesiredState(mode harnesshostlifecycle.Mode, sealUID stri
 	if mode == harnesshostlifecycle.Running && desiredState.Mode != harnesshostlifecycle.Running {
 		// Drop old execution requests while admission is still closed. Recovery
 		// publishes fresh demand after eligible journals have reopened.
-		if err := l.runner.sessions.ResetDemand(); err != nil {
+		if err := l.host.sessions.ResetDemand(); err != nil {
 			return err
 		}
-		if l.runner.codexAppServer != nil {
-			if err := l.runner.codexAppServer.ResetDemand(l.runner.ctx); err != nil {
+		if l.host.codexAppServer != nil {
+			if err := l.host.codexAppServer.ResetDemand(l.host.ctx); err != nil {
 				return err
 			}
 		}
@@ -131,10 +131,10 @@ func (l *lifecycle) setDesiredState(mode harnesshostlifecycle.Mode, sealUID stri
 	if desiredState.Mode != mode || desiredState.SealUID != sealUID || retry {
 		desiredState.Mode, desiredState.SealUID, desiredState.Generation = mode, sealUID, desiredState.Generation+1
 	}
-	return harnesshostlifecycle.PublishDesired(l.runner.ctx, l.state, desiredState)
+	return harnesshostlifecycle.PublishDesired(l.host.ctx, l.state, desiredState)
 }
 
-func (r *Runner) admitLifecycleEffect(ctx context.Context, expected harnesshostlifecycle.Desired, effect func(context.Context) error) error {
+func (r *Host) admitLifecycleEffect(ctx context.Context, expected harnesshostlifecycle.Desired, effect func(context.Context) error) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	current, found, err := harnesshostlifecycle.ReadDesired(ctx, r.lifecycle.state)
@@ -147,7 +147,7 @@ func (r *Runner) admitLifecycleEffect(ctx context.Context, expected harnesshostl
 	return effect(ctx)
 }
 
-func (r *Runner) admitCodexRequest(ctx context.Context, effect func(context.Context) error) error {
+func (r *Host) admitCodexRequest(ctx context.Context, effect func(context.Context) error) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !r.lifecycle.accepting() {
@@ -158,13 +158,13 @@ func (r *Runner) admitCodexRequest(ctx context.Context, effect func(context.Cont
 }
 
 func (l *lifecycle) accepting() bool {
-	return l.desiredState().Mode == harnesshostlifecycle.Running && l.runner.ready.Load()
+	return l.desiredState().Mode == harnesshostlifecycle.Running && l.host.ready.Load()
 }
 
 func (l *lifecycle) status() harnesshostlifecycle.Status {
-	value, _, err := harnesshostlifecycle.ReadStatus(l.runner.ctx, l.state)
+	value, _, err := harnesshostlifecycle.ReadStatus(l.host.ctx, l.state)
 	if err != nil {
-		l.runner.fail(err)
+		l.host.fail(err)
 	}
 	return value
 }
@@ -172,7 +172,7 @@ func (l *lifecycle) status() harnesshostlifecycle.Status {
 func (l *lifecycle) wait(ctx context.Context, minimum harnesshostlifecycle.Stage) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
-	stop := context.AfterFunc(l.runner.ctx, func() { cancel(context.Cause(l.runner.ctx)) })
+	stop := context.AfterFunc(l.host.ctx, func() { cancel(context.Cause(l.host.ctx)) })
 	defer stop()
 	stopEngine := context.AfterFunc(l.done, func() { cancel(context.Cause(l.done)) })
 	defer stopEngine()
