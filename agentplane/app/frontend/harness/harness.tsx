@@ -35,7 +35,8 @@ import { readySandbox, suspendedSandbox, testSandbox } from "../testing/sandbox"
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import "@mantine/core/styles.css";
 
-import { clone, create, fromJson, fromJsonString, toJson, type MessageInitShape } from "@bufbuild/protobuf";
+import { clone, create, fromJson, toJson, type MessageInitShape } from "@bufbuild/protobuf";
+import { TimestampSchema } from "@bufbuild/protobuf/wkt";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -66,6 +67,7 @@ import type { McpLinkageView } from "../mcp_linkage_client";
 import {
   SandboxNotificationStatusSchema,
   InboxEntrySummarySchema,
+  InboxStatusSchema,
 } from "../../../notification_service/notifications_operator_pb";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
 import { CommandSchema } from "../../../proto/command_pb";
@@ -601,7 +603,7 @@ function notificationStatus(sandbox: string) {
   const inboxes =
     sandbox === "ready-sandbox"
       ? [
-          {
+          fromJson(InboxStatusSchema, {
             inbox: {
               id: "inbox-one",
               sessionId: IDLE_THREAD,
@@ -688,8 +690,8 @@ function notificationStatus(sandbox: string) {
             pendingEntriesMore: false,
             noticeWaitReason: "NOTICE_WAIT_REASON_AWAITING_CONFIRMATION",
             nextWorkAt: ago(-5000),
-          },
-          {
+          }),
+          fromJson(InboxStatusSchema, {
             inbox: {
               id: "inbox-two",
               sessionId: "s-2",
@@ -712,8 +714,8 @@ function notificationStatus(sandbox: string) {
             maxWaitAt: ago(-120000),
             noticeWaitReason: "NOTICE_WAIT_REASON_DEBOUNCING",
             nextWorkAt: ago(-60000),
-          },
-          {
+          }),
+          fromJson(InboxStatusSchema, {
             inbox: {
               id: "inbox-three",
               sessionId: "s-3",
@@ -744,10 +746,10 @@ function notificationStatus(sandbox: string) {
             pendingEntriesMore: false,
             noticeWaitReason: "NOTICE_WAIT_REASON_DELIVERY_RETRY",
             nextWorkAt: ago(-5000),
-          },
+          }),
         ]
       : [];
-  return fromJsonString(SandboxNotificationStatusSchema, JSON.stringify({ observedAt: ago(0), inboxes }));
+  return create(SandboxNotificationStatusSchema, { observedAt: fromJson(TimestampSchema, ago(0)), inboxes });
 }
 
 /** The store's copy of the sessions: the idle one named, the stopped one not, so both renderings are on the page. */
@@ -3523,12 +3525,7 @@ routes.unshift([
           first.unannouncedCount += 1;
           first.pendingAcknowledgementCount += 1;
           first.pendingEntries.push(
-            fromJson(InboxEntrySummarySchema, {
-              cursor: "10",
-              createdAt: ago(0),
-              provider: "github",
-              summary: "GitHub workflow_run · completed",
-            })
+            fromJson(InboxEntrySummarySchema, notificationEntry(10, 0, "github", "GitHub workflow_run · completed"))
           );
         }
         return [{ snapshot: toJson(SandboxNotificationStatusSchema, snapshot, { alwaysEmitImplicit: true }) }];
