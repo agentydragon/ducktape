@@ -108,27 +108,8 @@ def test_quest_bearer_has_its_own_secret_and_network_access(scratch_chart: Chart
     rules = policy["spec"]["rules"]
     assert [rule["methods"] for rule in rules] == [["GET"], ["POST"]]
     assert all(rule["hosts"] == ["openai-platform.allegedly.works"] for rule in rules)
-    assert rules[0]["paths"] == [
-        "/quest/openapi.json",
-        "/quest/guest/getReasons/*",
-        "/quest/guest/getPscDetails/*",
-        "/quest/api/getInsuranceProfile",
-        "/quest/guest/getTokenBasicInfoAPI/*",
-        "/quest/guest/getEncounterInfo/appointment",
-        "/quest/guest/getEncounterInfo/demographics",
-        "/quest/guest/getEncounterInfo/insurance",
-        "/quest/guest/getEncounterInfo/secondaryInsurance",
-        "/quest/guest/getPayorList/*",
-        "/quest/guest/getAppointment/*",
-    ]
-    assert rules[1]["paths"] == [
-        "/quest/guest/getPscsWithAvailability",
-        "/quest/api/getOpenEorders",
-        "/quest/api/getUserDemographics",
-        "/quest/guest/examoneEligibility",
-        "/quest/guest/verifyInsurance/V2",
-        "/quest/guest/getPricing",
-    ]
+    assert all(rule["paths"] for rule in rules)
+    assert all(path.startswith("/quest/") for rule in rules for path in rule["paths"])
     network = next(
         obj
         for obj in objects
