@@ -49,5 +49,7 @@ callables, so the parameter/TDZ guard checks the right callable.
 intrinsic pollution is not detected, while migrated consumers query a closed
 source-write census and expose mutation witnesses. That wording obscures the
 distinction between host/entry assumptions and additional source-proof guards.
-Document the distinction and identify unmigrated spelling-based consumers;
-the A11 heading must not silently override a failed native-slot query.
+The design now documents this distinction and requires a failed slot query to
+retain its opaque fallback. The consumer-by-consumer inventory of unmigrated
+spelling-based admissions remains follow-up work; the A11 heading must not
+silently override a failed native-slot query.
