@@ -109,7 +109,7 @@ async def test_client_propagates_active_trace_context() -> None:
     )
     with trace.use_span(NonRecordingSpan(span_context)):
         async with _app(accepted, requests=observed) as (client, _):
-            await client.configuration.presets()
+            await client.presets()
     assert "traceparent: 00-1234567890abcdef1234567890abcdef-1234567890abcdef-01\r\n" in observed[0].lower()
 
 
@@ -186,11 +186,11 @@ async def test_app_config_client_decodes_generated_proto_json() -> None:
 
     async with _app(models, presets) as (client, _):
         catalog = await client.models()
-        presets_response = await client.configuration.presets()
+        presets_response = await client.presets()
 
     assert catalog.models[0].display_name == "Model A"
     assert catalog.harnesses == {"HARNESS_CODEX": ["model-a"]}
-    (preset,) = presets_response.configuration.presets
+    (preset,) = presets_response.presets
     assert preset.session_defaults.harness == session_pb2.HARNESS_CODEX
     assert not preset.session_defaults.HasField("reasoning_effort")
 
@@ -453,8 +453,8 @@ async def test_get_environment_uses_the_exact_generated_route_and_uid_query() ->
             writer,
             "200 OK",
             b'{"target":{"namespace":"test-ns","name":"box","uid":"target-uid"},'
-            b'"operatingMode":"OPERATING_MODE_RUNNING",'
-            b'"readiness":{"state":"READINESS_STATE_READY"}}',
+            b'"observedState":{"operatingMode":"OPERATING_MODE_RUNNING",'
+            b'"readiness":{"state":"READINESS_STATE_READY"}}}',
             "application/json",
         )
 

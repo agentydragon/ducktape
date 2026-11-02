@@ -29,7 +29,7 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
     with tracer.start_as_current_span(
         "system_test.launch_preset.resolve", record_exception=False, set_status_on_exception=False
     ):
-        configured = {preset.name: preset for preset in (await client.configuration.presets()).configuration.presets}
+        configured = {preset.name: preset for preset in (await client.presets()).presets}
         preset = configured[launch_preset.SANDBOX_PRESET]
     assert preset.session_defaults.harness == session_pb2.HARNESS_CODEX
 
