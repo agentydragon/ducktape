@@ -15,6 +15,17 @@ log, but the 30-second assertion passed. BuildBuddy target history returned
 217 passing entries and no failures in the retrieved page; many entries
 share cached results, so they are not 217 independent measurements.
 
+The next normal hosted run on PR head
+`34a7588a96e3fc57f55644562915a2097a74c432` failed the same target again
+(BuildBuddy invocation `05355d06-b729-58b5-9763-a91ede9b02c8`, GitHub run
+`41377958308`). BuildBuddy recorded 227 passing tests and one failure out of
+228; its invocation reports tested commit
+`807e9eeee446eeab2510a1cfeeed0f2fb74331ed`. The command took
+51.204735239 seconds and the whole test took 158.53 seconds. The assertion
+again failed before checking the proposal count. This second independent
+budget failure makes a one-off slow execution less persuasive, but does not
+identify which work made the command slower.
+
 ## Code-path boundary
 
 This fixture creates 4096 alternating sequenced steps and 96 readers, adding
@@ -29,21 +40,23 @@ premise, and the timed command reads an already built graph. The F10 branch
 adds refusal metadata to effect-coverage reports without changing effect
 coverage or these candidate loops.
 
-The failure's 169.23-second total includes about 106 seconds outside the timed
-command interval. The prior passing run's 81.66-second total includes its
+The first failure's 169.23-second total includes about 106 seconds outside the
+timed command interval; the second's 158.53-second total includes about 107
+seconds outside it. The prior passing run's 81.66-second total includes its
 entire command plus JSON checks. Both fixture generation and command execution
 can therefore contribute to the difference. Existing logs lack command phase
 durations, generated graph sizes, and worker load; they do not distinguish a
-graph-shape change from a slower remote worker. A 63-second command is a real
-budget failure, but this evidence does not justify weakening the budget or
-changing the algorithm.
+graph-shape change from a slower remote worker. Two real budget failures do
+not justify weakening the budget or changing the algorithm without a causal
+path.
 
 ## F14: locate proposal-budget slowdowns from hosted evidence
 
-Use the normal hosted PR CI result after the diagnostic change is integrated.
-If this target fails again, compare the failing and passing runs' generated
-graph node/edge counts and remote execution worker metadata, then trace the
-specific code path from those existing artifacts. Do not launch profiling,
+The failing test published only `test.log` and `test.xml`, not its generated
+graph. At the next permitted evidence collection, preserve graph node/edge
+counts for a failing and passing run and compare remote execution worker
+metadata, then trace the specific code path.
+Do not launch profiling,
 benchmark, standalone corpus or controlled-comparison jobs under the current
 no-measurement direction. Keep the 30-second assertion until a cause is
 established; an unexplained slow run is not proof of a flake.
