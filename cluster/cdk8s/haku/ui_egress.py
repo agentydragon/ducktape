@@ -1,4 +1,4 @@
-"""haku-ui's attachment to agentplane-staging, as its own caller (haku/plans/haku_ui_agentplane.md).
+"""haku-ui's attachment to agentplane-staging, as its own caller.
 
 haku-ui is Haku-authored (haku-state `k8s/haku-ui`, applied by `haku-state-workloads` into
 haku-sandbox), so the identity and everything it may reach live here, where Haku cannot write:
@@ -13,12 +13,21 @@ Invariant: haku-ui's grants stay a subset of `claude-ai`'s. `haku-sandbox-admin`
 Pods that run as any ServiceAccount in haku-sandbox and exec into haku-ui's, so whatever is bound
 to `haku-ui` is Haku's too; Haku already holds `claude-ai`'s grants, which makes that harmless.
 It is deliberately not `claude-ai` itself: that binding auto-approves sandbox create and exec.
+`test_haku_ui_egress` pins it.
 
-The Pod (haku-state) runs as this ServiceAccount with the same attachment as public-coder's
-OpenClaw: an `agentplane-egress-sidecar` container whose projected token (audience
-`WORKLOAD_TOKEN_AUDIENCE`) authenticates it to the gateway, `HTTPS_PROXY` on the sidecar's
-loopback listener, and the `agentplane-egress-ca` ConfigMap (published into this namespace by the
-egress Bundle) as its trust store. Credentials in the Pod are placeholders.
+What the Pod (haku-state) must carry, as public-coder's OpenClaw does (`public_coder/egress.py`):
+run as this ServiceAccount; an `agentplane-egress-sidecar` container with settings naming `GATEWAY`
+and a projected token (audience `WORKLOAD_TOKEN_AUDIENCE`); the `agentplane-egress-ca` ConfigMap
+(published into this namespace by the egress Bundle) as its trust store; and
+`forgejo-images-creds` as an imagePullSecret, because the sidecar is a private ducktape-ci image the
+`haku` registry user cannot read. Credentials in the Pod are placeholders.
+
+Gotcha (2026-11-01): `kyverno/proxy_injection.py` APPENDS `HTTP(S)_PROXY`, `NO_PROXY` and
+`SSL_CERT_FILE` to every container in haku-sandbox, and the last duplicate env entry wins. Its
+`NO_PROXY` covers `.svc.cluster.local` and `.allegedly.works`, so a client that takes its proxy from
+the environment skips the sidecar and sends the placeholder to the destination unsubstituted (Home
+Assistant answered 401). haku-ui therefore names the proxy and CA in code (haku-state
+`ui/backend/agentplane.py`, `Egress`).
 """
 
 from agentplane_policyset_crds.works.allegedly.agentplane import (
