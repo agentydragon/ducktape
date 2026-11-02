@@ -3,18 +3,22 @@
 ## Later decision, 2026-11-01 PDT
 
 The operator approved deletion of the eight legacy Actions records and all six old Actions
-Connection/external OAuth tables. Actions migration 9 implements that decision. The live MCP edge
-database and its distinct records remain the current owner. The investigation and preservation
-recommendations below describe the state and decision boundary **before** this approval.
+Connection/external OAuth tables. Actions migration 9 applied in staging; the six tables are gone.
+The live MCP edge database and its distinct records remain the current owner. The investigation
+below describes the state and decision boundary **before** this approval.
 
-## Current finding, 2026-11-02 04:15–04:22 UTC
+Reverting the Actions image cannot restore the deleted rows. If recovery is needed, restore a
+pre-drop Actions backup to an isolated database and recover only the needed state; do not overwrite
+new writes in either live database or restart the retired integrated Connection/OAuth writer.
 
-The external serving handoff happened; the old identities are absent from the observed edge state.
-The eight legacy records remain in `actions`. Their IDs have no overlap with the corresponding records in `mcp_edge`. Do not run the empty-destination transfer
-or drop the legacy schema on this evidence. No database, writer, route or grant was changed in
-this investigation.
+## Pre-retirement finding, 2026-11-02 04:15–04:22 UTC
 
-### Live inventory
+The external serving handoff had happened; the old identities were absent from the observed edge
+state. The eight legacy records were still in `actions`. Their IDs had no overlap with the
+corresponding records in `mcp_edge`. No database, writer, route or grant was changed in this
+investigation.
+
+### Pre-retirement inventory
 
 Read-only `psql` queries through `agentplane-staging/postgres-3` compared `md5(id::text)` sets,
 selected non-secret relationship fields and timestamps. Queries used `BEGIN READ ONLY` for the
@@ -69,7 +73,7 @@ resolves the grant in its own database. The source has no OAuth rows, its IDs ar
 edge, and its issuer differs. Matching caller names does not make the two grants interchangeable.
 No external login, token use, revocation or Action execution was attempted in this investigation.
 
-### History and the unresolved boundary
+### History and the pre-retirement uncertainty
 
 - The October 23 preflight recorded the same 1 Connection, 3 grants and 4 enrollments in Actions,
   with no OAuth rows, while the edge was scaled to zero.
@@ -98,7 +102,7 @@ contents were not inspected. A retained October 23 maintenance transcript, datab
 recoverable pre/post-cutover snapshot would be needed to distinguish those histories. Do not
 interpret missing reviewed evidence as proof that a transfer never ran.
 
-## Existing transfer is inapplicable to this destination
+## The retired transfer was inapplicable to this destination
 
 The now-retired `mcp-edge-transfer` command copied six tables, retaining IDs and
 all supported fields, inside one destination transaction. It requires recognized histories,
@@ -107,9 +111,5 @@ writers. It fails on any nonempty destination table. It records no separate dura
 Its confirmation flag cannot make a merge into the live edge safe.
 
 The old October 23 procedure required stopping writers, copying into an empty edge, comparing
-fields, switching routes and retaining the source. That procedure's empty-destination precondition is now false.
-Do not empty the edge, overwrite its new records, restart the legacy writer, replay consent or
-Actions, or insert the old active grant into live authority tables to manufacture continuity.
-Preserve both datasets while the historical owner and retention contract are decided. Any future
-handoff must preserve original IDs, grant revisions/statuses, operator/issuer associations and
-new edge writes, with a separately validated recovery path before source retirement.
+fields, switching routes and retaining the source. Its empty-destination precondition was false
+when investigated; the operator later approved deleting the source instead.
