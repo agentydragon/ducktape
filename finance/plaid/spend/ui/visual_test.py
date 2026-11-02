@@ -185,17 +185,6 @@ async def test_spending_decision_render(
 ) -> None:
     await page.set_viewport_size({"width": width, "height": height})
 
-    async def serve_pre_activation_history(route: Route) -> None:
-        response = await route.fetch()
-        transactions = await response.json()
-        if transactions["requested_period_id"] == "rolling_30d":
-            historical = next(row for row in transactions["rows"] if row["name"] == "EXAMPLE TRAVEL PURCHASE")
-            historical["date"] = "2026-09-30"
-            historical["disposition"] = "pace_only"
-            historical["allowance_minor_units"] = 0
-        await route.fulfill(response=response, json=transactions)
-
-    await page.route("**/api/v1/transactions*", serve_pre_activation_history)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.locator("canvas[aria-label]").wait_for()
     await page.get_by_text("$200", exact=True).wait_for()
@@ -214,7 +203,7 @@ async def test_spending_decision_render(
             );
         }"""
     )
-    await expect(page.get_by_role("alert").get_by_text("2 charges ($15) need review")).to_have_count(1)
+    await expect(page.get_by_role("alert").get_by_text("1 charge ($15) need review")).to_have_count(1)
     await expect(page.get_by_role("heading", name="Can I afford this?")).to_have_count(1)
     pair_review = page.get_by_role("alert").filter(has_text="Allowance needs review")
     await expect(pair_review.get_by_text("example-reversal-needs-review", exact=False)).to_be_visible()
@@ -226,9 +215,9 @@ async def test_spending_decision_render(
     await expect(page.locator('span[title="$200.00"]').first).to_be_attached()
     await expect(page.get_by_text("30 days", exact=True)).to_have_count(1)
     await expect(page.get_by_text("$13 / day", exact=True)).to_have_count(1)
-    await expect(page.get_by_text("Provisional leash ~$28 / day.", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Provisional leash ~$23 / day.", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Below provisional leash", exact=True)).to_have_count(1)
-    await expect(page.get_by_text("Unmatched in selected window: 2 ($3)", exact=False)).to_have_count(1)
+    await expect(page.get_by_text("Unmatched in selected window: 1 ($15)", exact=False)).to_have_count(1)
     await expect(page.get_by_text("$75", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Provisional card total since", exact=False)).to_have_count(1)
     await expect(page.get_by_text("Includes purchases outside the allowance", exact=False)).to_have_count(1)
@@ -238,7 +227,7 @@ async def test_spending_decision_render(
     await view.capture(normal.removesuffix(".png"), label=f"{width}px available", full_page=True, animations="disabled")
     await page.get_by_text("30 days", exact=True).click()
     await expect(page.locator("#spending-history-summary")).to_have_text(
-        "$550 flexible spending over 30 days; average $18 per day; leash reference $28 per day."
+        "$550 flexible spending over 30 days; average $18 per day; leash reference $23 per day."
     )
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
@@ -251,7 +240,7 @@ async def test_spending_decision_render(
     )
     await page.get_by_text("7 days", exact=True).click()
     await expect(page.locator("#spending-history-summary")).to_have_text(
-        "$15 flexible spending over 7 days; average $2 per day; leash reference $28 per day."
+        "$88 flexible spending over 7 days; average $13 per day; leash reference $23 per day."
     )
     await page.get_by_label("Hypothetical flexible purchase").fill("250")
     await page.get_by_text("Over allowance", exact=True).last.wait_for()
@@ -394,7 +383,7 @@ async def _open_transaction_details(page: Page, rows: Locator, width: int) -> No
     await page.get_by_text("Allowance bridge", exact=True).wait_for()
     if width >= 992:
         await rows.locator("tbody tr[data-transaction-row]").filter(has_text="UPS").click()
-        await expect(rows.locator("tbody tr")).to_have_count(11)
+        await expect(rows.locator("tbody tr")).to_have_count(12)
     else:
         await _expand_accordion(rows.get_by_role("button", name="UPS", exact=False))
     await rows.get_by_text("Required document shipping for a synthetic example.").wait_for()
@@ -435,11 +424,10 @@ async def test_transaction_explanations_render(
     await expect(tax_flow.get_by_text("$415.00", exact=True)).to_have_count(1)
     await expect(tax_flow.get_by_text("$0.00", exact=True)).to_have_count(1)
     await expect(tax_flow.get_by_text("1 pending", exact=True)).to_have_count(1)
-    cad_tax_flow = page.get_by_role("button", name="Filter transactions to Taxes, CAD")
-    await expect(cad_tax_flow).to_contain_text("72.00")
+    await expect(rows.get_by_text("Other currency", exact=True)).to_have_count(1)
     await expect(page.get_by_text("can still be real cash flows", exact=False)).to_be_visible()
     if width >= 992:
-        await expect(rows.locator("tbody tr")).to_have_count(10)
+        await expect(rows.locator("tbody tr")).to_have_count(12)
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     image = f"transactions-{width}.png"
@@ -452,7 +440,7 @@ async def test_transaction_explanations_render(
         expanded.removesuffix(".png"), label=f"{width}px rule explanation", full_page=True, animations="disabled"
     )
     await page.get_by_label("Transaction filter").get_by_text("Review", exact=True).click()
-    await page.get_by_text("Showing 2 of 10", exact=True).wait_for()
+    await page.get_by_text("Showing 2 of 11", exact=True).wait_for()
     await expect(rows.get_by_text("UPS", exact=True)).to_have_count(0)
     await expect(rows.get_by_text("EXAMPLE OWN ACCOUNT TRANSFER", exact=True)).to_have_count(0)
     await expect(rows.get_by_text("Confirm the purchase before netting this refund.")).not_to_be_visible()
@@ -464,7 +452,7 @@ async def test_transaction_explanations_render(
 
     await page.get_by_label("Transaction filter").get_by_text("All", exact=True).click()
     await transfer_flow.click()
-    await page.get_by_text("Showing 2 of 10", exact=True).wait_for()
+    await page.get_by_text("Showing 2 of 11", exact=True).wait_for()
     await expect(rows.get_by_text("EXAMPLE OWN TRANSFER DEBIT", exact=True)).to_have_count(1)
     await expect(rows.get_by_text("EXAMPLE OWN TRANSFER CREDIT", exact=True)).to_have_count(1)
     await expect(rows.get_by_text("EXAMPLE OWN ACCOUNT TRANSFER", exact=True)).to_have_count(0)
@@ -481,26 +469,26 @@ async def test_transaction_explanations_render(
     )
 
     await page.get_by_label("Transaction filter").get_by_text("Allowance effect", exact=True).click()
-    await page.get_by_text("Showing 0 of 10", exact=True).wait_for()
+    await page.get_by_text("Showing 0 of 11", exact=True).wait_for()
     await page.get_by_text("Clear exclusion filter", exact=True).click()
-    await page.get_by_text("Showing 2 of 10", exact=True).wait_for()
+    await page.get_by_text("Showing 3 of 11", exact=True).wait_for()
     await page.get_by_label("Transaction filter").get_by_text("All", exact=True).click()
 
     await tax_flow.click()
-    await page.get_by_text("Showing 1 of 10", exact=True).wait_for()
+    await page.get_by_text("Showing 1 of 11", exact=True).wait_for()
     await expect(rows.get_by_text("EXAMPLE TAX PAYMENT", exact=True)).to_have_count(1)
     await expect(rows.get_by_text("EXAMPLE TAX PAYMENT CAD", exact=True)).to_have_count(0)
     await page.get_by_label("Transaction filter").get_by_text("Review", exact=True).click()
-    await page.get_by_text("Showing 0 of 10", exact=True).wait_for()
+    await page.get_by_text("Showing 0 of 11", exact=True).wait_for()
     await page.get_by_text("Clear exclusion filter", exact=True).click()
-    await page.get_by_text("Showing 2 of 10", exact=True).wait_for()
+    await page.get_by_text("Showing 2 of 11", exact=True).wait_for()
     await expect(rows.get_by_text("EXAMPLE TAX PAYMENT", exact=True)).to_have_count(0)
 
     await page.get_by_label("Transaction filter").get_by_text("All", exact=True).click()
     await page.get_by_role("button", name="Filter transactions to Taxes, USD").click()
     await page.get_by_text("Clear exclusion filter", exact=True).wait_for()
     await page.get_by_text("7 days", exact=True).click()
-    await page.get_by_text("Showing 9 of 9", exact=True).wait_for()
+    await page.get_by_text("Showing 10 of 10", exact=True).wait_for()
     await expect(page.get_by_text("Clear exclusion filter", exact=True)).to_have_count(0)
     await expect(rows.get_by_text("EXAMPLE TAX PAYMENT", exact=True)).to_have_count(1)
     view.errors.assert_none(context="Spend")

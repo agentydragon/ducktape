@@ -6,7 +6,14 @@ from typing import cast
 import pytest
 import pytest_bazel
 
-from finance.plaid.spend.allowance import Disposition, Kind, PeriodId, TransactionPeriodId
+from finance.plaid.spend.allowance import (
+    Disposition,
+    Kind,
+    PeriodId,
+    TransactionPeriodId,
+    daily_reference,
+    round_minor_units,
+)
 from finance.plaid.spend.sustainability import SustainabilityView
 from finance.plaid.spend.ui.testing import sustainability, transactions
 
@@ -39,6 +46,49 @@ def test_transaction_summary_matches_shown_rows(period: TransactionPeriodId) -> 
         assert flow.credit_minor_units == sum(max(-row.amount_minor_units, 0) for row in rows)
         assert flow.transaction_count == len(rows)
         assert flow.pending_count == sum(row.pending for row in rows)
+
+
+@pytest.mark.parametrize("period", [PeriodId.CREDIT_CYCLE, PeriodId.ROLLING_7D, PeriodId.ROLLING_30D])
+def test_allowance_matches_transaction_ledger(period: TransactionPeriodId) -> None:
+    view = transactions.view(period)
+    allowance = view.allowance
+    assert allowance is not None
+    spend = next(entry for entry in allowance.spend_periods if entry.period.id == period)
+    assert spend.spend_minor_units == view.summary.net_allowance_spend_minor_units
+    assert spend.counted_from == max(spend.period.start, allowance.activation_at)
+    if period.rolling_days is not None:
+        pace = next(entry for entry in allowance.recorded_pace_periods if entry.period.id == period)
+        effects = [
+            effect.amount_minor_units for row in view.rows for effect in row.pace_effects if effect.period_id == period
+        ]
+        assert pace.observed_daily_minor_units == sum(effects) // period.rolling_days
+        assert pace.unmatched_charges is not None
+        assert pace.unmatched_charges.count == view.summary.unmatched_charge_count
+        assert pace.unmatched_charges.amount_minor_units == view.summary.unmatched_charge_minor_units
+
+
+def test_allowance_balance_matches_current_cycle() -> None:
+    view = transactions.view(PeriodId.CREDIT_CYCLE)
+    allowance = view.allowance
+    assert allowance is not None
+    assert allowance.posted_minor_units == sum(row.allowance_minor_units for row in view.rows if not row.pending)
+    assert allowance.pending_minor_units == sum(row.allowance_minor_units for row in view.rows if row.pending)
+    assert (
+        allowance.available_minor_units == allowance.monthly_minor_units - view.summary.net_allowance_spend_minor_units
+    )
+    assert allowance.review_transaction_count == view.summary.unmatched_charge_count
+    assert allowance.review_minor_units == view.summary.unmatched_charge_minor_units
+    assert allowance.daily_reference_minor_units == round_minor_units(daily_reference(allowance.monthly_minor_units), 0)
+
+
+def test_pre_activation_purchase_informs_pace_without_allowance_debt() -> None:
+    view = transactions.view(PeriodId.ROLLING_30D)
+    assert view.allowance is not None
+    history = [row for row in view.rows if row.date < view.allowance.activation_at]
+    assert len(history) == 1
+    assert history[0].disposition == Disposition.PACE_ONLY
+    assert history[0].allowance_minor_units == 0
+    assert any(effect.amount_minor_units > 0 for effect in history[0].pace_effects)
 
 
 def test_sustainability_copies_validate() -> None:
