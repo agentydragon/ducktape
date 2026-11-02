@@ -374,9 +374,9 @@
           </div>
         </div>
         <p class="current-note">
-          Keep image reuse and storage cleanup. Next: validate recovery of stale
-          VM-node heartbeats, and soak the bridge and observer changes. No 2× CI
-          speedup is established.
+          Keep image reuse and storage cleanup. A heartbeat remedy still needs a
+          verified aged warm trial; soak the bridge and observer changes. No 2×
+          CI speedup is established.
         </p>
         <nav aria-label="Report sections">
           <a href="#reuse">Reuse</a><a href="#feedback">PR feedback</a
@@ -961,10 +961,10 @@
           affinity. The retained node had
           <code>kubevirt.io/schedulable=false</code> and heartbeat 14:55:05; a
           15:00:17 <code>NodeUnresponsive</code> event says the handler was not
-          responsive. Provisioning only began15:02:18, then the Pods
-          scheduled15:02:22–23. The same control path provisioned in 3–4s and
-          scheduled 4–6s after the readiness wait began. The extra roughly 54s
-          is before guest execution.
+          responsive. Provisioning only began at 15:02:18, then the Pods
+          scheduled at 15:02:22–23. The same control path provisioned in 3–4s
+          and scheduled 4–6s after the readiness wait began. The extra roughly
+          54s is before guest execution.
         </p>
         <p>
           The pinned KubeVirt v1.8.2 source requires
@@ -989,12 +989,37 @@
           already a sufficient affinity failure.
         </p>
         <p>
-          A separate bounded candidate restarts only the DaemonSet-owned handler
-          Pod on a clean warm baseline with no VM guests, then waits for the
-          real producer to restore eligibility. It preserves operator ownership,
-          labels, heartbeat data and safety thresholds. Validation includes
-          restart/setup cost and an aged-baseline comparison; no latency saving
-          is claimed before that experiment finishes.
+          The bounded remedy trial was inconclusive. The candidate would restart
+          only the DaemonSet-owned handler Pod on an empty warm baseline and
+          wait for producer-written eligibility, preserving ownership and safety
+          thresholds. After a passing cold seed and a wait longer than five
+          minutes, BuildBuddy selected another worker for the
+          <a
+            href="https://app.buildbuddy.io/invocation/5cdf4230-56bc-4cbe-b4ae-e199cf5e09b0"
+            >candidate</a
+          >. It rebuilt a cold baseline, so the refresh path never ran. Its
+          action took 415.9s (117.0s setup, 249.2s case); scenario assertions
+          completed, but teardown failed with
+          <code>GuestBootEvidenceError</code> because the OOM guest's
+          boot-evidence report did not finish. It is a failed target, not a
+          successful treatment measurement.
+        </p>
+        <p>
+          The control's first dispatch failed before acceptance during the
+          connection handshake. The accepted
+          <a
+            href="https://app.buildbuddy.io/invocation/b60e8735-0ff4-491e-be29-887156b17e15"
+            >retry</a
+          >
+          then hit a provider-reported executor OOM (68.2s) and an automatic
+          physical retry (547.1s). That retry also rebuilt cold, took 149.0s
+          setup and 322.7s in the case, then failed on a partial boot-evidence
+          report during teardown. Both cold runs completed the OOM containment
+          and follow-up assertions but lack complete cleanup receipts. Neither
+          arm exercised retained-handler recovery. Helper safety and library
+          checks passed, but neither stale-node recovery by restart nor a net
+          latency gain was validated. No handler restart implementation is being
+          shipped; the diagnosis and rejected trial are retained for follow-up.
         </p>
         <p>
           The first candidate changed the test guest’s workspace mount ordering
@@ -1327,10 +1352,11 @@
                 </td>
                 <td>
                   No VM-ready or gate-time improvement established. Mount-order
-                  overlap and quieter-console arms are not selected. PR13921 has
-                  green Bazel, formatting and import checks; corrected rendering
-                  tests and the VM workload pass. Exact state is in the
-                  evidence.
+                  overlap and quieter-console arms are not selected. PR #13921
+                  merged after green Bazel, formatting and import checks;
+                  corrected rendering tests and the VM workload pass. The
+                  handler-refresh trial did not exercise the warm path and
+                  establishes no latency gain.
                 </td>
               </tr>
               <tr>
@@ -1568,16 +1594,19 @@
               <tr>
                 <td>1</td>
                 <td>
-                  Test managed virt-handler refresh after a stale warm restore.
+                  Obtain a verified aged warm restore before testing handler
+                  refresh.
                 </td>
                 <td>
                   The stale heartbeat marks the node unschedulable and the next
-                  periodic producer update gates volume provisioning. A normal
-                  owned-Pod restart may avoid that wait; include its overhead
-                  and require an empty retained VM stack. Observer CPU removal
-                  is already validated; retain full journals, OOM survival,
-                  credentials, supervision, workspace replacement and shutdown.
-                  Mount-order overlap and quieter-console arms are not selected.
+                  periodic producer update gates volume provisioning. The
+                  bounded candidate rebuilt cold and never ran the proposed
+                  restart. A future valid trial must include restart overhead,
+                  prove baseline reuse and require an empty retained VM stack.
+                  Observer CPU removal is already validated; retain full
+                  journals, OOM survival, credentials, supervision, workspace
+                  replacement and shutdown. Mount-order overlap and
+                  quieter-console arms are not selected.
                 </td>
               </tr>
               <tr>
