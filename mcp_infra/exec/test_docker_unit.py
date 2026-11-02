@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import textwrap
+import json
 from pathlib import Path
 
 import pytest
@@ -197,20 +197,18 @@ async def test_timeout_preserves_literal_arguments(exec_session) -> None:
 
 
 def test_launcher_json_config_sets_container_creation_options(monkeypatch) -> None:
-    config_json = textwrap.dedent(
-        """\
+    config_json = json.dumps(
         {
-          "image": "test:latest",
-          "working_dir": "/work",
-          "binds": [{"host_path": "/host/dir", "container_path": "/container/dir", "mode": "ro"}],
-          "network_mode": "bridge",
-          "environment": {"FOO": "bar"},
-          "labels": {"app": "test"},
-          "allow_user_field": true,
-          "allow_env_field": false,
-          "cwd_policy": {"type": "always", "value": "/work"}
+            "image": "test:latest",
+            "working_dir": "/work",
+            "binds": [{"host_path": "/host/dir", "container_path": "/container/dir", "mode": "ro"}],
+            "network_mode": "bridge",
+            "environment": {"FOO": "bar"},
+            "labels": {"app": "test"},
+            "allow_user_field": True,
+            "allow_env_field": False,
+            "cwd_policy": {"type": "always", "value": "/work"},
         }
-        """
     )
     captured: dict[str, ContainerExecServerConfig] = {}
 
