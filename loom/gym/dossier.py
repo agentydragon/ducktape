@@ -2,8 +2,9 @@
 
 The dossier is part of the **task definition**, not the contestant: every
 contestant receives exactly these bytes — inlined into a prompt (bare LLM
-baseline with `--with-data`) or materialized as files in the network-less
-container harness — so contestants stay apples-to-apples.
+baseline with `--with-data`) or passed through Inspect's `Sample.files` as
+`/data` files in the network-less container harness — so contestants stay
+apples-to-apples.
 
 Truncation: a month's value is knowable once the month has ended, so the
 dossier contains months strictly before `as_of` (for series tasks anchored at
@@ -18,7 +19,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import date
-from pathlib import Path
 
 from loom.gym.monthly_series import MonthlySeries
 
@@ -35,10 +35,3 @@ def series_dossier(series: Sequence[MonthlySeries], as_of: date) -> dict[str, st
         readme_lines.append(f"- {one_series.series_id}_monthly.csv: {one_series.description}, in {one_series.unit}.")
     files["README.txt"] = "\n".join(readme_lines) + "\n"
     return files
-
-
-def materialize_dossier(dossier: dict[str, str], directory: Path) -> None:
-    """Write dossier files into `directory` — the container harness's mount source."""
-    directory.mkdir(parents=True, exist_ok=True)
-    for filename, content in dossier.items():
-        (directory / filename).write_text(content)

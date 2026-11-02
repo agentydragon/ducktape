@@ -263,9 +263,11 @@ resolutionTime)`. This (a) aligns market tasks with the existing
 
 ## Dossier composition + leakage rules
 
-Per task, materialized via the existing `dossier.py` →
-`materialize_dossier()` path (files mounted at `/data` in the network-less
-Inspect sandbox):
+Per task, assemble a filename → content dossier like the existing
+`series_dossier()` output. The Inspect harness passes that mapping to
+`sample_for_task()`, which exposes each entry under `/data` through
+`Sample.files` in the network-less sandbox. The planned versioned store
+separately persists task dossiers under `tasks/<mint-version>/dossiers/`:
 
 | file                | content                                                           | leakage guard                                                |
 | ------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------ |
