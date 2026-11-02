@@ -832,3 +832,19 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "state_space_fit_test",
+    srcs = ["state_space_fit_test.py"],
+    deps = [
+        ":conftest",
+        ":state_space_fit",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/model/path_models:scenarios",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
