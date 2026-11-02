@@ -207,6 +207,11 @@ async def turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_inp
 
 
 SCENARIOS = (
+    # CaseBatch runs storage exclusively first, then starts this first remaining case.
+    pytest.param(
+        agent_resumes_an_idle_suspended_pod_with_its_execution_account,
+        marks=[pytest.mark.scripted_model, pytest.mark.timeout(600)],
+    ),
     pytest.param(an_agent_messages_another_which_reads_and_acknowledges_it, marks=pytest.mark.scripted_model),
     pytest.param(a_policy_granted_after_the_sandbox_is_running_takes_effect, marks=pytest.mark.scripted_model),
     pytest.param(the_model_call_itself_goes_through_the_proxy, marks=pytest.mark.scripted_model),
@@ -216,16 +221,12 @@ SCENARIOS = (
         pod_mtls_session_survives_replacement_and_keeps_history,
         marks=[pytest.mark.scripted_model, pytest.mark.timeout(600)],
     ),
+    pytest.param(fresh_workspace_storage_survives_replacement),
     pytest.param(
         the_standing_instruction_reaches_the_model_and_only_in_its_own_session, marks=pytest.mark.scripted_model
     ),
-    pytest.param(fresh_workspace_storage_survives_replacement),
     pytest.param(codex_standing_instructions_after_suspend_and_compact, marks=pytest.mark.scripted_model),
     pytest.param(two_harness_threads_keep_their_context_after_sandbox_suspend_resume, marks=pytest.mark.scripted_model),
-    pytest.param(
-        agent_resumes_an_idle_suspended_pod_with_its_execution_account,
-        marks=[pytest.mark.scripted_model, pytest.mark.timeout(600)],
-    ),
     pytest.param(an_unknown_thread_is_not_found),
     pytest.param(
         every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event, marks=pytest.mark.scripted_model
