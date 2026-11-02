@@ -24,7 +24,7 @@ func (*LifecycleController) Settings() controller.QSettings {
 			{Namespace: lifecycle.Namespace, Type: lifecycle.DesiredStateType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.AggregateStatusType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.ExecutionStatusType, Kind: controller.InputQMapped},
-			{Namespace: lifecycle.Namespace, Type: OperationType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: OperationStateType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: StatusType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(1)),
@@ -32,8 +32,8 @@ func (*LifecycleController) Settings() controller.QSettings {
 }
 
 func (*LifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
-	if ptr.Type() == OperationType {
-		_, found, err := componentRead[operationResult](ctx, r, ptr.ID())
+	if ptr.Type() == OperationStateType {
+		_, found, err := componentRead[operationState](ctx, r, ptr.ID())
 		if err != nil || !found {
 			return nil, err
 		}

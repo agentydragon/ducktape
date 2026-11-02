@@ -14,16 +14,10 @@ COSI resources have metadata and an opaque spec; `Status` is a useful project co
 required COSI subresource or a reason to combine resources with different owners. The current
 [COSI map](runtime/docs/cosi.md) shows the resource and controller boundaries.
 
-- Rename the embedded Harness Host Go type `Runner` to a component-specific name. Preserve the Host
-  drain barrier and its distinction from the Environment Runtime close and transition coordinator.
 - Review resources named `*Inputs` by their actual contents rather than applying one replacement:
   bootstrap carries a request, Session combines demand and observations, Process carries a revision
   wakeup, Execution carries demand and completion facts, and the Host input carries admission
   accounting. Preserve the admission lock and all teardown and fencing barriers.
-- Rename `BootstrapOperationResults`, `CodexAppServerOperationResults` and
-  `NativeOperationResults`: their resources track operation completion and routing, while the
-  in-process operation owns its result. Name the Session resource for Session operations. Preserve
-  ownership of one-shot slots, wakeups and consumption; uncertain work must not be replayed.
 - Clarify component-specific `Host` types and document or qualify generation, demand, attempt,
   epoch and incarnation identities by their actual scope. Some Session and app-server fields call
   a demand sequence an attempt. Distinguish domain lifecycle phases from COSI metadata phase.

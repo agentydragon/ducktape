@@ -14,13 +14,13 @@ import (
 )
 
 const (
-	InputType      = "BootstrapInputs.agentplane"
-	StatusType     = "BootstrapStatuses.agentplane"
-	OperationType  = "BootstrapOperationResults.agentplane"
-	SelectionType  = "BootstrapSelections.agentplane"
-	ControllerName = "bootstrap-lifecycle"
-	ResourceID     = "bootstrap"
-	HostOwner      = "bootstrap-host"
+	InputType          = "BootstrapInputs.agentplane"
+	StatusType         = "BootstrapStatuses.agentplane"
+	OperationStateType = "BootstrapOperationStates.agentplane"
+	SelectionType      = "BootstrapSelections.agentplane"
+	ControllerName     = "bootstrap-lifecycle"
+	ResourceID         = "bootstrap"
+	HostOwner          = "bootstrap-host"
 )
 
 // Input records that the Runner synchronously admitted the Sandbox bootstrap.
@@ -49,7 +49,7 @@ type Status struct {
 	Error string
 }
 
-type operationResult struct{ Done bool }
+type operationState struct{ Done bool }
 
 type componentSpec[T any] interface {
 	comparable
@@ -99,11 +99,11 @@ func isTerminal(phase Phase) bool {
 	return phase == Succeeded || phase == Failed || phase == Interrupted
 }
 
-func (Input) resourceType() resource.Type               { return InputType }
-func (value Input) DeepCopy() Input                     { return value }
-func (Status) resourceType() resource.Type              { return StatusType }
-func (value Status) DeepCopy() Status                   { return value }
-func (Selection) resourceType() resource.Type           { return SelectionType }
-func (value Selection) DeepCopy() Selection             { return value }
-func (operationResult) resourceType() resource.Type     { return OperationType }
-func (value operationResult) DeepCopy() operationResult { return value }
+func (Input) resourceType() resource.Type             { return InputType }
+func (value Input) DeepCopy() Input                   { return value }
+func (Status) resourceType() resource.Type            { return StatusType }
+func (value Status) DeepCopy() Status                 { return value }
+func (Selection) resourceType() resource.Type         { return SelectionType }
+func (value Selection) DeepCopy() Selection           { return value }
+func (operationState) resourceType() resource.Type    { return OperationStateType }
+func (value operationState) DeepCopy() operationState { return value }

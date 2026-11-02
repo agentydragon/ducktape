@@ -18,7 +18,7 @@ const (
 	InputType           = "SessionInputs.agentplane"
 	DrainInputType      = "SessionDrainInputs.agentplane"
 	LifecycleStatusType = "SessionLifecycleStatuses.agentplane"
-	OperationType       = "NativeOperationResults.agentplane"
+	OperationStateType  = "SessionOperationStates.agentplane"
 	ControllerName      = "session-lifecycle"
 	HostOwner           = lifecycle.HostOwner
 )
@@ -62,7 +62,7 @@ type LifecycleStatus struct {
 	Error          string
 }
 
-type operationResult struct {
+type operationState struct {
 	Session    string
 	Controller string
 	Done       bool
@@ -112,8 +112,8 @@ func (Input) resourceType() resource.Type               { return InputType }
 func (value Input) DeepCopy() Input                     { return value }
 func (LifecycleStatus) resourceType() resource.Type     { return LifecycleStatusType }
 func (value LifecycleStatus) DeepCopy() LifecycleStatus { return value }
-func (operationResult) resourceType() resource.Type     { return OperationType }
-func (value operationResult) DeepCopy() operationResult { return value }
+func (operationState) resourceType() resource.Type      { return OperationStateType }
+func (value operationState) DeepCopy() operationState   { return value }
 
 func (DrainInput) resourceType() resource.Type { return DrainInputType }
 func (value DrainInput) DeepCopy() DrainInput  { return value }

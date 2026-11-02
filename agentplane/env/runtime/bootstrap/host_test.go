@@ -100,7 +100,7 @@ func TestSelectionPublicationFailureDoesNotLaunch(t *testing.T) {
 }
 
 func (s initialOperationFailureState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
-	if result, ok := value.(*typed.Resource[operationResult, componentExtension[operationResult]]); ok && !result.TypedSpec().Done {
+	if result, ok := value.(*typed.Resource[operationState, componentExtension[operationState]]); ok && !result.TypedSpec().Done {
 		return s.err
 	}
 	return s.State.Modify(ctx, value, update, opts...)

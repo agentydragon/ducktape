@@ -38,11 +38,11 @@ func (c *Host) startOperation(slot **oneoff.Operation, work func(context.Context
 }
 
 func (c *Host) publishOperation(op *oneoff.Operation, done bool) error {
-	return publish(c.deps.Context, c.deps.State, op.ID(), operationResult{Done: done})
+	return publish(c.deps.Context, c.deps.State, op.ID(), operationState{Done: done})
 }
 
 func (c *Host) forgetOperation(op *oneoff.Operation) error {
-	err := c.deps.State.Destroy(c.deps.Context, resource.NewMetadata(lifecycle.Namespace, OperationType, op.ID(), resource.VersionUndefined), state.WithDestroyOwner(HostOwner))
+	err := c.deps.State.Destroy(c.deps.Context, resource.NewMetadata(lifecycle.Namespace, OperationStateType, op.ID(), resource.VersionUndefined), state.WithDestroyOwner(HostOwner))
 	if state.IsNotFoundError(err) {
 		return nil
 	}
