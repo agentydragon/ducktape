@@ -88,12 +88,12 @@ func TestCanceledBootstrapWaiterDoesNotCancelWorkAndCloseWaits(t *testing.T) {
 	closeGeneration := r.desired.Generation
 	r.mu.Unlock()
 	waitRuntime(t, r, func() bool {
-		status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
-		return err == nil && found && status.Generation == closeGeneration
+		progress := r.lifecycleCoordinator.closeProgress()
+		return progress.generation == closeGeneration
 	}, "generation-bound Runtime Close status")
-	status, _, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
-	if err != nil || status.Stage == lifecycle.RuntimeCloseReadyToJoin {
-		t.Fatalf("Close status during accepted bootstrap = %+v, %v", status, err)
+	progress := r.lifecycleCoordinator.closeProgress()
+	if progress.stage == runtimeCloseReadyToJoin {
+		t.Fatalf("Close progress during accepted bootstrap = %+v", progress)
 	}
 	select {
 	case err := <-closeDone:
@@ -138,8 +138,8 @@ func TestRuntimeCloseEngineCancelJoinsBootstrapWaitAndRetainsOwner(t *testing.T)
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
 	waitRuntime(t, r, func() bool {
-		status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
-		return err == nil && found && status.Stage == lifecycle.RuntimeCloseBootstrapSettling
+		progress := r.lifecycleCoordinator.closeProgress()
+		return progress.stage == runtimeCloseBootstrapSettling
 	}, "Runtime bootstrap settlement barrier")
 	r.lifecycleCancel()
 	select {

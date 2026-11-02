@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -22,7 +21,7 @@ func (r *Runtime) adoptIncarnation(ctx context.Context, uid string) error {
 	}
 	r.transitionMu.Lock()
 	defer r.transitionMu.Unlock()
-	return r.requestTransition(ctx, lifecycle.RuntimeAdopt, uid, nil)
+	return r.requestTransition(ctx, runtimeAdopt, uid, nil)
 }
 
 func (r *Runtime) Quiesce(ctx context.Context, request *sessionpb.QuiesceRequest) (*sessionpb.QuiesceResponse, error) {
@@ -35,7 +34,7 @@ func (r *Runtime) Quiesce(ctx context.Context, request *sessionpb.QuiesceRequest
 	if request != nil && request.IfIdleSince != nil {
 		idleSince = proto.Clone(request.IfIdleSince).(*timestamppb.Timestamp)
 	}
-	if err := r.requestTransition(ctx, lifecycle.RuntimeQuiesce, "", idleSince); err != nil {
+	if err := r.requestTransition(ctx, runtimeQuiesce, "", idleSince); err != nil {
 		return nil, err
 	}
 	facts, err := r.facts()
@@ -45,10 +44,10 @@ func (r *Runtime) Quiesce(ctx context.Context, request *sessionpb.QuiesceRequest
 	return &sessionpb.QuiesceResponse{Stage: sessionpb.QuiesceStage(facts.QuiesceStage)}, nil
 }
 
-// The Gateway holds transitionMu until the controller has published the exact
-// terminal status. Epoch cancellation cancels future adoption stages but does
-// not release a successor while an accepted Execution start remains unsettled.
-func (r *Runtime) requestTransition(ctx context.Context, kind lifecycle.RuntimeTransitionKind, uid string, idleSince *timestamppb.Timestamp) error {
+// transitionMu remains held until accepted work settles, including an Execution
+// start whose caller has already been canceled. Close can cancel that work without
+// admitting a successor before its exact fence completes.
+func (r *Runtime) requestTransition(ctx context.Context, kind runtimeTransitionKind, uid string, idleSince *timestamppb.Timestamp) error {
 	opCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	r.mu.Lock()
@@ -65,74 +64,61 @@ func (r *Runtime) requestTransition(ctx context.Context, kind lifecycle.RuntimeT
 		r.mu.Unlock()
 		return fmt.Errorf("prior Runtime transition outcome is uncertain: %w", unsafe)
 	}
-	r.activeTransitionSequence++
-	sequence := r.activeTransitionSequence
-	r.activeTransitionCtx = opCtx
 	r.activeTransitionCancel = cancel
-	transition := lifecycle.RuntimeTransitionRequest{Sequence: sequence, Kind: kind, UID: uid}
-	if idleSince != nil {
-		transition.HasIdleSince = true
-		transition.IdleSinceMicros = idleSince.AsTime().UnixMicro()
-	}
-	err := lifecycle.PublishRuntimeTransitionRequest(context.Background(), r.lifecycleState, transition)
-	if err != nil {
-		r.activeTransitionCtx, r.activeTransitionCancel = nil, nil
-		r.mu.Unlock()
-		return fmt.Errorf("publish Runtime transition: %w", err)
-	}
 	r.mu.Unlock()
 	defer func() {
 		r.mu.Lock()
-		if r.activeTransitionSequence == sequence {
-			r.activeTransitionCtx, r.activeTransitionCancel = nil, nil
-		}
+		r.activeTransitionCancel = nil
 		r.mu.Unlock()
 	}()
-	for {
-		r.mu.Lock()
-		changed := r.changes
-		controllerErr := r.lifecycleControllerErr
-		r.mu.Unlock()
-		if controllerErr != nil {
-			return controllerErr
-		}
-		current, found, err := lifecycle.ReadRuntimeTransitionStatus(context.Background(), r.lifecycleState)
-		if err != nil {
-			return fmt.Errorf("read Runtime transition status: %w", err)
-		}
-		if found && current.Sequence == sequence {
-			switch current.Stage {
-			case lifecycle.RuntimeTransitionDone:
-				if err := ctx.Err(); err != nil {
-					return err
-				}
-				return nil
-			case lifecycle.RuntimeTransitionFailed:
-				r.mu.Lock()
-				unsafe := r.transitionUnsafe
-				r.mu.Unlock()
-				if unsafe != nil {
-					return unsafe
-				}
-				if err := ctx.Err(); err != nil {
-					return err
-				}
-				if code := codes.Code(current.ErrorCode); code != codes.Unknown {
-					return status.Error(code, current.Error)
-				}
-				return errors.New(current.Error)
-			}
-		}
-		select {
-		case <-changed:
-		case <-r.lifecycleDone:
-			r.mu.Lock()
-			failure := r.failureLocked()
-			r.mu.Unlock()
-			if failure != nil {
-				return failure
-			}
-			return errors.New("Runtime lifecycle engine exited before transition completed")
-		}
+	request := &runtimeTransitionRequest{ctx: opCtx, done: make(chan struct{}), Kind: kind, UID: uid}
+	if idleSince != nil {
+		request.HasIdleSince = true
+		request.IdleSinceMicros = idleSince.AsTime().UnixMicro()
 	}
+	select {
+	case r.lifecycleCoordinator.requests <- request:
+	case <-opCtx.Done():
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return status.FromContextError(opCtx.Err()).Err()
+	case <-r.lifecycleCoordinator.stopped:
+		return r.coordinatorFailure("transition admission")
+	case <-r.lifecycleDone:
+		return r.coordinatorFailure("transition admission")
+	}
+	select {
+	case <-request.done:
+		r.mu.Lock()
+		unsafe := r.transitionUnsafe
+		coordinatorErr := r.lifecycleControllerErr
+		r.mu.Unlock()
+		if coordinatorErr != nil {
+			return coordinatorErr
+		}
+		if unsafe != nil {
+			return unsafe
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return request.err
+	case <-r.lifecycleCoordinator.stopped:
+		return r.coordinatorFailure("transition completion")
+	case <-r.lifecycleDone:
+		return r.coordinatorFailure("transition completion")
+	}
+}
+
+func (r *Runtime) coordinatorFailure(boundary string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.lifecycleControllerErr != nil {
+		return r.lifecycleControllerErr
+	}
+	if failure := r.failureLocked(); failure != nil {
+		return failure
+	}
+	return fmt.Errorf("Runtime lifecycle engine exited before %s", boundary)
 }

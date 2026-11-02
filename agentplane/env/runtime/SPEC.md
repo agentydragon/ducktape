@@ -82,8 +82,10 @@ Runtime recovers Sessions, observes exact-generation native cleanup and starts H
 successful recovery. Public control listens after that startup barrier. Runtime failure or Close
 wakes startup waiters even while recovery is unfinished.
 
-Adoption and conditional Quiesce are sequence-bound operations handled by the Runtime lifecycle
-coordinator. Each blocking boundary runs in an owned worker so controller observation continues.
+Adoption and conditional Quiesce pass a typed in-process request to the Runtime-owned lifecycle
+coordinator and wait for that operation's completion. Close uses the same coordinator with an
+exact-generation completion. These private handoffs are not COSI resources. Each blocking boundary
+runs in an owned worker so component observation continues.
 A canceled watch epoch ends future adoption stages but does not release a successor until accepted
 Execution starts and their fences settle. Repeated Quiesce preserves a healthy desired generation;
 only a failure for that exact generation can trigger retry.
@@ -99,7 +101,10 @@ Ordinary Close without a seal drains local work and creates no seal. Close prese
 for exact durable acknowledgements. Runtime first settles any accepted transition and fence before
 publishing Closing; it joins History before journals close, stops/joins the engine, joins workers,
 closes journals, fences the Pod PID namespace when applicable and releases its owner last.
-`ReadyToJoin` is permission to finish those steps, not successful owner release.
+`ReadyToJoin` is permission to finish those steps, not successful owner release. Coordinator exit
+wakes callers before joining workers, preventing a shutdown worker from waiting on a transition
+caller that is itself waiting for engine exit. Joined workers and exact fences still determine
+whether cleanup is proved; coordinator restart never replays accepted work.
 
 Concurrent Close callers share one accepted worker. Caller cancellation ends only that wait.
 Session recovery or History failure closes admission and starts cleanup without manufacturing a

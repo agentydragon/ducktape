@@ -80,9 +80,9 @@ func (c *runtimeTransitionSequence) recordAdoptionOutcome(step runtimeTransition
 		uid := c.adoption.targetUID
 		c.steps = append(
 			c.steps,
-			runtimeTransitionStep{stage: lifecycle.RuntimeTransitionExecutionStarting, adoption: adoptionBarrier{kind: adoptionExecutionStart, uid: uid}},
-			runtimeTransitionStep{stage: lifecycle.RuntimeTransitionDesiredPublishing, adoption: adoptionBarrier{kind: adoptionPublishDesired, uid: uid, mode: lifecycle.Running}},
-			runtimeTransitionStep{stage: lifecycle.RuntimeTransitionBootstrapRequesting, adoption: adoptionBarrier{kind: adoptionBootstrap}},
+			runtimeTransitionStep{stage: runtimeTransitionExecutionStarting, adoption: adoptionBarrier{kind: adoptionExecutionStart, uid: uid}},
+			runtimeTransitionStep{stage: runtimeTransitionDesiredPublishing, adoption: adoptionBarrier{kind: adoptionPublishDesired, uid: uid, mode: lifecycle.Running}},
+			runtimeTransitionStep{stage: runtimeTransitionBootstrapRequesting, adoption: adoptionBarrier{kind: adoptionBootstrap}},
 		)
 	}
 	return nil
@@ -111,10 +111,10 @@ func (c *runtimeTransitionSequence) planAdoption(ctx context.Context, uid string
 		if !accepted {
 			return plan, nil, status.Error(codes.Unavailable, "environment revision has not completed preparation")
 		}
-		return plan, []runtimeTransitionStep{{stage: lifecycle.RuntimeTransitionBootstrapRequesting, adoption: adoptionBarrier{kind: adoptionBootstrap}}}, nil
+		return plan, []runtimeTransitionStep{{stage: runtimeTransitionBootstrapRequesting, adoption: adoptionBarrier{kind: adoptionBootstrap}}}, nil
 	}
 	var steps []runtimeTransitionStep
-	add := func(stage lifecycle.RuntimeTransitionStage, barrier adoptionBarrier) {
+	add := func(stage runtimeTransitionStage, barrier adoptionBarrier) {
 		steps = append(steps, runtimeTransitionStep{stage: stage, adoption: barrier})
 	}
 	if desired.Mode == lifecycle.Inactive {
@@ -129,16 +129,16 @@ func (c *runtimeTransitionSequence) planAdoption(ctx context.Context, uid string
 		}
 		if desired.Mode != lifecycle.Quiescing || desired.IncarnationUID != oldUID || desired.SealUID != seal {
 			if sealed {
-				add(lifecycle.RuntimeTransitionExecutionStarting, adoptionBarrier{kind: adoptionExecutionStart, uid: oldUID})
+				add(runtimeTransitionExecutionStarting, adoptionBarrier{kind: adoptionExecutionStart, uid: oldUID})
 			}
-			add(lifecycle.RuntimeTransitionDesiredPublishing, adoptionBarrier{kind: adoptionPublishDesired, uid: oldUID, sealUID: seal, mode: lifecycle.Quiescing})
+			add(runtimeTransitionDesiredPublishing, adoptionBarrier{kind: adoptionPublishDesired, uid: oldUID, sealUID: seal, mode: lifecycle.Quiescing})
 		}
-		add(lifecycle.RuntimeTransitionNativeStopping, adoptionBarrier{kind: adoptionNativeStop})
-		add(lifecycle.RuntimeTransitionExecutionFencing, adoptionBarrier{kind: adoptionExecutionFence})
+		add(runtimeTransitionNativeStopping, adoptionBarrier{kind: adoptionNativeStop})
+		add(runtimeTransitionExecutionFencing, adoptionBarrier{kind: adoptionExecutionFence})
 		if sealed {
-			add(lifecycle.RuntimeTransitionHistoryAcknowledging, adoptionBarrier{kind: adoptionAcknowledgement})
+			add(runtimeTransitionHistoryAcknowledging, adoptionBarrier{kind: adoptionAcknowledgement})
 		}
 	}
-	add(lifecycle.RuntimeTransitionIncarnationAdopting, adoptionBarrier{kind: adoptionIncarnation})
+	add(runtimeTransitionIncarnationAdopting, adoptionBarrier{kind: adoptionIncarnation})
 	return plan, steps, nil
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -571,11 +572,21 @@ func TestMissingAdmissionStateRejectsDurableWork(t *testing.T) {
 		_ = owner.Close()
 	})
 	cursor := s.EventJournal().LastCursor()
-	if _, err := r.SubmitInput(sessionCallContext(r, r.lifecycleContext), &environmentruntimepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "missing-accounting", Text: "input"}); status.Code(err) != codes.Unavailable {
-		t.Fatalf("command with missing accounting = %v, want Unavailable", err)
+	_, admissionErr := r.SubmitInput(sessionCallContext(r, r.lifecycleContext), &environmentruntimepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "missing-accounting", Text: "input"})
+	if status.Code(admissionErr) != codes.Unavailable {
+		t.Fatalf("command with missing accounting = %v, want Unavailable", admissionErr)
 	}
 	if store.dropAdmissionUpdate.Load() {
 		t.Fatal("command did not reach admission accounting")
+	}
+	r.mu.Lock()
+	failure := r.failureLocked()
+	r.mu.Unlock()
+	if !state.IsNotFoundError(failure) {
+		t.Fatalf("accounting failure = %v, want original NotFound cause", failure)
+	}
+	if !strings.Contains(status.Convert(admissionErr).Message(), failure.Error()) {
+		t.Fatalf("command rejection = %v, want the accounting cause %v", admissionErr, failure)
 	}
 	if facts, err := r.facts(); err == nil {
 		t.Fatalf("missing accounting returned facts: %v", facts)

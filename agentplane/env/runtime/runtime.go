@@ -90,71 +90,70 @@ type Runtime struct {
 	config Config
 	deps   runtimeDeps
 
-	mu                       sync.Mutex
-	transitionMu             sync.Mutex
-	transitionUnsafe         error
-	activeTransitionCtx      context.Context
-	activeTransitionCancel   context.CancelFunc
-	activeTransitionSequence uint64
-	owner                    *environmentOwner
-	state                    *EnvironmentState
-	lifecycleState           state.State
-	lifecycleStore           io.Closer
-	lifecycleEngine          *cosiruntime.Runtime
-	lifecycleCancel          context.CancelFunc
-	lifecycleDone            chan struct{}
-	lifecycleRunErr          error
-	lifecycleStartOnce       sync.Once
-	lifecycleStartMu         sync.Mutex
-	lifecycleInitErr         error
-	lifecycleContext         context.Context
-	lifecycleWorkers         sync.WaitGroup
-	lifecycleCoordinator     *runtimeLifecycleController
-	lifecycleControllerErr   error
-	processes                *supervision.Host
-	scripts                  *scripts.Runner
-	bootstrapHost            *bootstrap.Host
-	executionLifecycle       *executionLifecycle
-	desired                  lifecycle.EnvironmentDesired
-	bootID                   string
-	supervisor               *supervision.Supervisor
-	admissionOpen            bool
-	executorProxy            executorpb.ExecutorServer
-	executionOwner           *executionLifetime
-	activeAdmissions         uint64
-	activeExecutionCalls     uint64
-	execStreamID             uint64
-	execStreams              map[uint64]context.CancelFunc
-	execCalls                map[uint64]context.CancelFunc
-	execCallID               uint64
-	fenceInFlight            uint64
-	fenceDone                chan struct{}
-	fenceErr                 error
-	closing                  bool
-	failed                   bool
-	changes                  chan struct{}
-	fatal                    chan error
-	failureErr               error
-	control                  *control.Server
-	bootstrapWait            func(context.Context) error
-	sessions                 *session.Manager
-	store                    *retained.Store
-	codexAppServer           *codexappserver.Host
-	createMu                 sync.Mutex
-	sealPublishMu            sync.Mutex
-	idleSince                *timestamppb.Timestamp
-	startupComplete          bool
-	harnessSupervisor        *supervision.Supervisor
-	workspaceSupervisor      *supervision.Supervisor
-	harnessProcesses         *supervision.Host
-	sessionWorkers           sync.WaitGroup
-	sessionScripts           *scripts.Runner
-	sessionWorkerDone        chan struct{}
-	sessionWorkerErr         error
-	ingress                  *ingressWorker
-	closeOnce                sync.Once
-	closeDone                chan struct{}
-	closeErr                 error
+	mu                     sync.Mutex
+	transitionMu           sync.Mutex
+	transitionUnsafe       error
+	activeTransitionCancel context.CancelFunc
+
+	owner                  *environmentOwner
+	state                  *EnvironmentState
+	lifecycleState         state.State
+	lifecycleStore         io.Closer
+	lifecycleEngine        *cosiruntime.Runtime
+	lifecycleCancel        context.CancelFunc
+	lifecycleDone          chan struct{}
+	lifecycleRunErr        error
+	lifecycleStartOnce     sync.Once
+	lifecycleStartMu       sync.Mutex
+	lifecycleInitErr       error
+	lifecycleContext       context.Context
+	lifecycleWorkers       sync.WaitGroup
+	lifecycleCoordinator   *runtimeLifecycleController
+	lifecycleControllerErr error
+	processes              *supervision.Host
+	scripts                *scripts.Runner
+	bootstrapHost          *bootstrap.Host
+	executionLifecycle     *executionLifecycle
+	desired                lifecycle.EnvironmentDesired
+	bootID                 string
+	supervisor             *supervision.Supervisor
+	admissionOpen          bool
+	executorProxy          executorpb.ExecutorServer
+	executionOwner         *executionLifetime
+	activeAdmissions       uint64
+	activeExecutionCalls   uint64
+	execStreamID           uint64
+	execStreams            map[uint64]context.CancelFunc
+	execCalls              map[uint64]context.CancelFunc
+	execCallID             uint64
+	fenceInFlight          uint64
+	fenceDone              chan struct{}
+	fenceErr               error
+	closing                bool
+	failed                 bool
+	changes                chan struct{}
+	fatal                  chan error
+	failureErr             error
+	control                *control.Server
+	bootstrapWait          func(context.Context) error
+	sessions               *session.Manager
+	store                  *retained.Store
+	codexAppServer         *codexappserver.Host
+	createMu               sync.Mutex
+	sealPublishMu          sync.Mutex
+	idleSince              *timestamppb.Timestamp
+	startupComplete        bool
+	harnessSupervisor      *supervision.Supervisor
+	workspaceSupervisor    *supervision.Supervisor
+	harnessProcesses       *supervision.Host
+	sessionWorkers         sync.WaitGroup
+	sessionScripts         *scripts.Runner
+	sessionWorkerDone      chan struct{}
+	sessionWorkerErr       error
+	ingress                *ingressWorker
+	closeOnce              sync.Once
+	closeDone              chan struct{}
+	closeErr               error
 }
 
 func New(config Config) (*Runtime, error) {
@@ -305,7 +304,7 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	if err := engine.RegisterQController(r.bootstrapHost.Controller()); err != nil {
 		return err
 	}
-	r.lifecycleCoordinator = &runtimeLifecycleController{r: r, transition: runtimeTransitionSequence{r: r}}
+	r.lifecycleCoordinator = &runtimeLifecycleController{r: r, transition: runtimeTransitionSequence{r: r}, requests: make(chan *runtimeTransitionRequest), closeDone: make(chan struct{}), stopped: make(chan struct{})}
 	if err := engine.RegisterController(r.lifecycleCoordinator); err != nil {
 		return err
 	}
@@ -421,46 +420,28 @@ func (r *Runtime) finishClose() error {
 	r.mu.Unlock()
 	r.transitionMu.Unlock()
 
-	// The aggregate controller owns all component shutdown steps. Close waits for
-	// its exact generation; a failed or superseded generation cannot release the
-	// environment owner. Caller cancellation affects only the outer wait.
-	for {
-		r.mu.Lock()
-		changed := r.changes
-		controllerErr := r.lifecycleControllerErr
-		r.mu.Unlock()
-		if controllerErr != nil {
-			return controllerErr
+	// The coordinator's result names the exact generation; completion only
+	// permits joining the engine, and never proves owner release on its own.
+	select {
+	case <-r.lifecycleCoordinator.closeDone:
+		result := r.lifecycleCoordinator.closeProgress()
+		if result.generation != desired.Generation {
+			return fmt.Errorf("Runtime Close completed generation %d, want %d", result.generation, desired.Generation)
 		}
-		current, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
-		if err != nil {
-			return fmt.Errorf("read Runtime Close status: %w", err)
+		if result.err != nil {
+			return result.err
 		}
-		if found && current.Generation == desired.Generation {
-			switch current.Stage {
-			case lifecycle.RuntimeCloseFailed:
-				return errors.New(current.Error)
-			case lifecycle.RuntimeCloseReadyToJoin:
-				return r.joinClose()
-			}
-		}
-		select {
-		case <-changed:
-		case <-r.lifecycleDone:
-			r.mu.Lock()
-			failure := r.failureLocked()
-			r.mu.Unlock()
-			if failure != nil {
-				return failure
-			}
-			return errors.New("Runtime lifecycle engine exited before Close completed")
-		}
+		return r.joinClose()
+	case <-r.lifecycleCoordinator.stopped:
+		return r.coordinatorFailure("Close completion")
+	case <-r.lifecycleDone:
+		return r.coordinatorFailure("Close completion")
 	}
 }
 
 func (r *Runtime) joinClose() error {
 	// The aggregate has stopped every component that can need the engine. Its
-	// terminal status means only that it is now safe to join that engine.
+	// completion means only that it is now safe to join that engine.
 	r.lifecycleCancel()
 	<-r.lifecycleDone
 	r.mu.Lock()

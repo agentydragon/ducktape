@@ -15,15 +15,12 @@ import (
 )
 
 const (
-	Namespace                    = "environment-runtime"
-	AdmissionCountType           = "EnvironmentAdmissionCounts.agentplane"
-	AggregateStatusType          = "EnvironmentSessionStatuses.agentplane"
-	RuntimeCloseStatusType       = "EnvironmentRuntimeCloseStatuses.agentplane"
-	RuntimeTransitionRequestType = "EnvironmentRuntimeTransitionRequests.agentplane"
-	RuntimeTransitionStatusType  = "EnvironmentRuntimeTransitionStatuses.agentplane"
-	ResourceID                   = "environment-runtime"
-	SessionOwner                 = "environment-sessions"
-	EnvironmentDesiredStateType  = "EnvironmentRuntimeDesiredStates.agentplane"
+	Namespace                   = "environment-runtime"
+	AdmissionCountType          = "EnvironmentAdmissionCounts.agentplane"
+	AggregateStatusType         = "EnvironmentSessionStatuses.agentplane"
+	ResourceID                  = "environment-runtime"
+	SessionOwner                = "environment-sessions"
+	EnvironmentDesiredStateType = "EnvironmentRuntimeDesiredStates.agentplane"
 	// ExecutionStatusType is observed by the app-server controller to
 	// wake its live Execution readiness check.
 	ExecutionStatusType   = "ExecutionStatuses.agentplane"
@@ -138,150 +135,6 @@ type Status struct {
 	Error         string
 	Blocker       Blocker
 	NativeStopped bool
-}
-
-// RuntimeCloseStage is the Runtime's ordered shutdown barrier. ReadyToJoin means
-// the COSI engine can stop; the caller still waits for worker joins and owner release.
-type RuntimeCloseStage uint8
-
-const (
-	RuntimeClosePreparing RuntimeCloseStage = iota
-	RuntimeCloseNativeStopping
-	RuntimeCloseExecutionFencing
-	RuntimeCloseHistoryFlushing
-	RuntimeCloseSessionsJoining
-	RuntimeCloseBootstrapSettling
-	RuntimeCloseReadyToJoin
-	RuntimeCloseFailed
-)
-
-type RuntimeCloseStatus struct {
-	Generation uint64
-	Stage      RuntimeCloseStage
-	Error      string
-}
-
-type RuntimeTransitionKind uint8
-
-const (
-	RuntimeAdopt RuntimeTransitionKind = iota + 1
-	RuntimeQuiesce
-)
-
-type RuntimeTransitionRequest struct {
-	Sequence        uint64
-	Kind            RuntimeTransitionKind
-	UID             string
-	HasIdleSince    bool
-	IdleSinceMicros int64
-}
-
-func (value RuntimeTransitionRequest) DeepCopy() RuntimeTransitionRequest { return value }
-
-type RuntimeTransitionStage uint8
-
-const (
-	RuntimeTransitionPlanning RuntimeTransitionStage = iota
-	RuntimeTransitionNativeStopping
-	RuntimeTransitionExecutionStarting
-	RuntimeTransitionDesiredPublishing
-	RuntimeTransitionExecutionFencing
-	RuntimeTransitionHistoryAcknowledging
-	RuntimeTransitionIncarnationAdopting
-	RuntimeTransitionBootstrapRequesting
-	RuntimeTransitionQuiesceSealing
-	RuntimeTransitionDone
-	RuntimeTransitionFailed
-)
-
-type RuntimeTransitionStatus struct {
-	Sequence  uint64
-	Stage     RuntimeTransitionStage
-	Error     string
-	ErrorCode uint32
-}
-
-func (value RuntimeTransitionStatus) DeepCopy() RuntimeTransitionStatus { return value }
-
-type runtimeTransitionRequestExtension struct{}
-
-func (runtimeTransitionRequestExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
-	return spec.ResourceDefinitionSpec{Type: RuntimeTransitionRequestType, DefaultNamespace: Namespace}
-}
-
-type runtimeTransitionStatusExtension struct{}
-
-func (runtimeTransitionStatusExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
-	return spec.ResourceDefinitionSpec{Type: RuntimeTransitionStatusType, DefaultNamespace: Namespace}
-}
-
-func ReadRuntimeTransitionRequest(ctx context.Context, reader controller.Reader) (RuntimeTransitionRequest, bool, error) {
-	value, err := safe.ReaderGetByID[*typed.Resource[RuntimeTransitionRequest, runtimeTransitionRequestExtension]](ctx, reader, EnvironmentResourceID)
-	if state.IsNotFoundError(err) {
-		return RuntimeTransitionRequest{}, false, nil
-	}
-	if err != nil {
-		return RuntimeTransitionRequest{}, false, err
-	}
-	return *value.TypedSpec(), true, nil
-}
-
-func PublishRuntimeTransitionRequest(ctx context.Context, writer state.State, value RuntimeTransitionRequest) error {
-	resource := typed.NewResource[RuntimeTransitionRequest, runtimeTransitionRequestExtension](
-		resource.NewMetadata(Namespace, RuntimeTransitionRequestType, EnvironmentResourceID, resource.VersionUndefined), value,
-	)
-	return cosi.Publish(ctx, writer, resource, value, EnvironmentOwner)
-}
-
-func ReadRuntimeTransitionStatus(ctx context.Context, reader controller.Reader) (RuntimeTransitionStatus, bool, error) {
-	value, err := safe.ReaderGetByID[*typed.Resource[RuntimeTransitionStatus, runtimeTransitionStatusExtension]](ctx, reader, EnvironmentResourceID)
-	if state.IsNotFoundError(err) {
-		return RuntimeTransitionStatus{}, false, nil
-	}
-	if err != nil {
-		return RuntimeTransitionStatus{}, false, err
-	}
-	return *value.TypedSpec(), true, nil
-}
-
-func WriteRuntimeTransitionStatus(ctx context.Context, writer controller.Writer, value RuntimeTransitionStatus) error {
-	resource := typed.NewResource[RuntimeTransitionStatus, runtimeTransitionStatusExtension](
-		resource.NewMetadata(Namespace, RuntimeTransitionStatusType, EnvironmentResourceID, resource.VersionUndefined), value,
-	)
-	return safe.WriterModify(ctx, writer, resource, func(current *typed.Resource[RuntimeTransitionStatus, runtimeTransitionStatusExtension]) error {
-		*current.TypedSpec() = value
-		return nil
-	})
-}
-
-func (value RuntimeCloseStatus) DeepCopy() RuntimeCloseStatus { return value }
-
-type runtimeCloseStatusExtension struct{}
-
-func (runtimeCloseStatusExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
-	return spec.ResourceDefinitionSpec{Type: RuntimeCloseStatusType, DefaultNamespace: Namespace}
-}
-
-func ReadRuntimeCloseStatus(ctx context.Context, reader controller.Reader) (RuntimeCloseStatus, bool, error) {
-	value, err := safe.ReaderGetByID[*typed.Resource[RuntimeCloseStatus, runtimeCloseStatusExtension]](ctx, reader, EnvironmentResourceID)
-	if state.IsNotFoundError(err) {
-		return RuntimeCloseStatus{}, false, nil
-	}
-	if err != nil {
-		return RuntimeCloseStatus{}, false, err
-	}
-	return *value.TypedSpec(), true, nil
-}
-
-// WriteRuntimeCloseStatus is exclusive to the Runtime aggregate controller.
-func WriteRuntimeCloseStatus(ctx context.Context, writer controller.Writer, value RuntimeCloseStatus) error {
-	resource := typed.NewResource[RuntimeCloseStatus, runtimeCloseStatusExtension](
-		resource.NewMetadata(Namespace, RuntimeCloseStatusType, EnvironmentResourceID, resource.VersionUndefined), value,
-	)
-	return safe.WriterModify(ctx, writer, resource, func(current *typed.Resource[RuntimeCloseStatus, runtimeCloseStatusExtension]) error {
-		*current.TypedSpec() = value
-		return nil
-	})
 }
 
 func (value Status) DeepCopy() Status { return value }
