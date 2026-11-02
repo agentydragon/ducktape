@@ -16,8 +16,8 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
 - [Central Anthropic follow-ups](../central_sampler/plans/anthropic.md) — deferred BuildBuddy
   credentials, background compaction, dynamic tools and optional Langfuse export; direct sampling
   and ordinary compaction are deployed
-- [Central sampler workflow gaps](../central_sampler/plans/codex_parity.md) — selected resilience
-  and Session-spawning work, followed by remaining Codex feature candidates
+- [Central sampler workflow gaps](../central_sampler/plans/codex_parity.md) — concrete reliability
+  regressions and remaining delegation usability/exposure, followed by Codex feature candidates
 - [Architecture overview](architecture_overview.md) — four whole directions for where Agentplane's
   objects and data live, the operator's workflows through each, what Agentplane borrows from
   Kubernetes and what each direction keeps or replaces, what is right under every direction, and the
@@ -46,12 +46,11 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   choices and broader authorization-system evaluation, separate from multiagent implementation
 - [Cross-agent communication and authorization](multiagent_communication.md) — agreed requirements
   (SA attribution, Sandbox scopes and tags, live bundles) and what is open after messaging shipped:
-  the transcript-read rule and archive split, discovery, Session creation and Sandbox launch
+  broader cross-SA transcript reads/archive policy, delegation usability and Sandbox launch
 - [Caller-privilege Session delegation](session_delegation_workflows.md) — approved existing-environment
-  and external MCP workflows, backend gaps and structured results; fresh provisioning is deferred.
-  Service-mediated caller identity follows the approved
-  [delegated authorization contract](../docs/delegated_authorization.md); shared auth and
-  Dispatcher/History receiving paths are implemented, while caller-delegating adapters remain open
+  and external MCP workflows have implemented tools and scripted acceptance. Natural-agent usability
+  and staging tool exposure remain open; fresh provisioning is deferred. Service-mediated caller
+  identity follows the implemented [delegated authorization contract](../docs/delegated_authorization.md).
 - [Generated HTTP facades](grpc_http_facade.md) — what is left: History reads, the app-contract
   question, browser error codes, attribution, and direct browser access as a later option
 - [Kubernetes API aggregation](api_aggregation_exploration.md) — held design exploration of serving

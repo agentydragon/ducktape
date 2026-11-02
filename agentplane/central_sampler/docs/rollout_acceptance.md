@@ -52,6 +52,31 @@ JavaScript cell surviving the roll, or subsequent model-driven continuation. The
 Sessions retain their original evidence and require their supported, explicitly authorized recovery
 paths. No live agent turn or fault-injection scenario was run for this reconciliation.
 
+## Managed platform-guidance rollout, 2026-11-02 UTC
+
+Read-only staging inspection after [#13410](https://github.com/agentydragon/ducktape/pull/13410)
+merged confirmed the compatible [#13384](https://github.com/agentydragon/ducktape/pull/13384)
+reader on both active sampler replicas and the managed guidance setting:
+
+- `agentplane-staging/central-sampler` Deployment generation and observed generation were both
+  72, with two desired, updated, Ready and available replicas.
+- Both Pods used
+  `git.allegedly.works/ducktape-ci/agentplane-central-sampler:devel-20261101230230-3ac5c01`,
+  source commit `3ac5c015df97123d002d37cd02c10e488123c07b`, image digest
+  `sha256:63c8c512cc5f0f225a58c6d6c3fb6b723845e397d65756d7c579df332c4022e9`.
+- `central-sampler-86cfb79f6-gs75k` and `central-sampler-86cfb79f6-hs9fz` were Running and Ready,
+  with zero restarts and no deletion timestamp. They started at 00:00:21 and 00:00:32 UTC.
+- The live `central-sampler-settings` ConfigMap contained nonempty `platform_instructions`.
+
+This discharges the compatible-reader and managed-configuration rollout hold. It does not prove
+a new model turn, unaided delegation usability or staging Session-tool exposure; the latter
+remains separate in [#13514](https://github.com/agentydragon/ducktape/pull/13514). No cluster
+mutation, provider request or disruption exercise was performed for this inspection.
+
+Existing stored instructions stay frozen. To roll back to a pre-reader image, first remove the
+managed setting and reconcile its removal: old strict readers reject the new key. Current
+composition semantics belong to the [Session instructions contract](../../session_instructions/README.md).
+
 ## Follow-up policy
 
 Operator decision, 2026-10-31: evaluate reliability through normal use and defer dedicated
