@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
@@ -73,12 +73,12 @@ func (s *Session) readyLocked() bool {
 }
 
 func (s *Session) executionClosed() bool {
-	desired, _, err := runnerlifecycle.ReadDesired(s.deps.ctx, s.deps.state)
+	desired, _, err := harnesshostlifecycle.ReadDesired(s.deps.ctx, s.deps.state)
 	if err != nil {
 		s.deps.fail(err)
 		return true
 	}
-	return desired.Mode != runnerlifecycle.Running || s.deps.environmentState().Quiesced || s.journal.SealState() != nil
+	return desired.Mode != harnesshostlifecycle.Running || s.deps.environmentState().Quiesced || s.journal.SealState() != nil
 }
 
 func (s *Session) waitSetup(ctx context.Context) error {

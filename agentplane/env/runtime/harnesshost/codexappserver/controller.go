@@ -124,7 +124,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 					current.ProcessID = p.ID()
 				}
 			} else if live {
-				// Initialization admitted under an older RunnerDesiredState may finish physically, but cannot
+				// Initialization admitted under an older HarnessHostDesiredState may finish physically, but cannot
 				// publish readiness. Shutdown will drain it after every Session has halted.
 				current.Phase = Initializing
 				current.ProcessID = p.ID()
@@ -172,7 +172,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		}
 		server.mu.Unlock()
 		if inactive {
-			// Demand and attempts are scoped to a Runner incarnation. A resumed Runner must wait for
+			// Demand and attempts are scoped to a Harness Host incarnation. A resumed Host must wait for
 			// fresh demand rather than replaying the previous incarnation's Codex startup request.
 			current.Generation = desiredState.Generation
 			current.Attempt = 0
@@ -193,7 +193,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		}
 		if current.StopError != "" {
 			// A failed COSI process stop leaves ownership uncertain. Preserve that evidence and block
-			// repeated drains and Runner's transition into executor fencing.
+			// repeated drains and the Harness Host transition into executor fencing.
 			return write()
 		}
 		server.mu.Lock()
@@ -355,7 +355,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		return err
 	}
 
-	// The Runner's synchronous admission barrier fences initialization against Close and Quiesce.
+	// The Harness Host admission barrier fences initialization against Close and Quiesce.
 	if err := server.deps.Admission(ctx, desiredState, func(ctx context.Context) error {
 		server.mu.Lock()
 		if server.initializing != nil || server.current != nil {

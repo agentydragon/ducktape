@@ -7,7 +7,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/cosi-project/runtime/pkg/controller"
@@ -15,28 +15,28 @@ import (
 	"go.uber.org/zap"
 )
 
-type runnerLifecycleController struct{ l *lifecycle }
+type harnessHostLifecycleController struct{ l *lifecycle }
 
-func hostFenceMatches(applied runnerlifecycle.HostIntentStatus, intent *runtimepb.LifecycleIntent, generation uint64) bool {
+func harnessHostFenceMatches(applied harnesshostlifecycle.HostIntentStatus, intent *runtimepb.LifecycleIntent, generation uint64) bool {
 	return intent != nil && intent.Binding != nil && applied.Applied && applied.Error == "" &&
 		applied.Intent.ExecutionFenced && applied.Intent.Generation == generation &&
-		applied.Intent == runnerlifecycle.HostIntentFromProto(intent)
+		applied.Intent == harnesshostlifecycle.HostIntentFromProto(intent)
 }
 
-func (*runnerLifecycleController) Name() string { return runnerControllerName }
-func (*runnerLifecycleController) Inputs() []controller.Input {
+func (*harnessHostLifecycleController) Name() string { return harnessHostControllerName }
+func (*harnessHostLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{runnerlifecycle.DesiredStateType, runnerlifecycle.HostIntentStatusType, runnerInputType, session.DrainInputType, session.LifecycleStatusType, journalSealType, ingressAckType, codexappserver.RuntimeType, supervision.DesiredStateType, supervision.StatusType} {
-		inputs = append(inputs, controller.Input{Namespace: runnerlifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
+	for _, kind := range []string{harnesshostlifecycle.DesiredStateType, harnesshostlifecycle.HostIntentStatusType, harnessHostInputType, session.DrainInputType, session.LifecycleStatusType, journalSealType, ingressAckType, codexappserver.RuntimeType, supervision.DesiredStateType, supervision.StatusType} {
+		inputs = append(inputs, controller.Input{Namespace: harnesshostlifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
 }
 
-func (*runnerLifecycleController) Outputs() []controller.Output {
-	return []controller.Output{{Type: runnerlifecycle.AggregateStatusType, Kind: controller.OutputExclusive}}
+func (*harnessHostLifecycleController) Outputs() []controller.Output {
+	return []controller.Output{{Type: harnesshostlifecycle.AggregateStatusType, Kind: controller.OutputExclusive}}
 }
 
-func (c *runnerLifecycleController) Run(ctx context.Context, r controller.Runtime, _ *zap.Logger) error {
+func (c *harnessHostLifecycleController) Run(ctx context.Context, r controller.Runtime, _ *zap.Logger) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -50,30 +50,30 @@ func (c *runnerLifecycleController) Run(ctx context.Context, r controller.Runtim
 	}
 }
 
-func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.Runtime) error {
-	desiredState, _, err := runnerlifecycle.ReadDesired(ctx, r)
+func (c *harnessHostLifecycleController) reconcile(ctx context.Context, r controller.Runtime) error {
+	desiredState, _, err := harnesshostlifecycle.ReadDesired(ctx, r)
 	if err != nil {
 		return err
 	}
-	current, _, err := runnerlifecycle.ReadStatus(ctx, r)
+	current, _, err := harnesshostlifecycle.ReadStatus(ctx, r)
 	if err != nil {
 		return err
 	}
 	if current.Generation != desiredState.Generation {
-		current = runnerlifecycle.Status{Generation: desiredState.Generation, Stage: runnerlifecycle.Draining}
+		current = harnesshostlifecycle.Status{Generation: desiredState.Generation, Stage: harnesshostlifecycle.Draining}
 	}
 	write := func() error {
-		changed, err := runnerlifecycle.WriteStatus(ctx, r, current)
+		changed, err := harnesshostlifecycle.WriteStatus(ctx, r, current)
 		if changed {
 			c.l.runner.changed()
-			// This controller does not subscribe to RunnerRuntime, so queue the next aggregate step explicitly.
+			// This controller does not subscribe to its output, so queue the next aggregate step explicitly.
 			r.QueueReconcile()
 		}
 		return err
 	}
-	if desiredState.Mode == runnerlifecycle.Running {
-		current.Stage = runnerlifecycle.StageRunning
-		current.Blocker = runnerlifecycle.Blocker{}
+	if desiredState.Mode == harnesshostlifecycle.Running {
+		current.Stage = harnesshostlifecycle.StageRunning
+		current.Blocker = harnesshostlifecycle.Blocker{}
 		return write()
 	}
 	c.l.runner.mu.Lock()
@@ -83,10 +83,10 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		return err
 	}
 	if admissions != 0 {
-		current.Stage = runnerlifecycle.Draining
-		current.Blocker = runnerlifecycle.Blocker{
-			Kind: runnerlifecycle.AdmissionsPending, ResourceType: runnerInputType,
-			ResourceID: runnerlifecycle.ResourceID, ResourcePresent: true, Admissions: uint64(admissions),
+		current.Stage = harnesshostlifecycle.Draining
+		current.Blocker = harnesshostlifecycle.Blocker{
+			Kind: harnesshostlifecycle.AdmissionsPending, ResourceType: harnessHostInputType,
+			ResourceID: harnesshostlifecycle.ResourceID, ResourcePresent: true, Admissions: uint64(admissions),
 		}
 		return write()
 	}
@@ -99,9 +99,9 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			return err
 		}
 	}
-	if current.Stage < runnerlifecycle.Halting {
-		current.Stage = runnerlifecycle.Halting
-		current.Blocker = runnerlifecycle.Blocker{}
+	if current.Stage < harnesshostlifecycle.Halting {
+		current.Stage = harnesshostlifecycle.Halting
+		current.Blocker = harnesshostlifecycle.Blocker{}
 		return write()
 	}
 	sessions := c.l.runner.sessions.Inventory()
@@ -115,11 +115,11 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		// that belong to this teardown; otherwise Close could race that reset.
 		if status.Generation == desiredState.Generation && status.Error != "" {
 			current.Error = status.Error
-			kind := runnerlifecycle.SessionHaltPending
+			kind := harnesshostlifecycle.SessionHaltPending
 			if status.Phase == session.Halted {
-				kind = runnerlifecycle.SessionProcessPending
+				kind = harnesshostlifecycle.SessionProcessPending
 			}
-			current.Blocker = runnerlifecycle.Blocker{
+			current.Blocker = harnesshostlifecycle.Blocker{
 				Kind: kind, ResourceType: session.LifecycleStatusType,
 				Error: status.Error, ResourceID: s.ID(), ProcessID: status.ProcessID,
 				ResourcePresent: found,
@@ -131,17 +131,17 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			if status.Generation == desiredState.Generation {
 				resourceError = status.Error
 			}
-			current.Blocker = runnerlifecycle.Blocker{
-				Kind: runnerlifecycle.SessionHaltPending, ResourceType: session.LifecycleStatusType,
+			current.Blocker = harnesshostlifecycle.Blocker{
+				Kind: harnesshostlifecycle.SessionHaltPending, ResourceType: session.LifecycleStatusType,
 				Error: resourceError, ResourceID: s.ID(), ProcessID: status.ProcessID,
 				ResourcePresent: found,
 			}
 			return write()
 		}
 	}
-	if current.Stage < runnerlifecycle.Stopping {
-		current.Stage = runnerlifecycle.Stopping
-		current.Blocker = runnerlifecycle.Blocker{}
+	if current.Stage < harnesshostlifecycle.Stopping {
+		current.Stage = harnesshostlifecycle.Stopping
+		current.Blocker = harnesshostlifecycle.Blocker{}
 		if err := write(); err != nil {
 			return err
 		}
@@ -152,8 +152,8 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			return err
 		}
 		if !status.ProcessStopped {
-			current.Blocker = runnerlifecycle.Blocker{
-				Kind: runnerlifecycle.SessionProcessPending, ResourceType: session.LifecycleStatusType,
+			current.Blocker = harnesshostlifecycle.Blocker{
+				Kind: harnesshostlifecycle.SessionProcessPending, ResourceType: session.LifecycleStatusType,
 				ResourceID: s.ID(), ProcessID: status.ProcessID, ResourcePresent: found,
 			}
 			return write()
@@ -166,16 +166,16 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		}
 		if runtime.StopError != "" {
 			current.Error = runtime.StopError
-			current.Blocker = runnerlifecycle.Blocker{
-				Kind: runnerlifecycle.CodexAppServerPending, ResourceType: codexappserver.RuntimeType,
+			current.Blocker = harnesshostlifecycle.Blocker{
+				Kind: harnesshostlifecycle.CodexAppServerPending, ResourceType: codexappserver.RuntimeType,
 				Error: runtime.StopError, ResourceID: codexappserver.ResourceID,
 				ProcessID: runtime.ProcessID, ResourcePresent: found,
 			}
 			return write()
 		}
 		if !found || runtime.Phase != codexappserver.Stopped {
-			current.Blocker = runnerlifecycle.Blocker{
-				Kind: runnerlifecycle.CodexAppServerPending, ResourceType: codexappserver.RuntimeType,
+			current.Blocker = harnesshostlifecycle.Blocker{
+				Kind: harnesshostlifecycle.CodexAppServerPending, ResourceType: codexappserver.RuntimeType,
 				ResourceID: codexappserver.ResourceID, ProcessID: runtime.ProcessID, ResourcePresent: found,
 			}
 			return write()
@@ -184,12 +184,12 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 	// Owner-level completion cannot substitute for the native cleanup barrier.
 	// Include scripts and workspace helpers, and preserve a failed fence even if
 	// a protocol reader already reported the leader's exit.
-	processes, err := r.List(ctx, resource.NewMetadata(runnerlifecycle.Namespace, supervision.DesiredStateType, "", resource.VersionUndefined))
+	processes, err := r.List(ctx, resource.NewMetadata(harnesshostlifecycle.Namespace, supervision.DesiredStateType, "", resource.VersionUndefined))
 	if err != nil {
 		return err
 	}
 	for _, process := range processes.Items {
-		desiredProcess, found, err := supervision.ReadDesiredState(ctx, r, runnerlifecycle.Namespace, process.Metadata().ID())
+		desiredProcess, found, err := supervision.ReadDesiredState(ctx, r, harnesshostlifecycle.Namespace, process.Metadata().ID())
 		if err != nil {
 			return err
 		}
@@ -203,22 +203,22 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		default:
 			return fmt.Errorf("process %q has unknown domain %q", process.Metadata().ID(), desiredProcess.Domain)
 		}
-		status, found, err := supervision.ReadStatus(ctx, r, runnerlifecycle.Namespace, process.Metadata().ID())
+		status, found, err := supervision.ReadStatus(ctx, r, harnesshostlifecycle.Namespace, process.Metadata().ID())
 		if err != nil {
 			return err
 		}
 		if status.StopError != "" {
 			current.Error = status.StopError
-			current.Blocker = runnerlifecycle.Blocker{
-				Kind: runnerlifecycle.ProcessCleanupPending, ResourceType: supervision.StatusType,
+			current.Blocker = harnesshostlifecycle.Blocker{
+				Kind: harnesshostlifecycle.ProcessCleanupPending, ResourceType: supervision.StatusType,
 				ResourceID: process.Metadata().ID(), ProcessID: process.Metadata().ID(), ResourcePresent: found,
 				Error: status.StopError, FinalizersPending: !process.Metadata().Finalizers().Empty(),
 			}
 			return write()
 		}
 		if !found || status.Phase != supervision.Exited || !process.Metadata().Finalizers().Empty() {
-			current.Blocker = runnerlifecycle.Blocker{
-				Kind: runnerlifecycle.ProcessCleanupPending, ResourceType: supervision.StatusType,
+			current.Blocker = harnesshostlifecycle.Blocker{
+				Kind: harnesshostlifecycle.ProcessCleanupPending, ResourceType: supervision.StatusType,
 				ResourceID: process.Metadata().ID(), ProcessID: process.Metadata().ID(), ResourcePresent: found,
 				FinalizersPending: !process.Metadata().Finalizers().Empty(),
 			}
@@ -233,15 +233,15 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			return err
 		}
 		if input.Inspecting {
-			current.Blocker = runnerlifecycle.Blocker{
-				Kind: runnerlifecycle.SessionInspectionPending, ResourceType: session.DrainInputType,
+			current.Blocker = harnesshostlifecycle.Blocker{
+				Kind: harnesshostlifecycle.SessionInspectionPending, ResourceType: session.DrainInputType,
 				ResourceID: s.ID(), ResourcePresent: found,
 			}
 			return write()
 		}
 	}
 	c.l.runner.mu.Lock()
-	latest, found, err := runnerlifecycle.ReadDesired(ctx, c.l.state)
+	latest, found, err := harnesshostlifecycle.ReadDesired(ctx, c.l.state)
 	if err != nil {
 		c.l.runner.mu.Unlock()
 		return err
@@ -250,26 +250,26 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		c.l.runner.mu.Unlock()
 		return nil
 	}
-	applied, found, err := cosi.Read(ctx, r, runnerlifecycle.HostIntentStatusResource(runnerlifecycle.HostIntentStatus{}))
+	applied, found, err := cosi.Read(ctx, r, harnesshostlifecycle.HostIntentStatusResource(harnesshostlifecycle.HostIntentStatus{}))
 	if err != nil {
 		c.l.runner.mu.Unlock()
 		return err
 	}
 	nativeChanged := !c.l.runner.nativeStopped
 	c.l.runner.nativeStopped = true
-	fenced := found && hostFenceMatches(applied, c.l.runner.intent, desiredState.Generation)
+	fenced := found && harnessHostFenceMatches(applied, c.l.runner.intent, desiredState.Generation)
 	c.l.runner.mu.Unlock()
 	if nativeChanged {
 		c.l.runner.changed()
 	}
 	if desiredState.SealUID != "" && !fenced {
-		current.Stage = runnerlifecycle.Fencing
+		current.Stage = harnesshostlifecycle.Fencing
 		return write()
 	}
 	if desiredState.SealUID != "" {
-		if current.Stage < runnerlifecycle.Sealing {
-			current.Stage = runnerlifecycle.Sealing
-			current.Blocker = runnerlifecycle.Blocker{}
+		if current.Stage < harnesshostlifecycle.Sealing {
+			current.Stage = harnesshostlifecycle.Sealing
+			current.Blocker = harnesshostlifecycle.Blocker{}
 			return write()
 		}
 		for _, s := range sessions {
@@ -278,8 +278,8 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 				return err
 			}
 			if !found || !seal.Present || seal.IncarnationUID != desiredState.SealUID {
-				current.Blocker = runnerlifecycle.Blocker{
-					Kind: runnerlifecycle.JournalSealPending, ResourceType: journalSealType,
+				current.Blocker = harnesshostlifecycle.Blocker{
+					Kind: harnesshostlifecycle.JournalSealPending, ResourceType: journalSealType,
 					ResourceID: s.ID(), ResourcePresent: found, JournalSealPresent: seal.Present,
 					JournalSealUID: seal.IncarnationUID, ExpectedJournalSealUID: desiredState.SealUID,
 				}
@@ -287,7 +287,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			}
 		}
 	}
-	if desiredState.Mode == runnerlifecycle.Closing {
+	if desiredState.Mode == harnesshostlifecycle.Closing {
 		// Closing the final admission window and publishing completion share
 		// the RPC barrier, including late exact-turn controls.
 		c.l.runner.mu.Lock()
@@ -298,9 +298,9 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		}
 		if admissions != 0 {
 			c.l.runner.mu.Unlock()
-			current.Blocker = runnerlifecycle.Blocker{
-				Kind: runnerlifecycle.AdmissionsPending, ResourceType: runnerInputType,
-				ResourceID: runnerlifecycle.ResourceID, ResourcePresent: true, Admissions: uint64(admissions),
+			current.Blocker = harnesshostlifecycle.Blocker{
+				Kind: harnesshostlifecycle.AdmissionsPending, ResourceType: harnessHostInputType,
+				ResourceID: harnesshostlifecycle.ResourceID, ResourcePresent: true, Admissions: uint64(admissions),
 			}
 			return write()
 		}
@@ -309,9 +309,9 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			c.l.runner.mu.Unlock()
 			return nil
 		}
-		current.Stage = runnerlifecycle.Closed
-		current.Blocker = runnerlifecycle.Blocker{}
-		changed, err := runnerlifecycle.WriteStatus(ctx, r, current)
+		current.Stage = harnesshostlifecycle.Closed
+		current.Blocker = harnesshostlifecycle.Blocker{}
+		changed, err := harnesshostlifecycle.WriteStatus(ctx, r, current)
 		c.l.runner.mu.Unlock()
 		if changed {
 			c.l.runner.changed()
@@ -319,7 +319,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		}
 		return err
 	}
-	current.Stage = runnerlifecycle.Flushing
+	current.Stage = harnesshostlifecycle.Flushing
 	for _, s := range sessions {
 		seal, sealFound, err := lifecycleRead[journalSealSpec](ctx, r, s.ID())
 		if err != nil {
@@ -330,8 +330,8 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			return err
 		}
 		if !ackFound || !ack.Sealed || ack.Cursor != seal.Cursor {
-			current.Blocker = runnerlifecycle.Blocker{
-				Kind: runnerlifecycle.IngressAcknowledgementPending, ResourceType: ingressAckType,
+			current.Blocker = harnesshostlifecycle.Blocker{
+				Kind: harnesshostlifecycle.IngressAcknowledgementPending, ResourceType: ingressAckType,
 				ResourceID: s.ID(), ResourcePresent: ackFound, JournalSealPresent: sealFound && seal.Present,
 				JournalSealUID: seal.IncarnationUID, ExpectedJournalSealUID: desiredState.SealUID,
 				JournalSealCursor: seal.Cursor, AcknowledgementPresent: ackFound,
@@ -340,7 +340,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			return write()
 		}
 	}
-	current.Stage = runnerlifecycle.Quiesced
-	current.Blocker = runnerlifecycle.Blocker{}
+	current.Stage = harnesshostlifecycle.Quiesced
+	current.Blocker = harnesshostlifecycle.Blocker{}
 	return write()
 }

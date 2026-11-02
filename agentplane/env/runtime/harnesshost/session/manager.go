@@ -109,7 +109,7 @@ func (m *Manager) Startup(ctx context.Context) error {
 }
 
 // reserveFresh serializes the durable write with first ownership of its
-// journal. The admission callback may hold Runner.mu for the write but must
+// journal. The admission callback may hold the Harness Host admission lock for the write but must
 // release it before returning, so publication never runs under that barrier.
 func (m *Manager) ReserveFresh(ctx context.Context, id string, reserve func() error) (*Session, error) {
 	m.loadMu.Lock()

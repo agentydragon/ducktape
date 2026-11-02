@@ -555,14 +555,14 @@ it("refreshes the runner snapshot and replaces old process and Session details",
   expect(container.textContent).not.toContain("process-before-refresh");
 });
 
-it("reports suspended runner diagnostics without a read or wake request", async () => {
+it("reports suspended Harness Host diagnostics without a read or wake request", async () => {
   readySandbox.operating_mode = "Suspended";
   readySandbox.phase = "Suspended";
   readySandbox.pod = null;
   await render(async () => Response.json([]));
   await act(async () => tab("Status").click());
   await vi.waitFor(() =>
-    expect(container.textContent).toContain("Runner diagnostics are unavailable until it is running")
+    expect(container.textContent).toContain("Harness Host diagnostics are unavailable until it is running")
   );
   const paths = fetchMock.mock.calls.map(([input, init]) => {
     const request = requestFromFetchInput(input, init);
@@ -572,7 +572,7 @@ it("reports suspended runner diagnostics without a read or wake request", async 
   expect(paths).not.toContainEqual(["POST", "/sandboxes/startup-test/resume"]);
 });
 
-it("reports backend runner diagnostics failures as unavailable", async () => {
+it("reports backend Harness Host diagnostics failures as unavailable", async () => {
   await render(
     async () => Response.json([]),
     undefined,
@@ -581,7 +581,7 @@ it("reports backend runner diagnostics failures as unavailable", async () => {
     async () => Response.json({ detail: "runner connection unavailable" }, { status: 503 })
   );
   await act(async () => tab("Status").click());
-  await vi.waitFor(() => expect(container.textContent).toContain("Runner diagnostics unavailable"));
+  await vi.waitFor(() => expect(container.textContent).toContain("Harness Host diagnostics unavailable"));
   expect(container.textContent).toContain("runner connection unavailable");
 });
 

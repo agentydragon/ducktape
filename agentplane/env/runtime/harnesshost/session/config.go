@@ -21,7 +21,7 @@ type Environment struct {
 type DebugCheckpointConfig struct{ Name, CommandID string }
 
 // Config names the concrete facilities one Session needs and the narrow
-// Runner-wide admission/publication gates retained by the aggregate owner.
+// Harness Host admission/publication gates retained by the aggregate owner.
 type Config struct {
 	Context              context.Context
 	State                state.State

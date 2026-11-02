@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -99,7 +99,7 @@ func (r *Runner) ApplyIntent(ctx context.Context, intent *runtimepb.LifecycleInt
 	if intent == nil || intent.Binding == nil || intent.Binding.RuntimeBootId == "" || intent.Binding.HostBootId != r.bootID || intent.Binding.Generation == 0 || intent.SandboxUid != r.config.Launch.Sandbox.UID {
 		return errors.New("invalid environment lifecycle binding")
 	}
-	mode := runnerlifecycle.Quiescing
+	mode := harnesshostlifecycle.Quiescing
 	switch intent.Mode {
 	case runtimepb.LifecycleIntent_INACTIVE:
 		if intent.IncarnationUid != "" || intent.SealUid != "" {
@@ -109,7 +109,7 @@ func (r *Runner) ApplyIntent(ctx context.Context, intent *runtimepb.LifecycleInt
 		if intent.IncarnationUid == "" || intent.SealUid != "" {
 			return errors.New("running environment has invalid incarnation or seal")
 		}
-		mode = runnerlifecycle.Running
+		mode = harnesshostlifecycle.Running
 	case runtimepb.LifecycleIntent_QUIESCING:
 		if intent.IncarnationUid == "" || intent.SealUid != intent.IncarnationUid {
 			return errors.New("draining environment has no incarnation")
@@ -148,11 +148,11 @@ func (r *Runner) ApplyIntent(ctx context.Context, intent *runtimepb.LifecycleInt
 	}
 	r.ready.Store(false)
 	r.intent = proto.Clone(intent).(*runtimepb.LifecycleIntent)
-	if mode == runnerlifecycle.Running {
+	if mode == harnesshostlifecycle.Running {
 		r.bootstrapBinding = proto.Clone(intent.Binding).(*runtimepb.Binding)
 	}
 	r.mu.Unlock()
-	if changedGeneration && mode == runnerlifecycle.Running {
+	if changedGeneration && mode == harnesshostlifecycle.Running {
 		if err := r.sessions.ResetDemand(); err != nil {
 			return err
 		}
@@ -174,7 +174,7 @@ func (r *Runner) ApplyIntent(ctx context.Context, intent *runtimepb.LifecycleInt
 	if changedGeneration {
 		r.nativeStopped = false
 	}
-	err := runnerlifecycle.PublishDesired(r.ctx, r.lifecycle.state, runnerlifecycle.Desired{Mode: mode, SealUID: intent.SealUid, Generation: intent.Binding.Generation})
+	err := harnesshostlifecycle.PublishDesired(r.ctx, r.lifecycle.state, harnesshostlifecycle.Desired{Mode: mode, SealUID: intent.SealUid, Generation: intent.Binding.Generation})
 	if err == nil {
 		r.ready.Store(true)
 	}

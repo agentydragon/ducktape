@@ -12,7 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/workspace"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
@@ -180,7 +180,7 @@ func (r *Runner) fail(err error) {
 			break
 		}
 	}
-	zap.L().Error("runner operation failed", zap.Error(err))
+	zap.L().Error("Harness Host operation failed", zap.Error(err))
 	select {
 	case r.fatal <- err:
 	default:
@@ -231,7 +231,7 @@ func (r *Runner) isClosing() bool {
 
 func (r *Runner) finishClose() error {
 	r.mu.Lock()
-	err := r.lifecycle.setDesiredState(runnerlifecycle.Closing, "")
+	err := r.lifecycle.setDesiredState(harnesshostlifecycle.Closing, "")
 	r.mu.Unlock()
 	r.changed()
 	if err == nil {
@@ -258,23 +258,23 @@ func (r *Runner) finishClose() error {
 // waiting for its final owner release, which follows the shared engine join.
 func (r *Runner) WaitClosed(ctx context.Context) error {
 	closed := func() (bool, error) {
-		status, found, err := runnerlifecycle.ReadStatus(context.Background(), r.lifecycle.state)
+		status, found, err := harnesshostlifecycle.ReadStatus(context.Background(), r.lifecycle.state)
 		if err != nil || !found {
 			return false, err
 		}
 		if status.Error != "" {
 			return false, errors.New(status.Error)
 		}
-		desired, found, err := runnerlifecycle.ReadDesired(context.Background(), r.lifecycle.state)
+		desired, found, err := harnesshostlifecycle.ReadDesired(context.Background(), r.lifecycle.state)
 		if err != nil || !found {
 			return false, err
 		}
-		return status.Stage == runnerlifecycle.Closed && status.Generation == desired.Generation, nil
+		return status.Stage == harnesshostlifecycle.Closed && status.Generation == desired.Generation, nil
 	}
 	if done, err := closed(); err != nil || done {
 		return err
 	}
-	err := r.lifecycle.wait(ctx, runnerlifecycle.Closed)
+	err := r.lifecycle.wait(ctx, harnesshostlifecycle.Closed)
 	if err == nil {
 		return nil
 	}

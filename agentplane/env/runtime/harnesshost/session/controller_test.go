@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -43,7 +43,7 @@ func TestSessionControllerMapsAppServerRuntimeToCodexSessions(t *testing.T) {
 	}
 	c := &sessionLifecycleController{manager: &Manager{}}
 	ctx := context.Background()
-	input := reducedLifecycleMetadata{Pointer: resource.NewMetadata(runnerlifecycle.Namespace, codexappserver.RuntimeType, codexappserver.ResourceID, resource.VersionUndefined)}
+	input := reducedLifecycleMetadata{Pointer: resource.NewMetadata(harnesshostlifecycle.Namespace, codexappserver.RuntimeType, codexappserver.ResourceID, resource.VersionUndefined)}
 	mapped, err := c.MapInput(ctx, nil, sessionControllerTestRuntime{state: resources}, input)
 	if err != nil {
 		t.Fatal(err)
@@ -52,7 +52,7 @@ func TestSessionControllerMapsAppServerRuntimeToCodexSessions(t *testing.T) {
 		t.Fatalf("app-server runtime mappings = %v, want %v", got, want)
 	}
 
-	input.Pointer = resource.NewMetadata(runnerlifecycle.Namespace, runnerlifecycle.AggregateStatusType, runnerlifecycle.ResourceID, resource.VersionUndefined)
+	input.Pointer = resource.NewMetadata(harnesshostlifecycle.Namespace, harnesshostlifecycle.AggregateStatusType, harnesshostlifecycle.ResourceID, resource.VersionUndefined)
 	mapped, err = c.MapInput(ctx, nil, sessionControllerTestRuntime{state: resources}, input)
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +74,7 @@ type sessionControllerTestRuntime struct {
 }
 
 func (r sessionControllerTestRuntime) List(ctx context.Context, _ resource.Kind, opts ...state.ListOption) (resource.List, error) {
-	return r.state.List(ctx, resource.NewMetadata(runnerlifecycle.Namespace, InputType, "", resource.VersionUndefined), opts...)
+	return r.state.List(ctx, resource.NewMetadata(harnesshostlifecycle.Namespace, InputType, "", resource.VersionUndefined), opts...)
 }
 
 func pointerIDs(pointers []resource.Pointer) []string {

@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
@@ -15,10 +15,10 @@ import (
 )
 
 const (
-	runnerInputType      = "RunnerInputs.agentplane"
-	journalSealType      = "JournalSeals.agentplane"
-	ingressAckType       = "IngressAcks.agentplane"
-	runnerControllerName = "runner-lifecycle"
+	harnessHostInputType      = "HarnessHostInputs.agentplane"
+	journalSealType           = "JournalSeals.agentplane"
+	ingressAckType            = "IngressAcks.agentplane"
+	harnessHostControllerName = "harness-host-lifecycle"
 )
 
 // Specs contain scalar values and immutable time.Time values; no native handles or mutable references.
@@ -32,12 +32,12 @@ type lifecycleExtension[T lifecycleSpec[T]] struct{}
 
 func (lifecycleExtension[T]) ResourceDefinition() spec.ResourceDefinitionSpec {
 	var value T
-	return spec.ResourceDefinitionSpec{Type: value.resourceType(), DefaultNamespace: runnerlifecycle.Namespace}
+	return spec.ResourceDefinitionSpec{Type: value.resourceType(), DefaultNamespace: harnesshostlifecycle.Namespace}
 }
 
 func lifecycleResourceFor[T lifecycleSpec[T]](id string, value T) *typed.Resource[T, lifecycleExtension[T]] {
 	return typed.NewResource[T, lifecycleExtension[T]](
-		resource.NewMetadata(runnerlifecycle.Namespace, value.resourceType(), id, resource.VersionUndefined), value,
+		resource.NewMetadata(harnesshostlifecycle.Namespace, value.resourceType(), id, resource.VersionUndefined), value,
 	)
 }
 
@@ -46,7 +46,7 @@ func lifecycleRead[T lifecycleSpec[T]](ctx context.Context, reader controller.Re
 	return cosi.Read(ctx, reader, lifecycleResourceFor(id, zero))
 }
 
-type runnerInputSpec struct {
+type harnessHostInputSpec struct {
 	Admissions int
 }
 type journalSealSpec struct {
@@ -59,8 +59,8 @@ type ingressAckSpec struct {
 	Sealed bool
 }
 
-func (runnerInputSpec) resourceType() resource.Type     { return runnerInputType }
-func (value runnerInputSpec) DeepCopy() runnerInputSpec { return value }
+func (harnessHostInputSpec) resourceType() resource.Type          { return harnessHostInputType }
+func (value harnessHostInputSpec) DeepCopy() harnessHostInputSpec { return value }
 
 func (journalSealSpec) resourceType() resource.Type     { return journalSealType }
 func (value journalSealSpec) DeepCopy() journalSealSpec { return value }
