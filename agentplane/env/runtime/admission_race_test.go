@@ -88,7 +88,11 @@ func TestDesiredPublicationFailureRevokesNativeAdmission(t *testing.T) {
 			}
 			r.mu.Lock()
 			open, failed := r.admissionOpen, r.failed
+			revision := r.desired.Generation
 			r.mu.Unlock()
+			if revision != old.Generation+1 {
+				t.Fatalf("failed publication reused prior revision: got %d", revision)
+			}
 			if open || !failed {
 				t.Fatalf("publication failure: open=%t failed=%t", open, failed)
 			}

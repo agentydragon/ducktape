@@ -66,9 +66,15 @@ func (r *Runtime) publishDesired(ctx context.Context, mode lifecycle.Mode, uid, 
 	}
 	r.admissionOpen = false
 	desired := lifecycle.EnvironmentDesired{Mode: mode, IncarnationUID: uid, SealUID: sealUID, Generation: r.desired.Generation + 1}
+	// Reserve the revision even on a failed write: its durable outcome can be
+	// unknown, so a later Close must never reuse it for a different desire.
+	r.desired = desired
 	err := lifecycle.PublishEnvironmentDesired(ctx, r.lifecycleState, desired)
-	if err == nil {
-		r.desired = desired
+	if err != nil {
+		r.failed = true
+		if r.failureErr == nil {
+			r.failureErr = err
+		}
 	}
 	r.changedLocked()
 	r.mu.Unlock()
