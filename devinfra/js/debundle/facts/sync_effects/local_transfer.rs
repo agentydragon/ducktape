@@ -3,7 +3,9 @@
 use super::allocation_transfer::{
     self, AllocationContext, AllocationJudgment, AllocationValue, LiteralHeap, LiteralLayout,
 };
-use super::local_operations::{LocalBinding, LocalBody, LocalExpression, LocalOperation};
+use super::local_operations::{
+    LocalBinding, LocalBody, LocalCallee, LocalExpression, LocalOperation,
+};
 use super::value_model::{
     AbstractValue, Context, OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr, Values,
 };
@@ -36,6 +38,27 @@ impl LocalFrame {
     }
 }
 
+#[derive(Clone)]
+pub(super) enum EvaluatedCallee {
+    Direct(Values),
+    Member { receiver: Values, targets: Values },
+}
+
+impl EvaluatedCallee {
+    pub(super) fn targets(&self) -> &Values {
+        match self {
+            Self::Direct(targets) | Self::Member { targets, .. } => targets,
+        }
+    }
+
+    pub(super) fn receiver(&self) -> Option<&Values> {
+        match self {
+            Self::Direct(_) => None,
+            Self::Member { receiver, .. } => Some(receiver),
+        }
+    }
+}
+
 pub(super) trait LocalContext {
     fn instantiate_bindings(&mut self, _frame: &mut LocalFrame) {}
     fn local_binding_stored(&mut self, _binding: &Id, _frame: &LocalFrame) {}
@@ -53,7 +76,7 @@ pub(super) trait LocalContext {
     fn call(
         &mut self,
         frame: &mut LocalFrame,
-        callee: &Values,
+        callee: &EvaluatedCallee,
         arguments: &[Values],
         span: Span,
     ) -> Option<AllocationValue>;
@@ -200,6 +223,30 @@ fn own_data_field(
     Ok(*object)
 }
 
+fn read_field(
+    context: &mut impl LocalContext,
+    frame: &mut LocalFrame,
+    receiver: &Id,
+    receivers: &Values,
+    property: &str,
+    span: Span,
+) -> Option<AllocationValue> {
+    match own_data_field(context, receivers, property, frame) {
+        Ok(object) => {
+            // The shared guard requires an existing own data slot on a
+            // settled, fresh, unborrowed ordinary record.
+            let values = context.heap().properties[&object][&Some(property.to_owned())].clone();
+            Some(AllocationValue {
+                values,
+                judgment: AllocationJudgment::CoveredAllocationOnly(Default::default()),
+            })
+        }
+        Err(refusal) => {
+            context.unproved_field_read(frame, receiver, receivers, property, span, refusal)
+        }
+    }
+}
+
 fn expression(
     context: &mut impl LocalContext,
     node: &LocalExpression,
@@ -298,18 +345,43 @@ fn expression(
         } => {
             // GetValue(callee) precedes every argument. In particular, an
             // argument assignment must not replace this captured callee.
-            let callee = value(context, &ValueExpr::Binding(callee.clone()), frame)?;
-            judgment.compose(&callee.judgment);
-            let callee = completing(callee.values, frame);
-            if callee.is_empty() {
+            let callee = match callee {
+                LocalCallee::Binding(binding) => {
+                    let result = value(context, &ValueExpr::Binding(binding.clone()), frame)?;
+                    judgment.compose(&result.judgment);
+                    EvaluatedCallee::Direct(completing(result.values, frame))
+                }
+                LocalCallee::Member {
+                    receiver,
+                    property,
+                    span,
+                } => {
+                    let result = value(context, &ValueExpr::Binding(receiver.clone()), frame)?;
+                    judgment.compose(&result.judgment);
+                    let receivers = completing(result.values, frame);
+                    if receivers.is_empty() {
+                        return Some(Values::new());
+                    }
+                    frame.inputs.extend(receivers.iter().cloned());
+                    let result = read_field(context, frame, receiver, &receivers, property, *span)?;
+                    judgment.compose(&result.judgment);
+                    EvaluatedCallee::Member {
+                        receiver: receivers,
+                        targets: completing(result.values, frame),
+                    }
+                }
+            };
+            if callee.targets().is_empty() {
                 return Some(Values::new());
             }
+            frame.inputs.extend(callee.targets().iter().cloned());
             let mut inputs = Vec::with_capacity(arguments.len());
             for argument in arguments.iter() {
                 let values = expression(context, argument, body, frame, judgment)?;
                 if values.is_empty() {
                     return Some(Values::new());
                 }
+                frame.inputs.extend(values.iter().cloned());
                 inputs.push(values);
             }
             let result = context.call(frame, &callee, &inputs, *span)?;
@@ -327,23 +399,9 @@ fn expression(
             if receivers.is_empty() {
                 return Some(Values::new());
             }
-            match own_data_field(context, &receivers, property, frame) {
-                Ok(object) => {
-                    // The shared guard requires an existing own data slot on a
-                    // settled, fresh, unborrowed ordinary record. It is not
-                    // broadened for reads of other receivers.
-                    let values =
-                        context.heap().properties[&object][&Some(property.clone())].clone();
-                    Some(completing(values, frame))
-                }
-                Err(refusal) => {
-                    let result = context.unproved_field_read(
-                        frame, receiver, &receivers, property, *span, refusal,
-                    )?;
-                    judgment.compose(&result.judgment);
-                    Some(completing(result.values, frame))
-                }
-            }
+            let result = read_field(context, frame, receiver, &receivers, property, *span)?;
+            judgment.compose(&result.judgment);
+            Some(completing(result.values, frame))
         }
         LocalExpression::AssignField {
             receiver,

@@ -3,7 +3,7 @@
 use super::super::allocation_transfer::{
     self, AllocationContext, AllocationJudgment, AllocationValue, LiteralHeap, LiteralLayout,
 };
-use super::super::local_transfer::{self, LocalContext, LocalFrame};
+use super::super::local_transfer::{self, EvaluatedCallee, LocalContext, LocalFrame};
 use super::super::value_model::{
     AbstractValue, Context, DenseArray, OwnPropertyShape, ProviderInput, ProviderScopeId,
     SymbolicInputId, ValueExpr, Values,
@@ -73,7 +73,7 @@ impl LocalContext for ProviderContext<'_> {
     fn call(
         &mut self,
         _frame: &mut LocalFrame,
-        _callee: &Values,
+        _callee: &EvaluatedCallee,
         _arguments: &[Values],
         _span: Span,
     ) -> Option<AllocationValue> {

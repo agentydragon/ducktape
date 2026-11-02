@@ -1203,9 +1203,10 @@ fails, the executor publishes reachable frame capabilities, widens native
 effects and uses the existing synchronous fallback closure for the remaining
 body. Earlier operations are not replayed. This local execution proof does not
 provide an owner-completion or foreign-provider certificate.
-Direct calls through simple binding references also enter this ordered path.
-The kernel reads the callee before evaluating each argument in order, retaining
-that callee if an argument reassigns its binding. Application execution sends
+Calls through simple binding references and static dot members of simple
+binding receivers also enter this ordered path. The kernel reads the receiver
+and callee before evaluating each argument in order, retaining both if an
+argument reassigns its binding. Application execution sends
 the evaluated operands through `RuntimeOperation::Call` together with the
 canonical call's existing policy and proof sites. This is the same dispatcher
 used for source-summary call effects. It returns effects and values together
@@ -1213,7 +1214,7 @@ for singleton untainted local functions/closures, admitted native rows and
 supported foreign-summary projections. The ordered caller performs no second
 value-only call evaluation. Abrupt operands stop the call; a possible
 abrupt invocation result is retained before following its completing values.
-Records reachable through the callee or its arguments become borrowed in the
+Records reachable through the callee, receiver or its arguments become borrowed in the
 caller, so a completed callee cannot leave the original fresh descriptor proof
 in force after modifying that receiver. Returned values stay in the frame's
 fallback capability roots. Unknown targets, incomplete invocations and missing
@@ -1225,6 +1226,19 @@ consume evaluated inputs. Their
 already executed effects remain in the outcome. All invocation results remain
 opaque to allocation-only proof, and the strict provider adapter refuses the
 operation. This gives no provider identity to exported property aliases.
+
+Member lookup reuses the shared field transfer and the canonical indexed
+callee-lookup certificates. A missing getter proof truncates before arguments
+run. Evaluated member references carry the receiver through invocation and
+fallback; neither rereads its source binding after arguments. Local method
+results require the existing unused-receiver predicate, including its nested
+implicit-capture check. The runtime does not yet bind `this` or retain it in
+arrow closures. Such methods use conservative fallback with the receiver as
+an input capability.
+The body's entry check admits native global reads only through the existing
+global-slot integrity guard with no shadowing or local declaration. It records
+that guard's dependencies; the member lookup and invocation still need their
+own proofs. Other absent captures or globals do not enter this path.
 
 Call results travel in the single-consumer runtime payload. They are not
 cached by source location: repeated activations and hypothetical value queries
@@ -1386,7 +1400,7 @@ an instance invalidates later construction of that class. A direct zero-argument
 `new` of a constructorless, fieldless class only allocates an instance, so an
 escaped class identity does not make that allocation run a method or accessor.
 Unknown or reassigned callee alternatives retain the opaque call path. Other
-constructor and member calls remain unknown and take the conservative path. Generator calls
+local-class constructor and instance-method calls remain unknown and take the conservative path. Generator calls
 also take that path because their parameter defaults execute at call time
 while their bodies wait for iteration; spread arguments may likewise execute
 iterator code before the callee runs.

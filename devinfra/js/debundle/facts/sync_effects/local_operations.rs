@@ -15,6 +15,16 @@ pub(super) enum LocalBinding {
 }
 
 #[derive(Debug, Clone)]
+pub(super) enum LocalCallee {
+    Binding(Id),
+    Member {
+        receiver: Id,
+        property: String,
+        span: Span,
+    },
+}
+
+#[derive(Debug, Clone)]
 pub(super) enum LocalExpression {
     Value(ValueExpr),
     Sequence(Arc<[Self]>),
@@ -29,7 +39,7 @@ pub(super) enum LocalExpression {
     },
     Closure(u32),
     Call {
-        callee: Id,
+        callee: LocalCallee,
         arguments: Arc<[Self]>,
         span: Span,
     },
@@ -156,16 +166,28 @@ impl LocalExpression {
                 let Callee::Expr(callee) = &call.callee else {
                     return None;
                 };
-                let Expr::Ident(callee) = callee.unwrap_parens() else {
-                    return None;
+                let callee = match callee.unwrap_parens() {
+                    // A direct eval reference can enter dynamic scope.
+                    Expr::Ident(binding) if binding.sym != "eval" => {
+                        LocalCallee::Binding(binding.to_id())
+                    }
+                    Expr::Member(member) => {
+                        let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
+                            return None;
+                        };
+                        let MemberProp::Ident(property) = &member.prop else {
+                            return None;
+                        };
+                        LocalCallee::Member {
+                            receiver: receiver.to_id(),
+                            property: property.sym.to_string(),
+                            span: member.span,
+                        }
+                    }
+                    _ => return None,
                 };
-                // A reference to eval can enter dynamic scope. Its binding
-                // resolution remains on the existing conservative path.
-                if callee.sym == "eval" {
-                    return None;
-                }
                 Some(Self::Call {
-                    callee: callee.to_id(),
+                    callee,
                     arguments: call
                         .args
                         .iter()
@@ -261,7 +283,11 @@ impl LocalExpression {
             Self::Call {
                 callee, arguments, ..
             } => {
-                reads.insert(callee.clone());
+                let (LocalCallee::Binding(binding)
+                | LocalCallee::Member {
+                    receiver: binding, ..
+                }) = callee;
+                reads.insert(binding.clone());
                 for argument in arguments.iter() {
                     argument.reads(reads);
                 }

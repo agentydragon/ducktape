@@ -2,6 +2,7 @@
 //! preceding prefix's settled state and never changes that earlier state.
 
 use super::super::allocation_transfer::AllocationJudgment;
+use super::super::local_transfer::EvaluatedCallee;
 use super::super::noninvoking_initialization::{EvaluatedInitializer, OriginalInitializer};
 use super::super::property_inference::OwnPropertyProof;
 use super::super::value_model::{CapturedContext, Context, ValueExpr, Values};
@@ -67,7 +68,7 @@ pub(super) struct ProgramPoint {
 /// The ordered caller has already read its callee and arguments. The call
 /// transfer must use these snapshots rather than evaluate their source again.
 pub(super) struct CallOperands {
-    pub(super) targets: Values,
+    pub(super) callee: EvaluatedCallee,
     pub(super) arguments: Vec<Values>,
 }
 
