@@ -21,15 +21,11 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     DUCKTAPE_PR_FAILED_JOBS_SET,
     GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
     GITHUB_IDENTITY_READS_SET,
-    GITHUB_READS_SET,
-    GMAIL_READS_SET,
-    GOOGLE_CALENDAR_READS_SET,
-    GROCY_SF_READS_SET,
-    HOME_ASSISTANT_READS_SET,
-    KUBERNETES_INSPECTION_READS_SET,
+    HAKU_SHARED_ACTION_SETS,
+    HAKU_SHARED_CORE_POLICIES,
+    HAKU_SHARED_GITHUB_POLICIES,
     SANDBOX_SELF_SET,
     SSH_READS_SET,
-    TANA_READS_SET,
 )
 from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, runtime_catalog, settings
 from cluster.cdk8s.agentplane.egress import (
@@ -41,15 +37,7 @@ from cluster.cdk8s.agentplane.egress import (
     GITHUB_CLONE_POLICY,
     PACKAGES_POLICY,
 )
-from cluster.cdk8s.agentplane.egress_staging_credentials import (
-    ACTIVITYWATCH_READ_POLICY,
-    AIQUOTA_READ_POLICY,
-    FORGEJO_FINANCE_AGENT_POLICY,
-    FORGEJO_HAKU_POLICY,
-    GOOGLE_READONLY_POLICY,
-    HAKU_MAILBOX_POLICY,
-    QUEST_READ_POLICY,
-)
+from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY, FORGEJO_FINANCE_AGENT_POLICY
 from cluster.cdk8s.agentplane.model_selections import HarnessRoutes
 from cluster.cdk8s.monitoring.grafana_instance import GRAFANA_BASE_URL, TEMPO_DATASOURCE_UID
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, OLLAMA_QWEN_IQ4XS_256K
@@ -71,19 +59,7 @@ _FINANCE_AGENT_THREAD_SETUP = Path(__file__).with_name("finance_agent_thread_set
 # inspection) plus sandbox use and the GitHub identity read, and Haku's one write: rerunning failed
 # jobs on a ducktape CI run. Nothing here is a new grant -- each set's own auto-approval rule was
 # reviewed for the connector principals, and every other write stays on the human path.
-HAKU_ACTION_POLICY_SETS = (
-    GITHUB_READS_SET,
-    GITHUB_IDENTITY_READS_SET,
-    SANDBOX_SELF_SET,
-    HOME_ASSISTANT_READS_SET,
-    GMAIL_READS_SET,
-    GOOGLE_CALENDAR_READS_SET,
-    TANA_READS_SET,
-    GROCY_SF_READS_SET,
-    SSH_READS_SET,
-    KUBERNETES_INSPECTION_READS_SET,
-    DUCKTAPE_PR_FAILED_JOBS_SET,
-)
+HAKU_ACTION_POLICY_SETS = (*HAKU_SHARED_ACTION_SETS, DUCKTAPE_PR_FAILED_JOBS_SET)
 
 # Inbox groups and the presets that launch into them (operator, 2026-10-21 07:51 UTC). A group's Sandboxes carry
 # its inbox tag and hold its `send_to` PolicySet, so they may message one another.
@@ -191,16 +167,8 @@ def config(
         # caller/ServiceAccount stamps it.
         policy_sets=[
             BASIC_POLICY,
-            FORGEJO_HAKU_POLICY,
-            PACKAGES_POLICY,
-            GOOGLE_READONLY_POLICY,
-            ACTIVITYWATCH_READ_POLICY,
-            AIQUOTA_READ_POLICY,
-            QUEST_READ_POLICY,
-            HAKU_MAILBOX_POLICY,
-            GITHUB_CLONE_POLICY,
-            GITHUB_AGENTYDRAGON_AGENT_POLICY,
-            GITHUB_ACTIONS_LOGS_POLICY,
+            *HAKU_SHARED_CORE_POLICIES,
+            *HAKU_SHARED_GITHUB_POLICIES,
             # Bound at launch rather than by a static account: a managed runner Pod runs as its own
             # per-Sandbox ServiceAccount, so the `haku-agent` binding never reaches it
             # and the preset is the only thing that decides what this Haku may do without the operator.
