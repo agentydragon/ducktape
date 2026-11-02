@@ -104,6 +104,11 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   The runner reads its certificate and private key there; the guest's unprivileged native-agent
   account cannot traverse that directory. The trust-manager CA bundle is mounted separately as
   public trust data.
+- The guest's executable erofs disk keeps serial `agentplane-runner` and mounts at
+  `/run/agentplane/environment`. Runtime configuration and the launch file arrive as separate
+  disks at `/run/agentplane/config` and `/run/agentplane/sandbox`. Their filenames, device serials
+  and guest mounts are recorded in [`env/images/vm_guest_contract.json`](../env/images/vm_guest_contract.json);
+  the guest image build asserts its evaluated mounts against that contract.
 - Each of the template's DataVolume templates is named `<sandbox>-<name>`, and the template's
   volumes naming it follow. Those disks belong to the VM: they outlive stops and go with the VM.
 - Optional `workspaceVolume` declares a retained workspace's name, claim and required layout:

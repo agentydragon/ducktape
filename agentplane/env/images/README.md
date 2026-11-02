@@ -1,5 +1,19 @@
 # Environment images
 
+## VM guest mount contract
+
+[`vm_guest_contract.json`](vm_guest_contract.json) records the KubeVirt disk serials, guest mount
+paths and Runtime config filenames shared by the NixOS guest and the rendered VM template. The Nix
+module uses it to build the evaluated `fileSystems` table, and a NixOS assertion checks those
+mounts against the contract as part of the guest image build. The Cdk8s test compares the rendered
+VM disks and Runtime configuration with the same values and the shared systemd unit.
+
+The executable erofs disk keeps the KubeVirt serial `agentplane-runner` and mounts at
+`/run/agentplane/environment`. The config disk contains `environment-runtime.json` and
+`environment-runtime.env`; the launch disk mounts at `/run/agentplane/sandbox`. The Runtime TLS
+Secret stays behind a root-only private virtiofs directory, with the public Runtime path exposed as
+a symlink. The trust-manager bundle mounts separately as public trust data.
+
 ## Release and image inputs
 
 Bazel builds the runner disk image (`//agentplane/env/images:disk_image`) from source at the same commit

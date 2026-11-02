@@ -17,6 +17,7 @@ from more_itertools import one
 
 from agentplane.env.config import CodexReadiness, Configuration, VMEnvironment
 from cluster.cdk8s.agentplane import environment_sandbox, environment_vm, staging
+from util.bazel.runfiles import get_required_path
 
 HARNESS_ENV = {"EXAMPLE_SERVICE_URL": "http://service.test"}
 
@@ -53,8 +54,29 @@ def _environment_vm_manifests(
     )
     sandbox_template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
     return {
+        "config_map": config_map["data"],
+        "config_map_name": config_map["metadata"]["name"],
         "environment_runtime": cast(dict[str, Any], json.loads(config_map["data"]["environment-runtime.json"])),
         "sandbox_template": sandbox_template,
+    }
+
+
+def _vm_guest_contract() -> dict[str, Any]:
+    return cast(
+        dict[str, Any],
+        json.loads(get_required_path("_main/agentplane/env/images/vm_guest_contract.json").read_text(encoding="utf-8")),
+    )
+
+
+def _runtime_service_unit() -> dict[str, str]:
+    contents = get_required_path(
+        "_main/agentplane/env/images/systemd/agentplane-environment-runtime.service"
+    ).read_text(encoding="utf-8")
+    return {
+        key: value
+        for line in contents.splitlines()
+        if "=" in line and not line.startswith("#")
+        for key, value in [line.split("=", maxsplit=1)]
     }
 
 
@@ -186,6 +208,62 @@ def test_vm_template_renders_mtls_server_listener(scratch_app: App) -> None:
     }
     interface = template["vm"]["template"]["spec"]["domain"]["devices"]["interfaces"][0]
     assert {"port": 9090} in interface["ports"]
+
+
+def test_vm_template_matches_the_guest_disk_and_runtime_file_contract(scratch_app: App) -> None:
+    contract = _vm_guest_contract()
+    unit = _runtime_service_unit()
+    rendered = _environment_vm_manifests(app=scratch_app, console_autologin=False)
+    config_map = rendered["config_map"]
+    runtime_config = rendered["environment_runtime"]
+    vm = rendered["sandbox_template"]["spec"]["vm"]
+    domain = vm["template"]["spec"]["domain"]
+
+    disk_names_by_serial = {disk["serial"]: disk["name"] for disk in domain["devices"]["disks"] if "serial" in disk}
+    for disk_name in ("runtime", "config", "egress_trust", "workspace"):
+        disk = contract["disks"][disk_name]
+        assert disk_names_by_serial[disk["serial"]] == disk["volume_name"]
+    volumes_by_name = {volume["name"]: volume for volume in vm["template"]["spec"]["volumes"]}
+    assert (
+        volumes_by_name[contract["disks"]["config"]["volume_name"]]["configMap"]["name"] == rendered["config_map_name"]
+    )
+
+    assert runtime_config["state_dir"] == contract["state"]["mount"]
+    assert runtime_config["control"]["security"]["tls"]["cert_file"] == (
+        f"{contract['environment_runtime_tls']['runtime_path']}/tls.crt"
+    )
+    assert runtime_config["control"]["security"]["tls"]["key_file"] == (
+        f"{contract['environment_runtime_tls']['runtime_path']}/tls.key"
+    )
+    assert runtime_config["control"]["security"]["tls"]["ca_file"] == (
+        f"{contract['environment_runtime_trust']['mount']}/{contract['environment_runtime_trust']['key']}"
+    )
+    assert runtime_config["harness_environment"]["values"]["PATH"].endswith(
+        f"{contract['disks']['runtime']['mount']}/bin"
+    )
+    assert runtime_config["environment"]["block_devices"] == [contract["disks"]["workspace"]["device"]]
+    assert contract["files"]["runtime_config"] in config_map
+    assert contract["files"]["runtime_environment"] in config_map
+
+    config_mount = contract["disks"]["config"]["mount"]
+    launch_mount = contract["disks"]["launch"]["mount"]
+    runtime_mount = contract["disks"]["runtime"]["mount"]
+    assert unit["EnvironmentFile"] == f"{config_mount}/{contract['files']['runtime_environment']}"
+    assert unit["ExecStart"] == (
+        f"{runtime_mount}/bin/agentplane-environment-runtime"
+        f" --config {config_mount}/{contract['files']['runtime_config']}"
+        f" --launch-file {launch_mount}/{contract['files']['launch']}"
+    )
+    assert set(unit["RequiresMountsFor"].split()) == {
+        contract["state"]["mount"],
+        contract["disks"]["workspace"]["mount"],
+        runtime_mount,
+        config_mount,
+        launch_mount,
+        contract["disks"]["egress_trust"]["mount"],
+        contract["environment_runtime_tls"]["private_mount"],
+        contract["environment_runtime_trust"]["mount"],
+    }
 
 
 if __name__ == "__main__":
