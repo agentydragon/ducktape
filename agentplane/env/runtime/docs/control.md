@@ -78,9 +78,6 @@ budget remains authoritative across all of its native services.
   resource at `<state_dir>/bootstrap-selections.db`, before the script starts. Environment Runtime thereafter refuses
   changed source, including after a failed attempt: two possibly incompatible initializations must
   never be combined in one Sandbox.
-- Before committing the selection, Runtime writes a rollback fence to the legacy
-  `<state_dir>/initialization/request.json` path. New Runtime ignores this file; older binaries
-  refuse its non-hex digest value and cannot replay a selected script.
 - The script runs at most once. An exact request after it ended, by a result of any exit code, only
   replays the record. An exact request that finds the script selected by an earlier Environment Runtime, with
   no terminal event, records the attempt as interrupted and replays that: the script

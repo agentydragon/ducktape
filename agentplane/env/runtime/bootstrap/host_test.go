@@ -2,9 +2,6 @@ package bootstrap
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -99,20 +96,6 @@ func TestSelectionPublicationFailureDoesNotLaunch(t *testing.T) {
 	}
 	if _, found, err := ReadSelection(t.Context(), store); err != nil || found {
 		t.Fatalf("selection after failed publication = (%t, %v), want absent", found, err)
-	}
-	legacy, err := os.ReadFile(filepath.Join(stateDir, "initialization", "request.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var request struct {
-		SHA string `json:"script_sha256"`
-	}
-	if err := json.Unmarshal(legacy, &request); err != nil {
-		t.Fatal(err)
-	}
-	digest := sha256.Sum256([]byte(script))
-	if request.SHA == "" || request.SHA == hex.EncodeToString(digest[:]) {
-		t.Fatalf("legacy rollback fence %q permits replay", request.SHA)
 	}
 }
 

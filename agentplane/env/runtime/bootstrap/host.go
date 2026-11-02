@@ -31,7 +31,6 @@ const (
 	failedMessage         = "the Sandbox bootstrap failed and never runs again; use a new Sandbox"
 	operationHasNoOutcome = "bootstrap has no terminal outcome"
 	maximumBootstrapBytes = 65536
-	legacyRollbackFence   = `{"script_sha256":"cosi-selection-rollback-fence"}`
 )
 
 var ErrInterrupted = errors.New(interruptedMessage)
@@ -345,11 +344,6 @@ func (h *Host) runBootstrap(ctx context.Context) error {
 	}
 	root := filepath.Join(h.config.StateDir, "initialization")
 	if err := retained.EnsureDirectory(root); err != nil {
-		return err
-	}
-	// Old binaries read this path as a script digest. A non-hex value makes
-	// them refuse the attempt; this binary never reads it as an authority.
-	if err := retained.WriteDurable(filepath.Join(root, "request.json"), []byte(legacyRollbackFence)); err != nil {
 		return err
 	}
 	selected, found, err := ReadSelection(ctx, h.state)
