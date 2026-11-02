@@ -119,6 +119,7 @@ py_library(
         ":artifacts",
         ":check_run",
         ":collection",
+        ":metadata",
         ":pull_request",
         "//devinfra/buildbuddy/ci:invocation_ids",
         "//util:visual_diff",
@@ -126,7 +127,6 @@ py_library(
         "@pypi//botocore",
         "@pypi//jinja2",
         "@pypi//pillow",
-        "@pypi//pydantic",
         "@pypi//pygithub",
     ],
 )
@@ -135,6 +135,7 @@ py_library(
     name = "retention",
     srcs = ["retention.py"],
     deps = [
+        ":metadata",
         "@pypi//boto3",
         "@pypi//botocore",
         "@pypi//pygithub",
@@ -181,6 +182,7 @@ py_test(
     deps = [
         ":artifacts",
         ":collection",
+        ":metadata",
         ":publisher",
         ":pull_request",
         "//:conftest",
@@ -204,6 +206,7 @@ py_visual_test(
     assets = ["gallery_harness/index.html"],
     harness = ":gallery_visual_harness",
     test_deps = [
+        ":metadata",
         ":publisher",
         "//util:playwright",
         "//util/testing/frontend_visual:capture",
@@ -328,4 +331,10 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "metadata",
+    srcs = ["metadata.py"],
+    deps = ["@pypi//pydantic"],
 )

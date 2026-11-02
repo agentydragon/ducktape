@@ -35,6 +35,7 @@ def _asset(digests: tuple[str | None, str | None, str | None] = (None, None, Non
     return {
         "path": "screen.png",
         "label": "Screen",
+        "case_id": "example/test_visual.py::test_screen",
         "candidate_sha256": candidate,
         "baseline_sha256": baseline,
         "diff_sha256": diff,
@@ -134,6 +135,21 @@ def test_preserves_structured_output_baseline_and_its_shared_image() -> None:
 
     assert report["plan_status"] == "candidate_plan"
     assert {row["prefix"] for row in report["bundles"]["retained"]} == {f"reviews-test-outputs/{SHA_A}/"}
+    assert not report["shared_assets"]["candidates"]
+
+
+def test_invalid_structured_variant_blocks_retention_plan() -> None:
+    objects: list[StoredObject] = []
+    bodies: dict[str, bytes] = {}
+    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_A, OBSERVED - timedelta(hours=1))
+    key = f"reviews-test-outputs/{SHA_A}/metadata.json"
+    metadata = json.loads(bodies[key])
+    metadata["tests"][0]["assets"][0]["variants"] = [{"sha256": "invalid", "results": []}]
+    bodies[key] = json.dumps(metadata).encode()
+
+    report = _report(ObjectStore(objects, bodies))
+
+    assert report["plan_status"] == "blocked"
     assert not report["shared_assets"]["candidates"]
 
 

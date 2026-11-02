@@ -17,19 +17,22 @@ from PIL import Image
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.artifacts import list_ci_artifacts
 from devinfra.pr_visuals.collection import CollectedOutputs, OutputKey, OutputObservation, ResultCoverage, ResultKey
+from devinfra.pr_visuals.metadata import (
+    BaselineMetadata,
+    BaselinePointer,
+    ClassificationCounts,
+    ReviewAsset,
+    ReviewBundleMetadata,
+    ReviewResult,
+    ReviewTest,
+)
 from devinfra.pr_visuals.publisher import (
     COMMENT_BUDGET,
     COMMENT_MARKER,
     S3_IMAGE_UPLOAD_WORKERS,
-    BaselineMetadata,
-    BaselinePointer,
-    ClassificationCounts,
     DownloadedAsset,
     DownloadedVariant,
     DownloadedVisualTest,
-    ReviewAsset,
-    ReviewBundleMetadata,
-    ReviewTest,
     build_bundle,
     diff_check,
     download_visual_tests,
@@ -1199,7 +1202,13 @@ def _asset_from_file(
         checkpoint,
         "screenshot",
         label or path.stem,
-        [DownloadedVariant(path, hashlib.sha256(body).hexdigest(), [{"run": 1, "status": "PASSED"}])],
+        [
+            DownloadedVariant(
+                path,
+                hashlib.sha256(body).hexdigest(),
+                [ReviewResult(invocation="test", configuration="config", run=1, shard=1, attempt=1, status="PASSED")],
+            )
+        ],
     )
 
 

@@ -20,19 +20,28 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event
-from typing import Annotated, Any, Literal, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 import boto3
 from botocore.exceptions import ClientError
 from github import Auth, Github
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from PIL import Image
-from pydantic import BaseModel, Field
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.artifacts import Runner
 from devinfra.pr_visuals.check_run import upsert_check_run
 from devinfra.pr_visuals.collection import OutputObservation, collect_outputs
+from devinfra.pr_visuals.metadata import (
+    BaselineMetadata,
+    BaselinePointer,
+    ClassificationCounts,
+    ReviewAsset,
+    ReviewBundleMetadata,
+    ReviewResult,
+    ReviewTest,
+    ReviewVariant,
+)
 from devinfra.pr_visuals.pull_request import find_reviewable_pull_request
 from util.visual_diff import compare_pngs
 
@@ -42,8 +51,6 @@ COMMENT_BUDGET = 55_000
 COMMENT_OPEN_TARGETS = 2
 INLINE_ASSET_LIMIT = 3
 REVIEW_PREFIX = "reviews-test-outputs"
-
-type ImageDigest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
 
 @dataclass(frozen=True)
@@ -57,7 +64,7 @@ class _Download:
 class DownloadedVariant:
     path: Path
     sha256: str
-    results: list[dict[str, Any]]
+    results: list[ReviewResult]
 
 
 @dataclass(frozen=True)
@@ -127,55 +134,6 @@ def _baseline_pointer_key(slug: str) -> str:
     return f"baselines/{REVIEW_PREFIX}/{slug}.json"
 
 
-class BaselinePointer(BaseModel):
-    commit_sha: str
-
-
-class ClassificationCounts(BaseModel):
-    modified: int = 0
-    new: int = 0
-    removed: int = 0
-    unchanged: int = 0
-    unstable: int = 0
-
-
-class ReviewVariant(BaseModel):
-    """One distinct image and the test results that produced its bytes."""
-
-    sha256: ImageDigest
-    results: list[dict[str, Any]]
-
-
-class ReviewAsset(BaseModel):
-    """A visual-review asset enriched with its baseline comparison result."""
-
-    path: str
-    label: str
-    case_id: str = Field(min_length=1)
-    checkpoint: str | None = None
-    role: str = "screenshot"
-    variants: list[ReviewVariant] = Field(default_factory=list)
-    candidate_sha256: ImageDigest | None = None
-    baseline_sha256: ImageDigest | None = None
-    diff_sha256: ImageDigest | None = None
-    classification: Literal["unchanged", "modified", "new", "removed", "unstable"] | None = None
-    changed_fraction: float | None = None
-    changed_pixels: int | None = None
-    candidate_dimensions: list[int] | None = None
-    baseline_dimensions: list[int] | None = None
-    dimension_changed: bool | None = None
-    # True on a modified/removed screenshot whose baseline image came from a commit other than the
-    # PR's merge base (see ResolvedBaseline.fallback), so the diff may include devel drift.
-    baseline_stale: bool | None = None
-
-
-class BaselineMetadata(BaseModel):
-    assets: list[ReviewAsset]
-    baseline_eligible: bool = False
-    comparison_profile: str | None = None
-    configuration: str | None = None
-
-
 @dataclass(frozen=True)
 class ResolvedBaseline:
     commit_sha: str
@@ -202,36 +160,6 @@ def _resolve_baseline(slug: str, base_sha: str | None, source: BaselineSource) -
         if (metadata := metadata_at(pointer.commit_sha)) is not None:
             return ResolvedBaseline(commit_sha=pointer.commit_sha, metadata=metadata, fallback=True)
     return None
-
-
-class ReviewTest(BaseModel):
-    """A test target's review data, serialized to per-test and commit metadata.
-
-    `base_sha` is the commit whose bundle the comparison actually used —
-    the PR's base commit (`merge_base_sha`), or (with `baseline_fallback=True`)
-    the devel-latest pointer's commit when the base bundle lacked this target.
-    """
-
-    target_label: str
-    slug: str
-    title: str
-    assets: list[ReviewAsset]
-    baseline_eligible: bool = False
-    issues: list[str] = Field(default_factory=list)
-    notices: list[str] = Field(default_factory=list)
-    comparison_profile: str = "bazel-configuration-exact-v1"
-    configuration: str | None = None
-    base_sha: str | None = None
-    merge_base_sha: str | None = None
-    baseline_fallback: bool | None = None
-    summary: ClassificationCounts | None = None
-    preview: ReviewAsset | None = None
-
-
-class ReviewBundleMetadata(BaseModel):
-    repository: str
-    commit_sha: str
-    tests: list[ReviewTest]
 
 
 REPO_URL = "https://github.com/agentydragon/ducktape"
@@ -513,16 +441,16 @@ def download_visual_tests(
                         image_path,
                         digest,
                         [
-                            {
-                                "invocation": source.result.invocation,
-                                "configuration": source.result.configuration,
-                                "run": source.result.run,
-                                "shard": source.result.shard,
-                                "attempt": source.result.attempt,
-                                "status": source.status,
-                                "uri": source.uri,
-                                "record_uri": source.record_uri,
-                            }
+                            ReviewResult(
+                                invocation=source.result.invocation,
+                                configuration=source.result.configuration,
+                                run=source.result.run,
+                                shard=source.result.shard,
+                                attempt=source.result.attempt,
+                                status=source.status,
+                                uri=source.uri,
+                                record_uri=source.record_uri,
+                            )
                             for source in items
                         ],
                     )

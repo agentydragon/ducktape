@@ -12,6 +12,7 @@ import pytest_bazel
 from PIL import Image, ImageDraw
 from playwright.async_api import expect
 
+from devinfra.pr_visuals.metadata import ReviewResult
 from devinfra.pr_visuals.publisher import (
     DownloadedAsset,
     DownloadedVariant,
@@ -57,15 +58,15 @@ def _asset_key(path: str) -> DownloadedAsset:
     return DownloadedAsset(f"gallery/test_visual.py::{path}", None, "screenshot", path.removesuffix(".png"), [])
 
 
-def _result(run: int) -> dict[str, str | int]:
-    return {
-        "invocation": "12345678-1234-1234-1234-123456789abc",
-        "configuration": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-        "run": run,
-        "shard": 1,
-        "attempt": 1,
-        "status": "PASSED",
-    }
+def _result(run: int) -> ReviewResult:
+    return ReviewResult(
+        invocation="12345678-1234-1234-1234-123456789abc",
+        configuration="1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        run=run,
+        shard=1,
+        attempt=1,
+        status="PASSED",
+    )
 
 
 def _add_test(
