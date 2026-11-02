@@ -13,9 +13,12 @@ target-invocation time. Aggregate worker process time fell 29.8%, about eight
 worker-minutes per run. These are small-sample, same-input experiment results,
 not fleet percentiles or whole-CI feedback savings.
 
-The optimization changes only this test's `test.runner-recycling-key`. Postgres servers,
+The original optimization changed only this test's `test.runner-recycling-key`. Postgres servers,
 databases, Electric state, Kubernetes API server, application services, ingress,
 and browser contexts retain their existing fresh fixture lifetimes.
+
+The November 2 extension below applies the same image family to
+`//agentplane/app:test_thread_window_browser`.
 
 ## Method and evidence
 
@@ -140,14 +143,15 @@ remains a measured alternative for a later decision.
 
 ## Adoption
 
-`test_thread_browser` uses `thread-browser-images-v1-` followed by the four full
+`test_thread_browser` and `test_thread_window_browser` share one execution-property
+constant in `agentplane/app/BUILD.bazel`. It uses `thread-browser-images-v1-` followed by the four full
 infrastructure image digests, in a fixed order. `postgres_18`, `electric_1_8_1`,
 `ryuk`, and `nginx_unprivileged` are owned by `devinfra/image_pins.json`; its module
 extension both creates their OCI repositories and exports the digest constants
-loaded by this target. Repinning any of these images automatically selects a new
+loaded by these targets. Repinning any of these images automatically selects a new
 snapshot baseline, without a second hash declaration or manual version bump.
 
-Its first full run prepares the shard placements; there is no seed job. The dated
+The first full run prepares any cold placements; there is no seed job. The dated
 keys above identify the measured experiment, not the retained configuration.
 The existing `util.oci.load_oci_image` checks the runfiles layout digest and actual
 daemon image ID before skipping a load. A missing or changed image therefore
@@ -160,13 +164,59 @@ disabled. The case-identity hash matched the experiment. An inspected REAPI
 Action carried exactly the four catalog digests in its recycling key. All four
 moved pin records retained their image repository, digest, tag and platform.
 
+## Window-browser extension (2026-11-02)
+
+Execution window: 2026-11-02 09:26–09:40 UTC.
+Base: `7244d8cb1cf92dde4e8dbbd52b7a9151f0a00242`. The extension preserves the
+existing browser recycling key and shares its expression between the two targets.
+Both register `agentplane.app.testing.thread_browser`; their existing fixtures
+load Ryuk, PostgreSQL, Electric and nginx even when either target runs first.
+The built frontend remains outside the stable key and uses the existing
+layout-digest/daemon-image-ID check. No fixture lifetime or test behavior changes.
+
+Runs used the command above with `//agentplane/app:test_thread_window_browser`
+in place of the original label. Build/action caches remained enabled and
+test-result caching was disabled. All 30 case executions passed without failures
+or skips. Each invocation executed all six cases in one originating physical
+TestRunner action. Their sorted case-identity SHA-256 was
+`4d81dcc7ddd16faed7db5cfa83c92525b64934254ba30cdab5029a7de8ceb6c6`,
+using the same newline-delimited format as the original experiment.
+
+| Configuration       | Bazel elapsed | Process |     CPU | Imports | Import time | Invocation                                                                            |
+| ------------------- | ------------: | ------: | ------: | ------: | ----------: | ------------------------------------------------------------------------------------- |
+| Default control A1  |       146.0 s | 139.3 s | 303.5 s |       5 |      26.9 s | [c2bee346](https://app.buildbuddy.io/invocation/c2bee346-bd7d-4674-afb8-e881f041b67a) |
+| Shared key, cold B1 |       137.5 s | 130.1 s | 288.4 s |       5 |      23.9 s | [a842bfff](https://app.buildbuddy.io/invocation/a842bfff-1f5b-4c2a-946a-46e310613702) |
+| Shared key, warm B2 |       104.3 s |  97.3 s | 181.6 s |       0 |       0.0 s | [041da896](https://app.buildbuddy.io/invocation/041da896-bbb8-4186-91fd-503f23227a68) |
+| Default control A2  |       156.2 s | 150.3 s | 329.6 s |       5 |      30.1 s | [6b507c16](https://app.buildbuddy.io/invocation/6b507c16-065a-4b5b-888b-d33960e1cf0b) |
+| Shared key, warm B3 |       104.4 s |  97.7 s | 182.5 s |       0 |       0.0 s | [e0d33533](https://app.buildbuddy.io/invocation/e0d33533-0164-4342-8b43-b1dd4b53e435) |
+
+The two-control mean was 151.1 seconds versus 104.4 seconds for the two warm
+runs: 46.7 seconds / 30.9% less target-invocation time. Mean process time fell
+144.8 → 97.5 seconds and CPU time 316.6 → 182.1 CPU-seconds. Avoided image imports
+averaged 28.5 seconds inside the process time; do not add that to the elapsed
+saving. The residual difference is not separately attributed. These are two
+controls and two warm repeats, not fleet percentiles or whole-CI savings. The
+first keyed run was cold and showed no reuse benefit; cold fallback passed.
+
+The control and keyed REAPI input root was identical:
+`81d92285789a1f14409ea949dbf575486191b1158e4a7dae783a7c2dba4b05ed/165`.
+Arguments and environment matched; the only Command change was the recycling
+platform property. The first keyed run and both warm repeats had identical Actions.
+
+The first keyed run saved a new local snapshot; both warm repeats'
+`lastExecutedTask` identify that first run on the same executor. Both skipped all
+five image imports. All five runs recorded fresh history-Postgres initialization.
+All 11 PNG artifacts from B2 matched the first control byte for byte; the retained-reader
+and offline-recovery captures were visually inspected.
+
 ## Scope and follow-up
 
-- This change applies to `test_thread_browser`; the window-browser companion
-  and other PostgreSQL tests are not changed. Its test result-cache key changes;
+- This change applies to `test_thread_browser` and `test_thread_window_browser`;
+  other PostgreSQL tests are unchanged. The window target's test result-cache key changes;
   compiler/linter execution platforms and the global RBE image stay unchanged.
-- Use a shared image-family key for compatible browser targets when expanding.
-  Every possible first action must load the family's required stable images.
+- Both browser targets use the same `thread_browser` fixture plugin and load
+  the family's required stable images, so either target can seed a cold baseline.
+  Any further extension must ensure every possible first action loads them.
   Preserve the existing digest/daemon-ID guard and cold fallback, and derive
   the family's recycling key from its authoritative infrastructure image pins.
 - Frequently changing frontend images should continue through the existing
