@@ -80,6 +80,16 @@ func (s *noteStore) listIDs(token string) ([]string, error) {
 	return ids, nil
 }
 
+func (s *noteStore) key(token string) ([16]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.sessions[token]
+	if !ok {
+		return [16]byte{}, errUnknownToken
+	}
+	return sess.Key, nil
+}
+
 func (s *noteStore) snapshot(token string) ([]storedNote, [16]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

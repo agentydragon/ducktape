@@ -79,10 +79,11 @@ self-contained; serve them with `uvx` instead.
   docker container; reads recovered/reference/spec/rubric over `bash`,
   emits a schema-validated `submit_grade` tool call. Per-item grades +
   justifications land in `Score.metadata['per_item']`.
-- **Floor/ceiling validation**: empty → 0.000 (high confidence);
-  reference `*.go` → 0.940 (high confidence). Both verified, both have
-  Bazel targets.
-- **Rubric**: 11 items, weights sum to 94. The original
+- **Floor/ceiling validation**: the previous 11-item, 94-weight rubric
+  yielded empty → 0.000 and reference `*.go` → 0.940 (both high confidence).
+  These historical scores do not validate the current 13-item rubric; both
+  validation targets remain available.
+- **Rubric**: 13 items, weights sum to 108. The original
   `mac_security_analysis` item (which asked whether the agent reasoned
   about a length-extension vulnerability) was removed — the rubric is
   now scoped to source reconstruction only.

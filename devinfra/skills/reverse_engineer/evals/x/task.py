@@ -223,6 +223,17 @@ _GRADER_INSTRUCTIONS = dedent(
                would prevent bit-identical reproduction
            2 = full: a faithful re-implementation of the agent's output
                would produce identical observable behavior
+         Apply each item's checks independently. Give 2 only when all
+         behaviors required by that item are supported by the recovered
+         implementation; give 1 when substantial parts are right but a
+         required behavior is absent or incomplete. In particular, keep
+         encoding separate from decoding, MAC generation separate from
+         full-tag verification, and endpoint outcomes separate from merely
+         having the underlying helpers. For endpoint items, trace the route
+         through its called decoder and verifier implementations. A stub or
+         unconditional helper cannot support full endpoint credit even when
+         the route has the expected branches; cite the relevant helper files
+         as well as the route file in the justification.
       4. Once you have grades for every rubric item, call `submit_grade`
          exactly ONCE. Justifications must cite which reference file vs
          which (or absent) recovered file you compared. Do not call
@@ -338,13 +349,13 @@ def _grader_bash_tool(box: _GraderContainer) -> Tool:
         async def execute(command: str) -> str:
             """Run a bash command in the read-only grader container.
 
-                        Available paths: /grade/recovered, /grade/reference,
-                        /grade/spec, /grade/rubric. Stdout and stderr are returned
+            Available paths: /grade/recovered, /grade/reference,
+            /grade/spec, /grade/rubric. Stdout and stderr are returned
             together. Container is `python:3.14-slim` with standard
-                        tools (find, cat, diff, grep, wc, head, tail).
+            tools (find, cat, diff, grep, wc, head, tail).
 
-                        Args:
-                            command: The bash command to execute.
+            Args:
+                command: The bash command to execute.
             """
             return await box.exec_text(command)
 
@@ -649,7 +660,7 @@ def _reference_recovered_dir() -> Path:
     return dst
 
 
-def _validation_task(*, sample_id: str, recovered_dir: Path) -> Task:
+def _validation_task(*, sample_id: str, recovered_dir: Path, judge_model: str = _DEFAULT_JUDGE_MODEL) -> Task:
     """Common task body for the two validation variants.
 
     No docker sandbox is declared — the scorer's grader container is the
@@ -664,7 +675,7 @@ def _validation_task(*, sample_id: str, recovered_dir: Path) -> Task:
     return Task(
         dataset=MemoryDataset([sample]),
         solver=[_identity_solver()],
-        scorer=rubric_judge(),
+        scorer=rubric_judge(judge_model=judge_model),
         # No agent runs, so no message_limit. We deliberately omit
         # time_limit too: Inspect splits `time_limit` into `time_limit/2`
         # for scoring (`_eval/task/run.py`), which strangles the judge
@@ -675,13 +686,15 @@ def _validation_task(*, sample_id: str, recovered_dir: Path) -> Task:
 
 
 @task
-def validate_empty_work() -> Task:
+def validate_empty_work(*, judge_model: str = _DEFAULT_JUDGE_MODEL) -> Task:
     """Judge floor: empty `/grade/recovered/`. Expected score ~0.0."""
-    return _validation_task(sample_id="empty_work", recovered_dir=_empty_recovered_dir())
+    return _validation_task(sample_id="empty_work", recovered_dir=_empty_recovered_dir(), judge_model=judge_model)
 
 
 @task
-def validate_reference_work() -> Task:
+def validate_reference_work(*, judge_model: str = _DEFAULT_JUDGE_MODEL) -> Task:
     """Judge ceiling: `/grade/recovered/` contains the reference *.go.
     Expected score >0.85."""
-    return _validation_task(sample_id="reference_work", recovered_dir=_reference_recovered_dir())
+    return _validation_task(
+        sample_id="reference_work", recovered_dir=_reference_recovered_dir(), judge_model=judge_model
+    )

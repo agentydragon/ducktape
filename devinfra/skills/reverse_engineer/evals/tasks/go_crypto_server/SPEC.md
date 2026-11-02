@@ -22,19 +22,23 @@ Server responses use the same envelope. Errors bypass the envelope and use a
 flat shape `{"v","op","code","reason"}` with HTTP 400 (client errors) or 500
 (server errors).
 
-| Path            | Op          | Request body                | Response body          |
-| --------------- | ----------- | --------------------------- | ---------------------- |
-| `/v1/register`  | `register`  | `{hint?: string}`           | `{token: hex32}`       |
-| `/v1/note/put`  | `note.put`  | `{token, title, plaintext}` | `{note_id}`            |
-| `/v1/note/get`  | `note.get`  | `{token, note_id}`          | `{title, plaintext}`   |
-| `/v1/note/list` | `note.list` | `{token}`                   | `{note_ids: [string]}` |
-| `/v1/export`    | `export`    | `{token}`                   | `{blob: string}`       |
+| Path                | Op              | Request body                | Response body          |
+| ------------------- | --------------- | --------------------------- | ---------------------- |
+| `/v1/register`      | `register`      | `{hint?: string}`           | `{token: hex32}`       |
+| `/v1/note/put`      | `note.put`      | `{token, title, plaintext}` | `{note_id}`            |
+| `/v1/note/get`      | `note.get`      | `{token, note_id}`          | `{title, plaintext}`   |
+| `/v1/note/list`     | `note.list`     | `{token}`                   | `{note_ids: [string]}` |
+| `/v1/export`        | `export`        | `{token}`                   | `{blob: string}`       |
+| `/v1/export/verify` | `export.verify` | `{token, blob}`             | `{valid: true}`        |
 
 `note_id` is `n_` + 16 uppercase hex digits (a process-wide counter,
 zero-padded). Lists are sorted lexically.
 
 Error codes: `4001` bad request, `4002` unknown token, `4003` unknown note,
 `4004` bad ciphertext, `4005` bad MAC, `5001` internal, `5002` not implemented.
+`export.verify` returns `4001` for malformed custom-base32 input or decoded
+blobs shorter than the 8-byte tag, `4002` for an unregistered token, and
+`4005` when the tag does not verify under that token's session key.
 
 ## Tokens & session key derivation
 
@@ -83,12 +87,26 @@ broken regardless.
 emitted to fill out 8-char groups. Encoder consumes 5 bytes at a time, packs
 into 40 bits big-endian, slices into eight 5-bit indices.
 
+The decoder consumes complete 8-character groups and accepts only 2, 4, 5, 7,
+or 8 alphabet characters per group. Padding, when present, must fill the rest
+of the final group: respectively 6, 4, 3, or 1 `~` characters for 2, 4, 5, or
+7 data characters. A full group has 8 data characters and no padding. Padding
+cannot appear in an earlier group, data cannot follow padding, and unused low
+bits in a partial final group must be zero as produced by the encoder. Empty
+input decodes to empty bytes. Other lengths, glyphs, group sizes, padding, or
+unused-bit values are malformed.
+
 ## Export
 
 `/v1/export` snapshots all notes for the session and returns
 `base32(payload || mac_tag(payload))` where the payload is a flat
 length-prefixed concatenation of `(len(note_id) u8, note_id, len(title) u8,
 title, len(ct) u32be, ct)` per note in insertion order.
+
+`/v1/export/verify` decodes the supplied `blob`, treats its final 8 bytes as
+the MAC tag and all preceding bytes as the payload, then verifies the tag with
+`macVerify` and the key stored for `token`. It authenticates arbitrary payload
+bytes without parsing the snapshot structure and does not change store state.
 
 ## Storage
 
@@ -98,7 +116,7 @@ and an order-preserving slice of `note_id`s. No persistence, no eviction.
 
 ## Endpoints, summarized
 
-5 endpoints (above table), one mux. All other paths return 404 (stdlib mux
+6 endpoints (above table), one mux. All other paths return 404 (stdlib mux
 default).
 
 ## Concurrency
@@ -120,6 +138,9 @@ The most important rubric items (cipher specifics, base32 alphabet, MAC
 construction shape, key derivation) are **exact**. The agent's recovered
 source either matches the constants verbatim or it doesn't. Paraphrased
 descriptions ("uses a Feistel cipher with some rounds") should score zero.
+For the export verification endpoint, inspect the called decoder and MAC
+verifier as well as the route: a stub or unconditional helper cannot reproduce
+both valid and rejected blobs.
 
 ## Listener startup
 
