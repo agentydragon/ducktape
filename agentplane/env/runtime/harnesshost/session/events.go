@@ -219,14 +219,18 @@ func (s *Session) ModelChanged(ctx context.Context, id, model string, sources []
 	if command != nil && command.TerminalCursor != nil {
 		return nil
 	}
+	s.recordMu.Lock()
 	s.mu.Lock()
 	previous := s.record.Model
-	s.record.Model = model
-	record := *s.record
 	s.mu.Unlock()
-	if err := s.deps.store.Write(s.id, record); err != nil {
+	if err := s.deps.store.UpdateModel(s.id, model); err != nil {
+		s.recordMu.Unlock()
 		return err
 	}
+	s.mu.Lock()
+	s.record.Model = model
+	s.mu.Unlock()
+	s.recordMu.Unlock()
 	_, err = s.recordEvent(ctx, observation(&eventpb.ModelChanged{CommandId: id, PreviousModel: previous, Model: model}), sources, []string{id})
 	return err
 }
@@ -239,14 +243,18 @@ func (s *Session) ReasoningEffortChanged(ctx context.Context, id, effort string,
 	if command != nil && command.TerminalCursor != nil {
 		return nil
 	}
+	s.recordMu.Lock()
 	s.mu.Lock()
 	previous := s.record.ReasoningEffort
-	s.record.ReasoningEffort = effort
-	record := *s.record
 	s.mu.Unlock()
-	if err := s.deps.store.Write(s.id, record); err != nil {
+	if err := s.deps.store.UpdateReasoningEffort(s.id, effort); err != nil {
+		s.recordMu.Unlock()
 		return err
 	}
+	s.mu.Lock()
+	s.record.ReasoningEffort = effort
+	s.mu.Unlock()
+	s.recordMu.Unlock()
 	_, err = s.recordEvent(ctx, observation(&eventpb.ReasoningEffortChanged{CommandId: id, PreviousEffort: previous, Effort: effort}), sources, []string{id})
 	return err
 }

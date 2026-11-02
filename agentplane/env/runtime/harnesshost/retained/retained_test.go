@@ -1,10 +1,14 @@
 package retained
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
@@ -58,6 +62,78 @@ func TestSessionRecordsUseCOSIState(t *testing.T) {
 	ids, err = store.SessionIDs()
 	if err != nil || len(ids) != 1 || ids[0] != "session-1" {
 		t.Fatalf("file affected Session IDs: %v, %v", ids, err)
+	}
+}
+
+func TestConcurrentSessionFieldsSurviveRestart(t *testing.T) {
+	root := t.TempDir()
+	resources, backing, err := cosistate.Open(root, lifecycle.Namespace, SessionRecordCodec())
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewStore(filepath.Join(root, "sessions"), resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Write("session", Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, CWD: "/workspace", Model: "old-model", ReasoningEffort: "old-effort", EventSourceID: "source"}); err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	var workers sync.WaitGroup
+	errors := make(chan error, 3)
+	for _, update := range []func() error{
+		func() error { return store.UpdateModel("session", "new-model") },
+		func() error { return store.UpdateReasoningEffort("session", "new-effort") },
+		func() error { return store.UpdateNativeSessionID("session", "native-session") },
+	} {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			<-start
+			errors <- update()
+		}()
+	}
+	close(start)
+	workers.Wait()
+	close(errors)
+	for err := range errors {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := backing.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, reopenedBacking, err := cosistate.Open(root, lifecycle.Namespace, SessionRecordCodec())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reopenedBacking.Close() })
+	restored, err := NewStore(filepath.Join(root, "sessions"), reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := restored.Read("session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Model != "new-model" || record.ReasoningEffort != "new-effort" || record.NativeSessionID == nil || *record.NativeSessionID != "native-session" || record.EventSourceID != "source" {
+		t.Fatalf("restored concurrent updates = %+v", record)
+	}
+}
+
+func TestSessionFieldUpdateDoesNotCreateRecord(t *testing.T) {
+	resources := state.WrapCore(namespaced.NewState(inmem.Build))
+	store, err := NewStore(t.TempDir(), resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var storageErr *StorageError
+	if err := store.UpdateModel("missing", "model"); !errors.As(err, &storageErr) || !state.IsNotFoundError(err) {
+		t.Fatalf("missing update = %v, want storage not-found error", err)
+	}
+	if exists, err := store.Exists("missing"); err != nil || exists {
+		t.Fatalf("missing record created: exists=%t, err=%v", exists, err)
 	}
 }
 

@@ -25,7 +25,12 @@ state volumes. Old lock files may remain; Session journals do not move.
 The durable seal remains `StateDir/sessions/sealed`, with the existing incarnation UID bytes as
 its payload. Runtime reads, removes, and writes this marker using the old filename, directory,
 payload and durability semantics. Session records are persisted as `SessionRecords` COSI resources
-in `StateDir/runtime-resources.db`. Journals, native continuations and History ACK positions remain
+in `StateDir/runtime-resources.db`. Harness Host reserves each record, then updates model, reasoning
+effort and native Session identity through field-scoped COSI writes under the Host owner. Its in-memory
+Session copy follows successful durable writes; concurrent changes to one Session retain write order.
+If a native frame's record update fails, Host commits the raw frame and stops receiving so recovery
+can inspect that outcome.
+Journals, native continuations and History ACK positions remain
 under `StateDir/sessions`.
 
 ## Lifecycle boundary

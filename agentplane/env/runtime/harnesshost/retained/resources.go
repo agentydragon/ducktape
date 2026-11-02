@@ -31,6 +31,13 @@ func (sessionRecordExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
 
 type SessionRecord = typed.Resource[Record, sessionRecordExtension]
 
+// StorageError identifies a failed retained resource operation so native frame
+// handling does not treat a durable write failure as a translation error.
+type StorageError struct{ Err error }
+
+func (e *StorageError) Error() string { return "Session record storage: " + e.Err.Error() }
+func (e *StorageError) Unwrap() error { return e.Err }
+
 func SessionResource(id string, record Record) *SessionRecord {
 	return typed.NewResource[Record, sessionRecordExtension](resource.NewMetadata(lifecycle.Namespace, SessionRecordType, id, resource.VersionUndefined), record)
 }
@@ -171,4 +178,33 @@ func (s *Store) Write(id string, record Record) error {
 		*value.TypedSpec() = record.DeepCopy()
 		return nil
 	}, state.WithUpdateOwner(lifecycle.HostOwner))
+}
+
+func (s *Store) update(id string, change func(*Record)) error {
+	if s.state == nil {
+		return &StorageError{Err: errors.New("Session COSI state is required")}
+	}
+	if _, err := ValidateSessionID(id); err != nil {
+		return err
+	}
+	_, err := safe.StateUpdateWithConflicts(context.Background(), s.state, SessionResource(id, Record{}).Metadata(), func(value *SessionRecord) error {
+		change(value.TypedSpec())
+		return validateRecord(*value.TypedSpec())
+	}, state.WithUpdateOwner(lifecycle.HostOwner))
+	if err != nil {
+		return &StorageError{Err: err}
+	}
+	return nil
+}
+
+func (s *Store) UpdateModel(id, model string) error {
+	return s.update(id, func(record *Record) { record.Model = model })
+}
+
+func (s *Store) UpdateReasoningEffort(id, effort string) error {
+	return s.update(id, func(record *Record) { record.ReasoningEffort = effort })
+}
+
+func (s *Store) UpdateNativeSessionID(id, native string) error {
+	return s.update(id, func(record *Record) { record.NativeSessionID = &native })
 }
