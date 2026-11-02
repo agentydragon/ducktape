@@ -166,8 +166,7 @@ def is_substantive(result: FetchSuccess) -> bool:
         or (
             result.anthropic_platform_credits is not None
             and any(
-                organization.balance is not None
-                for organization in result.anthropic_platform_credits.organizations
+                organization.balance is not None for organization in result.anthropic_platform_credits.organizations
             )
         )
         or result.prepaid_balance is not None
