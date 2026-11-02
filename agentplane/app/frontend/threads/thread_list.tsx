@@ -3,7 +3,8 @@
  * Sandbox no longer exists: the sidebar's navigation and the landing page's whole content.
  */
 import { ActionIcon, Button, Switch, Text, TextInput, Tooltip } from "@mantine/core";
-import type { SandboxView, ThreadView } from "../schema";
+import type { ThreadView } from "../schema";
+import type { Sandbox } from "../../../proto/sandboxes_pb";
 import { IconArchive, IconArchiveOff, IconSearch } from "../icons";
 import { type JSX, useState } from "react";
 import { Link, useMatch, useNavigate } from "react-router";
@@ -12,7 +13,7 @@ import { archiveThread } from "./client";
 import { displayableError } from "../client";
 import { harnessLabel } from "../model_catalog";
 import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "./live";
-import { sandboxInventoryFresh, sandboxView, useRequiredSandboxesLive } from "../sandboxes/live";
+import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
 import { MarkGlyph } from "../mark_glyph";
 import { sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../status_mark";
@@ -23,7 +24,7 @@ import { ThreadStatusIndicator } from "./thread_status_indicator";
 import { TimeAgo } from "../time_ago";
 import { archiveBlockReason, snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
 
-function GroupStateIcon({ sandbox }: { sandbox: SandboxView | null }): JSX.Element {
+function GroupStateIcon({ sandbox }: { sandbox: Sandbox | null }): JSX.Element {
   if (sandbox === null) {
     return (
       <Tooltip label="Sandbox deleted" withArrow>
@@ -54,7 +55,7 @@ function ThreadRow({
   onToggleArchived,
 }: {
   thread: ThreadView;
-  sandbox: SandboxView | null;
+  sandbox: Sandbox | null;
   fresh: boolean;
   current: boolean;
   detailed: boolean;
@@ -224,9 +225,7 @@ export function ThreadList({
   const current = threadRoute?.params.threadId ?? null;
   const groups = groupThreads(
     threads,
-    Object.fromEntries(
-      (sandboxesLive.snapshot?.sandboxes ?? []).map((sandbox) => [sandbox.name, sandboxView(sandbox)])
-    ),
+    Object.fromEntries((sandboxesLive.snapshot?.sandboxes ?? []).map((sandbox) => [sandbox.name, sandbox])),
     listing.includeArchived,
     current
   );

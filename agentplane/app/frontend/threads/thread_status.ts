@@ -1,8 +1,8 @@
 /** One status decision for a Thread, shared by every page that lists Threads from a live snapshot. */
-import type { SandboxView, ThreadView } from "../schema";
+import type { ThreadView } from "../schema";
 import type { Live } from "../live";
 import type { ThreadTabStatus } from "../tab_metadata";
-import { sandboxReady, sandboxSummary, suspensionReason } from "../sandbox_status";
+import { sandboxReady, sandboxSummary, suspensionReason, type SandboxStatusSource } from "../sandbox_status";
 import { harnessBehavior } from "../harness_behavior";
 import { turnErrorLabel } from "./history_rows";
 
@@ -21,7 +21,7 @@ export function archiveBlockReason(thread: ThreadView): string | null {
 
 export function threadStatusFromSnapshot(
   thread: ThreadView | undefined,
-  sandbox: SandboxView | undefined,
+  sandbox: SandboxStatusSource | undefined,
   fresh: boolean
 ): ThreadTabStatus {
   if (!thread || !fresh) return { kind: "inactive", label: "No live harness confirmed", tabLabel: "Unknown" };

@@ -1,7 +1,7 @@
 import { NumberInput } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import type { SandboxView } from "../schema";
+import { sandboxIdleSuspendAfterSeconds, type SandboxStatusSource } from "../sandbox_status";
 import { api, displayableError } from "../client";
 
 const SECONDS_PER_MINUTE = 60;
@@ -43,11 +43,11 @@ export function IdleSuspendInput({
   disabled,
   onError,
 }: {
-  sandbox: SandboxView;
+  sandbox: SandboxStatusSource;
   disabled: boolean;
   onError: (message: string | null) => void;
 }): JSX.Element {
-  const stored = sandbox.idle_suspend_after_seconds ?? null;
+  const stored = sandboxIdleSuspendAfterSeconds(sandbox);
   const [draft, setDraft] = useState<number | string>(idleMinutes(stored));
   const [saving, setSaving] = useState(false);
   useEffect(() => setDraft(idleMinutes(stored)), [stored]);

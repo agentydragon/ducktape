@@ -1,4 +1,5 @@
-import type { SandboxView, ThreadView } from "../schema";
+import type { ThreadView } from "../schema";
+import type { Sandbox } from "../../../proto/sandboxes_pb";
 
 /**
  * A flat newest-first Thread list folded into Sandbox groups, including Sandboxes without
@@ -8,7 +9,7 @@ import type { SandboxView, ThreadView } from "../schema";
 export interface ThreadGroup {
   sandboxName: string;
   /** The Sandbox's live view, or null once it no longer exists. */
-  sandbox: SandboxView | null;
+  sandbox: Sandbox | null;
   /** Newest first, matching the API's own order. */
   threads: ThreadView[];
 }
@@ -20,7 +21,7 @@ export interface ThreadGroup {
  */
 export function groupThreads(
   threads: ThreadView[],
-  sandboxes: Record<string, SandboxView>,
+  sandboxes: Record<string, Sandbox>,
   includeArchived: boolean,
   openThreadId: string | null
 ): ThreadGroup[] {

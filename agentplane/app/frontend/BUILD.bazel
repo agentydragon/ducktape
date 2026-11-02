@@ -558,6 +558,7 @@ ts_library(
         ":schema",
         ":status_mark",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/proto:sandboxes_pb",
     ],
 )
 
@@ -568,8 +569,11 @@ agentplane_vitest_test(
         ":client",
         ":sandbox_status",
         ":schema",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/testing:sandbox",
+        "//agentplane/proto:sandboxes_pb",
     ],
 )
 

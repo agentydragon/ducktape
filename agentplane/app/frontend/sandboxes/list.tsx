@@ -1,3 +1,4 @@
+import type { Sandbox } from "../../../proto/sandboxes_pb";
 import {
   ActionIcon,
   Button,
@@ -15,16 +16,16 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-import type { NewSandboxDefaults, NewSandboxInputBody, SandboxView } from "../schema";
+import type { NewSandboxDefaults, NewSandboxInputBody } from "../schema";
 import { IconDotsVertical } from "../icons";
-import { type JSX, useEffect, useMemo, useState } from "react";
+import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { api, displayableError } from "../client";
 import { listSandboxPresets, type SandboxPresetView } from "../app_config_client";
 import { IdleSuspendField, IdleSuspendInput } from "./idle_suspend";
 import { ConfirmDelete, deletable, deleting, SuspendResume } from "./lifecycle";
-import { sandboxView, useRequiredSandboxesLive } from "./live";
+import { useRequiredSandboxesLive } from "./live";
 import { MarkGlyph } from "../mark_glyph";
 import { placeholderSandboxName, sandboxNameError } from "./sandbox_name";
 import { podIp, sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
@@ -46,7 +47,7 @@ type NewSandboxForm = Omit<NewSandboxInputBody, "idle_suspend_after_seconds"> & 
 // The picked preset, in the URL like the sandbox page's tab, so a launch form can be linked to.
 const PRESET_PARAM = "preset";
 
-function StatusIcon({ row }: { row: SandboxView }): JSX.Element {
+function StatusIcon({ row }: { row: Sandbox }): JSX.Element {
   const summary = sandboxSummary(row);
   return (
     <Tooltip label={sandboxStatusDetail(row)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
@@ -74,10 +75,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const live = useRequiredSandboxesLive();
-  const rows: SandboxView[] = useMemo(
-    () => live.snapshot?.sandboxes.map(sandboxView) ?? [],
-    [live.snapshot?.sandboxes]
-  );
+  const rows = live.snapshot?.sandboxes ?? [];
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedPreset = searchParams.get(PRESET_PARAM);
   // An empty Name field creates the Sandbox under this free name, derived from the preset's.
@@ -275,7 +273,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <Table.Tbody>
           {rows.map((row) => {
             const ip = podIp(row);
-            const node = `${row.pod?.node_name ?? "—"} ${ip ? `(${ip})` : ""}`;
+            const node = `${row.pod?.nodeName ?? "—"} ${ip ? `(${ip})` : ""}`;
             return (
               <Table.Tr key={row.name}>
                 <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>

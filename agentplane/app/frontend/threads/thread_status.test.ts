@@ -1,54 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { SandboxView, ThreadView } from "../schema";
+import type { ThreadView } from "../schema";
+import { readySandbox, suspendedSandbox } from "../testing/sandbox";
 import { threadStatusFromSnapshot } from "./thread_status";
 
 afterEach(() => vi.restoreAllMocks());
 
 const SANDBOX_UID = "00000000-0000-4000-8000-000000000001";
 
-const READY_SANDBOX: SandboxView = {
-  name: "test-sandbox",
-  uid: SANDBOX_UID,
-  namespace: "agentplane-test",
-  created_at: "2026-01-01T00:00:00Z",
-  binding: null,
-  preset: null,
-  operating_mode: "Running",
-  wake_on_send: false,
-  idle_suspend_after_seconds: null,
-  idle_suspend_at: null,
-  autosuspend_blockers: [],
-  suspended_by: null,
-  service_account: { namespace: "agentplane-test", name: "test-sandbox" },
-  status: { conditions: [{ type: "Ready", status: "True" }] },
-  phase: "Running",
-  pod: {
-    name: "test-sandbox",
-    namespace: "agentplane-test",
-    uid: `${SANDBOX_UID}-pod`,
-    deleting: false,
-    node_name: "test-node",
-    owner_references: [
-      {
-        api_version: "agentplane.allegedly.works/v1alpha1",
-        kind: "Sandbox",
-        name: "test-sandbox",
-        uid: SANDBOX_UID,
-        controller: true,
-      },
-    ],
-    status: { phase: "Running", podIP: "10.0.0.1", conditions: [{ type: "Ready", status: "True" }] },
-  },
-};
-
-const SUSPENDED_SANDBOX: SandboxView = {
-  ...READY_SANDBOX,
-  operating_mode: "Suspended",
-  status: {},
-  phase: "Suspended",
-  pod: null,
-};
+const READY_SANDBOX = readySandbox("test-sandbox", SANDBOX_UID);
+const SUSPENDED_SANDBOX = suspendedSandbox("test-sandbox", SANDBOX_UID);
 
 function thread(overrides: Partial<ThreadView> = {}): ThreadView {
   return {

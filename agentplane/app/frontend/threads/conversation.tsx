@@ -1,5 +1,6 @@
+import type { Sandbox } from "../../../proto/sandboxes_pb";
 import { ActionIcon, Anchor, Button, Group, Menu, Popover, Select, Stack, Text, UnstyledButton } from "@mantine/core";
-import type { LangfuseSearchSettings, SandboxView, ThreadView, TraceSearchSettings } from "../schema";
+import type { LangfuseSearchSettings, ThreadView, TraceSearchSettings } from "../schema";
 import { IconDotsVertical, IconHistory } from "../icons";
 import { intlFormatDistance } from "date-fns";
 import { type JSX, useCallback, useEffect, useState } from "react";
@@ -13,7 +14,7 @@ import { traceSearchUrl } from "../trace_search";
 import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadWindow } from "./thread_sync";
 import { historyRows } from "./history_rows";
 import { useRequiredThreadsLive } from "./live";
-import { sandboxInventoryFresh, sandboxView, useRequiredSandboxesLive } from "../sandboxes/live";
+import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
 import { useOptionalStreamStatus } from "../stream_status";
 import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";
 import { pendingSentMessage } from "./thread_cards";
@@ -116,8 +117,8 @@ function AutosuspendHint({
   if (!hint) return null;
   const title = "Autosuspend waits until all sessions on this Sandbox are idle; new work resets the timer.";
   if (hint.blockers?.length) {
-    const sibling = hint.blockers.find((blocker) => blocker.session_id && blocker.session_id !== threadId);
-    const siblingId = sibling?.session_id;
+    const sibling = hint.blockers.find((blocker) => blocker.sessionId && blocker.sessionId !== threadId);
+    const siblingId = sibling?.sessionId;
     const sessionName = (id: string) =>
       live.snapshot?.threads.find((thread) => thread.id === id)?.name || `Session ${id.slice(0, 8)}`;
     return (
@@ -143,13 +144,13 @@ function AutosuspendHint({
             <Stack gap="xs">
               <Text size="xs">{title}</Text>
               {hint.blockers.map((blocker) => (
-                <Text key={`${blocker.reason}:${blocker.session_id ?? ""}`} size="xs">
-                  {AUTOSUSPEND_BLOCKER_LABELS[blocker.reason]}
-                  {blocker.session_id && (
+                <Text key={`${blocker.reason}:${blocker.sessionId ?? ""}`} size="xs">
+                  {AUTOSUSPEND_BLOCKER_LABELS[blocker.reason] ?? blocker.reason}
+                  {blocker.sessionId && (
                     <>
                       {" · "}
-                      <Anchor component={Link} to={`/threads/${encodeURIComponent(blocker.session_id)}`} size="xs">
-                        {sessionName(blocker.session_id)}
+                      <Anchor component={Link} to={`/threads/${encodeURIComponent(blocker.sessionId)}`} size="xs">
+                        {sessionName(blocker.sessionId)}
                       </Anchor>
                     </>
                   )}
@@ -188,7 +189,7 @@ interface ConversationBodyProps {
   onStatusChange: (status: ThreadTabTitleStatus) => void;
   traceSearch: TraceSearchSettings | null;
   langfuseSearch: LangfuseSearchSettings | null;
-  sandbox?: SandboxView;
+  sandbox?: Sandbox;
 }
 
 function ConversationBody({
@@ -237,8 +238,7 @@ function ConversationBody({
   const threadsLive = useRequiredThreadsLive();
   const sandboxesLive = useRequiredSandboxesLive();
   const inventoryFresh = sandboxInventoryFresh(sandboxesLive);
-  const environmentSandbox = sandboxesLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread.sandbox);
-  const currentSandbox = environmentSandbox === undefined ? undefined : sandboxView(environmentSandbox);
+  const currentSandbox = sandboxesLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread.sandbox);
   const status = threadStatusFromSnapshot(
     threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId),
     currentSandbox,
@@ -450,8 +450,8 @@ function ConversationBody({
                       llmTraceScope === "session"
                         ? langfuseSessionTraceUrl(langfuseSearch, thread.id)
                         : langfuseSandboxTraceUrl(langfuseSearch, {
-                            namespace: sandbox!.service_account.namespace,
-                            serviceAccount: sandbox!.service_account.name,
+                            namespace: sandbox!.serviceAccount?.namespace ?? "",
+                            serviceAccount: sandbox!.serviceAccount?.name ?? "",
                           })
                     }
                     target="_blank"
@@ -494,7 +494,7 @@ export interface ThreadConversationProps {
   onStatusChange: (status: ThreadTabTitleStatus) => void;
   traceSearch: TraceSearchSettings | null;
   langfuseSearch: LangfuseSearchSettings | null;
-  sandbox?: SandboxView;
+  sandbox?: Sandbox;
 }
 
 export function ThreadConversation({

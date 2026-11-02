@@ -203,6 +203,7 @@ ts_library(
         "//agentplane/app/frontend:sandbox_status",
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/proto:sandboxes_pb",
     ],
 )
 
@@ -245,6 +246,7 @@ ts_library(
         "//agentplane/app/frontend:trace_search",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/sandboxes:live",
+        "//agentplane/proto:sandboxes_pb",
         "//util/frontend/transcript:retained_disclosures",
     ],
 )
@@ -281,6 +283,7 @@ ts_library(
         "//agentplane/app/frontend:tracing",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/sandboxes:live",
+        "//agentplane/proto:sandboxes_pb",
     ],
 )
 
@@ -604,6 +607,7 @@ ts_library(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/proto:sandboxes_pb",
     ],
 )
 
@@ -617,6 +621,8 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/testing:sandbox",
+        "//agentplane/proto:sandboxes_pb",
     ],
 )
 
@@ -647,6 +653,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/testing:sandbox",
     ],
 )
 
@@ -745,6 +752,7 @@ ts_library(
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/sandboxes:live",
+        "//agentplane/proto:sandboxes_pb",
     ],
 )
 
