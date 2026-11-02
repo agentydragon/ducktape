@@ -99,9 +99,9 @@ export default [
   // These scripts execute in browser pages or service workers.
   {
     files: [
-      "util/testing/frontend_visual/capture-diagnostics.js",
-      "util/testing/frontend_visual/capture-diagnostics-fixture.js",
-      "util/testing/frontend_visual/frozen-clock.js",
+      "util/testing/frontend_visual/assets/capture_diagnostics.js",
+      "util/testing/frontend_visual/assets/capture_diagnostics_fixture.js",
+      "util/testing/frontend_visual/assets/frozen_clock.js",
     ],
     languageOptions: {
       sourceType: "script",

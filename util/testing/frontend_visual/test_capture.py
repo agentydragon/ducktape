@@ -291,7 +291,7 @@ async def test_concurrent_traces_claim_identity_once(tmp_path: Path, monkeypatch
 async def test_capture_diagnostics_cover_viewport_and_crop_without_page_text(harness: VisualHarness) -> None:
     async with harness.open(viewport=Viewport(width=300, height=200, device_scale_factor=2)) as view:
         fixture = get_required_path(
-            own_repo_rlocation("util/testing/frontend_visual/capture-diagnostics-fixture.js")
+            own_repo_rlocation("util/testing/frontend_visual/assets/capture_diagnostics_fixture.js")
         ).read_text(encoding="utf-8")
         await view.page.evaluate(fixture)
         await view.capture("viewport", scale="css")

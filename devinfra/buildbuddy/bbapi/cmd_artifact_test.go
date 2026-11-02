@@ -32,8 +32,8 @@ const besStream = `[
     {"name":"skills/backtrace/report.txt","uri":"bytestream://host/blobs/ccc/5","digest":"ccc","length":"5"}]}},
  {"id":{"namedSet":{"id":"transitioned"}},
   "namedSetOfFiles":{"files":[
-    {"pathPrefix":["bazel-out","k8-fastbuild-ST-abc","bin"],"name":"util/testing/frozen-clock.js","uri":"bytestream://host/blobs/eee/9","digest":"eee","length":"9"},
-    {"name":"util/testing/frozen-clock.js","uri":"bytestream://host/blobs/fff/9","digest":"fff","length":"9"}]}},
+    {"pathPrefix":["bazel-out","k8-fastbuild-ST-abc","bin"],"name":"util/testing/frontend_visual/assets/frozen_clock.js","uri":"bytestream://host/blobs/eee/9","digest":"eee","length":"9"},
+    {"name":"util/testing/frontend_visual/assets/frozen_clock.js","uri":"bytestream://host/blobs/fff/9","digest":"fff","length":"9"}]}},
  {"id":{"targetCompleted":{"label":"//util/testing:clock"}},
   "completed":{"success":true,"outputGroup":[{"name":"default","fileSets":[{"id":"transitioned"}]}]}},
  {"id":{"targetCompleted":{"label":"//skills/backtrace:backtrace_skill"}},
@@ -129,7 +129,7 @@ func TestParseArtifactsKeepsFilesDistinctByPathPrefix(t *testing.T) {
 	// silently collapse them into one and hand callers the wrong bytes.
 	var got []artifact
 	for _, a := range parseOrFail(t, besStream) {
-		if a.GetFile().GetName() == "util/testing/frozen-clock.js" {
+		if a.GetFile().GetName() == "util/testing/frontend_visual/assets/frozen_clock.js" {
 			got = append(got, a)
 		}
 	}
