@@ -9,14 +9,15 @@
 # /state lands as 107:107 and chown fails, so only guest root and a user whose uid and gid are both
 # 107 can write there. The runner runs as root; harness children run as that 107 user.
 #
-# The Runtime configuration, launch file, trust bundle, and mTLS credentials arrive on read-only
-# KubeVirt ConfigMap/Secret virtiofs mounts under /run/agentplane.
+# Runtime configuration, launch data and egress trust arrive on read-only ConfigMap disks. Runtime
+# TLS credentials and its trust bundle arrive on read-only virtiofs mounts.
 #
 # Runtime, Harness Host, Execution service and the `agentplane` command are not in this closure.
-# They arrive on the read-only runtime disk (//agentplane/env/images:disk_image), a second containerDisk
-# mounted at /run/agentplane/runner, so a service release republishes that small disk and not this
-# guest. The harnesses and tools stay here.
+# They arrive on the read-only runtime disk (//agentplane/env/images:disk_image), a second
+# containerDisk mounted at /run/agentplane/environment, so a service release republishes that small
+# disk and not this guest. The harnesses and tools stay here.
 {
+  config,
   lib,
   pkgs,
   pkgsUnstable,
@@ -24,18 +25,41 @@
   ...
 }:
 let
-  workspaceDevice = "/dev/disk/by-id/virtio-workspace";
-  workspaceDir = "/state/workspaces";
+  guestContract = builtins.fromJSON (builtins.readFile ./vm_guest_contract.json);
+  stateDir = guestContract.state.mount;
+  workspaceDir = guestContract.disks.workspace.mount;
   runtimeDir = "/run/agentplane";
-  # The Runtime disk's mount point. runner.json includes its bin directory in harness PATH;
-  # //agentplane/env/images:disk_image builds the disk.
-  runnerDir = "${runtimeDir}/runner";
-  # Pod and VM expose the same logical directories. Values are KubeVirt disk serial suffixes.
+  environmentDir = guestContract.disks.runtime.mount;
+  configDir = guestContract.disks.config.mount;
+  runtimeConfigFile = "${configDir}/${guestContract.files.runtime_config}";
+  runtimeTLS = guestContract.environment_runtime_tls;
+  runtimeTrust = guestContract.environment_runtime_trust;
+  # ConfigMap-backed disks carry immutable Runtime configuration, launch identity and egress trust.
   seedDisks = {
-    config = "config";
-    sandbox = "launch";
-    trust = "trust";
+    config = guestContract.disks.config;
+    launch = guestContract.disks.launch;
+    trust = guestContract.disks.egress_trust;
   };
+  fileSystemMatches =
+    path: device: fsType:
+    builtins.hasAttr path config.fileSystems
+    && config.fileSystems.${path}.device == device
+    && config.fileSystems.${path}.fsType == fsType;
+  guestMountsMatchContract =
+    fileSystemMatches stateDir guestContract.state.volume_name guestContract.state.filesystem
+    &&
+      fileSystemMatches workspaceDir guestContract.disks.workspace.device
+        guestContract.disks.workspace.filesystem
+    &&
+      fileSystemMatches environmentDir "/dev/disk/by-id/virtio-${guestContract.disks.runtime.serial}"
+        guestContract.disks.runtime.filesystem
+    && fileSystemMatches runtimeTLS.private_mount runtimeTLS.volume_name runtimeTLS.filesystem
+    && fileSystemMatches runtimeTrust.mount runtimeTrust.volume_name runtimeTrust.filesystem
+    && lib.all (
+      disk: fileSystemMatches disk.mount "/dev/disk/by-id/virtio-${disk.serial}" disk.filesystem
+    ) (builtins.attrValues seedDisks)
+    && lib.elem "d ${builtins.dirOf runtimeTLS.private_mount} 0700 root root -" config.systemd.tmpfiles.rules
+    && lib.elem "L+ ${runtimeTLS.runtime_path} - - - - ${runtimeTLS.private_mount}" config.systemd.tmpfiles.rules;
   # virtiofsd's identity (above); the Go Harness Host runs harnesses as this user.
   agentUser = "agent";
   agentId = 107;
@@ -73,7 +97,7 @@ let
   # for these units, would show.
   consoleAutologinIs =
     autologin:
-    "${pkgs.jq}/bin/jq 'if (.environment.kind == \"vm\" and .environment.console_autologin == true) == ${lib.boolToString autologin} then empty else (\"\" | halt_error(1)) end' ${runtimeDir}/config/runner.json";
+    "${pkgs.jq}/bin/jq 'if (.environment.kind == \"vm\" and .environment.console_autologin == true) == ${lib.boolToString autologin} then empty else (\"\" | halt_error(1)) end' ${runtimeConfigFile}";
   applyRunnerResourceLimits = pkgs.writeShellScript "agentplane-runner-resource-limits" (
     builtins.readFile ./systemd/apply-resource-limits
   );
@@ -92,6 +116,13 @@ let
   );
 in
 {
+  assertions = [
+    {
+      assertion = guestMountsMatchContract;
+      message = "Agentplane VM guest mounts and private TLS path must match vm_guest_contract.json";
+    }
+  ];
+
   imports = [ ./../../../nix/nixos/modules/vm-hardware.nix ];
 
   networking.hostName = "agentplane-environment-vm";
@@ -144,7 +175,7 @@ in
   # the VMI serial log and `virtctl console` read, without a guest exec.
   services.journald.console = "/dev/ttyS0";
 
-  # Serial console login, selected per environment by the Runner config's `environment.console_autologin`: the
+  # Serial console login, selected per environment by the Runtime config's `environment.console_autologin`: the
   # ordinary login prompt where unset, a root shell without a prompt where set. The guest has no
   # account passwords, so without autologin an attach stops at the prompt.
   #
@@ -202,9 +233,9 @@ in
 
   fileSystems = {
     # The KubeVirt filesystem named `state` is the virtiofs tag.
-    "/state" = {
-      device = "state";
-      fsType = "virtiofs";
+    ${stateDir} = {
+      device = guestContract.state.volume_name;
+      fsType = guestContract.state.filesystem;
       noCheck = true;
       options = [
         "noatime"
@@ -213,8 +244,8 @@ in
       ];
     };
     ${workspaceDir} = {
-      device = workspaceDevice;
-      fsType = "ext4";
+      device = guestContract.disks.workspace.device;
+      fsType = guestContract.disks.workspace.filesystem;
       options = [
         "noatime"
         "nodev"
@@ -223,12 +254,12 @@ in
       autoFormat = true;
       autoResize = false;
     };
-    # The runner disk is an erofs image on the containerDisk of serial `agentplane-runner`. Unlike
+    # The Runtime disk is an erofs image on the containerDisk of serial `agentplane-runner`. Unlike
     # the seed disks below it is executable. `nofail` leaves a missing disk to the runner, which
     # requires its mount.
-    ${runnerDir} = {
-      device = "/dev/disk/by-id/virtio-agentplane-runner";
-      fsType = "erofs";
+    ${environmentDir} = {
+      device = "/dev/disk/by-id/virtio-${guestContract.disks.runtime.serial}";
+      fsType = guestContract.disks.runtime.filesystem;
       noCheck = true;
       options = [
         "ro"
@@ -239,9 +270,9 @@ in
     };
     # KubeVirt Secret virtiofs mounts do not expose defaultMode, so keep the TLS key behind a
     # root-only parent directory. The runner runs as root; harnesses run as the unprivileged agent.
-    "${runtimeDir}/runner-private/runner-tls" = {
-      device = "agentplane-runner-tls";
-      fsType = "virtiofs";
+    ${runtimeTLS.private_mount} = {
+      device = runtimeTLS.volume_name;
+      fsType = runtimeTLS.filesystem;
       noCheck = true;
       options = [
         "ro"
@@ -252,9 +283,9 @@ in
         "x-systemd.requires=systemd-tmpfiles-setup.service"
       ];
     };
-    "${runtimeDir}/runner-trust" = {
-      device = "agentplane-runner-trust";
-      fsType = "virtiofs";
+    ${runtimeTrust.mount} = {
+      device = runtimeTrust.volume_name;
+      fsType = runtimeTrust.filesystem;
       noCheck = true;
       options = [
         "ro"
@@ -269,10 +300,10 @@ in
   # KubeVirt builds a ConfigMap disk as an ISO 9660 image with Rock Ridge names. `nofail` leaves a
   # missing disk to the runner, which requires its mount, rather than to local-fs.target.
   // lib.mapAttrs' (
-    directory: serial:
-    lib.nameValuePair "${runtimeDir}/${directory}" {
-      device = "/dev/disk/by-id/virtio-agentplane-${serial}";
-      fsType = "iso9660";
+    _: disk:
+    lib.nameValuePair disk.mount {
+      device = "/dev/disk/by-id/virtio-${disk.serial}";
+      fsType = disk.filesystem;
       noCheck = true;
       options = [
         "ro"
@@ -293,10 +324,10 @@ in
     "d ${workspaceDir}/.home 0700 ${agentUser} ${agentUser} -"
     "z ${workspaceDir}/.home 0700 ${agentUser} ${agentUser} -"
     "d ${runtimeDir} 0755 root root -"
-    "d ${runtimeDir}/runner-private 0700 root root -"
-    "d ${runtimeDir}/runner-trust 0755 root root -"
+    "d ${builtins.dirOf runtimeTLS.private_mount} 0700 root root -"
+    "d ${runtimeTrust.mount} 0755 root root -"
     "d ${runtimeDir}/execution-service 0700 root root -"
-    "L+ ${runtimeDir}/runner-tls - - - - ${runtimeDir}/runner-private/runner-tls"
+    "L+ ${runtimeTLS.runtime_path} - - - - ${runtimeTLS.private_mount}"
   ];
 
   systemd.services.agentplane-workspace = {

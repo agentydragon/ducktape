@@ -81,11 +81,13 @@ go_test(
         "vm_test.go",
         "workspace_test.go",
     ],
+    data = ["//agentplane/env/images:vm_guest_contract.json"],
     embed = [":sandbox_controller"],
     deps = [
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/lease",
+        "@io_bazel_rules_go//go/runfiles",
         "@io_k8s_api//coordination/v1:coordination",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/equality",

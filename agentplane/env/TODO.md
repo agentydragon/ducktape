@@ -1,21 +1,11 @@
 # TODO — Agentplane environment
 
-## Repair the VM guest's Runtime paths
+## Prove VM guest boot and console autologin
 
-`images/vm.nix` still mounts the executable disk at `/run/agentplane/runner`, the TLS
-virtiofs at `runner-private/runner-tls` and trust at `runner-trust`. Its autologin condition
-reads `config/runner.json`. The shared `images/systemd/agentplane-environment-runtime.service`
-executes from `/run/agentplane/environment`, requires `environment-runtime-private/environment-runtime-tls`
-and `environment-runtime-trust`, and uses `config/environment-runtime.json`; the VM template
-and Sandbox controller provide the new config and virtiofs names. The guest configuration therefore
-does not satisfy the unit or its credential paths; the console conditions also read a nonexistent
-config. This is a source-level finding, not a claim about a particular deployed image.
-
-Align the guest mounts, virtiofs device names, private TLS symlink, console condition and image docs
-with the unit and VM template; keep the `agentplane-runner` disk **serial** stable. Add a check that
-compares the actual guest mount/credential/config paths with the rendered VM and unit, plus a VM
-boot/readiness and console-autologin check. Existing `system_tests/k3s/test_render.py` checks the
-serial but does not establish that the guest mounts the disk where the unit executes it.
+The current regression checks evaluate the NixOS mount table and rendered VM resources, but do not
+build and boot the guest image or prove Runtime readiness. Add VM guest coverage that waits for
+Runtime readiness and verifies the serial console shows a login prompt when `console_autologin` is
+disabled and a root shell when it is enabled.
 
 ## Make Environment Runtime COSI names describe their owners and state
 

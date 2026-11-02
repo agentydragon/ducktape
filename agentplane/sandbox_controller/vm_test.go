@@ -2,11 +2,14 @@ package sandboxcontroller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
 	"slices"
 	"testing"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -18,6 +21,47 @@ import (
 )
 
 const workspaceVolume = "workspace"
+
+type vmGuestContract struct {
+	Disks struct {
+		Launch struct {
+			VolumeName string `json:"volume_name"`
+			Serial     string `json:"serial"`
+			Mount      string `json:"mount"`
+		} `json:"launch"`
+	} `json:"disks"`
+	State struct {
+		VolumeName string `json:"volume_name"`
+	} `json:"state"`
+	Files struct {
+		Launch string `json:"launch"`
+	} `json:"files"`
+	EnvironmentRuntimeTLS struct {
+		VolumeName  string `json:"volume_name"`
+		RuntimePath string `json:"runtime_path"`
+	} `json:"environment_runtime_tls"`
+	EnvironmentRuntimeTrust struct {
+		VolumeName string `json:"volume_name"`
+		Mount      string `json:"mount"`
+	} `json:"environment_runtime_trust"`
+}
+
+func readVMGuestContract(t *testing.T) vmGuestContract {
+	t.Helper()
+	path, err := runfiles.Rlocation("_main/agentplane/env/images/vm_guest_contract.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contract vmGuestContract
+	if err := json.Unmarshal(data, &contract); err != nil {
+		t.Fatal(err)
+	}
+	return contract
+}
 
 func testVMTemplate(image string) *sandboxapi.SandboxTemplate {
 	template := testTemplate(image)
@@ -139,6 +183,7 @@ func controllerRef(kind, name string, uid types.UID) metav1.OwnerReference {
 }
 
 func TestVMTemplateGetsARunningVMWithStateOverVirtiofs(t *testing.T) {
+	contract := readVMGuestContract(t)
 	r, c := newReconciler(t, true, testVMTemplate("test-guest:v1"))
 	reconcileOnce(t, r)
 
@@ -158,7 +203,7 @@ func TestVMTemplateGetsARunningVMWithStateOverVirtiofs(t *testing.T) {
 	if labels := vm.Spec.Template.ObjectMeta.Labels; labels[sandboxapi.SandboxLabel] != sandboxName || labels["app.kubernetes.io/name"] != "test-environment-vm" {
 		t.Errorf("VMI template labels = %v; the VMI and its virt-launcher Pod need the Sandbox label", labels)
 	}
-	state := volume(vm, "state")
+	state := volume(vm, contract.State.VolumeName)
 	if state == nil || state.PersistentVolumeClaim == nil || state.PersistentVolumeClaim.ClaimName != StateVolumeName(sandboxName) {
 		t.Fatalf("VM state volume = %v, want the state PVC", state)
 	}
@@ -167,8 +212,24 @@ func TestVMTemplateGetsARunningVMWithStateOverVirtiofs(t *testing.T) {
 	for _, filesystem := range filesystems {
 		filesystemNames[filesystem.Name] = filesystem.Virtiofs != nil
 	}
-	if len(filesystems) != 3 || !filesystemNames["state"] || !filesystemNames[EnvironmentRuntimeTLSVolumeName] || !filesystemNames[EnvironmentRuntimeTrustVolumeName] {
+	if len(filesystems) != 3 || !filesystemNames[contract.State.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeTLS.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeTrust.VolumeName] {
 		t.Errorf("VM filesystems = %v, want state and runner TLS/trust volumes over virtiofs", filesystems)
+	}
+	if LaunchDiskSerial != contract.Disks.Launch.Serial || LaunchMountPath != contract.Disks.Launch.Mount || LaunchFile != contract.Files.Launch {
+		t.Fatalf("launch disk contract = serial %q, mount %q, file %q; want %q, %q, %q", LaunchDiskSerial, LaunchMountPath, LaunchFile, contract.Disks.Launch.Serial, contract.Disks.Launch.Mount, contract.Files.Launch)
+	}
+	launchDisk := slices.IndexFunc(vm.Spec.Template.Spec.Domain.Devices.Disks, func(disk kubevirtv1.Disk) bool {
+		return disk.Serial == contract.Disks.Launch.Serial && disk.Name == contract.Disks.Launch.VolumeName
+	})
+	if launchDisk < 0 {
+		t.Fatalf("VM disks = %v, want launch disk %s with serial %s", vm.Spec.Template.Spec.Domain.Devices.Disks, contract.Disks.Launch.VolumeName, contract.Disks.Launch.Serial)
+	}
+	launchVolume := volume(vm, contract.Disks.Launch.VolumeName)
+	if launchVolume == nil || launchVolume.ConfigMap == nil || launchVolume.ConfigMap.Name != LaunchConfigMapName(sandboxName) {
+		t.Fatalf("VM launch volume = %v, want the Sandbox launch ConfigMap", launchVolume)
+	}
+	if EnvironmentRuntimeTLSMountPath != contract.EnvironmentRuntimeTLS.RuntimePath || EnvironmentRuntimeTrustMountPath != contract.EnvironmentRuntimeTrust.Mount {
+		t.Fatalf("Runtime credential paths = TLS %q, trust %q; want %q and %q", EnvironmentRuntimeTLSMountPath, EnvironmentRuntimeTrustMountPath, contract.EnvironmentRuntimeTLS.RuntimePath, contract.EnvironmentRuntimeTrust.Mount)
 	}
 	// One template serves many Sandboxes, and DataVolume names are per namespace.
 	workspace := sandboxName + "-" + workspaceVolume

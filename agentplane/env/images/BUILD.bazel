@@ -5,6 +5,8 @@ load("//devinfra/python:defs.bzl", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["vm_guest_contract.json"])
+
 # All independently runnable environment processes and the CLI share one read-only disk that a Pod
 # mounts as an image volume (`bin/`) and a VM attaches as a KubeVirt containerDisk (`disk/runner.img`).
 pkg_tar(
