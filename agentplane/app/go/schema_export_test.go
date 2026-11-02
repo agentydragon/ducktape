@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"testing"
 )
@@ -83,8 +82,8 @@ func TestExportOpenAPIUsesHumaSchemasForThreadRoutes(t *testing.T) {
 		t.Fatal("ThreadView.id must be documented as a UUID")
 	}
 	sandboxUID, ok := properties["sandbox_uid"].(map[string]any)
-	if !ok || sandboxUID["format"] != "uuid" {
-		t.Fatalf("ThreadView.sandbox_uid = %v, want a nullable UUID", properties["sandbox_uid"])
+	if !ok || sandboxUID["format"] != nil {
+		t.Fatalf("ThreadView.sandbox_uid = %v, want an opaque nullable string", properties["sandbox_uid"])
 	}
 	types, ok := sandboxUID["type"].([]any)
 	if !ok || len(types) != 2 || types[0] != "string" || types[1] != "null" {
@@ -96,7 +95,6 @@ func TestExportOpenAPIUsesHumaSchemasForThreadRoutes(t *testing.T) {
 	}
 	for schemaName, fields := range map[string][]string{
 		"BindingView":           {"subjects", "conditions", "policy_sets", "missing_policy_sets"},
-		"SandboxPodView":        {"owner_references"},
 		"PolicySetView":         {"rules"},
 		"CredentialView":        {"targets"},
 		"SandboxFormOutputBody": {"policy_sets"},
@@ -132,49 +130,16 @@ func TestExportOpenAPIUsesHumaSchemasForThreadRoutes(t *testing.T) {
 	}
 }
 
-func TestSandboxViewOpenAPIDocumentsAutosuspendBlockers(t *testing.T) {
+func TestSandboxOpenAPILeavesEnvironmentOperationsToGeneratedService(t *testing.T) {
 	var output bytes.Buffer
 	if err := exportOpenAPI(&output); err != nil {
 		t.Fatal(err)
 	}
 	document := assertSaneOpenAPI(t, output.Bytes())
-	sandbox := document.Components.Schemas["SandboxView"]
-	properties, ok := sandbox["properties"].(map[string]any)
-	if !ok {
-		t.Fatalf("SandboxView.properties = %T, want object", sandbox["properties"])
-	}
-	blockers, ok := properties["autosuspend_blockers"].(map[string]any)
-	if !ok || blockers["type"] != "array" {
-		t.Fatalf("SandboxView.autosuspend_blockers = %v, want a non-null array", properties["autosuspend_blockers"])
-	}
-	items, ok := blockers["items"].(map[string]any)
-	if !ok || items["$ref"] != "#/components/schemas/AutosuspendBlockerView" {
-		t.Fatalf("SandboxView.autosuspend_blockers.items = %v, want AutosuspendBlockerView", blockers["items"])
-	}
-	blocker := document.Components.Schemas["AutosuspendBlockerView"]
-	blockerProperties, ok := blocker["properties"].(map[string]any)
-	if !ok {
-		t.Fatalf("AutosuspendBlockerView.properties = %T, want object", blocker["properties"])
-	}
-	reason, ok := blockerProperties["reason"].(map[string]any)
-	if !ok {
-		t.Fatalf("AutosuspendBlockerView.reason = %v, want enum schema", blockerProperties["reason"])
-	}
-	enum, ok := reason["enum"].([]any)
-	values := make([]string, len(enum))
-	for index, value := range enum {
-		values[index], _ = value.(string)
-	}
-	if !ok || !slices.Contains(values, "ExecutorRelay") {
-		t.Fatalf("AutosuspendBlockerView.reason.enum = %v, want executor relay support", reason["enum"])
-	}
-	sessionID, ok := blockerProperties["session_id"].(map[string]any)
-	if !ok {
-		t.Fatalf("AutosuspendBlockerView.session_id = %v, want nullable string schema", blockerProperties["session_id"])
-	}
-	types, ok := sessionID["type"].([]any)
-	if !ok || len(types) != 2 || types[0] != "string" || types[1] != "null" {
-		t.Fatalf("AutosuspendBlockerView.session_id.type = %v, want string or null", sessionID["type"])
+	for _, path := range []string{"/sandboxes", "/sandboxes/{name}", "/sandboxes/{name}/suspend", "/sandboxes/{name}/resume", "/sandboxes/templates"} {
+		if _, ok := document.Paths[path]; ok {
+			t.Errorf("app OpenAPI still exposes environment operation %q", path)
+		}
 	}
 }
 

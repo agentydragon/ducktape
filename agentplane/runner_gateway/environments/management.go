@@ -9,7 +9,6 @@ import (
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/management"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -88,7 +87,7 @@ func (s *Service) CreateEnvironment(ctx context.Context, request *sandboxespb.Cr
 	if created.GetNamespace() != s.namespace || created.GetName() != request.GetName() || created.GetUid() == "" {
 		return nil, status.Error(codes.Unavailable, "created environment identity is incomplete")
 	}
-	return &environmentpb.TargetHandle{Namespace: created.GetNamespace(), Name: created.GetName(), Uid: created.GetUid()}, nil
+	return created, nil
 }
 
 func (s *Service) SuspendEnvironment(ctx context.Context, request *environmentpb.EnvironmentMutationRequest) (*emptypb.Empty, error) {
@@ -152,7 +151,7 @@ func (s *Service) SetEnvironmentIdleSuspend(ctx context.Context, request *enviro
 }
 
 func managementError(ctx context.Context, err error) error {
-	var missing *inventory.SandboxNotFoundError
+	var missing *management.SandboxNotFoundError
 	var invalid *management.InvalidSandboxError
 	var unknownPolicy *policy.UnknownPolicySetError
 	var launcherPolicy *management.LauncherPolicySetError

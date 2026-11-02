@@ -13,15 +13,16 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"google.golang.org/grpc"
+
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/httperror"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -52,11 +53,11 @@ type threadReadHistory interface {
 }
 
 type threadSandboxInventory interface {
-	Get(context.Context, string) (*sandboxespb.Sandbox, error)
+	GetEnvironment(context.Context, *environmentpb.GetEnvironmentRequest, ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error)
 }
 
 type threadEnvironmentRuntimeStatusReader interface {
-	EnvironmentRuntimeStatus(context.Context, string) (*sessionpb.EnvironmentRuntimeStatus, error)
+	EnvironmentRuntimeStatus(context.Context, *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error)
 }
 
 type (
@@ -68,7 +69,7 @@ type (
 type threadView struct {
 	ID                  uuid.UUID  `json:"id" format:"uuid"`
 	Sandbox             string     `json:"sandbox"`
-	SandboxUID          *uuid.UUID `json:"sandbox_uid" format:"uuid" nullable:"true"`
+	SandboxUID          *string    `json:"sandbox_uid" nullable:"true"`
 	Harness             *string    `json:"harness" enum:"HARNESS_CLAUDE,HARNESS_CODEX,HARNESS_CENTRAL_SAMPLER"`
 	Model               *string    `json:"model"`
 	CWD                 *string    `json:"cwd"`
@@ -147,6 +148,7 @@ func (b *threadRenameBody) UnmarshalJSON(data []byte) error {
 // The inventory and Environment Runtime status reader are required for the archive guard.
 func RegisterThreadReadRoutes(
 	server *HTTPServer,
+	namespace string,
 	store threadReadStore,
 	history threadReadHistory,
 	inventory threadSandboxInventory,
@@ -210,7 +212,7 @@ func RegisterThreadReadRoutes(
 		if _, err := makeThreadView(*thread, summary); err != nil {
 			return nil, threadReadHTTPError(err)
 		}
-		if err := ensureThreadArchivable(ctx, *thread, summary, inventory, environmentRuntime); err != nil {
+		if err := ensureThreadArchivable(ctx, namespace, *thread, summary, inventory, environmentRuntime); err != nil {
 			return nil, threadArchiveHTTPError(err)
 		}
 		if _, err := store.Archive(ctx, input.ThreadID); err != nil {
@@ -282,12 +284,7 @@ func (s *appService) ListThreadMetadata(ctx context.Context, request *apppb.List
 	}
 	listing := threadListing{IncludeArchived: request.GetIncludeArchived()}
 	if request.GetSandboxUid() != "" {
-		uid, err := uuid.Parse(request.GetSandboxUid())
-		if err != nil || uid.String() != request.GetSandboxUid() {
-			return nil, status.Error(codes.InvalidArgument, "sandbox_uid must be a canonical UUID")
-		}
-		value := uid.String()
-		listing.SandboxUID = &value
+		listing.SandboxUID = stringPointer(request.GetSandboxUid())
 	}
 	var token *string
 	if request.GetPageToken() != "" {
@@ -303,39 +300,31 @@ func (s *appService) ListThreadMetadata(ctx context.Context, request *apppb.List
 			if errors.Is(err, errMalformedThreadPageToken) || errors.Is(err, errMismatchedThreadListing) {
 				return nil, status.Error(codes.InvalidArgument, err.Error())
 			}
-			return nil, status.Error(codes.Unavailable, "list Sandbox Threads")
+			return nil, status.Error(codes.Unavailable, "list Environment Threads")
 		}
 		response := &apppb.ListThreadMetadataResponse{Threads: make([]*apppb.ThreadMetadata, 0, len(page.Threads))}
-		for _, view := range page.Threads {
+		for _, thread := range page.Threads {
 			response.Threads = append(response.Threads, &apppb.ThreadMetadata{
-				ThreadId: view.ID.String(), CreatedAt: timestamppb.New(view.CreatedAt), Name: view.Name, Archived: view.Archived,
+				ThreadId: thread.ID.String(), CreatedAt: timestamppb.New(thread.CreatedAt), Name: thread.Name, Archived: thread.Archived,
 			})
 		}
 		if page.NextPageToken != nil {
 			response.NextPageToken = *page.NextPageToken
 		}
+		// ArchivedCount follows the same Sandbox UID filter, independent of whether this page
+		// includes archived Threads. Do not report the unrelated namespace-wide count.
 		matching, err := s.threadHistory.FindSessions(ctx, nil, nil, listing.SandboxUID)
 		if err != nil {
-			return nil, status.Error(codes.Unavailable, "count archived Sandbox Threads")
+			return nil, status.Error(codes.Unavailable, "count archived Environment Threads")
 		}
 		var cursor *threads.PageCursor
 		for {
 			countPage, err := s.threadReader.ListPage(ctx, threadMaxPageSize, cursor, true)
 			if err != nil {
-				return nil, status.Error(codes.Internal, "count archived Sandbox Threads")
+				return nil, status.Error(codes.Unavailable, "count archived Environment Threads")
 			}
-			ids := make([]uuid.UUID, 0, len(countPage.Threads))
-			for _, row := range countPage.Threads {
-				if _, belongs := matching[row.ID]; belongs && row.Archived {
-					ids = append(ids, row.ID)
-				}
-			}
-			summaries, err := s.threadHistory.BatchGetSummaries(ctx, ids)
-			if err != nil {
-				return nil, status.Error(codes.Unavailable, "count archived Sandbox Threads")
-			}
-			for _, id := range ids {
-				if summary, present := summaries[id]; present && summary.Present && summary.SandboxUID == *listing.SandboxUID {
+			for _, thread := range countPage.Threads {
+				if _, belongs := matching[thread.ID]; belongs && thread.Archived {
 					response.ArchivedCount++
 				}
 			}
@@ -602,11 +591,7 @@ func makeThreadView(thread threads.Thread, summary historydata.FoldSummary) (thr
 		HarnessState: sessionpb.HarnessState_HARNESS_STATE_UNSPECIFIED.String(),
 	}
 	if summary.SandboxUID != "" {
-		sandboxUID, err := uuid.Parse(summary.SandboxUID)
-		if err != nil {
-			return threadView{}, fmt.Errorf("History Service returned an invalid Sandbox UID %q: %w", summary.SandboxUID, err)
-		}
-		view.SandboxUID = &sandboxUID
+		view.SandboxUID = stringPointer(summary.SandboxUID)
 	}
 	if summary.LastTurnStatus != nil {
 		value := eventpb.TurnStatus_name[*summary.LastTurnStatus]
@@ -653,16 +638,18 @@ func makeThreadView(thread threads.Thread, summary historydata.FoldSummary) (thr
 
 func stringPointer(value string) *string { return &value }
 
-func ensureThreadArchivable(ctx context.Context, thread threads.Thread, summary historydata.FoldSummary, inventory threadSandboxInventory, environmentRuntime threadEnvironmentRuntimeStatusReader) error {
+func ensureThreadArchivable(ctx context.Context, namespace string, thread threads.Thread, summary historydata.FoldSummary, inventory threadSandboxInventory, environmentRuntime threadEnvironmentRuntimeStatusReader) error {
 	if inventory == nil {
 		return errors.New("Sandbox inventory is unavailable")
 	}
-	sandbox, err := inventory.Get(ctx, summary.Sandbox)
+	if summary.SandboxUID == "" {
+		return errors.New("Thread has no Sandbox UID; its Environment cannot be identified")
+	}
+	sandbox, err := inventory.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &environmentpb.TargetHandle{Namespace: namespace, Name: summary.Sandbox, Uid: summary.SandboxUID}})
+	if status.Code(err) == codes.NotFound {
+		return nil // This exact Environment is gone, so it cannot have a running harness.
+	}
 	if err != nil {
-		var missing *sandboxinventory.SandboxNotFoundError
-		if errors.As(err, &missing) {
-			return nil // A deleted Sandbox has no running harness to keep visible.
-		}
 		return err
 	}
 	if sandbox.GetPod() == nil {
@@ -674,7 +661,7 @@ func ensureThreadArchivable(ctx context.Context, thread threads.Thread, summary 
 	if environmentRuntime == nil {
 		return errors.New("Environment Runtime status is unavailable")
 	}
-	status, err := environmentRuntime.EnvironmentRuntimeStatus(ctx, summary.Sandbox)
+	status, err := environmentRuntime.EnvironmentRuntimeStatus(ctx, sandbox)
 	if err != nil {
 		return err
 	}
@@ -691,23 +678,9 @@ var (
 	errThreadBusy                      = errors.New("finish or interrupt active work before archiving this thread")
 )
 
-func threadSandboxReady(sandbox *sandboxespb.Sandbox) bool {
-	if sandbox.GetOperatingMode() != "Running" || sandbox.GetStatus() == nil {
-		return false
-	}
-
-	conditions, ok := sandbox.GetStatus().AsMap()["conditions"].([]any)
-	if !ok {
-		return false
-	}
-	for _, item := range conditions {
-		condition, ok := item.(map[string]any)
-		if !ok || condition["type"] != "Ready" || condition["status"] != "True" {
-			continue
-		}
-		return true
-	}
-	return false
+func threadSandboxReady(sandbox *environmentpb.EnvironmentDescriptor) bool {
+	return sandbox != nil && sandbox.GetOperatingMode() == environmentpb.OperatingMode_OPERATING_MODE_RUNNING &&
+		sandbox.GetReadiness().GetState() == environmentpb.ReadinessState_READINESS_STATE_READY
 }
 
 func threadReadHTTPError(err error) error {

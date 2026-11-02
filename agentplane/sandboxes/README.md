@@ -1,13 +1,13 @@
 # Sandboxes
 
-The shared library for Sandbox requesters and readers: the integration app, Runner Gateway and
-Notification Service. Kubernetes holds all Sandbox state. The Runner Gateway's `lifecycle` manager
+Shared Kubernetes types and exact-identity readers for Sandbox controllers and backend services.
+Kubernetes holds all Sandbox state. The Runner Gateway's `lifecycle` manager
 authorizes its explicit-resume API and automatic wake, applying guarded `spec.running`/`wakeGeneration`
 updates; operator authority and ordinary execution-account policy are checked at request time. The
 Dispatcher DeliveryWorker requests automatic wake through the shared manager, preserving the effective
 caller and applying `wakeOnSend` and the configured `wake_callers` grant. The Sandbox Controller
 reconciles desired state and owns Sandbox status. The shared `sandboxreader` reads exact Sandbox identities and execution accounts, while
-`inventory` projects Sandbox and Pod views for the app's remaining direct reads. The Gateway's
+the Gateway owns the canonical `EnvironmentDescriptor` projection and its get/list/watch API. The Gateway's
 private EnvironmentService management package owns template listing, idempotent creation and
 UID/resourceVersion-fenced suspension, deletion and policy updates. Explicit resume and send-wake
 requests use the Gateway lifecycle manager, rereading current state on resourceVersion conflicts;
@@ -19,13 +19,13 @@ govern automatic delivery wake. A separate optional direct Pod-bound `operator_c
 an operator explicitly resume a requested stop; delegated callers cannot use that grant.
 
 `status.operatingMode` is the controller's effective-mode report. It is absent until the controller
-first reconciles a new Sandbox, so readers expose a nullable mode and `Unspecified` phase instead of
+first reconciles a new Sandbox, so descriptors expose an unspecified mode and phase instead of
 deriving actual state from `spec.running`. Deletion requires an explicitly reported `Suspended` mode;
 send-triggered wake work stays queued without a wake deadline until a mode is reported.
 
 `status.idleSuspendBlockers` carries the live runner reasons that prevent autosuspension. Inventory
-readers project it as `Sandbox.autosuspend_blockers`; the integration app's `SandboxView` includes the
-same reasons and nullable Session IDs.
+readers project it as `EnvironmentDescriptor.autosuspend_blockers`, preserving reasons and
+nullable Session IDs.
 
 `spec.inboxTags` are plain strings with no backing object; a `session_inbox_access` rule targeting
 one covers every Sandbox holding it ([messages](../notification_service/docs/api.md#messages)).

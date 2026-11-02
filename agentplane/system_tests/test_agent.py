@@ -33,7 +33,7 @@ async def test_agent_open_retries_unavailable_without_creating_another_session()
         client,
         dispatcher,
         sandbox="test-sandbox",
-        sandbox_uid=UUID("00000000-0000-4000-8000-000000000001"),
+        sandbox_uid="00000000-0000-4000-8000-000000000001",
         harness=session_pb2.HARNESS_CODEX,
         model="test-model",
     )
@@ -41,7 +41,7 @@ async def test_agent_open_retries_unavailable_without_creating_another_session()
     first, retry = client.create_session.call_args_list
     assert first == retry
     assert first.args[0] == "test-sandbox"
-    assert first.kwargs["sandbox_uid"] == UUID("00000000-0000-4000-8000-000000000001")
+    assert first.kwargs["sandbox_uid"] == "00000000-0000-4000-8000-000000000001"
     assert isinstance(first.args[1], UUID)
     assert first.kwargs["overrides"]["model"] == "test-model"
     client.wait_for_thread_projection.assert_awaited_once_with(first.args[1], timeout_s=RUNNER_ANSWERS_SECONDS)
@@ -59,7 +59,7 @@ async def test_startup_refusals_and_other_server_failures_are_not_retried(status
             client,
             dispatcher,
             sandbox="test-sandbox",
-            sandbox_uid=UUID("00000000-0000-4000-8000-000000000001"),
+            sandbox_uid="00000000-0000-4000-8000-000000000001",
             harness=session_pb2.HARNESS_CODEX,
             model="test-model",
         )

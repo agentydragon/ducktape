@@ -14,7 +14,7 @@ const SUSPENDED_SANDBOX = suspendedSandbox("test-sandbox", SANDBOX_UID);
 function thread(overrides: Partial<ThreadView> = {}): ThreadView {
   return {
     id: "10000000-0000-4000-8000-000000000001",
-    sandbox: READY_SANDBOX.name,
+    sandbox: READY_SANDBOX.target!.name,
     harness: "HARNESS_CLAUDE",
     model: "test-model",
     cwd: "/work",

@@ -16,14 +16,17 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/liveinventory"
+	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
+	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	"github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
+	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -34,7 +37,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 func TestWriteSSEPreservesEventIDAndJSONData(t *testing.T) {
@@ -110,6 +112,70 @@ type streamTestLive struct {
 	changes   chan struct{}
 }
 
+type streamTestEnvironments struct {
+	mu         sync.Mutex
+	descriptor *environmentpb.EnvironmentDescriptor
+	err        error
+	changes    chan struct{}
+}
+
+func (f *streamTestEnvironments) GetEnvironment(_ context.Context, request *environmentpb.GetEnvironmentRequest, _ ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error) {
+	target := request.GetTarget()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.descriptor == nil || !proto.Equal(f.descriptor.GetTarget(), target) {
+		return nil, status.Error(codes.NotFound, "Environment target UID is no longer current")
+	}
+	return proto.Clone(f.descriptor).(*environmentpb.EnvironmentDescriptor), nil
+}
+
+func (f *streamTestEnvironments) Watch(ctx context.Context, target *environmentpb.TargetHandle) <-chan sandboxes.EnvironmentObservation {
+	observations := make(chan sandboxes.EnvironmentObservation)
+	go func() {
+		defer close(observations)
+		for {
+			f.mu.Lock()
+			var value *environmentpb.EnvironmentDescriptor
+			var err error
+			if f.err != nil {
+				err = f.err
+			} else if f.descriptor == nil || !proto.Equal(f.descriptor.GetTarget(), target) {
+				err = status.Error(codes.NotFound, "Environment not found")
+			} else {
+				value = proto.Clone(f.descriptor).(*environmentpb.EnvironmentDescriptor)
+			}
+			f.mu.Unlock()
+			select {
+			case observations <- sandboxes.EnvironmentObservation{Descriptor: value, Err: err}:
+			case <-ctx.Done():
+				return
+			}
+			if err != nil {
+				return
+			}
+			select {
+			case <-f.changes:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return observations
+}
+
+func (f *streamTestEnvironments) set(descriptor *environmentpb.EnvironmentDescriptor) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if descriptor == nil {
+		f.descriptor = nil
+		return
+	}
+	f.descriptor = proto.Clone(descriptor).(*environmentpb.EnvironmentDescriptor)
+}
+
 func (f *streamTestLive) Snapshot(context.Context) (liveinventory.Snapshot, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -159,7 +225,7 @@ func (f *decisionTestWatcher) WatchDecisions(_ context.Context, request *egress_
 
 func TestEgressDecisionStreamSnapshotsUpdatesAndDisconnect(t *testing.T) {
 	live := &streamTestLive{
-		snapshots: []liveinventory.Snapshot{{Sandboxes: []sandboxapi.Sandbox{{ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo", UID: "sandbox-uid"}}}}},
+		snapshots: []liveinventory.Snapshot{{}},
 		changes:   make(chan struct{}),
 	}
 	watcher := &decisionTestWatcher{stream: &decisionTestStream{
@@ -170,9 +236,10 @@ func TestEgressDecisionStreamSnapshotsUpdatesAndDisconnect(t *testing.T) {
 		err: status.Error(codes.Unavailable, "watch broke"),
 	}}
 	server := NewHTTPServer(nil)
-	routes := &streamingRoutes{server: server, deps: StreamingDependencies{Live: live, Egress: watcher}}
+	environments := &streamTestEnvironments{descriptor: testEnvironment("tools", "demo", "sandbox-uid", "tools", "demo")}
+	routes := &streamingRoutes{server: server, deps: StreamingDependencies{SandboxNamespace: "tools", Live: live, Sandboxes: environments, Egress: watcher}}
 	ctx, cancel := context.WithCancel(context.Background())
-	request := httptest.NewRequest(http.MethodGet, "/live/sandboxes/demo/egress/decisions", nil).WithContext(ctx)
+	request := httptest.NewRequest(http.MethodGet, "/live/sandboxes/demo/egress/decisions?sandbox_uid=sandbox-uid", nil).WithContext(ctx)
 	request.SetPathValue("name", "demo")
 	response := newStreamingRecorder()
 	done := make(chan struct{})
@@ -969,7 +1036,7 @@ func waitForStreamTextAfter(t *testing.T, response *streamingRecorder, before, a
 	}
 }
 
-const liveFramesSandboxUID = "33333333-3333-4333-8333-333333333333"
+const liveFramesSandboxUID = "opaque-kubernetes-uid"
 
 // countingLive is a live inventory whose snapshot the test replaces. It counts reads and signals every subscriber
 // of each change.
@@ -1020,16 +1087,35 @@ func (f *countingLive) readCount() int {
 	return f.reads
 }
 
-func liveFramesSnapshot(idleSuspendAt *metav1.Time) liveinventory.Snapshot {
-	return liveinventory.Snapshot{
-		Sandboxes: []sandboxapi.Sandbox{{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo", UID: types.UID(liveFramesSandboxUID)},
-			Status:     sandboxapi.SandboxStatus{IdleSuspendAt: idleSuspendAt},
-		}},
-		Watch: watchhealth.Status{Available: true, Synced: true},
+func liveFramesSnapshot() liveinventory.Snapshot {
+	return liveinventory.Snapshot{Watch: watchhealth.Status{Available: true, Synced: true}}
+}
+
+func testEnvironment(namespace, name, uid, accountNamespace, accountName string) *environmentpb.EnvironmentDescriptor {
+	return &environmentpb.EnvironmentDescriptor{
+		Target:           &environmentpb.TargetHandle{Namespace: namespace, Name: name, Uid: uid},
+		ExecutionAccount: &environmentpb.AccountHandle{Namespace: accountNamespace, Name: accountName},
 	}
 }
 
+type liveFramesFixture struct {
+	live   *countingLive
+	envs   *streamTestEnvironments
+	routes *streamingRoutes
+}
+
+func newLiveFramesFixture() *liveFramesFixture {
+	f := &liveFramesFixture{
+		live: &countingLive{snapshot: liveFramesSnapshot(), unsubscribed: make(chan struct{}, 8)},
+		envs: &streamTestEnvironments{descriptor: testEnvironment("tools", "demo", liveFramesSandboxUID, "tools", "demo"), changes: make(chan struct{}, 1)},
+	}
+	f.routes = newStreamingRoutes(NewHTTPServer(nil), StreamingDependencies{
+		SandboxNamespace: "tools", Live: f.live, Sandboxes: f.envs,
+	})
+	return f
+}
+
+// openLiveStreams serves count identical requests and returns their responses and a wait for every handler to return.
 func openLiveStreams(ctx context.Context, handler http.HandlerFunc, newRequest func() *http.Request, count int) ([]*streamingRecorder, func()) {
 	var handlers sync.WaitGroup
 	responses := make([]*streamingRecorder, count)
@@ -1048,38 +1134,166 @@ func waitForEveryStream(t *testing.T, responses []*streamingRecorder, text strin
 	}
 }
 
-func TestLiveSandboxStreamFencesSandboxUIDAndDoesNotReadThreads(t *testing.T) {
-	live := &countingLive{snapshot: liveFramesSnapshot(nil), unsubscribed: make(chan struct{}, 1)}
-	routes := newStreamingRoutes(NewHTTPServer(nil), StreamingDependencies{Live: live})
+func TestLiveSandboxStreamsSharePolicyReadsAcrossViewers(t *testing.T) {
+	f := newLiveFramesFixture()
 	ctx, cancel := context.WithCancel(context.Background())
-	responses, wait := openLiveStreams(ctx, routes.liveSandbox, func() *http.Request {
+	defer cancel()
+	responses, wait := openLiveStreams(ctx, f.routes.liveSandbox, func() *http.Request {
 		request := httptest.NewRequest(http.MethodGet, "/live/sandboxes/demo?sandbox_uid="+liveFramesSandboxUID, nil)
 		request.SetPathValue("name", "demo")
 		return request
 	}, 2)
-	waitForEveryStream(t, responses, `"uid":"`+liveFramesSandboxUID+`"`)
-	if got := live.readCount(); got != 1 {
-		t.Fatalf("shared snapshot reads = %d, want 1", got)
+	waitForEveryStream(t, responses, `"sandbox_uid":"`+liveFramesSandboxUID+`"`)
+	if got := f.live.readCount(); got != 1 {
+		t.Fatalf("initial shared reads = %d, want 1", got)
 	}
-	deadline := metav1.NewTime(time.Date(2026, 10, 20, 1, 4, 3, 0, time.UTC))
-	live.change(liveFramesSnapshot(&deadline))
-	waitForEveryStream(t, responses, `"idle_suspend_at":"2026-10-20T01:04:03Z"`)
-	replacement := liveFramesSnapshot(nil)
-	replacement.Sandboxes[0].UID = types.UID("44444444-4444-4444-8444-444444444444")
-	live.change(replacement)
-	waitForEveryStream(t, responses, `"sandbox":null`)
 	for _, response := range responses {
-		body := response.String()
-		if strings.Contains(body, `"threads"`) || strings.Contains(body, `"updates_connected"`) {
-			t.Fatalf("Sandbox stream still carries Thread data: %s", body)
+		for _, line := range strings.Split(response.String(), "\n") {
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			var frame map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &frame); err != nil {
+				t.Fatal(err)
+			}
+			if len(frame) != 4 || frame["sandbox_uid"] == nil || frame["bindings"] == nil || frame["action_policy"] == nil || frame["watch"] == nil {
+				t.Fatalf("policy composition frame has unexpected fields: %s", line)
+			}
+		}
+	}
+	changed := liveFramesSnapshot()
+	changed.Watch.Failing = map[watchhealth.Kind]watchhealth.Failure{"policysets": {Error: "test failure", Since: time.Date(2026, 10, 20, 1, 4, 3, 0, time.UTC)}}
+	f.live.change(changed)
+	waitForEveryStream(t, responses, `"policysets":{"error":"test failure"`)
+	const replacementUID = "44444444-4444-4444-8444-444444444444"
+	f.envs.set(testEnvironment("tools", "demo", replacementUID, "tools", "demo"))
+	f.envs.changes <- struct{}{}
+	waitForEveryStream(t, responses, `"sandbox_uid":null`)
+	for _, response := range responses {
+		if strings.Contains(response.String(), replacementUID) {
+			t.Fatal("stream followed a same-name replacement")
 		}
 	}
 	cancel()
 	wait()
 	select {
-	case <-live.unsubscribed:
+	case <-f.live.unsubscribed:
 	case <-time.After(2 * time.Second):
 		t.Fatal("shared producer did not stop")
+	}
+}
+
+type scriptedEnvironmentWatch struct {
+	streamSandboxInventory
+	observations chan sandboxes.EnvironmentObservation
+	target       *environmentpb.TargetHandle
+}
+
+func (f *scriptedEnvironmentWatch) Watch(_ context.Context, target *environmentpb.TargetHandle) <-chan sandboxes.EnvironmentObservation {
+	f.target = proto.Clone(target).(*environmentpb.TargetHandle)
+	return f.observations
+}
+
+func TestSandboxPolicyWatchRejectsMismatchedTargetsAndTerminatesOnErrors(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		observation sandboxes.EnvironmentObservation
+		wantCode    codes.Code
+		wantMissing bool
+	}{
+		{name: "namespace", observation: sandboxes.EnvironmentObservation{Descriptor: testEnvironment("other", "demo", liveFramesSandboxUID, "tools", "demo")}, wantCode: codes.Unknown},
+		{name: "name", observation: sandboxes.EnvironmentObservation{Descriptor: testEnvironment("tools", "other", liveFramesSandboxUID, "tools", "demo")}, wantCode: codes.Unknown},
+		{name: "uid", observation: sandboxes.EnvironmentObservation{Descriptor: testEnvironment("tools", "demo", "replacement-uid", "tools", "demo")}, wantCode: codes.Unknown},
+		{name: "empty", observation: sandboxes.EnvironmentObservation{}, wantCode: codes.Unknown},
+		{name: "missing", observation: sandboxes.EnvironmentObservation{Err: status.Error(codes.NotFound, "Environment no longer exists")}, wantCode: codes.OK, wantMissing: true},
+		{name: "unavailable", observation: sandboxes.EnvironmentObservation{Err: status.Error(codes.Unavailable, "watch disconnected")}, wantCode: codes.Unavailable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			watcher := &scriptedEnvironmentWatch{observations: make(chan sandboxes.EnvironmentObservation, 1)}
+			watcher.observations <- test.observation
+			close(watcher.observations)
+			live := &countingLive{snapshot: liveFramesSnapshot(), unsubscribed: make(chan struct{}, 1)}
+			routes := newStreamingRoutes(NewHTTPServer(nil), StreamingDependencies{SandboxNamespace: "tools", Live: live, Sandboxes: watcher})
+			var frames []sandboxDetail
+			err := routes.produceSandboxDetail(t.Context(), sandboxDetailKey{name: "demo", uid: liveFramesSandboxUID}, func(frame sandboxDetail) { frames = append(frames, frame) })
+			if status.Code(err) != test.wantCode {
+				t.Fatalf("watch result = %v, want code %v", err, test.wantCode)
+			}
+			if !proto.Equal(watcher.target, &environmentpb.TargetHandle{Namespace: "tools", Name: "demo", Uid: liveFramesSandboxUID}) {
+				t.Fatalf("watch target = %v", watcher.target)
+			}
+			if test.wantMissing {
+				if len(frames) != 1 || frames[0].sandboxUID != nil || frames[0].subject != nil || !frames[0].watch.Healthy {
+					t.Fatalf("missing Environment frames = %#v", frames)
+				}
+			} else if len(frames) != 0 {
+				t.Fatalf("failed watch published policy frames: %#v", frames)
+			}
+		})
+	}
+}
+
+type blockingDecisionWatch struct {
+	requests chan *egress_adminpb.WatchDecisionsRequest
+	stopped  chan struct{}
+}
+
+func (f *blockingDecisionWatch) WatchDecisions(ctx context.Context, request *egress_adminpb.WatchDecisionsRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[egress_adminpb.WatchDecisionsResponse], error) {
+	f.requests <- request
+	return &blockingDecisionStream{ctx: ctx, stopped: f.stopped}, nil
+}
+
+type blockingDecisionStream struct {
+	grpc.ServerStreamingClient[egress_adminpb.WatchDecisionsResponse]
+	ctx     context.Context
+	stopped chan struct{}
+}
+
+func (f *blockingDecisionStream) Recv() (*egress_adminpb.WatchDecisionsResponse, error) {
+	<-f.ctx.Done()
+	close(f.stopped)
+	return nil, status.FromContextError(f.ctx.Err()).Err()
+}
+
+func TestEgressDecisionWatchStopsWhenEnvironmentIsReplaced(t *testing.T) {
+	live := &streamTestLive{snapshots: []liveinventory.Snapshot{{}}, changes: make(chan struct{})}
+	environments := &streamTestEnvironments{descriptor: testEnvironment("tools", "demo", liveFramesSandboxUID, "tools", "account"), changes: make(chan struct{}, 1)}
+	watcher := &blockingDecisionWatch{requests: make(chan *egress_adminpb.WatchDecisionsRequest, 2), stopped: make(chan struct{})}
+	routes := newStreamingRoutes(NewHTTPServer(nil), StreamingDependencies{SandboxNamespace: "tools", Live: live, Sandboxes: environments, Egress: watcher})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	request := httptest.NewRequest(http.MethodGet, "/live/sandboxes/demo/egress/decisions?sandbox_uid="+liveFramesSandboxUID, nil).WithContext(ctx)
+	request.SetPathValue("name", "demo")
+	response := newStreamingRecorder()
+	done := make(chan struct{})
+	go func() {
+		routes.liveDecisions(response, request)
+		close(done)
+	}()
+	select {
+	case opened := <-watcher.requests:
+		if opened.GetFilter().GetSubject().GetNamespace() != "tools" || opened.GetFilter().GetSubject().GetName() != "account" {
+			t.Fatalf("decision subject = %v", opened.GetFilter().GetSubject())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("decision watch did not open")
+	}
+	environments.set(testEnvironment("tools", "demo", "replacement-uid", "tools", "replacement-account"))
+	environments.changes <- struct{}{}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("decision route did not end after Environment replacement")
+	}
+	select {
+	case <-watcher.stopped:
+	case <-time.After(time.Second):
+		t.Fatal("Environment replacement did not cancel Egress watch")
+	}
+	select {
+	case opened := <-watcher.requests:
+		t.Fatalf("decision watch reopened after replacement: %v", opened)
+	default:
 	}
 }
 
@@ -1122,5 +1336,111 @@ func TestEnvironmentFacadeRequiresAppCallerAndForwardsManagementAndWatch(t *test
 		if response.Code != http.StatusOK || gotPath != methodPath.wantPath || gotMethod != methodPath.method || gotQuery != methodPath.wantQuery {
 			t.Fatalf("%s %s = %d, forwarded %s %s?%s", methodPath.method, methodPath.path, response.Code, gotMethod, gotPath, gotQuery)
 		}
+	}
+}
+
+func TestEnvironmentGetRequiresAppCallerAndForwardsOnlyTarget(t *testing.T) {
+	authentication := newStreamTestAuth(t)
+	server := NewHTTPServer(authentication)
+	var gotMethod, gotPath, gotQuery string
+	var calls int
+	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, request *http.Request, _ context.Context, path, bearer string) error {
+		calls++
+		gotMethod, gotPath, gotQuery = request.Method, path, request.URL.RawQuery
+		if bearer != "" {
+			t.Fatalf("unexpected forwarded bearer: %q", bearer)
+		}
+		w.WriteHeader(http.StatusOK)
+		return nil
+	}}
+	RegisterStreamingRoutes(server, StreamingDependencies{EnvironmentHTTP: upstream})
+	path := "/upstream/environments/v1/environments/team-a/sandbox-1?target.uid=22222222-2222-4222-8222-222222222222"
+	unauthenticated := httptest.NewRecorder()
+	server.Handler(authentication).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, path, nil))
+	if unauthenticated.Code != http.StatusUnauthorized || calls != 0 {
+		t.Fatalf("anonymous get = %d, upstream calls = %d", unauthenticated.Code, calls)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	request.Header.Set("Authorization", "Bearer accepted")
+	response := httptest.NewRecorder()
+	server.Handler(authentication).ServeHTTP(response, request)
+	if response.Code != http.StatusOK || calls != 1 {
+		t.Fatalf("authenticated get = %d, upstream calls = %d", response.Code, calls)
+	}
+	if gotMethod != http.MethodGet || gotPath != "v1/environments/team-a/sandbox-1" ||
+		gotQuery != "target.uid=22222222-2222-4222-8222-222222222222" {
+		t.Fatalf("forwarded get = %s %s?%s", gotMethod, gotPath, gotQuery)
+	}
+}
+
+func TestEnvironmentGeneratedFacadeRejectsUnknownAndDispatcherRoutes(t *testing.T) {
+	authentication := newStreamTestAuth(t)
+	server := NewHTTPServer(authentication)
+	generated, err := facade.NewHandler(t.Context(), "127.0.0.1:1", time.Second, environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	RegisterStreamingRoutes(server, StreamingDependencies{EnvironmentHTTP: proxy.NewHandlerUpstream(generated, "")})
+	handler := server.Handler(authentication)
+	for _, test := range []struct {
+		method, path string
+		status       int
+	}{
+		{http.MethodGet, "/upstream/environments/v1/environments/team-a/sandbox-1/extra", http.StatusNotFound},
+		{http.MethodPost, "/upstream/environments/v1/environments/team-a/sandbox-1:unknown", http.StatusNotImplemented},
+		{http.MethodPatch, "/upstream/environments/v1/environments/team-a/sandbox-1:resume", http.StatusNotImplemented},
+		{http.MethodGet, "/upstream/environments/v1/dispatches:watch", http.StatusNotFound},
+	} {
+		request := httptest.NewRequest(test.method, test.path, nil)
+		request.Header.Set("Authorization", "Bearer accepted")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != test.status {
+			t.Errorf("%s %s = %d, want %d", test.method, test.path, response.Code, test.status)
+		}
+	}
+}
+
+func TestEnvironmentGetCancelsUpstreamWithRequest(t *testing.T) {
+	authentication := newStreamTestAuth(t)
+	server := NewHTTPServer(authentication)
+	started := make(chan context.Context, 1)
+	canceled := make(chan error, 1)
+	upstream := &streamTestUpstream{forward: func(_ http.ResponseWriter, _ *http.Request, ctx context.Context, _, _ string) error {
+		started <- ctx
+		<-ctx.Done()
+		canceled <- ctx.Err()
+		return ctx.Err()
+	}}
+	RegisterStreamingRoutes(server, StreamingDependencies{EnvironmentHTTP: upstream})
+	ctx, cancel := context.WithCancel(context.Background())
+	request := httptest.NewRequest(http.MethodGet, "/upstream/environments/v1/environments/team-a/sandbox-1?target.uid=uid", nil).WithContext(ctx)
+	request.Header.Set("Authorization", "Bearer accepted")
+	response := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		server.Handler(authentication).ServeHTTP(response, request)
+		close(done)
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("EnvironmentService Get did not reach upstream")
+	}
+	cancel()
+	select {
+	case err := <-canceled:
+		if err != context.Canceled {
+			t.Fatalf("upstream context error = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("request cancellation did not reach EnvironmentService Get")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("EnvironmentService Get did not finish after request cancellation")
 	}
 }

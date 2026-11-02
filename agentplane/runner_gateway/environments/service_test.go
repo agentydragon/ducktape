@@ -436,6 +436,88 @@ func TestLegacyWakeOnSendAvailabilityIsSeparateFromExplicitResumeEligibility(t *
 	}
 }
 
+func TestGetReturnsTheCanonicalSandboxAndCurrentPodProjection(t *testing.T) {
+	sandbox := sandboxObject(sandboxUID)
+	createdAt := metav1.NewTime(time.Date(2026, time.November, 2, 12, 0, 0, 0, time.UTC))
+	sandbox.CreationTimestamp = createdAt
+	sandbox.Spec.Bootstrap = "echo initialized"
+	sandbox.Spec.WakeOnSend = true
+	sandbox.Spec.IdleSuspendAfter = &metav1.Duration{Duration: 3 * time.Minute}
+	sandbox.Labels = map[string]string{"agentplane.allegedly.works/preset": "gpu-workbench"}
+	sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: "vm-launcher", UID: "pod-uid-current"}
+	sandbox.Status.Conditions = []metav1.Condition{{
+		Type: sandboxapi.ConditionReady, Status: metav1.ConditionTrue, Reason: "RuntimeReady",
+		Message: "runner is accepting work", LastTransitionTime: createdAt,
+	}}
+	suspendedBy := sandboxapi.SuspendedByIdle
+	sandbox.Status.SuspendedBy = &suspendedBy
+	idleSuspendAt := metav1.NewTime(createdAt.Add(5 * time.Minute))
+	sandbox.Status.IdleSuspendAt = &idleSuspendAt
+	sessionID := "session-123"
+	sandbox.Status.IdleSuspendBlockers = []sandboxapi.AutosuspendBlocker{
+		{Reason: sandboxapi.AutosuspendBlockerActiveTurn, SessionID: &sessionID},
+		{Reason: sandboxapi.AutosuspendBlockerBootstrap},
+	}
+	controller := true
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: discoveryNamespace, Name: "vm-launcher", UID: "pod-uid-current",
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: "kubevirt.io/v1", Kind: "VirtualMachineInstance", Name: "vm", UID: "vmi-uid", Controller: &controller,
+			}},
+		},
+		Spec:   corev1.PodSpec{NodeName: "worker-a"},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.42"},
+	}
+	objects := readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID), pod)
+	rpc := serveDiscovery(t, objects, runtimeconfig.Catalog{})
+	target := &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
+	got, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{Target: target})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetCreatedAt().AsTime() != createdAt.Time || got.GetBinding().GetBootstrap() != sandbox.Spec.Bootstrap || got.GetPreset() != "gpu-workbench" {
+		t.Fatalf("creation/binding/preset projection = %v / %v / %q", got.GetCreatedAt(), got.GetBinding(), got.GetPreset())
+	}
+	if got.GetPod().GetUid() != "pod-uid-current" || got.GetPod().GetNodeName() != "worker-a" || got.GetPod().GetStatus().AsMap()["phase"] != "Running" ||
+		len(got.GetPod().GetOwnerReferences()) != 1 || !got.GetPod().GetOwnerReferences()[0].GetController() {
+		t.Fatalf("current Pod projection = %v", got.GetPod())
+	}
+	incarnation, ok := got.GetStatus().AsMap()["incarnation"].(map[string]any)
+	if !ok || incarnation["uid"] != "pod-uid-current" {
+		t.Fatalf("raw Sandbox status = %v", got.GetStatus())
+	}
+	if got.GetReadiness().GetState() != environmentpb.ReadinessState_READINESS_STATE_READY ||
+		got.GetPhase() != environmentpb.SandboxPhase_SANDBOX_PHASE_RUNNING || got.GetSuspendedBy() != "Idle" ||
+		got.GetIdleSuspendAfter().AsDuration() != 3*time.Minute || got.GetIdleSuspendAt().AsTime() != idleSuspendAt.Time {
+		t.Fatalf("Sandbox status projection = %v", got)
+	}
+	if len(got.GetAutosuspendBlockers()) != 2 || got.GetAutosuspendBlockers()[0].GetSessionId() != sessionID {
+		t.Fatalf("autosuspend blockers = %v", got.GetAutosuspendBlockers())
+	}
+	if _, err := rpc.GetEnvironment(bearing(t, foreignToken), &environmentpb.GetEnvironmentRequest{Target: target}); status.Code(err) != codes.NotFound {
+		t.Fatalf("foreign caller GetEnvironment error = %v, want NotFound", err)
+	}
+}
+
+func TestGetDoesNotProjectAReplacedPodWithTheSameName(t *testing.T) {
+	sandbox := sandboxObject(sandboxUID)
+	sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: "runner", UID: "pod-uid-expected"}
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Namespace: discoveryNamespace, Name: "runner", UID: "pod-uid-replacement",
+	}}
+	rpc := serveDiscovery(t, readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID), pod), runtimeconfig.Catalog{})
+	got, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
+		Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetPod() != nil || got.GetRuntimeIncarnationUid() != "pod-uid-expected" {
+		t.Fatalf("replacement Pod was projected as current: Pod=%v incarnationUID=%q", got.GetPod(), got.GetRuntimeIncarnationUid())
+	}
+}
+
 func TestDelegatedActionsUseTheEffectiveCallerAndKeepTargetUIDFences(t *testing.T) {
 	rpc := serveDiscoveryWithDelegation(t, baseReader(t), runtimeconfig.Catalog{}, []string{
 		environmentpb.EnvironmentService_ListEnvironments_FullMethodName,
@@ -908,4 +990,118 @@ func TestDelegatedActorDoesNotLendInventoryReaderGrant(t *testing.T) {
 	if err != nil || len(response.GetItems()) != 1 || response.GetItems()[0].GetTarget().GetName() != sandboxName {
 		t.Fatalf("delegated list = %v, %v", response, err)
 	}
+}
+
+func TestCollectionSnapshotSurvivesDeletionDuringEligibilityRead(t *testing.T) {
+	reader := &missingDuringEligibility{WithWatch: baseReader(t)}
+	rpc := serveDiscovery(t, reader, runtimeconfig.Catalog{})
+	stream, err := rpc.WatchEnvironments(bearing(t, matchingToken), &emptypb.Empty{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame, err := stream.Recv()
+	if err != nil || frame.GetSnapshotComplete() == nil {
+		t.Fatalf("snapshot completion during deletion = %v, %v", frame, err)
+	}
+	if reader.sandboxGets != 4 {
+		t.Fatalf("Sandbox reads = %d, want the eligibility race to be exercised", reader.sandboxGets)
+	}
+}
+
+func TestGetFencesSandboxReplacementDuringCallerAuthorization(t *testing.T) {
+	replacement := sandboxObject("replacement-sandbox-uid")
+	reader := &replaceSandboxOnAuthorizationRead{
+		WithWatch:   baseReader(t),
+		replacement: replacement,
+	}
+	rpc := serveDiscovery(t, reader, runtimeconfig.Catalog{})
+	_, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
+		Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+	})
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("GetEnvironment during same-name replacement = %v, want NotFound", err)
+	}
+	if reader.sandboxGets != 2 {
+		t.Fatalf("Sandbox reads during authorization = %d, want initial read and exact-UID recheck", reader.sandboxGets)
+	}
+}
+
+func TestGetRechecksExecutionAccountAfterPodProjection(t *testing.T) {
+	sandbox := sandboxObject(sandboxUID)
+	sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: "runner", UID: "pod-uid-current"}
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Namespace: discoveryNamespace, Name: "runner", UID: "pod-uid-current",
+	}}
+	base := readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID), pod)
+	reader := &removeOwnerAfterPodRead{WithWatch: base}
+	rpc := serveDiscovery(t, reader, runtimeconfig.Catalog{})
+	_, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
+		Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+	})
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("GetEnvironment after owner changed during Pod projection = %v, want NotFound", err)
+	}
+	if !reader.removed {
+		t.Fatal("test did not remove the execution account owner during projection")
+	}
+}
+
+type replaceSandboxOnAuthorizationRead struct {
+	client.WithWatch
+	replacement *sandboxapi.Sandbox
+	sandboxGets int
+}
+
+// Simulate a deletion between the collection's initial read and the lifecycle manager's
+// independent eligibility read. The watch must deliver a complete snapshot instead of failing.
+type missingDuringEligibility struct {
+	client.WithWatch
+	sandboxGets int
+}
+
+func (r *missingDuringEligibility) Get(ctx context.Context, key types.NamespacedName, object client.Object, options ...client.GetOption) error {
+	if _, ok := object.(*sandboxapi.Sandbox); ok {
+		r.sandboxGets++
+		if r.sandboxGets == 4 {
+			return apierrors.NewNotFound(sandboxapi.GroupVersion.WithResource("sandboxes").GroupResource(), key.Name)
+		}
+	}
+	return r.WithWatch.Get(ctx, key, object, options...)
+}
+
+func (r *replaceSandboxOnAuthorizationRead) Get(ctx context.Context, key types.NamespacedName, object client.Object, options ...client.GetOption) error {
+	if sandbox, ok := object.(*sandboxapi.Sandbox); ok {
+		r.sandboxGets++
+		if r.sandboxGets == 2 {
+			r.replacement.DeepCopyInto(sandbox)
+			return nil
+		}
+	}
+	return r.WithWatch.Get(ctx, key, object, options...)
+}
+
+type removeOwnerAfterPodRead struct {
+	client.WithWatch
+	removed bool
+}
+
+func (r *removeOwnerAfterPodRead) Get(ctx context.Context, key types.NamespacedName, object client.Object, options ...client.GetOption) error {
+	if _, ok := object.(*corev1.Pod); ok {
+		if err := r.WithWatch.Get(ctx, key, object, options...); err != nil {
+			return err
+		}
+		if !r.removed {
+			r.removed = true
+			var account corev1.ServiceAccount
+			if err := r.WithWatch.Get(ctx, types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, &account); err != nil {
+				return err
+			}
+			account.OwnerReferences = nil
+			if err := r.WithWatch.Update(ctx, &account); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return r.WithWatch.Get(ctx, key, object, options...)
 }

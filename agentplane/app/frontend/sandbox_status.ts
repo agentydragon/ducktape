@@ -1,21 +1,18 @@
 /** Presentation of Kubernetes' raw Sandbox and Pod status objects. */
-import { SandboxPhase, type Sandbox } from "../../proto/sandboxes_pb";
-import type { SandboxView } from "./schema";
+import {
+  SandboxPhase,
+  OperatingMode,
+  ReadinessState,
+  type EnvironmentDescriptor,
+} from "../../runner_gateway/environments/environment_service_pb";
+
 import { durationLabel } from "./format_time";
 import type { SandboxStatusKind } from "./status_mark";
 
-/** The live inventory uses the Sandbox proto; the detail endpoint still uses its app presentation view. */
-export type SandboxStatusSource = Sandbox | SandboxView;
-
 type RawObject = Record<string, unknown>;
 
-function isSandboxView(sandbox: SandboxStatusSource): sandbox is SandboxView {
-  return typeof sandbox.phase === "string";
-}
-
 /** The controller's lifecycle phase, normalized without deriving it from the requested operating mode. */
-export function sandboxPhase(sandbox: SandboxStatusSource): string {
-  if (isSandboxView(sandbox)) return sandbox.phase;
+export function sandboxPhase(sandbox: EnvironmentDescriptor): string {
   switch (sandbox.phase) {
     case SandboxPhase.UNSPECIFIED:
       return "Unspecified";
@@ -36,17 +33,19 @@ export function sandboxPhase(sandbox: SandboxStatusSource): string {
   }
 }
 
-export function sandboxOperatingMode(sandbox: SandboxStatusSource): string | null {
-  return isSandboxView(sandbox) ? (sandbox.operating_mode ?? null) : (sandbox.operatingMode ?? null);
-}
-
-export function sandboxWakeOnSend(sandbox: SandboxStatusSource): boolean {
-  return isSandboxView(sandbox) ? (sandbox.wake_on_send ?? false) : sandbox.wakeOnSend;
+export function sandboxOperatingMode(sandbox: EnvironmentDescriptor): string | null {
+  switch (sandbox.operatingMode) {
+    case OperatingMode.RUNNING:
+      return "Running";
+    case OperatingMode.SUSPENDED:
+      return "Suspended";
+    default:
+      return null;
+  }
 }
 
 /** Converts a present protobuf Duration to seconds while keeping absent and zero durations distinct. */
-export function sandboxIdleSuspendAfterSeconds(sandbox: SandboxStatusSource): number | null {
-  if (isSandboxView(sandbox)) return sandbox.idle_suspend_after_seconds ?? null;
+export function sandboxIdleSuspendAfterSeconds(sandbox: EnvironmentDescriptor): number | null {
   const duration = sandbox.idleSuspendAfter;
   return duration === undefined ? null : Number(duration.seconds) + duration.nanos / 1_000_000_000;
 }
@@ -107,76 +106,29 @@ export function rawConditions(status: RawObject | null | undefined): RawConditio
   });
 }
 
-type PodFields = {
-  deleting: boolean;
-  ownerReferences: { apiVersion: string; kind: string; uid: string; controller: boolean }[];
-  status: RawObject | null;
-};
-
-function sandboxStatusObject(sandbox: SandboxStatusSource): RawObject | null {
-  return rawObject(sandbox.status);
+export function podPhase(sandbox: EnvironmentDescriptor): string | null {
+  return rawString(rawObject(sandbox.pod?.status)?.phase);
 }
 
-function sandboxPodFields(sandbox: SandboxStatusSource): PodFields | null {
-  if (isSandboxView(sandbox)) {
-    const pod = sandbox.pod;
-    return pod
-      ? {
-          deleting: pod.deleting,
-          ownerReferences: pod.owner_references.map((owner) => ({
-            apiVersion: owner.api_version,
-            kind: owner.kind,
-            uid: owner.uid,
-            controller: owner.controller,
-          })),
-          status: rawObject(pod.status),
-        }
-      : null;
-  }
-  const pod = sandbox.pod;
-  return pod
-    ? {
-        deleting: pod.deleting,
-        ownerReferences: pod.ownerReferences.map((owner) => ({
-          apiVersion: owner.apiVersion,
-          kind: owner.kind,
-          uid: owner.uid,
-          controller: owner.controller,
-        })),
-        status: rawObject(pod.status),
-      }
-    : null;
-}
-
-export function podPhase(sandbox: SandboxStatusSource): string | null {
-  return rawString(sandboxPodFields(sandbox)?.status?.phase);
-}
-
-export function podIp(sandbox: SandboxStatusSource): string | null {
-  return rawString(sandboxPodFields(sandbox)?.status?.podIP);
+export function podIp(sandbox: EnvironmentDescriptor): string | null {
+  return rawString(rawObject(sandbox.pod?.status)?.podIP);
 }
 
 /** Whether the current Sandbox incarnation is the VMI-backed Pod whose serial console is available. */
-export function hasVmConsole(sandbox: SandboxStatusSource | null): boolean {
+export function hasVmConsole(sandbox: EnvironmentDescriptor | null): boolean {
   return (
-    (sandbox ? sandboxPodFields(sandbox)?.ownerReferences : null)?.some(
+    (sandbox ? sandbox.pod?.ownerReferences : null)?.some(
       (owner) =>
         owner.controller && owner.kind === "VirtualMachineInstance" && owner.apiVersion.startsWith("kubevirt.io/")
     ) ?? false
   );
 }
 
-/** The Sandbox Controller's reported running mode and `Ready` condition; no caller reads into the incarnation. */
-export function sandboxReady(sandbox: SandboxStatusSource | null | undefined): boolean {
-  return (
-    sandbox !== null &&
-    sandbox !== undefined &&
-    sandboxOperatingMode(sandbox) === "Running" &&
-    rawConditions(sandboxStatusObject(sandbox)).some((c) => c.type === "Ready" && c.status === "True")
-  );
+export function sandboxReady(sandbox: EnvironmentDescriptor | null | undefined): boolean {
+  return sandbox?.operatingMode === OperatingMode.RUNNING && sandbox.readiness?.state === ReadinessState.READY;
 }
 
-export function sandboxSuspended(sandbox: SandboxStatusSource | null | undefined): boolean {
+export function sandboxSuspended(sandbox: EnvironmentDescriptor | null | undefined): boolean {
   return (
     sandbox !== null &&
     sandbox !== undefined &&
@@ -185,7 +137,7 @@ export function sandboxSuspended(sandbox: SandboxStatusSource | null | undefined
   );
 }
 
-export function sandboxStarting(sandbox: SandboxStatusSource): boolean {
+export function sandboxStarting(sandbox: EnvironmentDescriptor): boolean {
   return (
     sandboxOperatingMode(sandbox) === "Running" &&
     ["Creating", "Running"].includes(sandboxPhase(sandbox)) &&
@@ -194,8 +146,8 @@ export function sandboxStarting(sandbox: SandboxStatusSource): boolean {
 }
 
 /** Why a Sandbox is suspended, as the views word it; null while it runs and until the controller reports. */
-export function suspensionReason(sandbox: SandboxStatusSource): "idle" | "on request" | null {
-  const suspendedBy = isSandboxView(sandbox) ? sandbox.suspended_by : (sandbox.suspendedBy ?? null);
+export function suspensionReason(sandbox: EnvironmentDescriptor): "idle" | "on request" | null {
+  const suspendedBy = sandbox.suspendedBy;
   switch (suspendedBy) {
     case "Idle":
       return "idle";
@@ -206,9 +158,9 @@ export function suspensionReason(sandbox: SandboxStatusSource): "idle" | "on req
   }
 }
 
-export function sandboxSummary(sandbox: SandboxStatusSource): { label: string; kind: SandboxStatusKind } {
+export function sandboxSummary(sandbox: EnvironmentDescriptor): { label: string; kind: SandboxStatusKind } {
   const phase = sandboxPhase(sandbox);
-  const pod = sandboxPodFields(sandbox);
+  const pod = sandbox.pod;
   const reason = suspensionReason(sandbox);
   const withReason = (label: string): string => (reason === null ? label : `${label} (${reason})`);
   if (phase === "Unspecified") return { label: "Status unknown", kind: "pending" };
@@ -286,11 +238,11 @@ function conditionLine(condition: RawCondition): string {
     .join(" · ");
 }
 
-export function sandboxStatusDetail(sandbox: SandboxStatusSource): string {
+export function sandboxStatusDetail(sandbox: EnvironmentDescriptor): string {
   const lines = [`Sandbox: ${sandboxSummary(sandbox).label}`];
   const reason = suspensionReason(sandbox);
   const idleSuspendAfterSeconds = sandboxIdleSuspendAfterSeconds(sandbox);
-  const pod = sandboxPodFields(sandbox);
+  const pod = sandbox.pod;
   if (reason !== null) {
     lines.push(
       reason === "idle" && idleSuspendAfterSeconds
@@ -299,13 +251,13 @@ export function sandboxStatusDetail(sandbox: SandboxStatusSource): string {
     );
   }
   lines.push(
-    ...rawConditions(sandboxStatusObject(sandbox)).map((condition) => `Sandbox condition · ${conditionLine(condition)}`)
+    ...rawConditions(rawObject(sandbox.status)).map((condition) => `Sandbox condition · ${conditionLine(condition)}`)
   );
   if (pod) {
     const status = pod.status;
     lines.push(`Pod: ${podPhase(sandbox) ?? "phase unknown"}${pod.deleting ? " · deleting" : ""}`);
     const controllers = pod.ownerReferences.filter((owner) => owner.controller);
-    if (controllers.length !== 1 || controllers[0]?.uid !== sandbox.uid) {
+    if (controllers.length !== 1 || controllers[0]?.uid !== sandbox.target?.uid) {
       lines.push("Pod controller identity does not match this Sandbox");
     }
     lines.push(...rawConditions(status).map((condition) => `Pod condition · ${conditionLine(condition)}`));

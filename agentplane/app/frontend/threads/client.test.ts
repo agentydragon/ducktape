@@ -11,12 +11,28 @@ import {
   threadEvidence,
   threadNativeFrames,
   threadObservations,
+  listThreadWindow,
 } from "./client";
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+it("passes the exact Sandbox UID to the paginated app Thread RPC", async () => {
+  const requests: Request[] = [];
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init);
+    requests.push(request);
+    return Promise.resolve(Response.json({ threads: [], archivedCount: 0 }));
+  });
+  await listThreadWindow({ limit: 200, search: null, includeArchived: false, sandboxUID: "opaque-uid" }, null);
+  expect(requests).toHaveLength(1);
+  const url = new URL(requests[0]!.url);
+  expect(url.pathname).toBe("/upstream/app/v1/threads");
+  expect(url.searchParams.get("sandbox_uid")).toBe("opaque-uid");
+  expect(url.searchParams.get("limit")).toBe("200");
 });
 
 it.each(["before", "after"] as const)("preserves %s archive cursors above JS integer precision", async (direction) => {

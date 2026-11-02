@@ -1,3 +1,4 @@
+import type { EnvironmentDescriptor } from "../../../runner_gateway/environments/environment_service_pb";
 import type { JSX } from "react";
 /**
  * The lifecycle controls the sandbox list and the sandbox page share: the suspend/resume button,
@@ -6,18 +7,18 @@ import type { JSX } from "react";
  * action when it will be accepted, not so it enforces anything.
  */
 import { ActionIcon, Button, Group, Modal, Stack, Text, Tooltip } from "@mantine/core";
-import { sandboxOperatingMode, sandboxPhase, type SandboxStatusSource } from "../sandbox_status";
+import { sandboxOperatingMode, sandboxPhase } from "../sandbox_status";
 import { IconPlayerPause, IconPlayerPlay } from "../icons";
 
 export const DELETE_NEEDS_SUSPENDED = "Suspend the sandbox before deleting it";
 
 /** Whether the API will accept a deletion: only a suspended sandbox may go. */
-export function deletable(sandbox: SandboxStatusSource): boolean {
+export function deletable(sandbox: EnvironmentDescriptor): boolean {
   return sandboxPhase(sandbox) === "Suspended";
 }
 
 /** Deletion was asked for: it takes no new work and cannot be suspended or resumed. */
-export function deleting(sandbox: SandboxStatusSource): boolean {
+export function deleting(sandbox: EnvironmentDescriptor): boolean {
   const phase = sandboxPhase(sandbox);
   return phase === "Quiescing" || phase === "Tearing down";
 }
@@ -26,7 +27,7 @@ export function SuspendResume({
   sandbox,
   onAct,
 }: {
-  sandbox: SandboxStatusSource;
+  sandbox: EnvironmentDescriptor;
   onAct: (action: "suspend" | "resume") => void;
 }): JSX.Element {
   const mode = sandboxOperatingMode(sandbox);

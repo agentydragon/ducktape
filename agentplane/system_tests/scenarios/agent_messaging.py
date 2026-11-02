@@ -102,27 +102,37 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
         )
         sender_started = starting.create_task(sandbox(f"systest-msg-from-{harness}", policies=[send_grant.POLICY_SET]))
     recipient, sender = recipient_started.result(), sender_started.result()
-    assert recipient.pod is not None
-    assert sender.pod is not None
+    assert recipient.HasField("pod")
+    assert sender.HasField("pod")
     recipient_model = scripted.model(recipient.pod.name, harness)
     sender_model = scripted.model(sender.pod.name, harness)
     recipient_agent = await Agent.open(
-        client, dispatcher, sandbox=recipient.name, sandbox_uid=recipient.uid, harness=harness, model=offered_model
+        client,
+        dispatcher,
+        sandbox=recipient.target.name,
+        sandbox_uid=recipient.target.uid,
+        harness=harness,
+        model=offered_model,
     )
     sender_agent = await Agent.open(
-        client, dispatcher, sandbox=sender.name, sandbox_uid=sender.uid, harness=harness, model=offered_model
+        client,
+        dispatcher,
+        sandbox=sender.target.name,
+        sandbox_uid=sender.target.uid,
+        harness=harness,
+        model=offered_model,
     )
 
     send = (
-        f"agentplane --json notifications send {cluster.namespace}/{recipient.name} {recipient_agent.thread_id}"
-        f" --uid {recipient.uid} --key test-message-1 --body {shlex.quote(BODY)}"
+        f"agentplane --json notifications send {cluster.namespace}/{recipient.target.name} {recipient_agent.thread_id}"
+        f" --uid {recipient.target.uid} --key test-message-1 --body {shlex.quote(BODY)}"
     )
     with tracer.start_as_current_span(
         "system_test.agent_messaging.send", record_exception=False, set_status_on_exception=False
     ):
         sending = await sender_agent.run_shell(sender_model, send)
         sent = _parsed(sending.tool_outputs[-1], notifications_pb2.Message())
-    assert sent.destination_ref.uid == str(recipient.uid), sending.transcript
+    assert sent.destination_ref.uid == str(recipient.target.uid), sending.transcript
 
     async with asyncio.TaskGroup() as turns:
         turns.create_task(recipient_agent.next_turn())
@@ -152,7 +162,7 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
         assert inbox.inbox.session_id == str(recipient_agent.thread_id), inbox.inbox
         entry = one(entry for entry in inbox.entries if entry.event.message.message_id == sent.id)
         assert entry.event.message.sender == notifications_pb2.ServiceAccount(
-            namespace=sender.service_account.namespace, name=sender.service_account.name
+            namespace=sender.execution_account.namespace, name=sender.execution_account.name
         ), entry
         assert entry.payload["body"] == BODY, entry
         assert entry.payload["from_session"] == str(sender_agent.thread_id), entry

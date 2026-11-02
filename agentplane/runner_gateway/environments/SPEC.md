@@ -4,9 +4,9 @@
 
 Own Sandbox creation, templates, management mutations, discovery and observation in the existing
 Runner Gateway process. List/get/watch return facts needed to choose a target and prepare a Session
-request; their existing descriptor and watch contract remains unchanged. `ResumeEnvironment`
-delegates guarded mutation to the lifecycle manager. Creation and policy mutations use the shared
-Kubernetes inventory; no method attaches a Session or grants authorization.
+request. All read and watch methods return the same `EnvironmentDescriptor` contract. `ResumeEnvironment`
+delegates guarded mutation to the lifecycle manager. Creation and policy mutations use private
+Kubernetes access; no method attaches a Session or grants authorization.
 
 ## Caller and object authorization
 
@@ -31,7 +31,9 @@ Kubernetes inventory; no method attaches a Session or grants authorization.
   complete Action caller and group origin. Delegation, a read grant, and a launcher grant never
   confer general management. The service records both the authenticated broker and launch origin
   in create intent, so an identical retry can recover the same Sandbox while a different caller or
-  request cannot adopt its name.
+  request cannot adopt its name. Create returns the persisted object's exact target handle. A
+  successful write retains the UID acknowledged by Kubernetes even if the name is later replaced;
+  an uncertain write succeeds only after the same create intent is found in the live object.
 - Suspend, delete, and policy changes require a complete namespace/name/UID handle and fence writes
   on the live UID and Kubernetes resourceVersion. Delete requires reported suspension. Uncertain
   outcomes stay uncertain; callers reconcile the same intent before deciding whether to retry.
@@ -55,25 +57,27 @@ snapshots when descriptor facts change. Changes only to `observed_at` or unproje
 metadata do not emit a new snapshot. There is no readiness predicate or server-side readiness wait.
 
 Observation depends on the control plane, not on a connection to the environment Runtime;
-suspended targets remain observable. Target and execution-ServiceAccount watches are established
+suspended targets remain observable. Target, execution-ServiceAccount, and namespace Pod watches are established
 before reading the initial snapshot. Kubernetes collection resource versions bridge list/watch
 setup; notifications trigger uncached reads and the same live UID/ownership checks as get.
-An already admitted stream never follows a replacement target or execution account.
+The service rechecks target UID and execution-account ownership after assembling a descriptor.
+An already admitted stream never follows a replacement target or execution account. Credentials
+are reviewed before sends and periodically while idle; a valid credential keeps its stream open.
 
 This is a current-state subscription, not retained transition history. Intermediate states may be
 coalesced. Reconnecting starts with a current snapshot and has no cursor. Source closure, expiration,
 or failure ends the RPC with `UNAVAILABLE`; a client must reconnect to refresh its observation.
 Missing, replaced or no-longer-accessible targets end with `NOT_FOUND`; deletion does so for ordinary callers. Last observations
 remain observations of their recorded time; silence or disconnection does not assert readiness.
-Client cancellation ends the stream and both source watches. Server writes have a five-second
+Client cancellation ends the stream and all source watches. Server writes have a five-second
 backpressure bound. A blocked write ends the RPC with `DEADLINE_EXCEEDED` and is not retried.
 
 ## Collection watch
 
-`WatchEnvironments` begins with the caller-visible Sandbox set in bounded snapshot chunks followed
+`WatchEnvironments` begins with the caller-visible descriptor set in bounded snapshot chunks followed
 by `snapshot_complete`. A client replaces its prior set only after completion, including for an
 empty snapshot; it discards incomplete snapshots on disconnect. After the initial snapshot, `upsert`
-replaces one Sandbox and `removed` removes the given namespace, name, and UID. A same-name
+replaces one descriptor and `removed` removes the given namespace, name, and UID. A same-name
 replacement removes the prior UID before upserting the new one. Visibility loss also removes an item.
 Intermediate changes may be coalesced. Reconnecting starts a fresh snapshot; there is no replay cursor
 or transition history. The assembled view draws from multiple Kubernetes resources and does not
@@ -92,6 +96,9 @@ the stream; a successful review leaves it open. A stalled send is bounded by fiv
 ## Returned facts
 
 - `target` is the Sandbox object's immutable identity; a runner Pod or VM incarnation UID is separate.
+- Diagnostic fields include creation time, bootstrap binding, preset, controller lifecycle phase, idle
+  suspension settings and blockers, raw Sandbox status, and the current Pod. Pod diagnostics are
+  present only when name, namespace, and UID match the controller-reported incarnation.
 - `execution_account` is resolved from the live controller-owned ServiceAccount.
 - Readiness and operating state come from the current Sandbox status; `observed_at` records when the
   descriptor was assembled.

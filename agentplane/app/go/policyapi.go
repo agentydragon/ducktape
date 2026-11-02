@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
+	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/policy"
-	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/danielgtaylor/huma/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -31,9 +33,15 @@ type policyBindingOutput struct {
 type sandboxPolicyGrantInput struct {
 	Name string `path:"name" minLength:"1" maxLength:"57" pattern:"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"`
 	Body struct {
+		UID        string   `json:"uid" minLength:"1" required:"true"`
 		PolicySets []string `json:"policy_sets" minItems:"1"`
 		ExpiresAt  *string  `json:"expires_at,omitempty" format:"date-time"`
 	}
+}
+
+type sandboxEgressInput struct {
+	Name string `path:"name" minLength:"1" maxLength:"57" pattern:"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"`
+	UID  string `query:"uid" minLength:"1" required:"true"`
 }
 
 type policyBindingNameInput struct {
@@ -42,7 +50,7 @@ type policyBindingNameInput struct {
 
 // RegisterPolicyRoutes installs the caller-readable Egress views and operator-only grant/revoke
 // operations. Access uses the existing typed PolicyBinding, PolicySet, and EgressCredential CRDs.
-func RegisterPolicyRoutes(server *HTTPServer, config Config, inventory *sandboxinventory.Access, policies *policyaccess.Access) {
+func RegisterPolicyRoutes(server *HTTPServer, config Config, environments *sandboxes.EnvironmentReader, policies *policyaccess.Access) {
 	readAPI := server.ProtectedAPI()
 	huma.Register[struct{}, sandboxFormOutput](readAPI, huma.Operation{
 		OperationID: "getSandboxForm", Method: http.MethodGet, Path: "/sandboxes/form", Tags: []string{"sandboxes"},
@@ -57,15 +65,19 @@ func RegisterPolicyRoutes(server *HTTPServer, config Config, inventory *sandboxi
 		output.Body.NewSandboxDefaults = config.NewSandboxDefaults
 		return output, nil
 	})
-	huma.Register[sandboxNameInput, sandboxEgressOutput](readAPI, huma.Operation{
+	huma.Register[sandboxEgressInput, sandboxEgressOutput](readAPI, huma.Operation{
 		OperationID: "listSandboxEgress", Method: http.MethodGet, Path: "/sandboxes/{name}/egress", Tags: []string{"sandboxes"},
 		Summary: "List policy bindings for a Sandbox's ServiceAccount",
-	}, func(ctx context.Context, input *sandboxNameInput) (*sandboxEgressOutput, error) {
-		sandbox, err := inventory.Get(ctx, input.Name)
+	}, func(ctx context.Context, input *sandboxEgressInput) (*sandboxEgressOutput, error) {
+		sandbox, err := environments.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &environmentpb.TargetHandle{Namespace: config.SandboxNamespace, Name: input.Name, Uid: input.UID}})
 		if err != nil {
 			return nil, sandboxHTTPError(err)
 		}
-		bindings, err := policies.BindingsFor(ctx, sandbox.GetServiceAccount())
+		account := sandbox.GetExecutionAccount()
+		if account == nil {
+			return nil, policyHTTPError(errors.New("Environment has no execution account"))
+		}
+		bindings, err := policies.BindingsFor(ctx, &sandboxespb.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()})
 		if err != nil {
 			return nil, policyHTTPError(err)
 		}
@@ -76,7 +88,7 @@ func RegisterPolicyRoutes(server *HTTPServer, config Config, inventory *sandboxi
 		OperationID: "grantSandboxPolicySets", Method: http.MethodPost, Path: "/sandboxes/{name}/policy-bindings", Tags: []string{"sandboxes"},
 		Summary: "Grant policy sets to a running Sandbox", DefaultStatus: http.StatusCreated,
 	}, func(ctx context.Context, input *sandboxPolicyGrantInput) (*policyBindingOutput, error) {
-		sandbox, err := inventory.Get(ctx, input.Name)
+		sandbox, err := environments.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &environmentpb.TargetHandle{Namespace: config.SandboxNamespace, Name: input.Name, Uid: input.Body.UID}})
 		if err != nil {
 			return nil, sandboxHTTPError(err)
 		}

@@ -19,9 +19,9 @@ from __future__ import annotations
 import asyncio
 
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.models import SandboxView
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
@@ -60,8 +60,8 @@ async def the_model_obeys_the_standing_instruction_its_session_was_opened_with(
         instructed = await Agent.open(
             client,
             dispatcher,
-            sandbox=view.name,
-            sandbox_uid=view.uid,
+            sandbox=view.target.name,
+            sandbox_uid=view.target.uid,
             harness=harness,
             model=model,
             instructions=INSTRUCTIONS,
@@ -76,7 +76,7 @@ async def the_model_obeys_the_standing_instruction_its_session_was_opened_with(
         "system_test.session_instructions.plain_turn", record_exception=False, set_status_on_exception=False
     ):
         plain = await Agent.open(
-            client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model
+            client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=model
         )
         uninstructed = await plain.run(PROMPT)
     assert MARKER not in uninstructed.transcript, (
@@ -88,21 +88,21 @@ async def the_model_obeys_the_standing_instruction_its_session_was_opened_with(
 async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session(
     client: Client,
     dispatcher: SessionDispatcherClient,
-    view: SandboxView,
+    view: environment_service_pb2.EnvironmentDescriptor,
     harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:
     """Two sessions on one sandbox, as in the real-model scenario: what each sends the model shows
     whether the app, the Dispatcher and the runner carried the instruction, and to that session only."""
-    assert view.pod is not None
+    assert view.HasField("pod")
     model = scripted.model(view.pod.name, harness)
 
     instructed = await Agent.open(
         client,
         dispatcher,
-        sandbox=view.name,
-        sandbox_uid=view.uid,
+        sandbox=view.target.name,
+        sandbox_uid=view.target.uid,
         harness=harness,
         model=offered_model,
         instructions=INSTRUCTIONS,
@@ -119,7 +119,7 @@ async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session
     assert MARKER in obeyed.result().answer
 
     plain = await Agent.open(
-        client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=offered_model
+        client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=offered_model
     )
     with tracer.start_as_current_span(
         "system_test.session_instructions.plain_exchange", record_exception=False, set_status_on_exception=False

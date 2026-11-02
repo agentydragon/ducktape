@@ -1,4 +1,6 @@
-import { SandboxPhase, type AutosuspendBlocker, type Sandbox } from "../../../proto/sandboxes_pb";
+import type { AutosuspendBlocker } from "../../../proto/environment_lifecycle_pb";
+import { SandboxPhase, type EnvironmentDescriptor } from "../../../runner_gateway/environments/environment_service_pb";
+
 import { sandboxReady, sandboxStarting, sandboxSuspended } from "../sandbox_status";
 
 export interface AutosuspendHint {
@@ -36,7 +38,11 @@ function compactDuration(seconds: number): string {
 }
 
 /** The sandbox inventory is authoritative for this hint; stale snapshots cannot tell the reader when it will act. */
-export function autosuspendHint(sandbox: Sandbox | undefined, fresh: boolean, now: number): AutosuspendHint | null {
+export function autosuspendHint(
+  sandbox: EnvironmentDescriptor | undefined,
+  fresh: boolean,
+  now: number
+): AutosuspendHint | null {
   if (!sandbox) return null;
   if (!fresh) return { text: "Autosuspend timing unavailable", deadline: null };
 

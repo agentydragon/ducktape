@@ -17,7 +17,6 @@ from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.sandboxes.launch import SandboxIdentity
-from agentplane.sandboxes.testing.reader import SandboxReader
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.tls import environment_runtime_identity_uri
@@ -38,7 +37,6 @@ class SandboxCluster:
     namespace: str
     # The Sandbox's, its Pod's and its ServiceAccount's.
     name: str
-    reader: SandboxReader
     # The UIDs the API server gave the Sandbox and its Pod.
     uid: str
     pod_uid: str
@@ -165,14 +163,7 @@ async def sandbox_cluster(server: KubernetesApiServer, *, name: str = SANDBOX) -
         namespace,
         {"status": {"phase": "Running", "podIP": "127.0.0.1", "conditions": [{"type": "Ready", "status": "True"}]}},
     )
-    cluster = SandboxCluster(
-        server=server,
-        namespace=namespace,
-        name=name,
-        reader=SandboxReader(namespace=namespace, custom_objects=custom, core_v1=core),
-        uid=uid,
-        pod_uid=pod.metadata.uid,
-    )
+    cluster = SandboxCluster(server=server, namespace=namespace, name=name, uid=uid, pod_uid=pod.metadata.uid)
     await cluster.patch_sandbox_status(
         {
             "status": {

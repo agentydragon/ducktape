@@ -26,8 +26,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
+	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
-	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/google/uuid"
@@ -620,7 +620,7 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 			// published Running. Do not expose its idle Session facts in that gap.
 			facts.Bootstrap = environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_RUNNING
 			if !hasAutosuspendReason(facts.AutosuspendBlockers, "Bootstrap") {
-				facts.AutosuspendBlockers = append(facts.AutosuspendBlockers, &sandboxpb.AutosuspendBlocker{Reason: "Bootstrap"})
+				facts.AutosuspendBlockers = append(facts.AutosuspendBlockers, &environmentlifecyclepb.AutosuspendBlocker{Reason: "Bootstrap"})
 			}
 		} else if statusFound {
 			switch bootstrapStatus.Phase {
@@ -637,13 +637,13 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 		facts.QuiesceStage = environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_DRAINING
 	}
 	if activeAdmissions > 0 && !hasAutosuspendReason(facts.AutosuspendBlockers, "Admission") {
-		facts.AutosuspendBlockers = append(facts.AutosuspendBlockers, &sandboxpb.AutosuspendBlocker{Reason: "Admission"})
+		facts.AutosuspendBlockers = append(facts.AutosuspendBlockers, &environmentlifecyclepb.AutosuspendBlocker{Reason: "Admission"})
 	}
 	if activeExecution > 0 && !hasAutosuspendReason(facts.AutosuspendBlockers, "ExecutorRelay") {
-		facts.AutosuspendBlockers = append(facts.AutosuspendBlockers, &sandboxpb.AutosuspendBlocker{Reason: "ExecutorRelay"})
+		facts.AutosuspendBlockers = append(facts.AutosuspendBlockers, &environmentlifecyclepb.AutosuspendBlocker{Reason: "ExecutorRelay"})
 	}
 	if executionRecovering && !hasAutosuspendReason(facts.AutosuspendBlockers, "ExecutorRelay") {
-		facts.AutosuspendBlockers = append(facts.AutosuspendBlockers, &sandboxpb.AutosuspendBlocker{Reason: "ExecutorRelay"})
+		facts.AutosuspendBlockers = append(facts.AutosuspendBlockers, &environmentlifecyclepb.AutosuspendBlocker{Reason: "ExecutorRelay"})
 	}
 	if activeAdmissions > 0 || activeExecution > 0 || executionRecovering || bootstrapActive || r.state.Lameduck() || desired.Mode != lifecycle.Running {
 		facts.IdleSince = nil
@@ -659,7 +659,7 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 	return facts, nil
 }
 
-func hasAutosuspendReason(blockers []*sandboxpb.AutosuspendBlocker, reason string) bool {
+func hasAutosuspendReason(blockers []*environmentlifecyclepb.AutosuspendBlocker, reason string) bool {
 	for _, blocker := range blockers {
 		if blocker.GetReason() == reason {
 			return true

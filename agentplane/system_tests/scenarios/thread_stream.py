@@ -26,11 +26,11 @@ import pytest
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
-from agentplane.app.testing.models import SandboxView
 from agentplane.grpc.calls import ServiceError
 from agentplane.proto import command_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, Agent
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.tracing import tracer
@@ -105,11 +105,17 @@ async def tab(http: httpx.AsyncClient, thread_id: UUID, *, last_event_id: int | 
 
 
 async def _open(
-    client: Client, dispatcher: SessionDispatcherClient, view: SandboxView, harness: session_pb2.Harness, model: str
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    view: environment_service_pb2.EnvironmentDescriptor,
+    harness: session_pb2.Harness,
+    model: str,
 ) -> UUID:
     """A Thread whose runner feed is attached, so a tab's first frame is `attached`."""
     thread_id = (
-        await Agent.open(client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model)
+        await Agent.open(
+            client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=model
+        )
     ).thread_id
     with tracer.start_as_current_span(
         "system_test.thread_stream.feed_ready", record_exception=False, set_status_on_exception=False
@@ -125,14 +131,17 @@ def _input(label: str, text: str) -> command_pb2.Command:
 
 
 async def _submit(
-    dispatcher: SessionDispatcherClient, thread_id: UUID, view: SandboxView, command: command_pb2.Command
+    dispatcher: SessionDispatcherClient,
+    thread_id: UUID,
+    view: environment_service_pb2.EnvironmentDescriptor,
+    command: command_pb2.Command,
 ) -> None:
     """Submit `command`; the Dispatcher receipt names that same command."""
     with tracer.start_as_current_span(
         "system_test.thread_stream.submit", record_exception=False, set_status_on_exception=False
     ):
         answer = await dispatcher.submit_input(
-            str(thread_id), command.command_id, view.name, str(view.uid), command.submit_input.text
+            str(thread_id), command.command_id, view.target.name, str(view.target.uid), command.submit_input.text
         )
     assert (answer.command_id, answer.operation) == (command.command_id, session_dispatcher_pb2.OPERATION_SUBMIT_INPUT)
 
@@ -196,12 +205,12 @@ async def every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event
     client: Client,
     dispatcher: SessionDispatcherClient,
     http: httpx.AsyncClient,
-    view: SandboxView,
+    view: environment_service_pb2.EnvironmentDescriptor,
     harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:
-    assert view.pod is not None
+    assert view.HasField("pod")
     model = scripted.model(view.pod.name, harness)
     thread_id = await _open(client, dispatcher, view, harness, offered_model)
 
@@ -212,7 +221,7 @@ async def every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event
         # The Dispatcher id names that command alone.
         with pytest.raises(ServiceError) as reused:
             await dispatcher.submit_input(
-                str(thread_id), command.command_id, view.name, str(view.uid), "Something else"
+                str(thread_id), command.command_id, view.target.name, str(view.target.uid), "Something else"
             )
         assert reused.value.code == grpc.StatusCode.ALREADY_EXISTS
         # An exact retry, as after a lost response, answers the same command.
@@ -261,13 +270,13 @@ async def turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_inp
     client: Client,
     dispatcher: SessionDispatcherClient,
     http: httpx.AsyncClient,
-    view: SandboxView,
+    view: environment_service_pb2.EnvironmentDescriptor,
     harness: session_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:
     """No tab is open while either turn runs: the runner's feed, not a watcher, is what archives them."""
-    assert view.pod is not None
+    assert view.HasField("pod")
     model = scripted.model(view.pod.name, harness)
     thread_id = await _open(client, dispatcher, view, harness, offered_model)
 

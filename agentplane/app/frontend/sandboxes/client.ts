@@ -2,6 +2,7 @@ import { create, fromJson, toJson, type JsonObject } from "@bufbuild/protobuf";
 import { DurationSchema, ValueSchema } from "@bufbuild/protobuf/wkt";
 
 import type { components } from "../schema";
+import { fetchWithLogin, HttpError } from "../client";
 import { CreateSandboxRequestSchema, type CreateSandboxRequest } from "../../../proto/sandboxes_pb";
 import {
   EnvironmentMutationRequestSchema,
@@ -14,7 +15,6 @@ import {
   TargetHandleSchema,
   type TargetHandle,
 } from "../../../runner_gateway/environments/environment_service_pb";
-import { fetchWithLogin, HttpError } from "../client";
 import {
   EnvironmentRuntimeStatusSchema,
   SessionSpecSchema,
@@ -62,16 +62,15 @@ export type Decision = {
 };
 /** Submit once; an uncertain response is reconciled by the caller-minted Session ID. */
 export async function openSession(
-  sandbox: string,
-  sandboxUID: string,
+  target: TargetHandle,
   sessionId: string,
   spec: SessionSpec,
   setupScript?: string | null
 ): Promise<SessionOpening> {
   const request = create(OpenSessionRequestSchema, {
-    name: sandbox,
+    name: target.name,
     sessionId,
-    sandboxUid: sandboxUID,
+    sandboxUid: target.uid,
     spec: toJson(SessionSpecSchema, spec) as JsonObject,
     setupScript: setupScript === undefined ? undefined : fromJson(ValueSchema, setupScript),
   });
@@ -118,11 +117,14 @@ export function sessionOpeningNotVisible(error: unknown): boolean {
   );
 }
 
-export async function getEnvironmentRuntimeStatus(sandbox: string): Promise<EnvironmentRuntimeStatus> {
-  const request = create(GetEnvironmentRuntimeStatusRequestSchema, { name: sandbox });
-  const response = await fetchWithLogin(`/sandboxes/${encodeURIComponent(request.name)}/runner-status`, {
-    headers: { Accept: "application/json" },
-  });
+export async function getEnvironmentRuntimeStatus(target: TargetHandle): Promise<EnvironmentRuntimeStatus> {
+  const request = create(GetEnvironmentRuntimeStatusRequestSchema, { name: target.name, sandboxUid: target.uid });
+  const response = await fetchWithLogin(
+    `/sandboxes/${encodeURIComponent(request.name)}/runner-status?sandbox_uid=${encodeURIComponent(request.sandboxUid)}`,
+    {
+      headers: { Accept: "application/json" },
+    }
+  );
   const text = await response.text();
   let body: unknown;
   try {
@@ -139,11 +141,6 @@ export async function getEnvironmentRuntimeStatus(sandbox: string): Promise<Envi
 
 const environmentPath = (target: TargetHandle): string =>
   `/upstream/environments/v1/environments/${encodeURIComponent(target.namespace)}/${encodeURIComponent(target.name)}`;
-
-export function sandboxTarget(sandbox: { namespace: string; name: string; uid: string }): TargetHandle {
-  if (!sandbox.namespace || !sandbox.name || !sandbox.uid) throw new Error("Sandbox identity is incomplete");
-  return create(TargetHandleSchema, { namespace: sandbox.namespace, name: sandbox.name, uid: sandbox.uid });
-}
 
 async function environmentJSON(path: string, init?: RequestInit): Promise<JsonObject> {
   const response = await fetchWithLogin(path, init);

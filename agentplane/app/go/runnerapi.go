@@ -15,7 +15,7 @@ import (
 )
 
 type runnerStatusReader interface {
-	EnvironmentRuntimeStatus(context.Context, string) (*sessionpb.EnvironmentRuntimeStatus, error)
+	EnvironmentRuntimeStatus(context.Context, string, string) (*sessionpb.EnvironmentRuntimeStatus, error)
 }
 
 // RegisterRunnerRoutes exposes the generated AppService HTTP route through the app's
@@ -41,7 +41,10 @@ func (s *appService) GetEnvironmentRuntimeStatus(
 		slog.ErrorContext(ctx, "Runner status proxy is not configured")
 		return nil, grpcstatus.Error(codes.Unavailable, "Upstream service unavailable")
 	}
-	status, err := s.runnerStatus.EnvironmentRuntimeStatus(ctx, request.GetName())
+	if request.GetName() == "" || request.GetSandboxUid() == "" {
+		return nil, grpcstatus.Error(codes.InvalidArgument, "Sandbox name and UID are required")
+	}
+	status, err := s.runnerStatus.EnvironmentRuntimeStatus(ctx, request.GetName(), request.GetSandboxUid())
 	if err != nil {
 		return nil, runnerStatusRPCError(err)
 	}

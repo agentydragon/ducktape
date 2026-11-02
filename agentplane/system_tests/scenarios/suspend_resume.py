@@ -10,16 +10,16 @@ import subprocess
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
+from google.protobuf.json_format import MessageToDict
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.models import SandboxView
 from agentplane.crd_group import GROUP
 from agentplane.env.runtime.harness import Harness
 from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_log_pb2, event_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.sandbox_resource import OperatingMode, SuspendedBy
+from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests.agent import (
     TURN_SECONDS,
     WORKING_DIRECTORY,
@@ -53,7 +53,7 @@ RECALL_PROMPT = (
 )
 
 
-def _storage_volumes(cluster: Cluster, sandbox_uid: UUID) -> dict[str, tuple[str, str]]:
+def _storage_volumes(cluster: Cluster, sandbox_uid: str) -> dict[str, tuple[str, str]]:
     result = subprocess.run(
         cluster.command("get", "pvc", "-o", "json"), capture_output=True, text=True, check=True, timeout=20
     )
@@ -61,7 +61,7 @@ def _storage_volumes(cluster: Cluster, sandbox_uid: UUID) -> dict[str, tuple[str
         claim
         for claim in json.loads(result.stdout)["items"]
         if any(
-            owner.get("controller") and owner["uid"] == str(sandbox_uid)
+            owner.get("controller") and owner["uid"] == sandbox_uid
             for owner in claim["metadata"].get("ownerReferences", [])
         )
     ]
@@ -93,7 +93,7 @@ def _assert_prefix(before: list[event_log_pb2.EventEntry], after: list[event_log
     ], "archived events, cursors or origins changed across suspension"
 
 
-async def _wait_until_suspended_without_pod(client: Client, name: str) -> None:
+async def _wait_until_suspended_without_pod(client: Client, target: environment_service_pb2.TargetHandle) -> None:
     """Wait for the old Pod to disappear before the same Sandbox is resumed."""
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(POD_TRANSITION_SECONDS),
@@ -102,12 +102,16 @@ async def _wait_until_suspended_without_pod(client: Client, name: str) -> None:
         reraise=True,
     ):
         with attempt:
-            view = await client.sandbox(name)
-            assert view.operating_mode is OperatingMode.SUSPENDED, f"{name} is still {view.operating_mode}"
-            assert view.pod is None, f"{name} still has its old Pod: {view.pod}"
+            view = await client.get_environment(target)
+            assert view.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED, (
+                f"{target.name} is still {view.operating_mode}"
+            )
+            assert not view.HasField("pod"), f"{target.name} still has its old Pod: {view.pod}"
 
 
-async def _wait_until_idle_suspended_without_pod(client: Client, name: str) -> SandboxView:
+async def _wait_until_idle_suspended_without_pod(
+    client: Client, target: environment_service_pb2.TargetHandle
+) -> environment_service_pb2.EnvironmentDescriptor:
     """Wait for the controller's idle suspension, distinguishing it from an operator stop."""
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(POD_TRANSITION_SECONDS),
@@ -116,10 +120,12 @@ async def _wait_until_idle_suspended_without_pod(client: Client, name: str) -> S
         reraise=True,
     ):
         with attempt:
-            view = await client.sandbox(name)
-            assert view.operating_mode is OperatingMode.SUSPENDED, f"{name} is still {view.operating_mode}"
-            assert view.suspended_by is SuspendedBy.IDLE, f"{name} stopped for {view.suspended_by}, not idleness"
-            assert view.pod is None, f"{name} still has its old Pod: {view.pod}"
+            view = await client.get_environment(target)
+            assert view.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED, (
+                f"{target.name} is still {view.operating_mode}"
+            )
+            assert view.suspended_by == "Idle", f"{target.name} stopped for {view.suspended_by}, not idleness"
+            assert not view.HasField("pod"), f"{target.name} still has its old Pod: {view.pod}"
             return view
     raise AssertionError("unreachable")
 
@@ -163,21 +169,24 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
     view = await sandbox(
         f"systest-explicit-resume-{uuid4().hex[:8]}", template=POD_TEMPLATE, idle_suspend_after_seconds=60
     )
-    assert view.pod is not None
+    assert view.HasField("pod")
+    assert view.HasField("execution_account")
     old_pod = view.pod
-    assert view.service_account.namespace == view.namespace
+    target = view.target
+    account = view.execution_account
+    assert account.namespace == target.namespace
 
     # The app API intentionally does not expose lifecycle policy edits. Set the opt-in only on this
     # test-owned Sandbox, fencing the JSON Patch by the immutable Sandbox UID.
     await cluster.kubectl(
         "patch",
         f"sandboxes.{GROUP}",
-        view.name,
+        target.name,
         "--type=json",
         "-p",
         json.dumps(
             [
-                {"op": "test", "path": "/metadata/uid", "value": str(view.uid)},
+                {"op": "test", "path": "/metadata/uid", "value": target.uid},
                 {"op": "add", "path": "/spec/resumePolicy", "value": {"allowOwnServiceAccount": True}},
             ]
         ),
@@ -188,8 +197,8 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
     agent = await Agent.open(
         client,
         dispatcher,
-        sandbox=view.name,
-        sandbox_uid=view.uid,
+        sandbox=target.name,
+        sandbox_uid=target.uid,
         harness=harness,
         model=model_name,
         cwd=WORKING_DIRECTORY,
@@ -219,32 +228,28 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
     ]
 
     async with asyncio.timeout(POD_TRANSITION_SECONDS + 120):
-        suspended = await _wait_until_idle_suspended_without_pod(client, view.name)
-    assert suspended.uid == view.uid
+        suspended = await _wait_until_idle_suspended_without_pod(client, target)
+    assert suspended.target.uid == target.uid
 
     service_account = json.loads(
-        await cluster.kubectl("get", "serviceaccounts", view.service_account.name, "-o", "json")
+        await cluster.kubectl("get", "serviceaccounts", account.name, "-n", account.namespace, "-o", "json")
     )
     account_meta = service_account["metadata"]
-    assert account_meta["namespace"] == view.service_account.namespace
-    account_uid = account_meta["uid"]
+    assert account_meta["namespace"] == account.namespace
+    assert account_meta["uid"] == account.uid
     token = await cluster.kubectl(
-        "create", "token", view.service_account.name, f"--audience={TOKEN_AUDIENCE}", "--duration=600s"
+        "create", "token", account.name, "-n", account.namespace, f"--audience={TOKEN_AUDIENCE}", "--duration=600s"
     )
 
-    async with forward(cluster) as target:
+    async with forward(cluster) as forwarded_target:
         environment = os.environ.copy()
-        environment["AGENTPLANE_SESSIONS_URL"] = f"http://{target}"
+        environment["AGENTPLANE_SESSIONS_URL"] = f"http://{forwarded_target}"
         environment["AGENTPLANE_SESSIONS_CREDENTIAL"] = token
-        descriptor = await _run_cli(environment, "environments", "get", view.namespace, view.name, str(view.uid))
+        descriptor = await _run_cli(environment, "environments", "get", target.namespace, target.name, target.uid)
         eligibility = descriptor["resume_eligibility"]
         assert isinstance(eligibility, dict), descriptor
         assert eligibility["state"] == "RESUME_ELIGIBILITY_STATE_AVAILABLE", descriptor
-        assert descriptor["execution_account"] == {
-            "namespace": view.service_account.namespace,
-            "name": view.service_account.name,
-            "uid": account_uid,
-        }, descriptor
+        assert descriptor["execution_account"] == MessageToDict(account, preserving_proto_field_name=True), descriptor
         resume_token = descriptor["resume_token"]
         assert isinstance(resume_token, str)
         assert resume_token
@@ -253,21 +258,21 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
             environment,
             "environments",
             "resume",
-            view.namespace,
-            view.name,
-            str(view.uid),
+            target.namespace,
+            target.name,
+            target.uid,
             "--resume-token",
             resume_token,
         )
     assert response["outcome"] == "RESUME_OUTCOME_REQUESTED", response
     resumed_target = response["target"]
     assert isinstance(resumed_target, dict), response
-    assert resumed_target["uid"] == str(view.uid), response
+    assert resumed_target["uid"] == target.uid, response
 
-    resumed = await wait_until_running(client, view.name, expected_uid=view.uid)
-    assert resumed.pod is not None
+    resumed = await wait_until_running(client, target)
+    assert resumed.HasField("pod")
     assert resumed.pod.uid != old_pod.uid
-    assert resumed.operating_mode is OperatingMode.RUNNING
+    assert resumed.operating_mode == environment_service_pb2.OPERATING_MODE_RUNNING
 
     resumed_model = scripted.model(resumed.pod.name, harness)
     fresh_turn = await agent.run_shell(resumed_model, "printf 'EXPLICIT_RESUME_EXEC_OK\\n'")
@@ -296,12 +301,8 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
     (undeclared_outputs_dir() / "explicit-resume-idle-pod.json").write_text(
         json.dumps(
             {
-                "sandbox": {"namespace": view.namespace, "name": view.name, "uid": str(view.uid)},
-                "execution_account": {
-                    "namespace": view.service_account.namespace,
-                    "name": view.service_account.name,
-                    "uid": account_uid,
-                },
+                "sandbox": MessageToDict(target, preserving_proto_field_name=True),
+                "execution_account": MessageToDict(account, preserving_proto_field_name=True),
                 "old_pod_uid": old_pod.uid,
                 "new_pod_uid": resumed.pod.uid,
                 "resume_outcome": response["outcome"],
@@ -328,7 +329,7 @@ class _ResumeRun:
     cluster: Cluster
     client: Client
     dispatcher: SessionDispatcherClient
-    view: SandboxView
+    view: environment_service_pb2.EnvironmentDescriptor
     template: str
     original_incarnation: str
     storage_volumes: dict[str, tuple[str, str]]
@@ -347,7 +348,7 @@ class _ResumeRun:
         cls, cluster: Cluster, client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes, *, template: str
     ) -> _ResumeRun:
         view = await sandbox(f"systest-resume-{template}-{uuid4().hex[:8]}", template=template)
-        assert view.pod is not None
+        assert view.HasField("pod")
         run = cls(
             cluster=cluster,
             client=client,
@@ -355,7 +356,7 @@ class _ResumeRun:
             view=view,
             template=template,
             original_incarnation=view.pod.uid,
-            storage_volumes=_storage_volumes(cluster, view.uid),
+            storage_volumes=_storage_volumes(cluster, view.target.uid),
         )
         run.save()
         return run
@@ -363,7 +364,7 @@ class _ResumeRun:
     @property
     def pod_name(self) -> str:
         """The Sandbox's current Pod: a Pod Sandbox's every incarnation keeps its name, a VM's launcher does not."""
-        assert self.view.pod is not None
+        assert self.view.HasField("pod")
         return self.view.pod.name
 
     async def open(self, harness: session_pb2.Harness, *, cwd: str, instructions: str = "") -> Agent:
@@ -374,14 +375,14 @@ class _ResumeRun:
         agent = await Agent.open(
             self.client,
             self.dispatcher,
-            sandbox=self.view.name,
-            sandbox_uid=self.view.uid,
+            sandbox=self.view.target.name,
+            sandbox_uid=self.view.target.uid,
             harness=harness,
             model=offered[0],
             cwd=cwd,
             instructions=instructions,
         )
-        snapshot = await self.client.runner_status(self.view.name)
+        snapshot = await self.client.runner_status(self.view.target.name, self.view.target.uid)
         self.initial_boot_id = snapshot.environment_runtime_boot_id
         reserved = next(row for row in snapshot.sessions if row.session_id == str(agent.thread_id))
         assert not reserved.HasField("process_id"), "OpenSession unexpectedly started a native harness"
@@ -393,7 +394,7 @@ class _ResumeRun:
         assert seed.input_confirmed, f"{session_pb2.Harness.Name(harness)} did not confirm the seed input"
         agent = self.agents[harness]
         self.seeded_history[harness] = await _history(self.client, agent.thread_id, completed_turns=1)
-        snapshot = await self.client.runner_status(self.view.name)
+        snapshot = await self.client.runner_status(self.view.target.name, self.view.target.uid)
         ready = next(row for row in snapshot.sessions if row.session_id == str(agent.thread_id))
         assert ready.execution_state == session_pb2.SESSION_EXECUTION_STATE_READY
         assert ready.HasField("process_id")
@@ -408,12 +409,12 @@ class _ResumeRun:
         """Suspend until the old Pod is gone, resume, and check what the new runner holds."""
         with tracer.start_as_current_span(
             "system_test.sandbox.suspend_resume",
-            attributes={"sandbox.name": self.view.name, "sandbox.uid": str(self.view.uid)},
+            attributes={"sandbox.name": self.view.target.name, "sandbox.uid": str(self.view.target.uid)},
         ):
             assert len({agent.thread_id for agent in self.agents.values()}) == len(self.agents)
-            await self.client.suspend_sandbox(self.view.name)
-            await _wait_until_suspended_without_pod(self.client, self.view.name)
-            assert _storage_volumes(self.cluster, self.view.uid) == self.storage_volumes
+            await self.client.suspend_sandbox(self.view.target)
+            await _wait_until_suspended_without_pod(self.client, self.view.target)
+            assert _storage_volumes(self.cluster, self.view.target.uid) == self.storage_volumes
             for harness, agent in self.agents.items():
                 self.suspended_history[harness] = await _history(self.client, agent.thread_id, completed_turns=None)
                 _assert_prefix(self.seeded_history[harness], self.suspended_history[harness])
@@ -432,19 +433,19 @@ class _ResumeRun:
                 ]
             )
             self.save()
-            await self.client.resume_sandbox(self.view.name)
+            await self.client.resume_sandbox(self.view.target)
 
-            resumed = await wait_until_running(self.client, self.view.name, expected_uid=self.view.uid)
-            assert resumed.uid == self.view.uid
-            assert resumed.pod is not None
+            resumed = await wait_until_running(self.client, self.view.target)
+            assert resumed.target.uid == self.view.target.uid
+            assert resumed.HasField("pod")
             assert resumed.pod.uid != self.original_incarnation
-            assert _storage_volumes(self.cluster, self.view.uid) == self.storage_volumes
+            assert _storage_volumes(self.cluster, self.view.target.uid) == self.storage_volumes
             self.view = resumed
             self.resumed_incarnation = resumed.pod.uid
             self.checks.append("same_sandbox_new_incarnation_same_volumes")
             async for attempt in environment_runtime_startup_retries():
                 with attempt:
-                    snapshot = await self.client.runner_status(self.view.name)
+                    snapshot = await self.client.runner_status(self.view.target.name, self.view.target.uid)
             assert snapshot.environment_runtime_boot_id != self.initial_boot_id
             assert {row.session_id for row in snapshot.sessions} == set(self.native_session_ids)
             for row in snapshot.sessions:
@@ -489,7 +490,7 @@ class _ResumeRun:
 
     def save(self) -> None:
         evidence = {
-            "sandbox": self.view.name,
+            "sandbox": self.view.target.name,
             "template": self.template,
             "storage_volumes": self.storage_volumes,
             "old_incarnation": self.original_incarnation,

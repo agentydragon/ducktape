@@ -4,7 +4,7 @@
  */
 import { ActionIcon, Button, Switch, Text, TextInput, Tooltip } from "@mantine/core";
 import type { ThreadView } from "../schema";
-import type { Sandbox } from "../../../proto/sandboxes_pb";
+import type { EnvironmentDescriptor } from "../../../runner_gateway/environments/environment_service_pb";
 import { IconArchive, IconArchiveOff, IconSearch } from "../icons";
 import { type JSX, useState } from "react";
 import { Link, useMatch, useNavigate } from "react-router";
@@ -24,7 +24,7 @@ import { ThreadStatusIndicator } from "./thread_status_indicator";
 import { TimeAgo } from "../time_ago";
 import { archiveBlockReason, snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
 
-function GroupStateIcon({ sandbox }: { sandbox: Sandbox | null }): JSX.Element {
+function GroupStateIcon({ sandbox }: { sandbox: EnvironmentDescriptor | null }): JSX.Element {
   if (sandbox === null) {
     return (
       <Tooltip label="Sandbox deleted" withArrow>
@@ -55,7 +55,7 @@ function ThreadRow({
   onToggleArchived,
 }: {
   thread: ThreadView;
-  sandbox: Sandbox | null;
+  sandbox: EnvironmentDescriptor | null;
   fresh: boolean;
   current: boolean;
   detailed: boolean;
@@ -225,7 +225,7 @@ export function ThreadList({
   const current = threadRoute?.params.threadId ?? null;
   const groups = groupThreads(
     threads,
-    Object.fromEntries((sandboxesLive.snapshot?.sandboxes ?? []).map((sandbox) => [sandbox.name, sandbox])),
+    Object.fromEntries((sandboxesLive.snapshot?.environments ?? []).map((sandbox) => [sandbox.target!.name, sandbox])),
     listing.includeArchived,
     current
   );

@@ -7,12 +7,9 @@ import json
 from collections.abc import AsyncIterator, Callable, Coroutine, Sequence
 from contextlib import AsyncExitStack, aclosing, asynccontextmanager
 from datetime import datetime
-from http import HTTPStatus
 from types import TracebackType
 from typing import Any
-from uuid import UUID
 
-import httpx
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import Message
 
@@ -20,9 +17,9 @@ from google.protobuf.message import Message
 from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.models import NewSandbox, SandboxView, sandbox_is_ready
 from agentplane.crd_group import GROUP
-from agentplane.sandbox_resource import OperatingMode
+from agentplane.proto import sandboxes_pb2
+from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.tracing import tracer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -33,14 +30,14 @@ ENVIRONMENT_RUNTIME_LEASE_SUFFIX = "-environment-runtime"
 VM_TEMPLATE = "environment-vm"
 VM_WORKING_DIRECTORY = "/state/workspaces/accept"
 SANDBOX_READY_SECONDS = 300.0
-Sandboxes = Callable[..., Coroutine[Any, Any, SandboxView]]
+Sandboxes = Callable[..., Coroutine[Any, Any, environment_service_pb2.EnvironmentDescriptor]]
 
 
 @asynccontextmanager
 async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tracer) -> AsyncIterator[Sandboxes]:
     """Own every Sandbox created in this scope, including one that never becomes ready."""
     async with AsyncExitStack() as cleanup:
-        owned: list[tuple[str, UUID]] = []
+        owned: list[tuple[str, str]] = []
 
         async def release_owned(
             _exc_type: type[BaseException] | None, exc: BaseException | None, _traceback: TracebackType | None
@@ -99,34 +96,36 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
             bootstrap: str = "",
             inbox_tags: Sequence[str] = (),
             idle_suspend_after_seconds: int | None = None,
-        ) -> SandboxView:
+        ) -> environment_service_pb2.EnvironmentDescriptor:
             if template is None:
                 template = POD_TEMPLATE
             with phase_tracer.start_as_current_span(
                 "system_test.sandbox.create", attributes={"sandbox.name": name, "sandbox.template": template}
             ):
-                request = NewSandbox(
+                request = sandboxes_pb2.CreateSandboxRequest(
                     name=name,
                     template=template,
-                    preset=preset,
                     policy_sets=policies or [],
                     inbox_tags=list(inbox_tags),
                     bootstrap=bootstrap,
                 )
+                if preset is not None:
+                    request.preset = preset
                 if idle_suspend_after_seconds is not None:
-                    request.idle_suspend_after_seconds = idle_suspend_after_seconds
-                view = await client.create_sandbox(request)
-            # Register before readiness so failed boots are released too.
-            owned.append((view.name, view.uid))
-            return await wait_until_running(client, view.name, expected_uid=view.uid)
+                    request.idle_suspend_after.seconds = idle_suspend_after_seconds
+                created = await client.create_sandbox(request)
+            # Register the exact acknowledged incarnation before any follow-on watch or Get can fail.
+            owned.append((created.name, created.uid))
+            return await wait_until_running(client, created)
 
         yield create
 
 
-def record_launch_transitions(span: trace.Span, view: SandboxView) -> None:
+def record_launch_transitions(span: trace.Span, view: environment_service_pb2.EnvironmentDescriptor) -> None:
     """Mark controller and kubelet launch steps before the watch consumer observes Ready."""
-    pod_status = view.pod.status if view.pod else None
-    for source, status in (("sandbox", view.status), ("pod", pod_status)):
+    pod_status = MessageToDict(view.pod.status) if view.HasField("pod") and view.pod.HasField("status") else None
+    sandbox_status = MessageToDict(view.status) if view.HasField("status") else None
+    for source, status in (("sandbox", sandbox_status), ("pod", pod_status)):
         for condition in _dicts((status or {}).get("conditions")):
             at = condition.get("lastTransitionTime")
             if condition.get("status") == "True" and isinstance(at, str):
@@ -153,35 +152,43 @@ class SandboxNotReadyError(Exception):
     """A lifecycle wait ended before the expected Sandbox state was observed."""
 
 
-async def wait_until_running(client: Client, name: str, *, expected_uid: UUID) -> SandboxView:
+async def wait_until_running(
+    client: Client, target: environment_service_pb2.TargetHandle
+) -> environment_service_pb2.EnvironmentDescriptor:
     """Wait for the named Sandbox incarnation to report its own Ready condition."""
+    if not target.namespace or not target.name or not target.uid:
+        raise ValueError("complete EnvironmentService target handle is required")
+    requested_target = environment_service_pb2.TargetHandle()
+    requested_target.CopyFrom(target)
+    name, expected_uid = requested_target.name, requested_target.uid
     with tracer.start_as_current_span(
-        "system_test.sandbox.ready", attributes={"sandbox.name": name, "sandbox.uid": str(expected_uid)}
+        "system_test.sandbox.ready", attributes={"sandbox.name": name, "sandbox.uid": expected_uid}
     ) as ready_span:
         deadline = asyncio.timeout(SANDBOX_READY_SECONDS)
         last_status: dict[str, object] | None = None
         try:
             async with deadline, aclosing(client.sandbox_snapshots()) as snapshots:
                 async for snapshot in snapshots:
-                    observed = next((row for row in snapshot if row.name == name), None)
+                    candidates = [
+                        row
+                        for row in snapshot
+                        if row.target.name == name and row.target.namespace == requested_target.namespace
+                    ]
+                    observed = next((row for row in candidates if row.target.uid == expected_uid), None)
                     if observed is None:
+                        if candidates:
+                            raise SandboxNotReadyError(
+                                f"{name} has been replaced: expected {expected_uid}, "
+                                f"observed {', '.join(row.target.uid for row in candidates)}"
+                            )
                         continue
-                    if observed.uid != str(expected_uid):
-                        raise SandboxNotReadyError(
-                            f"{name} has been replaced: expected {expected_uid}, observed {observed.uid}"
-                        )
-                    try:
-                        view = await client.sandbox(name)
-                    except httpx.HTTPStatusError as error:
-                        if error.response.status_code == HTTPStatus.NOT_FOUND:
-                            continue
-                        raise
-                    if view.uid != expected_uid:
-                        raise SandboxNotReadyError(
-                            f"{name} has been replaced: expected {expected_uid}, observed {view.uid}"
-                        )
-                    last_status = view.status
-                    if sandbox_is_ready(view):
+                    view = observed
+                    last_status = MessageToDict(view.status) if view.HasField("status") else {}
+                    if (
+                        view.operating_mode == environment_service_pb2.OPERATING_MODE_RUNNING
+                        and view.HasField("readiness")
+                        and view.readiness.state == environment_service_pb2.READINESS_STATE_READY
+                    ):
                         record_launch_transitions(ready_span, view)
                         return view
                 raise SandboxNotReadyError(f"{name}'s Sandbox inventory stream ended before observing Ready")
@@ -193,11 +200,12 @@ async def wait_until_running(client: Client, name: str, *, expected_uid: UUID) -
             ) from error
 
 
-async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: UUID) -> None:
+async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: str) -> None:
     with tracer.start_as_current_span(
-        "system_test.sandbox.cleanup", attributes={"sandbox.name": name, "sandbox.uid": str(uid)}
+        "system_test.sandbox.cleanup", attributes={"sandbox.name": name, "sandbox.uid": uid}
     ) as cleanup:
-        await client.suspend_sandbox(name)
+        target = environment_service_pb2.TargetHandle(namespace=cluster.namespace, name=name, uid=uid)
+        await client.suspend_sandbox(target)
         cleanup.add_event("suspend.accepted")
         # Deletion admission reads effective mode, which the controller publishes after the spec write.
         delete_requested = False
@@ -206,17 +214,26 @@ async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: U
             async with asyncio.timeout(SANDBOX_READY_SECONDS), aclosing(client.sandbox_snapshots()) as snapshots:
                 async for snapshot in snapshots:
                     last_snapshot = snapshot
-                    view = next((view for view in snapshot if view.name == name), None)
+                    view = next(
+                        (
+                            view
+                            for view in snapshot
+                            if view.target.namespace == target.namespace and view.target.name == name
+                        ),
+                        None,
+                    )
                     if view is None:
                         if delete_requested:
                             cleanup.add_event("deleted")
                             return
                         continue
-                    if view.uid != str(uid):
-                        raise SandboxNotReadyError(f"{name} has been replaced: expected {uid}, observed {view.uid}")
-                    if not delete_requested and view.operating_mode == OperatingMode.SUSPENDED.value:
+                    if view.target.uid != uid:
+                        raise SandboxNotReadyError(
+                            f"{name} has been replaced: expected {uid}, observed {view.target.uid}"
+                        )
+                    if not delete_requested and view.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED:
                         cleanup.add_event("suspended")
-                        await client.delete_sandbox(name)
+                        await client.delete_sandbox(target)
                         cleanup.add_event("delete.accepted")
                         # The delete response only accepts the request. Keep controllers and kubelet alive
                         # until the finalizer has removed the VM/Pod and released its volumes.
@@ -224,14 +241,14 @@ async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: U
                 raise SandboxNotReadyError(f"{name}'s stream ended before observing deletion")
         except TimeoutError as error:
             try:
-                path = await _write_cleanup_diagnostics(cluster, client, name, last_snapshot)
+                path = await _write_cleanup_diagnostics(cluster, client, name, uid, last_snapshot)
                 error.add_note(f"Sandbox cleanup diagnostics: {path}")
             except Exception as diagnostic_error:
                 error.add_note(f"Sandbox cleanup diagnostics failed: {diagnostic_error!r}")
             raise
 
 
-async def _write_cleanup_diagnostics(cluster: Cluster, client: Client, name: str, last_snapshot: Any) -> str:
+async def _write_cleanup_diagnostics(cluster: Cluster, client: Client, name: str, uid: str, last_snapshot: Any) -> str:
     """Capture the state and control logs when the effective suspend watch stops progressing."""
 
     diagnostic: dict[str, Any] = {
@@ -239,22 +256,28 @@ async def _write_cleanup_diagnostics(cluster: Cluster, client: Client, name: str
         "last_live_snapshot": None if last_snapshot is None else [MessageToDict(row) for row in last_snapshot],
     }
 
-    async def app_state(key: str, operation: Callable[[], Coroutine[Any, Any, Any]]) -> None:
+    async def app_state(key: str, operation: Callable[[], Coroutine[Any, Any, Message]]) -> None:
         try:
             async with asyncio.timeout(10):
                 value = await operation()
-                diagnostic[key] = (
-                    MessageToDict(value, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
-                    if isinstance(value, Message)
-                    else value.model_dump(mode="json")
+                diagnostic[key] = MessageToDict(
+                    value, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
                 )
         except Exception as error:
             diagnostic[f"{key}_error"] = repr(error)
 
-    await asyncio.gather(
-        app_state("app_sandbox", lambda: client.sandbox(name)),
-        app_state("runner_status", lambda: client.runner_status(name)),
+    observed = next(
+        (
+            row
+            for row in last_snapshot or []
+            if row.target.namespace == cluster.namespace and row.target.name == name and row.target.uid == uid
+        ),
+        None,
     )
+    state_operations = [app_state("runner_status", lambda: client.runner_status(name, uid))]
+    if observed is not None:
+        state_operations.append(app_state("app_sandbox", lambda: client.get_environment(observed.target)))
+    await asyncio.gather(*state_operations)
 
     async def kubectl(*args: str) -> dict[str, Any]:
         try:

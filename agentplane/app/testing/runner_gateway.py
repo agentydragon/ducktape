@@ -70,6 +70,7 @@ async def gateway_service(
         gateway_callers=(APP, GATEWAY),
         environment_readers=(APP,),
         environment_managers=(APP,),
+        operator_callers=(APP,),
         dispatcher_audience=DISPATCHER_AUDIENCE,
         gateway_audience=GATEWAY_AUDIENCE,
         runner_proxy_token_file=token_file,

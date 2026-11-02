@@ -1,7 +1,11 @@
-import { CreateSandboxRequestSchema, type Sandbox } from "../../../proto/sandboxes_pb";
-import { create as createProto } from "@bufbuild/protobuf";
+import {
+  TargetHandleSchema,
+  type EnvironmentDescriptor,
+  type TargetHandle,
+} from "../../../runner_gateway/environments/environment_service_pb";
+import { clone, create as createProto } from "@bufbuild/protobuf";
 import { DurationSchema } from "@bufbuild/protobuf/wkt";
-import type { TargetHandle } from "../../../runner_gateway/environments/environment_service_pb";
+import { CreateSandboxRequestSchema } from "../../../proto/sandboxes_pb";
 import {
   ActionIcon,
   Button,
@@ -40,7 +44,6 @@ import {
   deleteEnvironment,
   listEnvironmentTemplates,
   resumeSandbox,
-  sandboxTarget,
   suspendEnvironment,
 } from "./client";
 
@@ -64,7 +67,7 @@ const EMPTY_FORM: NewSandboxForm = {
 // The picked preset, in the URL like the sandbox page's tab, so a launch form can be linked to.
 const PRESET_PARAM = "preset";
 
-function StatusIcon({ row }: { row: Sandbox }): JSX.Element {
+function StatusIcon({ row }: { row: EnvironmentDescriptor }): JSX.Element {
   const summary = sandboxSummary(row);
   return (
     <Tooltip label={sandboxStatusDetail(row)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
@@ -89,14 +92,17 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [templates, setTemplates] = useState<string[]>([]);
   // The PolicySets a new Sandbox may name; a preset pre-fills the pick and the operator edits it.
   const [policySets, setPolicySets] = useState<string[]>([]);
-  // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
+  // Keep the exact UID selected when opening the confirmation, even if its name is reused.
   const [confirmingDelete, setConfirmingDelete] = useState<TargetHandle | null>(null);
   const live = useRequiredSandboxesLive();
-  const rows = live.snapshot?.sandboxes ?? [];
+  const rows = live.snapshot?.environments ?? [];
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedPreset = searchParams.get(PRESET_PARAM);
   // An empty Name field creates the Sandbox under this free name, derived from the preset's.
-  const placeholderName = placeholderSandboxName(selectedPreset ?? "sandbox", new Set(rows.map((row) => row.name)));
+  const placeholderName = placeholderSandboxName(
+    selectedPreset ?? "sandbox",
+    new Set(rows.map((row) => row.target!.name))
+  );
   const nameError = sandboxNameError(form.name || placeholderName);
 
   /** Fill the Sandbox creation fields from a preset; session defaults remain app configuration. */
@@ -152,14 +158,16 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
 
   // No refresh after an action: the change reaches the API server, and the watch behind the
   // stream brings the new row back on its own.
-  async function act(target: TargetHandle, action: "suspend" | "resume" | "delete"): Promise<void> {
-    const failure = await (
-      action === "delete"
-        ? deleteEnvironment(target)
-        : action === "resume"
-          ? resumeSandbox(target)
-          : suspendEnvironment(target)
-    ).then(
+  async function act(target: TargetHandle, action: "suspend" | "resume"): Promise<void> {
+    const failure = await (action === "resume" ? resumeSandbox(target) : suspendEnvironment(target)).then(
+      () => null,
+      (reason: unknown) => reason
+    );
+    setError(failure ? displayableError(failure) : null);
+  }
+
+  async function remove(target: TargetHandle): Promise<void> {
+    const failure = await deleteEnvironment(target).then(
       () => null,
       (reason: unknown) => reason
     );
@@ -206,7 +214,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           name={confirmingDelete.name}
           onCancel={() => setConfirmingDelete(null)}
           onConfirm={() => {
-            void act(confirmingDelete, "delete");
+            void remove(confirmingDelete);
             setConfirmingDelete(null);
           }}
         />
@@ -304,13 +312,13 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
             const ip = podIp(row);
             const node = `${row.pod?.nodeName ?? "—"} ${ip ? `(${ip})` : ""}`;
             return (
-              <Table.Tr key={row.name}>
+              <Table.Tr key={row.target!.name}>
                 <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
                   <StatusIcon row={row} />
                 </Table.Td>
                 <Table.Td>
-                  <Button variant="subtle" px="xs" onClick={() => onOpen(row.name)}>
-                    {row.name}
+                  <Button variant="subtle" px="xs" onClick={() => onOpen(row.target!.name)}>
+                    {row.target!.name}
                   </Button>
                   {/* On a phone the other columns fold under the name, leaving room for the actions. */}
                   <Stack gap="xs" hiddenFrom="sm">
@@ -338,19 +346,18 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                 </Table.Td>
                 <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
                   <Group gap="xs" wrap="nowrap" justify="flex-end">
-                    <SuspendResume sandbox={row} onAct={(action) => void act(sandboxTarget(row), action)} />
+                    <SuspendResume sandbox={row} onAct={(action) => void act(row.target!, action)} />
                     <Menu position="bottom-end">
                       <Menu.Target>
-                        <ActionIcon variant="subtle" aria-label={`More actions for ${row.name}`}>
+                        <ActionIcon variant="subtle" aria-label={`More actions for ${row.target!.name}`}>
                           <IconDotsVertical size={16} />
                         </ActionIcon>
                       </Menu.Target>
                       <Menu.Dropdown>
-                        {/* The API refuses a running sandbox; suspend is one click left. */}
                         <Menu.Item
                           color="red"
                           disabled={!deletable(row)}
-                          onClick={() => setConfirmingDelete(sandboxTarget(row))}
+                          onClick={() => setConfirmingDelete(clone(TargetHandleSchema, row.target!))}
                         >
                           Delete
                         </Menu.Item>

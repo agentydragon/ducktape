@@ -2,11 +2,9 @@
 
 import asyncio
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
-from types import SimpleNamespace
 from typing import cast
-from unittest.mock import call, create_autospec
-from uuid import UUID, uuid4
+from unittest.mock import AsyncMock, call, create_autospec
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -14,54 +12,59 @@ import pytest_bazel
 from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.models import SandboxPhase, SandboxView
-from agentplane.proto import sandboxes_pb2
+from agentplane.runner_gateway.environments import environment_service_pb2
 
 # gazelle:include_dep @pypi//protobuf
-from agentplane.sandbox_resource import OperatingMode
-from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests import sandbox
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.sandbox import SandboxNotReadyError, suspend_and_delete
 
 
-def _sandbox_view(
-    name: str, uid: UUID, *, ready: bool, operating_mode: OperatingMode = OperatingMode.RUNNING
-) -> SandboxView:
-    return SandboxView(
-        name=name,
-        uid=uid,
-        namespace="test",
-        created_at=datetime(2026, 10, 31, tzinfo=UTC),
+def _environment(
+    name: str, uid: str, *, ready: bool, operating_mode: str = "OPERATING_MODE_RUNNING", namespace: str = "test"
+) -> environment_service_pb2.EnvironmentDescriptor:
+    return environment_service_pb2.EnvironmentDescriptor(
+        target=environment_service_pb2.TargetHandle(namespace=namespace, name=name, uid=uid),
+        execution_account=environment_service_pb2.AccountHandle(namespace="test", name="runner"),
         operating_mode=operating_mode,
-        status={"conditions": [{"type": "Ready", "status": "True" if ready else "False"}]},
-        service_account=ServiceAccountRef(namespace="test", name="runner"),
-        phase=SandboxPhase.RUNNING,
+        readiness=environment_service_pb2.Readiness(
+            state=environment_service_pb2.READINESS_STATE_READY
+            if ready
+            else environment_service_pb2.READINESS_STATE_NOT_READY
+        ),
     )
 
 
-def _snapshot(*sandboxes: SandboxView) -> list[sandboxes_pb2.Sandbox]:
-    return [
-        sandboxes_pb2.Sandbox(
-            name=row.name, uid=str(row.uid), operating_mode=row.operating_mode.value if row.operating_mode else ""
-        )
-        for row in sandboxes
-    ]
+def _snapshot(
+    *environments: environment_service_pb2.EnvironmentDescriptor,
+) -> list[environment_service_pb2.EnvironmentDescriptor]:
+    return list(environments)
+
+
+def _target(name: str, uid: str) -> environment_service_pb2.TargetHandle:
+    return environment_service_pb2.TargetHandle(namespace="test", name=name, uid=uid)
+
+
+def _create_targets(client: Client, names: tuple[str, ...]) -> dict[str, environment_service_pb2.TargetHandle]:
+    created = {name: _target(name, str(uuid4())) for name in names}
+    cast(AsyncMock, client.create_sandbox).side_effect = list(created.values())
+    return created
 
 
 @pytest.fixture
 def cluster() -> Cluster:
     access = create_autospec(Cluster, instance=True)
+    access.namespace = "test"
     access.kubectl.side_effect = RuntimeError("test diagnostics unavailable")
     return cast(Cluster, access)
 
 
 async def test_readiness_accepts_an_already_ready_sandbox_from_initial_inventory() -> None:
     client = create_autospec(Client, instance=True)
-    view = _sandbox_view("readiness-test", uuid4(), ready=True)
+    view = _environment("readiness-test", str(uuid4()), ready=True)
     closed = False
 
-    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
+    async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
         nonlocal closed
         try:
             yield _snapshot(view)
@@ -69,67 +72,67 @@ async def test_readiness_accepts_an_already_ready_sandbox_from_initial_inventory
             closed = True
 
     client.sandbox_snapshots.return_value = snapshots()
-    client.sandbox.return_value = view
 
-    assert await sandbox.wait_until_running(client, view.name, expected_uid=view.uid) is view
+    assert await sandbox.wait_until_running(client, view.target) is view
 
-    client.sandbox.assert_awaited_once_with(view.name)
     client.sandbox_snapshots.assert_called_once_with()
     assert closed
 
 
 async def test_readiness_waits_for_a_later_ready_snapshot() -> None:
     client = create_autospec(Client, instance=True)
-    uid = uuid4()
-    ready = _sandbox_view("readiness-test", uid, ready=True)
-    not_ready = _sandbox_view("readiness-test", uid, ready=False)
-    suspended_ready_condition = _sandbox_view("readiness-test", uid, ready=True, operating_mode=OperatingMode.SUSPENDED)
+    uid = str(uuid4())
+    ready = _environment("readiness-test", uid, ready=True)
+    not_ready = _environment("readiness-test", uid, ready=False)
+    suspended_ready_condition = _environment(
+        "readiness-test", uid, ready=True, operating_mode="OPERATING_MODE_SUSPENDED"
+    )
 
-    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
-        yield _snapshot()
+    async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
+        yield _snapshot(_environment("readiness-test", uid, ready=True, namespace="other-test-namespace"))
         yield _snapshot(suspended_ready_condition)
         yield _snapshot(not_ready)
         yield _snapshot(ready)
 
     client.sandbox_snapshots.return_value = snapshots()
-    client.sandbox.side_effect = [suspended_ready_condition, not_ready, ready]
 
-    assert await sandbox.wait_until_running(client, ready.name, expected_uid=uid) is ready
+    assert await sandbox.wait_until_running(client, ready.target) is ready
 
 
 async def test_readiness_propagates_a_lost_inventory_source() -> None:
     client = create_autospec(Client, instance=True)
 
-    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
+    async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
         yield []
         raise RuntimeError("environment watch source failed")
 
     client.sandbox_snapshots.return_value = snapshots()
     with pytest.raises(RuntimeError, match="source failed"):
-        await sandbox.wait_until_running(client, "readiness-test", expected_uid=uuid4())
+        await sandbox.wait_until_running(client, _target("readiness-test", str(uuid4())))
 
 
 async def test_readiness_rejects_a_replaced_sandbox_incarnation() -> None:
     client = create_autospec(Client, instance=True)
-    expected_uid = uuid4()
-    replacement = _sandbox_view("readiness-test", uuid4(), ready=True)
+    expected_uid = str(uuid4())
+    replacement = _environment("readiness-test", str(uuid4()), ready=True)
+    expected = environment_service_pb2.TargetHandle(namespace="test", name="readiness-test", uid=expected_uid)
 
-    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
+    async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
         yield _snapshot(replacement)
 
     client.sandbox_snapshots.return_value = snapshots()
 
     with pytest.raises(SandboxNotReadyError, match="has been replaced"):
-        await sandbox.wait_until_running(client, replacement.name, expected_uid=expected_uid)
+        await sandbox.wait_until_running(client, expected)
 
 
 async def test_readiness_timeout_closes_the_watch(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sandbox, "SANDBOX_READY_SECONDS", 0.01)
     client = create_autospec(Client, instance=True)
-    view = _sandbox_view("readiness-test", uuid4(), ready=False)
+    view = _environment("readiness-test", str(uuid4()), ready=False)
     closed = False
 
-    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
+    async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
         nonlocal closed
         try:
             yield _snapshot(view)
@@ -138,10 +141,9 @@ async def test_readiness_timeout_closes_the_watch(monkeypatch: pytest.MonkeyPatc
             closed = True
 
     client.sandbox_snapshots.return_value = snapshots()
-    client.sandbox.return_value = view
 
     with pytest.raises(SandboxNotReadyError) as raised:
-        await sandbox.wait_until_running(client, view.name, expected_uid=view.uid)
+        await sandbox.wait_until_running(client, view.target)
 
     assert isinstance(raised.value.__cause__, TimeoutError)
     assert closed
@@ -149,9 +151,9 @@ async def test_readiness_timeout_closes_the_watch(monkeypatch: pytest.MonkeyPatc
 
 async def test_readiness_propagates_inventory_stream_end() -> None:
     client = create_autospec(Client, instance=True)
-    uid = uuid4()
+    uid = str(uuid4())
 
-    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
+    async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
         yield _snapshot()
         raise RuntimeError("the Sandbox inventory stream ended")
         yield  # pragma: no cover
@@ -159,26 +161,28 @@ async def test_readiness_propagates_inventory_stream_end() -> None:
     client.sandbox_snapshots.return_value = snapshots()
 
     with pytest.raises(RuntimeError, match="inventory stream ended"):
-        await sandbox.wait_until_running(client, "readiness-test", expected_uid=uid)
+        await sandbox.wait_until_running(client, _target("readiness-test", uid))
 
 
 async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluster: Cluster) -> None:
     client = create_autospec(Client, instance=True)
-    uid = uuid4()
+    uid = str(uuid4())
     closed = False
     deletion_observed = False
 
-    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
+    async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
         nonlocal closed, deletion_observed
         try:
-            for name, mode in [
-                ("owned-test-sandbox", OperatingMode.RUNNING),
-                ("other-sandbox", OperatingMode.SUSPENDED),
-                ("owned-test-sandbox", OperatingMode.SUSPENDED),
+            for name, namespace, mode in [
+                ("owned-test-sandbox", "test", "OPERATING_MODE_RUNNING"),
+                ("owned-test-sandbox", "other-test-namespace", "OPERATING_MODE_SUSPENDED"),
+                ("owned-test-sandbox", "test", "OPERATING_MODE_SUSPENDED"),
             ]:
                 client.delete_sandbox.assert_not_awaited()
-                yield [sandboxes_pb2.Sandbox(name=name, uid=str(uid), operating_mode=mode.value)]
-            client.delete_sandbox.assert_awaited_once_with("owned-test-sandbox")
+                yield [_environment(name, uid, ready=False, operating_mode=mode, namespace=namespace)]
+            client.delete_sandbox.assert_awaited_once_with(
+                environment_service_pb2.TargetHandle(namespace=cluster.namespace, name="owned-test-sandbox", uid=uid)
+            )
             deletion_observed = True
             yield []
         finally:
@@ -189,9 +193,13 @@ async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluste
     await suspend_and_delete(cluster, client, "owned-test-sandbox", uid)
 
     assert client.mock_calls == [
-        call.suspend_sandbox("owned-test-sandbox"),
+        call.suspend_sandbox(
+            environment_service_pb2.TargetHandle(namespace=cluster.namespace, name="owned-test-sandbox", uid=uid)
+        ),
         call.sandbox_snapshots(),
-        call.delete_sandbox("owned-test-sandbox"),
+        call.delete_sandbox(
+            environment_service_pb2.TargetHandle(namespace=cluster.namespace, name="owned-test-sandbox", uid=uid)
+        ),
     ]
     assert closed
     assert deletion_observed
@@ -200,12 +208,12 @@ async def test_cleanup_waits_for_effective_suspension_and_actual_deletion(cluste
 async def test_cleanup_does_not_delete_a_replacement_sandbox(cluster: Cluster) -> None:
     client = create_autospec(Client, instance=True)
 
-    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
-        yield [sandboxes_pb2.Sandbox(name="owned-test-sandbox", uid=str(uuid4()), operating_mode="Suspended")]
+    async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
+        yield [_environment("owned-test-sandbox", str(uuid4()), ready=False, operating_mode="OPERATING_MODE_SUSPENDED")]
 
     client.sandbox_snapshots.return_value = snapshots()
     with pytest.raises(SandboxNotReadyError, match="has been replaced"):
-        await suspend_and_delete(cluster, client, "owned-test-sandbox", uuid4())
+        await suspend_and_delete(cluster, client, "owned-test-sandbox", str(uuid4()))
     client.delete_sandbox.assert_not_awaited()
 
 
@@ -216,7 +224,7 @@ async def test_cleanup_bounds_a_watch_that_stops_making_progress(
     client = create_autospec(Client, instance=True)
     closed = False
 
-    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
+    async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
         nonlocal closed
         try:
             yield []
@@ -226,7 +234,7 @@ async def test_cleanup_bounds_a_watch_that_stops_making_progress(
 
     client.sandbox_snapshots.return_value = snapshots()
     with pytest.raises(TimeoutError):
-        await suspend_and_delete(cluster, client, "owned-test-sandbox", uuid4())
+        await suspend_and_delete(cluster, client, "owned-test-sandbox", str(uuid4()))
     client.delete_sandbox.assert_not_awaited()
     assert closed
 
@@ -236,14 +244,14 @@ async def test_cleanup_does_not_retry_an_authorization_refusal_or_delete(cluster
     request = httpx.Request("GET", "https://app.test.invalid/sandboxes/owned-test-sandbox")
     refused = httpx.HTTPStatusError("read refused", request=request, response=httpx.Response(403, request=request))
 
-    async def snapshots() -> AsyncIterator[list[sandboxes_pb2.Sandbox]]:
+    async def snapshots() -> AsyncIterator[list[environment_service_pb2.EnvironmentDescriptor]]:
         raise refused
         yield  # pragma: no cover
 
     client.sandbox_snapshots.return_value = snapshots()
 
     with pytest.raises(httpx.HTTPStatusError):
-        await suspend_and_delete(cluster, client, "owned-test-sandbox", uuid4())
+        await suspend_and_delete(cluster, client, "owned-test-sandbox", str(uuid4()))
 
     client.sandbox_snapshots.assert_called_once()
     client.delete_sandbox.assert_not_awaited()
@@ -251,12 +259,13 @@ async def test_cleanup_does_not_retry_an_authorization_refusal_or_delete(cluster
 
 async def test_scope_releases_owned_sandboxes_concurrently(cluster: Cluster, monkeypatch: pytest.MonkeyPatch) -> None:
     client = create_autospec(Client, instance=True)
-    views = {name: SimpleNamespace(name=name, uid=uuid4(), pod=None, status={}) for name in ("owned-0", "owned-1")}
-    client.create_sandbox.side_effect = list(views.values())
+    views = _create_targets(client, ("owned-0", "owned-1"))
 
-    async def ready(_client: Client, name: str, *, expected_uid: UUID) -> SimpleNamespace:
-        assert expected_uid == views[name].uid
-        return views[name]
+    async def ready(
+        _client: Client, target: environment_service_pb2.TargetHandle
+    ) -> environment_service_pb2.EnvironmentDescriptor:
+        assert target == views[target.name]
+        return _environment(target.name, target.uid, ready=True)
 
     monkeypatch.setattr(sandbox, "wait_until_running", ready)
     started: set[str] = set()
@@ -295,12 +304,13 @@ async def test_scope_drains_other_owners_when_one_cleanup_fails(
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client = create_autospec(Client, instance=True)
-    views = {name: SimpleNamespace(name=name, uid=uuid4(), pod=None, status={}) for name in ("owned-0", "owned-1")}
-    client.create_sandbox.side_effect = list(views.values())
+    views = _create_targets(client, ("owned-0", "owned-1"))
 
-    async def ready(_client: Client, name: str, *, expected_uid: UUID) -> SimpleNamespace:
-        assert expected_uid == views[name].uid
-        return views[name]
+    async def ready(
+        _client: Client, target: environment_service_pb2.TargetHandle
+    ) -> environment_service_pb2.EnvironmentDescriptor:
+        assert target == views[target.name]
+        return _environment(target.name, target.uid, ready=True)
 
     monkeypatch.setattr(sandbox, "wait_until_running", ready)
     started: set[str] = set()
@@ -343,12 +353,13 @@ async def test_scope_drains_other_owners_when_one_cleanup_fails(
 
 async def test_scope_preserves_multiple_cleanup_failures(cluster: Cluster, monkeypatch: pytest.MonkeyPatch) -> None:
     client = create_autospec(Client, instance=True)
-    views = {name: SimpleNamespace(name=name, uid=uuid4(), pod=None, status={}) for name in ("owned-0", "owned-1")}
-    client.create_sandbox.side_effect = list(views.values())
+    views = _create_targets(client, ("owned-0", "owned-1"))
 
-    async def ready(_client: Client, name: str, *, expected_uid: UUID) -> SimpleNamespace:
-        assert expected_uid == views[name].uid
-        return views[name]
+    async def ready(
+        _client: Client, target: environment_service_pb2.TargetHandle
+    ) -> environment_service_pb2.EnvironmentDescriptor:
+        assert target == views[target.name]
+        return _environment(target.name, target.uid, ready=True)
 
     monkeypatch.setattr(sandbox, "wait_until_running", ready)
     started: set[str] = set()
@@ -395,12 +406,13 @@ async def test_scope_cleans_failed_boot_and_preserves_its_error(
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client = create_autospec(Client, instance=True)
-    view = SimpleNamespace(name="failed-boot", uid=uuid4(), pod=None, status={})
-    client.create_sandbox.return_value = view
+    created = _create_targets(client, ("failed-boot",))["failed-boot"]
     cleanup: list[tuple[str, object]] = []
 
-    async def not_ready(_client: Client, _name: str, *, expected_uid: UUID) -> SimpleNamespace:
-        del expected_uid
+    async def not_ready(
+        _client: Client, target: environment_service_pb2.TargetHandle
+    ) -> environment_service_pb2.EnvironmentDescriptor:
+        assert target == created
         raise RuntimeError("boot did not become ready")
 
     async def delete(_cluster: Cluster, _client: Client, name: str, uid: object) -> None:
@@ -415,19 +427,20 @@ async def test_scope_cleans_failed_boot_and_preserves_its_error(
 
     with pytest.raises(RuntimeError, match="boot did not become ready"):
         await use_scope()
-    assert cleanup == [(view.name, view.uid)]
+    assert cleanup == [(created.name, created.uid)]
 
 
 async def test_scope_body_cancellation_waits_for_cleanup_and_keeps_failures(
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client = create_autospec(Client, instance=True)
-    views = {name: SimpleNamespace(name=name, uid=uuid4(), pod=None, status={}) for name in ("owned-0", "owned-1")}
-    client.create_sandbox.side_effect = list(views.values())
+    views = _create_targets(client, ("owned-0", "owned-1"))
 
-    async def ready(_client: Client, name: str, *, expected_uid: UUID) -> SimpleNamespace:
-        assert expected_uid == views[name].uid
-        return views[name]
+    async def ready(
+        _client: Client, target: environment_service_pb2.TargetHandle
+    ) -> environment_service_pb2.EnvironmentDescriptor:
+        assert target == views[target.name]
+        return _environment(target.name, target.uid, ready=True)
 
     monkeypatch.setattr(sandbox, "wait_until_running", ready)
     body_started = asyncio.Event()
@@ -483,12 +496,13 @@ async def test_scope_cancellation_during_cleanup_waits_for_every_owner(
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client = create_autospec(Client, instance=True)
-    views = {name: SimpleNamespace(name=name, uid=uuid4(), pod=None, status={}) for name in ("owned-0", "owned-1")}
-    client.create_sandbox.side_effect = list(views.values())
+    views = _create_targets(client, ("owned-0", "owned-1"))
 
-    async def ready(_client: Client, name: str, *, expected_uid: UUID) -> SimpleNamespace:
-        assert expected_uid == views[name].uid
-        return views[name]
+    async def ready(
+        _client: Client, target: environment_service_pb2.TargetHandle
+    ) -> environment_service_pb2.EnvironmentDescriptor:
+        assert target == views[target.name]
+        return _environment(target.name, target.uid, ready=True)
 
     monkeypatch.setattr(sandbox, "wait_until_running", ready)
     cleanup_started = asyncio.Event()

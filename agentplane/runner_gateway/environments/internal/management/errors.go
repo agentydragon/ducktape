@@ -42,3 +42,10 @@ type LauncherPolicySetError struct{ Names []string }
 func (e *LauncherPolicySetError) Error() string {
 	return fmt.Sprintf("PolicySets %s are other Sandboxes' launcher grants", strings.Join(e.Names, ", "))
 }
+
+// SandboxNotFoundError means the requested name is absent or now belongs to another UID.
+type SandboxNotFoundError struct{ Name string }
+
+func (e *SandboxNotFoundError) Error() string {
+	return fmt.Sprintf("no Agentplane sandbox name='%s'", e.Name)
+}

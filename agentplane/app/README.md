@@ -46,9 +46,8 @@ attachments, and app-only provisioning or prompt/bootstrap state, including in v
 [service dependency rule](../docs/service_boundaries.md).
 
 Backend responsibilities needed by another service move to an independent owner, not a temporary
-app endpoint. The shared `agentplane/sandboxes/inventory` package implements the app's remaining Kubernetes
-reads; Gateway management lives privately in EnvironmentService, whose authenticated facade the
-app calls. The [Session Dispatcher](../runner_gateway/dispatcher/README.md)
+app endpoint. EnvironmentService in Runner Gateway owns inventory reads, watches and management;
+the app calls its generated authenticated facade. The app retains Thread and policy composition. The [Session Dispatcher](../runner_gateway/dispatcher/README.md)
 owns opening and durable command delivery; the [Runner Gateway](../runner_gateway/README.md) owns the
 runner control stream and authorized live Runner proxy; the
 [History Service](../history_service/README.md) owns the Session Event archive and its Thread fold.

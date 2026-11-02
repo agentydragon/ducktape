@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/policy"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -281,8 +282,9 @@ func TestGrantValidatesPolicySetsAndCreatesIndependentSandboxOwnedBindings(t *te
 	).Build()
 	objects := &generatedNameClient{Client: base}
 	access := New(testNamespace, objects)
-	sandbox := &sandboxespb.Sandbox{
-		Name: "worker", Uid: "sandbox-uid", ServiceAccount: account(testNamespace, "worker"),
+	sandbox := &environmentpb.EnvironmentDescriptor{
+		Target:           &environmentpb.TargetHandle{Namespace: testNamespace, Name: "worker", Uid: "sandbox-uid"},
+		ExecutionAccount: &environmentpb.AccountHandle{Namespace: testNamespace, Name: "worker"},
 	}
 	expiresAt := &metav1.Time{Time: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)}
 	first, err := access.Grant(context.Background(), sandbox, []string{"known"}, expiresAt)
@@ -307,14 +309,14 @@ func TestGrantValidatesPolicySetsAndCreatesIndependentSandboxOwnedBindings(t *te
 	}
 	owner := stored.OwnerReferences[0]
 	if owner.APIVersion != sandboxapi.GroupVersion.String() || owner.Kind != sandboxapi.SandboxKind ||
-		owner.Name != sandbox.Name || owner.UID != types.UID(sandbox.Uid) || owner.Controller == nil || *owner.Controller ||
+		owner.Name != sandbox.GetTarget().GetName() || owner.UID != types.UID(sandbox.GetTarget().GetUid()) || owner.Controller == nil || *owner.Controller ||
 		owner.BlockOwnerDeletion == nil || *owner.BlockOwnerDeletion {
 		t.Fatalf("Sandbox owner reference = %#v", owner)
 	}
 	if first.Provenance != BindingFromOperator || first.PolicySets[0].Name != "known" {
 		t.Fatalf("returned grant view = %#v", first)
 	}
-	views, err := access.BindingsFor(context.Background(), sandbox.ServiceAccount)
+	views, err := access.BindingsFor(context.Background(), account(testNamespace, "worker"))
 	if err != nil || len(views) != 2 {
 		t.Fatalf("repeated grant changed existing binding rather than adding one: %#v, %v", views, err)
 	}

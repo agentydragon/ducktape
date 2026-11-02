@@ -4,7 +4,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
-	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/protobuf/proto"
 )
@@ -79,11 +79,11 @@ func (o Observation) Attached() *sessionpb.Attached {
 	return &sessionpb.Attached{SessionId: o.id, Spec: proto.Clone(o.spec).(*sessionpb.SessionSpec), LastCursor: o.cursor, HarnessState: harness, ActiveTurnId: o.activeTurn, SetupState: o.setup, LaunchOutcome: o.launch, IncarnationUid: copied(o.incarnation), ExecutionPrincipal: o.executionPrincipal}
 }
 
-func (o Observation) AutosuspendBlockers() []*sandboxpb.AutosuspendBlocker {
-	var blockers []*sandboxpb.AutosuspendBlocker
+func (o Observation) AutosuspendBlockers() []*environmentlifecyclepb.AutosuspendBlocker {
+	var blockers []*environmentlifecyclepb.AutosuspendBlocker
 	add := func(reason string) {
 		id := o.id
-		blockers = append(blockers, &sandboxpb.AutosuspendBlocker{Reason: reason, SessionId: &id})
+		blockers = append(blockers, &environmentlifecyclepb.AutosuspendBlocker{Reason: reason, SessionId: &id})
 	}
 	if o.activeTurn != "" || o.nativeActiveTurn {
 		add(autosuspendActiveTurn)
@@ -125,7 +125,7 @@ func (o Observation) Status() (*sessionpb.SessionStatus, *sessionpb.HarnessProce
 }
 
 func (s *Session) Attached() *sessionpb.Attached { return s.Observe().Attached() }
-func (s *Session) AutosuspendBlockers() []*sandboxpb.AutosuspendBlocker {
+func (s *Session) AutosuspendBlockers() []*environmentlifecyclepb.AutosuspendBlocker {
 	return s.Observe().AutosuspendBlockers()
 }
 

@@ -40,9 +40,9 @@ async def _exercise_case(
         offered = catalog.harnesses[Harness(session_pb2.Harness.Name(harness))]
         assert route in offered, f"route absent from offered models for {case_id}"
         view = await sandbox("systest-ollama-smoke")
-        evidence["sandbox"] = view.name
+        evidence["sandbox"] = view.target.name
         agent = await Agent.open(
-            client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=route
+            client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=route
         )
         evidence["thread_id"] = str(agent.thread_id)
         async with asyncio.timeout(300):
