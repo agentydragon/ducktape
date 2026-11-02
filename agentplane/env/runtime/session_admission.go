@@ -79,7 +79,7 @@ func (r *Runtime) OpenSession(ctx context.Context, request *environmentruntimepb
 			r.idleSince = nil
 			return nil
 		}); err != nil {
-			return nil, err
+			return nil, rpcError(err)
 		}
 		defer r.finishAdmission(&resultErr)
 		record, err := r.store.Read(request.SessionId)
@@ -169,7 +169,7 @@ func (r *Runtime) admit(ctx context.Context, id string, c *commandpb.Command) (e
 		r.idleSince = nil
 		return nil
 	}); err != nil {
-		return nil, err
+		return nil, rpcError(err)
 	}
 	defer r.finishAdmission(&resultErr)
 	exists, err := r.store.Exists(id)

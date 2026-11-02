@@ -3,6 +3,9 @@ package runtime
 import (
 	"context"
 	"errors"
+	"github.com/cosi-project/runtime/pkg/resource/typed"
+	"github.com/cosi-project/runtime/pkg/safe"
+	"github.com/cosi-project/runtime/pkg/state"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
@@ -51,7 +54,11 @@ func (r *Runtime) changeAdmissionsLocked(delta int) error {
 	}
 	// Count publication is part of the synchronous admission gate. An uncertain
 	// write must close admission even if the backing store committed it.
-	if err := cosi.Publish(r.lifecycleContext, r.lifecycleState, lifecycleResourceFor(lifecycle.ResourceID, value), value, lifecycle.EnvironmentOwner); err != nil {
+	_, err := safe.StateUpdateWithConflicts(r.lifecycleContext, r.lifecycleState, lifecycleResourceFor(lifecycle.ResourceID, value).Metadata(), func(current *typed.Resource[environmentAdmissionCountSpec, lifecycleExtension[environmentAdmissionCountSpec]]) error {
+		*current.TypedSpec() = value
+		return nil
+	}, state.WithUpdateOwner(lifecycle.EnvironmentOwner))
+	if err != nil {
 		r.admissionOpen = false
 		r.failed = true
 		if r.failureErr == nil {
