@@ -10,9 +10,24 @@ proto_library(
     srcs = ["environment_lifecycle.proto"],
     visibility = ["//visibility:public"],
     deps = [
-        "@googleapis//google/rpc:status_proto",
+        "//google/rpc:status_proto",
         "@protobuf//:timestamp_proto",
     ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "environment_lifecycle_pb2",
+    visibility = ["//visibility:public"],
+    deps = [":environment_lifecycle_proto"],
+)
+
+ts_proto_library(
+    name = "environment_lifecycle_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":environment_lifecycle_proto",
+    visibility = ["//visibility:public"],
+    deps = ["//google/rpc:status_pb"],
 )
 
 go_proto_library(

@@ -15,7 +15,9 @@ service EnvironmentLifecycle {
 message ResumeEnvironmentRequest {
   // All three fields identify one Sandbox; a replacement is not the requested target.
   agentplane.sandboxes.discovery.TargetHandle target = 1;
-  // Opaque precondition for the target UID and wake generation observed by Discovery.
+  // Opaque precondition for the target UID and wake generation observed by Discovery. Required
+  // for ordinary callers. A trusted direct Pod-bound operator broker may omit it to express a new
+  // operator intent; delegated actor authority never enables that path.
   string resume_token = 2;
 }
 
