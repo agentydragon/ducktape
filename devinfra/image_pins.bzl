@@ -52,6 +52,7 @@ def _impl(module_ctx):
                     name = name,
                     image = pin["image"],
                     digest = pin["digest"],
+                    tag = pin.get("tag", ""),
                     platforms = pin["platforms"],
                     is_bzlmod = True,
                 )

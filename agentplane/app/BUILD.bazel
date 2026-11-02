@@ -1,4 +1,5 @@
 load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
+load("@image_pins//:pins.bzl", "ELECTRIC_1_8_1_DIGEST", "NGINX_UNPRIVILEGED_DIGEST", "POSTGRES_18_DIGEST", "RYUK_DIGEST")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
@@ -324,6 +325,16 @@ py_test(
     name = "test_thread_browser",
     size = "medium",
     srcs = ["test_thread_browser.py"],
+    exec_properties = {
+        # Keep snapshots seeded by this suite; infrastructure repins select a new baseline.
+        # Frontend images change independently and use the normal digest-checked loader.
+        "test.runner-recycling-key": "thread-browser-images-v1-" + "-".join([
+            POSTGRES_18_DIGEST,
+            ELECTRIC_1_8_1_DIGEST,
+            RYUK_DIGEST,
+            NGINX_UNPRIVILEGED_DIGEST,
+        ]),
+    },
     requires_docker = True,
     shard_count = 16,
     tags = ["visual"],
