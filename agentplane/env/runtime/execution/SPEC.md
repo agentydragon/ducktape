@@ -27,7 +27,7 @@ or provisioning authority. Invalid, foreign or stale Sandbox identities, an unsy
 inventory and uncertain Kubernetes reads receive no Gateway environment detail. Legacy Runner
 proxy calls keep their existing status behavior and do not receive this execution detail.
 
-Runtime holds the environment owner lock before constructing the embedded Execution service. Its
+Runtime holds the COSI database lock before constructing the embedded Execution service. Its
 COSI Execution controller serializes service attempts and requires the previous service's joined
 fence before launching a successor. Pod ownership is
 PID 1 plus its private process namespace. On ordinary release, the companion stops exec-server,
