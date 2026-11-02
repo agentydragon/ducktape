@@ -181,17 +181,8 @@ def _old_cache_iam(scope: Construct) -> None:
         namespace=NAMESPACE,
         description="attic's NAR chunks; replicated per volume by the SeaweedFS cluster's defaultReplication.",
     )
-    credential = s3.credentials(
-        scope,
-        "old-cache-credential",
-        identity=NAME,
-        namespace=NAMESPACE,
-        secret="attic-s3-credentials",
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
-    )
-    # Retire the credential only after the bucket, then the identity last.
-    for resource in (identity, credential):
-        resource.add_json_patch(JsonPatch.replace("/spec/reclaimPolicy", "Delete"))
+    # Keep the identity until the old credential's key is confirmed revoked.
+    identity.add_json_patch(JsonPatch.replace("/spec/reclaimPolicy", "Delete"))
 
 
 def _service(scope: Construct) -> None:
