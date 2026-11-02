@@ -22,7 +22,7 @@ images:
     newTag: devel-20261101212521-e5d77ea # {"$imagepolicy": "flux-system:agentplane-runner-gateway:tag"}
   # Bootstrap only: the image workflow publishes on devel; wait for Flux to select a real tag before creating Sandboxes.
   - name: git.allegedly.works/ducktape-ci/environment-tools
-    newTag: devel-20261102022535-17a5657 # {"$imagepolicy": "flux-system:environment-tools:tag"}
+    newTag: devel-20261102024345-5e9f09f # {"$imagepolicy": "flux-system:environment-tools:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
     newTag: devel-20261102024011-5e9f09f # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
@@ -40,7 +40,7 @@ images:
     newTag: devel-20261101200555-7477a95 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   # Bootstrap only: the image workflow publishes on devel; wait for Flux to select a real tag before creating VM Sandboxes.
   - name: git.allegedly.works/ducktape-ci/agentplane-environment-vm
-    newTag: devel-20261102022242-17a5657 # {"$imagepolicy": "flux-system:agentplane-environment-vm:tag"}
+    newTag: devel-20261102024410-5e9f09f # {"$imagepolicy": "flux-system:agentplane-environment-vm:tag"}
   # The `agentplane` command disk beside the VM guest and as an image volume in the environment Pod.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-disk
     newTag: devel-20261102022702-17a5657 # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
