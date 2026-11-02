@@ -107,9 +107,11 @@ func executionFilesCmd() *cobra.Command {
 	var pageSize int32
 	cmd := &cobra.Command{
 		Use:   "files <invocation-id> <execution-id>",
-		Short: "List a remote execution's output files",
-		Long: "List the output files of a remote execution via GetExecutionDownloads. " +
-			"The execution ID is the one shown by `bbapi execution <invocation-id>`.",
+		Short: "List a remote execution's GetExecutionDownloads file records",
+		Long: "List the file records returned by GetExecutionDownloads. This does not enumerate " +
+			"the action's complete input-root tree. The command fails if the API returns more " +
+			"than the 100-page safety limit. The execution ID is the one shown by " +
+			"`bbapi execution <invocation-id>`.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			c, err := newClient()
@@ -135,6 +137,11 @@ func executionFilesCmd() *cobra.Command {
 				if pageToken == "" {
 					break
 				}
+			}
+			if pageToken != "" {
+				return fmt.Errorf(
+					"execution download listing exceeded the 100-page safety limit; results are incomplete",
+				)
 			}
 			if jsonOutput {
 				return printProtoJSON(out)
