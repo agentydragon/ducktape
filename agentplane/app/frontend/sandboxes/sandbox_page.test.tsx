@@ -23,6 +23,7 @@ import { SandboxRoute } from "../app";
 import { SandboxPage } from "./sandbox_page";
 import { TopbarContext } from "../topbar";
 import type { SandboxSnapshot } from "./live";
+import type * as SandboxLiveModule from "./live";
 import type { ThreadsSnapshot } from "../threads/live";
 import {
   EnvironmentRuntimeLifecycleMode,
@@ -115,7 +116,7 @@ vi.mock("../live", async (importOriginal) => ({
 }));
 vi.mock("../threads/live", () => ({ useThreadsLive: () => threadLive }));
 vi.mock("./live", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./live")>()),
+  ...(await importOriginal<typeof SandboxLiveModule>()),
   useRequiredSandboxesLive: () => ({
     snapshot: {
       sandboxes: live.snapshot.sandbox ? [{ name: live.snapshot.sandbox.name, uid: live.snapshot.sandbox.uid }] : [],
