@@ -30,7 +30,7 @@ k3s_suite(
     ],
 )
 
-# Manual, isolated trial of a prepared k3s/PKI seed across complete Pod-suite actions.
+# Manual trial of retained k3s, PKI and PostgreSQL across complete Pod-suite actions.
 k3s_suite(
     name = "test_pod_persistence_spike",
     srcs = ["test_pod.py"],

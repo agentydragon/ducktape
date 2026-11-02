@@ -16,9 +16,14 @@ VM system tests use a separate `test.runner-recycling-key` so their disk-backed 
 tmpfs layers keep separate image stores.
 
 The manual `//agentplane/system_tests/suites:test_pod_persistence_spike` also retains live k3s and
-PKI controllers, with fresh application state per action. Its fingerprint invalidates changed
-baseline inputs; its experimental remote snapshot policy saves the refreshed baseline for later
-actions. Ordinary targets still stop k3s. See the [spike evidence](../../debug/k3s_persistence_spike.md).
+PKI controllers and PostgreSQL. PostgreSQL lives in `systest-infrastructure`; application Pods and
+their namespaces remain disposable. Teardown drops and recreates the service databases and roles,
+checks that a sentinel and all user relations disappeared, and verifies that PostgreSQL's process
+identity survived before marking the baseline clean. Services run their normal migrations on the
+fresh databases. The fingerprint includes PostgreSQL manifests, bootstrap configuration and image
+alongside the other baseline inputs; its experimental remote snapshot policy saves the refreshed
+baseline for later actions. Ordinary targets still stop k3s. See the
+[spike evidence](../../debug/k3s_persistence_spike.md).
 
 Setup, each image import and teardown use the same OpenTelemetry tracer as the scenarios,
 writing completed spans immediately to `test-spans.jsonl` in undeclared outputs. The test log prints

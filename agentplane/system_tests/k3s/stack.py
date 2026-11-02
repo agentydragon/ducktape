@@ -43,6 +43,7 @@ from agentplane.system_tests.k3s import (
     certificates,
     guest_logs,
     iptables_rule,
+    postgres_persistence,
     process_traces,
     rendered_fixture,
     vm_sandboxes,
@@ -558,7 +559,9 @@ def _spike_identity(k3s: K3s, pid: int) -> dict[str, str | int]:
     }
 
 
-def _spike_fingerprint(binary: Path, crds: list[Path], pki: list[dict[str, Any]], pki_images: dict[str, Path]) -> str:
+def _spike_fingerprint(
+    binary: Path, crds: list[Path], infrastructure: list[dict[str, Any]], images: dict[str, Path]
+) -> str:
     digest = hashlib.sha256(b"k3s-persistence-pod-spike-v6\0")
     for name, path in [
         ("k3s", binary),
@@ -566,6 +569,7 @@ def _spike_fingerprint(binary: Path, crds: list[Path], pki: list[dict[str, Any]]
         ("bootstrap.py", Path(bootstrap.__file__)),
         ("certificates.py", Path(certificates.__file__)),
         ("iptables_rule.py", Path(iptables_rule.__file__)),
+        ("postgres_persistence.py", Path(postgres_persistence.__file__)),
         *((f"crds/{path.name}", path) for path in crds),
     ]:
         # Names and fixed-size digests frame the inputs, including helper changes that affect the
@@ -573,8 +577,8 @@ def _spike_fingerprint(binary: Path, crds: list[Path], pki: list[dict[str, Any]]
         digest.update(name.encode() + b"\0")
         with path.open("rb") as source:
             digest.update(hashlib.file_digest(source, "sha256").digest())
-    digest.update(json.dumps(pki, sort_keys=True).encode())
-    for reference, rloc in sorted(pki_images.items()):
+    digest.update(json.dumps(infrastructure, sort_keys=True).encode())
+    for reference, rloc in sorted(images.items()):
         digest.update(reference.encode())
         layout = get_required_path(rloc.read_text().strip())
         # OCI index manifests bind the config and layer digests without hashing every layer tarball.
@@ -666,11 +670,8 @@ def _spike_evidence(
     pki: list[dict[str, Any]],
     marker: dict[str, Any],
     warm: bool,
+    postgres: dict[str, Any],
 ) -> dict[str, Any]:
-    pods = json.loads(k3s.kubectl("get", "pods", "-n", fixture.namespace, "-o", "json"))["items"]
-    postgres = [pod for pod in pods if pod["metadata"]["name"].startswith("postgres-")]
-    if len(postgres) != 1:
-        raise RuntimeError(f"expected one fixture PostgreSQL Pod, found {len(postgres)}")
     controllers = {
         doc["metadata"]["name"]: k3s.kubectl(
             "get", "deployment", doc["metadata"]["name"], "-n", "cert-manager", "-o", "jsonpath={.metadata.uid}"
@@ -686,7 +687,8 @@ def _spike_evidence(
         "fingerprint": marker["fingerprint"],
         "k3s": marker["identity"],
         "namespace_uid": k3s.kubectl("get", "namespace", fixture.namespace, "-o", "jsonpath={.metadata.uid}"),
-        "postgres_pod_uid": postgres[0]["metadata"]["uid"],
+        "postgres_pod_uid": postgres["identity"]["pod_uid"],
+        "postgres": postgres,
         "root_certificate_uid": k3s.kubectl(
             "get", "certificate", "test-runner-root", "-n", "cert-manager", "-o", "jsonpath={.metadata.uid}"
         ),
@@ -699,8 +701,10 @@ def _spike_evidence(
     }
 
 
-def _spike_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture, marker: dict[str, Any]) -> None:
-    """Wait for fixture-owned resources to vanish, leaving only k3s and PKI controllers."""
+def _spike_clean(
+    k3s: K3s, fixture: rendered_fixture.RenderedFixture, marker: dict[str, Any], postgres: postgres_persistence.Baseline
+) -> dict[str, Any]:
+    """Remove application state and reset databases before retaining the infrastructure."""
     namespaces = [doc["metadata"]["name"] for doc in fixture.objects if doc["kind"] == "Namespace"]
     if set(namespaces) != {fixture.namespace, "systest-egress-credentials"}:
         raise RuntimeError(f"unexpected fixture namespaces: {namespaces}")
@@ -757,8 +761,10 @@ def _spike_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture, marker: di
     remaining_pvs = json.loads(k3s.kubectl("get", "pv", "-o", "json"))["items"]
     if any(item.get("spec", {}).get("claimRef", {}).get("namespace") in namespaces for item in remaining_pvs):
         raise RuntimeError("fixture-owned PersistentVolume survived cleanup")
+    postgres_cleanup = postgres_persistence.clean(k3s.kubectl, postgres, marker)
     marker["state"] = "clean"
     _spike_write_marker(marker)
+    return postgres_cleanup
 
 
 @contextlib.contextmanager
@@ -769,9 +775,17 @@ def running_stack(
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = inputs.fixture
     persistence_spike = os.environ.get("K3S_PERSISTENCE_SPIKE") == "1"
+    postgres = postgres_persistence.prepare(fixture) if persistence_spike else None
+    if postgres is not None:
+        fixture = postgres.fixture
     cert_manager, trust_manager = certificates.releases()
     pki_images = certificates.images(cert_manager + trust_manager)
     fixture_images = {_ci_image(rloc): rloc for rloc in inputs.image_layouts}
+    postgres_images = (
+        {reference: fixture_images[reference] for reference in _deployment_images(postgres.objects)}
+        if postgres is not None
+        else {}
+    )
     guest_images = {_ci_image(rloc): rloc for rloc in inputs.guest_image_layouts}
     if fixture.vm_sandboxes != bool(guest_images):
         raise ValueError("VM deployment and guest image inputs do not match")
@@ -788,12 +802,17 @@ def running_stack(
                 process_traces.ProcessTraces(k3s.node_ip, undeclared_outputs_dir() / "process-spans.jsonl")
             )
             # A VM stack's layers would leave too little memory for its guests (README § Image layers in memory).
-            if persistence_spike:
+            if postgres is not None:
                 if fixture.vm_sandboxes:
                     raise ValueError("the persistence spike only supports the Pod fixture")
                 k3s, spike_marker, spike_warm = _spike_open(
                     inputs.binary,
-                    _spike_fingerprint(inputs.binary, crds, cert_manager + trust_manager, pki_images),
+                    _spike_fingerprint(
+                        inputs.binary,
+                        crds,
+                        cert_manager + trust_manager + postgres.objects,
+                        pki_images | postgres_images,
+                    ),
                     layers_in_memory=True,
                 )
             else:
@@ -868,7 +887,12 @@ def running_stack(
                 # Applying a workload before its image is imported would pull it from the registry.
                 if pki_import is not None:
                     pki_import.result()
-                fixture_import = importing.submit(contextvars.copy_context().run, k3s.import_images, fixture_images)
+                action_images = {
+                    reference: layout
+                    for reference, layout in fixture_images.items()
+                    if not (persistence_spike and spike_warm and reference in postgres_images)
+                }
+                fixture_import = importing.submit(contextvars.copy_context().run, k3s.import_images, action_images)
                 if install_pki:
                     certificates.install(k3s.kubectl, cert_manager, trust_manager)
                 else:
@@ -881,6 +905,10 @@ def running_stack(
                 setup.add_event("cert-manager and trust-manager ready")
                 fixture_import.result()
                 setup.add_event("fixture images imported" if guest_images else "images imported")
+                if postgres is not None:
+                    postgres_evidence = postgres_persistence.ensure(
+                        k3s.kubectl, postgres, warm=spike_warm, marker=spike_marker
+                    )
                 if guest_images:
                     # The VM root image is this stack's largest cold import. Sampling proceeds while
                     # the importer and the rest of setup work; joining happens at fixture teardown.
@@ -982,7 +1010,7 @@ def running_stack(
         spike_output = undeclared_outputs_dir() / "persistence-suite.json"
         if persistence_spike:
             spike_evidence = _spike_evidence(
-                k3s, fixture, models, cert_manager + trust_manager, spike_marker, spike_warm
+                k3s, fixture, models, cert_manager + trust_manager, spike_marker, spike_warm, postgres_evidence
             )
             spike_output.write_text(json.dumps(spike_evidence))
         yield Stack(k3s=k3s, cluster=cluster, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
@@ -992,7 +1020,7 @@ def running_stack(
                 (undeclared_outputs_dir() / "vm-sandboxes.txt").write_text(
                     vm_sandboxes.report(k3s.kubectl, fixture.namespace)
                 )
-        if persistence_spike:
-            _spike_clean(k3s, fixture, spike_marker)
+        if postgres is not None:
+            spike_evidence["postgres_cleanup"] = _spike_clean(k3s, fixture, spike_marker, postgres)
             spike_evidence["cleanup"] = "complete"
             spike_output.write_text(json.dumps(spike_evidence))

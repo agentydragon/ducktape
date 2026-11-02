@@ -1,6 +1,22 @@
 # Hosted RBE k3s persistence spike (2026-11-01)
 
-## Continued spike: automatic baseline refresh
+## PostgreSQL extension
+
+The manual full-Pod spike now also retains PostgreSQL in `systest-infrastructure`. Application
+namespaces and Pods remain disposable. Once application teardown finishes, the spike writes an
+actual SQL sentinel, drops and recreates the fixture-owned service databases and roles, and checks
+that the databases have new OIDs and no user relations. It verifies PostgreSQL's Pod, container and
+SQL server identity before accepting a clean seed. Services apply their normal migrations on every
+action. PostgreSQL's manifests, bootstrap configuration, image index and persistence helper code
+participate in the baseline fingerprint.
+
+The preceding k3s/PKI-only experiment's two warm actions spent 0.245/2.047 s importing PostgreSQL's
+image and 8.243/4.179 s in its Deployment readiness span. Those spans are part of setup and can
+overlap other work; they are not additive savings. Database reset and verification introduce their
+own work. The extension must preserve the existing 13 cases and prove process retention and fresh
+database state before any performance conclusion.
+
+## Prior continuation: automatic baseline refresh
 
 The manual full-Pod target now uses a v6 snapshot family. It retains the runtime input fingerprint
 and clean/dirty ownership marker, and adds `allow-remote-snapshots=true`,
