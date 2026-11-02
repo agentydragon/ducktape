@@ -39,6 +39,7 @@ type harnessHostAdmissionProbeState struct {
 	statusReadFailures     []admissionStatusReadFailure
 	failDesiredPublication atomic.Bool
 	desiredPublicationErr  error
+	dropAdmissionUpdate    atomic.Bool
 }
 
 func (s *harnessHostAdmissionProbeState) failNextStatusRead(ctx context.Context, err error) {
@@ -67,6 +68,17 @@ func (s *harnessHostAdmissionProbeState) Modify(ctx context.Context, target reso
 		return s.desiredPublicationErr
 	}
 	return s.State.Modify(ctx, target, update, options...)
+}
+
+func (s *harnessHostAdmissionProbeState) UpdateWithConflicts(ctx context.Context, pointer resource.Pointer, update state.UpdaterFunc, options ...state.UpdateOption) (resource.Resource, error) {
+	if pointer.Type() == lifecycle.AdmissionCountType && s.dropAdmissionUpdate.Swap(false) {
+		// Admission holds Runtime.mu through Update, so WatchState cannot see
+		// the missing count and revoke its epoch before accounting fails.
+		if err := s.State.Destroy(ctx, pointer, state.WithDestroyOwner(lifecycle.EnvironmentOwner)); err != nil {
+			return nil, err
+		}
+	}
+	return s.State.UpdateWithConflicts(ctx, pointer, update, options...)
 }
 
 func lifecycleTestSession(t *testing.T) (*Runtime, *session.Session) {
@@ -533,13 +545,18 @@ func TestMissingAdmissionStateRejectsDurableWork(t *testing.T) {
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
 	config.expectCloseError = true
-	r := newSessionTestRuntime(t, config)
+	store := &harnessHostAdmissionProbeState{State: state.WrapCore(namespaced.NewState(inmem.Build))}
+	r := newSessionTestRuntimeWithState(t, config, store)
 	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	s := r.sessions.Get("session-1")
-	restore := removeAdmissionState(t, r)
-	defer restore()
+	store.dropAdmissionUpdate.Store(true)
+	defer func() {
+		if err := r.lifecycleState.Create(r.lifecycleContext, lifecycleResourceFor(lifecycle.EnvironmentResourceID, environmentAdmissionCountSpec{}), state.WithCreateOwner(lifecycle.EnvironmentOwner)); err != nil {
+			t.Errorf("restore admission accounting for teardown: %v", err)
+		}
+	}()
 	// The deferred test-only restoration permits cleanup, but must not clear the
 	// Runtime failure raised when admission accounting could not be published.
 	t.Cleanup(func() {
@@ -553,12 +570,15 @@ func TestMissingAdmissionStateRejectsDurableWork(t *testing.T) {
 		}
 		_ = owner.Close()
 	})
-	if facts, err := r.facts(); err == nil {
-		t.Fatalf("missing accounting returned facts: %v", facts)
-	}
 	cursor := s.EventJournal().LastCursor()
 	if _, err := r.SubmitInput(sessionCallContext(r, r.lifecycleContext), &environmentruntimepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "missing-accounting", Text: "input"}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("command with missing accounting = %v, want Unavailable", err)
+	}
+	if store.dropAdmissionUpdate.Load() {
+		t.Fatal("command did not reach admission accounting")
+	}
+	if facts, err := r.facts(); err == nil {
+		t.Fatalf("missing accounting returned facts: %v", facts)
 	}
 	if after := s.EventJournal().LastCursor(); after != cursor {
 		t.Fatalf("rejected command changed journal cursor: %d -> %d", cursor, after)
