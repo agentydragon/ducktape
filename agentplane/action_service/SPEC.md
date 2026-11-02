@@ -286,23 +286,25 @@ delegation envelope. Discovery, Dispatcher and History apply their normal resour
 effective caller; privileged actor membership does not widen the caller's authority. Missing caller
 UIDs fail closed, and ambiguous mutation replies end as `execution_unknown` without replay.
 
-The reviewed `environments` group lists and reads existing eligible targets. The `sessions` group
+The reviewed `environments` group lists, reads and explicitly resumes existing eligible targets.
+Reads return the current snapshot immediately; they neither wait nor resume. The resume Action uses
+`EnvironmentService`, which rechecks the effective caller's current same-ServiceAccount
+`resumePolicy` and exact Sandbox UID/generation; it creates no target or grant. The `sessions` group
 opens Sessions, submits input with caller-minted command IDs, observes input delivery and History
 facts, cancels only a queued input whose durable receipt matches the supplied Session, interrupts
 the exact observed turn, reads the retained Dispatcher opening and History summary, and reads
 paginated retained turns with explicit coverage and source errors. These projections do not look up
 live environments and preserve facts already observed when another source is unavailable. Opening
 does not start a turn; `additional_instructions` is an additive standing brief and the caller submits
-the task separately. This surface creates no environments or caller grants and adds no wake
-authority; submitted input still follows the backend's existing wake-on-send policy when the
-authenticated caller already has that permission.
+the task separately. This surface creates no environments or caller grants. Explicit resume uses
+the existing target policy; submitted input follows the separate backend wake-on-send policy.
 
 MCP Edge names direct tools `<group>__<action>` (for example `sessions__submit_input`) while the
 Action catalog retains the reviewed group/action pair. Successful output is structured JSON from
 the owning protobuf or typed Session projection; source-specific partial and unavailable facts stay
-explicit. The `basic` PolicySet's exact-action rule is the auto-approval owner for these operations.
-Existing ServiceAccount and Sandbox PolicyBindings are not rewritten; an Action is auto-approved
-only where that existing permission set applies to the caller.
+explicit. Existing ServiceAccount and Sandbox PolicyBindings are not rewritten; an Action is
+auto-approved only where a PolicySet already bound to the caller applies. Resume also requires the
+backend's current target policy.
 
 ## Optional MCP backends
 
