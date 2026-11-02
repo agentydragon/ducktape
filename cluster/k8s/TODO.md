@@ -350,14 +350,25 @@ set the Haku proxy pods may reach on the public internet, and nothing else. Know
 unverified around it as of 2026-11-02 (operator-facing summary: `haku/docs/security.md`):
 
 - [ ] Finish retiring the `haku-sandbox` half of the Haku proxy. `haku-egress-proxy` (mitmproxy) now
-      really serves `haku-ci` (CI builds: the real traffic). In `haku-sandbox` only `haku-anki` needs
-      it (AnkiWeb sync), and it is moving behind an Agentplane egress sidecar, running as the shared `haku-ui` account
-      (`ankiweb-sync` in `actions_staging_policies.py`);
-      the Kyverno injection (`kyverno/proxy_injection.py`) now leaves a container that sets its own
-      proxy alone. Once Anki is verified syncing through the sidecar: delete the injection policy, drop
-      `*.ankiweb.net` from the fence, and leave `haku-sandbox` on its default-deny CCNP. Several other
-      allowlist entries were justified by pods that are gone (`alloy-otlp`, `haku-mailbox`,
-      `api.coinbase.com`, PyPI/npm); per-host flow data (Hubble) is needed to know which can go.
+      really serves `haku-ci` (CI builds: the real traffic). In `haku-sandbox` only `haku-anki` would
+      need it (AnkiWeb sync), and it now runs behind an Agentplane egress sidecar as the shared
+      `haku-ui` account (`ankiweb-sync` in `actions_staging_policies.py`); the Kyverno injection
+      (`kyverno/proxy_injection.py`) leaves a container that sets its own proxy alone. That path is
+      wired but **unexercised**: see the next item. Once Anki is verified syncing through the sidecar:
+      delete the injection policy, drop `*.ankiweb.net` from the fence, and leave `haku-sandbox` on its
+      default-deny CCNP. Several other allowlist entries were justified by pods that are gone
+      (`alloy-otlp`, `haku-mailbox`, `api.coinbase.com`, PyPI/npm); per-host flow data (Hubble) is
+      needed to know which can go.
+- [ ] (Maybe later.) AnkiWeb sync has been off since the credentials moved to external-creds
+      (2026-09-21, #7581). `ankiweb-credentials` exists only in `ducktape-flux` (its source), approved
+      for `haku-sandbox` in `external_creds.py` but never mirrored there: `haku/workspaces.py` has no
+      ExternalSecret for it. haku-anki references the Secret with `optional: true`, so it starts fine
+      and its sync worker reports `disabled` (`GET /api/sync/status`) instead of failing loudly.
+      Fix: ESO-mirror it into `haku-sandbox` like the other approved consumers (keys `email` and
+      `password`, which the Deployment reads), restart Anki, and check the status leaves `disabled`.
+      Before turning it on, know that the worker's first pass after boot does an automatic full upload
+      when AnkiWeb's side is empty, so the collection is pushed to the dedicated AnkiWeb account
+      straight away. Also consider dropping `optional: true` so a missing Secret is loud.
 - [ ] Converge on one proxy. mitmproxy has no credential placeholders, so its clients send real
       unredacted tokens upstream where Agentplane egress substitutes a placeholder in a trusted
       pod (Iron, the earlier candidate, was retired 2026-10-21). Blocked on an Agentplane
