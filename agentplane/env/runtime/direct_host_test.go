@@ -56,7 +56,8 @@ func TestNativeStopWaitDoesNotMissStatusPublishedDuringRead(t *testing.T) {
 	if _, err := lifecycle.WriteStatus(ctx, writer, lifecycle.Status{Generation: 3, NativeStopped: true}); err != nil {
 		t.Fatal(err)
 	}
-	r.changed()
+	woke := make(chan struct{})
+	go func() { r.changed(); close(woke) }()
 	paused.release()
 	select {
 	case err := <-result:
@@ -66,6 +67,7 @@ func TestNativeStopWaitDoesNotMissStatusPublishedDuringRead(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("status update was lost between read and wait")
 	}
+	<-woke
 }
 
 func TestNativeStopWaitRejectsStaleGeneration(t *testing.T) {
