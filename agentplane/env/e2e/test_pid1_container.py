@@ -23,11 +23,16 @@ from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.environment_runtime_transport.config import Insecure
 from agentplane.history_service import session_ingress_pb2, session_ingress_pb2_grpc
 from agentplane.proto import session_pb2
-from third_party.containers import debian_slim
+from third_party.containers import debian_slim, ryuk
 from util.bazel.runfiles import get_required_path
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
+
+
+def _load_images() -> None:
+    for image in (ryuk.IMAGE, debian_slim.IMAGE):
+        load_oci_image(image)
 
 
 def _wait_ready(directory: Path) -> None:
@@ -109,7 +114,7 @@ async def acknowledging_history() -> AsyncIterator[str]:
 @pytest.mark.parametrize("mode", ["native-exit", "term", "escalate", "crash"])
 @pytest.mark.parametrize("backend", ["pid1", "subprocess"])
 async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str, backend: str) -> None:
-    load_oci_image(debian_slim.IMAGE)
+    _load_images()
     binary = get_required_path(
         "_main/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
     ).resolve()
@@ -155,7 +160,7 @@ async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str, b
 
 @pytest.mark.parametrize("abrupt", [False, True], ids=["term", "crash"])
 async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, abrupt: bool) -> None:
-    load_oci_image(debian_slim.IMAGE)
+    _load_images()
     runner = get_required_path(launches.RUNTIME_BINARY).resolve()
     fixture = get_required_path(
         "_main/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
@@ -216,7 +221,7 @@ async def test_production_pid1_embedded_host_reaps_setup(
     tmp_path: Path, gateway: Gateway, acknowledging_history: str
 ) -> None:
     """A Host-owned setup child must use Runtime's PID1 reaper and join its process group."""
-    load_oci_image(debian_slim.IMAGE)
+    _load_images()
     runner = get_required_path(launches.RUNTIME_BINARY).resolve()
     fixture = get_required_path(
         "_main/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
