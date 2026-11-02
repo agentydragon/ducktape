@@ -56,8 +56,9 @@ boundary, this path is guidance on the mounted workspace volume; the Runner's ex
 remain authoritative. The target's workspace volume is shared by its Sessions; a distinct cwd is
 workflow organization, not isolation.
 
-`WatchEnvironments` emits complete caller-visible inventories as bounded chunks followed by a
-completion marker. Each completed snapshot replaces the last. Direct ServiceAccounts named by the
-Gateway's `environment_readers` setting can read all Sandboxes; the grant does not authorize writes
-and is not inherited by delegated callers. Ordinary callers remain restricted to their exact owned
-Sandbox. Stream loss requires reconnection; the 30-second authentication lease ends with `reconnect_required`.
+`WatchEnvironments` sends an initial caller-visible inventory in bounded chunks and a completion
+marker, followed by per-Sandbox upserts and UID-fenced removals. Reconnection starts a new snapshot;
+intermediate changes may be coalesced. Direct ServiceAccounts named by the Gateway's
+`environment_readers` setting can read all Sandboxes; the grant does not authorize writes and is
+not inherited by delegated callers. Ordinary callers remain restricted to their exact owned Sandbox.
+An idle stream stays open while its credential remains valid and closes when revalidation fails.

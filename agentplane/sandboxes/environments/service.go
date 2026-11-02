@@ -30,12 +30,13 @@ const maxLimit = 100
 type Service struct {
 	environmentpb.UnimplementedEnvironmentServiceServer
 
-	namespace   string
-	objects     client.WithWatch
-	sandboxes   *sandboxreader.Reader
-	runtime     runtimeconfig.Catalog
-	wakeCallers map[auth.Account]struct{}
-	readers     map[auth.Account]struct{}
+	namespace              string
+	objects                client.WithWatch
+	sandboxes              *sandboxreader.Reader
+	runtime                runtimeconfig.Catalog
+	wakeCallers            map[auth.Account]struct{}
+	readers                map[auth.Account]struct{}
+	collectionAuthInterval time.Duration
 }
 
 func New(
@@ -56,7 +57,7 @@ func New(
 	for account := range wakeCallers {
 		wake[account] = struct{}{}
 	}
-	return &Service{namespace: namespace, objects: objects, sandboxes: sandboxes, runtime: runtime, wakeCallers: wake, readers: readers}, nil
+	return &Service{namespace: namespace, objects: objects, sandboxes: sandboxes, runtime: runtime, wakeCallers: wake, readers: readers, collectionAuthInterval: auth.DefaultVerdictTTL}, nil
 }
 
 // Methods admits direct TokenReview-verified ServiceAccounts in the configured Resolver namespaces.

@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
+	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -52,6 +53,21 @@ type watchFixture struct {
 	ctx          context.Context
 	metadataRead <-chan struct{}
 	readerCtx    context.Context
+	reviews      *switchableReviews
+}
+
+type switchableReviews struct {
+	inner   auth.TokenReviews
+	revoked atomic.Bool
+	calls   atomic.Int32
+}
+
+func (r *switchableReviews) Create(ctx context.Context, review *authenticationv1.TokenReview, opts metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
+	r.calls.Add(1)
+	if r.revoked.Load() {
+		return &authenticationv1.TokenReview{}, nil
+	}
+	return r.inner.Create(ctx, review, opts)
 }
 
 func newWatchFixture(t *testing.T) watchFixture {
@@ -102,7 +118,9 @@ func newWatchFixture(t *testing.T) watchFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolver, err := auth.NewResolver(watchAPI.TokenReviews(), dispatcherAudience, []string{namespace}, auth.WithVerdictTTL(0))
+	service.collectionAuthInterval = 50 * time.Millisecond
+	reviews := &switchableReviews{inner: watchAPI.TokenReviews()}
+	resolver, err := auth.NewResolver(reviews, dispatcherAudience, []string{namespace}, auth.WithVerdictTTL(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,6 +136,7 @@ func newWatchFixture(t *testing.T) watchFixture {
 		t.Fatal(err)
 	}
 	return watchFixture{
+		reviews:   reviews,
 		readerCtx: metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken),
 		objects:   objects, rpc: environmentpb.NewEnvironmentServiceClient(connection),
 		target:       &environmentpb.TargetHandle{Namespace: namespace, Name: sandboxName, Uid: string(sandbox.UID)},
@@ -400,8 +419,132 @@ func TestWatchEnvironmentsScopesAndIncludesSandboxesWithoutAccounts(t *testing.T
 	if err := f.objects.Delete(f.ctx, other); err != nil {
 		t.Fatal(err)
 	}
-	after := receiveCollection(t, all)
-	if len(after) != 1 || after[0].GetName() != sandboxName {
-		t.Fatalf("after deletion = %v", after)
+	after, err := all.Recv()
+	if err != nil || after.GetRemoved().GetName() != other.Name || after.GetRemoved().GetUid() != string(other.UID) {
+		t.Fatalf("after deletion = %v, %v; want UID-fenced removal", after, err)
+	}
+}
+
+func TestCollectionWatchUpsertsAndRemovesOnAccountLoss(t *testing.T) {
+	f := newWatchFixture(t)
+	stream, err := f.rpc.WatchEnvironments(f.ctx, &emptypb.Empty{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := receiveCollection(t, stream)
+	if len(initial) != 1 {
+		t.Fatalf("initial = %v", initial)
+	}
+	sandbox := f.sandbox(t)
+	sandbox.Spec.WakeOnSend = true
+	if err := f.objects.Update(f.ctx, sandbox); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := stream.Recv()
+	if err != nil || !changed.GetUpsert().GetWakeOnSend() {
+		t.Fatalf("upsert = %v, %v", changed, err)
+	}
+	var account corev1.ServiceAccount
+	key := types.NamespacedName{Namespace: f.target.Namespace, Name: sandboxName}
+	if err := f.objects.Get(f.ctx, key, &account); err != nil {
+		t.Fatal(err)
+	}
+	account.OwnerReferences = nil
+	if err := f.objects.Update(f.ctx, &account); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := stream.Recv()
+	if err != nil || removed.GetRemoved().GetUid() != f.target.Uid {
+		t.Fatalf("account loss = %v, %v", removed, err)
+	}
+}
+
+func TestCollectionWatchRevalidatesIdleCredentialWithoutRenewal(t *testing.T) {
+	f := newWatchFixture(t)
+	stream, err := f.rpc.WatchEnvironments(f.readerCtx, &emptypb.Empty{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiveCollection(t, stream)
+	first := f.reviews.calls.Load()
+	for f.reviews.calls.Load() < first+2 {
+		select {
+		case <-time.After(10 * time.Millisecond):
+		case <-f.ctx.Done():
+			t.Fatal("idle credentials were not revalidated")
+		}
+	}
+	other := sandboxObject("")
+	other.Namespace, other.Name = f.target.Namespace, "created"
+	if err := f.objects.Create(f.ctx, other); err != nil {
+		t.Fatal(err)
+	}
+	frame, err := stream.Recv()
+	if err != nil || frame.GetUpsert().GetUid() != string(other.UID) {
+		t.Fatalf("stream did not remain open: %v, %v", frame, err)
+	}
+	f.reviews.revoked.Store(true)
+	_, err = stream.Recv()
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("revoked idle stream: %v, want Unauthenticated", err)
+	}
+}
+
+func TestCollectionWatchTracksIncarnationPodChanges(t *testing.T) {
+	f := newWatchFixture(t)
+	stream, err := f.rpc.WatchEnvironments(f.readerCtx, &emptypb.Empty{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiveCollection(t, stream)
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "vm-launcher", Namespace: f.target.Namespace},
+		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "runner", Image: "test"}}},
+	}
+	if err := f.objects.Create(f.ctx, pod); err != nil {
+		t.Fatal(err)
+	}
+	sandbox := f.sandbox(t)
+	sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: pod.Name, UID: string(pod.UID)}
+	if err := f.objects.Status().Update(f.ctx, sandbox); err != nil {
+		t.Fatal(err)
+	}
+	frame, err := stream.Recv()
+	if err != nil || frame.GetUpsert().GetPod().GetUid() != string(pod.UID) {
+		t.Fatalf("incarnation upsert = %v, %v", frame, err)
+	}
+	pod.Status.Phase = corev1.PodRunning
+	if err := f.objects.Status().Update(f.ctx, pod); err != nil {
+		t.Fatal(err)
+	}
+	frame, err = stream.Recv()
+	if err != nil || frame.GetUpsert().GetPod().GetStatus().AsMap()["phase"] != "Running" {
+		t.Fatalf("Pod status upsert = %v, %v", frame, err)
+	}
+}
+
+func TestCollectionWatchFencesSameNameReplacement(t *testing.T) {
+	f := newWatchFixture(t)
+	stream, err := f.rpc.WatchEnvironments(f.readerCtx, &emptypb.Empty{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiveCollection(t, stream)
+	old := f.sandbox(t)
+	if err := f.objects.Delete(f.ctx, old); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := stream.Recv()
+	if err != nil || removed.GetRemoved().GetUid() != string(old.UID) {
+		t.Fatalf("removed = %v, %v", removed, err)
+	}
+	replacement := sandboxObject("")
+	replacement.Namespace = f.target.Namespace
+	if err := f.objects.Create(f.ctx, replacement); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := stream.Recv()
+	if err != nil || updated.GetUpsert().GetUid() != string(replacement.UID) || replacement.UID == old.UID {
+		t.Fatalf("replacement = %v, %v (old uid %s)", updated, err, old.UID)
 	}
 }

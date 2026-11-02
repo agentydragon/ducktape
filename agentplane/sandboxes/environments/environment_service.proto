@@ -14,7 +14,7 @@ service EnvironmentService {
   rpc ListEnvironments(ListEnvironmentsRequest) returns (ListEnvironmentsResponse) {
     option (google.api.http) = {get: "/v1/environments"};
   }
-  // Watches the caller-visible collection. Each complete snapshot replaces the previous one.
+  // Sends an initial caller-visible snapshot, then coalesced updates and removals.
   rpc WatchEnvironments(google.protobuf.Empty) returns (stream WatchEnvironmentsResponse) {
     option (google.api.http) = {get: "/v1/environments:watch"};
   }
@@ -53,13 +53,21 @@ message ListEnvironmentsResponse {
 }
 
 message WatchEnvironmentsResponse {
-  // Snapshot chunks replace the previous view only when snapshot_complete arrives.
+  // Snapshot chunks replace the previous view only when snapshot_complete arrives. Afterwards,
+  // upserts replace one Sandbox and removals remove the named UID. Reconnect starts a new snapshot.
   oneof frame {
     SandboxChunk snapshot = 1;
     google.protobuf.Empty snapshot_complete = 2;
-    // Reconnect with fresh authorization.
-    google.protobuf.Empty reconnect_required = 3;
+    agentplane.proto.Sandbox upsert = 3;
+    EnvironmentRemoved removed = 4;
   }
+}
+
+// A Sandbox was deleted or is no longer visible to this caller. UID fences same-name replacement.
+message EnvironmentRemoved {
+  string namespace = 1;
+  string name = 2;
+  string uid = 3;
 }
 
 message SandboxChunk {

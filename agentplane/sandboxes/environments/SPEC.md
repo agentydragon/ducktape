@@ -54,16 +54,24 @@ backpressure bound. A blocked write ends the RPC with `DEADLINE_EXCEEDED` and is
 
 ## Collection watch
 
-`WatchEnvironments` returns the Sandbox proto for each caller-visible target as snapshot chunks,
-followed by `snapshot_complete`. The client replaces its prior set only after completion, including
-for an empty snapshot. Each subsequent change sends another complete set; intermediate changes may
-be coalesced. It watches Sandboxes, execution accounts and Pods before the first read, including
-VM Pod incarnations. Ordinary callers see only their exact live owned target; explicitly granted
-direct readers see all targets, including creation and deletion before or after the account exists.
-A missing or stale Pod is never substituted for the controller-reported incarnation. Source loss
-ends the stream with `UNAVAILABLE`, and a client reconnects for a fresh snapshot. A 30-second stream
-lease sends `reconnect_required` and ends the stream so callers reauthenticate even when no objects change; no cursor or transition history is
-promised. A stalled send is bounded by five seconds.
+`WatchEnvironments` begins with the caller-visible Sandbox set in bounded snapshot chunks followed
+by `snapshot_complete`. A client replaces its prior set only after completion, including for an
+empty snapshot; it discards incomplete snapshots on disconnect. After the initial snapshot, `upsert`
+replaces one Sandbox and `removed` removes the given namespace, name, and UID. A same-name
+replacement removes the prior UID before upserting the new one. Visibility loss also removes an item.
+Intermediate changes may be coalesced. Reconnecting starts a fresh snapshot; there is no replay cursor
+or transition history. The assembled view draws from multiple Kubernetes resources and does not
+promise a globally atomic point-in-time read.
+
+The service starts Sandbox, account, and Pod watches before reading the initial snapshot, and
+rereads affected Sandboxes on notifications. It indexes current incarnation Pod names, including VM
+Pods; unrelated Pod events do not reread the inventory. Ordinary callers see only their exact live
+owned target; explicitly granted direct readers see all targets, including creation and deletion
+before or after the account exists. A missing or stale Pod is never substituted for the
+controller-reported incarnation. Source loss ends the stream with `UNAVAILABLE`; the client
+reconnects for a fresh snapshot. The admitted credential is reviewed before each frame and
+periodically while idle, using the resolver's verdict cache. An expired or revoked credential ends
+the stream; a successful review leaves it open. A stalled send is bounded by five seconds.
 
 ## Returned facts
 

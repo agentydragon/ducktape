@@ -25,14 +25,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// A finite lease requires callers to reauthenticate even when inventory is idle.
-const (
-	collectionLease = 30 * time.Second
-	collectionChunk = 64
-)
+const collectionChunk = 64
 
-// WatchEnvironments sends a complete caller-visible inventory on each change. The receiver replaces
-// its view only after snapshot_complete; reconnect always starts a new snapshot.
+// WatchEnvironments sends one initial snapshot followed by coalesced per-Sandbox changes.
 func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamingServer[environmentpb.WatchEnvironmentsResponse]) error {
 	ctx := stream.Context()
 	identity, err := caller(ctx)
@@ -47,64 +42,111 @@ func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamin
 	if !broad {
 		target.Name = identity.Account.Name
 	}
-	sandboxes, err := s.watchCollection(ctx, &sandboxapi.SandboxList{}, target)
+	initialSandboxes := &sandboxapi.SandboxList{}
+	sandboxes, err := s.watchCollection(ctx, initialSandboxes, target)
 	if err != nil {
 		return err
 	}
 	defer sandboxes.Stop()
-	accounts, err := s.watchCollection(ctx, &corev1.ServiceAccountList{}, target)
-	if err != nil {
-		return err
+	var accountEvents <-chan watch.Event
+	if !broad {
+		accounts, err := s.watchCollection(ctx, &corev1.ServiceAccountList{}, target)
+		if err != nil {
+			return err
+		}
+		defer accounts.Stop()
+		accountEvents = accounts.ResultChan()
 	}
-	defer accounts.Stop()
-	// VM incarnation Pod names differ from the Sandbox name; a Pod event only triggers an authorized reread.
+	// A VM Pod may not have the Sandbox's name. Index each current incarnation by Pod name.
 	pods, err := s.watchCollection(ctx, &corev1.PodList{}, &environmentpb.TargetHandle{Namespace: s.namespace})
 	if err != nil {
 		return err
 	}
 	defer pods.Stop()
-	expiry := time.NewTimer(collectionLease)
-	defer expiry.Stop()
-	var previous []*sandboxpb.Sandbox
-	first := true
-	for {
-		current, err := s.collection(ctx, identity, broad)
+	incarnation := make(map[string]string)
+	byPod := make(map[string]map[string]struct{})
+	index := func(name, pod string) {
+		if old := incarnation[name]; old != "" {
+			delete(byPod[old], name)
+			if len(byPod[old]) == 0 {
+				delete(byPod, old)
+			}
+		}
+		delete(incarnation, name)
+		if pod != "" {
+			incarnation[name] = pod
+			if byPod[pod] == nil {
+				byPod[pod] = make(map[string]struct{})
+			}
+			byPod[pod][name] = struct{}{}
+		}
+	}
+	for i := range initialSandboxes.Items {
+		item := &initialSandboxes.Items[i]
+		if item.Status.Incarnation != nil {
+			index(item.Name, item.Status.Incarnation.Name)
+		}
+	}
+	current, err := s.collection(ctx, identity, broad)
+	if err != nil {
+		return err
+	}
+	previous := make(map[string]*sandboxpb.Sandbox, len(current))
+	for _, item := range current {
+		previous[item.Name] = item
+	}
+	for start := 0; start < len(current); start += collectionChunk {
+		end := min(start+collectionChunk, len(current))
+		if err := sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Snapshot{Snapshot: &environmentpb.SandboxChunk{Sandboxes: current[start:end]}}}); err != nil {
+			return err
+		}
+	}
+	if err := sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}}}); err != nil {
+		return err
+	}
+	// Revalidate idle streams without interrupting streams whose credentials remain valid.
+	recheck := time.NewTicker(s.collectionAuthInterval)
+	defer recheck.Stop()
+	refresh := func(name string) error {
+		item, podName, err := s.collectionItem(ctx, identity, broad, name)
 		if err != nil {
 			return err
 		}
-		same := !first && len(previous) == len(current)
-		if same {
-			for i := range current {
-				if !proto.Equal(previous[i], current[i]) {
-					same = false
-					break
-				}
-			}
-		}
-		if !same {
-			for start := 0; start < len(current); start += collectionChunk {
-				end := min(start+collectionChunk, len(current))
-				frame := &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Snapshot{Snapshot: &environmentpb.SandboxChunk{Sandboxes: current[start:end]}}}
-				if err := sendCollection(ctx, stream, frame); err != nil {
-					return err
-				}
-			}
-			if err := sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}}}); err != nil {
+		index(name, podName)
+		old := previous[name]
+		if old != nil && (item == nil || old.Uid != item.Uid) {
+			if err := sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Removed{Removed: &environmentpb.EnvironmentRemoved{Namespace: old.Namespace, Name: old.Name, Uid: old.Uid}}}); err != nil {
 				return err
 			}
-			previous = current
-			first = false
+			delete(previous, name)
+			old = nil
 		}
+		if item != nil && !proto.Equal(old, item) {
+			if err := sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Upsert{Upsert: item}}); err != nil {
+				return err
+			}
+			previous[name] = item
+		}
+		return nil
+	}
+	for {
 		var event watch.Event
 		var ok bool
+		var source string
 		select {
 		case <-ctx.Done():
 			return status.FromContextError(ctx.Err()).Err()
-		case <-expiry.C:
-			return sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}}})
+		case <-recheck.C:
+			if err := auth.RevalidateStream(ctx); err != nil {
+				return err
+			}
+			continue
 		case event, ok = <-sandboxes.ResultChan():
-		case event, ok = <-accounts.ResultChan():
+			source = "sandbox"
+		case event, ok = <-accountEvents:
+			source = "account"
 		case event, ok = <-pods.ResultChan():
+			source = "pod"
 		}
 		if !ok {
 			return watchFailure(ctx, errors.New("Kubernetes environment watch closed"))
@@ -112,10 +154,38 @@ func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamin
 		if event.Type == watch.Error {
 			return watchFailure(ctx, apierrors.FromObject(event.Object))
 		}
+		object, ok := event.Object.(metav1.Object)
+		if !ok {
+			return watchFailure(ctx, errors.New("Kubernetes environment watch returned a non-object"))
+		}
+		switch source {
+		case "sandbox":
+			if err := refresh(object.GetName()); err != nil {
+				return err
+			}
+		case "account":
+			if err := refresh(object.GetName()); err != nil {
+				return err
+			}
+		case "pod":
+			names := make([]string, 0, len(byPod[object.GetName()]))
+			for name := range byPod[object.GetName()] {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				if err := refresh(name); err != nil {
+					return err
+				}
+			}
+		}
 	}
 }
 
 func sendCollection(ctx context.Context, stream grpc.ServerStreamingServer[environmentpb.WatchEnvironmentsResponse], frame *environmentpb.WatchEnvironmentsResponse) error {
+	if err := auth.RevalidateStream(ctx); err != nil {
+		return err
+	}
 	err := streaming.SendWithin(ctx, watchWriteTimeout, stream.Send, frame)
 	if errors.Is(err, streaming.ErrSendTimeout) {
 		return status.Error(codes.DeadlineExceeded, "environment watch write deadline expired")
@@ -185,4 +255,48 @@ func (s *Service) collection(ctx context.Context, identity auth.ServiceAccountPr
 		result = append(result, value)
 	}
 	return result, nil
+}
+
+// collectionItem rereads only the Sandbox affected by a source event. The returned Pod name is
+// tracked even when the item is not currently visible, so a later incarnation event can reconcile it.
+func (s *Service) collectionItem(ctx context.Context, identity auth.ServiceAccountPrincipal, broad bool, name string) (*sandboxpb.Sandbox, string, error) {
+	if !broad && name != identity.Account.Name {
+		return nil, "", nil
+	}
+	v, err := s.sandboxes.Get(ctx, name)
+	if status.Code(err) == codes.NotFound {
+		return nil, "", nil
+	}
+	if err != nil {
+		return nil, "", watchFailure(ctx, err)
+	}
+	resource := v.Resource
+	podName := ""
+	if resource.Status.Incarnation != nil {
+		podName = resource.Status.Incarnation.Name
+	}
+	if !broad {
+		execution, found, err := s.sandboxes.ExecutionAccount(ctx, v.Identity)
+		if err != nil {
+			return nil, "", watchFailure(ctx, err)
+		}
+		if !found || !callerMatches(identity, execution) {
+			return nil, podName, nil
+		}
+	}
+	var pod *corev1.Pod
+	if podName != "" {
+		pod = &corev1.Pod{}
+		err := s.objects.Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: podName}, pod)
+		if apierrors.IsNotFound(err) {
+			pod = nil
+		} else if err != nil {
+			return nil, "", watchFailure(ctx, err)
+		}
+	}
+	item, err := sandboxview.View(resource, pod)
+	if err != nil {
+		return nil, "", watchFailure(ctx, err)
+	}
+	return item, podName, nil
 }
