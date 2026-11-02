@@ -35,7 +35,7 @@ def _backup(source: Path, destination: Path, *, journal: bool) -> dict[str, Any]
     return result
 
 
-def _add_tree(output: tarfile.TarFile, source: Path, arcname: str, excluded: set[Path]) -> None:
+def _add_tree(output: tarfile.TarFile, source: Path, arcname: str, excluded: set[Path], backup_dir: Path) -> None:
     if source in excluded:
         return
     member = output.gettarinfo(source, arcname=arcname)
@@ -46,7 +46,7 @@ def _add_tree(output: tarfile.TarFile, source: Path, arcname: str, excluded: set
         if sqlite:
             # Harness databases are not all session journals. Snapshot their committed
             # contents before excluding sidecars that can vanish during a live walk.
-            with TemporaryDirectory(dir=Path(output.name).parent) as directory:
+            with TemporaryDirectory(dir=backup_dir) as directory:
                 snapshot = Path(directory) / "snapshot.sqlite"
                 _backup(source, snapshot, journal=False)
                 current = source.stat(follow_symlinks=False)
@@ -63,7 +63,7 @@ def _add_tree(output: tarfile.TarFile, source: Path, arcname: str, excluded: set
         output.addfile(member)
     if member.isdir():
         for child in sorted(source.iterdir()):
-            _add_tree(output, child, f"{arcname}/{child.name}", excluded)
+            _add_tree(output, child, f"{arcname}/{child.name}", excluded, backup_dir)
 
 
 def capture(plan_path: Path) -> int:
@@ -100,7 +100,7 @@ def capture(plan_path: Path) -> int:
                 source = Path(mount["source"])
                 if not source.exists():
                     raise FileNotFoundError(source)
-                _add_tree(output, source, mount["destination"].lstrip("/"), backed_sidecars)
+                _add_tree(output, source, mount["destination"].lstrip("/"), backed_sidecars, archive.parent)
         partial_archive.replace(archive)
         manifest["archive"] = "complete"
         manifest["archive_path"] = str(archive)
