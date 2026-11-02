@@ -16,6 +16,7 @@ export type EffectiveQuota = {
   windows: WindowView[];
   extraSpend: ExtraSpend | null;
   paidCredits: PaidCredits | null;
+  platformCredits: FetchSuccess["platform_credits"];
   prepaidBalance: PrepaidBalance | null;
   resetCredits: number | null;
   resetCreditExpiries: string[];
@@ -33,6 +34,7 @@ export function effectiveQuota(provider: ProviderView): EffectiveQuota {
     (result.windows?.length ||
       result.available_reset_credits != null ||
       result.paid_credits != null ||
+      result.platform_credits != null ||
       result.prepaid_balance != null)
   ) {
     return { ...shown(result), windows: provider.display_windows, staleSince: null, error };
@@ -44,6 +46,7 @@ export function effectiveQuota(provider: ProviderView): EffectiveQuota {
     windows: [],
     extraSpend: null,
     paidCredits: null,
+    platformCredits: null,
     prepaidBalance: null,
     resetCredits: null,
     resetCreditExpiries: [],
@@ -57,6 +60,7 @@ function shown(result: FetchSuccess): Omit<EffectiveQuota, "staleSince" | "error
   return {
     extraSpend: result.extra_spend ?? null,
     paidCredits: result.paid_credits ?? null,
+    platformCredits: result.platform_credits ?? null,
     prepaidBalance: result.prepaid_balance ?? null,
     resetCredits: result.available_reset_credits ?? null,
     resetCreditExpiries: result.available_reset_credit_expiries ?? [],

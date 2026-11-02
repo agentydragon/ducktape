@@ -12,6 +12,7 @@ from aiquota.providers.claude import ClaudeProvider
 from aiquota.providers.cli_proxy_api import CLIProxyAPIManagementClient
 from aiquota.providers.client import ProviderClientFactory, provider_client
 from aiquota.providers.codex import CodexProvider
+from aiquota.providers.openai_platform import OpenAIPlatformProvider
 from aiquota.providers.zai import ZaiProvider
 from aiquota.remote import QuotaAPIClient
 
@@ -93,6 +94,7 @@ def _instantiate(
     candidates: list[tuple[Provider, bool]] = [
         (ClaudeProvider(config.claude, client_factory, management_client), config.claude.enabled),
         (CodexProvider(config.codex, client_factory, management_client), config.codex.enabled),
+        (OpenAIPlatformProvider(config.openai_platform, client_factory), config.openai_platform.enabled),
         (ZaiProvider(config.zai, client_factory), config.zai.enabled),
     ]
     return [p for p, enabled in candidates if enabled]
@@ -105,6 +107,7 @@ def _assemble(name: str, output: ProviderFetch, prior: ProviderQuota | None) -> 
         output.result.windows
         or output.result.available_reset_credits is not None
         or output.result.paid_credits is not None
+        or output.result.platform_credits is not None
         or output.result.prepaid_balance is not None
     ):
         success = SuccessfulProviderFetch(fetched_at=output.fetched_at, result=output.result)

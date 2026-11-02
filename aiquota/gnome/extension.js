@@ -97,6 +97,7 @@ function effectiveState(state) {
     state.windows.length > 0 ||
     state.availableResetCredits != null ||
     state.paidCredits != null ||
+    state.platformCredits != null ||
     state.prepaidBalance != null
   ) {
     const staleAge = state.error && state.lastFetch != null ? Math.max(0, (nowMs() - state.lastFetch) / 1000) : null;
@@ -104,6 +105,7 @@ function effectiveState(state) {
       windows: state.windows,
       extraSpend: state.extraSpend,
       paidCredits: state.paidCredits,
+      platformCredits: state.platformCredits,
       prepaidBalance: state.prepaidBalance,
       availableResetCredits: state.availableResetCredits,
       availableResetCreditExpiries: state.availableResetCreditExpiries,
@@ -117,12 +119,14 @@ function effectiveState(state) {
     (snap.windows.length === 0 &&
       snap.availableResetCredits == null &&
       snap.paidCredits == null &&
+      snap.platformCredits == null &&
       snap.prepaidBalance == null)
   ) {
     return {
       windows: [],
       extraSpend: null,
       paidCredits: null,
+      platformCredits: null,
       prepaidBalance: null,
       availableResetCredits: null,
       availableResetCreditExpiries: [],
@@ -135,6 +139,7 @@ function effectiveState(state) {
     windows: snap.windows,
     extraSpend: snap.extraSpend,
     paidCredits: snap.paidCredits,
+    platformCredits: snap.platformCredits,
     prepaidBalance: snap.prepaidBalance,
     availableResetCredits: snap.availableResetCredits,
     availableResetCreditExpiries: snap.availableResetCreditExpiries,
@@ -235,6 +240,7 @@ function emptyProviderState() {
     error: null,
     extraSpend: null,
     paidCredits: null,
+    platformCredits: null,
     prepaidBalance: null,
     availableResetCredits: null,
     availableResetCreditExpiries: [],
@@ -255,6 +261,7 @@ function emptyProviderState() {
 const PROVIDER_DEFS = [
   { id: "claude", label: "Claude", iconFile: "claude-symbolic.svg" },
   { id: "codex", label: "Codex", iconFile: "openai-symbolic.svg" },
+  { id: "openai_platform", label: "OpenAI API", iconFile: "openai-symbolic.svg" },
   { id: "zai", label: "z.ai", iconFile: "zai-symbolic.svg" },
 ];
 
@@ -787,6 +794,7 @@ const QuotaIndicator = GObject.registerClass(
           .filter((window) => window.display),
         extraSpend: this._mapExtraSpend(snap.result.extra_spend),
         paidCredits: snap.result.paid_credits ?? null,
+        platformCredits: snap.result.platform_credits ?? null,
         prepaidBalance: snap.result.prepaid_balance ?? null,
         availableResetCredits: snap.result.available_reset_credits ?? null,
         availableResetCreditExpiries: snap.result.available_reset_credit_expiries ?? [],
@@ -820,6 +828,7 @@ const QuotaIndicator = GObject.registerClass(
           (result.windows?.length ||
             result.available_reset_credits != null ||
             result.paid_credits != null ||
+            result.platform_credits != null ||
             result.prepaid_balance != null);
         if (lastSuccess && !currentUsable) lastSuccess.windows = displayWindows;
         const lastCheck = pq.last_output?.fetched_at ? new Date(pq.last_output.fetched_at).getTime() : fetchedAt;
@@ -830,6 +839,7 @@ const QuotaIndicator = GObject.registerClass(
           error: isSuccess ? null : (result.error ?? null),
           extraSpend: isSuccess ? this._mapExtraSpend(result.extra_spend) : null,
           paidCredits: isSuccess ? (result.paid_credits ?? null) : null,
+          platformCredits: isSuccess ? (result.platform_credits ?? null) : null,
           prepaidBalance: isSuccess ? (result.prepaid_balance ?? null) : null,
           availableResetCredits: isSuccess ? (result.available_reset_credits ?? null) : null,
           availableResetCreditExpiries: isSuccess ? (result.available_reset_credit_expiries ?? []) : [],
@@ -938,10 +948,11 @@ const QuotaIndicator = GObject.registerClass(
           this._renderExtraActiveRow(p.windowRows[0], windows);
           p.windowRows.slice(1).forEach((row) => (row.visible = false));
         } else {
-          const { windows, staleAge } = effectiveState(p.state);
-          if (windows.length === 0) this._renderPopupRow(p.windowRows[0], null, staleAge);
+          const { windows, staleAge, platformCredits } = effectiveState(p.state);
+          if (windows.length === 0 && platformCredits == null) this._renderPopupRow(p.windowRows[0], null, staleAge);
           windows.forEach((window, index) => this._renderPopupRow(p.windowRows[index], window, staleAge));
-          p.windowRows.forEach((row, index) => (row.visible = index < Math.max(1, windows.length)));
+          const rowCount = windows.length === 0 && platformCredits != null ? 0 : Math.max(1, windows.length);
+          p.windowRows.forEach((row, index) => (row.visible = index < rowCount));
         }
       }
     }
@@ -991,7 +1002,19 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _renderPrepaidRow(item, state) {
-      const text = formatPrepaidBalance(effectiveState(state).prepaidBalance);
+      const effective = effectiveState(state);
+      const credits = effective.platformCredits;
+      const money = (value) =>
+        new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(Number(value));
+      const text = credits
+        ? [
+            `OpenAI API balance · ${money(credits.total_available_usd)}`,
+            ...credits.grants.map(
+              (grant) =>
+                `Grant ${money(Number(grant.granted_usd) - Number(grant.used_usd))} / ${money(grant.granted_usd)} · expires ${grant.expires_at ? new Date(grant.expires_at).toLocaleString() : "unknown"}${grant.is_scheduled ? " · scheduled" : grant.is_held_for_prepaid_transition ? " · held" : ""}`
+            ),
+          ].join("\n")
+        : formatPrepaidBalance(effective.prepaidBalance);
       item.visible = text != null;
       if (text != null) item._summaryLabel.set_text(text);
     }

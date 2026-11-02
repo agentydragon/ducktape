@@ -127,6 +127,11 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
             assert prepaid_text.endswith("$123.45")
         elif fixture_name == "claude_prepaid_balance_unavailable":
             assert string_reply(session.call("GetPrepaidText", "claude")) == "Claude prepaid balance unavailable"
+        elif fixture_name == "openai_platform_credits":
+            credits = string_reply(session.call("GetPrepaidText", "openai_platform"))
+            assert "OpenAI API balance" in credits
+            assert "$125.75" in credits
+            assert "expires" in credits
         elif fixture_name == "wire_fields":
             rows = json.loads(string_reply(session.call("GetWindowRows", "codex")))
             assert len(rows) == 1

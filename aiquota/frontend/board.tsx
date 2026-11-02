@@ -33,7 +33,12 @@ import { effectiveQuota, type EffectiveQuota, type PrepaidBalance } from "./quot
 
 // The payload carries provider ids; these are how the vendors write their names, matching the
 // GNOME panel's labels. An id with no entry shows as itself rather than being guessed at.
-const PROVIDER_NAMES: Record<string, string> = { claude: "Claude", codex: "Codex", zai: "z.ai" };
+const PROVIDER_NAMES: Record<string, string> = {
+  claude: "Claude",
+  codex: "Codex",
+  openai_platform: "OpenAI API",
+  zai: "z.ai",
+};
 
 /**
  * One card per provider. `aiquota-scope` carries the palette (board.css), so a host page's own
@@ -77,6 +82,19 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
         <PaidCreditsStrip credits={quota.paidCredits} active={paidCreditsActive} windows={quota.windows} />
       )}
       {quota.prepaidBalance && <PrepaidBalanceStrip balance={quota.prepaidBalance} />}
+      {quota.platformCredits && (
+        <div className="aiquota-aside">
+          <p>OpenAI API balance · {formatUsd(Number(quota.platformCredits.total_available_usd))}</p>
+          {quota.platformCredits.grants.map((grant, index) => (
+            <p key={index}>
+              Grant {formatUsd(Number(grant.granted_usd) - Number(grant.used_usd))} /{" "}
+              {formatUsd(Number(grant.granted_usd))} · expires{" "}
+              {grant.expires_at ? new Date(grant.expires_at).toLocaleString() : "unknown"}
+              {grant.is_scheduled ? " · scheduled" : grant.is_held_for_prepaid_transition ? " · held" : ""}
+            </p>
+          ))}
+        </div>
+      )}
       {quota.resetCredits !== null && (
         <ResetCreditsStrip
           count={quota.resetCredits}
@@ -89,7 +107,9 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
       {overPlan || paidCreditsActive
         ? null
         : quota.windows.length === 0
-          ? quota.error === null && quota.prepaidBalance === null && <p className="aiquota-empty">No quota data.</p>
+          ? quota.error === null &&
+            quota.prepaidBalance === null &&
+            quota.platformCredits == null && <p className="aiquota-empty">No quota data.</p>
           : quota.windows.map((window) => (
               <WindowRow
                 key={`${window.name ?? ""}-${window.window_seconds}`}

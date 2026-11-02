@@ -18,6 +18,7 @@ FIXTURE_NAMES = (
     "extra_enabled_not_burning",
     "stale_fallback",
     "paid_credits",
+    "openai_platform_credits",
     "claude_prepaid_balance",
     "claude_prepaid_balance_unavailable",
     "reset_credit_expiry_unavailable",
