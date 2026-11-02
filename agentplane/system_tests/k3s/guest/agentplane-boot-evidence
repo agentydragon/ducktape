@@ -10,7 +10,9 @@ receipt() {
 run() {
 	printf '\nAGENTPLANE_BOOT_EVIDENCE_BEGIN %s\n' "$*"
 	receipt "AGENTPLANE_BOOT_EVIDENCE_BEGIN $*"
-	/usr/bin/busybox timeout 2 "$@"
+	# The service bounds required collection as a whole. A two-second child deadline
+	# interrupts working systemctl requests while the concurrent TCG guests boot.
+	"$@"
 	command_status=$?
 	printf 'AGENTPLANE_BOOT_EVIDENCE_END status=%s command=%s\n' "$command_status" "$*"
 	receipt "AGENTPLANE_BOOT_EVIDENCE_END status=$command_status command=$*"
@@ -45,19 +47,14 @@ run_required /usr/bin/busybox cat /etc/fstab
 properties=Id,ActiveState,SubState,Result,ActiveEnterTimestampMonotonic,InactiveEnterTimestampMonotonic,ActiveExitTimestampMonotonic,InactiveExitTimestampMonotonic,StateChangeTimestampMonotonic,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic,ExecMainCode,ExecMainStatus,Type,TimeoutStartUSec,TimeoutStopUSec,NotifyAccess,Before,After,Conflicts,Requires,Wants
 run_required /usr/bin/systemctl --no-pager show \
 	--property=FirmwareTimestampMonotonic,LoaderTimestampMonotonic,KernelTimestampMonotonic,InitRDTimestampMonotonic,UserspaceTimestampMonotonic,FinishTimestampMonotonic
-run_required /usr/bin/systemctl --no-pager show --property="$properties" 'dev-disk-by\x2did-virtio\x2dworkspace.device'
-run_required /usr/bin/systemctl --no-pager show --property="$properties" systemd-udevd.service
-run_required /usr/bin/systemctl --no-pager show --property="$properties" systemd-udev-trigger.service
 run_required /usr/bin/systemctl --no-pager show --property="$properties" \
-	'systemd-makefs@dev-disk-by\x2did-virtio\x2dworkspace.service'
-run_required /usr/bin/systemctl --no-pager show --property="$properties" state-workspaces.mount
-run_required /usr/bin/systemctl --no-pager show --property="$properties" agentplane-environment-runtime.service
-run_required /usr/bin/systemctl --no-pager show --property="$properties" agentplane-boot-device-monitor.service
-run_required /usr/bin/systemctl --no-pager cat systemd-udevd.service
-run_required /usr/bin/systemctl --no-pager cat systemd-udev-trigger.service agentplane-boot-device-monitor.service
+	'dev-disk-by\x2did-virtio\x2dworkspace.device' \
+	systemd-udevd.service systemd-udev-trigger.service \
+	'systemd-makefs@dev-disk-by\x2did-virtio\x2dworkspace.service' \
+	state-workspaces.mount agentplane-environment-runtime.service agentplane-boot-device-monitor.service
 run_required /usr/bin/systemctl --no-pager cat \
-	'systemd-makefs@dev-disk-by\x2did-virtio\x2dworkspace.service'
-run_required /usr/bin/systemctl --no-pager cat state-workspaces.mount
+	systemd-udevd.service systemd-udev-trigger.service agentplane-boot-device-monitor.service \
+	'systemd-makefs@dev-disk-by\x2did-virtio\x2dworkspace.service' state-workspaces.mount
 receipt AGENTPLANE_BOOT_EVIDENCE_ACTIVATION_END
 receipt AGENTPLANE_BOOT_EVIDENCE_JOURNAL_BEGIN
 run_required /usr/bin/journalctl --no-pager --boot=0 --output=short-monotonic --lines=100 \
@@ -66,12 +63,14 @@ run_required /usr/bin/journalctl --no-pager --boot=0 --output=short-monotonic --
 	--unit='systemd-makefs@dev-disk-by\x2did-virtio\x2dworkspace.service' \
 	--unit=state-workspaces.mount
 receipt AGENTPLANE_BOOT_EVIDENCE_JOURNAL_END
-run /usr/bin/systemd-analyze --no-pager time
-run /usr/bin/systemd-analyze --no-pager critical-chain agentplane-environment-runtime.service
-run /usr/bin/systemd-analyze --no-pager blame
 if [ "$required_failures" -eq 0 ]; then
 	receipt 'AGENTPLANE_BOOT_EVIDENCE_END status=complete'
 else
 	receipt 'AGENTPLANE_BOOT_EVIDENCE_END status=partial'
 	receipt "AGENTPLANE_BOOT_EVIDENCE_REQUIRED_FAILURES $required_failures"
 fi
+
+# Optional probes cannot prevent completed required evidence from being certified.
+run /usr/bin/busybox timeout 2 /usr/bin/systemd-analyze --no-pager time
+run /usr/bin/busybox timeout 2 /usr/bin/systemd-analyze --no-pager critical-chain agentplane-environment-runtime.service
+run /usr/bin/busybox timeout 2 /usr/bin/systemd-analyze --no-pager blame
