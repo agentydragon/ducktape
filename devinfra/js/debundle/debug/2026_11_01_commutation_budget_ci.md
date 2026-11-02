@@ -26,6 +26,14 @@ again failed before checking the proposal count. This second independent
 budget failure makes a one-off slow execution less persuasive, but does not
 identify which work made the command slower.
 
+PR #13657 subsequently removed a duplicate source clone and AST parse from
+selector synthesis. Its reviewed head `cf2e329c71608c9496220f94a6329bb3c1f34714`
+passed all 198 selected hosted tests, including the unchanged proposal budget,
+in BuildBuddy invocation `ef2f3a82-562b-5678-a1cf-7892dc2ceaf2`. It merged as
+`3466c544b202165d471f7ff5a0d74d1fc9d859f8`; this diagnostic branch now includes
+that source change. Its own integrated result remains to be checked. This is
+no measured savings claim or causal attribution of the earlier failures.
+
 ## Code-path boundary
 
 This fixture creates 4096 alternating sequenced steps and 96 readers, adding
