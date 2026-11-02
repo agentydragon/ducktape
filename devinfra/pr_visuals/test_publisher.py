@@ -563,7 +563,7 @@ def test_unstable_variant_provenance_groups_shards_and_uses_distinguishable_link
         configuration_one,
         [
             ReviewIssue(
-                message="related invocation",
+                message="related <invocation>",
                 source=ReviewIssueSource(
                     invocation=invocation_five, configuration=configuration_five, run=5, shards=[2], attempt=1
                 ),
@@ -583,6 +583,8 @@ def test_unstable_variant_provenance_groups_shards_and_uses_distinguishable_link
     )
 
     for rendered in (page, comment):
+        assert "related &lt;invocation&gt;" in rendered
+        assert "related <invocation>" not in rendered
         assert "run 2 · shards 1-3 · attempt 1 · config abcdef011" in rendered
         assert "run 3 · shard 1 · attempt 2 · config abcdef012" in rendered
         assert "run 4 · shard 2 · attempt 1 · config abcdef013" in rendered

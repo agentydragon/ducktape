@@ -1,4 +1,5 @@
-{% macro issue_list(items) %}<ul>{% for issue in items %}<li>{{ issue.message }}{% if issue.source %} ({{ "shard" if issue.source.shards | length == 1 else "shards" }} {{ issue.source.shards | shard_ranges }} · run {{ issue.source.run if issue.source.run is not none else "unknown" }} · attempt {{ issue.source.attempt if issue.source.attempt is not none else "unknown" }}{% if issue.source.configuration_label %} · config {{ issue.source.configuration_label }}{% endif %}) · <a href="{{ issue.source.invocation | buildbuddy_url }}">BuildBuddy {{ issue.source.invocation_label }}</a>{% endif %}</li>{% endfor %}</ul>{% endmacro %}
+{% import "issue_provenance.j2" as provenance -%}
+{% macro issue_list(items) %}<ul>{% for issue in items %}<li>{{ provenance.issue_details(issue, issue.source.invocation_label if issue.source else none, issue.source.configuration_label if issue.source else none) }}</li>{% endfor %}</ul>{% endmacro %}
 <!doctype html>
 <html lang="en">
   <head>
@@ -21,7 +22,7 @@
       <figure id="{{ asset.path }}">
         <figcaption>{{ asset.label }}<span class="badge modified">unstable across runs</span></figcaption>
         {% for variant in asset.variants %}
-        <div><div class="variant-provenance">{% for source in variant.provenance %}run {{ source.run if source.run is not none else "unknown" }} · {{ "shard" if source.shards | length == 1 else "shards" }} {{ source.shards | shard_ranges }} · attempt {{ source.attempt if source.attempt is not none else "unknown" }}{% if source.configuration_label %} · config {{ source.configuration_label }}{% endif %} · <a href="{{ source.invocation_url }}">BuildBuddy {{ source.invocation_label }}</a>{% if not loop.last %}; {% endif %}{% endfor %}</div>
+        <div><div class="variant-provenance">{% for source in variant.provenance %}{{ provenance.variant_provenance(source) }}{% if not loop.last %}; {% endif %}{% endfor %}</div>
           <a class="sample-frame" href="{{ variant.url }}"><img src="{{ variant.url }}" alt="{{ asset.label }} variant {{ loop.index }}" loading="lazy"></a>
         </div>
         {% endfor %}
