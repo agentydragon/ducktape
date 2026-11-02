@@ -33,9 +33,8 @@ so a producer whose visual test already documents sub-pixel drift (font
 rasterization, anti-aliasing) can declare it instead of flagging every run:
 
 - manifest fields `intensityThreshold` (per-channel max-diff gate) and
-  `changeTolerance` (fraction of pixels that may differ) on
-  `ducktape.visual-review.v1` assets, added to both the Python and JavaScript
-  writers with shared parity fixtures;
+  `changeTolerance` (fraction of pixels that may differ) on visual asset
+  records, with shared parity fixtures for the supported writers;
 - the publisher honors them when classifying `unchanged` vs `modified` (today
   it compares exact decoded RGB via `util/visual_diff.compare_pngs`);
 - AI quota (`//aiquota/gnome:test_render`) becomes the first declarer, matching
@@ -53,9 +52,6 @@ threshold-tolerated assets.
   dimensions, and total decoded-pixel limits.
 - Bound BuildBuddy queries, downloads, image decoding, rendering, uploads, and
   GitHub comment size.
-- Handle cached results, linked invocations, shards, retries, and duplicate
-  target results. Accept only the final successful result and reject ambiguous
-  conflicting manifests.
 - Add per-pull-request workflow concurrency and cancel older runs.
 - Recheck the pull request head immediately before replacing its sticky
   comment.
@@ -74,7 +70,7 @@ failures cannot publish a misleading current result.
 Automated coverage must include:
 
 - manifest validation and unsafe paths;
-- Python/JavaScript writer parity;
+- writer parity;
 - multiple linked invocations, cached tests, shards, attempts, and conflicting
   duplicate results;
 - collision-free target and asset URL normalization;
