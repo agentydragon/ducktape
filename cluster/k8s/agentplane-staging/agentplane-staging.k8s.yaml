@@ -11465,7 +11465,7 @@ metadata:
   name: quest-read
   namespace: agentplane-staging
 spec:
-  description: Quest read-only scheduling and open-orders API. Use https://quest.allegedly.works/openapi.json to discover the read-only routes. The bearer is substituted only for the listed lookup paths.
+  description: Quest read-only scheduling, open-orders, and insurance API. Use https://quest.allegedly.works/openapi.json to discover the read-only routes. The bearer is substituted only for the listed lookup paths.
   source:
     secretRef:
       key: token
@@ -11492,6 +11492,7 @@ spec:
         - /openapi.json
         - /guest/getReasons/*
         - /guest/getPscDetails/*
+        - /api/getInsuranceProfile
       type: egress
     - credentialRef:
         name: quest-read
