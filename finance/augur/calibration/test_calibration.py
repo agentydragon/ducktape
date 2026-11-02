@@ -53,6 +53,13 @@ from finance.evidence.markets import Platform
 
 _ISSUER = IssuerId("issuer_x")
 _HORIZON = 120
+_INFLATION_HISTORY = {
+    date(2025, 12, 1): 100.0,
+    date(2026, 1, 1): 100.0,
+    date(2026, 2, 1): 100.0,
+    date(2026, 3, 1): 100.0,
+    date(2026, 4, 1): 100.0,
+}
 
 
 def _event_kind_codes(request: ExogenousSamplingRequest) -> npt.NDArray[np.int64]:
@@ -378,7 +385,7 @@ async def test_threshold_ladder_family_derives_categorical_distribution() -> Non
         price_clients=clients,
         bundle=sampled.private_equity,
         level_paths=level_paths,
-        inflation_history=[100.0] * 5,
+        inflation_history=_INFLATION_HISTORY,
     )
 
     assert result.clean == []
@@ -485,7 +492,7 @@ async def test_threshold_ladder_uses_quote_mids_and_interpolates_unpriced() -> N
         price_clients=clients,
         bundle=sampled.private_equity,
         level_paths=level_paths,
-        inflation_history=[100.0] * 5,
+        inflation_history=_INFLATION_HISTORY,
     )
 
     family = result.categorical[0]

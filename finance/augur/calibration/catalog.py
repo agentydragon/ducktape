@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PositiveFloat, model_validator
 
 from finance.augur.calibration.platform import Direction
 from finance.augur.model.series import IssuerId
@@ -115,17 +115,22 @@ class CatalogMetadata(BaseModel):
     # series is absent here, `macro_anchors.resolve_anchors` derives the spot from the scraped
     # exogenous evidence (read at `AUGUR_EVIDENCE_DIR`), the single source of truth shared with the model fit.
     anchors: dict[str, float] = Field(default_factory=dict)
-    # OPTIONAL override of the real CPI-U index for the months immediately BEFORE
-    # `model_anchor_date`, oldest first (last entry = the month before the anchor observation;
-    # the anchor value is `anchors.inflation`, same units). Lets an `inflation_yoy` market whose
-    # year-ending date is within a year of as_of look back to real data instead of resolving
-    # UNRESOLVED. When empty, derived from the vendored CPI series by `resolve_anchors`.
-    inflation_history: list[float] = Field(default_factory=list)
+    # OPTIONAL replacement for derived CPI-U history. Keys are first-of-month dates before
+    # `model_anchor_date`; values are index levels. Missing months stay missing and make only
+    # lookbacks requiring those months unresolved.
+    inflation_history: dict[date, PositiveFloat] = Field(default_factory=dict)
 
     @property
     def model_anchor_date(self) -> date:
         """Date month indices for `resolution_deadline`s are measured from."""
         return self.augur_model_as_of or self.as_of
+
+    @model_validator(mode="after")
+    def validate_inflation_history_months(self) -> CatalogMetadata:
+        anchor_month = self.model_anchor_date.replace(day=1)
+        if any(month.day != 1 or month >= anchor_month for month in self.inflation_history):
+            raise ValueError("inflation_history keys must be first-of-month dates before model_anchor_date")
+        return self
 
 
 # ---------------------------------------------------------------------------

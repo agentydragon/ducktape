@@ -19,10 +19,10 @@ metadata:
   augur_sim_horizon_months: 120 # from as_of -> ~2036-05; later-resolving markets flagged
 
   # No `anchors` / `inflation_history` block: each macro level series is anchored to its real spot
-  # at model_anchor_date (and the pre-anchor CPI history for near-term inflation_yoy markets is
-  # taken) from the vendored evidence in augur/data/ -- the single source of truth shared with the
-  # model fit (see augur/calibration/macro_anchors.py). A catalog MAY still pin explicit
-  # `anchors:` / `inflation_history:` here to override the derived values.
+  # at model_anchor_date, while CPI observations retain their calendar months for exact YoY
+  # lookbacks. Both derive from vendored evidence (see augur/calibration/macro_anchors.py).
+  # A catalog MAY replace derived history with a dated `inflation_history:` map, for example:
+  #   inflation_history: {"2025-07-01": 320.293, "2025-08-01": 320.821}
 
   # `mappability` -- how the market relates to a modeled augur quantity:
   #   exact      A resolver scores it apples-to-apples from per-rollout output
@@ -397,17 +397,15 @@ markets:
     mapping: { kind: level_at_date, series: "security:SPY", threshold: 7500, direction: above, at_date: "2026-12-31" }
     notes: "Point-in-time threshold on the security:SPY channel; p_model = share of rollouts with anchored security:SPY >= 7500 at 2026-12-31."
 
-  # CPI YoY: augur emits a monthly inflation index; YoY needs the index 12 months before
-  # `at_date`. The path starts at model_anchor_date, so a 2026 year-ending date looks back
-  # past as_of -- the look-back is served from the pre-anchor CPI history derived from vendored
-  # evidence (see macro_anchors.py), so the market scores instead of resolving UNRESOLVED.
+  # CPI YoY: augur emits a monthly inflation index; YoY needs the index in the exact month
+  # 12 months before `at_date`. A missing real month leaves this market unresolved.
   - platform: kalshi
     kalshi_id: KXCPIYOY-26JUL-T3.0
     # question: "Will CPI inflation be above 3.0% for the year ending July 2026?"
     resolution_deadline: "2026-08-15"
     mappability: exact
     mapping: { kind: inflation_yoy, series: inflation, threshold: 0.03, direction: above, at_date: "2026-07-31" }
-    notes: "Trailing-12mo window looks back past as_of; the denominator is the vendored pre-anchor CPI-U."
+    notes: "Trailing-12mo window uses the vendored CPI-U observation for the exact denominator month."
 
   # ============================================================================
   # EXACT -- crypto markets (scored against the model's security:btc level channel).
