@@ -1,80 +1,29 @@
 diff --git a/mypy/private/mypy.bzl b/mypy/private/mypy.bzl
 --- a/mypy/private/mypy.bzl
 +++ b/mypy/private/mypy.bzl
-@@ -107,4 +107,5 @@
-     # generated dirs
-     generated_dirs = {}
-+    generated_imports_dirs = {}
--
+@@ -128,8 +128,24 @@
+     pyi_dirs = {}
+     for dep in (ctx.rule.attr.deps + additional_types):
+         if RulesPythonPyInfo in dep and hasattr(dep[RulesPythonPyInfo], "direct_pyi_files"):
+-            pyi_files.extend(dep[RulesPythonPyInfo].direct_pyi_files.to_list())
++            direct_pyi_files = dep[RulesPythonPyInfo].direct_pyi_files.to_list()
++            pyi_files.extend(direct_pyi_files)
+             pyi_dirs |= {"%s/%s" % (ctx.bin_dir.path, imp): None for imp in _extract_imports(dep) if imp != "site-packages" and imp != "_main"}
 +
-     upstream_caches = []
-@@ -149,22 +150,49 @@
-         if MypyCacheInfo in dep:
-             upstream_caches.append(dep[MypyCacheInfo].directory)
--
-+
-+        # Generated runfiles retain their repository prefix in the execroot.
-+        # Keep this separate from source/wheel import resolution.
-+        dep_imports = [
-+            _extract_import_dir(i) if i == "_main" or i.startswith("_main/") else "external/" + i
-+            for i in _imports(dep)
-+        ]
-         for file in dep.default_runfiles.files.to_list():
-+            if file.is_source:
-+                continue
-             root = file.root.path
--            if root:
--                if dep.label.workspace_root.startswith("external/"):
--                    generated_dirs[root + "/" + dep.label.workspace_root] = 1
-+            if not root:
-+                continue
-+
-+            owner = file.owner
-+            if owner:
-+                workspace_root = owner.workspace_root
-+                if workspace_root.startswith("external/"):
-+                    generated_dir = root + "/" + workspace_root
-+                    import_prefix = workspace_root + "/"
-                 else:
--                    generated_dirs[root] = 1
-+                    generated_dir = root
-+                    import_prefix = None
-+                generated_dirs[generated_dir] = 1
-+
-+                # A generated artifact can only supply imports from its own
-+                # repository. Pair it with matching PyInfo imports instead of
-+                # the cross product of every generated root and import root.
-+                for import_ in dep_imports:
-+                    if import_prefix:
-+                        if import_ == "" or import_ == workspace_root:
-+                            generated_imports_dirs[generated_dir] = 1
-+                        elif import_.startswith(import_prefix):
-+                            generated_imports_dirs[root + "/" + import_] = 1
-+                    elif not import_.startswith("external/"):
-+                        generated_imports_dirs[root + "/" + import_] = 1
-+            else:
-+                # Preserve the artifact root when Bazel provides no owning
-+                # label; without one there is no safe repository association.
-+                generated_dirs[root] = 1
--
-+
-         # TODO: can we use `ctx.bin_dir.path` here to cover generated files
-         # and as a way to skip iterating over depset contents to find generated
-         # file roots?
--
--    generated_imports_dirs = []
--    for generated_dir in generated_dirs.keys():
--        for import_ in imports_dirs.keys():
--            generated_imports_dirs.append("{}/{}".format(generated_dir, import_))
--
-+
-     path_components = (
-         # normally, mypy looks in the current directory last, but we explicitly want
-@@ -178,6 +206,6 @@
-         sorted(external_deps) +
-         sorted(imports_dirs) +
-         sorted(generated_dirs) +
--        sorted(generated_imports_dirs) +
-+        sorted(generated_imports_dirs.keys()) +
-         sorted(pyi_dirs)
-     )
++            # A first-party wrapper can expose generated stubs owned by an external
++            # repository. Keep their repository and virtual-import roots in the
++            # execroot; source/wheel imports retain their existing resolution.
++            for file in direct_pyi_files:
++                if file.is_source or not file.owner:
++                    continue
++                workspace_root = file.owner.workspace_root
++                if not workspace_root.startswith("external/"):
++                    continue
++                pyi_dirs[file.root.path + "/" + workspace_root] = None
++                repository = workspace_root.removeprefix("external/")
++                for import_ in _imports(dep):
++                    if import_.startswith(repository + "/"):
++                        pyi_dirs[file.root.path + "/external/" + import_] = None
+         depsets.append(dep.default_runfiles.files)
+         if PyTypeLibraryInfo in dep:
+             types.append(dep[PyTypeLibraryInfo].directory.path + "/site-packages")
