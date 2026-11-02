@@ -20,14 +20,17 @@ the invariant regardless.
 ## Identity and protocol
 
 Define a versioned, framework-neutral test-output record. Its logical identity is
-`(collection scope, case namespace, case ID, checkpoint components, output role)`:
+`(collection scope, case ID, checkpoint components, output role)`:
 
 - For Bazel, the collector supplies the repository and canonical test label as
   the collection scope. A producer does not need Bazel or pytest to construct its
   case and output identity.
-- The case namespace identifies the adapter's identity scheme. The case ID is an
-  opaque, stable value in that scheme; the collector does not parse framework
-  names, paths, classes, or parameter IDs. Distinct namespaces cannot collide.
+- The case ID is an opaque, stable value unique within the collection scope;
+  the collector does not parse framework names, paths, classes, or parameter
+  IDs. A producer must provide enough context to avoid collisions. A deliberate
+  framework migration can retain an existing case ID. Duplicate claims in one
+  collection are detectable; reuse by an unrelated case in a later revision
+  cannot be inferred from an equal ID alone.
 - A checkpoint is a sequence of explicit components scoped to the case. The
   default checkpoint has its own unambiguous representation. An output role
   distinguishes a screenshot from its trace, diagnostics, or another artifact.
@@ -56,8 +59,8 @@ report provenance and the reason it accepts or rejects a comparison.
 
 ## Producers
 
-Provide a framework-independent output writer accepting an explicit namespace,
-case ID, checkpoint, role, media type, and bytes or file. Add a pytest fixture
+Provide a framework-independent output writer accepting an explicit case ID,
+checkpoint, role, media type, and bytes or file. Add a pytest fixture
 that binds the case ID automatically to the full node ID, normalized to a
 verified stable repository-relative root under Bazel. `VisualPage.capture()`
 uses the bound case and treats its optional name as a local checkpoint, not a
