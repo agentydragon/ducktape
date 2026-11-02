@@ -35,6 +35,12 @@ a template and a relational kind (`cross_ref`, `reads_member`, …): "emits this
 literal **and** is imported by `@settingsModule`" needs conjunction across the
 two.
 
+**R5 — Nested targets.** Selector entities resolve to whole source units, not
+properties inside a declaration. A getter inside an object returned by one
+binding therefore cannot be selected independently; representing that target
+requires a finer-grained entity model. See <../docs/selectors.md> for the
+current source-unit boundary.
+
 **Template-language gaps.**
 
 - **Contextual sugar.** A template already spans adjacent statements, and
