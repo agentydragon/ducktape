@@ -51,6 +51,7 @@ func TestCloseWaitersDoNotCancelSharedCleanup(t *testing.T) {
 		t.Fatalf("Close waiter canceled the Host lifetime: %v", err)
 	}
 	finishSetup()
+	acknowledgeSealedSessionsForClose(t, r)
 	if err := r.Close(ctx); err != nil {
 		t.Fatalf("Close after setup finished = %v", err)
 	}

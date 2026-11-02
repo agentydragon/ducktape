@@ -24,29 +24,35 @@ func newSessionTestRuntime(t *testing.T, config runtimeTestConfig) *Runtime {
 
 func newSessionTestRuntimeWithState(t *testing.T, config runtimeTestConfig, resources state.State) *Runtime {
 	t.Helper()
+	var r *Runtime
+	cleanupDelivery := make(chan struct{})
 	if config.deps.runIngress == nil {
-		config.deps.runIngress = func(ctx context.Context, _ configuration.Endpoint) error {
-			<-ctx.Done()
-			return nil
-		}
-	}
-	r := newLifecycleRunnerWithState(t, config, resources)
-	startDirectExecutionTestClient(t, r, "test-incarnation")
-	t.Cleanup(func() {
-		select {
-		case <-r.lifecycleDone:
-			return
-		default:
-		}
-		for _, s := range r.sessions.Inventory() {
-			if seal := s.EventJournal().SealState(); seal != nil {
-				if err := r.store.WriteAcknowledgement(s.ID(), retained.Acknowledgement{Cursor: seal.Cursor, Sealed: true}); err != nil {
-					t.Errorf("acknowledge test journal before cleanup: %v", err)
-				}
+		config.deps.runIngress = func(ctx context.Context, endpoint configuration.Endpoint) error {
+			select {
+			case <-cleanupDelivery:
+				return r.ingressSupervisor(endpoint, r.fail).Run(ctx)
+			case <-ctx.Done():
+				return nil
 			}
 		}
-	})
+	}
+	r = newLifecycleRunnerWithState(t, config, resources)
+	startDirectExecutionTestClient(t, r, "test-incarnation")
+	// Assertions retain manual ACK control. Only cleanup enables real delivery,
+	// which observes and acknowledges seals published later by Runtime.Close.
+	t.Cleanup(func() { close(cleanupDelivery) })
 	return r
+}
+
+func acknowledgeSealedSessionsForClose(t *testing.T, r *Runtime) {
+	t.Helper()
+	for _, s := range r.sessions.Inventory() {
+		waitLifecycle(t, r, func() bool { return s.EventJournal().SealState() != nil }, "Close to publish the Session seal")
+		seal := s.EventJournal().SealState()
+		if err := r.store.WriteAcknowledgement(s.ID(), retained.Acknowledgement{Cursor: seal.Cursor, Sealed: true}); err != nil {
+			t.Fatalf("acknowledge published Session seal: %v", err)
+		}
+	}
 }
 
 func sessionCallContext(r *Runtime, ctx context.Context) context.Context {

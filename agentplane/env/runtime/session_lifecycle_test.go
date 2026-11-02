@@ -451,6 +451,7 @@ func TestCloseWaitsForAdmission(t *testing.T) {
 	if err := <-inputDone; status.Code(err) != codes.Aborted {
 		t.Fatalf("late input admission error = %v, want Aborted", err)
 	}
+	acknowledgeSealedSessionsForClose(t, r)
 	if err := waitClose(t, closeDone); err != nil {
 		t.Fatalf("Close after admission completion: %v", err)
 	}

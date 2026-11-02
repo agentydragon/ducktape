@@ -37,7 +37,10 @@ func closeRuntimeForTest(t *testing.T, r *Runtime) error {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return r.Close(ctx)
+	closed := make(chan error, 1)
+	go func() { closed <- r.Close(ctx) }()
+	acknowledgeSealedSessionsForClose(t, r)
+	return <-closed
 }
 
 func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
@@ -435,7 +438,8 @@ func failedInitialOperationHost(t *testing.T, failTeardown bool) (*Runtime, *ini
 	store.failTeardown.Store(failTeardown)
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, binary)
 	config.expectCloseError = true
-	r := newSessionTestRuntimeWithState(t, config, store)
+	r := newLifecycleRunnerWithState(t, config, store)
+	startDirectExecutionTestClient(t, r, "test-incarnation")
 
 	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
