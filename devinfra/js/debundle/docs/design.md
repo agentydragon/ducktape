@@ -1210,10 +1210,20 @@ argument reassigns its binding. Application execution sends
 the evaluated operands through `RuntimeOperation::Call` together with the
 canonical call's existing policy and proof sites. This is the same dispatcher
 used for source-summary call effects. It returns effects and values together
-for singleton untainted local functions/closures, admitted native rows and
+for singleton local source functions/closures, admitted native rows and
 supported foreign-summary projections. The ordered caller performs no second
 value-only call evaluation. Abrupt operands stop the call; a possible
 abrupt invocation result is retained before following its completing values.
+An ordinary source function's internal call target survives publication and
+property mutation. Its live captured cells and reachable heap do not gain an
+immutability proof: the existing taint/havoc passes still widen them, and
+invocation consumes their current state. The target must remain a singleton
+indexed local function; unknown alternatives, unsupported bodies and bounds
+retain their conservative paths. Cross-module exported values currently carry
+primitive kinds only, so this check imports no foreign callable offset.
+Tainted source functions neither read nor publish invocation memos: their
+reachable heap can lose proofs without changing the binding-prefix revision
+used by the memo signature. They execute against the current state instead.
 Records reachable through the callee, receiver or its arguments become borrowed in the
 caller, so a completed callee cannot leave the original fresh descriptor proof
 in force after modifying that receiver. Returned values stay in the frame's

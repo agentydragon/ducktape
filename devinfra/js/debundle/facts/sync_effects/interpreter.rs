@@ -1605,6 +1605,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn remember_invocation(&mut self, signature: InvocationSignature, outcome: &Outcome) {
+        if self.state.tainted_functions.contains(&signature.callable) {
+            return;
+        }
         // This executor owns only this invocation's child ledger. A memo
         // must never capture the caller's accumulated effects.
         let mut memo = outcome.clone();
@@ -8454,6 +8457,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             top_owner: self.state.current_top_owner,
         };
         if self.state.array_iteration_depth == 0
+            && !self.state.tainted_functions.contains(&key)
             && let Some(point) = self.state.invocation_memos.get(&signature)
         {
             let outcome = self.queries.invocation_memo(point);
@@ -9510,12 +9514,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .as_ref()
             .map(|_| self.method_receiver_is_unused(&targets));
         if needs_value {
+            // Publication can change properties and captured state, but cannot
+            // replace an ordinary source function's [[Call]]. Invocation reads
+            // live capture cells and retains their existing havoc/heap guards.
             let local_target = targets.len() == 1
                 && targets.first().is_some_and(|target| match target {
                     AbstractValue::Value(Value::Alloc(Kind::Function, key))
                     | AbstractValue::Closure(key, _) => {
                         self.inputs.index.callables.contains_key(key)
-                            && !self.state.tainted_functions.contains(key)
                     }
                     _ => false,
                 });
