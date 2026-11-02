@@ -177,7 +177,7 @@ func (r *Runner) admit(ctx context.Context, id string, c *commandpb.Command) (en
 	}
 	if r.closing {
 		r.mu.Unlock()
-		return nil, status.Error(codes.Unavailable, "runner is closing")
+		return nil, status.Error(codes.Unavailable, "Harness Host is closing")
 	}
 	lameduck := !r.lifecycle.accepting()
 	if err := r.lifecycle.changeAdmissionsLocked(1); err != nil {

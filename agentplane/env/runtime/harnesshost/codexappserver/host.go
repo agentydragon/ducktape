@@ -214,7 +214,7 @@ func (c *Host) waitFor(ctx context.Context, predicate func() (bool, error)) erro
 	}
 }
 
-// Host admits demand synchronously under the Runner's admission barrier, then waits for readiness.
+// Host admits demand synchronously under the Harness Host admission barrier, then waits for readiness.
 func (c *Host) Host(ctx context.Context, s *Attachment) (*Process, error) {
 	var demand uint64
 	if err := c.deps.RequestAdmission(ctx, func(ctx context.Context) error {
@@ -231,7 +231,7 @@ func (c *Host) Host(ctx context.Context, s *Attachment) (*Process, error) {
 			return false, err
 		}
 		if desired.Mode != lifecycle.Running {
-			return false, errors.New("runner is not accepting new Codex work")
+			return false, errors.New("Harness Host is not accepting new Codex work")
 		}
 		runtime, _, err := ReadRuntime(c.deps.Context, c.deps.State)
 		if err != nil {
@@ -275,14 +275,14 @@ func (c *Host) Host(ctx context.Context, s *Attachment) (*Process, error) {
 	return ready, nil
 }
 
-// RequestLocked records accepted demand. Caller holds the synchronous Runner admission barrier.
+// RequestLocked records accepted demand. Caller holds the Harness Host admission barrier.
 func (c *Host) RequestLocked(ctx context.Context, s *Attachment) (uint64, error) {
 	desired, found, err := lifecycle.ReadDesired(ctx, c.deps.State)
 	if err != nil {
 		return 0, err
 	}
 	if !found || desired.Mode != lifecycle.Running {
-		return 0, errors.New("runner is not accepting new Codex work")
+		return 0, errors.New("Harness Host is not accepting new Codex work")
 	}
 	c.inputMu.Lock()
 	defer c.inputMu.Unlock()
@@ -401,7 +401,7 @@ func (c *Host) initialize(ctx context.Context, owner *Attachment, generation uin
 }
 
 // waitReaders closes ended only after stdout has journaled every hosted Session's exit and stderr has
-// delivered its remaining diagnostics. The app lifecycle controller waits for this before fencing Runner.
+// delivered its remaining diagnostics. The app lifecycle controller waits for this before fencing the Harness Host.
 func (c *Host) waitReaders(p *Process) {
 	p.readers.Wait()
 	cleanupErr := p.process.WaitStopped(c.deps.Context)
@@ -590,7 +590,7 @@ func (c *Host) drainProcess(ctx context.Context) error {
 		return errors.Join(p.readError(), errors.New("Codex app-server remained running after its readers exited"))
 	}
 	// A native process may report a nonzero exit code after SIGTERM. Once Wait and both readers settle,
-	// that exit status does not mean the Runner failed to fence the process.
+	// that exit status does not mean the Harness Host failed to fence the process.
 	return p.readError()
 }
 

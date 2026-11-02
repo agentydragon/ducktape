@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
@@ -28,7 +28,7 @@ func newTestRunner(config Config, store state.State) (*Runner, error) {
 	}
 	engineDone := make(chan struct{})
 	var runtimeWorkers sync.WaitGroup
-	processes := supervision.NewHost(context.Background(), store, runnerlifecycle.Namespace, supervision.RuntimeDomain, &runtimeWorkers, func(err error) {
+	processes := supervision.NewHost(context.Background(), store, harnesshostlifecycle.Namespace, supervision.RuntimeDomain, &runtimeWorkers, func(err error) {
 		zap.L().Error("test Runtime process host", zap.Error(err))
 	})
 	if err := engine.RegisterQController(processes.Controller()); err != nil {

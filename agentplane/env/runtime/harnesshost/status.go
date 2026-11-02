@@ -5,7 +5,7 @@ import (
 	"sort"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -21,10 +21,10 @@ const (
 )
 
 func (r *Runner) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
-	if desiredState := r.lifecycle.desiredState(); desiredState.Mode != runnerlifecycle.Running {
-		minimum := runnerlifecycle.Flushing
-		if desiredState.Mode == runnerlifecycle.Closing {
-			minimum = runnerlifecycle.Closed
+	if desiredState := r.lifecycle.desiredState(); desiredState.Mode != harnesshostlifecycle.Running {
+		minimum := harnesshostlifecycle.Flushing
+		if desiredState.Mode == harnesshostlifecycle.Closing {
+			minimum = harnesshostlifecycle.Closed
 		}
 		if err := r.lifecycle.wait(ctx, minimum); err != nil {
 			return nil, rpcError(err)
@@ -52,103 +52,103 @@ func (r *Runner) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (
 			result.Processes = append(result.Processes, process)
 		}
 	}
-	desired, desiredFound, err := runnerlifecycle.ReadDesired(ctx, r.lifecycle.state)
+	desired, desiredFound, err := harnesshostlifecycle.ReadDesired(ctx, r.lifecycle.state)
 	if err != nil {
 		return nil, rpcError(err)
 	}
-	progress, progressFound, err := runnerlifecycle.ReadStatus(ctx, r.lifecycle.state)
+	progress, progressFound, err := harnesshostlifecycle.ReadStatus(ctx, r.lifecycle.state)
 	if err != nil {
 		return nil, rpcError(err)
 	}
-	result.Lifecycle = runnerLifecycleStatus(desired, desiredFound, progress, progressFound)
+	result.Lifecycle = harnessHostLifecycleStatus(desired, desiredFound, progress, progressFound)
 	return result, nil
 }
 
-func runnerLifecycleStatus(desired runnerlifecycle.Desired, desiredFound bool, progress runnerlifecycle.Status, progressFound bool) *sessionpb.EnvironmentRuntimeLifecycleStatus {
+func harnessHostLifecycleStatus(desired harnesshostlifecycle.Desired, desiredFound bool, progress harnesshostlifecycle.Status, progressFound bool) *sessionpb.EnvironmentRuntimeLifecycleStatus {
 	current := desiredFound && progressFound && desired.Generation == progress.Generation
 	status := &sessionpb.EnvironmentRuntimeLifecycleStatus{
-		DesiredMode:        runnerLifecycleMode(desired.Mode, desiredFound),
+		DesiredMode:        harnessHostLifecycleMode(desired.Mode, desiredFound),
 		DesiredGeneration:  desired.Generation,
 		ProgressGeneration: progress.Generation,
 		ProgressAvailable:  progressFound,
 		ProgressCurrent:    current,
-		Stage:              runnerLifecycleStage(progress.Stage, progressFound),
+		Stage:              harnessHostLifecycleStage(progress.Stage, progressFound),
 	}
 	if current {
 		status.Error = progress.Error
-		if progress.Blocker.Kind != runnerlifecycle.NoBlocker {
-			status.Blocker = runnerLifecycleBlocker(progress.Blocker)
+		if progress.Blocker.Kind != harnesshostlifecycle.NoBlocker {
+			status.Blocker = harnessHostLifecycleBlocker(progress.Blocker)
 		}
 	}
 	return status
 }
 
-func runnerLifecycleMode(mode runnerlifecycle.Mode, found bool) sessionpb.EnvironmentRuntimeLifecycleMode {
+func harnessHostLifecycleMode(mode harnesshostlifecycle.Mode, found bool) sessionpb.EnvironmentRuntimeLifecycleMode {
 	if !found {
 		return sessionpb.EnvironmentRuntimeLifecycleMode_ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_UNSPECIFIED
 	}
 	switch mode {
-	case runnerlifecycle.Running:
+	case harnesshostlifecycle.Running:
 		return sessionpb.EnvironmentRuntimeLifecycleMode_ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_RUNNING
-	case runnerlifecycle.Quiescing:
+	case harnesshostlifecycle.Quiescing:
 		return sessionpb.EnvironmentRuntimeLifecycleMode_ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING
-	case runnerlifecycle.Closing:
+	case harnesshostlifecycle.Closing:
 		return sessionpb.EnvironmentRuntimeLifecycleMode_ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_CLOSING
 	default:
 		return sessionpb.EnvironmentRuntimeLifecycleMode_ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_UNSPECIFIED
 	}
 }
 
-func runnerLifecycleStage(stage runnerlifecycle.Stage, found bool) sessionpb.EnvironmentRuntimeLifecycleStage {
+func harnessHostLifecycleStage(stage harnesshostlifecycle.Stage, found bool) sessionpb.EnvironmentRuntimeLifecycleStage {
 	if !found {
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_UNSPECIFIED
 	}
 	switch stage {
-	case runnerlifecycle.StageRunning:
+	case harnesshostlifecycle.StageRunning:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_RUNNING
-	case runnerlifecycle.Draining:
+	case harnesshostlifecycle.Draining:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_DRAINING
-	case runnerlifecycle.Halting:
+	case harnesshostlifecycle.Halting:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_HALTING
-	case runnerlifecycle.Stopping:
+	case harnesshostlifecycle.Stopping:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_STOPPING
-	case runnerlifecycle.Fencing:
+	case harnesshostlifecycle.Fencing:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FENCING
-	case runnerlifecycle.Sealing:
+	case harnesshostlifecycle.Sealing:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_SEALING
-	case runnerlifecycle.Flushing:
+	case harnesshostlifecycle.Flushing:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING
-	case runnerlifecycle.Quiesced:
+	case harnesshostlifecycle.Quiesced:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_QUIESCED
-	case runnerlifecycle.Closed:
+	case harnesshostlifecycle.Closed:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_CLOSED
 	default:
 		return sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_UNSPECIFIED
 	}
 }
 
-func runnerLifecycleBlocker(blocker runnerlifecycle.Blocker) *sessionpb.EnvironmentRuntimeLifecycleBlocker {
+func harnessHostLifecycleBlocker(blocker harnesshostlifecycle.Blocker) *sessionpb.EnvironmentRuntimeLifecycleBlocker {
 	kind := sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_UNSPECIFIED
 	switch blocker.Kind {
-	case runnerlifecycle.AdmissionsPending:
+	case harnesshostlifecycle.AdmissionsPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_ADMISSIONS
-	case runnerlifecycle.SessionHaltPending:
+	case harnesshostlifecycle.SessionHaltPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_HALT
-	case runnerlifecycle.SessionProcessPending:
+	case harnesshostlifecycle.SessionProcessPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_PROCESS
-	case runnerlifecycle.CodexAppServerPending:
+	case harnesshostlifecycle.CodexAppServerPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_CODEX_APP_SERVER
-	case runnerlifecycle.CodexExecServerPending:
+	case harnesshostlifecycle.CodexExecServerPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_CODEX_EXEC_SERVER
-	case runnerlifecycle.BootstrapPending:
+	case harnesshostlifecycle.BootstrapPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_BOOTSTRAP
-	case runnerlifecycle.ProcessCleanupPending:
+	case harnesshostlifecycle.ProcessCleanupPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_PROCESS_CLEANUP
-	case runnerlifecycle.SessionInspectionPending:
+	case harnesshostlifecycle.SessionInspectionPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_INSPECTION
-	case runnerlifecycle.JournalSealPending:
+	case harnesshostlifecycle.JournalSealPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_JOURNAL_SEAL
-	case runnerlifecycle.IngressAcknowledgementPending:
+	case harnesshostlifecycle.IngressAcknowledgementPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT
 	}
 	return &sessionpb.EnvironmentRuntimeLifecycleBlocker{
@@ -212,17 +212,17 @@ func (r *Runner) factsWithContext(ctx context.Context) (*environmentruntimestate
 	facts.AutosuspendBlockers = blockers
 	if r.environment().Quiesced {
 		facts.QuiesceStage = environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_DRAINING
-		current, _, err := runnerlifecycle.ReadStatus(ctx, r.lifecycle.state)
+		current, _, err := harnesshostlifecycle.ReadStatus(ctx, r.lifecycle.state)
 		if err != nil {
 			return nil, err
 		}
-		desiredState, _, err := runnerlifecycle.ReadDesired(ctx, r.lifecycle.state)
+		desiredState, _, err := harnesshostlifecycle.ReadDesired(ctx, r.lifecycle.state)
 		if err != nil {
 			return nil, err
 		}
-		if current.Generation == desiredState.Generation && current.Stage >= runnerlifecycle.Flushing {
+		if current.Generation == desiredState.Generation && current.Stage >= harnesshostlifecycle.Flushing {
 			facts.QuiesceStage = environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_FLUSHING
-			if current.Stage == runnerlifecycle.Quiesced {
+			if current.Stage == harnesshostlifecycle.Quiesced {
 				facts.QuiesceStage = environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED
 			}
 		}

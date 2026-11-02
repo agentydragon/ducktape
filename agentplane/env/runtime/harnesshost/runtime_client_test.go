@@ -11,7 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -51,8 +51,8 @@ func bindingContext(ctx context.Context, binding *runtimepb.Binding) context.Con
 }
 
 func publishHostIntentStatus(ctx context.Context, r *Runner, intent *runtimepb.LifecycleIntent, applied bool) error {
-	value := runnerlifecycle.HostIntentStatus{Intent: runnerlifecycle.HostIntentFromProto(intent), Applied: applied}
-	return cosi.Publish(ctx, r.lifecycle.state, runnerlifecycle.HostIntentStatusResource(value), value, "harness-host-intent")
+	value := harnesshostlifecycle.HostIntentStatus{Intent: harnesshostlifecycle.HostIntentFromProto(intent), Applied: applied}
+	return cosi.Publish(ctx, r.lifecycle.state, harnesshostlifecycle.HostIntentStatusResource(value), value, "harness-host-intent")
 }
 
 func TestHostRejectsStaleGenerationBeforeDurableAdmission(t *testing.T) {
@@ -130,7 +130,7 @@ func TestHostSealsOnlyAfterMatchingExecutionFence(t *testing.T) {
 	if err := r.ApplyIntent(ctx, intentFor(r, 2, runtimepb.LifecycleIntent_QUIESCING)); err == nil {
 		t.Fatal("same-generation Execution fence regressed")
 	}
-	if err := r.lifecycle.wait(ctx, runnerlifecycle.Flushing); err != nil {
+	if err := r.lifecycle.wait(ctx, harnesshostlifecycle.Flushing); err != nil {
 		t.Fatal(err)
 	}
 	seal := s.EventJournal().SealState()
@@ -144,7 +144,7 @@ func TestHostSealsOnlyAfterMatchingExecutionFence(t *testing.T) {
 	if err := r.lifecycle.publishAck("session", ack); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.lifecycle.wait(ctx, runnerlifecycle.Quiesced); err != nil {
+	if err := r.lifecycle.wait(ctx, harnesshostlifecycle.Quiesced); err != nil {
 		t.Fatal(err)
 	}
 	if contents, err := os.ReadFile(marker); err != nil || string(contents) != "runtime-owned" {
@@ -156,28 +156,28 @@ func TestHostFenceRequiresAppliedExactIntent(t *testing.T) {
 	r, _ := boundaryHost(t)
 	intent := intentFor(r, 2, runtimepb.LifecycleIntent_QUIESCING)
 	intent.ExecutionFenced = true
-	applied := runnerlifecycle.HostIntentStatus{Intent: runnerlifecycle.HostIntentFromProto(intent), Applied: true}
-	if !hostFenceMatches(applied, intent, 2) {
-		t.Fatal("matching COSI fence was rejected")
+	applied := harnesshostlifecycle.HostIntentStatus{Intent: harnesshostlifecycle.HostIntentFromProto(intent), Applied: true}
+	if !harnessHostFenceMatches(applied, intent, 2) {
+		t.Fatal("matching applied Host intent was rejected")
 	}
-	for name, mutate := range map[string]func(*runnerlifecycle.HostIntentStatus){
-		"stale generation":  func(value *runnerlifecycle.HostIntentStatus) { value.Intent.Generation-- },
-		"runtime boot":      func(value *runnerlifecycle.HostIntentStatus) { value.Intent.RuntimeBootID = "old-runtime" },
-		"host boot":         func(value *runnerlifecycle.HostIntentStatus) { value.Intent.HostBootID = "old-host" },
-		"unfenced":          func(value *runnerlifecycle.HostIntentStatus) { value.Intent.ExecutionFenced = false },
-		"applying":          func(value *runnerlifecycle.HostIntentStatus) { value.Applied = false },
-		"failed":            func(value *runnerlifecycle.HostIntentStatus) { value.Error = "failed" },
-		"wrong incarnation": func(value *runnerlifecycle.HostIntentStatus) { value.Intent.IncarnationUID = "old" },
+	for name, mutate := range map[string]func(*harnesshostlifecycle.HostIntentStatus){
+		"stale generation":  func(value *harnesshostlifecycle.HostIntentStatus) { value.Intent.Generation-- },
+		"runtime boot":      func(value *harnesshostlifecycle.HostIntentStatus) { value.Intent.RuntimeBootID = "old-runtime" },
+		"host boot":         func(value *harnesshostlifecycle.HostIntentStatus) { value.Intent.HostBootID = "old-host" },
+		"unfenced":          func(value *harnesshostlifecycle.HostIntentStatus) { value.Intent.ExecutionFenced = false },
+		"applying":          func(value *harnesshostlifecycle.HostIntentStatus) { value.Applied = false },
+		"failed":            func(value *harnesshostlifecycle.HostIntentStatus) { value.Error = "failed" },
+		"wrong incarnation": func(value *harnesshostlifecycle.HostIntentStatus) { value.Intent.IncarnationUID = "old" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			stale := applied
 			mutate(&stale)
-			if hostFenceMatches(stale, intent, 2) {
-				t.Fatal("nonmatching COSI fence accepted")
+			if harnessHostFenceMatches(stale, intent, 2) {
+				t.Fatal("nonmatching applied Host intent accepted")
 			}
 		})
 	}
-	if hostFenceMatches(applied, intent, 3) {
+	if harnessHostFenceMatches(applied, intent, 3) {
 		t.Fatal("fact from an earlier desired generation accepted")
 	}
 }
@@ -192,7 +192,7 @@ func TestHostUsesCosiExecutionFenceFact(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := r.lifecycle.waitFor(ctx, func() (bool, error) {
-		return r.lifecycle.status().Stage == runnerlifecycle.Fencing, nil
+		return r.lifecycle.status().Stage == harnesshostlifecycle.Fencing, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestHostUsesCosiExecutionFenceFact(t *testing.T) {
 	if err := publishHostIntentStatus(ctx, r, drain, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.lifecycle.wait(ctx, runnerlifecycle.Flushing); err != nil {
+	if err := r.lifecycle.wait(ctx, harnesshostlifecycle.Flushing); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -255,13 +255,13 @@ func TestHostPublishesExactIntentAndIdleFacts(t *testing.T) {
 	if err := r.ApplyIntent(ctx, running); err != nil {
 		t.Fatal(err)
 	}
-	read := func(expectedFence bool) runnerlifecycle.HostReport {
+	read := func(expectedFence bool) harnesshostlifecycle.HostReport {
 		t.Helper()
-		result, err := r.lifecycle.state.WatchFor(ctx, runnerlifecycle.HostReportResource(runnerlifecycle.HostReport{}).Metadata(),
+		result, err := r.lifecycle.state.WatchFor(ctx, harnesshostlifecycle.HostReportResource(harnesshostlifecycle.HostReport{}).Metadata(),
 			state.WithEventTypes(state.Created, state.Updated),
 			state.WithCondition(func(value resource.Resource) (bool, error) {
 				report := value.(interface {
-					TypedSpec() *runnerlifecycle.HostReport
+					TypedSpec() *harnesshostlifecycle.HostReport
 				}).TypedSpec()
 				return report.Intent != nil && report.Intent.ExecutionFenced == expectedFence &&
 					proto.Equal(report.Intent.Binding, running.Binding) && report.Report != nil && report.Report.Ready, nil
@@ -270,7 +270,7 @@ func TestHostPublishesExactIntentAndIdleFacts(t *testing.T) {
 			t.Fatal(err)
 		}
 		return *result.(interface {
-			TypedSpec() *runnerlifecycle.HostReport
+			TypedSpec() *harnesshostlifecycle.HostReport
 		}).TypedSpec()
 	}
 	first := read(false)

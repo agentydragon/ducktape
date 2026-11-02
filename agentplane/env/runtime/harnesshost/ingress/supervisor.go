@@ -10,7 +10,7 @@ import (
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 )
 
-// SupervisorConfig supplies the Runner-owned session inventory and observation
+// SupervisorConfig supplies the Harness Host-owned Session inventory and observation
 // seams used by the per-Session ingress workers.
 type SupervisorConfig struct {
 	Target            string
@@ -35,7 +35,7 @@ func NewSupervisor(config SupervisorConfig) *Supervisor {
 // Run keeps delivery workers alive until cancellation or a supervisor failure.
 // Worker failures are reported while the failed Session remains eligible for
 // retry. Callers decide when shutdown may cancel ingress so final ACKs can
-// still satisfy Runner quiescence.
+// still satisfy Harness Host quiescence.
 func (s *Supervisor) Run(ctx context.Context) error {
 	if s == nil || s.config.Store == nil || s.config.Inventory == nil || s.config.Changes == nil || s.config.OnWorkerFailure == nil {
 		return errors.New("ingress supervisor requires a store, inventory, change source, and worker failure handler")

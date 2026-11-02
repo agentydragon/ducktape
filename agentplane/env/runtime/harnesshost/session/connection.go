@@ -92,7 +92,7 @@ func (c *nativeConnection) request(ctx context.Context, frame json.RawMessage, m
 			}
 		}
 	}()
-	// Preparation cancellation bounds native I/O and waiting, while its journal remains runner-owned.
+	// Preparation cancellation bounds native I/O and waiting, while its journal remains Harness Host-owned.
 	if err := c.deps.send(ctx, frame); err != nil {
 		return harness.NativeReceipt{}, err
 	}

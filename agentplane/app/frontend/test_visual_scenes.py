@@ -217,7 +217,9 @@ async def test_sandbox_status_idle_suspended(view: VisualPage, app: AgentplaneFi
     await app.build(Scene.ADD_SUSPENDED_SANDBOXES)
     await app.mount_app("/sandboxes/idle-suspended-sandbox?tab=status")
     await expect(view.page.get_by_label("Idle suspend minutes for idle-suspended-sandbox")).to_have_value("30")
-    await view.page.get_by_text("Runner diagnostics are unavailable until it is running.").wait_for(state="visible")
+    await view.page.get_by_text("Harness Host diagnostics are unavailable until it is running.").wait_for(
+        state="visible"
+    )
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
 
@@ -389,7 +391,7 @@ async def test_central_sampler_unavailable_executor(view: VisualPage, app: Agent
 async def test_sandbox_status(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=status")
     page = view.page
-    diagnostics = page.get_by_test_id("sandbox-runner-diagnostics")
+    diagnostics = page.get_by_test_id("sandbox-harness-host-diagnostics")
     await view.page.get_by_text("dormant-session", exact=True).wait_for(state="visible")
     await view.page.get_by_text("ready-session", exact=True).wait_for(state="visible")
     await view.page.get_by_text("PID 18001", exact=True).wait_for(state="visible")
@@ -415,7 +417,7 @@ async def test_sandbox_status_details(view: VisualPage, app: AgentplaneFixture) 
     await app.mount_app("/sandboxes/ready-sandbox?tab=status")
     page = view.page
     await expect(page.get_by_role("rowheader", name="Wake on message")).to_be_visible()
-    await expect(page.get_by_text("Loading runner diagnostics…")).to_have_count(0)
+    await expect(page.get_by_text("Loading Harness Host diagnostics…")).to_have_count(0)
     await view.check(context="fixture ready")
     await view.capture(target=page.locator("#app"))
 
@@ -426,7 +428,7 @@ async def test_sandbox_status_unmet_conditions(view: VisualPage, app: Agentplane
     page = view.page
     await expect(page.get_by_text("PodPending", exact=True)).to_be_visible()
     await expect(page.get_by_text("ImagePullBackOff")).to_be_visible()
-    await expect(page.get_by_text("Loading runner diagnostics…")).to_have_count(0)
+    await expect(page.get_by_text("Loading Harness Host diagnostics…")).to_have_count(0)
     await view.check(context="fixture ready")
     await view.capture(target=page.locator("#app"))
 

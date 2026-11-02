@@ -20,7 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -350,15 +350,15 @@ func (s *failJournalSealPublicationOnce) Modify(ctx context.Context, value resou
 
 func (s *initialOperationFailureState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
 	if value.Metadata().Type() == session.OperationType {
-		desired, found, err := runnerlifecycle.ReadDesired(ctx, s.State)
+		desired, found, err := harnesshostlifecycle.ReadDesired(ctx, s.State)
 		if err == nil && found {
 			var armed *atomic.Bool
 			var failure error
 			var failed chan struct{}
 			switch desired.Mode {
-			case runnerlifecycle.Running:
+			case harnesshostlifecycle.Running:
 				armed, failure, failed = &s.failInitial, s.initialFailure, s.failed
-			case runnerlifecycle.Closing:
+			case harnesshostlifecycle.Closing:
 				armed, failure, failed = &s.failTeardown, s.teardownFailure, s.teardownFailed
 			}
 			if armed != nil {
