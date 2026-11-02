@@ -47,6 +47,7 @@ const live = vi.hoisted(
     ({
       snapshot: {
         sandbox_uid: "00000000-0000-4000-8000-000000000001" as string | null,
+        thread_snapshot_uid: null as string | null,
         threads: [] as ThreadView[] | { kind: "unavailable"; code: string },
         bindings: [],
         action_policy: null,
@@ -61,7 +62,11 @@ const live = vi.hoisted(
         standing: "current",
       },
     }) satisfies Live<
-      SandboxSnapshot & { threads: ThreadView[] | { kind: "unavailable"; code: string }; updates_connected: boolean }
+      SandboxSnapshot & {
+        thread_snapshot_uid: string | null;
+        threads: ThreadView[] | { kind: "unavailable"; code: string };
+        updates_connected: boolean;
+      }
     >
 );
 vi.mock("../live", async (importOriginal) => ({
@@ -77,7 +82,7 @@ vi.mock("../threads/live", () => ({
     snapshot: Array.isArray(live.snapshot.threads)
       ? {
           threads: live.snapshot.threads,
-          sandbox_uid: listing?.sandboxUID,
+          sandbox_uid: live.snapshot.thread_snapshot_uid ?? listing?.sandboxUID,
           more: false,
           updates_connected: live.snapshot.updates_connected,
         }
@@ -130,6 +135,7 @@ afterEach(async () => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   live.snapshot.threads = [];
+  live.snapshot.thread_snapshot_uid = null;
   readySandbox.operatingMode = OperatingMode.RUNNING;
   readySandbox.phase = SandboxPhase.RUNNING;
   readySandbox.pod = readyPod;
@@ -372,6 +378,7 @@ async function choose(label: string, value: string): Promise<void> {
 
 it("does not join an old detail frame to a same-name replacement", async () => {
   mutableSnapshot.sandbox_uid = "00000000-0000-4000-8000-000000000099";
+  live.snapshot.thread_snapshot_uid = mutableSnapshot.sandbox_uid;
   live.snapshot.threads = [thread({ id: "old-thread", name: "Old incarnation thread" })];
   await render(async () => Response.json([]));
   expect(container.textContent).not.toContain("Old incarnation thread");
