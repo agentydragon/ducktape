@@ -177,7 +177,7 @@ The original native-cleanup timeout remains unexplained; the closed
 selected. A later, separate [Runtime.Close caller-deadline failure](../env/runtime/debug/2026-11-01_runtime_close_wait_timeout.md)
 also lacks causal evidence. On recurrence, capture shutdown-stage/join evidence before attributing
 either failure or claiming it fixed. Passing later tests and the merged Runtime COSI improvements
-do not establish either cause. The broader systemd-unit ownership decision remains separate.
+do not establish either cause.
 
 Small launch-UX work can proceed alongside these tracks. Fresh-VM latency and VM-based Bazel are
 next and are independent of each other; image/layering work becomes a prerequisite only when the
@@ -1421,7 +1421,6 @@ flowchart TD
     SANDBOX_AUTODISKFUL[Decision, unscheduled: auto-diskful storage for Sandboxes]
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
-    SYSTEMD_UNIT_COSI_DESIGN[In review: systemd Unit supervision]
     SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN[Selected P0 decision: caller-authorized resume and message wake]
     EXEC_SUSPENDED_RESUME[Selected P0: recover exec on a suspended Sandbox]
     SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN --> EXEC_SUSPENDED_RESUME
@@ -1731,30 +1730,6 @@ background process, a terminal and workspace files, and a crash restart (no susp
 differently.
 
 Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-coverage).
-
-### `SYSTEMD_UNIT_COSI_DESIGN` — review systemd Unit resources and controller ownership
-
-**Selected implementation in review, operator 2026-11-01 UTC.** The [design](../env/runtime/supervision/docs/systemd_cosi_design.md)
-selects the generic process controller over a second `SystemdUnit` controller. The first change
-brings the embedded VM exec-server under that controller, publishes typed attempt observations and
-removes a duplicate diagnostic query and unused unit reference API while retaining the existing
-recovery and fencing contracts.
-
-Cover the packaged Runtime unit as the outer lifetime owner and the native transient units it
-manages; Host and Execution no longer have separate packaged units. Distinguish a unit's
-identity, a requested launch attempt and its observed `InvocationID`; define launch-time
-configuration, retained exit outcomes, connection loss/reconnection and uncertain start semantics.
-Reconciliation must preserve terminal one-shot attempts; explicitly assign any restart policy so
-it cannot replay agent work. Keep successful application shutdown separate from proof of an empty
-process domain, and specify how finalizers hold teardown and successor admission until cleanup is
-proven. Treat live D-Bus references and handles as process-owned state, and explain reconstruction
-after controller/runtime loss rather than assuming COSI resources alone make them durable.
-
-**Exit:** review an ownership map, proposed resource/status shapes, and concrete launch, normal exit,
-stop, uncertain start and reconnect sequences against today's generic process controller. Identify
-the bespoke wiring each alternative replaces and show how ordinary Pod supervision continues to
-work. This decision does not gate current reliability or delegation work. Preserve the implemented
-[management-process ownership](../env/README.md#layout-and-entrypoints).
 
 ### `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN` — authorize explicit resume and message wake
 
