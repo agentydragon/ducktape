@@ -61,6 +61,9 @@ func (c *hostIntentController) Run(ctx context.Context, engine controller.Runtim
 		}
 		result := runnerlifecycle.HostIntentStatus{Intent: desired}
 		if _, err := cosi.Write(ctx, engine, runnerlifecycle.HostIntentStatusResource(result), result); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
 			return err
 		}
 		if !c.eligible(desired) {

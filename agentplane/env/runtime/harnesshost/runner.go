@@ -171,7 +171,15 @@ func (r *Runner) fail(err error) {
 	if err == nil {
 		return
 	}
-	r.runtimeConnection.Store(nil)
+	for {
+		current := r.runtimeConnection.Load()
+		if current != nil && current.failed {
+			break
+		}
+		if r.runtimeConnection.CompareAndSwap(current, &runtimeConnection{failed: true}) {
+			break
+		}
+	}
 	zap.L().Error("runner operation failed", zap.Error(err))
 	select {
 	case r.fatal <- err:

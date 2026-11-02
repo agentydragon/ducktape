@@ -71,6 +71,16 @@ func TestHostIntentAdmissionRequiresStartupAndExactConnection(t *testing.T) {
 	}
 }
 
+func TestHostFailureCannotReopenRuntimeConnection(t *testing.T) {
+	runner := &Runner{fatal: make(chan error, 1)}
+	runner.SetRuntimeConnection("runtime", "host", true)
+	runner.fail(context.Canceled)
+	runner.SetRuntimeConnection("runtime", "host", true)
+	if runner.RuntimeConnectionMatches("runtime", "host") {
+		t.Fatal("a failed Host was reconnected for intent application")
+	}
+}
+
 type heldApplyingState struct {
 	state.State
 	marked  chan struct{}
