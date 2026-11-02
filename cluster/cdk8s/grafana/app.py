@@ -1,5 +1,4 @@
-"""AIQuota's ClickHouse datasource and history dashboard (`dashboard.json` beside this
-module) in the monitoring Grafana."""
+"""AIQuota's ClickHouse datasource and history dashboard in the monitoring Grafana."""
 
 from __future__ import annotations
 
@@ -24,7 +23,9 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/grafana"
 _NAMESPACE = "monitoring"
 _INSTANCE_LABELS = {"dashboards": "grafana"}
 DASHBOARD = DashboardFile(
-    source="cluster/cdk8s/grafana/dashboard.json", config_map="aiquota-history-dashboard", namespace=_NAMESPACE
+    source="cluster/cdk8s/monitoring/dashboards/aiquota-history.json",
+    config_map="aiquota-history-dashboard",
+    namespace=_NAMESPACE,
 )
 
 

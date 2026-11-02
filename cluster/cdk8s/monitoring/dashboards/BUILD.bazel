@@ -4,8 +4,14 @@ load("//devinfra/python:defs.bzl", "py_library")
 load("//grafana/visual_tests:visual_test.bzl", "grafana_dashboard_visual_test")
 
 exports_files(
-    ["home-network-overview.json"],
-    visibility = ["//cluster/cdk8s/monitoring:__pkg__"],
+    [
+        "aiquota-history.json",
+        "home-network-overview.json",
+    ],
+    visibility = [
+        "//cluster/cdk8s/grafana:__pkg__",
+        "//cluster/cdk8s/monitoring:__pkg__",
+    ],
 )
 
 filegroup(
@@ -95,4 +101,10 @@ grafana_dashboard_visual_test(
     name = "storage_service_details_dashboard_visual_test",
     dashboard = ":storage-service-details.json",
     fixture_data = ":visual_fixtures/storage-service-details.json",
+)
+
+grafana_dashboard_visual_test(
+    name = "aiquota_history_dashboard_visual_test",
+    dashboard = ":aiquota-history.json",
+    fixture_data = ":visual_fixtures/aiquota-history.json",
 )

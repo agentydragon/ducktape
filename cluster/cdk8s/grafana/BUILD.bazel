@@ -1,10 +1,9 @@
 load("//devinfra/python:defs.bzl", "py_library")
-load("//grafana/visual_tests:visual_test.bzl", "grafana_dashboard_visual_test")
 
 py_library(
     name = "app",
     srcs = ["app.py"],
-    data = ["dashboard.json"],
+    data = ["//cluster/cdk8s/monitoring/dashboards:aiquota-history.json"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:flux",
@@ -17,10 +16,4 @@ py_library(
         "//cluster/cdk8s/providers/grafana_operator:grafanadatasource",
         "@pypi//cdk8s",
     ],
-)
-
-grafana_dashboard_visual_test(
-    name = "dashboard_visual_test",
-    dashboard = ":dashboard.json",
-    fixture_data = ":dashboard_visual_fixture.json",
 )

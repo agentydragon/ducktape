@@ -1,4 +1,4 @@
-"""Grafana dashboards whose JSON is a native file beside the generator module that deploys them,
+"""Grafana dashboards whose JSON is a native file in the repository,
 packaged by the directory's generated `kustomization.yaml` as a `configMapGenerator` ConfigMap.
 Its content-hash name suffix reaches the `GrafanaDashboard`'s `configMapRef`, so an edited
 dashboard is a new ConfigMap that grafana-operator re-imports."""
