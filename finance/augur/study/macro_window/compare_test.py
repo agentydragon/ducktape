@@ -20,8 +20,8 @@ import asyncio
 
 import pytest_bazel
 
-from finance.augur.study.macro_window.compare import compare_windows, describe, fitted_var
-from finance.augur.x.models.structural_macro_fit import MacroFitWindow
+from finance.augur.study.macro_window.compare import compare_windows, describe
+from finance.augur.x.models.structural_macro_fit import MacroFitWindow, macro_fit_sources
 
 
 def test_both_windows_are_fit_and_the_long_record_is_longer() -> None:
@@ -29,16 +29,20 @@ def test_both_windows_are_fit_and_the_long_record_is_longer() -> None:
 
     fits = asyncio.run(compare_windows())
 
-    for window, fitted in fits.items():
-        print(describe(str(window), fitted, fitted_var(fitted)))
+    for window, fit in fits.items():
+        report = describe(window, fit)
+        assert f"{fit.first_month} .. {fit.latest_month}  ({fit.sample_months} months)" in report
+        expected_sources = ",".join(source.provenance_label for source in macro_fit_sources(window))
+        assert expected_sources in report
+        print(report)
         print()
 
     short, long_record = fits[MacroFitWindow.FRED_1955], fits[MacroFitWindow.LONG_RECORD_1926]
     # A relationship rather than two dates: the fit's first usable month is a lookback year after
     # the record's own start (the inflation state is TRAILING-year, so twelve months are spent
     # before there is one), and pinning the literal would be re-asserting that arithmetic.
-    assert long_record.macro_state_fit.first_month < short.macro_state_fit.first_month
-    assert long_record.macro_state_fit.sample_months > short.macro_state_fit.sample_months
+    assert long_record.first_month < short.first_month
+    assert long_record.sample_months > short.sample_months
 
 
 if __name__ == "__main__":

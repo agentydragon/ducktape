@@ -49,7 +49,6 @@ configured `Sampler.sample` composes this with `product_paths.construct_products
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Literal
 
 import numpy as np
@@ -87,17 +86,15 @@ class EquityProcess(FrozenModel):
 
     instrument: EquitySpec
     # Defaults to the checked-in fit on the CRSP value-weighted total US market (Ken French's
-    # factors, `Mkt-RF + RF`, dividends included) — see `calibrated/trained_structural_macro
-    # .yaml`'s `equity_fit` for the window/sample count, and structural_macro.md gap 3 for why a century
-    # rather than a shorter window is the deliberate choice.
+    # factors, `Mkt-RF + RF`, dividends included). See structural_macro.md gap 3 for the
+    # historical window choice.
     monthly_log_return_mu: float = Field(default_factory=lambda: _fitted_defaults().equity_monthly_log_return_mu)
     monthly_log_return_sigma: NonNegativeFloat = Field(
         default_factory=lambda: _fitted_defaults().equity_monthly_log_return_sigma
     )
     # ZERO by POLICY, not by fit — the fitted coupling's sign is not stable across windows and
-    # neither window explains half a percent of variance (structural_macro.md gap 2 has the numbers; the
-    # checked-in fit's `rate_beta_fit`/`rate_beta_fitted_value`/`rate_beta_r_squared` are the
-    # same finding as data). So the model carries no bond/equity coupling rather than noise
+    # neither window explains half a percent of variance (structural_macro.md gap 2 has the
+    # numbers). So the model carries no bond/equity coupling rather than noise
     # dressed as structure — load-bearing per structural_macro.md: a question that turns on bond/equity
     # correlation is not answered here. Changing the default changes every bond/equity conclusion
     # drawn from this model, so it moves only together with structural_macro.md's gap 2.
@@ -137,17 +134,6 @@ class MacroVarSpec(FrozenModel):
         return self
 
 
-class FitWindowProvenance(FrozenModel):
-    """A fitted block's evidence window, checked in as data rather than left to a comment
-    beside the numbers: which series it came from, the window it was fitted on, and how many
-    months that window covered."""
-
-    source: str
-    first_month: date
-    last_month: date
-    sample_months: int
-
-
 class StructuralMacroFittedDefaults(FrozenModel):
     """The structural-macro fit, checked in whole: written by `bb run
     //finance/augur/x/models:train_bin -- --model structural_macro ...` to
@@ -160,16 +146,12 @@ class StructuralMacroFittedDefaults(FrozenModel):
     """
 
     macro_state: MacroVarSpec
-    macro_state_fit: FitWindowProvenance
 
     equity_monthly_log_return_mu: float
     equity_monthly_log_return_sigma: NonNegativeFloat
-    equity_fit: FitWindowProvenance
 
     # `EquityProcess.rate_beta` stays a policy-set 0.0 rather than this fitted value — see its
-    # field comment. Recorded here so that policy is checkable against real evidence instead
-    # of asserted, and so a future refit's rate_beta finding is a reviewable diff.
-    rate_beta_fit: FitWindowProvenance
+    # field comment. Retain the numeric fit result and diagnostic for review.
     rate_beta_fitted_value: float
     rate_beta_r_squared: float
 
@@ -195,8 +177,8 @@ class StructuralMacroProviderConfig(FrozenModel):
 
     # --- joint macro state: a VAR(1) on (short_rate, term_spread, inflation_rate) ---------
     # Defaults to the checked-in fit (`calibrated/trained_structural_macro.yaml`'s
-    # `macro_state` + `macro_state_fit` for the window/sample count) rather than a module
-    # constant, so a refit is a reviewable diff instead of a hand-transcription. Inflation is
+    # `macro_state`) rather than a module constant, so a refit is a reviewable diff instead of
+    # a hand-transcription. Inflation is
     # trailing-year log inflation; all three states are annualized decimals. Why one JOINT
     # process rather than three independent ones — persistence, the Fed's inflation reaction,
     # correlated innovations — is structural_macro.md's "What is fitted, and on what" and gap 1.
