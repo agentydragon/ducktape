@@ -38,6 +38,7 @@ class Stream extends EventTarget {
               extra_status: "hidden",
               burn: null,
               display_windows: [],
+              display_platform_credits: null,
               summary_tint: "unknown",
               summary_index: null,
             },
@@ -113,6 +114,7 @@ describe("quota subscription", () => {
                 extra_status: "none",
                 burn: null,
                 display_windows: [],
+                display_platform_credits: null,
                 summary_tint: "unknown",
                 summary_index: null,
               },
@@ -144,6 +146,7 @@ describe("quota subscription", () => {
                 extra_status: "none",
                 burn: null,
                 display_windows: [],
+                display_platform_credits: null,
                 summary_tint: "unknown",
                 summary_index: null,
               },
@@ -172,6 +175,7 @@ describe("quota subscription", () => {
                 paid_credits_active: false,
                 extra_status: "none",
                 burn: null,
+                display_platform_credits: null,
                 display_windows: [
                   {
                     ...raw,

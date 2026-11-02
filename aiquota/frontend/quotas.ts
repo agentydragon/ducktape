@@ -37,11 +37,23 @@ export function effectiveQuota(provider: ProviderView): EffectiveQuota {
       result.platform_credits != null ||
       result.prepaid_balance != null)
   ) {
-    return { ...shown(result), windows: provider.display_windows, staleSince: null, error };
+    return {
+      ...shown(result),
+      platformCredits: provider.display_platform_credits,
+      windows: provider.display_windows,
+      staleSince: null,
+      error,
+    };
   }
   const fallback = provider.last_success;
   if (fallback)
-    return { ...shown(fallback.result), windows: provider.display_windows, staleSince: fallback.fetched_at, error };
+    return {
+      ...shown(fallback.result),
+      platformCredits: provider.display_platform_credits,
+      windows: provider.display_windows,
+      staleSince: fallback.fetched_at,
+      error,
+    };
   return {
     windows: [],
     extraSpend: null,

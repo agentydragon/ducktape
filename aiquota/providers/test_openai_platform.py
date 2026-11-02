@@ -31,7 +31,15 @@ async def test_fetch_reports_balance_and_grant_expiry(tmp_path):
                             "expires_at": 1800000000,
                             "is_scheduled": False,
                             "is_held_for_prepaid_transition": False,
-                        }
+                        },
+                        {
+                            "grant_amount": 10,
+                            "used_amount": 10,
+                            "effective_at": 1700000000,
+                            "expires_at": None,
+                            "is_scheduled": False,
+                            "is_held_for_prepaid_transition": False,
+                        },
                     ]
                 },
             },
@@ -48,6 +56,7 @@ async def test_fetch_reports_balance_and_grant_expiry(tmp_path):
     assert result.platform_credits is not None
     assert result.platform_credits.total_available_usd == Decimal("25.75")
     assert result.platform_credits.grants[0].expires_at == datetime.fromtimestamp(1800000000, UTC)
+    assert result.platform_credits.grants[1].expires_at is None
 
 
 async def test_failed_fetch_does_not_report_zero(tmp_path):

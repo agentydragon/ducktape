@@ -2,7 +2,19 @@ from datetime import UTC, datetime, timedelta
 
 import pytest_bazel
 
-from aiquota.models import AllQuotas, ExtraSpend, FetchSuccess, PaidCredits, ProviderFetch, ProviderQuota, QuotaWindow
+from aiquota.models import (
+    AllQuotas,
+    ExtraSpend,
+    FetchError,
+    FetchSuccess,
+    PaidCredits,
+    PlatformCreditGrant,
+    PlatformCredits,
+    ProviderFetch,
+    ProviderQuota,
+    QuotaWindow,
+    SuccessfulProviderFetch,
+)
 from aiquota.render.view_model import currently_over_plan, to_view
 
 if __name__ == "__main__":
@@ -113,3 +125,46 @@ def test_window_presentation_updates_from_one_snapshot() -> None:
     assert (later.display_windows[0].pace, later.summary_tint) == ("-10%", "cool")
     assert (first.display_windows[0].reset, later.display_windows[0].reset) == ("2h30m", "1h30m")
     assert (first.display_windows[0].elapsed, later.display_windows[0].elapsed) == (0.5, 0.7)
+
+
+def test_platform_grants_filter_tracks_time_and_preserves_snapshot() -> None:
+    def grant(used: int, expires: datetime | None, *, scheduled: bool = False) -> PlatformCreditGrant:
+        return PlatformCreditGrant(
+            granted_usd=10,
+            used_usd=used,
+            effective_at=_NOW - timedelta(days=1),
+            expires_at=expires,
+            is_scheduled=scheduled,
+            is_held_for_prepaid_transition=False,
+        )
+
+    credits = PlatformCredits(
+        total_available_usd=20,
+        total_paid_available_usd=20,
+        grants=[
+            grant(0, _NOW + timedelta(hours=1)),
+            grant(1, _NOW),
+            grant(10, None),
+            grant(2, None),
+            grant(10, None, scheduled=True),
+        ],
+    )
+    success = FetchSuccess(platform_credits=credits)
+    quota = AllQuotas(
+        fetched_at=_NOW,
+        providers=[
+            ProviderQuota(provider="openai_platform", last_output=ProviderFetch(fetched_at=_NOW, result=success))
+        ],
+    )
+    first = to_view(quota, _NOW).providers[0]
+    assert first.display_platform_credits is not None
+    assert first.display_platform_credits.grants == [credits.grants[i] for i in (0, 3, 4)]
+    assert first.last_output.result.platform_credits == credits
+
+    quota.providers[0].last_success = SuccessfulProviderFetch(fetched_at=_NOW, result=success)
+    quota.providers[0].last_output = ProviderFetch(fetched_at=_NOW, result=FetchError(error="offline"))
+    stale = to_view(quota, _NOW + timedelta(hours=1)).providers[0]
+    assert stale.display_platform_credits is not None
+    assert stale.display_platform_credits.grants == [credits.grants[i] for i in (3, 4)]
+    assert stale.last_success is not None
+    assert stale.last_success.result.platform_credits == credits

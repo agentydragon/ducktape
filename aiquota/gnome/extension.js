@@ -830,7 +830,10 @@ const QuotaIndicator = GObject.registerClass(
             result.paid_credits != null ||
             result.platform_credits != null ||
             result.prepaid_balance != null);
-        if (lastSuccess && !currentUsable) lastSuccess.windows = displayWindows;
+        if (lastSuccess && !currentUsable) {
+          lastSuccess.windows = displayWindows;
+          lastSuccess.platformCredits = pq.display_platform_credits ?? null;
+        }
         const lastCheck = pq.last_output?.fetched_at ? new Date(pq.last_output.fetched_at).getTime() : fetchedAt;
         p.state = {
           windows: currentUsable ? displayWindows : [],
@@ -839,7 +842,7 @@ const QuotaIndicator = GObject.registerClass(
           error: isSuccess ? null : (result.error ?? null),
           extraSpend: isSuccess ? this._mapExtraSpend(result.extra_spend) : null,
           paidCredits: isSuccess ? (result.paid_credits ?? null) : null,
-          platformCredits: isSuccess ? (result.platform_credits ?? null) : null,
+          platformCredits: isSuccess && currentUsable ? (pq.display_platform_credits ?? null) : null,
           prepaidBalance: isSuccess ? (result.prepaid_balance ?? null) : null,
           availableResetCredits: isSuccess ? (result.available_reset_credits ?? null) : null,
           availableResetCreditExpiries: isSuccess ? (result.available_reset_credit_expiries ?? []) : [],
