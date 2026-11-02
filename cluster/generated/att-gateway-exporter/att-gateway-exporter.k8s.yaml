@@ -175,6 +175,9 @@ spec:
   configMapRef:
     key: dashboard.json
     name: att-gateway-exporter-dashboard
+  datasources:
+    - datasourceName: Loki
+      inputName: DS_LOKI
   folder: Network
   instanceSelector:
     matchLabels:
