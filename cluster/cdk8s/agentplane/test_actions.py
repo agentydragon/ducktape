@@ -101,7 +101,7 @@ def test_actions_migrate_before_serving_and_roll(staging_manifests: list[dict[st
 def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -> None:
     props = SessionDelegationProps(
         direct_tools_by_group={
-            actions.ENVIRONMENTS_GROUP: frozenset({"list", "get"}),
+            actions.ENVIRONMENTS_GROUP: frozenset({"list", "get", "resume"}),
             actions.SESSIONS_GROUP: frozenset(
                 {"open", "submit_input", "observe_input", "get", "read_turns", "cancel_input", "interrupt_turn"}
             ),
@@ -127,7 +127,7 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
     settings = yaml.safe_load(config["data"]["settings.yaml"])
     groups = settings["action_groups"]
     assert groups["environments"]["executor"]["kind"] == "session_delegation"
-    assert set(groups["environments"]["direct_tools"]) == {"get", "list"}
+    assert set(groups["environments"]["direct_tools"]) == {"get", "list", "resume"}
     assert groups["sessions"]["executor"]["kind"] == "session_delegation"
     assert set(groups["sessions"]["direct_tools"]) == {
         "cancel_input",

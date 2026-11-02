@@ -86,8 +86,8 @@ class AppSettingsConfig(YamlFileSettings):
         default_factory=dict, description="App-owned Sandbox launch-form presets keyed by displayable name."
     )
     default_policy_sets: Set[str] = Field(
-        description="PolicySets every new Sandbox is bound to. The app creates, suspends, resumes and deletes "
-        "Sandboxes through Kubernetes itself."
+        description="PolicySets every new Sandbox is bound to. The app creates, suspends and deletes Sandboxes "
+        "through Kubernetes; the Runner Gateway owns authorized resume requests."
     )
     new_sandbox_defaults: NewSandboxDefaults = Field(
         default_factory=NewSandboxDefaults,
@@ -126,7 +126,8 @@ class Settings(AppSettingsConfig):
         min_length=1, description="The Runner Gateway's gRPC host:port, used by the health-status probe."
     )
     session_dispatcher_target: str = Field(
-        min_length=1, description="Required Session Dispatcher gRPC host:port for Thread commands."
+        min_length=1,
+        description="Runner Gateway gRPC host:port for Session Dispatcher commands and app-brokered resume requests.",
     )
     runner_gateway_control_target: str = Field(
         min_length=1,

@@ -114,10 +114,9 @@ The current path has different authority at each step:
 | Dispatcher admission and wake        | Dispatcher retains the effective sender and expected Sandbox UID with queued work. Before automatic resume, the shared lifecycle manager rechecks the live target UID and effective ServiceAccount UID against `resumePolicy`, or checks the separate `wake_callers` broker grant. Requested stops stay sticky. | Dispatcher admission and retained attribution do not grant wake authority. `wake_callers` permits automatic wake only; explicit operator resume uses the separate direct Pod-bound `operator_callers` grant. A requested wake does not assert readiness. |
 | Gateway proxy and runner             | Proxy authenticates an allowed service account and routes to the connection holder. UID and owner headers are required; the proxy checks the exact Sandbox and ready Pod. Runner rejects an unknown Session.                                                                                                    | The Go Dispatcher carries the watched UID into proxy calls, rejecting a same-name replacement. Proxy's broad caller list is not a per-destination send grant; runner membership cannot be checked while offline.                                         |
 
-The app's live Runner inventory uses the identity-fenced per-Sandbox proxy; its operator resume
-still patches desired Sandbox state in Kubernetes. The backend-owned `EnvironmentService.ResumeEnvironment` RPC
-checks caller authority and exact target before changing desired state. Migrating the app caller
-follows deployment of that backend and its separate operator grant. The Gateway Session wrappers,
+The app's live Runner inventory still uses the identity-fenced per-Sandbox proxy. Explicit Sandbox
+resume now calls the Runner Gateway's `EnvironmentService`, which checks the operator's
+Pod-bound authority and exact target before changing desired state. The Gateway Session wrappers,
 registry and separate database are retired.
 
 **Approved public destination (operator, 2026-10-15):** every submission names the exact

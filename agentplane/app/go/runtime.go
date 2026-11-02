@@ -178,6 +178,13 @@ func run(ctx context.Context, config Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Session Dispatcher: %w", err)
 	}
+	environmentClient, err := bridge.NewEnvironmentClient(bridge.EnvironmentConfig{
+		Target: config.SessionDispatcherTarget, TokenFile: config.SessionDispatcherTokenFile,
+		Timeout: time.Duration(config.SessionDispatcherRequestTimeoutSecs * float64(time.Second)),
+	})
+	if err != nil {
+		return fmt.Errorf("configure EnvironmentService: %w", err)
+	}
 	appBridge, err := bridge.New(inventory, runner, dispatcher)
 	if err != nil {
 		return fmt.Errorf("configure Runner bridge: %w", err)
@@ -331,7 +338,7 @@ func run(ctx context.Context, config Config) error {
 	if err := RegisterCoreRoutes(server, config); err != nil {
 		return fmt.Errorf("register core routes: %w", err)
 	}
-	RegisterSandboxRoutes(server, config, inventory)
+	RegisterSandboxRoutes(server, config, inventory, environmentClient)
 	RegisterPolicyRoutes(server, config, inventory, policies)
 	if err := RegisterSessionRoutes(server, app); err != nil {
 		return fmt.Errorf("register Session opening facade: %w", err)
