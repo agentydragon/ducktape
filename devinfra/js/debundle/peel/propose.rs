@@ -477,7 +477,7 @@ pub struct ProposalDiagnostic {
 }
 
 pub fn propose_from_files(options: &ProposalOptions) -> Result<ProposalsReport> {
-    let graph: DependencyGraphReport = report_io::read_json(&options.dependency_graph_path)?;
+    let graph: DependencyGraphReport = report_io::read_json_gzip(&options.dependency_graph_path)?;
     propose_from_graph(&graph, options)
 }
 
@@ -529,7 +529,7 @@ pub fn decompose_modules_from_files_with_options(
     options: &ProposalOptions,
     decomposition: ModuleDecompositionOptions,
 ) -> Result<ModuleDecompositionReport> {
-    let graph: DependencyGraphReport = report_io::read_json(&options.dependency_graph_path)?;
+    let graph: DependencyGraphReport = report_io::read_json_gzip(&options.dependency_graph_path)?;
     decompose_modules_from_graph_with_options(&graph, options, decomposition)
 }
 

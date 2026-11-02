@@ -45,7 +45,7 @@ use crate::spec_commands::SpecNs;
 pub(crate) fn load_dependency_graph_report(
     path: &std::path::Path,
 ) -> Result<analysis::DependencyGraphReport> {
-    report_io::read_json(path)
+    report_io::read_json_gzip(path)
         .with_context(|| format!("reading full dependency graph {}; export it with debundle run --graphs or the dependency_graphs Bazel output group", path.display()))
 }
 

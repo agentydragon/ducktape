@@ -250,7 +250,7 @@ fn exported_factory_result_stays_deferred_until_acyclic_importer_use() {
     );
     assert_preserved_entry_output(&fixture, "42\n");
 
-    let graph: analysis::DependencyGraphReport = read_json(
+    let graph: analysis::DependencyGraphReport = read_gzip_json(
         &fixture
             .report_root
             .join("static/provider/dependency_graph.json.gz"),

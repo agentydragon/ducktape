@@ -284,7 +284,7 @@ impl GraphFixture {
     }
 
     pub fn dependency_graph(&self) -> DependencyGraphReport {
-        let report = read_json(&self.graph);
+        let report = read_gzip_json(&self.graph);
         assert_no_purity_disagreements(&report);
         report
     }

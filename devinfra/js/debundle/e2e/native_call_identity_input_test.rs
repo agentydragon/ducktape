@@ -434,7 +434,7 @@ fn freeze_heap_proof_retains_nested_array_mutation() {
     // The Pass-1 cut is a feedback arc set and need not pick this edge, so
     // read it from the graph: `frozen`'s push into `values` stays ordered
     // after `heap/a`.
-    let graph: serde_json::Value = read_json(
+    let graph: serde_json::Value = read_gzip_json(
         &rejected
             .report_root
             .join("static")

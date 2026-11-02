@@ -85,21 +85,11 @@ def overlaps(left, right) -> bool:
 
 
 def out_edges(graph_path: Path, source_of: dict) -> Counter:
-    graphs = (
-        [graph_path]
-        if graph_path.is_file()
-        else sorted([*graph_path.rglob("dependency_graph.json.gz"), *graph_path.rglob("dependency_graph.json")])
-    )
+    graphs = [graph_path] if graph_path.is_file() else sorted(graph_path.rglob("dependency_graph.json.gz"))
     counts: Counter[tuple[str | None, int]] = Counter()
     for path in graphs:
-        with path.open("rb") as encoded:
-            compressed = encoded.read(2) == b"\x1f\x8b"
-            encoded.seek(0)
-            if compressed:
-                with gzip.GzipFile(fileobj=encoded) as decoded:
-                    graph = json.load(decoded)
-            else:
-                graph = json.load(encoded)
+        with gzip.open(path, "rt") as decoded:
+            graph = json.load(decoded)
         source = source_of.get(graph.get("chunk_id"))
         for edge in graph["edges"]:
             if edge.get("constrains_init_order") and edge["source"].startswith("unit:"):

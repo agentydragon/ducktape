@@ -1236,7 +1236,7 @@ pub fn run_source_selection_report(
 }
 
 fn load_graph(path: &Path) -> Result<DependencyGraphReport> {
-    report_io::read_json(path)
+    report_io::read_json_gzip(path)
 }
 
 fn load_program_graph(
@@ -1244,7 +1244,7 @@ fn load_program_graph(
     graph: &DependencyGraphReport,
 ) -> Result<ProgramGraphReport> {
     let path = graph_provenance::program_graph_path(graph_path, &graph.program_graph);
-    report_io::read_json(&path)
+    report_io::read_json_gzip(&path)
 }
 
 fn apply_limit<T>(records: &mut Vec<T>, limit: usize) {

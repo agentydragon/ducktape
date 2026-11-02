@@ -8,9 +8,7 @@ use anyhow::{Context, Result};
 use flate2::{Compression, GzBuilder, read::MultiGzDecoder};
 use serde::{Serialize, de::DeserializeOwned};
 
-/// Parse the actual file format, including historical explicit plain JSON.
-/// The decoder consumes the complete stream, checking gzip trailers and
-/// rejecting trailing garbage rather than accepting a partial first member.
+/// Parse a JSON report, accepting plain reports and gzip streams by content.
 pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
     let file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
     let mut input = BufReader::new(file);
@@ -24,6 +22,14 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
         serde_json::from_reader(input)
     }
     .with_context(|| format!("parsing JSON report {}", path.display()))
+}
+
+/// Parse a gzip-encoded JSON report. The decoder consumes the complete stream,
+/// checking gzip trailers and rejecting trailing garbage.
+pub fn read_json_gzip<T: DeserializeOwned>(path: &Path) -> Result<T> {
+    let file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
+    serde_json::from_reader(MultiGzDecoder::new(BufReader::new(file)))
+        .with_context(|| format!("parsing gzip JSON report {}", path.display()))
 }
 
 /// Write compact JSON directly through a bounded gzip stream. Completion
@@ -68,7 +74,7 @@ mod tests {
     }
 
     #[test]
-    fn reads_plain_and_gzip_by_content_and_validates_the_entire_stream() {
+    fn reads_plain_reports_and_gzip_by_content_and_validates_the_entire_stream() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("report");
         let value = serde_json::json!({"nodes": [1, 2]});

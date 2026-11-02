@@ -43,9 +43,10 @@ Full graph files use `.json.gz`: deterministic gzip level-1 streams containing
 the complete existing compact JSON payload. Writers finish the compression
 footer and flush the file before reporting success; no plaintext full graph
 is staged or emitted. Small JSON reports and JSONL are unchanged. Saved-graph
-readers accept gzip and historical explicit plain JSON by content and validate
-the complete compressed stream, including checksums and trailing bytes. For
-shell inspection, use `gzip -dc dependency_graph.json.gz | jq ...`.
+readers require gzip streams and validate the complete stream, including
+checksums and trailing bytes. Graph consumers use the gzip-only reader; the
+generic JSON report reader accepts plain JSON for non-graph reports. For shell inspection, use
+`gzip -dc dependency_graph.json.gz | jq ...`.
 
 Sections that are the same for every chunk are written once per run, as
 `program_graph.json.gz` at the report root (`reports/tree/` beside the chunk
