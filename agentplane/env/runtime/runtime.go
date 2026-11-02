@@ -140,7 +140,6 @@ type Runtime struct {
 	store                  *retained.Store
 	codexAppServer         *codexappserver.Host
 	createMu               sync.Mutex
-	sealPublishMu          sync.Mutex
 	idleSince              *timestamppb.Timestamp
 	startupComplete        bool
 	harnessSupervisor      *supervision.Supervisor

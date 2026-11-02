@@ -18,6 +18,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
+	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
@@ -66,7 +67,6 @@ func TestSessionOwnerReconcilesRetainedRecord(t *testing.T) {
 	m, err := NewManager(withTestSessionFacilities(t, Config{
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root),
 		Destination: func(string) string { return "test-destination" },
-		PublishSeal: func(string, *journal.SealState) error { return nil },
 		OnChange:    func() {}, OnError: func(err error) {
 			if err != nil {
 				failures <- err
@@ -127,7 +127,6 @@ func TestSessionOwnerReportsRecoveryFailure(t *testing.T) {
 	m, err := NewManager(withTestSessionFacilities(t, Config{
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: root,
 		Destination: func(string) string { return "test-destination" },
-		PublishSeal: func(string, *journal.SealState) error { return nil },
 		OnChange:    func() {}, OnError: func(err error) {
 			if err != nil {
 				failures <- err
@@ -225,7 +224,6 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	m, err := NewManager(withTestSessionFacilities(t, Config{
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root),
 		Destination: func(string) string { return "test-destination" },
-		PublishSeal: func(string, *journal.SealState) error { return nil },
 		OnError: func(err error) {
 			if err != nil {
 				publishErrors <- err
@@ -366,11 +364,25 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	}
 }
 
+type failAcknowledgementModifyOnce struct {
+	state.State
+	failure error
+	fail    bool
+}
+
+func (s *failAcknowledgementModifyOnce) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
+	if value.Metadata().Type() == retained.IngressAckType && s.fail {
+		s.fail = false
+		return s.failure
+	}
+	return s.State.Modify(ctx, value, update, opts...)
+}
+
 func TestReopenRetryKeepsCOSIIngressAcknowledgementAfterJournalReopened(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	root := t.TempDir()
-	resources := state.WrapCore(namespaced.NewState(inmem.Build))
+	resources := &failAcknowledgementModifyOnce{State: state.WrapCore(namespaced.NewState(inmem.Build))}
 	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
 	if err != nil {
 		t.Fatal(err)
@@ -404,19 +416,13 @@ func TestReopenRetryKeepsCOSIIngressAcknowledgementAfterJournalReopened(t *testi
 		t.Fatal(err)
 	}
 	environment := Environment{IncarnationUID: "current-incarnation"}
-	sealPublishCalls := 0
 	publishErr := errors.New("injected acknowledgement publication failure")
+	resources.failure = publishErr
+	resources.fail = true
 	m, err := NewManager(withTestSessionFacilities(t, Config{
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root), Environment: func() Environment { return environment },
 		Destination: func(string) string { return "test-destination" },
-		PublishSeal: func(string, *journal.SealState) error {
-			sealPublishCalls++
-			if sealPublishCalls == 1 {
-				return publishErr
-			}
-			return nil
-		},
-		OnChange: func() {},
+		OnChange:    func() {},
 		OnError: func(err error) {
 			if err != nil {
 				t.Errorf("session manager: %v", err)
@@ -433,7 +439,7 @@ func TestReopenRetryKeepsCOSIIngressAcknowledgementAfterJournalReopened(t *testi
 		}
 	})
 	if _, err := m.load(ctx, "reopen-session"); !errors.Is(err, publishErr) {
-		t.Fatalf("initial load error = %v, want %v after durable journal and acknowledgement reopen", err, publishErr)
+		t.Fatalf("initial load error = %v, want %v after durable journal reopen", err, publishErr)
 	}
 	if m.Get("reopen-session") != nil {
 		t.Fatal("failed reopen became visible in the Session registry")
@@ -442,8 +448,8 @@ func TestReopenRetryKeepsCOSIIngressAcknowledgementAfterJournalReopened(t *testi
 		t.Fatalf("failed reopen published a Session reconcile snapshot: found=%t, err=%v", found, err)
 	}
 	ack, err := store.ReadAcknowledgement("reopen-session")
-	if err != nil || ack == nil || ack.Cursor != sealCursor || ack.Sealed {
-		t.Fatalf("acknowledgement after failed publication = %+v, err=%v; want durable unsealed cursor", ack, err)
+	if err != nil || ack == nil || ack.Cursor != sealCursor || !ack.Sealed {
+		t.Fatalf("acknowledgement after failed publication = %+v, err=%v; want retained sealed cursor", ack, err)
 	}
 	environment.Quiesced = true
 

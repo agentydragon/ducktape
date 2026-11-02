@@ -345,7 +345,7 @@ func frameTestSessionWithControllerGate(t *testing.T, command []string, withCont
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := NewManager(Config{Admission: testSessionAdmission(resources), Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root), Scripts: scriptRunner, WaitBootstrap: bootstrapHost.Wait, Environment: func() Environment { return Environment{IncarnationUID: "test-incarnation"} }, EnsureWorkspace: func(_ context.Context, cwd string) (string, error) { return workspace.Resolve(cwd, filepath.Dir(root)) }, LaunchProcess: launch, ResolveModelConfig: func(context.Context, sessionpb.Harness, string) (*int, error) { return nil, nil }, Destination: func(string) string { return "test-destination" }, PublishSeal: func(string, *journal.SealState) error { return nil }, OnChange: func() {}, OnError: func(err error) {
+	m, err := NewManager(Config{Admission: testSessionAdmission(resources), Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root), Scripts: scriptRunner, WaitBootstrap: bootstrapHost.Wait, Environment: func() Environment { return Environment{IncarnationUID: "test-incarnation"} }, EnsureWorkspace: func(_ context.Context, cwd string) (string, error) { return workspace.Resolve(cwd, filepath.Dir(root)) }, LaunchProcess: launch, ResolveModelConfig: func(context.Context, sessionpb.Harness, string) (*int, error) { return nil, nil }, Destination: func(string) string { return "test-destination" }, OnChange: func() {}, OnError: func(err error) {
 		if err != nil && !errors.Is(err, context.Canceled) {
 			t.Error(err)
 		}

@@ -9,23 +9,8 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
 	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 )
-
-func (r *Runtime) publishSeal(id string, seal *journal.SealState) error {
-	r.sealPublishMu.Lock()
-	defer r.sealPublishMu.Unlock()
-	value := journalSealSpec{}
-	if seal != nil {
-		value = journalSealSpec{Present: true, IncarnationUID: seal.IncarnationUID, Cursor: seal.Cursor}
-	}
-	return publishLifecycle(r, id, value)
-}
-
-func publishLifecycle[T lifecycleSpec[T]](r *Runtime, id string, value T) error {
-	return cosi.Publish(r.lifecycleContext, r.lifecycleState, lifecycleResourceFor(id, value), value, lifecycle.EnvironmentOwner)
-}
 
 func (r *Runtime) admissionCount(ctx context.Context) (int, error) {
 	input, found, err := lifecycleRead[environmentAdmissionCountSpec](ctx, r.lifecycleState, lifecycle.ResourceID)

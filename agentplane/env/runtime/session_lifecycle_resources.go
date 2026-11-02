@@ -12,7 +12,6 @@ import (
 )
 
 const (
-	journalSealType                = "JournalSeals.agentplane"
 	sessionLifecycleControllerName = "environment-session-lifecycle"
 )
 
@@ -45,16 +44,8 @@ type environmentAdmissionCountSpec struct {
 	Admissions         int
 	AcceptedGeneration uint64
 }
-type journalSealSpec struct {
-	Present        bool
-	IncarnationUID string
-	Cursor         uint64
-}
 
 func (environmentAdmissionCountSpec) resourceType() resource.Type {
 	return lifecycle.AdmissionCountType
 }
 func (value environmentAdmissionCountSpec) DeepCopy() environmentAdmissionCountSpec { return value }
-
-func (journalSealSpec) resourceType() resource.Type     { return journalSealType }
-func (value journalSealSpec) DeepCopy() journalSealSpec { return value }

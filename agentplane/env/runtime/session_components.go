@@ -65,8 +65,8 @@ func (r *Runtime) initializeSessions() error {
 		LaunchProcess: func(ctx context.Context, owner string, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
 			return r.launchSessionProcess(ctx, owner, r.harnessSupervisor, config)
 		},
-		ResolveModelConfig: r.config.ResolveModelConfig, PublishSeal: r.publishSeal,
-		OnChange: r.changed, OnError: r.fail,
+		ResolveModelConfig: r.config.ResolveModelConfig,
+		OnChange:           r.changed, OnError: r.fail,
 		ReconcileConcurrency: r.config.SessionReconcileConcurrency, Environment: r.environment,
 		Admission: r.admitLifecycleEffect,
 	})

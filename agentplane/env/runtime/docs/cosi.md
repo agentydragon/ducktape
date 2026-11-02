@@ -153,7 +153,7 @@ flowchart LR
 ```
 
 These are aggregate stages and a first-unmet-predicate blocker, not another environment desire.
-Session halt and process stop are separate observations. A blocked journal seal, pending inspection,
+Session halt and process stop are separate observations. A blocked per-Session seal or delivery, pending inspection,
 remaining process finalizer or under-cursor ACK prevents the corresponding barrier from completing.
 A successor generation cannot reuse an old status or Execution fence association.
 

@@ -7,7 +7,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
@@ -41,7 +40,6 @@ type Config struct {
 	EnsureWorkspace      func(context.Context, string) (string, error)
 	LaunchProcess        func(context.Context, string, supervision.ProcessConfig) (*supervision.ManagedProcess, error)
 	ResolveModelConfig   func(context.Context, sessionpb.Harness, string) (*int, error)
-	PublishSeal          func(string, *journal.SealState) error
 	OnChange             func()
 	OnError              func(error)
 	ReconcileConcurrency int

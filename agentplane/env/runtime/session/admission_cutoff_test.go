@@ -3,10 +3,12 @@ package session
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"google.golang.org/grpc/codes"
@@ -110,15 +112,23 @@ func TestSuccessorReopenClearsCutoffOnlyAfterCurrentRevisionAndPublication(t *te
 	if err := lifecycle.PublishEnvironmentDesired(ctx, m.state, lifecycle.EnvironmentDesired{Mode: lifecycle.Running, IncarnationUID: "successor", Generation: 3}); err != nil {
 		t.Fatal(err)
 	}
-	failure := errors.New("seal publication failed")
-	m.publishSeal = func(string, *journal.SealState) error { return failure }
+	failure := errors.New("acknowledgement publication failed")
+	directory, err := m.store.Directory(s.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fault := &failAcknowledgementModifyOnce{State: m.state, failure: failure, fail: true}
+	store, err := retained.NewStore(filepath.Dir(directory), fault)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.store = store
 	if err := m.Reopen(ctx, s); !errors.Is(err, failure) || s.journal.SealState() != nil || !s.finalAdmissionClosed {
-		t.Fatalf("failed successor publication opened gate: err=%v seal=%+v", err, s.journal.SealState())
+		t.Fatalf("failed successor acknowledgement publication opened gate: err=%v seal=%+v", err, s.journal.SealState())
 	}
 	if _, err := s.Admit(ctx, &commandpb.Command{CommandId: "during-failure", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "blocked"}}}, false); status.Code(err) != codes.Aborted {
-		t.Fatalf("failed successor publication admitted command: %v", err)
+		t.Fatalf("failed successor acknowledgement publication admitted command: %v", err)
 	}
-	m.publishSeal = func(string, *journal.SealState) error { return nil }
 	if err := m.Reopen(ctx, s); err != nil {
 		t.Fatalf("retry completed successor reopen: %v", err)
 	}
