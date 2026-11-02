@@ -6,11 +6,7 @@ import { api, displayableError, fetchWithLogin, HttpError, ok } from "../client"
 import { EventEntrySchema } from "../../../proto/event_log_pb";
 import { TurnStatusSchema } from "../../../proto/event_pb";
 import { HarnessSchema, HarnessStateSchema, LaunchOutcomeSchema, SetupStateSchema } from "../../../proto/session_pb";
-import {
-  ListThreadMetadataResponseSchema,
-  ThreadMetadataSchema,
-  type ThreadMetadata,
-} from "../../thread_metadata/thread_metadata_pb";
+import { ListThreadMetadataResponseSchema, ThreadMetadataSchema, type ThreadMetadata } from "../../app_service_pb";
 import {
   BatchGetSessionSummariesRequestSchema,
   BatchGetSessionSummariesResponseSchema,

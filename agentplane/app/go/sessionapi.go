@@ -10,9 +10,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	appbridge "github.com/agentydragon/ducktape/agentplane/app/go/bridge"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
-	sessionopeningpb "github.com/agentydragon/ducktape/agentplane/app/session_opening/sessionopeningpb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -35,17 +35,9 @@ type threadOpener interface {
 	OpenThread(context.Context, uuid.UUID) error
 }
 
-type sessionOpeningService struct {
-	sessionopeningpb.UnimplementedSessionOpeningServiceServer
-	config    Config
-	inventory appbridge.SandboxGetter
-	bridge    sessionOpener
-	store     threadOpener
-}
-
 // The generated unary gateway invokes the app-owned service in process, after RequireCaller
 // authenticates HTTP callers and enforces cookie CSRF. Dispatcher remains a native gRPC call.
-func RegisterSessionRoutes(server *HTTPServer, config Config, inventory appbridge.SandboxGetter, bridge sessionOpener, store threadOpener) error {
+func RegisterSessionRoutes(server *HTTPServer, service *appService) error {
 	mux := gatewayruntime.NewServeMux(
 		gatewayruntime.WithForwardResponseOption(func(ctx context.Context, w http.ResponseWriter, _ proto.Message) error {
 			if method, ok := gatewayruntime.RPCMethod(ctx); ok && strings.HasSuffix(method, "/OpenSession") {
@@ -55,8 +47,7 @@ func RegisterSessionRoutes(server *HTTPServer, config Config, inventory appbridg
 		}),
 		gatewayruntime.WithErrorHandler(sessionGatewayError),
 	)
-	service := &sessionOpeningService{config: config, inventory: inventory, bridge: bridge, store: store}
-	if err := sessionopeningpb.RegisterSessionOpeningServiceHandlerServer(context.Background(), mux, service); err != nil {
+	if err := apppb.RegisterAppServiceHandlerServer(context.Background(), mux, service); err != nil {
 		return err
 	}
 	server.RegisterRawRoute("POST /sandboxes/{name}/sessions", mux, false)
@@ -77,7 +68,7 @@ func validateSessionOpeningIdentity(name, id string) (uuid.UUID, error) {
 	return parsed, nil
 }
 
-func (s *sessionOpeningService) OpenSession(ctx context.Context, request *sessionopeningpb.OpenSessionRequest) (_ *sessionopeningpb.OpenSessionResponse, routeErr error) {
+func (s *appService) OpenSession(ctx context.Context, request *apppb.OpenSessionRequest) (_ *apppb.OpenSessionResponse, routeErr error) {
 	ctx, span := observability.Start(ctx, "agentplane.session.create")
 	defer func() { observability.End(span, routeErr) }()
 	id, err := validateSessionOpeningIdentity(request.GetName(), request.GetSessionId())
@@ -116,7 +107,7 @@ func (s *sessionOpeningService) OpenSession(ctx context.Context, request *sessio
 		return nil, status.Error(codes.InvalidArgument, "setup script exceeds maximum length")
 	}
 	spec.Cwd = replaceSessionID(spec.GetCwd(), id.String())
-	if err := s.store.OpenThread(ctx, id); err != nil {
+	if err := s.threadWriter.OpenThread(ctx, id); err != nil {
 		slog.ErrorContext(ctx, "create Thread metadata", "session_id", id, "error", err)
 		return nil, status.Error(codes.Unavailable, "Thread metadata is unavailable")
 	}
@@ -129,10 +120,10 @@ func (s *sessionOpeningService) OpenSession(ctx context.Context, request *sessio
 		}
 		return nil, sessionRPCError(err)
 	}
-	return &sessionopeningpb.OpenSessionResponse{Opening: opening}, nil
+	return &apppb.OpenSessionResponse{Opening: opening}, nil
 }
 
-func (s *sessionOpeningService) GetSessionOpening(ctx context.Context, request *sessionopeningpb.GetSessionOpeningRequest) (*sessionopeningpb.GetSessionOpeningResponse, error) {
+func (s *appService) GetSessionOpening(ctx context.Context, request *apppb.GetSessionOpeningRequest) (*apppb.GetSessionOpeningResponse, error) {
 	id, err := validateSessionOpeningIdentity(request.GetName(), request.GetSessionId())
 	if err != nil {
 		return nil, err
@@ -141,7 +132,7 @@ func (s *sessionOpeningService) GetSessionOpening(ctx context.Context, request *
 	if err != nil {
 		return nil, sessionRPCError(err)
 	}
-	return &sessionopeningpb.GetSessionOpeningResponse{Opening: opening}, nil
+	return &apppb.GetSessionOpeningResponse{Opening: opening}, nil
 }
 
 func sessionRPCError(err error) error {

@@ -76,8 +76,7 @@ filegroup(
         "//agentplane/action_service:action_service_pb",
         "//agentplane/action_service:operator_action_service_pb",
         "//agentplane/action_service:web_push_service_pb",
-        "//agentplane/app:config_service_pb",
-        "//agentplane/app/thread_metadata:thread_metadata_pb",
+        "//agentplane/app:app_service_pb",
         "//agentplane/history_service:history_service_pb",
         "//agentplane/mcp_edge:connection_service_pb",
         "//agentplane/proto:command_pb",
@@ -256,7 +255,7 @@ ts_library(
     deps = [
         ":client",
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/app:config_service_pb",
+        "//agentplane/app:app_service_pb",
         "//agentplane/proto:session_pb",
     ],
 )

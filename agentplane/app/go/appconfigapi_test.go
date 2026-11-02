@@ -40,7 +40,7 @@ func TestAppConfigRoutesUseGeneratedProtoJSONAndCallerAuthentication(t *testing.
 		sandboxPresetOrder: []string{"work"},
 	}
 	server := NewHTTPServer(authentication)
-	if err := RegisterCoreRoutes(server, config); err != nil {
+	if err := RegisterAppConfigRoutes(server, &appService{config: config}); err != nil {
 		t.Fatal(err)
 	}
 	handler := server.Handler(authentication)
@@ -85,7 +85,7 @@ func TestAppConfigRoutesUseGeneratedProtoJSONAndCallerAuthentication(t *testing.
 		}
 	}
 
-	for _, path := range []string{"/models", "/presets"} {
+	for _, path := range []string{"/models", "/presets", "/upstream/app-config/v1/threads", "/upstream/app-config/v1/threads:watch"} {
 		oldRoute := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodGet, path, nil)
 		request.Header.Set("Authorization", "Bearer accepted")

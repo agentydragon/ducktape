@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"sort"
 
-	appconfigpb "github.com/agentydragon/ducktape/agentplane/app/configservicepb"
+	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -14,25 +14,21 @@ import (
 // RegisterAppConfigRoutes serves the app-owned browser configuration through generated
 // ProtoJSON HTTP routes. The generated gateway and service implementation share this process;
 // there is no separate config service or internal HTTP hop.
-func RegisterAppConfigRoutes(server *HTTPServer, config Config) error {
+func RegisterAppConfigRoutes(server *HTTPServer, service *appService) error {
 	gateway := runtime.NewServeMux()
-	if err := appconfigpb.RegisterAppConfigServiceHandlerServer(context.Background(), gateway, &appConfigService{config: config}); err != nil {
+	if err := apppb.RegisterAppServiceHandlerServer(context.Background(), gateway, service); err != nil {
 		return err
 	}
 	const prefix = "/upstream/app-config"
-	server.RegisterRawRoute(prefix+"/{path...}", http.StripPrefix(prefix, gateway), false)
+	server.RegisterRawRoute("GET "+prefix+"/v1/models", http.StripPrefix(prefix, gateway), false)
+	server.RegisterRawRoute("GET "+prefix+"/v1/presets", http.StripPrefix(prefix, gateway), false)
 	return nil
 }
 
-type appConfigService struct {
-	appconfigpb.UnimplementedAppConfigServiceServer
-	config Config
-}
-
-func (s *appConfigService) ListModels(context.Context, *emptypb.Empty) (*appconfigpb.ListModelsResponse, error) {
-	response := &appconfigpb.ListModelsResponse{}
+func (s *appService) ListModels(context.Context, *emptypb.Empty) (*apppb.ListModelsResponse, error) {
+	response := &apppb.ListModelsResponse{}
 	for _, model := range s.config.Models.Models {
-		response.Models = append(response.Models, &appconfigpb.ModelOption{
+		response.Models = append(response.Models, &apppb.ModelOption{
 			Model: model.Model, DisplayName: model.DisplayName,
 			ReasoningEfforts: nonNilStrings(model.ReasoningEfforts),
 		})
@@ -49,17 +45,17 @@ func (s *appConfigService) ListModels(context.Context, *emptypb.Empty) (*appconf
 			// Config validation rejects unknown names before the server starts.
 			continue
 		}
-		response.Harnesses = append(response.Harnesses, &appconfigpb.HarnessModelOffers{
+		response.Harnesses = append(response.Harnesses, &apppb.HarnessModelOffers{
 			Harness: sessionpb.Harness(value), Models: nonNilStrings(s.config.Models.Harnesses[name]),
 		})
 	}
 	return response, nil
 }
 
-func (s *appConfigService) ListSandboxPresets(context.Context, *emptypb.Empty) (*appconfigpb.ListSandboxPresetsResponse, error) {
-	response := &appconfigpb.ListSandboxPresetsResponse{}
+func (s *appService) ListSandboxPresets(context.Context, *emptypb.Empty) (*apppb.ListSandboxPresetsResponse, error) {
+	response := &apppb.ListSandboxPresetsResponse{}
 	for _, preset := range s.config.PresetViews() {
-		defaults := &appconfigpb.SessionDefaults{
+		defaults := &apppb.SessionDefaults{
 			Model: preset.SessionDefaults.Model, Cwd: preset.SessionDefaults.CWD,
 			Instructions: preset.SessionDefaults.Instructions, SetupScript: preset.SessionDefaults.SetupScript,
 		}
@@ -69,7 +65,7 @@ func (s *appConfigService) ListSandboxPresets(context.Context, *emptypb.Empty) (
 		if preset.SessionDefaults.ReasoningEffort != nil {
 			defaults.ReasoningEffort = preset.SessionDefaults.ReasoningEffort
 		}
-		response.Presets = append(response.Presets, &appconfigpb.SandboxPreset{
+		response.Presets = append(response.Presets, &apppb.SandboxPreset{
 			Name: preset.Name, Title: preset.Title, Template: preset.Template,
 			PolicySets: nonNilStrings(preset.PolicySets), InboxTags: nonNilStrings(preset.InboxTags),
 			SessionDefaults: defaults, Bootstrap: preset.Bootstrap,

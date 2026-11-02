@@ -144,7 +144,7 @@ shown as unavailable, while suspended Sandboxes show that diagnostics are unavai
 Idle Sessions can be archived while their harness process remains live. The UI disables archive for
 observable active turns, setup, or a pending local launch; the server checks whether Session work is
 unfinished before accepting the archive request.
-The app's protobuf-defined `SessionOpeningService` serves the generated HTTP facade at
+The app's protobuf-defined `AppService` serves the generated HTTP facade at
 `POST /sandboxes/{name}/sessions` and `GET /sandboxes/{name}/sessions/{id}/opening`.
 It is an interface for the app's human frontend, not an API for in-cluster services. Backend callers
 use the [Session Dispatcher](../runner_gateway/dispatcher/README.md) directly with a complete
@@ -566,10 +566,10 @@ constructing OIDC callback URLs, so there is no released-port allocation window.
 
 ## Launch presets
 
-The browser reads configured models and Sandbox presets through the generated `AppConfigService`
+The browser reads configured models and Sandbox presets through the generated `AppService`
 ProtoJSON routes `/upstream/app-config/v1/models` and `/upstream/app-config/v1/presets`. These
 in-process handlers share the app's caller authentication boundary; the service and HTTP mapping are
-defined in `config_service.proto`. `POST
+defined in `app_service.proto`. `POST
 /sandboxes` stores the selected preset label alongside the concrete Sandbox choices; it does not
 store per-Sandbox Session defaults. On a new Thread open, the app resolves the defaults from its
 configured preset catalog using that Sandbox label, then overlays fields explicitly supplied for

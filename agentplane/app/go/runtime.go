@@ -317,16 +317,27 @@ func run(ctx context.Context, config Config) error {
 	defer closeConnections(healthConnections)
 
 	server := NewHTTPServer(appAuth)
+	app := &appService{
+		config: config, inventory: inventory, bridge: appBridge,
+		threadWriter: threadStore, threadReader: threadStore,
+		updates: wakeupHub, updatesConnected: wakeupHub.Connected, drainDone: server.DrainDone(),
+	}
+	if err := RegisterAppConfigRoutes(server, app); err != nil {
+		return fmt.Errorf("register app configuration facade: %w", err)
+	}
 	if err := RegisterCoreRoutes(server, config); err != nil {
 		return fmt.Errorf("register core routes: %w", err)
 	}
 	RegisterSandboxRoutes(server, config, inventory)
 	RegisterPolicyRoutes(server, config, inventory, policies)
-	if err := RegisterSessionRoutes(server, config, inventory, appBridge, threadStore); err != nil {
+	if err := RegisterSessionRoutes(server, app); err != nil {
 		return fmt.Errorf("register Session opening facade: %w", err)
 	}
 	RegisterRunnerRoutes(server, appBridge)
-	if err := RegisterThreadReadRoutes(server, threadStore, history, inventory, appBridge, wakeupHub, wakeupHub.Connected); err != nil {
+	if err := registerThreadMetadataGateway(server, app); err != nil {
+		return fmt.Errorf("register Thread metadata facade: %w", err)
+	}
+	if err := RegisterThreadReadRoutes(server, threadStore, history, inventory, appBridge); err != nil {
 		return fmt.Errorf("register Thread routes: %w", err)
 	}
 	RegisterOperatorRoutes(server, policies, federator, actionClient, actionCallbackHTTP, config.ActionFederation.ServiceURL)
