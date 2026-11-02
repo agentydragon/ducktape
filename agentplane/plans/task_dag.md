@@ -2173,6 +2173,7 @@ contract is [HTTP/JSON facades](../docs/grpc_services.md#httpjson-facades); what
 ```mermaid
 flowchart LR
     APP_API_GRPC_FACADE[Selected, unscheduled: uniform app gRPC APIs with generated HTTP facades]
+    SANDBOX_NOTIFICATION_ROLLOUT_FALLBACK[Pending rollout: remove new-browser fallback for old app replicas]
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
 ```
@@ -2215,6 +2216,14 @@ replaced route/type-generation paths are removed, and remaining protocol-specifi
 listed with reasons. Focused API/browser tests cover ordinary calls, authorization denials,
 idempotency and ambiguous outcomes, and stream reconnects. Each migration records its rollout and
 rollback; update the app's contract documentation as behavior changes.
+
+### `SANDBOX_NOTIFICATION_ROLLOUT_FALLBACK` — remove the old-replica fallback
+
+**Pending rollout, app owner.** New browser bundles try the generated Sandbox notification watch
+first and switch to the old SSE URL only when an old app replica returns 404 during a rolling
+deployment. Once all app replicas serve the generated route and the rollback window closes, remove
+that 404 fallback and its `live_stream` dependency from `notification_status.tsx`. The old SSE route
+is not served by new replicas.
 
 ### `HISTORY_READS_FACADE` — History reads as a generated browser API
 

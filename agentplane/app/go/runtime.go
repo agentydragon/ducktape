@@ -283,12 +283,6 @@ func run(ctx context.Context, config Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Notification Service gRPC client: %w", err)
 	}
-	notificationConn, err := bearer.Dial(notificationTarget, config.NotificationsTokenFile,
-		time.Duration(config.NotificationsRequestTimeoutSeconds*float64(time.Second)))
-	if err != nil {
-		return fmt.Errorf("configure Notification Service gRPC client: %w", err)
-	}
-	defer notificationConn.Close()
 	notificationFacade, err := facade.NewHandler(
 		facadeContext, notificationTarget,
 		time.Duration(config.NotificationsRequestTimeoutSeconds*float64(time.Second)),
@@ -355,11 +349,9 @@ func run(ctx context.Context, config Config) error {
 		DispatcherHTTP:   dispatcherGateway, EnvironmentHTTP: dispatcherGateway,
 		ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
 		HistoryHTTP: historyGateway, NotificationHTTP: notificationGateway,
-		Notifications:    notifications_operatorpb.NewNotificationsOperatorClient(notificationConn),
-		NotificationWait: time.Duration(config.NotificationsRequestTimeoutSeconds * float64(time.Second)),
-		Egress:           egress_adminpb.NewEgressAdminClient(egressConn),
-		EgressWait:       time.Duration(config.EgressAdminTimeoutSeconds * float64(time.Second)),
-		Console:          consoleConnector, Logger: logger,
+		Egress:     egress_adminpb.NewEgressAdminClient(egressConn),
+		EgressWait: time.Duration(config.EgressAdminTimeoutSeconds * float64(time.Second)),
+		Console:    consoleConnector, Logger: logger,
 	})
 	if config.ElectricURL != "" {
 		electric, electricErr := proxy.NewElectricProxy(baseClient, config.ElectricURL,

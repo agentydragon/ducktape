@@ -39,7 +39,10 @@ export interface ReaderHandlers<F> {
   /** Abort and retry if no first frame arrives within this many milliseconds. */
   initialFrameTimeoutMs?: number;
   /** One frame, which makes the stream live. Throwing ends the connection. */
-  onFrame: (frame: F) => void;
+  /** Return `reconnect` for a planned renewal frame, without waiting for EOF or backoff. */
+  onFrame: (frame: F) => void | "reconnect";
+  /** A retired route may be served by an older replica during a rolling deployment. */
+  onNotFound?: () => void;
   /** Called with the opening `connecting` at once, then on every change. */
   onConnection: (connection: StreamConnection) => void;
 }
@@ -47,7 +50,7 @@ export interface ReaderHandlers<F> {
 /** Follows `url` until the returned function is called. */
 export function followResponse<F>(
   url: string,
-  { accept, frames, onOpen, initialFrameTimeoutMs, onFrame, onConnection }: ReaderHandlers<F>
+  { accept, frames, onOpen, initialFrameTimeoutMs, onFrame, onConnection, onNotFound }: ReaderHandlers<F>
 ): () => void {
   let connection: StreamConnection = { phase: "connecting", since: Date.now() };
   let retries = 0;
@@ -61,7 +64,7 @@ export function followResponse<F>(
     onConnection(next);
   }
 
-  async function read(attempt: AbortController): Promise<void> {
+  async function read(attempt: AbortController): Promise<boolean> {
     const timeout =
       initialFrameTimeoutMs === undefined
         ? undefined
@@ -71,19 +74,23 @@ export function followResponse<F>(
           );
     try {
       const response = await fetchWithLogin(url, { signal: attempt.signal, headers: { Accept: accept } });
+      if (response.status === 404 && onNotFound) {
+        onNotFound();
+        return false;
+      }
       if (!response.ok) throw new HttpError(response, await response.text());
       if (response.body === null) throw new Error("the response has no body");
       onOpen?.();
       const reader = frames(response.body.pipeThrough(new TextDecoderStream())).getReader();
       for (;;) {
         const { done, value } = await reader.read();
-        if (done) return;
+        if (done) return false;
         window.clearTimeout(timeout);
         if (connection.phase !== "live") {
           retries = 0;
           report({ phase: "live", since: Date.now() });
         }
-        onFrame(value);
+        if (onFrame(value) === "reconnect") return true;
       }
     } finally {
       window.clearTimeout(timeout);
@@ -94,8 +101,9 @@ export function followResponse<F>(
     window.clearTimeout(retry);
     const attempt = (current = new AbortController());
     let lastError: string | null = null;
+    let renew = false;
     try {
-      await read(attempt);
+      renew = await read(attempt);
     } catch (reason) {
       lastError = displayableError(reason);
     } finally {
@@ -110,7 +118,7 @@ export function followResponse<F>(
       attempt: connection.phase === "reconnecting" ? connection.attempt + 1 : 1,
       lastError,
     });
-    retry = window.setTimeout(() => void connect(), backoff(retries++));
+    retry = window.setTimeout(() => void connect(), renew ? 0 : backoff(retries++));
   }
 
   function resume(): void {

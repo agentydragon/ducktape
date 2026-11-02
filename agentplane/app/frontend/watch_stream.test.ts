@@ -26,7 +26,9 @@ afterEach(() => {
 function follow(): void {
   stop = followWatch("/test/watch", {
     onOpen: () => events.push("open"),
-    onFrame: (result) => events.push(result),
+    onFrame: (result) => {
+      events.push(result);
+    },
     onConnection: (connection) => connections.push(connection),
   });
 }
@@ -84,4 +86,39 @@ it("treats an error message of the stream as the end of the connection", async (
 
   expect(connection()).toMatchObject({ phase: "reconnecting", lastError: expect.stringContaining("lease lost") });
   expect(watch(0).signal?.aborted).toBe(true);
+});
+
+it("renews immediately when the service requests reconnect, without waiting for EOF", async () => {
+  stop = followWatch("/test/watch", {
+    onOpen: () => events.push("open"),
+    onFrame: (result) => {
+      events.push(result);
+      if (result === "renew") return "reconnect";
+    },
+    onConnection: (state) => connections.push(state),
+  });
+  await settle();
+  watch(0).send("renew");
+  await settle();
+
+  expect(watch(0).signal?.aborted).toBe(true);
+  expect(fetchMock.fetch).toHaveBeenCalledTimes(2);
+  expect(events).toEqual(["open", "renew", "open"]);
+});
+
+it("hands a missing route to a rolling-deploy fallback and stops retrying it", async () => {
+  const notFound = vi.fn(() => stop());
+  fetchMock.fetch.mockResolvedValueOnce(new Response("missing", { status: 404 }));
+  stop = followWatch("/test/watch", {
+    onOpen: () => events.push("open"),
+    onFrame: () => {},
+    onNotFound: notFound,
+    onConnection: (state) => connections.push(state),
+  });
+  await settle();
+  await vi.advanceTimersByTimeAsync(60_000);
+
+  expect(notFound).toHaveBeenCalledOnce();
+  expect(fetchMock.fetch).toHaveBeenCalledOnce();
+  expect(events).toEqual([]);
 });

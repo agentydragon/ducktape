@@ -748,9 +748,9 @@ settles it, including shared input confirmations and lifecycle effects.
 An operator can open the read-only Notifications drawer from a Thread (filtered to its runner
 session) or a Sandbox (all its sessions). The app's authenticated BFF resolves the live Sandbox
 incarnation and follows the Notification Service's UID-pinned, bounded-summary `NotificationsOperator`
-watch ([`notifications_operator.proto`](../notification_service/notifications_operator.proto)) over gRPC with its
-own rotating audience-scoped service token, relaying each snapshot to the browser as an SSE `snapshot` event in
-the proto3 JSON form. It shows the first 100 retained entries after
+watch ([`notifications_operator.proto`](../notification_service/notifications_operator.proto)) through the
+generated HTTP facade backed by in-cluster gRPC and its own rotating audience-scoped service token. The browser
+decodes generated protobuf watch frames and refreshes on a planned renewal. It shows the first 100 retained entries after
 acknowledgement (provider, cursor, time, and curated lifecycle/event summary), with a truncation
 indicator. It never sends that token or raw provider payloads to the browser, and requires a
 browser operator login, not merely a workload bearer admitted elsewhere in the app. No inspection acknowledges an entry or changes a subscription. The drawer refreshes

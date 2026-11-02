@@ -23,7 +23,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	"github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
@@ -45,11 +44,6 @@ const (
 
 type streamingUpstream interface {
 	ForwardHTTP(http.ResponseWriter, *http.Request, context.Context, string, string) error
-}
-
-type sandboxNotificationWatcher interface {
-	WatchSandboxNotifications(context.Context, *notifications_operatorpb.WatchSandboxNotificationsRequest, ...grpc.CallOption) (grpc.ServerStreamingClient[notifications_operatorpb.WatchSandboxNotificationsResponse], error)
-	WatchSessionNotices(context.Context, *notifications_operatorpb.WatchSessionNoticesRequest, ...grpc.CallOption) (grpc.ServerStreamingClient[notifications_operatorpb.WatchSessionNoticesResponse], error)
 }
 
 type egressDecisionWatcher interface {
@@ -93,8 +87,6 @@ type StreamingDependencies struct {
 	ConnectionHTTP   streamingUpstream
 	HistoryHTTP      streamingUpstream
 	NotificationHTTP streamingUpstream
-	Notifications    sandboxNotificationWatcher
-	NotificationWait time.Duration
 	Egress           egressDecisionWatcher
 	EgressWait       time.Duration
 	ThreadHeartbeat  time.Duration
@@ -113,7 +105,7 @@ func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependenc
 	server.RegisterRawRoute("GET /live/sandboxes/{name}/egress/decisions", http.HandlerFunc(routes.liveDecisions), false)
 	server.RegisterRawRoute("GET /threads/{thread_id}/events/stream", http.HandlerFunc(routes.threadEvents), false)
 	server.RegisterRawRoute("GET /upstream/notifications/v1/operator/notices:watch", http.HandlerFunc(routes.notificationFacade), true)
-	server.RegisterRawRoute("GET /sandboxes/{name}/notifications/stream", http.HandlerFunc(routes.sandboxNotifications), true)
+	server.RegisterRawRoute("GET /upstream/notifications/v1/operator/sandboxes/{name}/notifications:watch", http.HandlerFunc(routes.sandboxNotificationFacade), true)
 	server.RegisterRawRoute("GET /sandboxes/{name}/console/stream", http.HandlerFunc(routes.console), true)
 	for _, method := range []string{http.MethodGet, http.MethodPost} {
 		server.RegisterRawRoute(method+" /upstream/dispatcher/{path...}", http.HandlerFunc(routes.dispatcher), true)
@@ -671,43 +663,6 @@ func writeJSONResponse(w http.ResponseWriter, statusCode int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
-func (r *streamingRoutes) sandboxNotifications(w http.ResponseWriter, request *http.Request) {
-	if r.deps.Sandboxes == nil || r.deps.Notifications == nil {
-		writeDetailError(w, http.StatusServiceUnavailable, "Notification Service is not configured")
-		return
-	}
-	ctx, cancel, err := r.operatorLifetime(request)
-	if err != nil {
-		writeDetailError(w, http.StatusForbidden, "operator login required")
-		return
-	}
-	defer cancel()
-	sandbox, err := r.deps.Sandboxes.Get(ctx, request.PathValue("name"))
-	if err != nil {
-		_ = sandboxHTTPErrorToRaw(w, err)
-		return
-	}
-	stream, err := r.deps.Notifications.WatchSandboxNotifications(ctx, &notifications_operatorpb.WatchSandboxNotificationsRequest{Namespace: sandbox.GetNamespace(), Name: sandbox.GetName(), Uid: sandbox.GetUid()})
-	if err != nil {
-		writeGRPCOpenError(w, err)
-		return
-	}
-	streamCtx, stop := context.WithCancel(ctx)
-	defer stop()
-	// The RPC was opened with ctx so cancellation reaches transport; the route's relay still
-	// watches its own lifetime and the first snapshot bound separately below.
-	r.relayNotificationStream(w, streamCtx, "Notification", func() (proto.Message, error) { return stream.Recv() }, func(message proto.Message) (proto.Message, bool) {
-		response, ok := message.(*notifications_operatorpb.WatchSandboxNotificationsResponse)
-		if !ok || response == nil {
-			return nil, false
-		}
-		if response.GetReconnectRequired() != nil {
-			return nil, true
-		}
-		return response.GetSnapshot(), false
-	}, r.deps.NotificationWait)
-}
-
 func (r *streamingRoutes) notificationFacade(w http.ResponseWriter, request *http.Request) {
 	if r.deps.NotificationHTTP == nil {
 		writeDetailError(w, http.StatusServiceUnavailable, "Notification Service is not configured")
@@ -738,64 +693,30 @@ func (r *streamingRoutes) notificationFacade(w http.ResponseWriter, request *htt
 	r.forwardFacade(w, forwarded, ctx, r.deps.NotificationHTTP, "v1/operator/notices:watch", "")
 }
 
-func (r *streamingRoutes) relayNotificationStream(w http.ResponseWriter, ctx context.Context, label string, recv func() (proto.Message, error), snapshot func(proto.Message) (proto.Message, bool), firstWait time.Duration) {
-	if startSSE(w) != nil {
+// The generated watch requires a UID. Resolve it here on every connection so the browser
+// cannot select a previous incarnation of a Sandbox by supplying its own UID.
+func (r *streamingRoutes) sandboxNotificationFacade(w http.ResponseWriter, request *http.Request) {
+	if r.deps.Sandboxes == nil || r.deps.NotificationHTTP == nil {
+		writeDetailError(w, http.StatusServiceUnavailable, "Notification Service is not configured")
 		return
 	}
-	if firstWait <= 0 {
-		firstWait = 5 * time.Second
+	ctx, cancel, err := r.operatorLifetime(request)
+	if err != nil {
+		writeDetailError(w, http.StatusForbidden, "operator login required")
+		return
 	}
-	firstTimer := time.NewTimer(firstWait)
-	defer firstTimer.Stop()
-	first := true
-	for {
-		result := make(chan struct {
-			message proto.Message
-			err     error
-		}, 1)
-		go func() {
-			message, err := recv()
-			result <- struct {
-				message proto.Message
-				err     error
-			}{message, err}
-		}()
-		select {
-		case <-ctx.Done():
-			return
-		case <-firstTimer.C:
-			if first {
-				r.logger().WarnContext(ctx, label+" stream did not send an initial snapshot before its deadline")
-				return
-			}
-		case received := <-result:
-			if received.err != nil {
-				if ctx.Err() == nil && !errors.Is(received.err, io.EOF) {
-					r.logger().WarnContext(ctx, label+" stream interrupted", "error", received.err)
-				}
-				return
-			}
-			message, reconnect := snapshot(received.message)
-			if reconnect {
-				return
-			}
-			if message == nil {
-				r.logger().WarnContext(ctx, label+" stream sent an empty snapshot")
-				return
-			}
-			data, err := (protojson.MarshalOptions{EmitDefaultValues: true}).Marshal(message)
-			if err != nil || writeSSEData(w, "snapshot", data, nil) != nil {
-				return
-			}
-			first = false
-			if !firstTimer.Stop() {
-				select {
-				case <-firstTimer.C:
-				default:
-				}
-			}
-		}
+	defer cancel()
+	sandbox, err := r.deps.Sandboxes.Get(ctx, request.PathValue("name"))
+	if err != nil {
+		_ = sandboxHTTPErrorToRaw(w, err)
+		return
 	}
+	forwarded := request.Clone(ctx)
+	query := url.Values{}
+	query.Set("uid", sandbox.GetUid())
+	forwarded.URL.RawQuery = query.Encode()
+	path := "v1/operator/sandboxes/" + sandbox.GetNamespace() + "/" + sandbox.GetName() + "/notifications:watch"
+	r.forwardFacade(w, forwarded, ctx, r.deps.NotificationHTTP, path, "")
 }
 
 func (r *streamingRoutes) console(w http.ResponseWriter, request *http.Request) {
