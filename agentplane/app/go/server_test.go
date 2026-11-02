@@ -125,10 +125,10 @@ func TestHumaResponsesDoNotAddSchemaMetadata(t *testing.T) {
 
 func TestNonUUIDIDSegmentMatchesNoRoute(t *testing.T) {
 	server := NewHTTPServer(nil)
-	if err := RegisterThreadReadRoutes(server, nil, nil, nil, nil, nil, nil); err != nil {
+	if err := RegisterThreadReadRoutes(server, nil, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := RegisterSessionRoutes(server, Config{}, nil, nil, nil); err != nil {
+	if err := RegisterSessionRoutes(server, &appService{}); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(server.Close)

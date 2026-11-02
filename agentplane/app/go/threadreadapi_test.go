@@ -138,7 +138,7 @@ func TestThreadMetadataWatchStreamsUpdatesAndCloses(t *testing.T) {
 			var connected atomic.Bool
 			connected.Store(true)
 			server := NewHTTPServer(authentication)
-			if err := registerThreadMetadataGateway(server, &threadReadStoreFake{}, changes, connected.Load); err != nil {
+			if err := registerThreadMetadataGateway(server, &appService{threadReader: &threadReadStoreFake{}, updates: changes, updatesConnected: connected.Load, drainDone: server.DrainDone()}); err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(server.Close)
@@ -442,7 +442,7 @@ func TestThreadRenameBodyRequiresOneKnownField(t *testing.T) {
 
 func TestThreadReadRouteRegistrationPublishesOpenAPIPaths(t *testing.T) {
 	server := NewHTTPServer(nil)
-	if err := RegisterThreadReadRoutes(server, nil, nil, nil, nil, nil, nil); err != nil {
+	if err := RegisterThreadReadRoutes(server, nil, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	recorder := httptest.NewRecorder()
@@ -564,7 +564,7 @@ func TestRenameThreadReturnsNotFoundWhenHistorySessionIsMissing(t *testing.T) {
 	t.Cleanup(server.Close)
 	id := uuid.New()
 	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id}}}
-	if err := RegisterThreadReadRoutes(server, store, &threadReadHistoryFake{}, nil, nil, nil, nil); err != nil {
+	if err := RegisterThreadReadRoutes(server, store, &threadReadHistoryFake{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodPatch, "/threads/"+id.String(), strings.NewReader(`{"name":"renamed"}`))

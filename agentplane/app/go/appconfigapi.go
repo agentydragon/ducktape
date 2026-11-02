@@ -14,9 +14,9 @@ import (
 // RegisterAppConfigRoutes serves the app-owned browser configuration through generated
 // ProtoJSON HTTP routes. The generated gateway and service implementation share this process;
 // there is no separate config service or internal HTTP hop.
-func RegisterAppConfigRoutes(server *HTTPServer, config Config) error {
+func RegisterAppConfigRoutes(server *HTTPServer, service *appService) error {
 	gateway := runtime.NewServeMux()
-	if err := apppb.RegisterAppServiceHandlerServer(context.Background(), gateway, &appService{config: &appConfigService{config: config}}); err != nil {
+	if err := apppb.RegisterAppServiceHandlerServer(context.Background(), gateway, service); err != nil {
 		return err
 	}
 	const prefix = "/upstream/app-config"
@@ -25,11 +25,7 @@ func RegisterAppConfigRoutes(server *HTTPServer, config Config) error {
 	return nil
 }
 
-type appConfigService struct {
-	config Config
-}
-
-func (s *appConfigService) ListModels(context.Context, *emptypb.Empty) (*apppb.ListModelsResponse, error) {
+func (s *appService) ListModels(context.Context, *emptypb.Empty) (*apppb.ListModelsResponse, error) {
 	response := &apppb.ListModelsResponse{}
 	for _, model := range s.config.Models.Models {
 		response.Models = append(response.Models, &apppb.ModelOption{
@@ -56,7 +52,7 @@ func (s *appConfigService) ListModels(context.Context, *emptypb.Empty) (*apppb.L
 	return response, nil
 }
 
-func (s *appConfigService) ListSandboxPresets(context.Context, *emptypb.Empty) (*apppb.ListSandboxPresetsResponse, error) {
+func (s *appService) ListSandboxPresets(context.Context, *emptypb.Empty) (*apppb.ListSandboxPresetsResponse, error) {
 	response := &apppb.ListSandboxPresetsResponse{}
 	for _, preset := range s.config.PresetViews() {
 		defaults := &apppb.SessionDefaults{

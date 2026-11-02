@@ -14,7 +14,6 @@ import (
 	"unicode/utf8"
 
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
-	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/httperror"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
@@ -143,7 +142,7 @@ func (b *threadRenameBody) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(raw, &b.Name)
 }
 
-// RegisterThreadReadRoutes adds the app-owned metadata gateway and the Thread read/mutation routes.
+// RegisterThreadReadRoutes adds the Thread read/mutation routes.
 // History-owned reads are served by the History gateway; content and stream routes remain separate.
 // The inventory and Environment Runtime status reader are required for the archive guard.
 func RegisterThreadReadRoutes(
@@ -152,12 +151,7 @@ func RegisterThreadReadRoutes(
 	history threadReadHistory,
 	inventory threadSandboxInventory,
 	environmentRuntime threadEnvironmentRuntimeStatusReader,
-	updates auth.ChangeSource,
-	updatesConnected func() bool,
 ) error {
-	if err := registerThreadMetadataGateway(server, store, updates, updatesConnected); err != nil {
-		return err
-	}
 	api := server.ProtectedAPI()
 	huma.Register[threadRenameInput, threadViewOutput](api, huma.Operation{
 		OperationID: "renameThread", Method: http.MethodPatch, Path: "/threads/{thread_id}", Tags: []string{"threads"},
@@ -236,24 +230,9 @@ func RegisterThreadReadRoutes(
 	return nil
 }
 
-type threadMetadataService struct {
-	store            threadReadStore
-	updates          auth.ChangeSource
-	updatesConnected func() bool
-	drainDone        <-chan struct{}
-}
-
-func registerThreadMetadataGateway(server *HTTPServer, store threadReadStore, updates auth.ChangeSource, updatesConnected func() bool) error {
-	if store == nil {
-		// Schema export and route-registration tests use nil dependencies and do not serve these raw
-		// generated routes. The runtime always supplies a store.
-		return nil
-	}
+func registerThreadMetadataGateway(server *HTTPServer, service *appService) error {
 	mux := gatewayruntime.NewServeMux()
-	service := &threadMetadataService{
-		store: store, updates: updates, updatesConnected: updatesConnected, drainDone: server.DrainDone(),
-	}
-	if err := apppb.RegisterAppServiceHandlerServer(context.Background(), mux, &appService{threads: service}); err != nil {
+	if err := apppb.RegisterAppServiceHandlerServer(context.Background(), mux, service); err != nil {
 		return fmt.Errorf("register generated Thread Metadata gateway: %w", err)
 	}
 	gateway := http.StripPrefix("/upstream/app", mux)
@@ -278,12 +257,12 @@ func registerThreadMetadataGateway(server *HTTPServer, store threadReadStore, up
 	return nil
 }
 
-func (s *threadMetadataService) GetThreadMetadata(ctx context.Context, request *apppb.GetThreadMetadataRequest) (*apppb.ThreadMetadata, error) {
+func (s *appService) GetThreadMetadata(ctx context.Context, request *apppb.GetThreadMetadataRequest) (*apppb.ThreadMetadata, error) {
 	id, err := uuid.Parse(request.GetThreadId())
 	if err != nil || id.String() != request.GetThreadId() {
 		return nil, status.Error(codes.InvalidArgument, "thread_id must be a canonical UUID")
 	}
-	thread, err := s.store.GetThread(ctx, id)
+	thread, err := s.threadReader.GetThread(ctx, id)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "read Thread metadata")
 	}
@@ -293,7 +272,7 @@ func (s *threadMetadataService) GetThreadMetadata(ctx context.Context, request *
 	return threadMetadataProto(*thread), nil
 }
 
-func (s *threadMetadataService) ListThreadMetadata(ctx context.Context, request *apppb.ListThreadMetadataRequest) (*apppb.ListThreadMetadataResponse, error) {
+func (s *appService) ListThreadMetadata(ctx context.Context, request *apppb.ListThreadMetadataRequest) (*apppb.ListThreadMetadataResponse, error) {
 	limit := int(request.GetLimit())
 	if limit == 0 {
 		limit = 50
@@ -311,11 +290,11 @@ func (s *threadMetadataService) ListThreadMetadata(ctx context.Context, request 
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	page, err := s.store.ListPage(ctx, limit, after, listing.IncludeArchived)
+	page, err := s.threadReader.ListPage(ctx, limit, after, listing.IncludeArchived)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "list Thread metadata")
 	}
-	archivedCount, err := s.store.ArchivedCount(ctx)
+	archivedCount, err := s.threadReader.ArchivedCount(ctx)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "count archived Threads")
 	}
@@ -338,11 +317,11 @@ type threadMetadataWatch struct {
 	ctx         context.Context
 	updates     <-chan struct{}
 	unsubscribe func()
-	service     *threadMetadataService
+	service     *appService
 	initial     bool
 }
 
-func (s *threadMetadataService) newThreadMetadataWatch(ctx context.Context) (*threadMetadataWatch, error) {
+func (s *appService) newThreadMetadataWatch(ctx context.Context) (*threadMetadataWatch, error) {
 	if s.updates == nil {
 		return nil, status.Error(codes.Unavailable, "Thread metadata updates are unavailable")
 	}

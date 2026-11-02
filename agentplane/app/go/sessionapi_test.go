@@ -81,7 +81,7 @@ func TestSessionRoutesRequireCallerAuthentication(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewHTTPServer(authentication)
-	if err := RegisterSessionRoutes(server, Config{}, nil, nil, nil); err != nil {
+	if err := RegisterSessionRoutes(server, &appService{}); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(server.Close)
@@ -168,7 +168,7 @@ func sessionTestGateway(t *testing.T, peer *sessionTestPeer) http.Handler {
 		ThreadPresets:  map[string]ThreadPreset{"default": {Harness: "HARNESS_CODEX", Model: "preset-model", CWD: "/work/{session_id}", ReasoningEffort: sessionTestStringPtr("high"), Instructions: "preset", SetupScript: "setup"}},
 	}
 	server := NewHTTPServer(authentication)
-	if err := RegisterSessionRoutes(server, config, peer, peer, peer); err != nil {
+	if err := RegisterSessionRoutes(server, &appService{config: config, inventory: peer, bridge: peer, threadWriter: peer}); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(server.Close)

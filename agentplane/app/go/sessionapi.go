@@ -35,16 +35,9 @@ type threadOpener interface {
 	OpenThread(context.Context, uuid.UUID) error
 }
 
-type sessionOpeningService struct {
-	config    Config
-	inventory appbridge.SandboxGetter
-	bridge    sessionOpener
-	store     threadOpener
-}
-
 // The generated unary gateway invokes the app-owned service in process, after RequireCaller
 // authenticates HTTP callers and enforces cookie CSRF. Dispatcher remains a native gRPC call.
-func RegisterSessionRoutes(server *HTTPServer, config Config, inventory appbridge.SandboxGetter, bridge sessionOpener, store threadOpener) error {
+func RegisterSessionRoutes(server *HTTPServer, service *appService) error {
 	mux := gatewayruntime.NewServeMux(
 		gatewayruntime.WithForwardResponseOption(func(ctx context.Context, w http.ResponseWriter, _ proto.Message) error {
 			if method, ok := gatewayruntime.RPCMethod(ctx); ok && strings.HasSuffix(method, "/OpenSession") {
@@ -54,8 +47,7 @@ func RegisterSessionRoutes(server *HTTPServer, config Config, inventory appbridg
 		}),
 		gatewayruntime.WithErrorHandler(sessionGatewayError),
 	)
-	service := &sessionOpeningService{config: config, inventory: inventory, bridge: bridge, store: store}
-	if err := apppb.RegisterAppServiceHandlerServer(context.Background(), mux, &appService{sessions: service}); err != nil {
+	if err := apppb.RegisterAppServiceHandlerServer(context.Background(), mux, service); err != nil {
 		return err
 	}
 	server.RegisterRawRoute("POST /sandboxes/{name}/sessions", mux, false)
@@ -76,7 +68,7 @@ func validateSessionOpeningIdentity(name, id string) (uuid.UUID, error) {
 	return parsed, nil
 }
 
-func (s *sessionOpeningService) OpenSession(ctx context.Context, request *apppb.OpenSessionRequest) (_ *apppb.OpenSessionResponse, routeErr error) {
+func (s *appService) OpenSession(ctx context.Context, request *apppb.OpenSessionRequest) (_ *apppb.OpenSessionResponse, routeErr error) {
 	ctx, span := observability.Start(ctx, "agentplane.session.create")
 	defer func() { observability.End(span, routeErr) }()
 	id, err := validateSessionOpeningIdentity(request.GetName(), request.GetSessionId())
@@ -115,7 +107,7 @@ func (s *sessionOpeningService) OpenSession(ctx context.Context, request *apppb.
 		return nil, status.Error(codes.InvalidArgument, "setup script exceeds maximum length")
 	}
 	spec.Cwd = replaceSessionID(spec.GetCwd(), id.String())
-	if err := s.store.OpenThread(ctx, id); err != nil {
+	if err := s.threadWriter.OpenThread(ctx, id); err != nil {
 		slog.ErrorContext(ctx, "create Thread metadata", "session_id", id, "error", err)
 		return nil, status.Error(codes.Unavailable, "Thread metadata is unavailable")
 	}
@@ -131,7 +123,7 @@ func (s *sessionOpeningService) OpenSession(ctx context.Context, request *apppb.
 	return &apppb.OpenSessionResponse{Opening: opening}, nil
 }
 
-func (s *sessionOpeningService) GetSessionOpening(ctx context.Context, request *apppb.GetSessionOpeningRequest) (*apppb.GetSessionOpeningResponse, error) {
+func (s *appService) GetSessionOpening(ctx context.Context, request *apppb.GetSessionOpeningRequest) (*apppb.GetSessionOpeningResponse, error) {
 	id, err := validateSessionOpeningIdentity(request.GetName(), request.GetSessionId())
 	if err != nil {
 		return nil, err

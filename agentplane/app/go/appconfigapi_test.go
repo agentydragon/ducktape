@@ -40,7 +40,7 @@ func TestAppConfigRoutesUseGeneratedProtoJSONAndCallerAuthentication(t *testing.
 		sandboxPresetOrder: []string{"work"},
 	}
 	server := NewHTTPServer(authentication)
-	if err := RegisterCoreRoutes(server, config); err != nil {
+	if err := RegisterAppConfigRoutes(server, &appService{config: config}); err != nil {
 		t.Fatal(err)
 	}
 	handler := server.Handler(authentication)
