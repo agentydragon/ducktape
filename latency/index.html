@@ -3,7 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Ducktape CI latency · 1 November 2026 · evening refresh</title>
+    <title>
+      Ducktape CI latency · 1 November 2026 · hosted experiment follow-up
+    </title>
     <style>
       * {
         box-sizing: border-box;
@@ -340,10 +342,17 @@
             >
           </div>
         </div>
+        <p class="meta">
+          Hosted experiment follow-up: 2026-11-01T22:15:00Z →
+          2026-11-01T23:12:25.941Z. Fleet cohort and collection clocks above are
+          retained from the merged refresh.
+        </p>
         <nav aria-label="Report sections">
           <a href="#effects">Intervention effects</a
           ><a href="#feedback">Current timings</a
-          ><a href="#runtime">Blocking work</a><a href="#twice">Path to 2×</a
+          ><a href="#runtime">Blocking work</a
+          ><a href="#experiments">Hosted experiments</a>
+          <a href="#twice">Path to 2×</a
           ><a href="#resources">Queues &amp; compute</a
           ><a href="#signals">Agent signals</a
           ><a href="#continuity">Prior work</a><a href="#methods">Methods</a>
@@ -936,7 +945,9 @@
           the historical 233–241s serial controls, with different workers and
           source. A four-slot ideal schedule on the newer 132s trace has a 75s
           lower bound, suggesting at most 57s scheduling headroom before
-          contention. That bound is neither an experiment nor a gate saving.
+          contention. That historical scheduling bound did not account for the
+          memory-reservation limit found in the new hosted experiments below; it
+          is not a measured gate saving.
         </p>
         <details>
           <summary>
@@ -1076,6 +1087,380 @@
         </p>
       </section>
 
+      <section id="experiments">
+        <p class="eyebrow">
+          Hosted experiments · same inspected source, isolated patches
+        </p>
+        <h2>Hosted k3s reuse works; extra Pod slots need memory.</h2>
+        <p>
+          The full Pod persistence spike passed all 13 cases in both actions:
+          285.1s cold and 214.2s prepared, with fresh application state. More
+          Pod concurrency needs a larger worker: three slots failed memory
+          admission on four units; four slots passed twice on eight units in
+          192.0/192.6s. These are suite measurements, with no demonstrated
+          reduction of the enclosing CI gate.
+        </p>
+        <h3>More Pod slots hit a memory-reservation limit.</h3>
+        <p>
+          On the existing four-unit worker, two slots passed all 13 cases in
+          262.3s. Three slots took 498.8s and failed three cases; two explicitly
+          reported Kubernetes <code>Insufficient memory</code>, and another
+          never reached bootstrap. The target failed. Its 5.7 GiB action memory
+          peak is not proof of a physical out-of-memory kill: the scheduler
+          refused declared memory requests.
+        </p>
+        <p>
+          Each environment Pod requests 1 GiB for the runtime, 512 MiB for its
+          executor, plus a 32 MiB sidecar. Six Pods alone exceed 9 GiB; the 11
+          fixed app Deployments add 1,664 MiB before PKI and Kubernetes. The
+          four-unit worker reported 9,724 MiB total RAM. Node allocatable and a
+          simultaneous aggregate request census were not captured, so these
+          source requests corroborate the scheduler diagnosis without inventing
+          an exact admission threshold.
+        </p>
+        <p>
+          The original 2/3/4/4/3/2 plan stopped after that capacity failure. The
+          revised experiment holds capacity at eight units for 2/3/4 slots, then
+          repeats the highest passing candidate and the two-slot control. Disk
+          remains 50 GB; images, cases, assertions, RBE, cache use and ordinary
+          CI flags remain unchanged. All tests use
+          <code>--nocache_test_results</code>. The failed arm remains in the
+          comparison.
+        </p>
+        <div class="table-scroll" id="pod-results">
+          <table>
+            <thead>
+              <tr>
+                <th>Fresh action, in execution order</th>
+                <th>Units / slots</th>
+                <th>Action, s</th>
+                <th>Setup, s</th>
+                <th>Case envelope, s</th>
+                <th>CPU, s</th>
+                <th>Peak, GiB</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/f6924852-8eb4-4c0e-a1e8-de0f2a3dd806"
+                    >measured-01-limit-2</a
+                  >
+                </td>
+                <td>4 / 2</td>
+                <td>262.3</td>
+                <td>88.6</td>
+                <td>140.6</td>
+                <td>724.5</td>
+                <td>5.8</td>
+                <td>13/13 passed</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/2b585654-713f-44ed-a8d3-bdea63c17ce9"
+                    >measured-02-limit-3</a
+                  >
+                </td>
+                <td>4 / 3</td>
+                <td>498.8</td>
+                <td>76.6</td>
+                <td>390.2</td>
+                <td>688.1</td>
+                <td>5.7</td>
+                <td>10/13 passed; 3 failed</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/19b23f7d-c0c3-4fef-b4a7-7aecc0cf1c4b"
+                    >measured-03-limit-2-cu8</a
+                  >
+                </td>
+                <td>8 / 2</td>
+                <td>305.2</td>
+                <td>149.4</td>
+                <td>128.6</td>
+                <td>990.3</td>
+                <td>4.6</td>
+                <td>13/13 passed</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/52448945-afc4-4ee1-ab3b-eab73609880e"
+                    >measured-04-limit-3-cu8</a
+                  >
+                </td>
+                <td>8 / 3</td>
+                <td>204.7</td>
+                <td>61.6</td>
+                <td>115.1</td>
+                <td>574.1</td>
+                <td>4.7</td>
+                <td>13/13 passed</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/3ff27888-abed-4560-a457-3f1eb40eaddd"
+                    >measured-05-limit-4-cu8</a
+                  >
+                </td>
+                <td>8 / 4</td>
+                <td>192.0</td>
+                <td>61.8</td>
+                <td>102.6</td>
+                <td>569.5</td>
+                <td>4.9</td>
+                <td>13/13 passed</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/bca00a62-0e50-44fa-bf76-0a9157b8f925"
+                    >measured-06-limit-4-cu8-repeat</a
+                  >
+                </td>
+                <td>8 / 4</td>
+                <td>192.6</td>
+                <td>63.0</td>
+                <td>100.9</td>
+                <td>588.0</td>
+                <td>4.9</td>
+                <td>13/13 passed</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/785447a0-b9d7-4507-8a46-82b6603daa9e"
+                    >measured-07-limit-2-cu8-control</a
+                  >
+                </td>
+                <td>8 / 2</td>
+                <td>227.1</td>
+                <td>50.4</td>
+                <td>142.8</td>
+                <td>616.7</td>
+                <td>4.6</td>
+                <td>13/13 passed</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>Compare slot counts at the same worker size.</h3>
+        <div class="table-scroll" id="pod-means">
+          <table>
+            <thead>
+              <tr>
+                <th>Slots on eight units</th>
+                <th>Passing samples</th>
+                <th>Action mean (range), s</th>
+                <th>Case-envelope mean (range), s</th>
+                <th>Units × action seconds, mean</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>2</td>
+                <td>2</td>
+                <td>266.2 (227.1–305.2)</td>
+                <td>135.7 (128.6–142.8)</td>
+                <td>2129</td>
+              </tr>
+              <tr>
+                <td>3</td>
+                <td>1</td>
+                <td>204.7 (204.7–204.7)</td>
+                <td>115.1 (115.1–115.1)</td>
+                <td>1638</td>
+              </tr>
+              <tr>
+                <td>4</td>
+                <td>2</td>
+                <td>192.3 (192.0–192.6)</td>
+                <td>101.7 (100.9–102.6)</td>
+                <td>1538</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Four slots shortened the case envelope to 100.9–102.6s, versus
+          128.6/142.8s for the two-slot controls on the same eight-unit worker.
+          The final two-slot control took 227.1s despite a lower 50.4s setup
+          span, compared with the four-slot pair’s 192.0/192.6s actions and
+          61.8/63.0s setup. That is a selected 34.8s (15.3%) whole-action
+          difference against the final control, not a fleet treatment estimate.
+          The initial two-slot control’s 305.2s action included 149.4s setup, so
+          presenting the full 113s difference as a concurrency saving would be
+          misleading. Four-slot allocation is about 1,538 unit-seconds per
+          action, versus 1,049 for the original four-unit/two-slot control:
+          roughly 47% more allocation for the observed lower wall time. Retain
+          two slots on the existing worker; the eight-unit/four-slot candidate
+          is useful if Pods become the blocking gate after VM improvement.
+          Right-sizing fixture memory requests remains untested and needs
+          per-container peak evidence.
+        </p>
+        <p class="note">
+          Means and ranges describe these selected actions, not a fleet
+          distribution. Units × action seconds is an allocation proxy, not a
+          bill or CPU measurement; it excludes queue, preparation and
+          retained-snapshot costs. Cache state and host load were uncontrolled,
+          and the distinct persistence spike ran concurrently in separate
+          microVMs. The first eight-unit control spent 149.4s in setup versus
+          88.6s on four units; its case envelope was 128.6s versus 140.6s.
+          Source capture and physical action identity are recorded per trial in
+          the evidence.
+        </p>
+        <details>
+          <summary>Coverage and measurement boundaries</summary>
+          <p>
+            All 13 selectable JUnit identities remain. OTel case roots verify
+            the observed overlap and first/exclusive storage case. Unchanged
+            source bounds the runner-pair pool with the same CASE_LIMIT, creates
+            fresh Sessions, checks Sandbox/Pod identity on borrow, and deletes
+            failed or canceled leases. Passing runs do not exercise that last
+            failure branch. These small samples do not establish a flake rate.
+          </p>
+          <p>
+            Setup, first-to-last case envelope and teardown are
+            overlapping-hierarchy-aware phase clocks; CPU and memory come from
+            originating physical TestRunner executions. JUnit's first/last item
+            times contain fixture setup/teardown, so their sum is not additive
+            case work. A separate 239.9s two-slot preflight lacked the explicit
+            CI configuration and is retained only in evidence, outside the
+            measured comparison.
+          </p>
+        </details>
+        <h3 id="persistence">
+          Prepared k3s and PKI work on hosted BuildBuddy.
+        </h3>
+        <p>
+          The full
+          <a
+            href="https://github.com/agentydragon/ducktape/commit/64f78edc9865201457ef8f1d151252283042c690"
+            >manual source spike</a
+          >
+          uses a detached k3s process, stable binary/config/log paths, an input
+          fingerprint, live identity checks and a dirty marker. It preserves k3s
+          and PKI controllers while recreating application state. Both actions
+          below ran the same source and identical TestRunner action digest on
+          one hosted worker with four compute units.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Full 13-case Pod action</th>
+                <th>Setup, s</th>
+                <th>Action, s</th>
+                <th>CPU, s</th>
+                <th>Peak, GB</th>
+                <th>Queue / preparation, s</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/7ef08fcc-d50a-402a-bef7-f54fb1e3f8c8"
+                    >Cold seed</a
+                  >
+                </td>
+                <td>109.43</td>
+                <td>285.051</td>
+                <td>693.425</td>
+                <td>4.934</td>
+                <td>0.060 / 1.411</td>
+                <td>13 passed; cleanup complete</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/182acac7-a360-4f2e-9818-2eb8860e209a"
+                    >Prepared attach</a
+                  >
+                </td>
+                <td>35.54</td>
+                <td>214.168</td>
+                <td>465.318</td>
+                <td>4.991</td>
+                <td>0.058 / 0.236</td>
+                <td>13 passed; cleanup complete</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <strong
+            >Observed: 70.9s less action wall time and 73.9s less setup in one
+            cold/prepared pair.</strong
+          >
+          The same boot ID, PID/start ticks, node and kube-system UIDs prove the
+          k3s process survived. All four PKI Deployment UIDs were unchanged. The
+          app namespace, PostgreSQL Pod, root Certificate and Secret, collector
+          namespace and scripted-model endpoint were different. Teardown
+          verified removal of fixture-owned namespaces, volumes, CA resources,
+          exact cluster-scoped objects and generated permissions before marking
+          the seed clean. The warm snapshot’s lastExecutedTask identifies the
+          cold action.
+        </p>
+        <p>
+          Yes, this works without provisioning our own runners.
+          <a
+            href="https://www.buildbuddy.io/docs/rbe-microvms/#preserving-microvm-state-across-actions"
+            >BuildBuddy documents live-process recycling</a
+          >; this spike demonstrated it with the default local snapshot policy.
+          Reuse is best effort. Only same-worker local reuse is proved here;
+          cross-worker availability, eviction behavior and production hit rate
+          remain unmeasured. Runtime fingerprints reject changed inputs, and the
+          manual recycling key must be bumped to create a new prepared seed.
+          Ordinary cold-install targets remain available.
+        </p>
+        <p>
+          The 71s action difference includes image/cache warming and the
+          prepared cluster, so it does not isolate a k3s-only effect. Worker
+          preparation did not increase in this pair, but snapshot-write cost and
+          retained-state resource cost were not separately measured. No
+          end-to-end PR saving follows while VM remains the longest action. VM
+          reuse is explicitly excluded from this Pod spike: retaining KubeVirt,
+          Kyverno and raw-block guest resources needs a separate ownership
+          check.
+        </p>
+        <details>
+          <summary>
+            Failed probes explain the mechanism and the cleanup repair.
+          </summary>
+          <p>
+            Early default-policy probes restored an older snapshot and started
+            cold. Explicit remote-save/read policies advanced snapshot lineage,
+            but k3s still died:
+            <a
+              href="https://github.com/bazelbuild/bazel/blob/9.2.0/tools/test/test-setup.sh#L280-L283"
+              >Bazel kills the test process group on exit</a
+            >, and the original subprocess inherited it. Detaching the server
+            and using a fresh key proved bare API reuse, with 32.7/12.8s
+            cold/warm actions and identical process and cluster identity. Extra
+            snapshot-save properties were unnecessary for that same-worker
+            result.
+          </p>
+          <p>
+            The first full-suite version passed all 13 case bodies but failed
+            teardown when cert-manager had already garbage-collected an
+            enumerated CertificateRequest. Idempotent deletion fixed that race;
+            the fresh-key pair above passed complete cleanup. The failed target
+            is retained in evidence. Five canceled/lint-failed preflight
+            commands also launched physical TestRunners; they are not silently
+            discarded as unexecuted builds. Full raw logs remain in linked
+            BuildBuddy artifacts; the reviewed JSON retains IDs, patches,
+            metrics, verdicts and snapshot lineage.
+          </p>
+        </details>
+      </section>
       <section id="twice">
         <h2>What would be needed for 2× faster CI?</h2>
         <p>
@@ -1101,27 +1486,26 @@
             <tbody>
               <tr>
                 <td data-label="Priority / change">
-                  A · Versioned prepared infrastructure
+                  A · Prepared hosted infrastructure
                 </td>
                 <td data-label="Measured opportunity and who benefits">
-                  Prototype in
-                  <a
-                    href="https://github.com/agentydragon/ducktape/blob/de5f671002f516e952c3dfafcbf06659a4bc731b/agentplane/system_tests/k3s/stack.py"
-                    >agentplane/system_tests/k3s/stack.py</a
-                  >: reuse immutable k3s, KubeVirt, Kyverno and
-                  certificate-controller installation plus validated image
-                  state. Fresh namespace, DB, credentials, certificates, volumes
-                  and Sandboxes per action. VM setup is 103–167s; Pod setup
-                  70–95s. These are ceilings, not removable-time estimates.
+                  The manual Pod spike now proves live k3s and prepared PKI
+                  reuse on BuildBuddy-hosted workers. One full pair reduced
+                  setup 109.4→35.5s and action wall 285.1→214.2s while
+                  preserving all 13 cases and fresh app state. This includes
+                  image/cache warming; it is not an isolated estimate of
+                  retaining k3s alone. Ordinary VM setup remains 103–167s and
+                  Pod setup 70–95s in the selected devel runs.
                 </td>
                 <td data-label="Effort / confidence / validation">
-                  High effort; medium confidence in avoidable repeated work, low
-                  confidence in achieved saving. First validate one
-                  cold/prepared same-input pair, digest and unpacked-state
-                  guards, no stale resources and cleanup ownership. Keep a
-                  cold-install target on every PR changing baseline inputs and
-                  periodic mainline validation. No snapshot facility is
-                  established yet.
+                  High confidence in the hosted mechanism and this pair’s
+                  isolation, low confidence in fleet savings. The spike is
+                  manual and source-pinned. Production adoption needs versioned
+                  baseline keys, cold/eviction coverage and hit-rate evidence.
+                  VM reuse additionally needs KubeVirt/Kyverno and
+                  raw-block/guest ownership validation; MCP is unmeasured. Keep
+                  fresh namespaces, DBs, CA/certificates, volumes and Sandboxes,
+                  plus cold-install coverage when baseline inputs change.
                 </td>
               </tr>
               <tr>
@@ -1151,23 +1535,24 @@
               </tr>
               <tr>
                 <td data-label="Priority / change">
-                  C · Pod slots, after VM improvement
+                  C · Pod slots after VM improvement
                 </td>
                 <td data-label="Measured opportunity and who benefits">
-                  Compare CASE_LIMIT=2/3/4 in
-                  <a
-                    href="https://github.com/agentydragon/ducktape/blob/de5f671002f516e952c3dfafcbf06659a4bc731b/agentplane/system_tests/suites/test_pod.py"
-                    >agentplane/system_tests/suites/test_pod.py</a
-                  >, with pool ownership in pod_runners.py. Optimistic headroom
-                  is 0–57s for the selected trace; VM currently finishes later.
-                  MCP still needs the prepared baseline to fit the next floor.
+                  The 2/3/4 experiment is complete. Three slots exceeded
+                  scheduler memory reservations on four units. On eight units,
+                  four slots passed twice with 101–103s case envelopes and
+                  192–193s actions; the final two-slot control was 143s/227s.
+                  Candidate change: CASE_LIMIT=4 plus EstimatedComputeUnits=8;
+                  preserve storage exclusivity, all 13 cases and pool ownership.
                 </td>
                 <td data-label="Effort / confidence / validation">
-                  Medium effort; medium confidence in schedule opportunity, low
-                  confidence in end-to-end saving. Preserve all 13 JUnit
-                  identities, selection, cancellation, exclusive storage, fresh
-                  Sessions and failed-lease cleanup. Compare fresh action time,
-                  CPU, peak memory, failures and the enclosing gate.
+                  Small source change, doubled requested compute/memory. About
+                  47% more unit-seconds than the original four-unit control in
+                  these selected actions. Two passing candidate runs establish
+                  neither a fleet flake rate nor gate savings. VM actions remain
+                  344–425s, so this does not deliver 2× CI. Keep the current
+                  two-slot worker configuration until the bottleneck shifts or
+                  request sizing is measured.
                 </td>
               </tr>
               <tr>
@@ -1725,9 +2110,11 @@
           linked BuildBuddy artifacts. Published evidence contains reviewed
           measurements and public provenance, without credentials, webhook
           payloads or agent inbox data. Attribution is not collected. No
-          production/workflow/test policy was changed. Desktop/mobile checks and
-          exact HTML hashes are recorded separately in evidence and manifest
-          after visual review.
+          production/workflow/test policy was changed. The fleet arrival window
+          remains 02:30–21:45 UTC; later hosted experiments have a separate
+          window and source patches in evidence. Desktop/mobile checks and exact
+          HTML hashes are recorded separately in evidence and manifest after
+          visual review.
         </p>
       </section>
       <footer>

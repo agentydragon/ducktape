@@ -1,12 +1,21 @@
 {
   "source_devel_commit": "de5f671002f516e952c3dfafcbf06659a4bc731b",
   "window_start_utc": "2026-11-01T02:30:00Z",
-  "window_end_utc": "2026-11-01T21:45:00Z",
-  "published_at_utc": "2026-11-01T22:13:41.520206+00:00",
+  "window_end_utc": "2026-11-01T23:12:25.941Z",
+  "published_at_utc": "2026-11-01T23:22:02.541816+00:00",
   "attribution": "not collected",
-  "previous_report_branch_commit": "a7aba03c0c745de172872fda1393303cbd55dd70",
-  "report_html_sha256": "f40489a76b6ca5d5d6112a667df727cfe4ae147ce4ad5029aa4782a78af48f0e",
-  "evidence_sha256": "09c1be4d4da48ec5b5256b7ae3faf2b5c5d761d6abdaab6ed0a7224e5a6a71c6",
-  "visual_validation_invocation": "0ab77479-9c78-4b32-afbe-fd2e35f132d5",
-  "sampling_design": "Continuous Actions arrival census; exact-head gate proxy; selected combined-source runtime samples."
+  "previous_report_branch_commit": "b6341a9a03feb29ba9ca7751609c630369677067",
+  "report_html_sha256": "cbd8e66a48d9d856d053abf252dc2374020d57eb2ecc34165c6b186aaa693d24",
+  "evidence_sha256": "ad34e7b07bd47eab32fdc5a87f1362a61e750f7f97a23df07d24d186481c674a",
+  "visual_validation_invocation": "6b231684-f28e-4388-a6d4-27db58f3c8e0",
+  "fleet_arrival_window_utc": [
+    "2026-11-01T02:30:00Z",
+    "2026-11-01T21:45:00Z"
+  ],
+  "experiment_window_utc": [
+    "2026-11-01T22:15:00Z",
+    "2026-11-01T23:12:25.941Z"
+  ],
+  "sampling_design": "Retains merged fleet cohort; adds 7 controlled Pod-concurrency actions plus separate preflight, and a full same-source cold/prepared Pod-persistence pair with earlier failed probes.",
+  "source_spike_commit": "64f78edc9865201457ef8f1d151252283042c690"
 }
