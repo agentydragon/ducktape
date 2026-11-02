@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import pytest_bazel
 
@@ -130,8 +131,8 @@ def test_window_presentation_updates_from_one_snapshot() -> None:
 def test_platform_grants_filter_tracks_time_and_preserves_snapshot() -> None:
     def grant(used: int, expires: datetime | None, *, scheduled: bool = False) -> PlatformCreditGrant:
         return PlatformCreditGrant(
-            granted_usd=10,
-            used_usd=used,
+            granted_usd=Decimal(10),
+            used_usd=Decimal(used),
             effective_at=_NOW - timedelta(days=1),
             expires_at=expires,
             is_scheduled=scheduled,
@@ -139,8 +140,8 @@ def test_platform_grants_filter_tracks_time_and_preserves_snapshot() -> None:
         )
 
     credits = PlatformCredits(
-        total_available_usd=20,
-        total_paid_available_usd=20,
+        total_available_usd=Decimal(20),
+        total_paid_available_usd=Decimal(20),
         grants=[
             grant(0, _NOW + timedelta(hours=1)),
             grant(1, _NOW),
@@ -159,6 +160,7 @@ def test_platform_grants_filter_tracks_time_and_preserves_snapshot() -> None:
     first = to_view(quota, _NOW).providers[0]
     assert first.display_platform_credits is not None
     assert first.display_platform_credits.grants == [credits.grants[i] for i in (0, 3, 4)]
+    assert isinstance(first.last_output.result, FetchSuccess)
     assert first.last_output.result.platform_credits == credits
 
     quota.providers[0].last_success = SuccessfulProviderFetch(fetched_at=_NOW, result=success)
