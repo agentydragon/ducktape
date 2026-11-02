@@ -2205,6 +2205,46 @@ This implementation can make a central Session-to-Sandbox placement lookup unnec
 delivery. Neither the destination design nor this node deletes retained History or the Kubernetes
 UID-to-connection locator.
 
+### MCP edge retained data
+
+```mermaid
+flowchart LR
+    MCP_EDGE_RETENTION_DECISION[Decision: historical owner and retention] --> MCP_EDGE_DATA_HANDOFF[Blocked: preserve and validate legacy identities]
+    MCP_EDGE_DATA_HANDOFF --> MCP_EDGE_SCHEMA_RETIREMENT[Blocked: retire legacy Actions schema after retention window]
+```
+
+### `MCP_EDGE_RETENTION_DECISION` — choose the historical owner
+
+**Decision; investigation selected by the operator, 2026-11-01 PDT.** Read-only checks by Codex
+at 2026-11-02 04:15–04:22 UTC found eight legacy Connection/grant/enrollment records in Actions,
+with no matching IDs in the live edge. Serving extraction is complete; data-preserving handoff
+is unverified. The existing transfer requires an empty destination and cannot be run now.
+
+Review the [retention proposal](mcp_edge_data_handoff.md#decision-historical-owner-and-retention):
+recommend exact historical records in an edge-owned archive excluded from live authorization;
+alternatively retain the legacy Actions tables under explicit historical ownership. Decide reader/
+recovery access and retention/rollback window. No authority revival, identity rewrite or data drop
+is implied. Exit: an agreed owner and retention contract, with distinct current and historical IDs.
+
+### `MCP_EDGE_DATA_HANDOFF` — preserve and validate legacy identities
+
+**Blocked on `MCP_EDGE_RETENTION_DECISION` for implementation/live mutation.** Implement and test
+its chosen retention model, exact-field comparison, failure/rerun behavior and non-authorizing
+historical storage. Follow the [handoff sequence](mcp_edge_data_handoff.md#implementation-after-the-decision)
+and staging preservation policy, including isolated restore and reviewed maintenance boundaries.
+Exit: verified ownership of every source record with IDs, revisions and associations retained,
+current edge state intact, durable comparison evidence and a tested recovery path. Historical
+uncertainty about October 23 must remain explicit unless new evidence resolves it.
+
+### `MCP_EDGE_SCHEMA_RETIREMENT` — retire only the verified legacy copy
+
+**Blocked on `MCP_EDGE_DATA_HANDOFF` and the agreed retention window.** In a separate PR, add an
+Actions migration retiring only the six legacy Connection/external OAuth tables after exact-revision
+reader/constraint checks and recovery validation. Preserve upstream OAuth/linkage and Action history.
+Exit: fresh/upgrade and relevant system tests pass, the selected archive remains recoverable, and
+live edge identity/authority is unchanged. This node does not authorize deletion or rollback by
+restarting the retired integrated server.
+
 ### Service API transport tracks
 
 One track per service. Tracks are independent except where an edge is drawn, and graph position
