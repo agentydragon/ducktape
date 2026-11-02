@@ -28,7 +28,7 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 			{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.DesiredStateType, Kind: controller.InputQMapped},
 			{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.AggregateStatusType, Kind: controller.InputQMapped},
 			{Namespace: harnesshostlifecycle.Namespace, Type: codexappserver.StatusType, Kind: controller.InputQMapped},
-			{Namespace: harnesshostlifecycle.Namespace, Type: OperationType, Kind: controller.InputQMapped},
+			{Namespace: harnesshostlifecycle.Namespace, Type: OperationStatusType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: LifecycleStatusType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(c.manager.workers)),
@@ -36,8 +36,8 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 }
 
 func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
-	if ptr.Type() == OperationType {
-		result, found, err := componentRead[operationResult](ctx, r, ptr.ID())
+	if ptr.Type() == OperationStatusType {
+		result, found, err := componentRead[operationStatus](ctx, r, ptr.ID())
 		if err != nil || !found || result.Controller != ControllerName || result.Session == "" {
 			return nil, err
 		}

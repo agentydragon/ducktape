@@ -35,7 +35,7 @@ flowchart LR
   IS["HostIntentStatuses"]
   R["HostReports"]
   BI["BootstrapInputs"]
-  BO["BootstrapOperationResults"]
+  BO["BootstrapOperationStatuses"]
   BR["BootstrapStatuses"]
   PD["ProcessDesiredStates"]
   PI["ProcessInputs"]
@@ -89,7 +89,7 @@ transition. An uncertain effect retains ownership and is not automatically repla
 | ---------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `environment-runtime-lifecycle`    | `EnvironmentRuntimeDesiredStates`, `EnvironmentRuntimeTransitionRequests` (weak)         | `EnvironmentRuntimeCloseStatuses`, `EnvironmentRuntimeTransitionStatuses` (exclusive) | Close and adopt/quiesce are coordinated by this one controller; workers publish completion by waking its loop.           |
 | `environment-host-report-observer` | `HostReports`, `HostIntentStatuses` (weak)                                               | None                                                                                  | Wakes Runtime waiters and starts the Execution fence for an exact applied report.                                        |
-| `bootstrap-lifecycle`              | `BootstrapInputs` (primary); `BootstrapStatuses`, `BootstrapOperationResults` (mapped)   | `BootstrapStatuses` (exclusive)                                                       | Host owns admitted one-off work and publishes operation completion. Runtime admission checks the environment generation. |
+| `bootstrap-lifecycle`              | `BootstrapInputs` (primary); `BootstrapStatuses`, `BootstrapOperationStatuses` (mapped)  | `BootstrapStatuses` (exclusive)                                                       | Host owns admitted one-off work and publishes operation completion. Runtime admission checks the environment generation. |
 | `process-lifecycle`                | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                               | `ProcessStatuses` (exclusive)                                                         | Runtime host owns launch callbacks, live handles, observations and workers.                                              |
 | `execution-lifecycle`              | `ExecutionInputs` (primary), `ExecutionStatuses` (mapped), both in `environment-runtime` | `ExecutionStatuses` (exclusive)                                                       | Runtime host publishes typed completion facts; the controller retains an unfenced owner on failure.                      |
 
@@ -117,10 +117,10 @@ flowchart LR
   HI(["harness-host-intent"])
   SI["SessionInputs"]
   SD["SessionDrainInputs"]
-  SO["NativeOperationResults"]
+  SO["SessionOperationStatuses"]
   SR["SessionLifecycleStatuses"]
   AI["CodexAppServerInputs"]
-  AO["CodexAppServerOperationResults"]
+  AO["CodexAppServerOperationStatuses"]
   AR["CodexAppServerStatuses"]
   ER["ExecutionStatuses"]
   J["JournalSeals"]
@@ -163,8 +163,8 @@ flowchart LR
 | `harness-host-report`        | `HarnessHostDesiredStates`, `HarnessHostLifecycleStatuses` (weak), plus Host change wakeups                                                                                                                                        | `HostReports` (exclusive)                  | Publishes inventory, blocker, idle and lifecycle facts with the full sampled intent.                                                          |
 | `harness-host-intent`        | `HostIntents` (weak)                                                                                                                                                                                                               | `HostIntentStatuses` (exclusive)           | Checks startup and the synchronous Runtime connection gate, records Applying before the native effect, and fails closed on an unknown result. |
 | `harness-host-lifecycle`     | `HarnessHostDesiredStates`, `HarnessHostInputs`, `HostIntentStatuses`, `SessionDrainInputs`, `SessionLifecycleStatuses`, `JournalSeals`, `IngressAcks`, `CodexAppServerStatuses`, `ProcessDesiredStates`, `ProcessStatuses` (weak) | `HarnessHostLifecycleStatuses` (exclusive) | Aggregates the Host drain barrier; explicitly queues its next step after changing status.                                                     |
-| `session-lifecycle`          | `SessionInputs` (primary); `HarnessHostDesiredStates`, `HarnessHostLifecycleStatuses`, `CodexAppServerStatuses`, `NativeOperationResults` (mapped)                                                                                 | `SessionLifecycleStatuses` (exclusive)     | Per Session. App-server updates map only to Codex Sessions; operation results map to their Session.                                           |
-| `codex-app-server-lifecycle` | `CodexAppServerInputs` (primary); `HarnessHostDesiredStates`, `HarnessHostLifecycleStatuses`, `CodexAppServerOperationResults`, `ExecutionStatuses` (mapped)                                                                       | `CodexAppServerStatuses` (exclusive)       | Per shared app-server; native effects run in host-owned one-off workers. Execution status changes wake a separate live-owner readiness check. |
+| `session-lifecycle`          | `SessionInputs` (primary); `HarnessHostDesiredStates`, `HarnessHostLifecycleStatuses`, `CodexAppServerStatuses`, `SessionOperationStatuses` (mapped)                                                                               | `SessionLifecycleStatuses` (exclusive)     | Per Session. App-server updates map only to Codex Sessions; operation statuses map to their Session.                                          |
+| `codex-app-server-lifecycle` | `CodexAppServerInputs` (primary); `HarnessHostDesiredStates`, `HarnessHostLifecycleStatuses`, `CodexAppServerOperationStatuses`, `ExecutionStatuses` (mapped)                                                                      | `CodexAppServerStatuses` (exclusive)       | Per shared app-server; native effects run in host-owned one-off workers. Execution status changes wake a separate live-owner readiness check. |
 | `process-lifecycle`          | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                                                                                                                                                                         | `ProcessStatuses` (exclusive)              | The same single controller and registry shown above; per-domain contexts and worker barriers remain separate.                                 |
 
 The process controller and its three resource types appear in both diagrams to show their callers;
@@ -177,6 +177,12 @@ Harness Host publishes `SessionDrainInputs` separately from the more frequently 
 Harness Host aggregation needs inspection settlement, not every dispatch change. Journal seals and History
 ACKs are facts published from durable journal/ingress activity. The in-memory resource is not the
 durable journal, seal, or ACK authority.
+
+`BootstrapOperationStatuses`, `CodexAppServerOperationStatuses`, and `SessionOperationStatuses`
+are host-owned wakeups. Each is keyed by the one-off operation ID and records whether that
+operation has completed. Session status also identifies the Session for event routing. The actual
+result and the right to consume it remain in the process-owned one-off operation slot; publishing
+a completion never authorizes replay after an uncertain effect.
 
 The retained Session record supplies immutable configuration. `SessionInputs` carries harness kind
 and demand alongside the setup, process, dispatch and inspection facts the controller reconciles.
@@ -193,7 +199,7 @@ controller wakes on both Harness Host COSI changes and Host inventory notificati
 full intent. Runtime accepts a report only after that exact intent is applied, so a same-generation
 Execution fence cannot validate an older report.
 
-`EnvironmentRuntimeDesiredStates`, `HostIntents`, statuses, reports and operation results are
+`EnvironmentRuntimeDesiredStates`, `HostIntents`, statuses and reports are
 in-memory coordination state. `BootstrapSelections` alone has a COSI backing store; `BootstrapInputs`
 is live-only. The incarnation seal, bootstrap event log, Session records,
 journals and History acknowledgements have durable owners. Owner locks have process lifetimes even

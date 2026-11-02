@@ -22,7 +22,7 @@ func (*LifecycleController) Settings() controller.QSettings {
 		Inputs: []controller.Input{
 			{Namespace: lifecycle.Namespace, Type: InputType, Kind: controller.InputQPrimary},
 			{Namespace: lifecycle.Namespace, Type: StatusType, Kind: controller.InputQMapped},
-			{Namespace: lifecycle.Namespace, Type: OperationType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: OperationStatusType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: StatusType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(1)),
@@ -34,8 +34,8 @@ func (*LifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r contr
 	switch ptr.Type() {
 	case InputType, StatusType:
 		return []resource.Pointer{input}, nil
-	case OperationType:
-		result, found, err := componentRead[operationResult](ctx, r, ptr.ID())
+	case OperationStatusType:
+		result, found, err := componentRead[operationStatus](ctx, r, ptr.ID())
 		if err != nil || !found || !result.Done {
 			return nil, err
 		}

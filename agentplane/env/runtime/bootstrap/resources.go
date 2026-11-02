@@ -14,13 +14,13 @@ import (
 )
 
 const (
-	InputType      = "BootstrapInputs.agentplane"
-	StatusType     = "BootstrapStatuses.agentplane"
-	OperationType  = "BootstrapOperationResults.agentplane"
-	SelectionType  = "BootstrapSelections.agentplane"
-	ControllerName = "bootstrap-lifecycle"
-	ResourceID     = "bootstrap"
-	HostOwner      = "bootstrap-host"
+	InputType           = "BootstrapInputs.agentplane"
+	StatusType          = "BootstrapStatuses.agentplane"
+	OperationStatusType = "BootstrapOperationStatuses.agentplane"
+	SelectionType       = "BootstrapSelections.agentplane"
+	ControllerName      = "bootstrap-lifecycle"
+	ResourceID          = "bootstrap"
+	HostOwner           = "bootstrap-host"
 )
 
 // Input records that the Runner synchronously admitted the Sandbox bootstrap.
@@ -49,7 +49,7 @@ type Status struct {
 	Error string
 }
 
-type operationResult struct{ Done bool }
+type operationStatus struct{ Done bool }
 
 type componentSpec[T any] interface {
 	comparable
@@ -105,5 +105,5 @@ func (Status) resourceType() resource.Type              { return StatusType }
 func (value Status) DeepCopy() Status                   { return value }
 func (Selection) resourceType() resource.Type           { return SelectionType }
 func (value Selection) DeepCopy() Selection             { return value }
-func (operationResult) resourceType() resource.Type     { return OperationType }
-func (value operationResult) DeepCopy() operationResult { return value }
+func (operationStatus) resourceType() resource.Type     { return OperationStatusType }
+func (value operationStatus) DeepCopy() operationStatus { return value }

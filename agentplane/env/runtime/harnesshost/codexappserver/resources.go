@@ -14,12 +14,12 @@ import (
 )
 
 const (
-	InputType      = "CodexAppServerInputs.agentplane"
-	StatusType     = "CodexAppServerStatuses.agentplane"
-	OperationType  = "CodexAppServerOperationResults.agentplane"
-	ControllerName = "codex-app-server-lifecycle"
-	ResourceID     = "codex-app-server"
-	HostOwner      = "codex-app-server-host"
+	InputType           = "CodexAppServerInputs.agentplane"
+	StatusType          = "CodexAppServerStatuses.agentplane"
+	OperationStatusType = "CodexAppServerOperationStatuses.agentplane"
+	ControllerName      = "codex-app-server-lifecycle"
+	ResourceID          = "codex-app-server"
+	HostOwner           = "codex-app-server-host"
 )
 
 type Input struct {
@@ -49,7 +49,7 @@ type Status struct {
 	StopError               string
 }
 
-type operationResult struct {
+type operationStatus struct {
 	Done bool
 }
 
@@ -95,5 +95,5 @@ func (Input) resourceType() resource.Type               { return InputType }
 func (value Input) DeepCopy() Input                     { return value }
 func (Status) resourceType() resource.Type              { return StatusType }
 func (value Status) DeepCopy() Status                   { return value }
-func (operationResult) resourceType() resource.Type     { return OperationType }
-func (value operationResult) DeepCopy() operationResult { return value }
+func (operationStatus) resourceType() resource.Type     { return OperationStatusType }
+func (value operationStatus) DeepCopy() operationStatus { return value }

@@ -19,14 +19,14 @@ const (
 )
 
 func (m *Manager) publishOperation(sessionID, operationID string, done bool) error {
-	return publish(m.ctx, m.state, operationID, operationResult{Session: sessionID, Controller: ControllerName, Done: done})
+	return publish(m.ctx, m.state, operationID, operationStatus{Session: sessionID, Controller: ControllerName, Done: done})
 }
 
 func (m *Manager) forgetOperation(op *oneoff.Operation) {
 	if op == nil {
 		return
 	}
-	err := m.state.Destroy(m.ctx, resource.NewMetadata(lifecycle.Namespace, OperationType, op.ID(), resource.VersionUndefined), state.WithDestroyOwner(HostOwner))
+	err := m.state.Destroy(m.ctx, resource.NewMetadata(lifecycle.Namespace, OperationStatusType, op.ID(), resource.VersionUndefined), state.WithDestroyOwner(HostOwner))
 	if !state.IsNotFoundError(err) {
 		m.fail(err)
 	}

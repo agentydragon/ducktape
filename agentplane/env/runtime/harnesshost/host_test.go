@@ -349,7 +349,7 @@ func (s *failJournalSealPublicationOnce) Modify(ctx context.Context, value resou
 }
 
 func (s *initialOperationFailureState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
-	if value.Metadata().Type() == session.OperationType {
+	if value.Metadata().Type() == session.OperationStatusType {
 		desired, found, err := harnesshostlifecycle.ReadDesired(ctx, s.State)
 		if err == nil && found {
 			var armed *atomic.Bool

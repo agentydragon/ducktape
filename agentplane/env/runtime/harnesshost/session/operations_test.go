@@ -21,7 +21,7 @@ type blockedCompletionState struct {
 }
 
 func (s *blockedCompletionState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
-	if result, ok := value.(*typed.Resource[operationResult, componentExtension[operationResult]]); ok && result.TypedSpec().Done {
+	if result, ok := value.(*typed.Resource[operationStatus, componentExtension[operationStatus]]); ok && result.TypedSpec().Done {
 		close(s.publishing)
 		select {
 		case <-s.release:
@@ -82,7 +82,7 @@ func TestOperationCompletionPublicationPrecedesConsumption(t *testing.T) {
 	if !result.done || result.op == nil || result.op.Err() != nil || remaining != nil {
 		t.Fatalf("consumed operation = %+v, done=%t slot=%p", result.op, result.done, remaining)
 	}
-	if _, found, err := componentRead[operationResult](ctx, st, result.op.ID()); err != nil || found {
+	if _, found, err := componentRead[operationStatus](ctx, st, result.op.ID()); err != nil || found {
 		t.Fatalf("operation result survived consumption: found=%t error=%v", found, err)
 	}
 }
