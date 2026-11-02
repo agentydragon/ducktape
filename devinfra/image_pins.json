@@ -45,5 +45,71 @@
     "digest": "sha256:e1754f434ace974cdf9b9f98d868082b86ab8ee703f8466e6d3d777f553d3fb9",
     "tag": "1.31-alpine",
     "platforms": ["linux/amd64"]
+  },
+  "cert_manager_controller": {
+    "digest": "sha256:70f532fd9cfde0b09d55687200942399d89838bc2d5d5b45152eb799a15912b8",
+    "image": "quay.io/jetstack/cert-manager-controller",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.21.2"
+  },
+  "cert_manager_webhook": {
+    "digest": "sha256:a60e2dac46dbb8a7f3df95c54ce941012f54c2fe022f0ee55aaa1ab40ed957ae",
+    "image": "quay.io/jetstack/cert-manager-webhook",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.21.2"
+  },
+  "cert_manager_cainjector": {
+    "digest": "sha256:c85268c64f2e0e76684bf5fe8906caff34b82523561c6affe0fae3546bd87562",
+    "image": "quay.io/jetstack/cert-manager-cainjector",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.21.2"
+  },
+  "trust_manager": {
+    "digest": "sha256:0521921c2a46d14d0417336b20bcde69215ef3164f2977cc939d53c6e5224a17",
+    "image": "quay.io/jetstack/trust-manager",
+    "platforms": ["linux/amd64"],
+    "tag": "v0.25.0"
+  },
+  "kubevirt_virt_operator": {
+    "digest": "sha256:3596b23097e0e2709d7ea744d018a9b40990735fab04aa5a415bca034b22f68a",
+    "image": "quay.io/kubevirt/virt-operator",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.8.2"
+  },
+  "kubevirt_virt_api": {
+    "digest": "sha256:3f5ed85fc6563a5a2d27dcf282bcceec6ff00a38f43b572a1f33f5d819c713b4",
+    "image": "quay.io/kubevirt/virt-api",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.8.2"
+  },
+  "kubevirt_virt_controller": {
+    "digest": "sha256:76669dbe9f1c4a7635406050738480770fe0e50eca8a532692c48f40ee087b68",
+    "image": "quay.io/kubevirt/virt-controller",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.8.2"
+  },
+  "kubevirt_virt_handler": {
+    "digest": "sha256:1a9b89a11bc90d536ec78c8462cf83592ce1429a7acd1d31af5359fa094303f6",
+    "image": "quay.io/kubevirt/virt-handler",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.8.2"
+  },
+  "kubevirt_virt_launcher": {
+    "digest": "sha256:574fabe0ff9719fa1e3800dcca8530fa4e02fd71ef74109508e59800e13e8b5d",
+    "image": "quay.io/kubevirt/virt-launcher",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.8.2"
+  },
+  "kyverno_kyverno": {
+    "digest": "sha256:b31d8511ae5fd6010e2a01ea72ebae08eb82fa51d91af14a1d9fe989949b4edb",
+    "image": "ghcr.io/kyverno/kyverno",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.19.1"
+  },
+  "kyverno_kyvernopre": {
+    "digest": "sha256:c25c47461f06f2845a48c319ae86fbbc1730a7b9ed5b701889c9dc1f9ee94b09",
+    "image": "ghcr.io/kyverno/kyvernopre",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.19.1"
   }
 }

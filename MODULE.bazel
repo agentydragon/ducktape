@@ -302,38 +302,6 @@ oci.pull(
     tag = "18.6-minimal-trixie",
 )
 
-# Bare-k3s PKI fixture: install upstream cert-manager and trust-manager releases
-# from pinned manifests/chart, with their exact OCI images already imported into
-# containerd before either operator starts.
-oci.pull(
-    name = "cert_manager_controller",
-    digest = "sha256:70f532fd9cfde0b09d55687200942399d89838bc2d5d5b45152eb799a15912b8",
-    image = "quay.io/jetstack/cert-manager-controller",
-    platforms = ["linux/amd64"],
-    tag = "v1.21.2",
-)
-oci.pull(
-    name = "cert_manager_webhook",
-    digest = "sha256:a60e2dac46dbb8a7f3df95c54ce941012f54c2fe022f0ee55aaa1ab40ed957ae",
-    image = "quay.io/jetstack/cert-manager-webhook",
-    platforms = ["linux/amd64"],
-    tag = "v1.21.2",
-)
-oci.pull(
-    name = "cert_manager_cainjector",
-    digest = "sha256:c85268c64f2e0e76684bf5fe8906caff34b82523561c6affe0fae3546bd87562",
-    image = "quay.io/jetstack/cert-manager-cainjector",
-    platforms = ["linux/amd64"],
-    tag = "v1.21.2",
-)
-oci.pull(
-    name = "trust_manager",
-    digest = "sha256:0521921c2a46d14d0417336b20bcde69215ef3164f2977cc939d53c6e5224a17",
-    image = "quay.io/jetstack/trust-manager",
-    platforms = ["linux/amd64"],
-    tag = "v0.25.0",
-)
-
 # Bare-k3s fixture: the Dex and `mcp-everything` images
 # (//agentplane/system_tests/k3s:{dex,mcp_fixture_servers}) for MCP scenarios.
 oci.pull(
@@ -348,59 +316,6 @@ oci.pull(
     digest = "sha256:96c4aa07420dd2a8dee0315763a8ea27de72fd054483c781894f6280cd3f56e7",
     image = "docker.io/tzolov/mcp-everything-server",
     platforms = ["linux/amd64"],
-)
-
-# Bare-k3s fixture: the KubeVirt and Kyverno images that `@kubevirt_operator_bundle` and
-# `@kyverno_install` run with VM Sandboxes (agentplane/system_tests/k3s/vm_sandboxes.py); keep the tags
-# equal to those releases.
-oci.pull(
-    name = "kubevirt_virt_operator",
-    digest = "sha256:3596b23097e0e2709d7ea744d018a9b40990735fab04aa5a415bca034b22f68a",
-    image = "quay.io/kubevirt/virt-operator",
-    platforms = ["linux/amd64"],
-    tag = "v1.8.2",
-)
-oci.pull(
-    name = "kubevirt_virt_api",
-    digest = "sha256:3f5ed85fc6563a5a2d27dcf282bcceec6ff00a38f43b572a1f33f5d819c713b4",
-    image = "quay.io/kubevirt/virt-api",
-    platforms = ["linux/amd64"],
-    tag = "v1.8.2",
-)
-oci.pull(
-    name = "kubevirt_virt_controller",
-    digest = "sha256:76669dbe9f1c4a7635406050738480770fe0e50eca8a532692c48f40ee087b68",
-    image = "quay.io/kubevirt/virt-controller",
-    platforms = ["linux/amd64"],
-    tag = "v1.8.2",
-)
-oci.pull(
-    name = "kubevirt_virt_handler",
-    digest = "sha256:1a9b89a11bc90d536ec78c8462cf83592ce1429a7acd1d31af5359fa094303f6",
-    image = "quay.io/kubevirt/virt-handler",
-    platforms = ["linux/amd64"],
-    tag = "v1.8.2",
-)
-oci.pull(
-    name = "kubevirt_virt_launcher",
-    digest = "sha256:574fabe0ff9719fa1e3800dcca8530fa4e02fd71ef74109508e59800e13e8b5d",
-    image = "quay.io/kubevirt/virt-launcher",
-    platforms = ["linux/amd64"],
-    tag = "v1.8.2",
-)
-oci.pull(
-    name = "kyverno_kyverno",
-    digest = "sha256:b31d8511ae5fd6010e2a01ea72ebae08eb82fa51d91af14a1d9fe989949b4edb",
-    image = "ghcr.io/kyverno/kyverno",
-    platforms = ["linux/amd64"],
-    tag = "v1.19.1",
-)
-oci.pull(
-    name = "kyverno_kyvernopre",
-    digest = "sha256:c25c47461f06f2845a48c319ae86fbbc1730a7b9ed5b701889c9dc1f9ee94b09",
-    image = "ghcr.io/kyverno/kyvernopre",
-    platforms = ["linux/amd64"],
-    tag = "v1.19.1",
 )
 
 # Test infrastructure: PostgreSQL with pgvector, for //agentplane/x/indexing and //haku/console
@@ -480,7 +395,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "v0.16.22",
 )
-use_repo(oci, "cert_manager_cainjector", "cert_manager_cainjector_linux_amd64", "cert_manager_controller", "cert_manager_controller_linux_amd64", "cert_manager_webhook", "cert_manager_webhook_linux_amd64", "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "dex", "dex_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_static_debian13", "distroless_static_debian13_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "kubevirt_virt_api", "kubevirt_virt_api_linux_amd64", "kubevirt_virt_controller", "kubevirt_virt_controller_linux_amd64", "kubevirt_virt_handler", "kubevirt_virt_handler_linux_amd64", "kubevirt_virt_launcher", "kubevirt_virt_launcher_linux_amd64", "kubevirt_virt_operator", "kubevirt_virt_operator_linux_amd64", "kyverno_kyverno", "kyverno_kyverno_linux_amd64", "kyverno_kyvernopre", "kyverno_kyvernopre_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "mcp_everything", "mcp_everything_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18_minimal", "postgres_18_minimal_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "stalwart", "stalwart_linux_amd64", "tf_runner", "tf_runner_linux_amd64", "trust_manager", "trust_manager_linux_amd64")
+use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "dex", "dex_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_static_debian13", "distroless_static_debian13_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "mcp_everything", "mcp_everything_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18_minimal", "postgres_18_minimal_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "stalwart", "stalwart_linux_amd64", "tf_runner", "tf_runner_linux_amd64")
 
 # Container image pins from devinfra/image_pins.json.
 # - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants
@@ -488,7 +403,7 @@ use_repo(oci, "cert_manager_cainjector", "cert_manager_cainjector_linux_amd64", 
 # CI workflows update the JSON via devinfra/update_image_pin.py.
 image_pins = use_extension("//devinfra:image_pins.bzl", "image_pins")
 image_pins.from_file(lockfile = "//devinfra:image_pins.json")
-use_repo(image_pins, "blackbox_exporter", "blackbox_exporter_linux_amd64", "electric_1_8_1", "electric_1_8_1_linux_amd64", "excalidraw", "excalidraw_linux_amd64", "freecad_test", "freecad_test_linux_amd64", "image_pins", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "ryuk", "ryuk_linux_amd64")
+use_repo(image_pins, "blackbox_exporter", "blackbox_exporter_linux_amd64", "cert_manager_cainjector", "cert_manager_cainjector_linux_amd64", "cert_manager_controller", "cert_manager_controller_linux_amd64", "cert_manager_webhook", "cert_manager_webhook_linux_amd64", "electric_1_8_1", "electric_1_8_1_linux_amd64", "excalidraw", "excalidraw_linux_amd64", "freecad_test", "freecad_test_linux_amd64", "image_pins", "kubevirt_virt_api", "kubevirt_virt_api_linux_amd64", "kubevirt_virt_controller", "kubevirt_virt_controller_linux_amd64", "kubevirt_virt_handler", "kubevirt_virt_handler_linux_amd64", "kubevirt_virt_launcher", "kubevirt_virt_launcher_linux_amd64", "kubevirt_virt_operator", "kubevirt_virt_operator_linux_amd64", "kyverno_kyverno", "kyverno_kyverno_linux_amd64", "kyverno_kyvernopre", "kyverno_kyvernopre_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "ryuk", "ryuk_linux_amd64", "trust_manager", "trust_manager_linux_amd64")
 
 # Hermetic deb packages for container images (rules_distroless).
 # Replaces Dockerfile apt-get with snapshot-pinned deb extraction.
@@ -947,17 +862,19 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
+artifact_pins = use_extension("//devinfra:artifact_pins.bzl", "artifact_pins")
+use_repo(artifact_pins, "artifact_pins", "cert_manager_v1_21_2_release", "helm_3_20_2_linux_amd64", "k3s_linux_amd64", "kubevirt_operator_bundle", "kyverno_install", "trust_manager_chart_v0_25_0")
+
 # Bare-k3s PKI fixture inputs. cert-manager's release bundle is the upstream
 # complete installation manifest; trust-manager has no release YAML, so Bazel
 # renders its tagged source chart with this pinned Helm binary.
-http_file(
+artifact_pins.file(
     name = "cert_manager_v1_21_2_release",
     downloaded_file_path = "cert-manager.yaml",
     sha256 = "e03b668ec8675214af6b0a671699d088f2601fa3878e0dbe1b41d3feafd1879f",
     urls = ["https://github.com/cert-manager/cert-manager/releases/download/v1.21.2/cert-manager.yaml"],
 )
-
-http_archive(
+artifact_pins.archive(
     name = "trust_manager_chart_v0_25_0",
     build_file_content = '''
 filegroup(
@@ -976,8 +893,7 @@ filegroup(
     strip_prefix = "trust-manager-0.25.0",
     urls = ["https://github.com/cert-manager/trust-manager/archive/refs/tags/v0.25.0.tar.gz"],
 )
-
-http_archive(
+artifact_pins.archive(
     name = "helm_3_20_2_linux_amd64",
     build_file_content = 'exports_files(["helm"], visibility = ["//visibility:public"])',
     sha256 = "258e830a9e613c8a7a302d6059b4bb3b9758f2f3e1bb8ea0d707ce10a9a72fea",
@@ -1560,7 +1476,7 @@ http_file(
 
 # The k3s fixture's Kyverno (agentplane/system_tests/k3s/vm_sandboxes.py); keep the `kyverno_*` images'
 # tags equal.
-http_file(
+artifact_pins.file(
     name = "kyverno_install",
     downloaded_file_path = "install.yaml",
     sha256 = "d3322cb346d3d42dd0f41e230b0d1d7bc5619960e1c36fdac4d9151d724b88e6",
@@ -1593,7 +1509,7 @@ http_file(
 
 # The release assets cluster/cdk8s/kubevirt/operators.py installs; keep the URLs, and the
 # `kubevirt_*` images' tags, equal. The bindings BUILD extracts the operator CRs' CRDs.
-http_file(
+artifact_pins.file(
     name = "kubevirt_operator_bundle",
     downloaded_file_path = "kubevirt-operator.yaml",
     sha256 = "57e0822062e6617964fd7e1731f9ace531f8ee34a0e48cf8dd0ccce72196e1d6",
@@ -1774,7 +1690,7 @@ http_file(
 # K3s v1.34.12+k3s1 for the Agentplane bare-cluster lifecycle fixture: its containerd (v2.2) mounts
 # image volumes, which the runner Pod's `runner-disk` volume needs. The checksum matches the official
 # sha256sum-amd64.txt release asset.
-http_file(
+artifact_pins.file(
     name = "k3s_linux_amd64",
     downloaded_file_path = "k3s",
     executable = True,

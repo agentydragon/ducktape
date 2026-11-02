@@ -17,12 +17,13 @@ Applications and PostgreSQL remain fresh, as do MCP fixtures, model endpoints, r
 collectors and workspace disks. Successful teardown stops the provisioner and validates guest logs,
 removes fixture namespaces and cluster resources, confirms no VM/VMI or owned PV survives, deletes the
 provisioner's StorageClass, and detaches every owned loop device before certifying the baseline clean.
-Failures leave the marker dirty for a cold rebuild. The existing lifecycle and bare-cluster probes
-retain their diagnostic semantics.
+Failures leave the marker dirty for a cold rebuild.
 
-The current snapshot families are `k3s-persistence-v7-{pod,vm}`. Every application stack uses
-persistence automatically on BuildBuddy executors. Historical commands and commit-pinned links below retain
-the comparison-target names used when those measurements were collected.
+The current snapshot family prefix is `k3s-persistence-v7-`, followed by authoritative
+infrastructure pin digests; the additional KubeVirt and Kyverno pins distinguish VM families.
+Every application stack uses persistence automatically
+on BuildBuddy executors. Historical commands and commit-pinned links below retain the
+comparison-target names used when those measurements were collected.
 
 ### Executor lifecycle boundary
 
@@ -35,14 +36,14 @@ attestation; deliberately exporting the marker can grant it too.
 
 Without the exact permission, ordinary suites use their original fresh-node lifecycle and stop k3s
 at teardown, including failure paths. The retained-baseline entry point also rejects callers before
-touching persistent state when permission is absent, protecting the cross-action diagnostic probe.
+touching persistent state when permission is absent.
 BuildBuddy API credentials and generic CI variables do not grant permission. PostgreSQL and all other
 per-action application state remain fresh in either mode.
 
 An initial distinct fallback trial restored a retained snapshot despite a header override to its
 recycling key. The ordinary reset failed on a busy Pod cgroup because the retained kubelet was still
 running. The normal-start branch now stops the exact owner recorded in the marker, removes its Pods,
-and deletes the marker before resetting the fresh node. The lifecycle test covers this transition,
+and deletes the marker before resetting the fresh node. A diagnostic run exercised this transition,
 including the subsequent ordinary server shutdown; PID-reuse protection remains in force.
 
 ### Default enablement validation
@@ -52,7 +53,7 @@ suite, removed the environment opt-in and deleted the parallel comparison target
 [The focused RBE build](https://app.buildbuddy.io/invocation/4fd95865-e48a-496b-b099-972f9935283a)
 passed all eight standard targets present on that branch plus the changed stack library and its
 lint/type aspects. [The naming/lifecycle run](https://app.buildbuddy.io/invocation/0e1d24b8-9d8e-483a-922f-c747862a32c5)
-also passed the real-k3s lifecycle checks, cross-action probe and full 13-case Pod suite.
+also passed the then-existing real-k3s diagnostics and full 13-case Pod suite.
 
 [Ordinary merge CI](https://app.buildbuddy.io/invocation/5ca7fb3e-a586-5644-9092-692289673982)
 completed successfully at synthetic merge `4994d4f86a4f9c8b84eb7aeeae3d8a47211df6ab`, including
@@ -71,7 +72,7 @@ Source `4a190b1991a0748884e0431d84371901c1074f52` passed all five non-VM suites 
 ([Pod/Dispatcher/real-model](https://app.buildbuddy.io/invocation/e7fcb343-9437-495a-97fa-1815a9631a4b),
 [MCP](https://app.buildbuddy.io/invocation/544152d9-3e5f-4882-8c0a-6c0077aecc40)).
 The enclosing cold invocation failed because of the VM outcomes described below; its five non-VM
-suite results and the lifecycle probe passed.
+suite results passed.
 
 | Suite        | Cases per action | Cold setup | Warm setup | Cold TestRunner wall | Warm TestRunner wall |
 | ------------ | ---------------: | ---------: | ---------: | -------------------: | -------------------: |
@@ -314,12 +315,6 @@ additional changes are the investigation note and README. Two earlier preflight 
 tests through CI's tag filter and executed no TestRunners. They are not passing test evidence.
 The final pair ran directly from `27aa8b8733a975a079a3ad91bfe7515fcd841bfc` with only investigation
 Markdown changes; its Python/Starlark inputs match the initial continuation actions.
-
-Repeat the lifecycle contract with:
-
-```sh
-bbr test --config=rbe --config=ci --test_tag_filters=-live_openai_api --nocache_test_results --test_output=all //agentplane/system_tests/k3s:test_persistence_lifecycle //agentplane/system_tests/k3s:stack
-```
 
 ## Initial v5 full-suite experiment
 
