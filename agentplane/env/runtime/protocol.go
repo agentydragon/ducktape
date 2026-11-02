@@ -33,7 +33,11 @@ func (r *Runtime) admitLifecycleEffect(ctx context.Context, expected lifecycle.E
 		return err
 	}
 	defer r.finishAdmission(&resultErr)
-	return effect(ctx)
+	resultErr = effect(ctx)
+	if resultErr != nil {
+		r.fail(resultErr)
+	}
+	return resultErr
 }
 
 func (r *Runtime) admitCodexRequest(ctx context.Context, effect func(context.Context) error) (resultErr error) {
