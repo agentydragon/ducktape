@@ -87,7 +87,10 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         fail("boot_evidence requires the VM stack")
     config = _STACKS[stack]
     images = {
-        "fixture": ["//agentplane/system_tests/k3s:service_images"] + config.images,
+        "fixture": [
+            "//agentplane/system_tests/k3s:service_images",
+            "//agentplane/system_tests/k3s:vm_runner_disk_image" if config.vm else "//agentplane/system_tests/k3s:runner_disk_image",
+        ] + config.images,
         "pki": ["//agentplane/system_tests/k3s/pki:images"],
         "vm": [],
         "guest": [],

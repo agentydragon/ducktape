@@ -7,6 +7,7 @@ load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_PROPERTIES", "K3S_TAGS")
+load("//devinfra/erofs:defs.bzl", "erofs_image")
 load("//devinfra/oci:defs.bzl", "oci_image_manifest")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -49,10 +50,54 @@ py_test(
     ],
 )
 
-# The runner Pod's environment-tools image. It keeps Debian's shell utilities for bootstrap and
-# process-lifecycle fixtures, plus curl and git (the `trixie_e2e` package set) for scripted commands;
-# the Nix-built production image supplies the full toolset. As in production, the runner is not in it:
-# the Pod runs it from the volume of the production runner disk image.
+# Keep the VM-only supervision fixture off the Debian guest-root dependency path.
+pkg_files(
+    name = "supervision_fixture_file",
+    srcs = ["//agentplane/env/runtime/supervision:environment_runtime_systemd_fixture"],
+    attributes = pkg_attributes(mode = "0755"),
+    renames = {"//agentplane/env/runtime/supervision:environment_runtime_systemd_fixture": "environment-runtime-systemd-fixture"},
+)
+
+pkg_tar(
+    name = "supervision_fixture_bin",
+    srcs = [":supervision_fixture_file"],
+    package_dir = "/bin",
+)
+
+pkg_tar(
+    name = "test_runner_disk_bin",
+    deps = [
+        ":supervision_fixture_bin",
+        "//agentplane/env/images:disk_bin",
+    ],
+)
+
+erofs_image(
+    name = "test_runner_disk_erofs",
+    out = "test-runner.img",
+    tar = ":test_runner_disk_bin",
+    volume_label = "agentplane",
+)
+
+pkg_tar(
+    name = "test_runner_disk_img",
+    srcs = [":test_runner_disk_erofs"],
+    mode = "0644",
+    owner = "107.107",
+    package_dir = "/disk",
+    remap_paths = {"test-runner.img": "runner.img"},
+)
+
+oci_image(
+    name = "test_runner_disk_image",
+    architecture = "amd64",
+    os = "linux",
+    tars = [
+        ":test_runner_disk_bin",
+        ":test_runner_disk_img",
+    ],
+    user = "107:107",
+)
 
 # **Deviation:** production appends the runner disk's bin to PATH (agentplane/env/images/image.nix). Here
 # `agentplane` is linked into /usr/bin instead, because Codex runs commands in a login shell and
@@ -104,6 +149,10 @@ pkg_tar(
     symlinks = {"codex": "/opt/harnesses/codex/bin/codex"},
 )
 
+# The runner Pod's environment-tools image. It keeps Debian's shell utilities for bootstrap and
+# process-lifecycle fixtures, plus curl and git (the `trixie_e2e` package set) for scripted commands;
+# the Nix-built production image supplies the full toolset. As in production, the runner is not in it:
+# the Pod runs it from the volume of the production runner disk image.
 # Both harnesses, for scenarios that run a turn.
 oci_image(
     name = "environment_tools_harnesses_image",
@@ -138,11 +187,22 @@ oci_image_manifest(
         "//agentplane/mcp_edge:service_image": "git.allegedly.works/ducktape-ci/agentplane-mcp-edge:unset",
         "//agentplane/notification_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-notification-service:unset",
         "//agentplane/policy_controller:image": "git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset",
-        "//agentplane/env/images:disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
         "//agentplane/runner_gateway:image": "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset",
         "//agentplane/sandbox_controller:image": "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset",
         "@postgres_18_minimal_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
     },
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+)
+
+oci_image_manifest(
+    name = "runner_disk_image",
+    images = {"//agentplane/env/images:disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"},
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+)
+
+oci_image_manifest(
+    name = "vm_runner_disk_image",
+    images = {":test_runner_disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"},
     visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 
