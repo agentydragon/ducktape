@@ -62,13 +62,15 @@ cold; this is not an aged warm-baseline experiment.
 
 The OOM guest's raw console and native journal contain all seven expected
 `Id=` property blocks, all five unit definitions, all required section receipts
-and a complete required report. Its optional critical-chain and blame probes
+and a complete required report. All 16 required commands exited zero.
+Its optional critical-chain and blame probes
 still returned 143, demonstrating that optional timeouts remain visible without
-invalidating completed required collection. Systemd recorded service start at
-guest monotonic 46.970245s and successful deactivation at 60.450927s, with
-2.102 guest CPU seconds. The first optional probe's journal message was recorded
+invalidating completed required collection. The guest journal received the
+service-start message at monotonic 46.970245s and successful deactivation at
+60.450927s; service accounting reports 2.102 guest CPU seconds.
+The first optional probe's journal message was recorded
 at 56.072725s, after the required completion receipt in the serial stream.
-These guest journal clocks are separate from host CRI receipt times.
+These are guest journal receipt times, separate from host CRI receipt times.
 
 BuildBuddy records base commit `f551411f922a5f71398617c1d51b13fa832dc4d7`;
 `bbr` mirrored the uncommitted reporter patch for this run. The resulting
