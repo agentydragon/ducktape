@@ -25,7 +25,7 @@ from testcontainers.core.container import DockerContainer
 
 from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
-from util.testing.gnome import GnomeSession, capture_panel_menu, exec_output
+from util.testing.gnome import GnomeMenuCapture, GnomeSession, exec_output
 from util.testing.output_writer import BoundTestOutputs
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -80,9 +80,9 @@ def fixture_json_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture(scope="module")
-def render_session(
+def session(
     gnome_shell_test_image: str, extension_dir: Path, fixture_json_dir: Path, tmp_path_factory: pytest.TempPathFactory
-) -> Iterator[tuple[GnomeSession, Path]]:
+) -> Iterator[GnomeSession]:
     """Share one Xvfb, D-Bus bus, and GNOME Shell process across all fixtures."""
     output_dir = tmp_path_factory.mktemp("plaid-spend-renders")
     output_dir.chmod(0o777)
@@ -96,6 +96,7 @@ def render_session(
     with container:
         session = GnomeSession(
             container.get_wrapped_container(),
+            screenshot_dir=output_dir,
             extension=_EXTENSION_UUID,
             destination=_TEST_DBUS_DEST,
             object_path=_TEST_DBUS_PATH,
@@ -109,7 +110,7 @@ def render_session(
             session.save_log(undeclared_outputs_dir() / "startup.shell.log")
             raise
         try:
-            yield session, output_dir
+            yield session
         finally:
             try:
                 session.save_log(undeclared_outputs_dir() / "session.shell.log")
@@ -166,8 +167,7 @@ def _card_view(amount_minor_units: int) -> str:
     )
 
 
-def test_view_signal_wins_initial_get_and_owner_restart_rehydrates(render_session: tuple[GnomeSession, Path]) -> None:
-    session, _ = render_session
+def test_view_signal_wins_initial_get_and_owner_restart_rehydrates(session: GnomeSession) -> None:
     session.exec("gjs -m /fake-daemon.js >/tmp/plaid-spend-fake-daemon.log 2>&1 &")
     try:
         _wait_until(
@@ -254,23 +254,8 @@ def _allowance_menu_text(session: GnomeSession) -> str:
 
 
 @pytest.fixture
-def capture_menu(
-    render_session: tuple[GnomeSession, Path], test_outputs: BoundTestOutputs
-) -> Callable[[tuple[int, int, int, int], str], None]:
-    session, output_dir = render_session
-
-    def capture(geometry: tuple[int, int, int, int], name: str) -> None:
-        capture_panel_menu(
-            session,
-            output_dir,
-            geometry=geometry,
-            name=f"{name}.png",
-            title="Plaid Spend GNOME extension",
-            label=name.replace("_", " "),
-            outputs=test_outputs,
-        )
-
-    return capture
+def capture_menu(session: GnomeSession, test_outputs: BoundTestOutputs) -> GnomeMenuCapture:
+    return GnomeMenuCapture(session, test_outputs, title="Plaid Spend GNOME extension")
 
 
 @pytest.mark.parametrize(
@@ -278,20 +263,13 @@ def capture_menu(
     [("ready_two_cards", "$149 !"), ("authentication_required", "Sign in"), ("offline", "Offline")],
 )
 def test_card_status(
-    render_session: tuple[GnomeSession, Path],
-    fixture_name: str,
-    expected_label: str,
-    capture_menu: Callable[[tuple[int, int, int, int], str], None],
+    session: GnomeSession, fixture_name: str, expected_label: str, capture_menu: GnomeMenuCapture
 ) -> None:
-    session, _ = render_session
     with _menu(session, fixture_name, expected_label) as geometry:
-        capture_menu(geometry, fixture_name)
+        capture_menu.capture(geometry, label=fixture_name.replace("_", " "))
 
 
-def test_allowance_paced(
-    render_session: tuple[GnomeSession, Path], capture_menu: Callable[[tuple[int, int, int, int], str], None]
-) -> None:
-    session, _ = render_session
+def test_allowance_paced(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
     with _menu(session, "allowance_paced", "Flex $200 !") as geometry:
         menu_text = _allowance_menu_text(session)
         assert "7d $28/day" in menu_text
@@ -302,34 +280,27 @@ def test_allowance_paced(
         assert "View updated" not in menu_text
         assert "sustainability target" not in menu_text
         assert "past pace is not opening debt" not in menu_text
-        capture_menu(geometry, "allowance_paced")
+        capture_menu.capture(geometry, label="allowance paced")
 
 
-def test_allowance_warming(
-    render_session: tuple[GnomeSession, Path], capture_menu: Callable[[tuple[int, int, int, int], str], None]
-) -> None:
-    session, _ = render_session
+def test_allowance_warming(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
     with _menu(session, "allowance_warming", "Flex $700") as geometry:
         menu_text = _allowance_menu_text(session)
         assert "Pace warming up" in menu_text
         assert "7d n/a" in menu_text
         assert "Sync 59m ago" in menu_text
-        capture_menu(geometry, "allowance_warming")
+        capture_menu.capture(geometry, label="allowance warming")
 
 
-def test_allowance_exhausted(
-    render_session: tuple[GnomeSession, Path], capture_menu: Callable[[tuple[int, int, int, int], str], None]
-) -> None:
-    session, _ = render_session
+def test_allowance_exhausted(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
     with _menu(session, "allowance_exhausted", "Flex -<$1 !!") as geometry:
         assert "Exhausted" in _allowance_menu_text(session)
-        capture_menu(geometry, "allowance_exhausted")
+        capture_menu.capture(geometry, label="allowance exhausted")
 
 
 def test_desktop_retry_timing_ticks_and_stays_separate_from_server_sync(
-    render_session: tuple[GnomeSession, Path], capture_menu: Callable[[tuple[int, int, int, int], str], None]
+    session: GnomeSession, capture_menu: GnomeMenuCapture
 ) -> None:
-    session, _ = render_session
     with _menu(session, "retrying", "Flex unavailable") as geometry:
         menu_text = _string_reply(session.call("GetMenuText"))
         assert "Last attempt 1m 15s ago" in menu_text
@@ -340,11 +311,10 @@ def test_desktop_retry_timing_ticks_and_stays_separate_from_server_sync(
         assert "Last attempt 1m 20s ago" in menu_text
         assert "Retry in 15s" in menu_text
         assert "Sync 1h ago" in menu_text
-        capture_menu(geometry, "retrying")
+        capture_menu.capture(geometry, label="retrying")
 
 
-def test_authentication_required_has_no_retry_countdown(render_session: tuple[GnomeSession, Path]) -> None:
-    session, _ = render_session
+def test_authentication_required_has_no_retry_countdown(session: GnomeSession) -> None:
     with _menu(session, "authentication_required", "Sign in"):
         menu_text = _string_reply(session.call("GetMenuText"))
         assert "Last attempt 1m 15s ago" in menu_text

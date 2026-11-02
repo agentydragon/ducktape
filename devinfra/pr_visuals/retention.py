@@ -18,18 +18,12 @@ import boto3
 from botocore.exceptions import ClientError
 from github import Auth, Github
 
-from devinfra.pr_visuals.metadata import (
-    BaselinePointer,
-    LegacyBundleMetadata,
-    LegacyTest,
-    ReviewBundleMetadata,
-    ReviewTest,
-)
+from devinfra.pr_visuals.metadata import BaselinePointer, ReviewBundleMetadata, ReviewTest
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 ASSET_KEY = re.compile(r"^assets/([0-9a-f]{64})\.png$")
-BUNDLE_KEY = re.compile(r"^(commits|reviews|reviews-test-outputs)/([0-9a-f]{40})/(.+)$")
-POINTER_KEY = re.compile(r"^baselines/(?:reviews/|reviews-test-outputs/)?([^/]+)\.json$")
+BUNDLE_KEY = re.compile(r"^(reviews-test-outputs)/([0-9a-f]{40})/(.+)$")
+POINTER_KEY = re.compile(r"^baselines/reviews-test-outputs/([^/]+)\.json$")
 CLOSED_PR_GRACE = timedelta(hours=8)
 DEFAULT_RETENTION = timedelta(days=3)
 ACTIVE_RUN_STATUSES = ("queued", "in_progress", "requested", "waiting", "pending")
@@ -76,7 +70,7 @@ def _validate_sha(value: Any, context: str) -> str:
     return value
 
 
-def _metadata_refs(tests: Iterable[ReviewTest | LegacyTest], context: str) -> tuple[set[str], set[str]]:
+def _metadata_refs(tests: Iterable[ReviewTest], context: str) -> tuple[set[str], set[str]]:
     """Return dependency SHAs and referenced image digests from validated metadata."""
     dependencies: set[str] = set()
     digests: set[str] = set()
@@ -258,7 +252,7 @@ def build_retention_report(
                 LOGGER.info("Reading metadata for retained bundle %d", len(parsed_prefixes))
             aggregate_key = f"{bundle.prefix}metadata.json"
             test_keys = sorted(target_metadata_by_prefix.get(bundle.prefix, []))
-            metadata_records: list[tuple[Iterable[ReviewTest | LegacyTest], str]] = []
+            metadata_records: list[tuple[Iterable[ReviewTest], str]] = []
             actual_target_slugs: set[str] = set()
             metadata_keys = ([aggregate_key] if aggregate_key in by_key else []) + test_keys
             # The production callback uses a thread-safe boto3 client; callbacks
@@ -271,15 +265,8 @@ def build_retention_report(
                     blockers.append(f"listed retained metadata disappeared: {aggregate_key}")
                     break
                 try:
-                    bundle_metadata = (
-                        ReviewBundleMetadata.model_validate_json(body)
-                        if bundle.prefix.startswith("reviews-test-outputs/")
-                        else LegacyBundleMetadata.model_validate_json(body)
-                    )
-                    if (
-                        bundle_metadata.commit_sha is not None
-                        and _validate_sha(bundle_metadata.commit_sha, f"{aggregate_key}.commit_sha") != sha
-                    ):
+                    bundle_metadata = ReviewBundleMetadata.model_validate_json(body)
+                    if _validate_sha(bundle_metadata.commit_sha, f"{aggregate_key}.commit_sha") != sha:
                         raise ValueError(f"{aggregate_key}.commit_sha does not match bundle SHA {sha}")
                     metadata_records.append((bundle_metadata.tests, aggregate_key))
                 except ValueError as error:
@@ -304,11 +291,7 @@ def build_retention_report(
                     blockers.append(f"listed retained metadata disappeared: {key}")
                     break
                 try:
-                    test_metadata = (
-                        ReviewTest.model_validate_json(body)
-                        if bundle.prefix.startswith("reviews-test-outputs/")
-                        else LegacyTest.model_validate_json(body)
-                    )
+                    test_metadata = ReviewTest.model_validate_json(body)
                     target_slug = key.removeprefix(f"{bundle.prefix}tests/").removesuffix("/metadata.json")
                     if test_metadata.slug != target_slug:
                         raise ValueError(f"{key}.slug does not match its key path")

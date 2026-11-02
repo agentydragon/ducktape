@@ -43,7 +43,7 @@ from testcontainers.core.container import DockerContainer
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_view_fixture
 from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
-from util.testing.gnome import GnomeSession, capture_panel_menu, exec_output
+from util.testing.gnome import GnomeMenuCapture, GnomeSession, exec_output
 from util.testing.output_writer import BoundTestOutputs
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -100,16 +100,15 @@ def fixture_json_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture(scope="module")
-def render_session(
+def session(
     gnome_shell_test_image: str, extension_dir: Path, fixture_json_dir: Path, tmp_path_factory: pytest.TempPathFactory
-) -> Iterator[tuple[GnomeSession, Path]]:
+) -> Iterator[GnomeSession]:
     """Long-lived container + gnome-shell shared across the whole matrix.
 
     boot.sh starts Xvfb + a long-lived dbus session bus inside the
     container; we then launch gnome-shell once with one of the fixtures
     set as initial state (so the extension's test DBus interface is
-    exported), wait for it to reach ENABLED, and yield the container
-    handle + host-side output directory. Each parametrized test calls
+    exported), wait for it to reach ENABLED, and yield the session. Each parametrized test calls
     Reload + screenshots, leaving the shell process alone.
     """
     out_dir = tmp_path_factory.mktemp("ai-quota-renders")
@@ -124,6 +123,7 @@ def render_session(
     with container:
         session = GnomeSession(
             container.get_wrapped_container(),
+            screenshot_dir=out_dir,
             extension=_EXTENSION_UUID,
             destination=_TEST_DBUS_DEST,
             object_path=_TEST_DBUS_PATH,
@@ -135,7 +135,7 @@ def render_session(
         except AssertionError, TimeoutError, RuntimeError:
             session.save_log(undeclared_outputs_dir() / "startup.shell.log")
             raise
-        yield session, out_dir
+        yield session
 
 
 @pytest.fixture
@@ -145,11 +145,13 @@ def undeclared_dir() -> Path:
     return out
 
 
+@pytest.fixture
+def capture_menu(session: GnomeSession, test_outputs: BoundTestOutputs) -> GnomeMenuCapture:
+    return GnomeMenuCapture(session, test_outputs, title="AI quota GNOME extension")
+
+
 @pytest.mark.parametrize("fixture_name", FIXTURE_NAMES)
-def test_render(
-    render_session: tuple[GnomeSession, Path], undeclared_dir: Path, fixture_name: str, test_outputs: BoundTestOutputs
-) -> None:
-    session, output_dir = render_session
+def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, capture_menu: GnomeMenuCapture) -> None:
     try:
         session.close_menu()
         session.reload(f"/fixtures/{fixture_name}.json")
@@ -168,15 +170,7 @@ def test_render(
             assert "internal-only" not in "\n".join(rows)
         geometry = session.open_menu()
         try:
-            capture_panel_menu(
-                session,
-                output_dir,
-                geometry=geometry,
-                name=f"{fixture_name}.png",
-                title="AI quota GNOME extension",
-                label=fixture_name.replace("_", " "),
-                outputs=test_outputs,
-            )
+            capture_menu.capture(geometry, label=fixture_name.replace("_", " "))
         finally:
             session.close_menu()
     except (TimeoutError, RuntimeError) as e:
@@ -185,9 +179,8 @@ def test_render(
 
 
 def test_render_disconnected_stream(
-    render_session: tuple[GnomeSession, Path], undeclared_dir: Path, test_outputs: BoundTestOutputs
+    session: GnomeSession, undeclared_dir: Path, capture_menu: GnomeMenuCapture
 ) -> None:
-    session, output_dir = render_session
     try:
         session.close_menu()
         session.reload("/fixtures/hot.json")
@@ -205,15 +198,7 @@ def test_render_disconnected_stream(
         session.wait_for_paint()
         geometry = session.open_menu()
         try:
-            capture_panel_menu(
-                session,
-                output_dir,
-                geometry=geometry,
-                name="stream_disconnected.png",
-                title="AI quota GNOME extension",
-                label="stream disconnected",
-                outputs=test_outputs,
-            )
+            capture_menu.capture(geometry, label="stream disconnected")
         finally:
             session.close_menu()
     except (TimeoutError, RuntimeError) as e:
@@ -222,9 +207,8 @@ def test_render_disconnected_stream(
 
 
 def test_render_disconnected_without_snapshot(
-    render_session: tuple[GnomeSession, Path], undeclared_dir: Path, test_outputs: BoundTestOutputs
+    session: GnomeSession, undeclared_dir: Path, capture_menu: GnomeMenuCapture
 ) -> None:
-    session, output_dir = render_session
     try:
         session.close_menu()
         session.reload(f"/fixtures/{FIXTURE_NAMES[0]}.json")
@@ -234,15 +218,7 @@ def test_render_disconnected_without_snapshot(
         session.wait_for_paint()
         geometry = session.open_menu()
         try:
-            capture_panel_menu(
-                session,
-                output_dir,
-                geometry=geometry,
-                name="stream_disconnected_without_snapshot.png",
-                title="AI quota GNOME extension",
-                label="stream disconnected without snapshot",
-                outputs=test_outputs,
-            )
+            capture_menu.capture(geometry, label="stream disconnected without snapshot")
         finally:
             session.close_menu()
     except (TimeoutError, RuntimeError) as e:
@@ -292,8 +268,7 @@ def _view_json(revision: int) -> str:
     return json.dumps({"fetched_at": f"2026-10-18T12:00:0{revision}Z", "providers": []})
 
 
-def test_view_signal_wins_getter_and_owner_restart_invalidates_reply(render_session: tuple[GnomeSession, Path]) -> None:
-    session, _ = render_session
+def test_view_signal_wins_getter_and_owner_restart_invalidates_reply(session: GnomeSession) -> None:
     session.exec("gjs -m /fake-daemon.js >/tmp/aiquota-fake-daemon.log 2>&1 &")
     try:
         _wait_until(

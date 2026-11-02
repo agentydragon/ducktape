@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 import time
 import urllib.parse
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -478,20 +478,11 @@ def _templates() -> Environment:
 
 
 def _asset_summary(assets: list[ReviewAsset]) -> ClassificationCounts:
-    summary = ClassificationCounts()
+    counts: Counter[str] = Counter()
     for asset in assets:
-        match asset.classification:
-            case "modified":
-                summary.modified += 1
-            case "new":
-                summary.new += 1
-            case "removed":
-                summary.removed += 1
-            case "unchanged":
-                summary.unchanged += 1
-            case "unstable":
-                summary.unstable += 1
-    return summary
+        if asset.classification is not None:
+            counts[asset.classification] += 1
+    return ClassificationCounts(**counts)
 
 
 def _ordered_assets(assets: list[ReviewAsset]) -> list[ReviewAsset]:
@@ -887,15 +878,11 @@ def write_baseline_pointers(slugs: list[str], *, commit_sha: str, bucket: str, c
 
 
 def _totals(review_tests: list[ReviewTest]) -> ClassificationCounts:
-    totals = ClassificationCounts()
+    totals: Counter[str] = Counter()
     for test in review_tests:
         if test.summary is not None:
-            totals.modified += test.summary.modified
-            totals.new += test.summary.new
-            totals.removed += test.summary.removed
-            totals.unchanged += test.summary.unchanged
-            totals.unstable += test.summary.unstable
-    return totals
+            totals.update(test.summary.model_dump())
+    return ClassificationCounts(**totals)
 
 
 def _preview_img(url: str, alt: str) -> str:

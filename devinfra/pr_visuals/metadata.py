@@ -95,28 +95,3 @@ class ReviewBundleMetadata(BaseModel):
     repository: str
     commit_sha: str
     tests: list[ReviewTest]
-
-
-class LegacyVariant(BaseModel):
-    """The image reference retained from an older review format."""
-
-    sha256: ImageDigest
-
-
-class LegacyAsset(BaseModel):
-    candidate_sha256: ImageDigest | None = None
-    baseline_sha256: ImageDigest | None = None
-    diff_sha256: ImageDigest | None = None
-    variants: list[LegacyVariant] = Field(default_factory=list)
-
-
-class LegacyTest(BaseModel):
-    slug: str = Field(min_length=1)
-    base_sha: str | None = None
-    merge_base_sha: str | None = None
-    assets: list[LegacyAsset]
-
-
-class LegacyBundleMetadata(BaseModel):
-    commit_sha: str | None = None
-    tests: list[LegacyTest]

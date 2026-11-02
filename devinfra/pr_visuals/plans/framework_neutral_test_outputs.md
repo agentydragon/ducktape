@@ -277,13 +277,12 @@ is known; unknown or partial coverage remains incomplete.
 2. Implement and validate the generic writer, pytest adapter, and collector;
    update all callers and visual/determinism consumers together, without
    transitional source shims. Coordinate the trusted publisher wheel and pin
-   rollout so old jobs and retained published metadata remain readable, and
-   prove the cutover before changing production publication. Do not assume a
-   source merge immediately deploys the wheel.
+   rollout and prove the cutover before changing production publication. Do not
+   assume a source merge immediately deploys the wheel.
 3. Start fresh baselines in the new namespace; old filename-based baselines are
-   not mapped to structured identities. Existing content-addressed blobs and
-   historical commit pages can remain in place. Devel runs must repopulate the
-   new per-target pointers before comparisons become available.
+   not mapped to structured identities. Clear old bundle and pointer namespaces;
+   historical links will expire. Devel runs must repopulate the new per-target
+   pointers before comparisons become available.
 4. Verify the pytest adapter and a producer that writes the protocol directly
    without pytest or its identity scheme; exercise parallel writers,
    multiple checkpoints and roles, stable pytest roots and parameter IDs, and

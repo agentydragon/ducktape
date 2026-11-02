@@ -13,11 +13,9 @@ Retain current baselines and active review dependencies regardless of age.
    `ducktape-flux/seaweedfs-pr-visuals-bucket`. Recheck them before each operation;
    never print credential values or change ownership as part of data cleanup.
 2. Save a complete S3 listing with key, size, modification time, and ETag. Group
-   `commits/<sha>/`, `reviews/<sha>/`, and `reviews-test-outputs/<sha>/` objects by their full commit SHA. A bundle
-   is old only when its newest object predates the cutoff. Keep unknown prefixes.
-3. Protect every commit reached by legacy and new baseline pointers
-   (`baselines/<slug>.json`, `baselines/reviews/<slug>.json`,
-   `baselines/reviews-test-outputs/<slug>.json`), open PR heads and
+   `reviews-test-outputs/<sha>/` objects by their full commit SHA. A bundle is
+   old only when its newest object predates the cutoff. Keep unknown prefixes.
+3. Protect every commit reached by `baselines/reviews-test-outputs/<slug>.json`, open PR heads and
    current merge bases, and recorded `base_sha`/`merge_base_sha` dependencies.
    Follow dependencies of retained metadata until no new protected commits appear.
    Also protect active CI/publisher work and recently closed PR heads that may
@@ -29,8 +27,8 @@ Retain current baselines and active review dependencies regardless of age.
    Stop on incomplete listings, failed reference reads, malformed metadata, or
    evidence of renewed publication. An online scan is not an atomic snapshot.
 
-Keep all baseline pointer objects and shared `assets/` images during this legacy
-bundle cleanup. A shared image may be old and still referenced by a recent review.
+Keep all baseline pointer objects and shared `assets/` images during bundle cleanup.
+A shared image may be old and still referenced by a recent review.
 Even an unreferenced old image can be reused by a publisher before the new review
 metadata is visible. Age grace periods alone do not make image deletion safe;
 automated shared-image collection needs coordination with publishers.
@@ -52,7 +50,7 @@ kubectl -n seaweedfs exec -i seaweedfs-filer-0 -- \
 ```
 
 Pass only approved, full SHA directories below the one authorized bucket, such as
-`fs.rm -r /buckets/pr-visuals/commits/<approved-full-sha>`. Never pass the bucket
+`fs.rm -r /buckets/pr-visuals/reviews-test-outputs/<approved-full-sha>`. Never pass the bucket
 root, wildcard paths, or `-f`. Native directory deletion has no per-object ETag
 guard; use it only after checking for concurrent writers to each selected bundle.
 The shell can print `rm:` errors while exiting successfully: inspect its output
