@@ -79,15 +79,17 @@
     "External consumers and dynamically constructed labels not exhaustively known",
     "The original audit did not implement its recommendations; status fields record subsequent work"
   ],
-  "burndown_updated_utc": "2026-11-02T12:06:43Z",
+  "burndown_updated_utc": "2026-11-02T12:07:00Z",
   "dispatched_in_progress": [
     {
       "id": "F",
       "pull_requests": [
-        13859,
         13860
       ],
-      "status_at_update": "open"
+      "status_at_update": "open",
+      "merged_pull_requests": [
+        13859
+      ]
     }
   ],
   "status_refresh": {
