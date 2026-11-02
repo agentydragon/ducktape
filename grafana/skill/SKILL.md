@@ -15,7 +15,7 @@ dashboard that renders real data in Grafana, not merely valid JSON or a query
 that works after an agent manually edits it.
 
 A new dashboard is two edits: the `<name>.json` file in that directory, and its line in
-`_FILE_DASHBOARDS` of `cluster/cdk8s/monitoring/grafana_instance.py`, mapping each of its
+`FILE_DASHBOARDS` of `cluster/cdk8s/monitoring/grafana_dashboard_inputs.py`, mapping each of its
 datasource inputs to a datasource name. `bb run //cluster/cdk8s:generate_manifests` then
 writes its `GrafanaDashboard` and `configMapGenerator` entry. A component's own dashboard
 sits beside the generator module that deploys it, declared as that module's `DASHBOARD`
@@ -104,16 +104,16 @@ verification.
    `loki` can have a generated UID, so do not guess `"uid": "loki"`. Use a
    verified UID explicitly provisioned by the deployment, or an operator input.
    For operator-managed file dashboards, use `"datasource": "${DS_LOKI}"` and
-   map it in `_FILE_DASHBOARDS` with `datasources={"DS_LOKI": "Loki"}`. Regenerate
+   map it in `FILE_DASHBOARDS` with `datasources={"DS_LOKI": "Loki"}`. Regenerate
    and inspect `GrafanaDashboard.spec.datasources`. The operator substitutes
    the datasource **name**, so `{"uid": "${DS_LOKI}"}` becomes `{"uid": "Loki"}`
    and fails when that name differs from the UID. Update both
    `panel.datasource` and each `target.datasource`; a target overrides its panel.
-   Candidate verification reads the generated `GrafanaDashboard` resource for
-   the dashboard's ConfigMap key and applies that same name substitution before
-   creating its temporary dashboard. It then checks the resulting name against
-   live Grafana datasources; it does not repair a UID-shaped placeholder into a
-   valid UID. For another generated resource set, pass
+   Candidate verification uses the Python source mappings for monitoring
+   dashboards and applies that same name substitution before creating its
+   temporary dashboard. It checks the resulting name against live Grafana
+   datasources; it does not repair a UID-shaped placeholder into a valid UID.
+   For a dashboard owned by another generator, pass
    `--grafana-dashboard-manifest <generated-resource-file>`. After import, query
    and render the live dashboard: `DashboardSynchronized=True` does not prove
    datasource references work.

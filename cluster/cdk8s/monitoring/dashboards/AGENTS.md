@@ -6,8 +6,8 @@
   run its candidate verifier before the PR when possible and inspect the Chrome
   screenshots; run its live verifier after Flux applies when candidate rendering was
   unavailable or deployment wiring changed.
-- A new dashboard is `<name>.json` here plus its entry in `_FILE_DASHBOARDS` in
-  [`../grafana_instance.py`](../grafana_instance.py).
+- A new dashboard is `<name>.json` here plus its entry in `FILE_DASHBOARDS` in
+  [`../grafana_dashboard_inputs.py`](../grafana_dashboard_inputs.py).
 - Don't hand over dashboards with unresolved macros, empty frames, datasource errors, or
   unexplained all-zero panels; record any explicit empty/all-zero allow-list exception and
   its reason in the PR.

@@ -194,6 +194,12 @@ py_library(
 )
 
 py_library(
+    name = "grafana_dashboard_inputs",
+    srcs = ["grafana_dashboard_inputs.py"],
+    visibility = ["//grafana/skill:__pkg__"],
+)
+
+py_library(
     name = "grafana_instance",
     srcs = ["grafana_instance.py"],
     data = ["//cluster/cdk8s/monitoring/dashboards"],
@@ -203,6 +209,7 @@ py_library(
         "//cluster/cdk8s/gatus:__pkg__",
     ],
     deps = [
+        ":grafana_dashboard_inputs",
         ":mimir",
         "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:cnpg_backup",
@@ -229,6 +236,7 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":grafana_dashboard_inputs",
         ":grafana_instance",
         "//:conftest",
         "//cluster/cdk8s:conftest",

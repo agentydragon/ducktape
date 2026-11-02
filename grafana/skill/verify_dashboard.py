@@ -28,7 +28,7 @@ import httpx
 import yaml
 from playwright.async_api import Page, async_playwright
 
-from util.bazel.runfiles import get_required_path
+from cluster.cdk8s.monitoring.grafana_dashboard_inputs import FILE_DASHBOARDS
 
 DEFAULT_GRAFANA_URL = "https://grafana.allegedly.works"
 DEFAULT_SECRET = "monitoring/grafana-admin-password"
@@ -40,7 +40,6 @@ DEFAULT_SECRET = "monitoring/grafana-admin-password"
 # require writer auth only for candidate browser rendering.
 # TODO: Replace admin-secret auth with narrower identities: Viewer for deployed-dashboard
 # checks and the minimum write-capable scope needed for temporary candidate dashboards.
-GRAFANA_DASHBOARD_MANIFEST = "cluster/generated/monitoring/grafana-instance/grafana-instance.k8s.yaml"
 DATASOURCE_PLACEHOLDER = re.compile(r"\$\{(DS_[A-Z0-9_]+)\}")
 UNRESOLVED_MACRO = re.compile(r"\$__[_a-zA-Z0-9]+")
 UNRESOLVED_VARIABLE = re.compile(r"\$(?:__[_a-zA-Z0-9]+|[_a-zA-Z][_a-zA-Z0-9]*)")
@@ -70,7 +69,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--grafana-dashboard-manifest",
         type=Path,
-        help="generated GrafanaDashboard resources; defaults to the packaged monitoring manifest",
+        help="optional generated GrafanaDashboard resources for a non-monitoring dashboard",
     )
     parser.add_argument("--from", dest="from_range", default="now-1h")
     parser.add_argument("--to", dest="to_range", default="now")
@@ -231,20 +230,13 @@ def datasource_map(api: GrafanaApi) -> tuple[dict[str, dict[str, Any]], dict[str
     return by_name, by_uid
 
 
-def grafana_dashboard_manifest_path(explicit_path: Path | None) -> Path:
-    if explicit_path is not None:
-        return explicit_path
-    try:
-        return get_required_path(f"_main/{GRAFANA_DASHBOARD_MANIFEST}")
-    except RuntimeError:
-        # Keep direct invocations from the repository root useful outside Bazel.
-        path = Path(GRAFANA_DASHBOARD_MANIFEST)
-        if path.is_file():
-            return path
-        raise VerificationError(f"cannot find packaged GrafanaDashboard manifest {GRAFANA_DASHBOARD_MANIFEST}")
+def operator_datasources(manifest_path: Path | None, dashboard_filename: str) -> dict[str, str]:
+    if manifest_path is None:
+        for name, dashboard in FILE_DASHBOARDS.items():
+            if dashboard_filename == f"{name}.json":
+                return dict(dashboard.datasources)
+        return {}
 
-
-def operator_datasources(manifest_path: Path, dashboard_filename: str) -> dict[str, str]:
     try:
         documents = yaml.safe_load_all(manifest_path.read_text())
         matches = [
@@ -295,9 +287,7 @@ def apply_operator_datasources(value: Any, by_input_name: dict[str, str]) -> Any
     # variables that have no matching operator input.
     unresolved_datasource = DATASOURCE_PLACEHOLDER.search(value)
     if unresolved_datasource:
-        raise VerificationError(
-            f"no generated GrafanaDashboard mapping for datasource input {unresolved_datasource.group(1)!r}"
-        )
+        raise VerificationError(f"no GrafanaDashboard mapping for datasource input {unresolved_datasource.group(1)!r}")
     return value
 
 
@@ -623,8 +613,9 @@ async def async_main(args: argparse.Namespace) -> None:
         by_name, by_uid = datasource_map(api)
         if args.dashboard:
             dashboard = dashboard_from_file(args.dashboard)
-            manifest_path = grafana_dashboard_manifest_path(args.grafana_dashboard_manifest)
-            dashboard = apply_operator_datasources(dashboard, operator_datasources(manifest_path, args.dashboard.name))
+            dashboard = apply_operator_datasources(
+                dashboard, operator_datasources(args.grafana_dashboard_manifest, args.dashboard.name)
+            )
             dashboard_context: contextlib.AbstractContextManager[tuple[str | None, dict[str, Any] | None]] = (
                 temporary_dashboard(api, dashboard)
             )

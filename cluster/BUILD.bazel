@@ -13,12 +13,6 @@ exports_files(
     visibility = ["//cluster:__subpackages__"],
 )
 
-filegroup(
-    name = "grafana_dashboard_manifest",
-    srcs = ["generated/monitoring/grafana-instance/grafana-instance.k8s.yaml"],
-    visibility = ["//grafana/skill:__pkg__"],
-)
-
 # The closed-world generated tree (cluster/cdk8s/manifest_roots.py), whole: the parity test
 # fails on any file here the generator does not write.
 filegroup(
