@@ -97,6 +97,9 @@ def _provider_view(pq: ProviderQuota, now: datetime) -> ProviderView:
             else next((i for i, window in enumerate(display_windows) if window.tint == tint), None)
         )
     credits = source.platform_credits if source is not None else None
+    # OpenAI reports fully used grants with no expiry as inactive. Keep scheduled
+    # and held grants visible, but hide any grant once its reported expiry passes.
+    # Filter a copy so the underlying provider response remains available.
     display_credits = (
         credits.model_copy(
             update={
