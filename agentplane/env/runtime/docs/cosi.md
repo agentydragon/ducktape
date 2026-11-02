@@ -1,8 +1,9 @@
 # Environment Runtime COSI map
 
-This is a map of the controllers and resources registered in the Runtime's **single in-memory
-COSI engine** and the single `environment-runtime` COSI namespace. That namespace is not a
-process, cgroup, Kubernetes namespace, or durable store. Harness Host registers its controllers
+This is a map of the controllers and resources registered in the Runtime's **single COSI engine**
+and the single `environment-runtime` COSI namespace. Bootstrap selections have a persistent
+backing store; the other resources are in memory. The namespace is not a process, cgroup, or
+Kubernetes namespace. Harness Host registers its controllers
 into the same engine. The Execution controller exists only when Execution
 is configured; the Codex app-server controller exists only when Codex is configured.
 
@@ -90,7 +91,7 @@ transition. An uncertain effect retains ownership and is not automatically repla
 | `environment-runtime-lifecycle`    | `EnvironmentRuntimeDesiredStates`, `EnvironmentRuntimeTransitionRequests` (weak)         | `EnvironmentRuntimeCloseStatuses`, `EnvironmentRuntimeTransitionStatuses` (exclusive) | Close and adopt/quiesce are coordinated by this one controller; workers publish completion by waking its loop.          |
 | `environment-host-report-observer` | `HostReports`, `HostIntentStatuses` (weak)                                               | None                                                                                  | Wakes Runtime waiters and starts the Execution fence for an exact applied report.                                       |
 | `bootstrap-lifecycle`              | `BootstrapInputs` (primary); `BootstrapStatuses`, `BootstrapOperationStates` (mapped)    | `BootstrapStatuses` (exclusive)                                                       | Host owns admitted one-off work and publishes its operation state. Runtime admission checks the environment generation. |
-| `process-lifecycle`                | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                               | `ProcessStatuses` (exclusive)                                                         | Runtime host owns launch callbacks, live handles, observations and workers.                                             |
+| `process-lifecycle`                | `ProcessDesiredStates` (primary), `ProcessInputs` (mapped)                               | `ProcessStatuses` (exclusive)                                                         | Host owns launch callbacks, live handles and workers; systemd observations are published in `ProcessInputs`.             |
 | `execution-lifecycle`              | `ExecutionInputs` (primary), `ExecutionStatuses` (mapped), both in `environment-runtime` | `ExecutionStatuses` (exclusive)                                                       | Runtime host publishes typed completion facts; the controller retains an unfenced owner on failure.                     |
 
 ## Harness Host
@@ -169,6 +170,8 @@ flowchart LR
 
 The process controller and its three resource types appear in both diagrams to show their callers;
 they are one controller and one set of resources. Each desired attempt records its process domain.
+The Host publishes systemd observations in `ProcessInputs`; its revision also wakes reconciliation
+for start, exit and stop slots whose live handles remain Host-owned. Observations do not prove fencing.
 Harness Host aggregation considers only the Host domain, while Environment Runtime attempts can continue
 until its own barriers settle. Each registered callback, live handle and worker remains bound to
 its owning domain's context and join barrier.

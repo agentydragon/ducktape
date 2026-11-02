@@ -8,6 +8,8 @@ import (
 
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/resource/typed"
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 )
 
@@ -76,9 +78,6 @@ type processHostEntry struct {
 	start *processStartSlot
 	exit  *processExitObservation
 	stop  *processStopSlot
-
-	revision uint64
-	systemd  SystemdObservation
 }
 
 type processHostSnapshot struct {
@@ -96,7 +95,6 @@ type processHostSnapshot struct {
 	stopDone    bool
 	stopErr     error
 	fenced      bool
-	systemd     SystemdObservation
 }
 
 // NewHost binds generic supervision to the caller's state, lifetime and worker barrier.
@@ -210,7 +208,6 @@ func (h *Host) snapshot(id string) (processHostSnapshot, bool) {
 	}
 
 	var snapshot processHostSnapshot
-	snapshot.systemd = entry.systemd
 	if start := entry.start; start != nil {
 		snapshot.startClaimed = true
 		snapshot.startDone = processSlotDone(start.done)
@@ -336,12 +333,16 @@ func (h *Host) runStart(entry *processHostEntry, start *processStartSlot) {
 func (h *Host) observeSystemd(id string, observation SystemdObservation) {
 	h.mu.Lock()
 	entry := h.entries[id]
-	if entry == nil || observation.Revision <= entry.systemd.Revision {
+	if entry == nil || observation.Revision == 0 {
 		h.mu.Unlock()
 		return
 	}
-	entry.systemd = observation
-	err := h.publishInputLocked(entry)
+	err := h.modifyInputLocked(entry, func(input *inputSpec) {
+		if observation.Revision > input.Systemd.Revision {
+			input.Systemd = observation
+			input.Revision++
+		}
+	})
 	h.mu.Unlock()
 	h.notify(err)
 }
@@ -523,11 +524,17 @@ func processSlotDone(done <-chan struct{}) bool {
 }
 
 func (h *Host) publishInputLocked(entry *processHostEntry) error {
+	return h.modifyInputLocked(entry, func(input *inputSpec) { input.Revision++ })
+}
+
+func (h *Host) modifyInputLocked(entry *processHostEntry, update func(*inputSpec)) error {
 	if h.entries[entry.id] != entry {
 		return nil
 	}
-	entry.revision++
-	return publishResource(h.ctx, h.state, h.namespace, entry.id, inputSpec{Revision: entry.revision})
+	return safe.StateModify(h.ctx, h.state, resourceFor(h.namespace, entry.id, inputSpec{}), func(current *typed.Resource[inputSpec, resourceExtension[inputSpec]]) error {
+		update(current.TypedSpec())
+		return nil
+	}, state.WithUpdateOwner(hostOwner))
 }
 
 func (h *Host) notify(err error) {

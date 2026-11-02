@@ -67,6 +67,13 @@ func (c *Controller) Reconcile(ctx context.Context, _ *zap.Logger, r controller.
 	} else if current.Owner != desired.Owner {
 		return fmt.Errorf("process %q owner changed from %q to %q", id, current.Owner, desired.Owner)
 	}
+	input, _, err := readResource[inputSpec](ctx, r, c.host.namespace, id)
+	if err != nil {
+		return err
+	}
+	if input.Systemd.Revision > current.Systemd.Revision {
+		current.Systemd = input.Systemd
+	}
 	write := func() error {
 		_, err := writeResource(ctx, r, c.host.namespace, id, current)
 		return err
@@ -291,9 +298,6 @@ func (c *Controller) removeFinalizer(ctx context.Context, r controller.QRuntime,
 }
 
 func applyProcessFacts(current Status, snapshot processHostSnapshot) Status {
-	if snapshot.systemd.Revision > current.Systemd.Revision {
-		current.Systemd = snapshot.systemd
-	}
 	current.Started = current.Started || snapshot.started
 	if snapshot.pid != 0 {
 		current.PID = snapshot.pid
