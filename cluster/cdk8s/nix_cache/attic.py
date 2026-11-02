@@ -1,5 +1,5 @@
 """The Attic Nix binary cache (`cache.allegedly.works`): the server and its Postgres,
-the retained previous SeaweedFS bucket, the cache bootstrap Job, and hourly JWT rotation.
+the previous SeaweedFS identity pending cleanup, the cache bootstrap Job, and hourly JWT rotation.
 
 cdk8s writes the directory Kustomization and the typed rotator roster. The native
 `server.toml`, SOPS Secrets, and `image-pins/kustomization.yaml` remain hand-written beside
@@ -173,19 +173,16 @@ def _database(scope: Construct) -> None:
     cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
 
 
-def _storage(scope: Construct) -> s3.PrivateBucket:
-    storage = s3.PrivateBucket(
+def _old_cache_identity(scope: Construct) -> None:
+    identity = s3.identity(
         scope,
-        "storage",
+        "old-cache-identity",
         name=NAME,
-        tenant=NAMESPACE,
-        adopt_existing=True,
+        namespace=NAMESPACE,
         description="attic's NAR chunks; replicated per volume by the SeaweedFS cluster's defaultReplication.",
     )
-    # Stage deletion of the old, disposable S3 cache before removing its CRs.
-    for resource in (storage.bucket, storage.credentials, storage.identity):
-        resource.add_json_patch(JsonPatch.replace("/spec/reclaimPolicy", "Delete"))
-    return storage
+    # Remove only after the old bucket and credential have finalized.
+    identity.add_json_patch(JsonPatch.replace("/spec/reclaimPolicy", "Delete"))
 
 
 def _service(scope: Construct) -> None:
@@ -599,7 +596,7 @@ def chart(app: App) -> Chart:
     namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO)
     pull_credentials.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     _database(chart)
-    _storage(chart)  # Retain the old cache data for now; it has no live consumer.
+    _old_cache_identity(chart)
     _service(chart)
     _rotation(chart)
     _local_server(chart)
