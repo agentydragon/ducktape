@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 import pytest
 import pytest_bazel
 
-from aiquota.peak_windows import SCHEDULES, BurnSchedule, PeakPeriod, in_peak, status, upcoming_peaks
+from aiquota.peak_windows import SCHEDULES, BurnSchedule, PeakPeriod, status, status_for, upcoming_peaks
 
 _SGT = ZoneInfo("Asia/Singapore")
 _WEEKDAYS = frozenset(range(5))
@@ -39,14 +39,23 @@ def _sgt(year: int, month: int, day: int, hour: int, minute: int = 0) -> datetim
     ],
 )
 def test_period_membership_is_start_inclusive_end_exclusive(moment: datetime, expected: bool) -> None:
-    assert in_peak(_schedule(_AFTERNOON), moment) is expected
+    assert status(_schedule(_AFTERNOON), moment).in_peak is expected
 
 
 def test_membership_follows_the_schedule_timezone_not_the_callers() -> None:
     # 07:00 UTC is 15:00 in Singapore — inside the window despite the UTC clock
     # reading as morning.
-    assert in_peak(_schedule(_AFTERNOON), datetime(2026, 8, 24, 7, 0, tzinfo=UTC)) is True
-    assert in_peak(_schedule(_AFTERNOON), datetime(2026, 8, 24, 15, 0, tzinfo=UTC)) is False
+    assert status(_schedule(_AFTERNOON), datetime(2026, 8, 24, 7, 0, tzinfo=UTC)).in_peak is True
+    assert status(_schedule(_AFTERNOON), datetime(2026, 8, 24, 15, 0, tzinfo=UTC)).in_peak is False
+
+
+@pytest.mark.parametrize(
+    ("hour", "minute", "expected"), [(13, 59, False), (14, 0, True), (17, 59, True), (18, 0, False)]
+)
+def test_status_for_uses_the_configured_provider_schedule(hour: int, minute: int, expected: bool) -> None:
+    burn = status_for("zai", _sgt(2026, 8, 24, hour, minute))
+    assert burn is not None
+    assert burn.in_peak is expected
 
 
 def test_next_transition_from_off_peak_is_the_upcoming_start() -> None:
@@ -64,12 +73,12 @@ def test_next_transition_skips_the_weekend_gap() -> None:
 
 def test_wrapped_period_covers_both_sides_of_midnight() -> None:
     overnight = _schedule(PeakPeriod(weekdays=_WEEKDAYS, start=time(22, 0), end=time(2, 0)))
-    assert in_peak(overnight, _sgt(2026, 8, 24, 23)) is True
-    assert in_peak(overnight, _sgt(2026, 8, 25, 1)) is True  # spilled into Tuesday
-    assert in_peak(overnight, _sgt(2026, 8, 25, 3)) is False
+    assert status(overnight, _sgt(2026, 8, 24, 23)).in_peak is True
+    assert status(overnight, _sgt(2026, 8, 25, 1)).in_peak is True  # spilled into Tuesday
+    assert status(overnight, _sgt(2026, 8, 25, 3)).in_peak is False
     # Saturday 01:00 is still covered — it belongs to Friday's period.
-    assert in_peak(overnight, _sgt(2026, 8, 29, 1)) is True
-    assert in_peak(overnight, _sgt(2026, 8, 29, 23)) is False
+    assert status(overnight, _sgt(2026, 8, 29, 1)).in_peak is True
+    assert status(overnight, _sgt(2026, 8, 29, 23)).in_peak is False
 
 
 def test_wrapped_period_transition_lands_on_the_following_day() -> None:
@@ -102,7 +111,7 @@ def test_status_changes_at_is_always_in_the_future_and_flips_the_state() -> None
         current = status(schedule, now)
         assert current.changes_at > now, provider
         just_after = current.changes_at.astimezone(UTC)
-        assert in_peak(schedule, just_after) is not current.in_peak, provider
+        assert status(schedule, just_after).in_peak is not current.in_peak, provider
 
 
 def test_schedule_without_periods_is_a_construction_error() -> None:

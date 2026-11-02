@@ -108,11 +108,6 @@ def upcoming_peaks(schedule: BurnSchedule, now: datetime, count: int = 3) -> lis
     return [interval for interval in _occurrences(schedule, first_day) if interval.end > now][:count]
 
 
-def in_peak(schedule: BurnSchedule, now: datetime) -> bool:
-    """Start is inclusive, end exclusive, so adjacent windows share no instant."""
-    return any(interval.start <= now < interval.end for interval in upcoming_peaks(schedule, now, count=1))
-
-
 def status(schedule: BurnSchedule, now: datetime, count: int = 3) -> BurnStatus:
     upcoming = upcoming_peaks(schedule, now, count)
     if not upcoming:
