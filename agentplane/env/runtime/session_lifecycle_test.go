@@ -665,3 +665,25 @@ func TestNewIncarnationWaitsForTeardown(t *testing.T) {
 	}
 
 }
+
+func TestAcceptedSetupCanWaitForBootstrapDuringDrain(t *testing.T) {
+	r, _, finishSetup := lifecycleTestBlockedSetup(t)
+	called := false
+	r.bootstrapWait = func(context.Context) error {
+		called = true
+		return nil
+	}
+	if _, err := r.Quiesce(context.Background(), &sessionpb.QuiesceRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if sessionAdmissionOpen(r) {
+		t.Fatal("quiesce left new work admitted")
+	}
+	if err := r.waitBootstrapForSession(context.Background()); err != nil {
+		t.Fatalf("accepted setup lost its bootstrap dependency during drain: %v", err)
+	}
+	if !called {
+		t.Fatal("accepted setup did not reach Runtime bootstrap")
+	}
+	finishSetup()
+}
