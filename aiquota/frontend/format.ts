@@ -1,8 +1,4 @@
-import { formatKnownExpiry, roundHalfToEven } from "../shared/presentation.js";
-
-export function formatKnownExpiries(expiries: string[]): string {
-  return expiries.map((expiry) => formatKnownExpiry(expiry) ?? "Invalid Date").join(", ");
-}
+import { roundHalfToEven } from "../shared/presentation.js";
 
 export function formatUsd(amount: number): string {
   return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

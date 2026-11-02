@@ -18,7 +18,7 @@
 import { type JSX } from "react";
 
 import type { AllQuotasView, BurnStatus, ExtraSpend, PaidCredits, ProviderView, WindowView } from "./schema";
-import { formatKnownExpiries, formatUsd, formatUsdWhole } from "./format";
+import { formatUsd, formatUsdWhole } from "./format";
 import {
   formatAge,
   formatClock,
@@ -26,6 +26,7 @@ import {
   formatPeakInterval,
   formatPrepaidBalance,
   formatMultiplier,
+  formatResetCreditSummary,
   roundHalfToEven,
   type Tint,
 } from "../shared/presentation.js";
@@ -209,8 +210,8 @@ function OverPlanStrip({ extra, windows }: { extra: ExtraSpend | null; windows: 
 
 /**
  * Earned rate-limit resets: headroom the account already has in hand, so it belongs with the
- * other facts about the future rather than in the status badges. The expiries come from a
- * best-effort detail endpoint that can name fewer credits than the count — hence "known".
+ * other facts about the future rather than in the status badges. Expiry details may be partial
+ * or fail independently from the authoritative reset count.
  */
 function ResetCreditsStrip({
   count,
@@ -223,14 +224,7 @@ function ResetCreditsStrip({
 }): JSX.Element {
   return (
     <div className={`aiquota-strip${count > 0 ? " aiquota-strip-resets" : ""}`}>
-      <p className="aiquota-strip-line">
-        ↻ {count} banked reset{count === 1 ? "" : "s"}
-      </p>
-      {expiryLookupFailed ? (
-        <p className="aiquota-strip-note">expiry dates unavailable</p>
-      ) : (
-        expiries.length > 0 && <p className="aiquota-strip-note">Known expiries: {formatKnownExpiries(expiries)}</p>
-      )}
+      <p className="aiquota-strip-line">{formatResetCreditSummary(count, expiries, expiryLookupFailed)}</p>
     </div>
   );
 }

@@ -12,10 +12,10 @@ import {
   formatAge as sharedFormatAge,
   formatClock,
   formatDuration as sharedFormatDuration,
-  formatKnownExpiry,
   formatMultiplier,
   formatPeakInterval,
   formatPrepaidBalance as sharedFormatPrepaidBalance,
+  formatResetCreditSummary,
   roundHalfToEven,
 } from "./presentation.js";
 
@@ -137,10 +137,7 @@ function formatExtraSpend(extra) {
 
 function formatBankedResets(count, expiries, expiryLookupFailed) {
   if (count == null) return null;
-  const knownExpiries = (expiries ?? []).map(formatKnownExpiry).filter((expiry) => expiry != null);
-  const label = `${count} banked reset${count === 1 ? "" : "s"}`;
-  if (expiryLookupFailed) return `${label} · expiry dates unavailable`;
-  return knownExpiries.length ? `${label} · known expiries: ${knownExpiries.join(", ")}` : label;
+  return formatResetCreditSummary(count, expiries ?? [], expiryLookupFailed);
 }
 
 function formatPaidCredits(credits, active) {

@@ -15,7 +15,7 @@ from aiquota.models import (
     SuccessfulProviderFetch,
 )
 from aiquota.render import human
-from aiquota.render.format import format_prepaid_balance
+from aiquota.render.format import format_prepaid_balance, format_reset_credit_summary
 from aiquota.render.view_model import to_view
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_fixture
 from util.bazel.runfiles import get_required_path
@@ -276,7 +276,46 @@ def test_renders_banked_reset_count_from_live_usage() -> None:
     )
 
     assert human.render(_quotas(_pq("codex", output)), now=_FETCHED_AT, tz=UTC).startswith(
-        "codex · 2 banked resets · known expiries: Jan 20 09:00\n"
+        "codex · 2 resets (expiry: Jan 20, 09:00, 1 unknown)\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("count", "expiries", "lookup_failed", "expected"),
+    [
+        (1, [datetime(2026, 1, 20, 9, 0, tzinfo=UTC)], False, "1 reset (expiry: Jan 20, 09:00)"),
+        (
+            2,
+            [datetime(2026, 1, 20, 9, 0, tzinfo=UTC), datetime(2026, 2, 2, 12, 34, tzinfo=UTC)],
+            False,
+            "2 resets (expiry: Jan 20, 09:00, Feb 2, 12:34)",
+        ),
+        (2, [], False, "2 resets (expiry: 2 unknown)"),
+        (2, [], True, "2 resets (expiry lookup failed)"),
+        (2, [datetime(2026, 1, 20, 9, 0, tzinfo=UTC)], True, "2 resets (expiry: Jan 20, 09:00; lookup failed)"),
+    ],
+)
+def test_formats_reset_credit_count_and_expiry_outcomes(count, expiries, lookup_failed, expected) -> None:
+    assert format_reset_credit_summary(count, expiries, lookup_failed, UTC) == expected
+
+
+def test_combines_subscription_resets_and_separate_platform_credit_pools() -> None:
+    fixture = load_quota_fixture(
+        get_required_path("_main/aiquota/testing/fixtures/platform_credits_with_subscription_resets.yaml")
+    )
+
+    rendered = human.render(fixture, now=_FETCHED_AT, tz=UTC)
+
+    assert "Claude · $25.75 prepaid balance" in rendered
+    assert "5h:  45%" in rendered
+    assert "7d:  32%" in rendered
+    assert "codex · 2 resets (expiry: Feb 1, 08:30, 1 unknown)" in rendered
+    assert "OpenAI API · $60.00 API credit" in rendered
+    assert "API credit grants: $60.00 expires 2026-06-01 00:00 UTC" in rendered
+    assert "Shared org · Anthropic API credit balance · $75.00 available" in rendered
+    assert "API credit grant $50.00 / $100.00 · expires 2026-07-01 00:00 UTC" in rendered
+    assert (
+        "API promo credit grant $25.00 / $50.00 · expires 2026-05-01 00:00 UTC · scope: claude_api (sonnet)" in rendered
     )
 
 

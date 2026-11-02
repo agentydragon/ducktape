@@ -67,16 +67,36 @@ def format_minor_currency(amount_minor: int, exponent: int, currency: str) -> st
 
 
 def format_known_reset_credit_expiries(expiries: list[datetime], tz: tzinfo | None = None) -> str | None:
-    """Render the detail endpoint's known expiries in the viewer's local time.
+    """Render expiry timestamps in the viewer's local time.
 
     The endpoint can return fewer credit rows than the authoritative count, so
-    callers must retain the "known" qualifier rather than imply this is a
-    complete list.
+    callers should compare the count with the rendered rows before claiming
+    that the list is complete.
     """
 
     if not expiries:
         return None
-    return ", ".join(expiry.astimezone(tz).strftime("%b %-d %H:%M") for expiry in expiries)
+    return ", ".join(expiry.astimezone(tz).strftime("%b %-d, %H:%M") for expiry in expiries)
+
+
+def format_reset_credit_summary(
+    count: int, expiries: list[datetime], expiry_lookup_failed: bool, tz: tzinfo | None = None
+) -> str:
+    """Summarize banked resets without treating a failed lookup as an empty result."""
+    noun = "reset" if count == 1 else "resets"
+    label = f"{count} {noun}"
+    known_expiries = format_known_reset_credit_expiries(expiries, tz)
+    if expiry_lookup_failed:
+        if known_expiries is None:
+            return f"{label} (expiry lookup failed)"
+        return f"{label} (expiry: {known_expiries}; lookup failed)"
+    unknown_count = max(0, count - len(expiries))
+    if known_expiries is None and unknown_count == 0:
+        return label
+    details = known_expiries or ""
+    if unknown_count:
+        details += f", {unknown_count} unknown" if details else f"{unknown_count} unknown"
+    return f"{label} (expiry: {details})"
 
 
 def format_pace(pace: PaceResult | None) -> str | None:

@@ -163,6 +163,30 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
             assert "scope: claude_api (sonnet), claude_code" in credits
             assert "scope: unscoped" not in credits
             assert "Expired grant" not in credits
+        elif fixture_name == "platform_credits_with_subscription_resets":
+            claude_header = string_reply(session.call("GetHeaderText", "claude"))
+            assert "$25.75 prepaid balance" in claude_header
+            assert len(json.loads(string_reply(session.call("GetWindowRows", "claude")))) == 2
+
+            codex_header = string_reply(session.call("GetHeaderText", "codex"))
+            assert "2 resets (expiry:" in codex_header
+            assert "1 unknown" in codex_header
+            assert len(json.loads(string_reply(session.call("GetWindowRows", "codex")))) == 2
+
+            openai_header = string_reply(session.call("GetHeaderText", "openai_platform"))
+            assert "$60.00 API credit" in openai_header
+            assert "$60 expires Jun 1, 2026" in openai_header
+            assert string_reply(session.call("GetPrepaidText", "openai_platform")) == ""
+
+            anthropic_header = string_reply(session.call("GetHeaderText", "anthropic_platform"))
+            anthropic_credits = string_reply(session.call("GetPrepaidText", "anthropic_platform"))
+            assert "Anthropic API" in anthropic_header
+            assert "Shared org" in anthropic_credits
+            assert "Anthropic API credit balance" in anthropic_credits
+            assert "$75.00 available" in anthropic_credits
+            assert "API credit grant $50.00 / $100.00" in anthropic_credits
+            assert "API promo credit grant $25.00 / $50.00" in anthropic_credits
+            assert "scope: claude_api (sonnet)" in anthropic_credits
         elif fixture_name == "wire_fields":
             rows = json.loads(string_reply(session.call("GetWindowRows", "codex")))
             assert len(rows) == 1

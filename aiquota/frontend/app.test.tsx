@@ -84,9 +84,9 @@ describe("quota subscription", () => {
     expect(container.querySelector('[role="status"]')?.textContent).toContain("Connecting");
     act(() => stream.view("2026-01-15T12:00:00Z"));
     expect(container.querySelector('[role="status"]')?.textContent).toBe("Quota stream live");
-    expect(container.textContent).toContain("1 banked reset");
+    expect(container.textContent).toContain("1 reset");
     act(() => stream.view("2026-01-16T12:00:00Z", 2));
-    expect(container.textContent).toContain("2 banked resets");
+    expect(container.textContent).toContain("2 resets");
     expect(container.textContent).not.toContain("checked");
     expect(container.textContent).not.toContain("Snapshot");
     act(() => {

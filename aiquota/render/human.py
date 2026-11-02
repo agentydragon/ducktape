@@ -20,10 +20,10 @@ from aiquota.models import (
 from aiquota.render.format import (
     format_age,
     format_burn,
-    format_known_reset_credit_expiries,
     format_minor_currency,
     format_peak_schedule,
     format_prepaid_balance,
+    format_reset_credit_summary,
 )
 from aiquota.render.view_model import AllQuotasView, ProviderView, WindowView, to_view
 
@@ -287,13 +287,7 @@ def _provider_label(
             provider += f" (prepaid stale {prepaid_stale_age})"
     if reset_credits is None:
         return provider
-    noun = "reset" if reset_credits == 1 else "resets"
-    label = f"{provider} · {reset_credits} banked {noun}"
-    if reset_credit_expiry_lookup_failed:
-        return f"{label} · expiry dates unavailable"
-    if expiries := format_known_reset_credit_expiries(reset_credit_expiries, tz):
-        return f"{label} · known expiries: {expiries}"
-    return label
+    return f"{provider} · {format_reset_credit_summary(reset_credits, reset_credit_expiries, reset_credit_expiry_lookup_failed, tz)}"
 
 
 def _format_anthropic_platform_credits(credits: AnthropicPlatformCredits | None, tz: tzinfo | None) -> list[str]:

@@ -48,8 +48,9 @@ async def test_dashboard(view: VisualPage, scene: str) -> None:
     await expect(view.page.locator(".aiquota-card").first).to_be_attached()
     await expect(view.page.get_by_role("status")).to_have_text("Quota stream live")
     if scene == "reset_credit_expiry_unavailable":
-        await expect(view.page.locator(".aiquota-strip-resets .aiquota-strip-line")).to_contain_text("2 banked resets")
-        await expect(view.page.get_by_text("expiry dates unavailable", exact=True)).to_be_visible()
+        await expect(view.page.locator(".aiquota-strip-resets .aiquota-strip-line")).to_have_text(
+            "2 resets (expiry lookup failed)"
+        )
     if scene == "openai_platform_credits":
         await expect(view.page.get_by_role("heading", name="OpenAI API · $125.75 API credit")).to_be_visible()
         grants = view.page.get_by_text("API credit grants:", exact=False).first
@@ -78,6 +79,23 @@ async def test_dashboard(view: VisualPage, scene: str) -> None:
             view.page.get_by_text("Main org · Anthropic API credit balance · $123.45 available", exact=True)
         ).to_be_visible()
         await expect(view.page.get_by_text("API promo credit grant", exact=False).first).to_be_visible()
+    if scene == "platform_credits_with_subscription_resets":
+        claude = view.page.locator('.aiquota-card[aria-label="claude quota"]')
+        await expect(claude.get_by_role("heading")).to_contain_text("Claude · $25.75 prepaid balance")
+        await expect(claude.locator(".aiquota-window")).to_have_count(2)
+        codex = view.page.locator('.aiquota-card[aria-label="codex quota"]')
+        await expect(codex.get_by_role("heading")).to_contain_text("Codex")
+        await expect(codex.locator(".aiquota-strip-resets .aiquota-strip-line")).to_contain_text("2 resets (expiry:")
+        await expect(codex.locator(".aiquota-strip-resets .aiquota-strip-line")).to_contain_text("1 unknown")
+        await expect(codex.locator(".aiquota-window")).to_have_count(2)
+        openai = view.page.locator('.aiquota-card[aria-label="openai_platform quota"]')
+        await expect(openai.get_by_role("heading", name="OpenAI API · $60.00 API credit")).to_be_visible()
+        await expect(openai.get_by_text("$60.00 expires", exact=False)).to_be_visible()
+        anthropic = view.page.locator('.aiquota-card[aria-label="anthropic_platform quota"]')
+        await expect(
+            anthropic.get_by_text("Shared org · Anthropic API credit balance · $75.00 available")
+        ).to_be_visible()
+        await expect(anthropic.get_by_text("API promo credit grant", exact=False)).to_contain_text("$25.00")
     await view.capture(target=view.page.locator("#app"))
 
 

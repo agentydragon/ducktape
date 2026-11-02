@@ -8,7 +8,13 @@
 
 import { describe, expect, it } from "vitest";
 
-import { formatDuration, formatPrepaidBalance, roundHalfToEven } from "../shared/presentation.js";
+import {
+  formatDuration,
+  formatKnownExpiry,
+  formatPrepaidBalance,
+  formatResetCreditSummary,
+  roundHalfToEven,
+} from "../shared/presentation.js";
 
 describe("formatPrepaidBalance", () => {
   it.each([
@@ -34,5 +40,37 @@ describe("Python's ties-to-even rounding", () => {
 
   it("uses ties-to-even in the shared visible quota formats", () => {
     expect(formatDuration(3598.5)).toBe("59m");
+  });
+});
+
+describe("formatResetCreditSummary", () => {
+  const firstExpiry = "2026-01-01T15:20:00Z";
+  const secondExpiry = "2026-02-02T12:34:00Z";
+
+  it("lists all known expiries", () => {
+    expect(formatResetCreditSummary(2, [firstExpiry, secondExpiry], false)).toBe(
+      `2 resets (expiry: ${formatKnownExpiry(firstExpiry)}, ${formatKnownExpiry(secondExpiry)})`
+    );
+  });
+
+  it("shows the difference between the count and a successful partial expiry lookup", () => {
+    expect(formatResetCreditSummary(2, [firstExpiry], false)).toBe(
+      `2 resets (expiry: ${formatKnownExpiry(firstExpiry)}, 1 unknown)`
+    );
+    expect(formatResetCreditSummary(1, [firstExpiry], false)).toBe(
+      `1 reset (expiry: ${formatKnownExpiry(firstExpiry)})`
+    );
+    expect(formatResetCreditSummary(2, [], false)).toBe("2 resets (expiry: 2 unknown)");
+  });
+
+  it("does not infer an unknown count when the expiry lookup fails", () => {
+    expect(formatResetCreditSummary(2, [], true)).toBe("2 resets (expiry lookup failed)");
+    expect(formatResetCreditSummary(2, [firstExpiry], true)).toBe(
+      `2 resets (expiry: ${formatKnownExpiry(firstExpiry)}; lookup failed)`
+    );
+  });
+
+  it("keeps a zero reset count concise when the lookup succeeds", () => {
+    expect(formatResetCreditSummary(0, [], false)).toBe("0 resets");
   });
 });
