@@ -43,6 +43,6 @@ images:
     newTag: devel-20261102191428-f3667f5 # {"$imagepolicy": "flux-system:agentplane-environment-vm:tag"}
   # The `agentplane` command disk beside the VM guest and as an image volume in the environment Pod.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-disk
-    newTag: devel-20261102200736-f76d16a # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
+    newTag: devel-20261102201506-c687c7d # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
 configurations:
   - kustomizeconfig
