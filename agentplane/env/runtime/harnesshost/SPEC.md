@@ -28,6 +28,14 @@ The Host drain waits for Host-domain process finalizers; Runtime-domain attempts
 cleanup barriers. Mode/identity changes require a new generation;
 Execution fence acknowledgement may advance monotonically within the same generation.
 
+Before publishing an Applying marker, the intent controller closes native admission under
+the Host admission lock. Session and app-server controllers can still observe the prior
+Running desired state, but cannot start a prior-generation native effect. Applying with an
+unknown outcome is terminal and never replayed. Once native application publishes the new
+Desired and reopens admission, its generation may start effects before the Applied status
+is written; Applied is Runtime observation proof, not the native admission commit. If that
+status write fails, Host revokes the Runtime binding and fails closed.
+
 Runtime passes copied Runtime boot ID and environment generation bindings with
 direct Session calls. Host checks both at ingress and again under the
 native admission lock before durable mutation. A model lookup does not hold that lock. Runtime alone

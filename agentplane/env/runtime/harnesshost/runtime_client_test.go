@@ -175,6 +175,86 @@ func TestHostIntentCannotReopenDesiredStateAfterClose(t *testing.T) {
 	}
 }
 
+func TestHostLifecycleEffectIsFencedWhileIntentIsApplying(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	store := &pausedSessionInputState{
+		State: state.WrapCore(namespaced.NewState(inmem.Build)), entered: make(chan struct{}), release: make(chan struct{}),
+	}
+	r, err := newTestHost(Config{StateDir: t.TempDir(), Launch: configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{UID: "sandbox"}}}, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.SetRuntimeBinding("runtime", true)
+	var release sync.Once
+	t.Cleanup(func() {
+		release.Do(func() { close(store.release) })
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cleanupCancel()
+		if err := r.CloseJournals(cleanupCtx); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := r.ApplyIntent(ctx, intentFor(r, 1, runtimepb.LifecycleIntent_RUNNING)); err != nil {
+		t.Fatal(err)
+	}
+	record, err := retained.NewRecord(&sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: r.config.StateDir, Model: "test"}, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.store.Write("session", record); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.sessions.Load(ctx, "session"); err != nil {
+		t.Fatal(err)
+	}
+	previous, found, err := harnesshostlifecycle.ReadDesired(ctx, r.lifecycle.state)
+	if err != nil || !found || previous.Mode != harnesshostlifecycle.Running {
+		t.Fatalf("previous running desired = %+v, found=%t, err=%v", previous, found, err)
+	}
+	store.armed.Store(true)
+	applied := make(chan error, 1)
+	go func() { applied <- r.ApplyIntent(ctx, intentFor(r, 2, runtimepb.LifecycleIntent_RUNNING)) }()
+	select {
+	case <-store.entered:
+	case <-ctx.Done():
+		t.Fatal("Host intent did not reach Session demand reset")
+	}
+	if r.ready.Load() {
+		t.Fatal("Host admission readiness remained open during intent application")
+	}
+	var effectRan bool
+	if err := r.admitLifecycleEffect(ctx, previous, func(context.Context) error {
+		effectRan = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if effectRan {
+		t.Fatal("old-generation lifecycle effect was admitted while a new intent was applying")
+	}
+	release.Do(func() { close(store.release) })
+	select {
+	case err := <-applied:
+		if err != nil {
+			t.Fatalf("apply next Host intent: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("Host intent did not finish after release")
+	}
+	next, found, err := harnesshostlifecycle.ReadDesired(ctx, r.lifecycle.state)
+	if err != nil || !found || next.Generation != 2 {
+		t.Fatalf("next desired = %+v, found=%t, err=%v", next, found, err)
+	}
+	var nextEffectRan bool
+	if err := r.admitLifecycleEffect(ctx, next, func(context.Context) error {
+		nextEffectRan = true
+		return nil
+	}); err != nil || !nextEffectRan {
+		t.Fatalf("next-generation effect was not admitted: ran=%t, err=%v", nextEffectRan, err)
+	}
+}
+
 func TestHostRejectsStaleGenerationBeforeDurableAdmission(t *testing.T) {
 	r, ctx := boundaryHost(t)
 	first := intentFor(r, 1, runtimepb.LifecycleIntent_RUNNING)
