@@ -11,8 +11,7 @@ from typing import cast
 from docker.models.containers import Container, ExecResult
 from PIL import Image
 
-from util.testing.output_writer import publish_output
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.output_writer import BoundTestOutputs
 
 
 def exec_output(result: ExecResult) -> tuple[bytes, bytes]:
@@ -154,13 +153,14 @@ def capture_panel_menu(
     session: GnomeSession,
     output_dir: Path,
     *,
+    outputs: BoundTestOutputs,
     geometry: tuple[int, int, int, int],
     name: str,
     title: str,
     label: str,
-    case_id: str,
+    checkpoint: str | None = None,
 ) -> Path:
-    """Capture and publish the panel/menu crop; output_dir is mounted at /out."""
+    """Capture and publish the crop; output_dir stages the host mount at /out."""
     session.screenshot(f"/out/{name}")
     full_path = output_dir / name
     assert full_path.is_file(), f"scrot did not produce {full_path}"
@@ -168,13 +168,6 @@ def capture_panel_menu(
         cropped = crop_panel_menu(full, geometry)
         png = BytesIO()
         cropped.save(png, format="PNG")
-    return publish_output(
-        undeclared_outputs_dir(),
-        case_id=case_id,
-        checkpoint=None,
-        role="screenshot",
-        data=png.getvalue(),
-        suffix="png",
-        label=label,
-        title=title,
+    return outputs.publish(
+        checkpoint=checkpoint, role="screenshot", data=png.getvalue(), suffix="png", label=label, title=title
     )

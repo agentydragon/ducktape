@@ -205,7 +205,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":output_writer",
-        ":undeclared_outputs",
         "@pypi//docker",
         "@pypi//pillow",
     ],

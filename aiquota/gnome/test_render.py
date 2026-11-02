@@ -44,6 +44,7 @@ from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_view_fixtur
 from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
 from util.testing.gnome import GnomeSession, capture_panel_menu, exec_output
+from util.testing.output_writer import BoundTestOutputs
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
@@ -146,7 +147,7 @@ def undeclared_dir() -> Path:
 
 @pytest.mark.parametrize("fixture_name", FIXTURE_NAMES)
 def test_render(
-    render_session: tuple[GnomeSession, Path], undeclared_dir: Path, fixture_name: str, case_id: str
+    render_session: tuple[GnomeSession, Path], undeclared_dir: Path, fixture_name: str, test_outputs: BoundTestOutputs
 ) -> None:
     session, output_dir = render_session
     try:
@@ -174,7 +175,7 @@ def test_render(
                 name=f"{fixture_name}.png",
                 title="AI quota GNOME extension",
                 label=fixture_name.replace("_", " "),
-                case_id=case_id,
+                outputs=test_outputs,
             )
         finally:
             session.close_menu()
@@ -184,7 +185,7 @@ def test_render(
 
 
 def test_render_disconnected_stream(
-    render_session: tuple[GnomeSession, Path], undeclared_dir: Path, case_id: str
+    render_session: tuple[GnomeSession, Path], undeclared_dir: Path, test_outputs: BoundTestOutputs
 ) -> None:
     session, output_dir = render_session
     try:
@@ -211,7 +212,7 @@ def test_render_disconnected_stream(
                 name="stream_disconnected.png",
                 title="AI quota GNOME extension",
                 label="stream disconnected",
-                case_id=case_id,
+                outputs=test_outputs,
             )
         finally:
             session.close_menu()
@@ -221,7 +222,7 @@ def test_render_disconnected_stream(
 
 
 def test_render_disconnected_without_snapshot(
-    render_session: tuple[GnomeSession, Path], undeclared_dir: Path, case_id: str
+    render_session: tuple[GnomeSession, Path], undeclared_dir: Path, test_outputs: BoundTestOutputs
 ) -> None:
     session, output_dir = render_session
     try:
@@ -240,7 +241,7 @@ def test_render_disconnected_without_snapshot(
                 name="stream_disconnected_without_snapshot.png",
                 title="AI quota GNOME extension",
                 label="stream disconnected without snapshot",
-                case_id=case_id,
+                outputs=test_outputs,
             )
         finally:
             session.close_menu()
