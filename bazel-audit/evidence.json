@@ -23,7 +23,10 @@
       "priority": "Medium",
       "category": "Lint wiring",
       "title": "Untangle checker-only provider dependencies from runtime libraries",
-      "refresh_status": "present_at_refresh"
+      "refresh_status": "present_at_refresh",
+      "related_pull_request": 11497,
+      "related_pull_request_status": "open_rebase_in_progress",
+      "related_pull_request_scope": "Python and mypy rules plus Props targets; eval-infra and Haku remain follow-up."
     },
     {
       "id": "K",
@@ -65,16 +68,8 @@
     "External consumers and dynamically constructed labels not exhaustively known",
     "The original audit did not implement its recommendations; status fields record subsequent work"
   ],
-  "burndown_updated_utc": "2026-11-02T13:19:18Z",
-  "dispatched_in_progress": [
-    {
-      "id": "O",
-      "pull_requests": [
-        13892
-      ],
-      "status_at_update": "open"
-    }
-  ],
+  "burndown_updated_utc": "2026-11-02T13:36:55Z",
+  "dispatched_in_progress": [],
   "status_refresh": {
     "source_commit": "2cbcf945b203c1260e10c8e32a6b6e26025f254d",
     "checked_utc": "2026-11-02T11:05:00Z",
