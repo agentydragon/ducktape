@@ -318,7 +318,16 @@ operation provenance.
 An original, standalone, non-exported variable declaration with one simple,
 unannotated binding may close global-property, general-heap and host-effect
 coverage when its initializer is a primitive literal, checked ordinary
-function/arrow creation, or a read of an initialized module-local binding.
+function/arrow creation, a read of an initialized module-local binding, or a
+static ordinary record literal. Record values may be primitive literals,
+initialized module-local binding reads, or nested records in the same subset.
+Identifier and string data keys and shorthand fields are supported; computed
+keys, spreads, accessors, methods, colon-form `__proto__`, and other value
+expressions remain uncovered. Creating these own data fields invokes no
+receiver getter, setter, coercion or callable body. Every source binding read,
+including one in an overwritten duplicate field, must already be initialized
+before the root transfer. No additional heap privacy or native-slot premise
+is used. Allocation effects remain in the report.
 The binding read must resolve to a declared local cell, excluding imports and
 host globals, and the interpreter must check its initialization before the
 read. A normally completed read retains its binding effect regardless of the
@@ -330,7 +339,7 @@ value without an unavailable alternative, and owner finalization must complete
 the binding initialization without fallback or precision loss before
 sealing the coverage certificate. Bodies remain lazy; this certifies no call.
 Sequences, assignments, templates, split comma declarations, exports, classes,
-objects/arrays, imported/global/uninitialized binding reads,
+arrays, imported/global/uninitialized binding reads,
 decorated/type-annotated functions and unsupported parameters remain uncovered.
 Parentheses alone preserve admissibility.
 The owner certificate survives staged analysis; generic child results and
