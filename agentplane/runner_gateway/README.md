@@ -39,7 +39,7 @@ conversation and from Runner admission.
   `AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` plus `AGENTPLANE_RUNNER_GATEWAY_*` environment variables;
   [`settings.py`](settings.py) is the authoring schema), including the optional `http_listen_address`
   for the Dispatcher's HTTP/JSON facade (none when unset). The independent `delegation` policy names
-  an Actions actor, caller namespace scope, and exact full RPC methods; it can include the two
+  an Actions actor, caller namespace scope, and exact full RPC methods; it can include the
   `EnvironmentService` read methods without delegating other Gateway methods.
 - `gateway/`: Runner connections, authenticated proxy, Sandbox/Pod validation and connection ownership.
 - `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.

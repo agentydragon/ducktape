@@ -2,15 +2,15 @@
 
 ## Purpose
 
-Expose bounded, read-only discovery of existing Agentplane Sandbox targets to the exact ServiceAccount
+Expose read-only discovery and observation of existing Agentplane Sandbox targets to the exact ServiceAccount
 that executes them. This service returns facts needed to choose a target and prepare a Session
 request. It does not create environments, attach Sessions, control lifecycle, or grant authorization.
 
 ## Caller and object authorization
 
-- Unary methods admit a direct TokenReview-verified ServiceAccount or an explicitly configured
+- Methods admit a direct TokenReview-verified ServiceAccount or an explicitly configured
   Actions delegation using the Runner Gateway's existing Dispatcher audience and served namespace
-  set. Only `ListEnvironments` and `GetEnvironment` may be added to the Gateway's exact delegated
+  set. `ListEnvironments`, `GetEnvironment`, and `WatchEnvironment` may be added to the Gateway's exact delegated
   method list; the grant does not extend to Dispatcher writes or Gateway proxy methods.
 - The handler obtains the admitted effective caller from shared workload authentication and requires
   a complete ServiceAccount identity, including its UID. Direct calls retain their existing
@@ -18,7 +18,7 @@ request. It does not create environments, attach Sessions, control lifecycle, or
 - For each candidate, `sandboxreader.Reader.ExecutionAccount` rereads the exact live Sandbox UID and
   confirms its non-deleting ServiceAccount has the Sandbox's exact controlling owner reference.
 - A result is returned only if namespace, account name, and account UID all match the effective caller.
-- Get requires the complete Sandbox namespace/name/UID handle. Missing, replaced, deleting, or
+- Get and watch require the complete Sandbox namespace/name/UID handle. Missing, replaced, deleting, or
   foreign targets are hidden as `NOT_FOUND`.
 - The page request/response remains compatible with bounded pagination. Current Sandbox-owned
   accounts resolve by the account's same-name Sandbox candidate, so the service emits no cursor.
@@ -29,6 +29,27 @@ Delegated calls keep the Actions actor separate from the effective caller. They 
 live Sandbox-owned ServiceAccount UID checks as direct calls. The dispatcher still rechecks
 identity at Session admission. Discovery is not an authorization lease and is not a substitute for
 mutation-time checks.
+
+## Snapshot reads and watches
+
+`GetEnvironment` returns the current descriptor without waiting for a condition.
+`WatchEnvironment` sends an initial `WatchEnvironmentResponse.environment` and subsequent complete
+snapshots when descriptor facts change. Changes only to `observed_at` or unprojected Kubernetes
+metadata do not emit a new snapshot. There is no readiness predicate or server-side readiness wait.
+
+Observation depends on the control plane, not on a connection to the environment Runtime;
+suspended targets remain observable. Target and execution-ServiceAccount watches are established
+before reading the initial snapshot. Kubernetes collection resource versions bridge list/watch
+setup; notifications trigger uncached reads and the same live UID/ownership checks as get.
+An already admitted stream never follows a replacement target or execution account.
+
+This is a current-state subscription, not retained transition history. Intermediate states may be
+coalesced. Reconnecting starts with a current snapshot and has no cursor. Source closure, expiration,
+or failure ends the RPC with `UNAVAILABLE`; a client must reconnect to refresh its observation.
+Missing, replaced, deleting or no-longer-accessible targets end with `NOT_FOUND`. Last observations
+remain observations of their recorded time; silence or disconnection does not assert readiness.
+Client cancellation ends the stream and both source watches. Server writes have a five-second
+backpressure bound. A blocked write ends the RPC with `DEADLINE_EXCEEDED` and is not retried.
 
 ## Returned facts
 

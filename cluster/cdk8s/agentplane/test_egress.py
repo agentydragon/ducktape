@@ -223,6 +223,7 @@ def test_session_dispatcher_egress_is_limited_to_the_delegation_rpc_surfaces(
     environment_service_paths = [
         "/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments",
         "/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment",
+        "/agentplane.sandboxes.environments.EnvironmentService/WatchEnvironment",
     ]
     expected_permissions = {
         (BASIC_POLICY, credential_name, destination, "POST", path, True)

@@ -197,6 +197,7 @@ data:
         - /agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch
         - /agentplane.sandboxes.environments.EnvironmentService/ListEnvironments
         - /agentplane.sandboxes.environments.EnvironmentService/GetEnvironment
+        - /agentplane.sandboxes.environments.EnvironmentService/WatchEnvironment
 immutable: false
 ---
 apiVersion: v1
@@ -438,6 +439,8 @@ rules:
       - serviceaccounts
     verbs:
       - get
+      - list
+      - watch
   - apiGroups:
       - kubevirt.io
     resources:

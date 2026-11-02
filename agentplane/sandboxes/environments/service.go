@@ -31,6 +31,7 @@ type Service struct {
 	environmentpb.UnimplementedEnvironmentServiceServer
 
 	namespace   string
+	objects     client.WithWatch
 	sandboxes   *sandboxreader.Reader
 	runtime     runtimeconfig.Catalog
 	wakeCallers map[auth.Account]struct{}
@@ -38,12 +39,12 @@ type Service struct {
 
 func New(
 	namespace string,
-	objects client.Reader,
+	objects client.WithWatch,
 	runtime runtimeconfig.Catalog,
 	wakeCallers map[auth.Account]struct{},
 ) (*Service, error) {
 	if namespace == "" || objects == nil {
-		return nil, errors.New("Sandbox namespace and uncached Kubernetes reader are required")
+		return nil, errors.New("Sandbox namespace and uncached Kubernetes watch client are required")
 	}
 	sandboxes, err := sandboxreader.New(namespace, objects)
 	if err != nil {
@@ -53,7 +54,7 @@ func New(
 	for account := range wakeCallers {
 		wake[account] = struct{}{}
 	}
-	return &Service{namespace: namespace, sandboxes: sandboxes, runtime: runtime, wakeCallers: wake}, nil
+	return &Service{namespace: namespace, objects: objects, sandboxes: sandboxes, runtime: runtime, wakeCallers: wake}, nil
 }
 
 // Methods admits direct TokenReview-verified ServiceAccounts in the configured Resolver namespaces.
@@ -64,6 +65,7 @@ func Methods(resolver *auth.Resolver) auth.Methods {
 	return auth.Methods{
 		environmentpb.EnvironmentService_ListEnvironments_FullMethodName: rule,
 		environmentpb.EnvironmentService_GetEnvironment_FullMethodName:   rule,
+		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName: rule,
 	}
 }
 

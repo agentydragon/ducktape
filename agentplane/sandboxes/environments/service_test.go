@@ -82,14 +82,14 @@ func testTokenReviews() tokenReviewStub {
 	}
 }
 
-func serveDiscovery(t *testing.T, objects client.Reader, catalog runtimeconfig.Catalog) environmentpb.EnvironmentServiceClient {
+func serveDiscovery(t *testing.T, objects client.WithWatch, catalog runtimeconfig.Catalog) environmentpb.EnvironmentServiceClient {
 	t.Helper()
 	return serveDiscoveryWithDelegation(t, objects, catalog, nil)
 }
 
 func serveDiscoveryWithDelegation(
 	t *testing.T,
-	objects client.Reader,
+	objects client.WithWatch,
 	catalog runtimeconfig.Catalog,
 	delegatedMethods []string,
 ) environmentpb.EnvironmentServiceClient {
@@ -124,7 +124,7 @@ func serveDiscoveryWithDelegation(
 	return environmentpb.NewEnvironmentServiceClient(connection)
 }
 
-func readerWithObjects(t *testing.T, objects ...client.Object) client.Reader {
+func readerWithObjects(t *testing.T, objects ...client.Object) client.WithWatch {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	if err := sandboxapi.AddToScheme(scheme); err != nil {
@@ -133,7 +133,12 @@ func readerWithObjects(t *testing.T, objects ...client.Object) client.Reader {
 	if err := corev1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	return clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+	builder := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...)
+	// The fake client implements API field selection through explicit indexes.
+	for _, object := range []client.Object{&sandboxapi.Sandbox{}, &corev1.ServiceAccount{}} {
+		builder.WithIndex(object, "metadata.name", func(object client.Object) []string { return []string{object.GetName()} })
+	}
+	return builder.Build()
 }
 
 func sandboxObject(uid types.UID) *sandboxapi.Sandbox {
@@ -157,7 +162,7 @@ func executionAccountObject(sandboxUID types.UID) *corev1.ServiceAccount {
 	}}
 }
 
-func baseReader(t *testing.T) client.Reader {
+func baseReader(t *testing.T) client.WithWatch {
 	t.Helper()
 	sandbox := sandboxObject(sandboxUID)
 	return readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID))
@@ -497,7 +502,7 @@ func TestDiscoveryValidatesLimitsPageTokensAndExactHandles(t *testing.T) {
 }
 
 type failingReader struct {
-	client.Reader
+	client.WithWatch
 	failSandboxRead int
 	sandboxReads    int
 	failAccountRead bool
@@ -515,24 +520,24 @@ func (r *failingReader) Get(ctx context.Context, key types.NamespacedName, objec
 			return apierrors.NewInternalError(errors.New("injected ServiceAccount API failure"))
 		}
 	}
-	return r.Reader.Get(ctx, key, object, options...)
+	return r.WithWatch.Get(ctx, key, object, options...)
 }
 
 func TestKubernetesReadFailuresReturnUnavailable(t *testing.T) {
 	for _, test := range []struct {
 		name   string
-		reader func(t *testing.T) client.Reader
+		reader func(t *testing.T) client.WithWatch
 	}{
 		{
 			name: "Sandbox read",
-			reader: func(t *testing.T) client.Reader {
-				return &failingReader{Reader: baseReader(t), failSandboxRead: 1}
+			reader: func(t *testing.T) client.WithWatch {
+				return &failingReader{WithWatch: baseReader(t), failSandboxRead: 1}
 			},
 		},
 		{
 			name: "execution ServiceAccount read",
-			reader: func(t *testing.T) client.Reader {
-				return &failingReader{Reader: baseReader(t), failAccountRead: true}
+			reader: func(t *testing.T) client.WithWatch {
+				return &failingReader{WithWatch: baseReader(t), failAccountRead: true}
 			},
 		},
 	} {

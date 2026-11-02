@@ -135,12 +135,12 @@ Resume needs an environment, not a Session. Support Pod and VM targets that impl
 environment kinds may truthfully return an unsupported capability. The initial public names below
 are implementation contracts; they are not deployed callable operations yet.
 
-| Surface                                                           | Request                                                      | Response / role                                                                                                                                     |
-| ----------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `EnvironmentService.GetEnvironment` / `environments__get`         | Existing exact target; optional bounded readiness wait       | Extend the descriptor with explicit-resume eligibility, denial reason, current wake generation and an opaque resume token                           |
-| `EnvironmentLifecycle.ResumeEnvironment` / `environments__resume` | `{target: TargetHandle, resume_token: string}`               | Typed `REQUESTED`, `ALREADY_RUNNING`, or `STATE_CHANGED` result, target and observed generation; denied calls return structured `PERMISSION_DENIED` |
-| `agentplane environments resume`                                  | Same target/token contract                                   | Direct gRPC client with the same authorization; return acceptance separately from readiness                                                         |
-| `EnvironmentLifecycle.SuspendEnvironment`                         | Exact target; suspend retry/precondition contract for review | Proposed operator-authorized companion; no agent suspend permission follows from resume permission                                                  |
+| Surface                                                         | Request                                                      | Response / role                                                                                                                                     |
+| --------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `EnvironmentService.GetEnvironment` / `environments__get`       | Existing exact target; immediate snapshot                    | Extend the descriptor with explicit-resume eligibility, denial reason, current wake generation and an opaque resume token                           |
+| `EnvironmentService.ResumeEnvironment` / `environments__resume` | `{target: TargetHandle, resume_token: string}`               | Typed `REQUESTED`, `ALREADY_RUNNING`, or `STATE_CHANGED` result, target and observed generation; denied calls return structured `PERMISSION_DENIED` |
+| `agentplane environments resume`                                | Same target/token contract                                   | Direct gRPC client with the same authorization; return acceptance separately from readiness                                                         |
+| Future suspend API (unselected)                                 | Exact target; suspend retry/precondition contract for review | Proposed operator-authorized companion; no agent suspend permission follows from resume permission                                                  |
 
 The operator's resume facade becomes a client of the lifecycle owner; backend-required
 state changes cannot call the app. Explicit resume is the selected first implementation. A public
@@ -156,9 +156,13 @@ inventing a generation. The backend validates it with current policy. No model-s
 execution incarnation is required for resume. Existing optional execution-incarnation fencing
 remains a separate exec argument.
 
-`GetEnvironment` remains read-only. A readiness wait has a caller-supplied bounded duration and
-returns current observations on timeout; it never starts work. Reuse existing typed readiness,
-stop-stage, incarnation and source-error facts rather than treating Pod existence as readiness.
+`GetEnvironment` returns an immediate snapshot. `EnvironmentService.WatchEnvironment` sends an initial
+snapshot followed by current-state updates for the same exact target. Observation lives in the
+control plane and works while the environment is suspended. A readiness wait belongs in a CLI or
+Action/MCP adapter consuming that watch, with an explicit caller-supplied bound and a typed outcome
+plus the latest observation. The adapter is a follow-up to the service RPCs; get/watch never request
+resume or start work. Reuse existing typed readiness, stop-stage, incarnation and source-error facts
+rather than treating Pod existence as readiness.
 
 Routine resume may use the existing `basic` Action auto-approval convention only after backend
 eligibility is implemented. Auto-approval does not bypass target policy or grant environment

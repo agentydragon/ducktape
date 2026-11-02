@@ -6,14 +6,27 @@ listener. Its method paths are:
 
 - `/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments`
 - `/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment`
+- `/agentplane.sandboxes.environments.EnvironmentService/WatchEnvironment`
 
-Both methods accept direct TokenReview-verified ServiceAccount credentials and the explicitly
+All methods accept direct TokenReview-verified ServiceAccount credentials and the explicitly
 configured Actions delegation. Delegated calls use the existing Dispatcher audience and are opted
 into by exact full RPC method name. The handler checks the admitted effective caller's namespace,
 name, and immutable ServiceAccount UID, then returns only Sandboxes whose live, controller-owned
 execution ServiceAccount has that exact identity. A Sandbox's namespace/name or labels alone do
 not establish access. A target handle is the Sandbox namespace, name, and UID; get returns
 `NOT_FOUND` for an absent, replaced, deleting, or foreign target.
+
+`GetEnvironment` returns the current descriptor immediately. `WatchEnvironment` accepts the same
+exact target and sends a current descriptor followed by changed snapshots. It observes Kubernetes
+state even while the target is suspended, with no connection to its Runtime. Each snapshot repeats
+the live target and execution-account checks. Metadata changes and observation timestamps alone
+do not emit duplicate snapshots.
+
+The watch is a current-state subscription: intermediate states may be coalesced, and reconnection
+starts with a fresh snapshot. Target deletion/replacement or loss of access ends it with `NOT_FOUND`;
+a lost Kubernetes source ends it with `UNAVAILABLE`. Clients retain their last observation as stale
+and reconnect to observe again. Waiting for readiness is a client operation over this stream;
+neither get nor watch requests resume. CLI and Action/MCP wait adapters are separate work.
 
 List requires a limit from 1..100 and retains the paged request/response shape. The current
 Sandbox-owned account mapping resolves the effective caller's same-name candidate directly, so it
