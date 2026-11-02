@@ -76,6 +76,15 @@ publication and local completion hold the slot mutex, so a woken controller cons
 operation after its result is published. One process controller and registry serve separate Runtime
 and harness domains without combining their native containment or cleanup proofs.
 
+At the exact Sealing barrier, each Session closes admission for all new command IDs under the
+same lock as journal admission and sealing. The Session lifecycle status reports
+`AdmissionClosed` for its observed environment generation only after this live gate closes and
+accepted commands are settled.
+An exact-turn interrupt may enter during halt before that cutoff; an identical admitted command
+can return its original receipt afterward. A failed settlement or seal leaves the gate closed.
+The live gate reopens only after a successor journal reopen and its acknowledgement and seal
+publication succeed for the current Running incarnation; same-incarnation re-entry stays closed.
+
 External authentication, Sandbox/incarnation authorization and Gateway epochs remain in
 `runtime/control`. Direct Session admission uses that authority and Runtime's gate. `OpenSession`
 acknowledges a durable reservation, without promising process readiness. Model lookup occurs outside

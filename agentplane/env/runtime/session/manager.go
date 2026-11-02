@@ -310,18 +310,40 @@ func (m *Manager) Reopen(ctx context.Context, s *Session) error {
 	env := m.environment()
 	uid, known := env.IncarnationUID, env.IncarnationUID != ""
 	seal := s.journal.SealState()
-	mayReopen := known && !m.environment().Quiesced
+	mayReopen := known && !env.Quiesced
 	reopening := mayReopen && seal != nil && seal.IncarnationUID != uid
 	if reopening {
+		// Keep the local admission gate closed through the entire successor
+		// reopen. Runtime's global gate is closed here, but direct Session
+		// admission and lifecycle observation must remain consistent too.
+		s.admitMu.Lock()
+		if s.finalAdmissionClosed {
+			s.finalAdmissionRequireRevision = true
+			desired, found, err := lifecycle.ReadEnvironmentDesired(ctx, m.state)
+			if err != nil || !found || desired.Mode != lifecycle.Running || desired.IncarnationUID != uid || desired.Generation <= s.finalAdmissionGeneration || m.environment().Quiesced {
+				s.admitMu.Unlock()
+				if err != nil {
+					return err
+				}
+				return fmt.Errorf("Session %s successor reopen does not match the current environment revision", s.id)
+			}
+		}
+		s.finalAdmissionClosed = true
 		if err := s.journal.Reopen(ctx, uid); err != nil {
+			s.admitMu.Unlock()
 			return err
 		}
+		s.finalAdmissionReopenedUID = uid
+		s.admitMu.Unlock()
 	}
+	s.admitMu.Lock()
+	reopenPending := s.finalAdmissionReopenedUID == uid
+	s.admitMu.Unlock()
 	ack, err := m.store.ReadAcknowledgement(s.id)
 	if err != nil {
 		return err
 	}
-	writeAck := (reopening && ack == nil) || (ack != nil && ack.Sealed && s.journal.SealState() == nil)
+	writeAck := (reopenPending && ack == nil) || (ack != nil && ack.Sealed && s.journal.SealState() == nil)
 	if writeAck && ack != nil && ack.Cursor > s.journal.LastCursor() {
 		return fmt.Errorf("sealed acknowledgement cursor %d exceeds unsealed journal cursor %d", ack.Cursor, s.journal.LastCursor())
 	}
@@ -337,6 +359,40 @@ func (m *Manager) Reopen(ctx context.Context, s *Session) error {
 	if err := m.publishSeal(s.id, s.journal.SealState()); err != nil {
 		return err
 	}
+	// A failed acknowledgement or seal publication leaves the gate closed.
+	// A retry may see an already-unsealed journal; the recorded reopen UID
+	// identifies the successor that is allowed to complete that retry.
+	s.admitMu.Lock()
+	if s.finalAdmissionClosed {
+		if s.finalAdmissionReopenedUID != uid || s.journal.SealState() != nil {
+			s.admitMu.Unlock()
+			return fmt.Errorf("Session %s final admission cutoff has no completed successor reopen for %q", s.id, uid)
+		}
+		if s.finalAdmissionRequireRevision {
+			desired, found, err := lifecycle.ReadEnvironmentDesired(ctx, m.state)
+			if err != nil || !found || desired.Mode != lifecycle.Running || desired.IncarnationUID != uid || desired.Generation <= s.finalAdmissionGeneration || m.environment().Quiesced {
+				s.admitMu.Unlock()
+				if err != nil {
+					return err
+				}
+				return fmt.Errorf("Session %s successor reopen no longer matches the accepted environment revision", s.id)
+			}
+		}
+		// A live Session needs a new reconcile after its gate reopens. A newly
+		// loaded Session has not published its first snapshot yet.
+		if s.finalAdmissionRequireRevision {
+			if err := s.deps.signalOperation(s.id); err != nil {
+				s.admitMu.Unlock()
+				return err
+			}
+		}
+		s.finalAdmissionClosed = false
+		s.finalAdmissionSettled = false
+		s.finalAdmissionGeneration = 0
+		s.finalAdmissionReopenedUID = ""
+		s.finalAdmissionRequireRevision = false
+	}
+	s.admitMu.Unlock()
 	if reopening || writeAck {
 		m.changed()
 	}

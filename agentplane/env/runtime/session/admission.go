@@ -3,11 +3,30 @@ package session
 import (
 	"context"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+// closeAdmission is the per-Session final cutoff. Admission and sealing take
+// the same lock, so a racing command either commits before this boundary or
+// returns without creating a journal entry.
+func (s *Session) closeAdmission(generation uint64) {
+	s.admitMu.Lock()
+	if !s.finalAdmissionClosed {
+		s.finalAdmissionGeneration = generation
+	}
+	s.finalAdmissionClosed = true
+	s.admitMu.Unlock()
+}
+
+func (s *Session) admissionClosed() bool {
+	s.admitMu.Lock()
+	defer s.admitMu.Unlock()
+	return (s.finalAdmissionClosed && s.finalAdmissionSettled) || s.journal.SealState() != nil
+}
 
 func (s *Session) Admit(ctx context.Context, command *commandpb.Command, lameduck bool) (*eventlogpb.EventEntry, error) {
 	s.admitMu.Lock()
@@ -17,6 +36,12 @@ func (s *Session) Admit(ctx context.Context, command *commandpb.Command, lameduc
 		return nil, err
 	}
 	closed := s.executionClosed()
+	if old == nil && s.journal.SealState() != nil && command.GetInterruptTurn() != nil {
+		return nil, journal.ErrSealed
+	}
+	if old == nil && (s.finalAdmissionClosed || s.journal.SealState() != nil) {
+		return nil, status.Error(codes.Aborted, "this Session no longer admits new commands")
+	}
 	if old == nil && (lameduck || closed) && command.GetInterruptTurn() == nil {
 		return nil, status.Error(codes.Aborted, "this Sandbox is quiesced")
 	}
@@ -29,7 +54,7 @@ func (s *Session) Admit(ctx context.Context, command *commandpb.Command, lameduc
 		return nil, err
 	}
 	if old != nil {
-		if closed {
+		if closed || s.finalAdmissionClosed {
 			return entry, nil
 		}
 	}

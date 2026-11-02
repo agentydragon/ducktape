@@ -95,6 +95,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		current.EnvironmentGeneration = desiredState.Generation
 		current.Error = ""
 	}
+	current.AdmissionClosed = s.admissionClosed()
 	if op, done := s.takeOperation(&s.setupJob); done {
 		if current.SetupOperationID == "" {
 			current.SetupOperationID = op.ID()
@@ -271,15 +272,18 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		s.mu.Lock()
 		inspected := s.inspection == nil && len(s.reconciliations) == 0
 		s.mu.Unlock()
-		if current.Phase == Halted && current.ProcessStopped && inspected && outer.Stage >= lifecycle.Sealing && desiredState.SealUID != "" && s.journal.SealState() == nil {
-			if _, err := s.startOperation(&s.sealing, func(ctx context.Context) error {
-				if err := s.sealJournal(ctx); err != nil {
-					return err
+		if current.Phase == Halted && current.ProcessStopped && inspected && outer.Stage >= lifecycle.Sealing && desiredState.SealUID != "" {
+			s.closeAdmission(desiredState.Generation)
+			if s.journal.SealState() == nil {
+				if _, err := s.startOperation(&s.sealing, func(ctx context.Context) error {
+					if err := s.sealJournal(ctx); err != nil {
+						return err
+					}
+					return c.manager.publishSeal(s.id, s.journal.SealState())
+				}); err != nil {
+					current.Error = err.Error()
+					return write()
 				}
-				return c.manager.publishSeal(s.id, s.journal.SealState())
-			}); err != nil {
-				current.Error = err.Error()
-				return write()
 			}
 		}
 		return write()
