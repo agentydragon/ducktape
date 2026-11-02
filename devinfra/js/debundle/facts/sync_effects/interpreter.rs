@@ -6916,6 +6916,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         super::super::allocation_transfer::AllocationValue { values, judgment }
     }
 
+    /// Availability of a module-local declarative cell at this exact prefix.
+    /// Imported cells need a separate provider initialization proof; a global
+    /// name may resolve through an accessor on the host's global object.
+    pub(super) fn initialized_local_binding(&self, id: &Id) -> bool {
+        self.inputs.top_bindings.contains(id)
+            && !self.inputs.index.imported_bindings.contains(id)
+            && self.state.initialized_bindings.contains(id)
+    }
+
     fn evaluate_binding(&mut self, id: &Id, env: &Context) -> Values {
         if self.inputs.index.callback_factory_imports.contains(id) {
             return Values::from([AbstractValue::CallbackFactory]);

@@ -13,6 +13,7 @@ use swc_ecma_ast::*;
 enum Leaf {
     Primitive(PrimKinds),
     Function(u32),
+    Binding(Id),
 }
 
 /// Collected from the original owner before ValueExpr can erase syntax.
@@ -67,6 +68,7 @@ impl OriginalInitializer {
         }
         let initializer = declarator.init.as_deref()?;
         let leaf = match initializer.unwrap_parens() {
+            Expr::Ident(binding) => Leaf::Binding(binding.to_id()),
             Expr::Lit(literal) => Leaf::Primitive(match literal {
                 Lit::Str(_) => PrimKinds::STRING,
                 Lit::Num(_) => PrimKinds::NUMBER,
@@ -110,27 +112,40 @@ impl OriginalInitializer {
         self.owner == owner && self.binding == *binding
     }
 
+    pub(super) fn read_binding(&self) -> Option<&Id> {
+        match &self.leaf {
+            Leaf::Binding(binding) => Some(binding),
+            Leaf::Primitive(_) | Leaf::Function(_) => None,
+        }
+    }
+
     /// The dedicated root Evaluate transfer must actually finish with its
-    /// expected value. Generic lowering or an empty effect ledger is no proof.
+    /// expected value. `initialized_read` names a local declarative cell
+    /// checked before that transfer; imported and global reads cannot supply it.
+    /// Generic lowering or an empty effect ledger is no proof.
     pub(super) fn evaluated(
         &self,
         expression: &ValueExpr,
         values: &Values,
+        initialized_read: Option<&Id>,
     ) -> Option<EvaluatedInitializer> {
-        if values.len() != 1 {
+        if values.is_empty() || values.contains(&AbstractValue::Value(Value::Unavailable)) {
             return None;
         }
         let matches = match (&self.leaf, expression, values.first()?) {
+            (Leaf::Binding(expected), ValueExpr::Binding(lowered), _) => {
+                expected == lowered && initialized_read == Some(expected)
+            }
             (
                 Leaf::Primitive(expected),
                 ValueExpr::NonCallable(lowered),
                 AbstractValue::Value(Value::Prim(evaluated)),
-            ) => expected == lowered && expected == evaluated,
+            ) => values.len() == 1 && expected == lowered && expected == evaluated,
             (
                 Leaf::Function(expected),
                 ValueExpr::Alloc(Kind::Function, lowered),
                 AbstractValue::Closure(evaluated, _),
-            ) => expected == lowered && expected == evaluated,
+            ) => values.len() == 1 && expected == lowered && expected == evaluated,
             _ => false,
         };
         matches.then_some(EvaluatedInitializer {
