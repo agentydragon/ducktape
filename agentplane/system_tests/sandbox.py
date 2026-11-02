@@ -18,8 +18,8 @@ from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP
-from agentplane.proto import identity_pb2
 from agentplane.environments.v1 import environment_service_pb2
+from agentplane.proto import identity_pb2
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.tracing import tracer
 from util.testing.undeclared_outputs import undeclared_outputs_dir

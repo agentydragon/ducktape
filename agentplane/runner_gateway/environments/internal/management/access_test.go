@@ -13,8 +13,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/policy"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view"
 
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/protobuf/types/known/durationpb"
 	corev1 "k8s.io/api/core/v1"

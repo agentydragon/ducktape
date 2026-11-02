@@ -1,5 +1,8 @@
 import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
-import { CreateEnvironmentRequestSchema, type EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
+import {
+  CreateEnvironmentRequestSchema,
+  type EnvironmentDescriptor,
+} from "../../../environments/v1/environment_service_pb";
 import { clone, create as createProto } from "@bufbuild/protobuf";
 import { DurationSchema } from "@bufbuild/protobuf/wkt";
 import {
