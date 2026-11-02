@@ -15,7 +15,8 @@ from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from types import TracebackType
+from typing import Literal, Self
 from urllib.parse import urlencode
 
 from more_itertools import one
@@ -67,10 +68,7 @@ async def playwright_trace(
     if not _trace_enabled(outputs.case_id):
         yield
         return
-    outputs.output_dir.mkdir(parents=True, exist_ok=True)
-    # Playwright writes its trace to a path. Give every opening its own staging directory,
-    # then let the output writer atomically claim the shared case/checkpoint/role identity.
-    staging_dir = Path(tempfile.mkdtemp(prefix=".trace-stage-", dir=outputs.output_dir))
+    staging_dir = Path(tempfile.mkdtemp(prefix="visual-trace-"))
     trace_path = staging_dir / "trace.zip"
     retain_raw_trace = False
     try:
@@ -87,13 +85,23 @@ async def playwright_trace(
             except Exception as trace_error:
                 if active_error is None:
                     raise
-                retain_raw_trace = trace_path.is_file()
                 note = (
                     f"Could not save Playwright trace for {outputs.case_id!r}, checkpoint {checkpoint!r}: "
                     f"{trace_error!r}"
                 )
-                if retain_raw_trace:
-                    note += f"; raw trace retained at {trace_path}"
+                if trace_path.is_file():
+                    try:
+                        outputs.output_dir.mkdir(parents=True, exist_ok=True)
+                        recovery_dir = Path(tempfile.mkdtemp(prefix="trace-recovery-", dir=outputs.output_dir))
+                        recovery_path = recovery_dir / "trace.zip"
+                        shutil.copyfile(trace_path, recovery_path)
+                    except OSError as recovery_error:
+                        retain_raw_trace = True
+                        note += (
+                            f"; could not copy raw trace to test outputs: {recovery_error!r}; raw trace at {trace_path}"
+                        )
+                    else:
+                        note += f"; raw trace retained at {recovery_path}"
                 active_error.add_note(note)
     finally:
         if not retain_raw_trace:
@@ -196,7 +204,7 @@ def _script_literal(value: JsonValue) -> str:
 
 
 class VisualPage:
-    """An instrumented page; construct before navigating, including in real-server tests."""
+    """An instrumented page; enter before navigation to check errors for its whole lifetime."""
 
     def __init__(
         self,
@@ -215,6 +223,19 @@ class VisualPage:
         self.fence = fence
         self.devtools_viewport = devtools_viewport
         self.expected_font_family = expected_font_family
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: TracebackType | None
+    ) -> None:
+        try:
+            self.errors.assert_none(context=self.case_id)
+        except AssertionError as page_error:
+            if exc is None:
+                raise
+            exc.add_note(str(page_error))
 
     @property
     def output_dir(self) -> Path:
@@ -360,39 +381,39 @@ class VisualHarness:
                     url: path.read_text(encoding="utf-8") for url, path in config.served_documents.items()
                 },
             )
-            view = VisualPage(
+            with VisualPage(
                 page,
                 outputs=self.outputs,
                 title=config.title,
                 fence=fence,
                 devtools_viewport=devtools,
                 expected_font_family=config.expected_font_family,
-            )
-            await fence.install(page)
-            if config.inline_page is None:
-                parameters = query if query is not None else ({"page": name} if name is not None else {})
-                url = config.harness_url
-                if parameters:
-                    url += f"?{urlencode(parameters)}"
-                await page.goto(url, wait_until="domcontentloaded")
-            else:
-                html = inline_page_html(
-                    config.inline_page, bundle_script=config.bundle_script, window_globals=window_globals
-                )
-                if config.inline_page.url is None:
-                    await page.set_content(html, wait_until="load")
+            ) as view:
+                await fence.install(page)
+                if config.inline_page is None:
+                    parameters = query if query is not None else ({"page": name} if name is not None else {})
+                    url = config.harness_url
+                    if parameters:
+                        url += f"?{urlencode(parameters)}"
+                    await page.goto(url, wait_until="domcontentloaded")
                 else:
+                    html = inline_page_html(
+                        config.inline_page, bundle_script=config.bundle_script, window_globals=window_globals
+                    )
+                    if config.inline_page.url is None:
+                        await page.set_content(html, wait_until="load")
+                    else:
 
-                    async def fulfill(route: Route) -> None:
-                        await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=html)
+                        async def fulfill(route: Route) -> None:
+                            await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=html)
 
-                    await page.route(config.inline_page.url, fulfill)
-                    await page.goto(config.inline_page.url, wait_until="load")
-            try:
-                yield view
-            except Exception:
-                # Prefer a recorded crash to a secondary timeout waiting for the crashed component.
-                view.errors.assert_none(context=name or "visual page")
-                raise
-            else:
-                await view.check(context=name or "visual page")
+                        await page.route(config.inline_page.url, fulfill)
+                        await page.goto(config.inline_page.url, wait_until="load")
+                try:
+                    yield view
+                except Exception:
+                    # Prefer a recorded crash to a secondary timeout waiting for the crashed component.
+                    view.errors.assert_none(context=name or "visual page")
+                    raise
+                else:
+                    await view.check(context=name or "visual page")

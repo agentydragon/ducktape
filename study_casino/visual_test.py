@@ -60,12 +60,9 @@ async def view(
         playwright, viewport=viewport, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"
     ) as context:
         page = await context.new_page()
-        view = VisualPage(page, outputs=test_outputs, title="Study Casino views")
-        await page.goto(f"{casino_server}/{query}", wait_until="domcontentloaded", timeout=30_000)
-        try:
+        with VisualPage(page, outputs=test_outputs, title="Study Casino views") as view:
+            await page.goto(f"{casino_server}/{query}", wait_until="domcontentloaded", timeout=30_000)
             yield view
-        finally:
-            view.errors.assert_none(context=query)
 
 
 @pytest.fixture(scope="module")

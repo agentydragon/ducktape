@@ -9,10 +9,10 @@ from typing import cast
 
 import pytest
 import pytest_bazel
-from playwright.async_api import BrowserContext, Playwright, expect
+from playwright.async_api import BrowserContext, Page, Playwright, expect
 
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
-from util.testing.frontend_visual.capture import HarnessConfig, InlinePage, VisualHarness, playwright_trace
+from util.testing.frontend_visual.capture import HarnessConfig, InlinePage, VisualHarness, VisualPage, playwright_trace
 from util.testing.frontend_visual.viewports import Viewport
 from util.testing.output_records import output_key
 from util.testing.output_writer import BoundTestOutputs
@@ -34,6 +34,27 @@ def _record(output_dir: Path, *, role: str, checkpoint: str | None) -> dict[str,
 
 def _payload(output_dir: Path, *, role: str, checkpoint: str | None) -> Path:
     return output_dir / "test-outputs" / str(_record(output_dir, role=role, checkpoint=checkpoint)["path"])
+
+
+async def _crash_visual_page(page: Page, outputs: BoundTestOutputs, *, fail_test: bool = False) -> None:
+    with VisualPage(page, outputs=outputs, title="Example"):
+        async with page.expect_event("pageerror"):
+            await page.evaluate("() => setTimeout(() => { throw new Error('browser crash') }, 0)")
+        if fail_test:
+            raise ValueError("original failure")
+
+
+async def test_visual_page_checks_errors_after_last_capture(page: Page, tmp_path: Path) -> None:
+    outputs = BoundTestOutputs(tmp_path, "example::test")
+    with pytest.raises(AssertionError, match="browser crash"):
+        await _crash_visual_page(page, outputs)
+
+
+async def test_visual_page_preserves_existing_failure(page: Page, tmp_path: Path) -> None:
+    outputs = BoundTestOutputs(tmp_path, "example::test")
+    with pytest.raises(ValueError, match="original failure") as caught:
+        await _crash_visual_page(page, outputs, fail_test=True)
+    assert any("browser crash" in note for note in getattr(caught.value, "__notes__", []))
 
 
 @pytest.fixture
@@ -149,7 +170,7 @@ async def test_duplicate_trace_keeps_first_record(harness: VisualHarness, monkey
     assert first_trace.read_bytes() == original
     assert zipfile.is_zipfile(first_trace)
     assert len(_records(harness.output_dir)) == 1
-    assert not list(harness.output_dir.glob(".trace-stage-*"))
+    assert not list(harness.output_dir.glob("trace-recovery-*"))
 
 
 async def test_failed_case_retains_raw_trace_if_identity_is_claimed(
@@ -215,8 +236,9 @@ async def test_concurrent_traces_claim_identity_once(tmp_path: Path, monkeypatch
     assert isinstance(failures[0], FileExistsError)
     assert len(staging_paths) == 2
     assert staging_paths[0] != staging_paths[1]
+    assert all(not path.is_relative_to(outputs.output_dir) for path in staging_paths)
     assert all(not path.exists() for path in staging_paths)
-    assert not list(outputs.output_dir.glob(".trace-stage-*"))
+    assert not list(outputs.output_dir.glob("trace-recovery-*"))
     assert _records(outputs.output_dir) == [
         {
             "schema": "ducktape.test-output.v1",

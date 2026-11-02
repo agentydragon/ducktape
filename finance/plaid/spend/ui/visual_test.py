@@ -118,13 +118,15 @@ async def touch_page(playwright: Playwright, test_outputs: BoundTestOutputs) -> 
 
 
 @pytest.fixture
-def view(page: Page, test_outputs: BoundTestOutputs) -> VisualPage:
-    return VisualPage(page, outputs=test_outputs, title="Spend")
+def view(page: Page, test_outputs: BoundTestOutputs) -> Iterator[VisualPage]:
+    with VisualPage(page, outputs=test_outputs, title="Spend") as view:
+        yield view
 
 
 @pytest.fixture
-def touch_view(touch_page: Page, test_outputs: BoundTestOutputs) -> VisualPage:
-    return VisualPage(touch_page, outputs=test_outputs, title="Spend")
+def touch_view(touch_page: Page, test_outputs: BoundTestOutputs) -> Iterator[VisualPage]:
+    with VisualPage(touch_page, outputs=test_outputs, title="Spend") as view:
+        yield view
 
 
 async def _expand_accordion(control: Locator) -> None:

@@ -103,9 +103,9 @@ Custom deterministic-context fixtures can use `playwright_trace(context, outputs
 checkpoint)` with a `BoundTestOutputs` writer. Set `VISUAL_TRACE=0` to disable tracing. Set
 `VISUAL_TRACE_CAPTURE_NAME` to the exact full `case_id` to retain only that case.
 When a test opens multiple pages, give each a distinct `trace_checkpoint`. Trace files
-are staged separately for every opening, and a duplicate case/checkpoint trace fails
+are staged in temporary directories for every opening, and a duplicate case/checkpoint trace fails
 without replacing the first record. If a failing test also cannot publish its trace,
-the exception note names the retained raw trace.
+the raw trace is copied to undeclared outputs and the exception note names it.
 
 To trace one case, set `VISUAL_TRACE_CAPTURE_NAME` and filter the Bazel target:
 
@@ -127,8 +127,10 @@ where the page is served:
 
 - Mounted by a bundled harness: `VisualHarness.open()` or the `view` fixture
   (`util/testing/frontend_visual/fixtures.py`).
-- Served by a real server: `deterministic_browser_context(...)` plus `VisualPage(page, ...)`,
-  constructed before navigating.
+- Served by a real server: `deterministic_browser_context(...)` plus
+  `with VisualPage(page, ...) as view:`, entered before navigating. Exiting the context checks
+  for uncaught page errors, including errors after the last screenshot. If another error is
+  already propagating, the page error is attached to it as a note.
 - Native UI (GNOME shell, ...): `publish_output()` (`util/testing/output_writer.py`), as
   `util/testing/gnome.py` does.
 

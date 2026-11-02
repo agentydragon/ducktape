@@ -427,11 +427,8 @@ async def page(playwright: Playwright) -> AsyncIterator[Page]:
 
 @pytest.fixture
 async def view(page: Page, test_outputs: BoundTestOutputs) -> AsyncIterator[VisualPage]:
-    view = VisualPage(page, outputs=test_outputs, title="Augur pages")
-    try:
+    with VisualPage(page, outputs=test_outputs, title="Augur pages") as view:
         yield view
-    finally:
-        view.errors.assert_none(context=test_outputs.case_id)
 
 
 @pytest.fixture

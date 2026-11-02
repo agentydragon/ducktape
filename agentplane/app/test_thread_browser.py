@@ -7,7 +7,7 @@ fetch and its streams, rendering, and page reload are not replaced by the visual
 import asyncio
 import json
 import re
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -100,8 +100,9 @@ def dispatched_command_id(body: str) -> str:
 
 
 @pytest.fixture
-def review_view(page: Page, test_outputs: BoundTestOutputs) -> VisualPage:
-    return VisualPage(page, outputs=test_outputs, title="Agentplane Thread browser")
+def review_view(page: Page, test_outputs: BoundTestOutputs) -> Iterator[VisualPage]:
+    with VisualPage(page, outputs=test_outputs, title="Agentplane Thread browser") as view:
+        yield view
 
 
 @pytest.fixture

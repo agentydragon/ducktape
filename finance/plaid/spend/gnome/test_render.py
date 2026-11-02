@@ -253,18 +253,24 @@ def _allowance_menu_text(session: GnomeSession) -> str:
     return menu_text
 
 
-def _capture(
-    session: GnomeSession, output_dir: Path, geometry: tuple[int, int, int, int], name: str, outputs: BoundTestOutputs
-) -> None:
-    capture_panel_menu(
-        session,
-        output_dir,
-        geometry=geometry,
-        name=f"{name}.png",
-        title="Plaid Spend GNOME extension",
-        label=name.replace("_", " "),
-        outputs=outputs,
-    )
+@pytest.fixture
+def capture_menu(
+    render_session: tuple[GnomeSession, Path], test_outputs: BoundTestOutputs
+) -> Callable[[tuple[int, int, int, int], str], None]:
+    session, output_dir = render_session
+
+    def capture(geometry: tuple[int, int, int, int], name: str) -> None:
+        capture_panel_menu(
+            session,
+            output_dir,
+            geometry=geometry,
+            name=f"{name}.png",
+            title="Plaid Spend GNOME extension",
+            label=name.replace("_", " "),
+            outputs=test_outputs,
+        )
+
+    return capture
 
 
 @pytest.mark.parametrize(
@@ -272,15 +278,20 @@ def _capture(
     [("ready_two_cards", "$149 !"), ("authentication_required", "Sign in"), ("offline", "Offline")],
 )
 def test_card_status(
-    render_session: tuple[GnomeSession, Path], fixture_name: str, expected_label: str, test_outputs: BoundTestOutputs
+    render_session: tuple[GnomeSession, Path],
+    fixture_name: str,
+    expected_label: str,
+    capture_menu: Callable[[tuple[int, int, int, int], str], None],
 ) -> None:
-    session, output_dir = render_session
+    session, _ = render_session
     with _menu(session, fixture_name, expected_label) as geometry:
-        _capture(session, output_dir, geometry, fixture_name, test_outputs)
+        capture_menu(geometry, fixture_name)
 
 
-def test_allowance_paced(render_session: tuple[GnomeSession, Path], test_outputs: BoundTestOutputs) -> None:
-    session, output_dir = render_session
+def test_allowance_paced(
+    render_session: tuple[GnomeSession, Path], capture_menu: Callable[[tuple[int, int, int, int], str], None]
+) -> None:
+    session, _ = render_session
     with _menu(session, "allowance_paced", "Flex $200 !") as geometry:
         menu_text = _allowance_menu_text(session)
         assert "7d $28/day" in menu_text
@@ -291,30 +302,34 @@ def test_allowance_paced(render_session: tuple[GnomeSession, Path], test_outputs
         assert "View updated" not in menu_text
         assert "sustainability target" not in menu_text
         assert "past pace is not opening debt" not in menu_text
-        _capture(session, output_dir, geometry, "allowance_paced", test_outputs)
+        capture_menu(geometry, "allowance_paced")
 
 
-def test_allowance_warming(render_session: tuple[GnomeSession, Path], test_outputs: BoundTestOutputs) -> None:
-    session, output_dir = render_session
+def test_allowance_warming(
+    render_session: tuple[GnomeSession, Path], capture_menu: Callable[[tuple[int, int, int, int], str], None]
+) -> None:
+    session, _ = render_session
     with _menu(session, "allowance_warming", "Flex $700") as geometry:
         menu_text = _allowance_menu_text(session)
         assert "Pace warming up" in menu_text
         assert "7d n/a" in menu_text
         assert "Sync 59m ago" in menu_text
-        _capture(session, output_dir, geometry, "allowance_warming", test_outputs)
+        capture_menu(geometry, "allowance_warming")
 
 
-def test_allowance_exhausted(render_session: tuple[GnomeSession, Path], test_outputs: BoundTestOutputs) -> None:
-    session, output_dir = render_session
+def test_allowance_exhausted(
+    render_session: tuple[GnomeSession, Path], capture_menu: Callable[[tuple[int, int, int, int], str], None]
+) -> None:
+    session, _ = render_session
     with _menu(session, "allowance_exhausted", "Flex -<$1 !!") as geometry:
         assert "Exhausted" in _allowance_menu_text(session)
-        _capture(session, output_dir, geometry, "allowance_exhausted", test_outputs)
+        capture_menu(geometry, "allowance_exhausted")
 
 
 def test_desktop_retry_timing_ticks_and_stays_separate_from_server_sync(
-    render_session: tuple[GnomeSession, Path], test_outputs: BoundTestOutputs
+    render_session: tuple[GnomeSession, Path], capture_menu: Callable[[tuple[int, int, int, int], str], None]
 ) -> None:
-    session, output_dir = render_session
+    session, _ = render_session
     with _menu(session, "retrying", "Flex unavailable") as geometry:
         menu_text = _string_reply(session.call("GetMenuText"))
         assert "Last attempt 1m 15s ago" in menu_text
@@ -325,7 +340,7 @@ def test_desktop_retry_timing_ticks_and_stays_separate_from_server_sync(
         assert "Last attempt 1m 20s ago" in menu_text
         assert "Retry in 15s" in menu_text
         assert "Sync 1h ago" in menu_text
-        _capture(session, output_dir, geometry, "retrying", test_outputs)
+        capture_menu(geometry, "retrying")
 
 
 def test_authentication_required_has_no_retry_countdown(render_session: tuple[GnomeSession, Path]) -> None:
