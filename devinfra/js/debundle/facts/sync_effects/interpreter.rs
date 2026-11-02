@@ -969,7 +969,10 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             frame,
             reached,
             self.owner,
-            ExecutionOperation::OpaqueExecution,
+            ExecutionPrecisionLossReason::UnsupportedOperation {
+                operation: ExecutionOperation::OpaqueExecution,
+                ordered_field_read_refusal: None,
+            },
             span,
             self.outcome,
         );
