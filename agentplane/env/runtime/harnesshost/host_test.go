@@ -123,7 +123,7 @@ func TestOpenSessionRetryUsesPersistedSetupAfterSealPublicationFailure(t *testin
 		t.Fatalf("failed OpenSession published a Session input: found=%t, err=%v", found, err)
 	}
 	record, err := r.store.Read(request.SessionId)
-	if err != nil || record.SetupScript != script {
+	if err != nil || string(record.SetupScript) != script {
 		t.Fatalf("retained setup = %q, err=%v; want exact setup source", record.SetupScript, err)
 	}
 	wrongScript := "exit 1"
@@ -207,7 +207,7 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eventJournal, err := journal.Open(context.Background(), filepath.Join(directory, "journal.sqlite"), record.EventSourceID)
+	eventJournal, err := journal.Open(context.Background(), filepath.Join(directory, "journal.sqlite"), record.EventSourceId)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("retained setup source replayed after restart: stat marker err=%v", err)
 	}
-	eventJournal, err = journal.Open(context.Background(), filepath.Join(directory, "journal.sqlite"), record.EventSourceID)
+	eventJournal, err = journal.Open(context.Background(), filepath.Join(directory, "journal.sqlite"), record.EventSourceId)
 	if err != nil {
 		t.Fatal(err)
 	}

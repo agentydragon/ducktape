@@ -9,7 +9,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
 	persistencepb "github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate/persistentpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -103,45 +102,9 @@ func ReadAcknowledgement(ctx context.Context, reader controller.Reader, id strin
 	return Acknowledgement{Cursor: value.TypedSpec().Value.Cursor, Sealed: value.TypedSpec().Value.Sealed}, true, nil
 }
 
-func SessionResource(id string, record Record) *SessionRecord {
+func SessionResource(id string, record *Record) *SessionRecord {
 	return typed.NewResource[sessionSpec, sessionRecordExtension](resource.NewMetadata(lifecycle.Namespace, SessionRecordType, id, resource.VersionUndefined),
-		resourcepb.NewResourceSpec(recordToProto(record)))
-}
-
-func recordToProto(record Record) *persistencepb.SessionRecordSpec {
-	value := &persistencepb.SessionRecordSpec{
-		Harness: record.Harness, Cwd: record.CWD, Model: record.Model,
-		ReasoningEffort: record.ReasoningEffort, Instructions: record.Instructions, SetupScript: []byte(record.SetupScript),
-		EventSourceId: record.EventSourceID, ExecutionPrincipal: record.ExecutionPrincipal,
-	}
-	if record.TotalContextBudgetTokens != nil {
-		budget := int64(*record.TotalContextBudgetTokens)
-		value.TotalContextBudgetTokens = &budget
-	}
-	if record.NativeSessionID != nil {
-		native := *record.NativeSessionID
-		value.NativeSessionId = &native
-	}
-	return value
-}
-
-func recordFromProto(value *persistencepb.SessionRecordSpec) (Record, error) {
-	if value == nil {
-		return Record{}, errors.New("missing persisted Session record")
-	}
-	record := Record{
-		Harness: value.Harness, CWD: value.Cwd, Model: value.Model, ReasoningEffort: value.ReasoningEffort,
-		Instructions: value.Instructions, SetupScript: string(value.SetupScript), EventSourceID: value.EventSourceId,
-		NativeSessionID: value.NativeSessionId, ExecutionPrincipal: value.ExecutionPrincipal,
-	}
-	if value.TotalContextBudgetTokens != nil {
-		budget := int(*value.TotalContextBudgetTokens)
-		if int64(budget) != *value.TotalContextBudgetTokens {
-			return Record{}, errors.New("persisted context budget overflows int")
-		}
-		record.TotalContextBudgetTokens = &budget
-	}
-	return record, validateRecord(record)
+		resourcepb.NewResourceSpec(proto.Clone(record).(*Record)))
 }
 
 func validateSessionResource(value resource.Resource) error {
@@ -152,31 +115,24 @@ func validateSessionResource(value resource.Resource) error {
 	if _, err := ValidateSessionID(entry.Metadata().ID()); err != nil {
 		return err
 	}
-	_, err := recordFromProto(entry.TypedSpec().Value)
-	return err
+	return validateRecord(entry.TypedSpec().Value)
 }
 
-func (r Record) DeepCopy() Record {
-	if r.TotalContextBudgetTokens != nil {
-		value := *r.TotalContextBudgetTokens
-		r.TotalContextBudgetTokens = &value
+func validateRecord(r *Record) error {
+	if r == nil {
+		return errors.New("missing persisted Session record")
 	}
-	if r.NativeSessionID != nil {
-		value := *r.NativeSessionID
-		r.NativeSessionID = &value
-	}
-	if r.ExecutionPrincipal != nil {
-		r.ExecutionPrincipal = proto.Clone(r.ExecutionPrincipal).(*delegationpb.ServiceAccountIdentity)
-	}
-	return r
-}
-
-func validateRecord(r Record) error {
 	if r.Harness != sessionpb.Harness_HARNESS_CLAUDE && r.Harness != sessionpb.Harness_HARNESS_CODEX {
 		return fmt.Errorf("invalid persisted harness value %d", r.Harness)
 	}
-	if r.TotalContextBudgetTokens != nil && *r.TotalContextBudgetTokens <= 0 {
-		return errors.New("total context budget must be positive")
+	if r.TotalContextBudgetTokens != nil {
+		budget := *r.TotalContextBudgetTokens
+		if budget <= 0 {
+			return errors.New("total context budget must be positive")
+		}
+		if int64(int(budget)) != budget {
+			return errors.New("persisted context budget overflows int")
+		}
 	}
 	if p := r.ExecutionPrincipal; p != nil && (p.GetAccount().GetNamespace() == "" || p.GetAccount().GetName() == "" || p.GetUid() == "") {
 		return errors.New("invalid persisted execution principal")
@@ -208,28 +164,32 @@ func (s *Store) Exists(id string) (bool, error) {
 	return err == nil, err
 }
 
-func (s *Store) Read(id string) (Record, error) {
+func (s *Store) Read(id string) (*Record, error) {
 	if s.state == nil {
-		return Record{}, errors.New("Session COSI state is required")
+		return nil, errors.New("Session COSI state is required")
 	}
 	if _, err := ValidateSessionID(id); err != nil {
-		return Record{}, err
+		return nil, err
 	}
-	value, err := safe.StateGet[*SessionRecord](context.Background(), s.state, SessionResource(id, Record{}).Metadata())
+	value, err := safe.StateGet[*SessionRecord](context.Background(), s.state, SessionResource(id, &Record{}).Metadata())
 	if err != nil {
-		return Record{}, err
+		return nil, err
 	}
-	record, err := recordFromProto(value.TypedSpec().Value)
-	return record.DeepCopy(), err
+	record := value.TypedSpec().Value
+	if err := validateRecord(record); err != nil {
+		return nil, err
+	}
+	return proto.Clone(record).(*Record), nil
 }
 
-func (s *Store) Write(id string, record Record) error {
+func (s *Store) Write(id string, record *Record) error {
 	if s.state == nil {
 		return errors.New("Session COSI state is required")
 	}
 	if err := validateRecord(record); err != nil {
 		return err
 	}
+	record = proto.Clone(record).(*Record)
 	directory, err := s.Directory(id)
 	if err != nil {
 		return err
@@ -240,7 +200,7 @@ func (s *Store) Write(id string, record Record) error {
 		return err
 	}
 	return safe.StateModify(context.Background(), s.state, SessionResource(id, record), func(value *SessionRecord) error {
-		value.TypedSpec().Value = recordToProto(record.DeepCopy())
+		value.TypedSpec().Value = proto.Clone(record).(*Record)
 		return nil
 	}, state.WithUpdateOwner(lifecycle.HostOwner))
 }
@@ -252,16 +212,16 @@ func (s *Store) update(id string, change func(*Record)) error {
 	if _, err := ValidateSessionID(id); err != nil {
 		return err
 	}
-	_, err := safe.StateUpdateWithConflicts(context.Background(), s.state, SessionResource(id, Record{}).Metadata(), func(value *SessionRecord) error {
-		record, err := recordFromProto(value.TypedSpec().Value)
-		if err != nil {
+	_, err := safe.StateUpdateWithConflicts(context.Background(), s.state, SessionResource(id, &Record{}).Metadata(), func(value *SessionRecord) error {
+		if err := validateRecord(value.TypedSpec().Value); err != nil {
 			return err
 		}
-		change(&record)
+		record := proto.Clone(value.TypedSpec().Value).(*Record)
+		change(record)
 		if err := validateRecord(record); err != nil {
 			return err
 		}
-		value.TypedSpec().Value = recordToProto(record)
+		value.TypedSpec().Value = record
 		return nil
 	}, state.WithUpdateOwner(lifecycle.HostOwner))
 	if err != nil {
@@ -279,5 +239,5 @@ func (s *Store) UpdateReasoningEffort(id, effort string) error {
 }
 
 func (s *Store) UpdateNativeSessionID(id, native string) error {
-	return s.update(id, func(record *Record) { record.NativeSessionID = &native })
+	return s.update(id, func(record *Record) { record.NativeSessionId = &native })
 }

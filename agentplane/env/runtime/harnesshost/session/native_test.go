@@ -50,7 +50,7 @@ func TestStaleNativeCodexCompletionRetainsFrameAndSuccessor(t *testing.T) {
 		setLifecycleStatusReady(t, m, s)
 		threadID := "thread-1"
 		s.mu.Lock()
-		s.record.NativeSessionID = &threadID
+		s.record.NativeSessionId = &threadID
 		s.mu.Unlock()
 		ptr := componentResource(s.id, LifecycleStatus{}).Metadata()
 		if _, err := safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[LifecycleStatus, componentExtension[LifecycleStatus]]) error {
@@ -298,8 +298,8 @@ func TestRetainedWriteFailureStopsNativeFrameAndPreservesCachedRecord(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	record := retained.Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, CWD: "/workspace", Model: "old-model", EventSourceID: "source"}
-	s := newSession(sessionDependencies{ctx: ctx, state: resources, store: store, changed: func() {}}, "session", &record, journal)
+	record := &retained.Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", Model: "old-model", EventSourceId: "source"}
+	s := newSession(sessionDependencies{ctx: ctx, state: resources, store: store, changed: func() {}}, "session", record, journal)
 	command := &commandpb.Command{CommandId: "change-model", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}
 	if _, _, err := journal.Admit(ctx, command, ""); err != nil {
 		t.Fatal(err)
@@ -746,7 +746,7 @@ func TestConfirmationReplayKeepsTerminalReceipt(t *testing.T) {
 		t.Fatal(err)
 	}
 	deps := sessionDependencies{environmentState: func() Environment { return Environment{IncarnationUID: "test-incarnation"} }, ctx: ctx, state: resources, store: store, publish: func(*Session, bool) {}, changed: func() {}, fail: func(err error) { t.Error(err) }}
-	s := newSession(deps, "session-1", &record, journal)
+	s := newSession(deps, "session-1", record, journal)
 	command := &commandpb.Command{CommandId: "input-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}
 	if _, _, err := journal.Admit(ctx, command, ""); err != nil {
 		t.Fatal(err)

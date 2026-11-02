@@ -250,7 +250,7 @@ func TestReopenRetryKeepsCOSIIngressAcknowledgementAfterJournalReopened(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	sealedJournal, err := journal.Open(ctx, filepath.Join(directory, "journal.sqlite"), record.EventSourceID)
+	sealedJournal, err := journal.Open(ctx, filepath.Join(directory, "journal.sqlite"), record.EventSourceId)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,7 +371,7 @@ func TestCodexExitBeforeProcessInstall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j, err := journal.Open(ctx, filepath.Join(directory, "journal.sqlite"), record.EventSourceID)
+	j, err := journal.Open(ctx, filepath.Join(directory, "journal.sqlite"), record.EventSourceId)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +380,7 @@ func TestCodexExitBeforeProcessInstall(t *testing.T) {
 		environmentState: func() Environment { return Environment{IncarnationUID: "test-incarnation"} },
 		ctx:              ctx, state: resources, store: store,
 		changed: func() {}, fail: func(err error) { t.Error(err) }, publish: func(*Session, bool) {},
-	}, "codex-session", &record, j)
+	}, "codex-session", record, j)
 	attachment := s.appServerAttachment()
 	s.mu.Lock()
 	exitEpoch := s.codexExitEpoch

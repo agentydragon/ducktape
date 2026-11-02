@@ -86,10 +86,10 @@ func (r *Host) OpenSession(ctx context.Context, request *environmentruntimepb.Op
 		if err != nil {
 			return nil, rpcError(err)
 		}
-		if !proto.Equal(record.Spec(), spec) {
+		if !proto.Equal(retained.SessionSpec(record), spec) {
 			return nil, status.Errorf(codes.AlreadyExists, "session %s exists with a different spec", request.GetSessionId())
 		}
-		if request.SetupScript != nil && !record.MatchesSetupScript(request.GetSetupScript()) {
+		if request.SetupScript != nil && !retained.MatchesSetupScript(record, request.GetSetupScript()) {
 			return nil, status.Error(codes.AlreadyExists, "session exists with a different setup script")
 		}
 		if !compatibleExecutionPrincipal(record.ExecutionPrincipal, request.GetExecutionPrincipal()) {

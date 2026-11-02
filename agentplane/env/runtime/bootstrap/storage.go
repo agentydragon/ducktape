@@ -29,9 +29,9 @@ func init() {
 	}
 }
 
-func SelectionResourceValue(value Selection) *SelectionResource {
+func SelectionResourceValue(script string) *SelectionResource {
 	return typed.NewResource[selectionSpec, selectionExtension](resource.NewMetadata(lifecycle.Namespace, SelectionType, ResourceID, resource.VersionUndefined),
-		resourcepb.NewResourceSpec(&persistencepb.BootstrapSelectionSpec{Script: []byte(value.Script)}))
+		resourcepb.NewResourceSpec(&persistencepb.BootstrapSelectionSpec{Script: []byte(script)}))
 }
 
 func SelectionRegistration() cosistate.Registration {

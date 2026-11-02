@@ -31,11 +31,6 @@ type Request struct {
 	Requested bool
 }
 
-// Selection is the immutable script committed before its one execution attempt.
-type Selection struct {
-	Script string `json:"script"`
-}
-
 type Phase uint8
 
 const (
@@ -93,26 +88,26 @@ func ReadStatus(ctx context.Context, reader controller.Reader) (Status, bool, er
 	return componentRead[Status](ctx, reader, ResourceID)
 }
 
-func ReadSelection(ctx context.Context, reader controller.Reader) (Selection, bool, error) {
-	value, err := safe.ReaderGet[*SelectionResource](ctx, reader, SelectionResourceValue(Selection{}).Metadata())
+func ReadSelection(ctx context.Context, reader controller.Reader) (string, bool, error) {
+	value, err := safe.ReaderGet[*SelectionResource](ctx, reader, SelectionResourceValue("").Metadata())
 	if state.IsNotFoundError(err) {
-		return Selection{}, false, nil
+		return "", false, nil
 	}
 	if err != nil {
-		return Selection{}, false, err
+		return "", false, err
 	}
 	if err := validateScript(string(value.TypedSpec().Value.Script)); err != nil {
-		return Selection{}, false, err
+		return "", false, err
 	}
-	return Selection{Script: string(value.TypedSpec().Value.Script)}, true, nil
+	return string(value.TypedSpec().Value.Script), true, nil
 }
 
-func publishSelection(ctx context.Context, writer state.State, value Selection) error {
-	if err := validateScript(value.Script); err != nil {
+func publishSelection(ctx context.Context, writer state.State, script string) error {
+	if err := validateScript(script); err != nil {
 		return err
 	}
-	return safe.StateModify(ctx, writer, SelectionResourceValue(value), func(current *SelectionResource) error {
-		current.TypedSpec().Value = &persistencepb.BootstrapSelectionSpec{Script: []byte(value.Script)}
+	return safe.StateModify(ctx, writer, SelectionResourceValue(script), func(current *SelectionResource) error {
+		current.TypedSpec().Value = &persistencepb.BootstrapSelectionSpec{Script: []byte(script)}
 		return nil
 	}, state.WithUpdateOwner(HostOwner))
 }

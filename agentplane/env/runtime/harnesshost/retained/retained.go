@@ -10,8 +10,8 @@ import (
 	"sync"
 	"syscall"
 
+	persistencepb "github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate/persistentpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -132,47 +132,41 @@ func WriteDurable(path string, data []byte) error {
 }
 
 // Record is the durable Session reservation and native recovery identity.
-type Record struct {
-	Harness                  sessionpb.Harness
-	CWD                      string
-	Model                    string
-	TotalContextBudgetTokens *int
-	ReasoningEffort          string
-	Instructions             string
-	SetupScript              string
-	EventSourceID            string
-	NativeSessionID          *string
-	ExecutionPrincipal       *delegationpb.ServiceAccountIdentity
-}
+// The generated protobuf spec is the sole in-memory and on-disk representation.
+type Record = persistencepb.SessionRecordSpec
 
-func NewRecord(spec *sessionpb.SessionSpec, setupScript string, totalContextBudgetTokens *int) (Record, error) {
+func NewRecord(spec *sessionpb.SessionSpec, setupScript string, totalContextBudgetTokens *int) (*Record, error) {
 	if spec == nil {
-		return Record{}, errors.New("session spec is required")
+		return nil, errors.New("session spec is required")
 	}
 	if totalContextBudgetTokens != nil && *totalContextBudgetTokens <= 0 {
-		return Record{}, errors.New("total context budget must be positive")
+		return nil, errors.New("total context budget must be positive")
 	}
-	record := Record{
-		Harness: spec.GetHarness(), CWD: spec.GetCwd(), Model: spec.GetModel(),
-		TotalContextBudgetTokens: totalContextBudgetTokens, ReasoningEffort: spec.GetReasoningEffort(),
-		Instructions: spec.GetInstructions(), SetupScript: setupScript, EventSourceID: uuid.NewString(),
+	record := &Record{
+		Harness: spec.GetHarness(), Cwd: spec.GetCwd(), Model: spec.GetModel(),
+		ReasoningEffort: spec.GetReasoningEffort(), Instructions: spec.GetInstructions(),
+		SetupScript: []byte(setupScript), EventSourceId: uuid.NewString(),
+	}
+	if totalContextBudgetTokens != nil {
+		budget := int64(*totalContextBudgetTokens)
+		record.TotalContextBudgetTokens = &budget
 	}
 	return record, nil
 }
 
 // MatchesSetupScript compares a supplied script against the retained source.
 // Callers should skip this check when the OpenSession request omits setup_script.
-func (r Record) MatchesSetupScript(script string) bool {
-	return r.SetupScript == script
+func MatchesSetupScript(record *Record, script string) bool {
+	return string(record.SetupScript) == script
 }
 
 // HasSetupScript reports whether a setup source was retained.
-func (r Record) HasSetupScript() bool { return r.SetupScript != "" }
+func HasSetupScript(record *Record) bool { return len(record.SetupScript) != 0 }
 
-func (r Record) Spec() *sessionpb.SessionSpec {
+func SessionSpec(record *Record) *sessionpb.SessionSpec {
 	return &sessionpb.SessionSpec{
-		Harness: r.Harness, Cwd: r.CWD, Model: r.Model,
-		ReasoningEffort: r.ReasoningEffort, Instructions: r.Instructions,
+		Harness: record.Harness, Cwd: record.Cwd, Model: record.Model,
+		ReasoningEffort: record.ReasoningEffort, Instructions: record.Instructions,
 	}
 }
 
@@ -180,8 +174,6 @@ type Acknowledgement struct {
 	Cursor uint64
 	Sealed bool
 }
-
-func (acknowledgement Acknowledgement) DeepCopy() Acknowledgement { return acknowledgement }
 
 // Store owns Session directories and the shared COSI state for Session records
 // and ingress acknowledgements.

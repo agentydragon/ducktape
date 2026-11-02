@@ -136,14 +136,14 @@ func (m *Manager) loadLocked(ctx context.Context, id string, recoverRetained boo
 	if err != nil {
 		return nil, err
 	}
-	if _, err := workspace.Resolve(record.CWD, m.workspaceRoot); err != nil {
+	if _, err := workspace.Resolve(record.Cwd, m.workspaceRoot); err != nil {
 		return nil, err
 	}
 	directory, err := m.store.Directory(id)
 	if err != nil {
 		return nil, err
 	}
-	journal, err := journal.Open(ctx, filepath.Join(directory, "journal.sqlite"), record.EventSourceID)
+	journal, err := journal.Open(ctx, filepath.Join(directory, "journal.sqlite"), record.EventSourceId)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +155,7 @@ func (m *Manager) loadLocked(ctx context.Context, id string, recoverRetained boo
 	}()
 	deps := m.dependencies
 	deps.destination = m.destination(id)
-	s := newSession(deps, id, &record, journal)
+	s := newSession(deps, id, record, journal)
 	s.loading = true
 	if err := s.load(ctx); err != nil {
 		return nil, err

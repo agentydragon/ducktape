@@ -112,7 +112,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	}
 	if input.SetupRequested && current.SetupOperationID == "" {
 		s.mu.Lock()
-		script, job := s.record.SetupScript, s.setupJob
+		script, job := string(s.record.SetupScript), s.setupJob
 		s.mu.Unlock()
 		if script != "" && job == nil && input.Setup == sessionpb.SetupState_SETUP_STATE_RUNNING {
 			op, startErr := s.startOperation(&s.setupJob, func(ctx context.Context) error { return s.runSetup(ctx, script) })
@@ -311,7 +311,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			return err
 		}
 		s.mu.Lock()
-		resuming := s.record.NativeSessionID != nil && started
+		resuming := s.record.NativeSessionId != nil && started
 		s.mu.Unlock()
 		current.Phase, current.ObservedDemand, current.Resuming = Preparing, input.Demand, resuming
 		current.ProcessStopped = false

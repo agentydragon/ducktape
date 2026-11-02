@@ -355,7 +355,7 @@ func (h *Host) runBootstrap(ctx context.Context) error {
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		if err := publishSelection(ctx, h.state, Selection{Script: *script}); err != nil {
+		if err := publishSelection(ctx, h.state, *script); err != nil {
 			return err
 		}
 		selected, found, err = ReadSelection(ctx, h.state)
@@ -363,7 +363,7 @@ func (h *Host) runBootstrap(ctx context.Context) error {
 			return errors.Join(err, errors.New("durable bootstrap selection unavailable after publication"))
 		}
 	}
-	if selected.Script != *script {
+	if selected != *script {
 		return status.Error(codes.AlreadyExists, selectionConflict)
 	}
 	log, err := OpenLog(filepath.Join(root, "events.jsonl"))
@@ -384,7 +384,7 @@ func (h *Host) runBootstrap(ctx context.Context) error {
 	if cwd == "" {
 		cwd = h.config.StateDir
 	}
-	code, err := h.scripts.Run(ctx, ControllerName, selected.Script, cwd, func(stdout bool, data []byte) error {
+	code, err := h.scripts.Run(ctx, ControllerName, selected, cwd, func(stdout bool, data []byte) error {
 		stream := sessionpb.InitializationStream_INITIALIZATION_STREAM_STDERR
 		if stdout {
 			stream = sessionpb.InitializationStream_INITIALIZATION_STREAM_STDOUT
