@@ -112,8 +112,8 @@ type Runtime struct {
 	lifecycleInitErr         error
 	lifecycleContext         context.Context
 	lifecycleWorkers         sync.WaitGroup
-	closeCoordinator         *runtimeCloseController
-	closeControllerErr       error
+	lifecycleCoordinator     *runtimeLifecycleController
+	lifecycleControllerErr   error
 	processes                *supervision.Host
 	scripts                  *scripts.Runner
 	bootstrapHost            *bootstrap.Host
@@ -285,8 +285,8 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	if err := engine.RegisterQController(r.bootstrapHost.Controller()); err != nil {
 		return err
 	}
-	r.closeCoordinator = &runtimeCloseController{r: r, transition: runtimeTransitionSequence{r: r}}
-	if err := engine.RegisterController(r.closeCoordinator); err != nil {
+	r.lifecycleCoordinator = &runtimeLifecycleController{r: r, transition: runtimeTransitionSequence{r: r}}
+	if err := engine.RegisterController(r.lifecycleCoordinator); err != nil {
 		return err
 	}
 	if err := engine.RegisterController(&hostReportObserver{runtime: r}); err != nil {
@@ -394,7 +394,7 @@ func (r *Runtime) finishClose() error {
 	for {
 		r.mu.Lock()
 		changed := r.changes
-		controllerErr := r.closeControllerErr
+		controllerErr := r.lifecycleControllerErr
 		r.mu.Unlock()
 		if controllerErr != nil {
 			return controllerErr
@@ -436,7 +436,7 @@ func (r *Runtime) joinClose() error {
 	if lifecycleRunErr != nil {
 		return lifecycleRunErr
 	}
-	hostRunErr := r.closeCoordinator.plan.hostRunErr
+	hostRunErr := r.lifecycleCoordinator.plan.hostRunErr
 	r.mu.Lock()
 	host := r.hostLifetime
 	r.mu.Unlock()
@@ -631,11 +631,11 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 		if err != nil {
 			return nil, err
 		}
-		bootstrapState, runtimeFound, err := bootstrap.ReadRuntime(context.Background(), r.lifecycleState)
+		bootstrapStatus, statusFound, err := bootstrap.ReadStatus(context.Background(), r.lifecycleState)
 		if err != nil {
 			return nil, err
 		}
-		bootstrapActive = bootstrapIsActive(input, inputFound, bootstrapState, runtimeFound)
+		bootstrapActive = bootstrapIsActive(input, inputFound, bootstrapStatus, statusFound)
 		if bootstrapActive {
 			// A requested input is busy even before the lifecycle controller has
 			// published Running. Do not expose its idle Host facts in that gap.
@@ -643,8 +643,8 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 			if !hasAutosuspendReason(facts.AutosuspendBlockers, "Bootstrap") {
 				facts.AutosuspendBlockers = append(facts.AutosuspendBlockers, &sandboxpb.AutosuspendBlocker{Reason: "Bootstrap"})
 			}
-		} else if runtimeFound {
-			switch bootstrapState.Phase {
+		} else if statusFound {
+			switch bootstrapStatus.Phase {
 			case bootstrap.Succeeded:
 				facts.Bootstrap = environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_SUCCEEDED
 			case bootstrap.Failed:
@@ -689,9 +689,9 @@ func hasAutosuspendReason(blockers []*sandboxpb.AutosuspendBlocker, reason strin
 	return false
 }
 
-func bootstrapIsActive(input bootstrap.Input, inputFound bool, state bootstrap.Runtime, stateFound bool) bool {
-	terminal := stateFound && (state.Phase == bootstrap.Succeeded || state.Phase == bootstrap.Failed || state.Phase == bootstrap.Interrupted)
-	return (stateFound && state.Phase == bootstrap.Running) || (inputFound && input.Requested && !terminal)
+func bootstrapIsActive(input bootstrap.Input, inputFound bool, status bootstrap.Status, statusFound bool) bool {
+	terminal := statusFound && (status.Phase == bootstrap.Succeeded || status.Phase == bootstrap.Failed || status.Phase == bootstrap.Interrupted)
+	return (statusFound && status.Phase == bootstrap.Running) || (inputFound && input.Requested && !terminal)
 }
 
 func (r *Runtime) isClosing() bool {

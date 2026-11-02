@@ -91,7 +91,7 @@ func (r *Runtime) requestTransition(ctx context.Context, kind lifecycle.RuntimeT
 	for {
 		r.mu.Lock()
 		changed := r.changes
-		controllerErr := r.closeControllerErr
+		controllerErr := r.lifecycleControllerErr
 		r.mu.Unlock()
 		if controllerErr != nil {
 			return controllerErr

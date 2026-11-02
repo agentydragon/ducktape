@@ -31,7 +31,7 @@ func TestSessionControllerUsesConfiguredReconcileConcurrency(t *testing.T) {
 	}
 }
 
-func TestSessionControllerMapsAppServerRuntimeToCodexSessions(t *testing.T) {
+func TestSessionControllerMapsAppServerStatusToCodexSessions(t *testing.T) {
 	resources := state.WrapCore(namespaced.NewState(inmem.Build))
 	for id, harness := range map[string]sessionpb.Harness{
 		"claude-session": sessionpb.Harness_HARNESS_CLAUDE,
@@ -43,13 +43,13 @@ func TestSessionControllerMapsAppServerRuntimeToCodexSessions(t *testing.T) {
 	}
 	c := &sessionLifecycleController{manager: &Manager{}}
 	ctx := context.Background()
-	input := reducedLifecycleMetadata{Pointer: resource.NewMetadata(runnerlifecycle.Namespace, codexappserver.RuntimeType, codexappserver.ResourceID, resource.VersionUndefined)}
+	input := reducedLifecycleMetadata{Pointer: resource.NewMetadata(runnerlifecycle.Namespace, codexappserver.StatusType, codexappserver.ResourceID, resource.VersionUndefined)}
 	mapped, err := c.MapInput(ctx, nil, sessionControllerTestRuntime{state: resources}, input)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got, want := pointerIDs(mapped), []string{"codex-session"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("app-server runtime mappings = %v, want %v", got, want)
+		t.Fatalf("app-server status mappings = %v, want %v", got, want)
 	}
 
 	input.Pointer = resource.NewMetadata(runnerlifecycle.Namespace, runnerlifecycle.AggregateStatusType, runnerlifecycle.ResourceID, resource.VersionUndefined)

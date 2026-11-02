@@ -211,14 +211,14 @@ func (*aggregateController) Reconcile(ctx context.Context, _ *zap.Logger, r cont
 	return err
 }
 
-func TestDesiredChangeWakesHostWithoutRuntimeWrite(t *testing.T) {
-	initialRuntimeObserved := make(chan struct{})
+func TestDesiredChangeWakesHostWithoutStatusWrite(t *testing.T) {
+	initialStatusObserved := make(chan struct{})
 	var observedOnce sync.Once
-	f := newFixtureWithOnChange(t, func() { observedOnce.Do(func() { close(initialRuntimeObserved) }) })
+	f := newFixtureWithOnChange(t, func() { observedOnce.Do(func() { close(initialStatusObserved) }) })
 	select {
-	case <-initialRuntimeObserved:
+	case <-initialStatusObserved:
 	case <-time.After(5 * time.Second):
-		t.Fatal("initial app-server runtime was not observed")
+		t.Fatal("initial app-server status was not observed")
 	}
 	f.host.mu.Lock()
 	f.host.initializing = oneoff.New(f.ctx)
@@ -255,24 +255,24 @@ func TestDesiredChangeWakesHostWithoutRuntimeWrite(t *testing.T) {
 			t.Fatalf("host wait after Quiesce = %v", err)
 		}
 	case <-ctx.Done():
-		t.Fatal("host missed Desired change with unchanged Runtime")
+		t.Fatal("host missed Desired change with unchanged status")
 	}
-	current, _, err := ReadRuntime(f.ctx, f.store)
+	current, _, err := ReadStatus(f.ctx, f.store)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if current.Phase != Stopped {
-		t.Fatalf("Runtime changed during the no-op Quiesce: %+v", current)
+		t.Fatalf("status changed during the no-op Quiesce: %+v", current)
 	}
 }
 
-func waitForRuntime(t *testing.T, f *fixture, predicate func(Runtime) bool) Runtime {
+func waitForStatus(t *testing.T, f *fixture, predicate func(Status) bool) Status {
 	t.Helper()
 	deadline := time.After(15 * time.Second)
 	tick := time.NewTicker(time.Millisecond)
 	defer tick.Stop()
 	for {
-		current, _, err := ReadRuntime(f.ctx, f.store)
+		current, _, err := ReadStatus(f.ctx, f.store)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -330,7 +330,7 @@ func TestHostProgressesWithoutObserverAndDrainsEarlyFrames(t *testing.T) {
 	if err := lifecycle.PublishDesired(f.ctx, f.store, lifecycle.Desired{Mode: lifecycle.Closing, Generation: 2}); err != nil {
 		t.Fatal(err)
 	}
-	waitForRuntime(t, f, func(current Runtime) bool { return current.Phase == Stopped && current.ProcessID == "" })
+	waitForStatus(t, f, func(current Status) bool { return current.Phase == Stopped && current.ProcessID == "" })
 	select {
 	case <-ended:
 	case <-ctx.Done():
@@ -354,7 +354,7 @@ func TestFailedDrainRetainsOwnership(t *testing.T) {
 	if err := lifecycle.PublishDesired(f.ctx, f.store, lifecycle.Desired{Mode: lifecycle.Closing, Generation: 2}); err != nil {
 		t.Fatal(err)
 	}
-	failed := waitForRuntime(t, f, func(current Runtime) bool { return current.StopError != "" })
+	failed := waitForStatus(t, f, func(current Status) bool { return current.StopError != "" })
 	if !strings.Contains(failed.StopError, stopFailure.Error()) || !p.Running() {
 		t.Fatalf("failed drain lost ownership: %+v", failed)
 	}

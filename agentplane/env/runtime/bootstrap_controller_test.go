@@ -17,22 +17,22 @@ import (
 
 func TestBootstrapIsActiveUntilAcceptedInputIsTerminal(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		input      bootstrap.Input
-		inputFound bool
-		state      bootstrap.Runtime
-		stateFound bool
-		wantActive bool
+		name        string
+		input       bootstrap.Input
+		inputFound  bool
+		status      bootstrap.Status
+		statusFound bool
+		wantActive  bool
 	}{
-		{name: "not requested", inputFound: true, state: bootstrap.Runtime{Phase: bootstrap.Dormant}, stateFound: true},
+		{name: "not requested", inputFound: true, status: bootstrap.Status{Phase: bootstrap.Dormant}, statusFound: true},
 		{name: "accepted before controller runs", input: bootstrap.Input{Requested: true}, inputFound: true, wantActive: true},
-		{name: "running", input: bootstrap.Input{Requested: true}, inputFound: true, state: bootstrap.Runtime{Phase: bootstrap.Running}, stateFound: true, wantActive: true},
-		{name: "succeeded", input: bootstrap.Input{Requested: true}, inputFound: true, state: bootstrap.Runtime{Phase: bootstrap.Succeeded}, stateFound: true},
-		{name: "failed", input: bootstrap.Input{Requested: true}, inputFound: true, state: bootstrap.Runtime{Phase: bootstrap.Failed}, stateFound: true},
-		{name: "interrupted", input: bootstrap.Input{Requested: true}, inputFound: true, state: bootstrap.Runtime{Phase: bootstrap.Interrupted}, stateFound: true},
+		{name: "running", input: bootstrap.Input{Requested: true}, inputFound: true, status: bootstrap.Status{Phase: bootstrap.Running}, statusFound: true, wantActive: true},
+		{name: "succeeded", input: bootstrap.Input{Requested: true}, inputFound: true, status: bootstrap.Status{Phase: bootstrap.Succeeded}, statusFound: true},
+		{name: "failed", input: bootstrap.Input{Requested: true}, inputFound: true, status: bootstrap.Status{Phase: bootstrap.Failed}, statusFound: true},
+		{name: "interrupted", input: bootstrap.Input{Requested: true}, inputFound: true, status: bootstrap.Status{Phase: bootstrap.Interrupted}, statusFound: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := bootstrapIsActive(tc.input, tc.inputFound, tc.state, tc.stateFound); got != tc.wantActive {
+			if got := bootstrapIsActive(tc.input, tc.inputFound, tc.status, tc.statusFound); got != tc.wantActive {
 				t.Fatalf("bootstrapIsActive() = %t, want %t", got, tc.wantActive)
 			}
 		})
@@ -186,8 +186,8 @@ func TestBootstrapRuntimeFailureDoesNotLeaveLogDerivedBusyFact(t *testing.T) {
 			t.Fatal("terminal bootstrap resource still blocks autosuspend")
 		}
 	}
-	runtime, found, err := bootstrap.ReadRuntime(ctx, r.lifecycleState)
-	if err != nil || !found || runtime.Phase != bootstrap.Failed || !strings.Contains(runtime.Error, "initialization log is closed") {
-		t.Fatalf("bootstrap runtime after log write failure = (%+v, found=%t, err=%v), want concrete storage failure", runtime, found, err)
+	status, found, err := bootstrap.ReadStatus(ctx, r.lifecycleState)
+	if err != nil || !found || status.Phase != bootstrap.Failed || !strings.Contains(status.Error, "initialization log is closed") {
+		t.Fatalf("bootstrap status after log write failure = (%+v, found=%t, err=%v), want concrete storage failure", status, found, err)
 	}
 }

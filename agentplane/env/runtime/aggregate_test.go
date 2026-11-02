@@ -102,7 +102,7 @@ func TestRuntimeCloseRetainsOwnerAfterRejectedLiveExecutionStart(t *testing.T) {
 				return first, nil
 			}
 			r := newLifecycleRunner(t, config)
-			current, found, err := cosiExecutionState(r)
+			current, found, err := cosiExecutionStatus(r)
 			if err != nil || !found || current.Phase != executionReady {
 				t.Fatalf("Execution before rejected start = %+v, found=%t, err=%v", current, found, err)
 			}

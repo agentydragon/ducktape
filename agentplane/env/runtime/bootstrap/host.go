@@ -183,42 +183,42 @@ func (h *Host) Wait(ctx context.Context) error {
 	defer cancel()
 	stop := context.AfterFunc(h.ctx, cancel)
 	defer stop()
-	if _, err := safe.StateWatchFor[*typed.Resource[Runtime, componentExtension[Runtime]]](
+	if _, err := safe.StateWatchFor[*typed.Resource[Status, componentExtension[Status]]](
 		waitCtx,
 		h.state,
-		componentResource(ResourceID, Runtime{}).Metadata(),
+		componentResource(ResourceID, Status{}).Metadata(),
 		state.WithEventTypes(state.Created, state.Updated),
 		state.WithCondition(func(value resource.Resource) (bool, error) {
-			current, ok := value.(*typed.Resource[Runtime, componentExtension[Runtime]])
+			current, ok := value.(*typed.Resource[Status, componentExtension[Status]])
 			if !ok {
-				return false, fmt.Errorf("unexpected bootstrap runtime resource %T", value)
+				return false, fmt.Errorf("unexpected bootstrap status resource %T", value)
 			}
 			return isTerminal(current.TypedSpec().Phase), nil
 		}),
 	); err != nil {
 		return err
 	}
-	runtime, found, err := ReadRuntime(waitCtx, h.state)
+	bootstrapStatus, found, err := ReadStatus(waitCtx, h.state)
 	if err != nil {
 		return err
 	}
 	if !found {
 		return errors.New(operationHasNoOutcome)
 	}
-	switch runtime.Phase {
+	switch bootstrapStatus.Phase {
 	case Succeeded:
 		return nil
 	case Interrupted:
-		if runtime.Error != "" && runtime.Error != interruptedMessage {
-			return errors.New(runtime.Error)
+		if bootstrapStatus.Error != "" && bootstrapStatus.Error != interruptedMessage {
+			return errors.New(bootstrapStatus.Error)
 		}
 		return ErrInterrupted
 	case Failed:
-		if runtime.Error == selectionConflict {
-			return status.Error(codes.AlreadyExists, runtime.Error)
+		if bootstrapStatus.Error == selectionConflict {
+			return status.Error(codes.AlreadyExists, bootstrapStatus.Error)
 		}
-		if runtime.Error != "" {
-			return errors.New(runtime.Error)
+		if bootstrapStatus.Error != "" {
+			return errors.New(bootstrapStatus.Error)
 		}
 		return errors.New(failedMessage)
 	default:
@@ -237,15 +237,15 @@ func (h *Host) Settled(ctx context.Context) (bool, error) {
 	if !found || !input.Requested {
 		return true, nil
 	}
-	runtime, found, err := ReadRuntime(ctx, h.state)
+	bootstrapStatus, found, err := ReadStatus(ctx, h.state)
 	if err != nil {
 		return false, err
 	}
-	return found && isTerminal(runtime.Phase), nil
+	return found && isTerminal(bootstrapStatus.Phase), nil
 }
 
-func (h *Host) RuntimeState(ctx context.Context) (Runtime, bool, error) {
-	return ReadRuntime(ctx, h.state)
+func (h *Host) Status(ctx context.Context) (Status, bool, error) {
+	return ReadStatus(ctx, h.state)
 }
 
 func (h *Host) CloseLog() error {

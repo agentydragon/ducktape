@@ -33,7 +33,7 @@ type executionHealth struct {
 type executionHealthEvent struct{ Revision uint64 }
 
 func (executionHealthEvent) resourceType() resource.Type {
-	return runnerlifecycle.EmbeddedExecutionRuntimeType
+	return runnerlifecycle.ExecutionStatusType
 }
 func (v executionHealthEvent) DeepCopy() executionHealthEvent { return v }
 
@@ -61,7 +61,7 @@ func (h *executionHealth) set(serving bool, err error) {
 	h.revision++
 	revision := h.revision
 	h.mu.Unlock()
-	if err := publishLifecycle(h.runner.lifecycle, "embedded-execution", executionHealthEvent{Revision: revision}); err != nil {
+	if err := publishLifecycle(h.runner.lifecycle, runnerlifecycle.ExecutionResourceID, executionHealthEvent{Revision: revision}); err != nil {
 		h.t.Fatalf("publish execution status: %v", err)
 	}
 }
@@ -103,7 +103,7 @@ func TestCodexJoinedStartupWaitsForSeparateExecutionHealth(t *testing.T) {
 	}
 	waitCodexDemand(t, r, 2)
 	waitForFile(t, marker)
-	waitCodex(t, r, func(v codexappserver.Runtime) bool {
+	waitCodexStatus(t, r, func(v codexappserver.Status) bool {
 		return v.Phase == codexappserver.Initializing && !v.ExecServerReadyDeadline.IsZero()
 	}, "external execution readiness")
 	select {
@@ -112,7 +112,7 @@ func TestCodexJoinedStartupWaitsForSeparateExecutionHealth(t *testing.T) {
 	default:
 	}
 	health.set(true, nil)
-	ready := waitCodex(t, r, func(v codexappserver.Runtime) bool { return v.Phase == codexappserver.Ready && v.Attempt == 2 }, "joined demand ready")
+	ready := waitCodexStatus(t, r, func(v codexappserver.Status) bool { return v.Phase == codexappserver.Ready && v.Attempt == 2 }, "joined demand ready")
 
 	if !ready.ExecServerReadyDeadline.IsZero() {
 		t.Fatal("consumed demand retained deadline")
@@ -136,7 +136,7 @@ func TestCodexExecutionRefusalDrainsOverlappedAppServer(t *testing.T) {
 	}
 	waitForFile(t, marker)
 	health.set(false, status.Error(codes.FailedPrecondition, "native executable unavailable"))
-	stopped := waitCodex(t, r, func(v codexappserver.Runtime) bool { return v.Phase == codexappserver.Stopped && v.Attempt == 1 }, "execution refusal cleanup")
+	stopped := waitCodexStatus(t, r, func(v codexappserver.Status) bool { return v.Phase == codexappserver.Stopped && v.Attempt == 1 }, "execution refusal cleanup")
 	if !strings.Contains(stopped.Error, "native executable unavailable") {
 		t.Fatalf("lost readiness refusal: %+v", stopped)
 	}
@@ -150,17 +150,17 @@ func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
 	if _, err := requestCodexAppServer(r); err != nil {
 		t.Fatal(err)
 	}
-	first := waitCodex(t, r, func(v codexappserver.Runtime) bool {
+	first := waitCodexStatus(t, r, func(v codexappserver.Status) bool {
 		return v.Phase == codexappserver.Initializing && !v.ExecServerReadyDeadline.IsZero()
 	}, "execution deadline")
 	if _, err := requestCodexAppServer(r); err != nil {
 		t.Fatal(err)
 	}
-	joined := codexAppServerRuntime(t, r)
+	joined := codexAppServerStatus(t, r)
 	if joined.ExecServerReadyDeadline != first.ExecServerReadyDeadline {
 		t.Fatal("joined demand changed deadline")
 	}
-	stopped := waitCodex(t, r, func(v codexappserver.Runtime) bool { return v.Phase == codexappserver.Stopped && v.Attempt == 2 }, "execution timeout")
+	stopped := waitCodexStatus(t, r, func(v codexappserver.Status) bool { return v.Phase == codexappserver.Stopped && v.Attempt == 2 }, "execution timeout")
 	if !strings.Contains(stopped.Error, "within 2s") || !stopped.ExecServerReadyDeadline.IsZero() {
 		t.Fatalf("deadline not consumed: %+v", stopped)
 	}
@@ -180,22 +180,22 @@ func forceStopTestRunner(t *testing.T, r *Runner) {
 	}
 }
 
-func codexAppServerRuntime(t *testing.T, r *Runner) codexappserver.Runtime {
+func codexAppServerStatus(t *testing.T, r *Runner) codexappserver.Status {
 	t.Helper()
-	current, _, err := codexappserver.ReadRuntime(r.ctx, r.lifecycle.state)
+	current, _, err := codexappserver.ReadStatus(r.ctx, r.lifecycle.state)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return current
 }
 
-func waitCodex(t *testing.T, r *Runner, predicate func(codexappserver.Runtime) bool, want string) codexappserver.Runtime {
+func waitCodexStatus(t *testing.T, r *Runner, predicate func(codexappserver.Status) bool, want string) codexappserver.Status {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
 	for {
 		changed := r.changesSince()
-		current := codexAppServerRuntime(t, r)
+		current := codexAppServerStatus(t, r)
 		if predicate(current) {
 			return current
 		}

@@ -233,34 +233,34 @@ func (c *Host) Host(ctx context.Context, s *Attachment) (*Process, error) {
 		if desired.Mode != lifecycle.Running {
 			return false, errors.New("runner is not accepting new Codex work")
 		}
-		runtime, _, err := ReadRuntime(c.deps.Context, c.deps.State)
+		currentStatus, _, err := ReadStatus(c.deps.Context, c.deps.State)
 		if err != nil {
 			return false, err
 		}
-		if runtime.Phase == Ready {
+		if currentStatus.Phase == Ready {
 			c.mu.Lock()
 			p := c.current
-			if p != nil && p.ID() == runtime.ProcessID && p.host(s) {
+			if p != nil && p.ID() == currentStatus.ProcessID && p.host(s) {
 				ready = p
 				c.mu.Unlock()
 				return true, nil
 			}
 			settled := p == nil
 			c.mu.Unlock()
-			if settled && runtime.Attempt >= demand {
+			if settled && currentStatus.Attempt >= demand {
 				return false, errors.New("Codex app-server exited before the Session could attach")
 			}
 		}
 		// Initialization errors may be published before cancellation has finished draining a
 		// process that was started concurrently with executor readiness. Do not release waiters
 		// until the controller has settled that process.
-		if runtime.Phase == Stopped && runtime.Attempt >= demand {
-			terminal := runtime.Error
-			if runtime.StopError != "" {
+		if currentStatus.Phase == Stopped && currentStatus.Attempt >= demand {
+			terminal := currentStatus.Error
+			if currentStatus.StopError != "" {
 				if terminal != "" {
 					terminal += "; "
 				}
-				terminal += "Codex app-server stop failed: " + runtime.StopError
+				terminal += "Codex app-server stop failed: " + currentStatus.StopError
 			}
 			if terminal != "" {
 				return false, errors.New(terminal)
@@ -596,32 +596,32 @@ func (c *Host) drainProcess(ctx context.Context) error {
 
 // Status describes the running app-server and the Sessions it hosts.
 func (c *Host) Status() *sessionpb.HarnessProcessStatus {
-	runtime, _, err := ReadRuntime(c.deps.Context, c.deps.State)
+	currentStatus, _, err := ReadStatus(c.deps.Context, c.deps.State)
 	if err != nil {
 		c.deps.OnError(err)
 		return nil
 	}
-	if runtime.Phase == Stopped || runtime.ProcessID == "" {
+	if currentStatus.Phase == Stopped || currentStatus.ProcessID == "" {
 		return nil
 	}
 	c.mu.Lock()
 	p := c.current
 	c.mu.Unlock()
 	state := sessionpb.ProcessState_PROCESS_STATE_STARTING
-	switch runtime.Phase {
+	switch currentStatus.Phase {
 	case Ready:
 		state = sessionpb.ProcessState_PROCESS_STATE_RUNNING
 	case Draining:
 		state = sessionpb.ProcessState_PROCESS_STATE_STOPPING
 	}
-	status := &sessionpb.HarnessProcessStatus{ProcessId: runtime.ProcessID, Harness: sessionpb.Harness_HARNESS_CODEX, State: state}
-	if p != nil && p.process.ID() == runtime.ProcessID {
+	status := &sessionpb.HarnessProcessStatus{ProcessId: currentStatus.ProcessID, Harness: sessionpb.Harness_HARNESS_CODEX, State: state}
+	if p != nil && p.process.ID() == currentStatus.ProcessID {
 		for _, s := range p.router.Hosts() {
 			status.AssignedSessionIds = append(status.AssignedSessionIds, s.ID)
 		}
 	}
 	slices.Sort(status.AssignedSessionIds)
-	if p != nil && p.process.ID() == runtime.ProcessID && p.process.Running() {
+	if p != nil && p.process.ID() == currentStatus.ProcessID && p.process.Running() {
 		pid := int64(p.process.PID())
 		status.Pid = &pid
 	}

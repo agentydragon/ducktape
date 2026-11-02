@@ -7,7 +7,6 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 go_library(
     name = "runtime",
     srcs = [
-        "close_controller.go",
         "environment_owner.go",
         "environment_state.go",
         "execution_lifecycle.go",
@@ -16,6 +15,7 @@ go_library(
         "forward.go",
         "host_intent.go",
         "host_report.go",
+        "lifecycle_controller.go",
         "protocol.go",
         "runtime.go",
         "serve.go",

@@ -15,12 +15,18 @@ required COSI subresource or a reason to combine resources with different owners
   transition coordinator.
 - Rename the other controller-owned `*Runtimes` status resources and Go types consistently:
   `BootstrapRuntimes` → `BootstrapStatuses`, `CodexAppServerRuntimes` → `CodexAppServerStatuses`,
-  and `EmbeddedExecutionRuntimes` →
-  `ExecutionStatuses`. `EnvironmentRuntimeTransitions` and `EnvironmentRuntimeCloses` also hold
-  status and should say so. Align type names, constants, readers, diagrams and documentation.
+  and `EmbeddedExecutionRuntimes` → `ExecutionStatuses`. `EnvironmentRuntimeTransitions` and
+  `EnvironmentRuntimeCloses` also hold status and should say so. Align type names, constants,
+  readers, diagrams and documentation.
 - Rename `environment-runtime-close` and its controller type to reflect that the same controller
   also coordinates adoption and quiesce transitions. Drop `embedded` from the Execution controller
   and resource names where it merely describes how the service is packaged.
+- Rename the Session controller's `SessionRuntimes` status resource and Go type to
+  `SessionLifecycleStatuses`. For Sessions, the retained record supplies configuration and
+  `SessionInputs` supplies harness kind and demand; `SessionRuntimes` records controller progress,
+  not a desired runtime spec. The controller realizes demand by launching a Session-owned Claude
+  process or attaching to the shared Codex app-server and establishing a thread. A Codex Session's
+  process ID identifies the shared app-server, and its attachment/router state also lives in memory.
 - Review resources named `*Inputs` by their actual contents rather than applying one replacement:
   bootstrap carries a request, Session combines demand and observations, Process carries a revision
   wakeup, Execution carries demand and completion facts, and the Host input carries admission

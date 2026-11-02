@@ -12,12 +12,12 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const runtimeCloseControllerName = "environment-runtime-close"
+const runtimeLifecycleControllerName = "environment-runtime-lifecycle"
 
 // The controller owns Runtime's Close and epoch transition sequences. Each
 // blocking boundary runs in a worker; its single event loop stays free to
 // observe either completion and gives Close reconciliation priority.
-type runtimeCloseController struct {
+type runtimeLifecycleController struct {
 	r          *Runtime
 	transition runtimeTransitionSequence
 	stage      lifecycle.RuntimeCloseStage
@@ -44,31 +44,31 @@ type closeOperation struct {
 	err    error
 }
 
-func (*runtimeCloseController) Name() string { return runtimeCloseControllerName }
+func (*runtimeLifecycleController) Name() string { return runtimeLifecycleControllerName }
 
-func (*runtimeCloseController) Inputs() []controller.Input {
+func (*runtimeLifecycleController) Inputs() []controller.Input {
 	return []controller.Input{
 		{Namespace: lifecycle.Namespace, Type: lifecycle.EnvironmentDesiredStateType, Kind: controller.InputWeak},
 		{Namespace: lifecycle.Namespace, Type: lifecycle.RuntimeTransitionRequestType, Kind: controller.InputWeak},
 	}
 }
 
-func (*runtimeCloseController) Outputs() []controller.Output {
+func (*runtimeLifecycleController) Outputs() []controller.Output {
 	return []controller.Output{
 		{Type: lifecycle.RuntimeCloseStatusType, Kind: controller.OutputExclusive},
 		{Type: lifecycle.RuntimeTransitionStatusType, Kind: controller.OutputExclusive},
 	}
 }
 
-func (c *runtimeCloseController) Run(ctx context.Context, r controller.Runtime, _ *zap.Logger) error {
+func (c *runtimeLifecycleController) Run(ctx context.Context, r controller.Runtime, _ *zap.Logger) error {
 	c.transition.engineCtx = ctx
 	defer func() {
 		// A transition caller holds transitionMu until it sees terminal status.
 		// Wake it before joining workers so a Close Prepare worker cannot remain
 		// blocked behind that mutex when the engine exits unexpectedly.
 		c.r.mu.Lock()
-		if (c.op != nil || c.r.activeTransitionCtx != nil) && c.r.closeControllerErr == nil {
-			c.r.closeControllerErr = errors.New("Runtime lifecycle coordinator exited before active work settled")
+		if (c.op != nil || c.r.activeTransitionCtx != nil) && c.r.lifecycleControllerErr == nil {
+			c.r.lifecycleControllerErr = errors.New("Runtime lifecycle coordinator exited before active work settled")
 			c.r.changedLocked()
 		}
 		c.r.mu.Unlock()
@@ -105,7 +105,7 @@ func (c *runtimeCloseController) Run(ctx context.Context, r controller.Runtime, 
 		}
 		if err := c.reconcile(ctx, r); err != nil {
 			c.r.mu.Lock()
-			c.r.closeControllerErr = err
+			c.r.lifecycleControllerErr = err
 			c.r.changedLocked()
 			c.r.mu.Unlock()
 			c.r.fail(fmt.Errorf("reconcile Runtime Close: %w", err))
@@ -113,7 +113,7 @@ func (c *runtimeCloseController) Run(ctx context.Context, r controller.Runtime, 
 		}
 		if err := c.transition.reconcile(ctx, r); err != nil {
 			c.r.mu.Lock()
-			c.r.closeControllerErr = err
+			c.r.lifecycleControllerErr = err
 			c.r.changedLocked()
 			c.r.mu.Unlock()
 			c.r.fail(fmt.Errorf("reconcile Runtime transition: %w", err))
@@ -123,7 +123,7 @@ func (c *runtimeCloseController) Run(ctx context.Context, r controller.Runtime, 
 	}
 }
 
-func (c *runtimeCloseController) reconcile(ctx context.Context, r controller.Runtime) error {
+func (c *runtimeLifecycleController) reconcile(ctx context.Context, r controller.Runtime) error {
 	desired, found, err := lifecycle.ReadEnvironmentDesired(ctx, r)
 	if err != nil || !found || desired.Mode != lifecycle.Closing {
 		return err
@@ -198,7 +198,7 @@ func nextRuntimeCloseStage(stage lifecycle.RuntimeCloseStage) (lifecycle.Runtime
 	}
 }
 
-func (c *runtimeCloseController) publish(ctx context.Context, r controller.Runtime) error {
+func (c *runtimeLifecycleController) publish(ctx context.Context, r controller.Runtime) error {
 	if err := lifecycle.WriteRuntimeCloseStatus(ctx, r, lifecycle.RuntimeCloseStatus{
 		Generation: c.generation, Stage: c.stage, Error: c.failure,
 	}); err != nil {
@@ -208,7 +208,7 @@ func (c *runtimeCloseController) publish(ctx context.Context, r controller.Runti
 	return nil
 }
 
-func (c *runtimeCloseController) runStage(ctx context.Context, stage lifecycle.RuntimeCloseStage) error {
+func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecycle.RuntimeCloseStage) error {
 	p := &c.plan
 	switch stage {
 	case lifecycle.RuntimeClosePreparing:
@@ -269,7 +269,7 @@ func (c *runtimeCloseController) runStage(ctx context.Context, stage lifecycle.R
 	}
 }
 
-func (c *runtimeCloseController) prepare() error {
+func (c *runtimeLifecycleController) prepare() error {
 	r := c.r
 	r.transitionMu.Lock()
 	defer r.transitionMu.Unlock()
