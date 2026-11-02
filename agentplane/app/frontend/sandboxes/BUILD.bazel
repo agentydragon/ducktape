@@ -309,6 +309,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/testing:sandbox_proto",
         "//agentplane/app/frontend/testing:watch",
+        "//agentplane/proto:sandboxes_pb",
     ],
 )
 

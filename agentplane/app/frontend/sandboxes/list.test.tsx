@@ -13,10 +13,11 @@ import { SandboxList } from "./list";
 import { SandboxesLiveProvider } from "./live";
 import { deletable, SuspendResume } from "./lifecycle";
 import { sandboxSummary } from "../sandbox_status";
-import { sandboxProto } from "../testing/sandbox_proto";
+import { sandboxProto, sandboxTimestamp, type SandboxFixture } from "../testing/sandbox_proto";
+import { SandboxPhase } from "../../../proto/sandboxes_pb";
 import { serveEventStreams } from "../testing/watch";
 
-const liveSandboxData = vi.hoisted(() => ({ snapshot: null as { sandboxes: SandboxView[] } | null }));
+const liveSandboxData = vi.hoisted(() => ({ snapshot: null as { sandboxes: SandboxFixture[] } | null }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
@@ -47,6 +48,16 @@ const CREATED: SandboxView = {
   idle_suspend_at: null,
   autosuspend_blockers: [],
   suspended_by: null,
+};
+
+const CREATED_INVENTORY: SandboxFixture = {
+  name: CREATED.name,
+  uid: CREATED.uid,
+  namespace: CREATED.namespace,
+  createdAt: sandboxTimestamp("2026-01-01T00:00:00Z"),
+  operatingMode: "Running",
+  serviceAccount: { namespace: "agentplane-test", name: "test-created-sandbox" },
+  phase: SandboxPhase.CREATING,
 };
 
 // What the app serves when its configuration leaves the new-Sandbox defaults unset.
@@ -305,7 +316,7 @@ it("starts a new Sandbox with the app's wake and idle suspension defaults whatev
 });
 
 it("shows existing wake policy and updates the displayed Sandbox incarnation", async () => {
-  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED, wake_on_send: true }] };
+  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED_INVENTORY, wakeOnSend: true }] };
   const { container } = await render();
   const checkbox = container.querySelector<HTMLInputElement>(
     'input[aria-label="Wake on message for test-created-sandbox"]'
@@ -327,7 +338,7 @@ it("shows existing wake policy and updates the displayed Sandbox incarnation", a
 });
 
 it("clears the pending wake policy when the request fails at the transport", async () => {
-  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED, wake_on_send: false }] };
+  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED_INVENTORY, wakeOnSend: false }] };
   const { container } = await render();
   const checkbox = container.querySelector<HTMLInputElement>(
     'input[aria-label="Wake on message for test-created-sandbox"]'
@@ -380,7 +391,7 @@ async function press(element: HTMLElement, key: string): Promise<void> {
 }
 
 it("shows a Sandbox's idle suspension time and saves an edit to the incarnation shown", async () => {
-  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED, idle_suspend_after_seconds: 1800 }] };
+  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED_INVENTORY, idleSuspendAfter: { seconds: 1800n } }] };
   const { container } = await render();
   expect(idleInput(container).value).toBe("30");
 
@@ -398,7 +409,7 @@ it("shows a Sandbox's idle suspension time and saves an edit to the incarnation 
 });
 
 it("turns idle suspension off when the time is cleared", async () => {
-  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED, idle_suspend_after_seconds: 1800 }] };
+  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED_INVENTORY, idleSuspendAfter: { seconds: 1800n } }] };
   const { container } = await render();
   const patch = vi.spyOn(api, "PATCH").mockResolvedValue({
     data: undefined,
@@ -415,7 +426,7 @@ it("turns idle suspension off when the time is cleared", async () => {
 });
 
 it("puts back the stored idle suspension time and reports a refused edit", async () => {
-  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED, idle_suspend_after_seconds: 1800 }] };
+  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED_INVENTORY, idleSuspendAfter: { seconds: 1800n } }] };
   const { container } = await render();
   vi.spyOn(api, "PATCH").mockResolvedValue({
     error: { detail: "Test edit refused" },

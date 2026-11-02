@@ -334,6 +334,7 @@ agentplane_vitest_test(
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:event_pb",
+        "//agentplane/proto:sandboxes_pb",
         "//util/frontend/transcript:retained_disclosures",
     ],
 )
@@ -770,6 +771,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/app/frontend/testing:sandbox_proto",
         "//agentplane/app/frontend/testing:watch",
+        "//agentplane/proto:sandboxes_pb",
     ],
 )
 
