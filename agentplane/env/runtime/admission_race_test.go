@@ -173,3 +173,24 @@ func TestAcceptedNativeRegistrationRemainsInDrainAccounting(t *testing.T) {
 		t.Fatalf("settled registration count=%d err=%v", count, err)
 	}
 }
+
+func TestFailedNativeRegistrationCannotReplay(t *testing.T) {
+	r := admissionTestRuntime(t, state.WrapCore(namespaced.NewState(inmem.Build)))
+	expected := r.desired
+	failure := errors.New("registration publication outcome unknown")
+	calls := 0
+	effect := func(context.Context) error { calls++; return failure }
+	if err := r.admitLifecycleEffect(t.Context(), expected, effect); !errors.Is(err, failure) {
+		t.Fatalf("registration error=%v", err)
+	}
+	if err := r.admitLifecycleEffect(t.Context(), expected, effect); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("unknown registration replayed %d times", calls)
+	}
+	count, err := r.admissionCount(t.Context())
+	if err != nil || count != 0 {
+		t.Fatalf("settled registration count=%d err=%v", count, err)
+	}
+}
