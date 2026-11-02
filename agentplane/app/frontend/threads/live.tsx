@@ -13,7 +13,7 @@ import { WatchSessionSummariesResponseSchema } from "../../../history_service/hi
 import type { ThreadView } from "../schema";
 import { listThreadWindow, type ThreadListing } from "./client";
 
-/** The Thread window. Sandboxes come from `/live/sandboxes` (`SandboxesLiveProvider`), their one source. */
+/** The Thread window. Sandboxes come from the EnvironmentService inventory watch (`SandboxesLiveProvider`), their one source. */
 export type ThreadsSnapshot = {
   threads: ThreadView[];
   more: boolean;

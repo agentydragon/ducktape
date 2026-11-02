@@ -207,6 +207,7 @@ async def run_gateway(
     dispatcher_callers: Sequence[ServiceAccountRef],
     gateway_callers: Sequence[ServiceAccountRef],
     executor_callers: Sequence[ServiceAccountRef] = (),
+    environment_readers: Sequence[ServiceAccountRef] = (),
     dispatcher_audience: str,
     gateway_audience: str,
     runner_proxy_token_file: Path,
@@ -260,6 +261,7 @@ async def run_gateway(
                 dispatcher_callers={f"{account.namespace}/{account.name}" for account in dispatcher_callers},
                 gateway_callers={f"{account.namespace}/{account.name}" for account in gateway_callers},
                 executor_callers={f"{account.namespace}/{account.name}" for account in executor_callers},
+                environment_readers={f"{account.namespace}/{account.name}" for account in environment_readers},
                 wake_callers=set(),
                 _cli_parse_args=[],
             )
@@ -270,7 +272,13 @@ async def run_gateway(
                 exclude_unset=True,
                 exclude={"dispatcher_database_url", "pod_name", "pod_ip"},
             )
-            for caller_list in ("dispatcher_callers", "gateway_callers", "executor_callers", "wake_callers"):
+            for caller_list in (
+                "dispatcher_callers",
+                "gateway_callers",
+                "executor_callers",
+                "environment_readers",
+                "wake_callers",
+            ):
                 settings[caller_list] = sorted(settings[caller_list])
             settings_path = settings_directory / "settings.yaml"
             settings_path.write_text(yaml.safe_dump(settings))

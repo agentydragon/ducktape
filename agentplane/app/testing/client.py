@@ -28,15 +28,15 @@ from agentplane.app.testing.models import (
     DecisionsSnapshot,
     DecisionsUnavailable,
     NewSandbox,
-    SandboxesSnapshot,
     SandboxView,
     ThreadMetadata,
     ThreadView,
     thread_view_from_proto_json,
 )
 from agentplane.egress.decisions import Decision
-from agentplane.proto import event_log_pb2, session_pb2
+from agentplane.proto import event_log_pb2, sandboxes_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.sandboxes.environments import environment_service_pb2
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -136,30 +136,52 @@ class Client:
         response = await self._json("GET", f"/sandboxes/{name}/runner-status")
         return ParseDict(response, session_pb2.EnvironmentRuntimeStatus())
 
-    async def sandbox_snapshots(self) -> AsyncGenerator[SandboxesSnapshot]:
-        """Initial inventory and watch-triggered changes; the caller bounds the subscription.
-
-        This lifecycle stream fails immediately on HTTP refusals or connection loss. It does not
-        use the Thread journal's rollout-reconnect policy.
-        """
+    async def sandbox_snapshots(self) -> AsyncGenerator[list[sandboxes_pb2.Sandbox]]:
+        """Yield complete inventories reconstructed from the EnvironmentService watch."""
+        pending: dict[tuple[str, str], sandboxes_pb2.Sandbox] | None = {}
+        current: dict[tuple[str, str], sandboxes_pb2.Sandbox] = {}
         async with self._http.stream(
             "GET",
-            "/live/sandboxes",
-            headers={"Accept": "text/event-stream"},
+            "/upstream/environments/v1/environments:watch",
+            headers={"Accept": "application/x-ndjson"},
             timeout=httpx.Timeout(REQUEST_SECONDS, read=None),
         ) as response:
             response.raise_for_status()
-            kind, data = "message", []
             async for line in response.aiter_lines():
-                if line.startswith("event:"):
-                    kind = line.removeprefix("event:").strip()
-                elif line.startswith("data:"):
-                    data.append(line.removeprefix("data:").lstrip())
-                elif not line:
-                    frame, payload = kind, "\n".join(data)
-                    kind, data = "message", []
-                    if frame == "snapshot" and payload:
-                        yield SandboxesSnapshot.model_validate_json(payload)
+                if not line:
+                    continue
+                envelope = json.loads(line)
+                if "error" in envelope:
+                    raise RuntimeError(f"Environment watch failed: {envelope['error']}")
+                frame = ParseDict(envelope["result"], environment_service_pb2.WatchEnvironmentsResponse())
+                match frame.WhichOneof("frame"):
+                    case "snapshot":
+                        if pending is None:
+                            raise RuntimeError("unexpected inventory snapshot chunk")
+                        for row in frame.snapshot.sandboxes:
+                            pending[(row.namespace, row.name)] = row
+                    case "snapshot_complete":
+                        if pending is None:
+                            raise RuntimeError("unexpected inventory snapshot completion")
+                        current, pending = pending, None
+                        yield [current[key] for key in sorted(current)]
+                    case "upsert":
+                        if pending is not None:
+                            raise RuntimeError("inventory update before snapshot completion")
+                        row = frame.upsert
+                        current[(row.namespace, row.name)] = row
+                        yield [current[key] for key in sorted(current)]
+                    case "removed":
+                        if pending is not None:
+                            raise RuntimeError("inventory removal before snapshot completion")
+                        removed = frame.removed
+                        key = (removed.namespace, removed.name)
+                        previous = current.get(key)
+                        if previous is not None and previous.uid == removed.uid:
+                            del current[key]
+                            yield [current[key] for key in sorted(current)]
+                    case _:
+                        raise RuntimeError("Environment watch returned an empty frame")
         raise RuntimeError("the Sandbox inventory stream ended")
 
     async def suspend_sandbox(self, name: str) -> None:

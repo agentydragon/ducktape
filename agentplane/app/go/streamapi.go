@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -107,7 +106,7 @@ type StreamingDependencies struct {
 // operator-facing HTTP facades. The server owns the shared auth/session middleware and drain gate.
 func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependencies) {
 	routes := newStreamingRoutes(server, dependencies)
-	server.RegisterRawRoute("GET /live/sandboxes", http.HandlerFunc(routes.liveSandboxes), false)
+	server.RegisterRawRoute("GET /upstream/environments/v1/environments:watch", http.HandlerFunc(routes.environmentWatch), false)
 	server.RegisterRawRoute("GET /live/sandboxes/{name}", http.HandlerFunc(routes.liveSandbox), false)
 	server.RegisterRawRoute("GET /live/sandboxes/{name}/egress/decisions", http.HandlerFunc(routes.liveDecisions), false)
 	server.RegisterRawRoute("GET /threads/{thread_id}/events/stream", http.HandlerFunc(routes.threadEvents), false)
@@ -130,13 +129,11 @@ type streamingRoutes struct {
 	server *HTTPServer
 	deps   StreamingDependencies
 
-	sandboxLists   *frameTopics[struct{}, []byte]
 	sandboxDetails *frameTopics[sandboxDetailKey, sandboxDetail]
 }
 
 func newStreamingRoutes(server *HTTPServer, deps StreamingDependencies) *streamingRoutes {
 	r := &streamingRoutes{server: server, deps: deps}
-	r.sandboxLists = newFrameTopics(r.logger, r.produceSandboxList)
 	r.sandboxDetails = newFrameTopics(r.logger, r.produceSandboxDetail)
 	return r
 }
@@ -151,11 +148,6 @@ type watchHealthView struct {
 type kindFailureView struct {
 	Error string    `json:"error"`
 	Since time.Time `json:"since"`
-}
-
-type sandboxListFrame struct {
-	Sandboxes []SandboxView   `json:"sandboxes"`
-	Watch     watchHealthView `json:"watch"`
 }
 
 type liveSandboxFrame struct {
@@ -213,37 +205,6 @@ type sandboxDetail struct {
 	threads          any
 	updatesConnected bool
 	watch            watchHealthView
-}
-
-func (r *streamingRoutes) liveSandboxes(w http.ResponseWriter, request *http.Request) {
-	if r.deps.Live == nil {
-		writeDetailError(w, http.StatusServiceUnavailable, "live inventory is unavailable")
-		return
-	}
-	ctx, cancel := r.requestLifetime(request)
-	defer cancel()
-	frames, unsubscribe := r.sandboxLists.subscribe(struct{}{})
-	defer unsubscribe()
-	streamLiveFrames(r, w, ctx, frames, encodedFrame)
-}
-
-func (r *streamingRoutes) produceSandboxList(ctx context.Context, _ struct{}, publish func([]byte)) error {
-	changes, unsubscribe := r.deps.Live.Subscribe()
-	defer unsubscribe()
-	for {
-		views, health, err := r.sandboxViews(ctx)
-		if err != nil {
-			return err
-		}
-		data, err := json.Marshal(sandboxListFrame{Sandboxes: views, Watch: health})
-		if err != nil {
-			return err
-		}
-		publish(data)
-		if _, ended := waitLiveChange(ctx, changes, nil); ended {
-			return nil
-		}
-	}
 }
 
 func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Request) {
@@ -541,33 +502,6 @@ func (r *streamingRoutes) sandboxThreads(ctx context.Context, sandbox *sandboxap
 	}
 }
 
-func (r *streamingRoutes) sandboxViews(ctx context.Context) ([]SandboxView, watchHealthView, error) {
-	snapshot, err := r.deps.Live.Snapshot(ctx)
-	if err != nil {
-		return nil, watchHealthView{}, err
-	}
-	views := make([]SandboxView, 0, len(snapshot.Sandboxes))
-	pods := make(map[string]*corev1.Pod, len(snapshot.Pods))
-	for i := range snapshot.Pods {
-		pod := snapshot.Pods[i]
-		pods[pod.Namespace+"/"+pod.Name] = &pod
-	}
-	for i := range snapshot.Sandboxes {
-		resource := &snapshot.Sandboxes[i]
-		var pod *corev1.Pod
-		if incarnation := resource.Status.Incarnation; incarnation != nil {
-			pod = pods[resource.Namespace+"/"+incarnation.Name]
-		}
-		view, err := sandboxview.View(resource, pod)
-		if err != nil {
-			return nil, watchHealthView{}, err
-		}
-		views = append(views, sandboxView(view))
-	}
-	sort.Slice(views, func(i, j int) bool { return views[i].Name < views[j].Name })
-	return views, healthView(snapshot.Watch), nil
-}
-
 func snapshotSandbox(snapshot liveinventory.Snapshot, name string) (*sandboxapi.Sandbox, *corev1.Pod) {
 	var resource *sandboxapi.Sandbox
 	for i := range snapshot.Sandboxes {
@@ -676,6 +610,30 @@ func (r *streamingRoutes) operatorLifetime(request *http.Request) (context.Conte
 		}
 	}()
 	return ctx, cancel, nil
+}
+
+// environmentWatch allows either an authenticated app service caller or an operator session.
+// It forwards only the inventory watch, using the app's explicitly granted service identity.
+func (r *streamingRoutes) environmentWatch(w http.ResponseWriter, request *http.Request) {
+	if r.deps.DispatcherHTTP == nil {
+		writeDetailError(w, http.StatusServiceUnavailable, "Environment Service is not configured")
+		return
+	}
+	var ctx context.Context
+	var cancel context.CancelFunc
+	caller, _ := auth.CallerFromContext(request.Context())
+	if caller.Kind == auth.CallerOperator {
+		var err error
+		ctx, cancel, err = r.operatorLifetime(request)
+		if err != nil {
+			writeDetailError(w, http.StatusForbidden, "operator login required")
+			return
+		}
+	} else {
+		ctx, cancel = r.requestLifetime(request)
+	}
+	defer cancel()
+	r.forwardFacade(w, request, ctx, r.deps.DispatcherHTTP, "v1/environments:watch", "")
 }
 
 func (r *streamingRoutes) dispatcher(w http.ResponseWriter, request *http.Request) {

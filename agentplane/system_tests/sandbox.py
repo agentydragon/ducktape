@@ -7,12 +7,16 @@ import json
 from collections.abc import AsyncIterator, Callable, Coroutine, Sequence
 from contextlib import AsyncExitStack, aclosing, asynccontextmanager
 from datetime import datetime
+from http import HTTPStatus
 from types import TracebackType
 from typing import Any
 from uuid import UUID
 
+import httpx
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import Message
+
+# gazelle:include_dep @pypi//protobuf
 from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
@@ -157,11 +161,19 @@ async def wait_until_running(client: Client, name: str, *, expected_uid: UUID) -
         try:
             async with deadline, aclosing(client.sandbox_snapshots()) as snapshots:
                 async for snapshot in snapshots:
-                    if not snapshot.watch.healthy:
+                    observed = next((row for row in snapshot if row.name == name), None)
+                    if observed is None:
                         continue
-                    view = next((view for view in snapshot.sandboxes if view.name == name), None)
-                    if view is None:
-                        continue
+                    if observed.uid != str(expected_uid):
+                        raise SandboxNotReadyError(
+                            f"{name} has been replaced: expected {expected_uid}, observed {observed.uid}"
+                        )
+                    try:
+                        view = await client.sandbox(name)
+                    except httpx.HTTPStatusError as error:
+                        if error.response.status_code == HTTPStatus.NOT_FOUND:
+                            continue
+                        raise
                     if view.uid != expected_uid:
                         raise SandboxNotReadyError(
                             f"{name} has been replaced: expected {expected_uid}, observed {view.uid}"
@@ -192,17 +204,15 @@ async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: U
             async with asyncio.timeout(SANDBOX_READY_SECONDS), aclosing(client.sandbox_snapshots()) as snapshots:
                 async for snapshot in snapshots:
                     last_snapshot = snapshot
-                    if not snapshot.watch.healthy:
-                        continue
-                    view = next((view for view in snapshot.sandboxes if view.name == name), None)
+                    view = next((view for view in snapshot if view.name == name), None)
                     if view is None:
                         if delete_requested:
                             cleanup.add_event("deleted")
                             return
                         continue
-                    if view.uid != uid:
+                    if view.uid != str(uid):
                         raise SandboxNotReadyError(f"{name} has been replaced: expected {uid}, observed {view.uid}")
-                    if not delete_requested and view.operating_mode is OperatingMode.SUSPENDED:
+                    if not delete_requested and view.operating_mode == OperatingMode.SUSPENDED.value:
                         cleanup.add_event("suspended")
                         await client.delete_sandbox(name)
                         cleanup.add_event("delete.accepted")
@@ -224,7 +234,7 @@ async def _write_cleanup_diagnostics(cluster: Cluster, client: Client, name: str
 
     diagnostic: dict[str, Any] = {
         "sandbox_name": name,
-        "last_live_snapshot": None if last_snapshot is None else last_snapshot.model_dump(mode="json"),
+        "last_live_snapshot": None if last_snapshot is None else [MessageToDict(row) for row in last_snapshot],
     }
 
     async def app_state(key: str, operation: Callable[[], Coroutine[Any, Any, Any]]) -> None:

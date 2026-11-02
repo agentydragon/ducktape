@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
+
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
@@ -263,6 +265,7 @@ func run(ctx context.Context, config Config) error {
 		facadeContext, config.SessionDispatcherTarget,
 		time.Duration(config.SessionDispatcherRequestTimeoutSecs*float64(time.Second)),
 		session_dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint,
+		environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint,
 	)
 	if err != nil {
 		return fmt.Errorf("configure generated Session Dispatcher HTTP facade: %w", err)

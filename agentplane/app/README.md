@@ -271,9 +271,10 @@ Staging runs two app replicas on separate nodes with `RollingUpdate` (`maxUnavai
 
 ### Inventory snapshots
 
-`/live/sandboxes` and `/live/sandboxes/{name}` are SSE, authenticated like every other route. Each
-carries a whole `snapshot` of what it covers whenever that changes, and a `health` frame through
-the quiet in between. What is pushed: the sandbox rows, one sandbox's bindings with each reader's verdict,
+The shared Sandbox inventory uses the generated EnvironmentService watch through
+`/upstream/environments/v1/environments:watch`. Protobuf snapshot chunks replace the inventory
+when complete; subsequent upserts and UID-fenced removals update individual Sandboxes. `/live/sandboxes/{name}` is an authenticated SSE stream carrying a
+whole detail snapshot on change and a health frame through the quiet. What it pushes: one Sandbox's bindings with each reader's verdict,
 its Action policy list, and its threads, the last of these from the store rather than a watch, since the app is the
 only writer of a thread's name. The Sandbox page uses those History Thread summaries as its retained
 Session inventory; its harness and turn fields are last observed History values. Suspending or
@@ -289,12 +290,12 @@ whether the page can open a new one; it does not determine whether a retained Hi
 in the table. Session creation displays progress and prevents duplicate clicks while the request
 runs.
 
-Each `/live/sandboxes` and `/live/sandboxes/{name}` snapshot is computed once per change for every stream with the
+Each `/live/sandboxes/{name}` snapshot is computed once per change for every stream with the
 same parameters and sent to all of them; a stream skips a snapshot identical to its last one. Only the Action policy
 list, which depends on the viewer, is computed per stream.
 
 A snapshot is not a delta, and there is no resumable id: a relist replaces a kind wholesale and a
-`resourceVersion` expires, so a reconnecting tab is served a fresh snapshot instead. Every frame
+`resourceVersion` expires, so a reconnecting tab is served a fresh snapshot instead. Each detail-stream frame
 carries the server's watch health: `healthy` once its informers have synced and while no kind's
 list or watch is failing, and each failing kind with its error and since when -- the same rule the
 egress proxy's readiness uses. A page whose server watch is failing says so rather than showing
@@ -346,9 +347,9 @@ whether its PostgreSQL listener is connected. The browser re-reads the list afte
 watch independently; a listener reconnect signals a re-read, including writes whose notifications were missed while
 disconnected. There is no sidebar polling loop or new notification service.
 
-The browser reads Sandboxes only from its one `/live/sandboxes` stream, which the whole shell shares (sidebar, landing
+The browser reads the shared Sandbox inventory from its one EnvironmentService watch, which the whole shell shares (sidebar, landing
 page, Sandbox list, and a Thread's top bar and composer), so two views of one Sandbox cannot disagree. Kubernetes
-inventory health stays with that stream; the Thread list's connection status comes from its History and app watches and
+inventory source loss closes that watch and marks it stale while it reconnects; the Thread list's connection status comes from its History and app watches and
 the PostgreSQL listener state.
 
 The landing route (`/`) is the same Thread list as a whole page, with each Thread's harness, model

@@ -1,3 +1,4 @@
+import { sandboxProto } from "../testing/sandbox_proto";
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
@@ -10,7 +11,7 @@ import type * as ThreadClientModule from "./client";
 import { listThreadWindow } from "./client";
 import { Home } from "./home";
 import { RoutedThreadsLiveProvider } from "./live";
-import { SandboxesLiveProvider, type SandboxesSnapshot } from "../sandboxes/live";
+import { SandboxesLiveProvider } from "../sandboxes/live";
 import { Sidebar } from "../sidebar";
 import { ServedWatch, serveEventStreams } from "../testing/watch";
 
@@ -90,21 +91,22 @@ async function render(): Promise<string[]> {
         stream.send({ snapshot: { observedAt: "2026-01-01T00:00:00Z", inboxes: [] } });
         return;
       }
-      if (pathname === "/live/sandboxes") {
-        const inventory: SandboxesSnapshot = { sandboxes: [SANDBOX], watch: { healthy: true, failing: {} } };
-        stream.event("snapshot", JSON.stringify(inventory));
+      if (pathname === "/upstream/environments/v1/environments:watch") {
+        stream.send({ snapshot: { sandboxes: [sandboxProto(SANDBOX)] } });
+        stream.send({ snapshotComplete: {} });
         return;
       }
       throw new Error(`Unexpected event stream route: ${pathname}${searchParams}`);
     },
     otherFetch,
-    new Set(["/upstream/notifications/v1/operator/notices:watch"])
+    new Set(["/upstream/notifications/v1/operator/notices:watch", "/upstream/environments/v1/environments:watch"])
   );
   const eventFetch = globalThis.fetch;
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
     if (new Headers(init?.headers).get("Accept") === "application/x-ndjson") {
       const watch = new ServedWatch(String(input), init?.signal ?? undefined);
       const pathname = watch.url.pathname;
+      if (pathname === "/upstream/environments/v1/environments:watch") return eventFetch(input, init);
       if (
         pathname !== "/upstream/app/v1/threads:watch" &&
         pathname !== "/upstream/history/v1/session-summaries:watch"

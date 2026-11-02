@@ -24,7 +24,7 @@ import { api, displayableError } from "../client";
 import { listSandboxPresets, type SandboxPresetView } from "../app_config_client";
 import { IdleSuspendField, IdleSuspendInput } from "./idle_suspend";
 import { ConfirmDelete, deletable, deleting, SuspendResume } from "./lifecycle";
-import { useRequiredSandboxesLive } from "./live";
+import { sandboxView, useRequiredSandboxesLive } from "./live";
 import { MarkGlyph } from "../mark_glyph";
 import { placeholderSandboxName, sandboxNameError } from "./sandbox_name";
 import { podIp, sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
@@ -74,7 +74,10 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const live = useRequiredSandboxesLive();
-  const rows: SandboxView[] = useMemo(() => live.snapshot?.sandboxes ?? [], [live.snapshot?.sandboxes]);
+  const rows: SandboxView[] = useMemo(
+    () => live.snapshot?.sandboxes.map(sandboxView) ?? [],
+    [live.snapshot?.sandboxes]
+  );
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedPreset = searchParams.get(PRESET_PARAM);
   // An empty Name field creates the Sandbox under this free name, derived from the preset's.

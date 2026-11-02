@@ -187,6 +187,7 @@ class RunnerGateway(Construct):
         # Lists are file-only settings.
         content = {
             "dispatcher_callers": dispatcher_accounts,
+            "environment_readers": [_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))],
             "gateway_callers": gateway_accounts,
             "runner_security": MTLS(
                 mode="mtls", tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)

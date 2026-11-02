@@ -98,7 +98,7 @@ async def _next_decisions(stream: AsyncIterator[str]) -> DecisionsSnapshot:
 async def test_the_streams_need_a_caller(app: AppProcess) -> None:
     async with httpx.AsyncClient(base_url=app.url) as unauthenticated:
         for route in (
-            "/live/sandboxes",
+            "/upstream/environments/v1/environments:watch",
             "/live/sandboxes/runner-1/egress/decisions",
             "/live/sandboxes/runner-1",
             "/upstream/app/v1/threads",

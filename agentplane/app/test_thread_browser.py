@@ -34,6 +34,7 @@ from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.http2_proxy import BrowserCertificate, http2_proxy
 from agentplane.app.testing.replication_process import GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.app.testing.runner_gateway import APP, DISPATCHER_AUDIENCE, GATEWAY, GATEWAY_AUDIENCE
 from agentplane.app.testing.thread_browser import (
     ThreadBrowser,
     append_items,
@@ -61,7 +62,7 @@ from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
-from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
+from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
@@ -126,6 +127,31 @@ async def sandbox(api_server: KubernetesApiServer) -> AsyncIterator[SandboxClust
         yield started
 
 
+@pytest.fixture
+async def empty_gateway_access(
+    api_server: KubernetesApiServer,
+    namespace: SandboxNamespace,
+    dispatcher_database_url: str,
+    app_token_file: Path,
+    tmp_path: Path,
+) -> AsyncIterator[GatewayAccess]:
+    """A real inventory service for tests whose Sandbox has already been deleted."""
+    token_file = tmp_path / "empty-gateway-token"
+    token_file.write_text(await api_server.workload_token(GATEWAY, [GATEWAY_AUDIENCE]))
+    async with run_gateway(
+        namespace.kubeconfig,
+        database_url=dispatcher_database_url,
+        namespace=namespace.name,
+        dispatcher_callers=(APP,),
+        gateway_callers=(APP, GATEWAY),
+        environment_readers=(APP,),
+        dispatcher_audience=DISPATCHER_AUDIENCE,
+        gateway_audience=GATEWAY_AUDIENCE,
+        runner_proxy_token_file=token_file,
+    ) as gateway:
+        yield GatewayAccess(gateway.target, app_token_file)
+
+
 async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     review_view: VisualPage,
     db_url: str,
@@ -136,6 +162,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     electric: ElectricService,
     certificate: BrowserCertificate,
     namespace: SandboxNamespace,
+    empty_gateway_access: GatewayAccess,
 ) -> None:
     page = review_view.page
     thread_id = await event_logs.seed(SANDBOX, SESSION)
@@ -147,7 +174,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
             db_url,
             history=event_logs.reader,
             sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
-            gateway=None,
+            gateway=empty_gateway_access,
             browser_login=True,
             certificate=certificate,
             electric_url=electric.url,
@@ -238,6 +265,7 @@ async def test_switching_threads_starts_at_each_threads_tail(
     electric: ElectricService,
     certificate: BrowserCertificate,
     namespace: SandboxNamespace,
+    empty_gateway_access: GatewayAccess,
 ) -> None:
     threads, _ = await _seed_navigation_threads(event_logs, history, store)
     async with (
@@ -245,7 +273,7 @@ async def test_switching_threads_starts_at_each_threads_tail(
             db_url,
             history=event_logs.reader,
             sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
-            gateway=None,
+            gateway=empty_gateway_access,
             browser_login=True,
             certificate=certificate,
             electric_url=electric.url,
@@ -285,6 +313,7 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
     electric: ElectricService,
     certificate: BrowserCertificate,
     namespace: SandboxNamespace,
+    empty_gateway_access: GatewayAccess,
 ) -> None:
     """The history lays an unmeasured row out at a flat guess; one it has read before, at the height
     it read. Rows read on a thread's first visit are laid out at those heights on the return."""
@@ -294,7 +323,7 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
             db_url,
             history=event_logs.reader,
             sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
-            gateway=None,
+            gateway=empty_gateway_access,
             browser_login=True,
             certificate=certificate,
             electric_url=electric.url,
@@ -347,6 +376,7 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
     electric: ElectricService,
     certificate: BrowserCertificate,
     namespace: SandboxNamespace,
+    empty_gateway_access: GatewayAccess,
 ) -> None:
     threads, sources = await _seed_navigation_threads(event_logs, history, store)
     async with (
@@ -354,7 +384,7 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
             db_url,
             history=event_logs.reader,
             sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
-            gateway=None,
+            gateway=empty_gateway_access,
             browser_login=True,
             certificate=certificate,
             electric_url=electric.url,

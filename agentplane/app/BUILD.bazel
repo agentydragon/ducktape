@@ -359,6 +359,7 @@ py_test(
         "//agentplane/app/testing:http2_proxy",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:replication_source",
+        "//agentplane/app/testing:runner_gateway",
         "//agentplane/app/testing:thread_browser",
         "//agentplane/app/testing:thread_test_support",
         "//agentplane/app/testing:thread_view_marks",
