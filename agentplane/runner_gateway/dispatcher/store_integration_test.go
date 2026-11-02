@@ -1352,8 +1352,10 @@ func TestWorkerRetriesAuthorizedWakeAfterDenialUsingEffectiveCaller(t *testing.T
 		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(7),
 	}
 	wake := &scriptedWake{assessments: []*environmentpb.WakeAssessment{
-		{State: environmentpb.WakeState_WAKE_STATE_DENIED, Reason: environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED,
-			ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(7)},
+		{
+			State: environmentpb.WakeState_WAKE_STATE_DENIED, Reason: environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED,
+			ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(7),
+		},
 		requested,
 	}}
 	fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
@@ -1394,9 +1396,11 @@ func TestWorkerRetriesAuthorizedWakeAfterDenialUsingEffectiveCaller(t *testing.T
 
 func TestWorkerDoesNotRepeatUnknownWakeInSameGeneration(t *testing.T) {
 	wake := &scriptedWake{assessments: []*environmentpb.WakeAssessment{
-		{State: environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN, Reason: environmentpb.WakeReason_WAKE_REASON_OUTCOME_UNKNOWN,
+		{
+			State: environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN, Reason: environmentpb.WakeReason_WAKE_REASON_OUTCOME_UNKNOWN,
 			ObservedAt: timestamppb.Now(), TargetGeneration: proto.Uint64(7),
-			Error: status.New(codes.Unavailable, "patch reply was lost").Proto()},
+			Error: status.New(codes.Unavailable, "patch reply was lost").Proto(),
+		},
 		{State: environmentpb.WakeState_WAKE_STATE_DENIED, Reason: environmentpb.WakeReason_WAKE_REASON_TARGET_CHANGED},
 	}}
 	fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
