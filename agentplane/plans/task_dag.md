@@ -1714,7 +1714,7 @@ Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-co
 
 ### `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN` — authorize explicit resume and message wake
 
-**Selected P0 decision; [proposal #13546](https://github.com/agentydragon/ducktape/pull/13546) in review; operator dispatch 2026-11-01 UTC.** Explicit resume first
+**Selected P0 decision; [draft proposal #13546](https://github.com/agentydragon/ducktape/pull/13546) for stakeholder discussion; operator dispatch 2026-11-01 UTC.** Explicit resume first
 and optional model incarnation fencing are selected. Define the remaining authority matrix for
 agents, external MCP callers, users and backend automation against existing Sandbox targets.
 This consolidates the earlier same-SA wake-allowlist question without equating the triggers:
@@ -1723,6 +1723,14 @@ explicit resume is a lifecycle request; wake-on-message is a delivery policy.
 **Operator direction, 2026-11-02 UTC:** represent the proposed target opt-in as an object,
 `resumePolicy: { allowOwnServiceAccount: true }`, with a false default. The remaining authority
 choices below still need review; see the [policy shape](environment_lifecycle_authorization.md#target-policy-shape).
+
+**Draft revision, 2026-11-02 UTC:** [layering and sender-visible outcomes](environment_lifecycle_authorization.md#layering-admission-optional-wake-lifecycle-and-execution)
+recommend one caller-authorized resume operation for both explicit resume and Dispatcher-triggered
+wake. `wakeOnSend` enables the automatic request, without granting extra authority. An authorized
+input stays queued when wake is disabled or denied, with typed delivery-blocker/wake observations
+available through receipt reads, watches and agent-facing observation. Current app HTTP lifecycle
+routes and direct Runtime proxy calls are distinguished from proposed RPCs; a direct send has no
+Dispatcher receipt. These are recommendations for review, not selected runtime behavior.
 
 The environment lifecycle API validates the effective caller and target identity, enforces the
 selected opt-in/budgets, and requests desired state; the Sandbox Controller reconciles the Pod/VM.
@@ -1734,15 +1742,16 @@ execution alone grants no resume permission, and environments may have no resume
 **Questions for review:** allow exact same-SA callers to resume their target directly, use narrow
 delegated lifecycle grants, or retain operator/backend-only resume? Recommend the same-SA option
 under explicit target policy, without generic Kubernetes patch authority. For authorized message
-delivery, allow same-SA wake when `wakeOnSend=true` (recommended) or retain `wake_callers` as an
-additional gate? Specify whether an explicit resume needs a separate opt-in, how wake budgets and
-concurrent requests converge, and what happens when the operator manually stopped the environment.
+delivery, require that same resume authority plus `wakeOnSend=true` (revised recommendation), or
+grant message wake independently of explicit resume? Review migration of the existing `wake_callers`
+broker path explicitly. Specify how wake budgets and concurrent requests converge, and what happens
+when the operator manually stopped the environment.
 Do not reinterpret `wakeOnSend` as generic execution/resume permission. Retain existing send
 authorization and explicit privileged broker behavior; do not silently remove the current allowlist.
 
 **Exit:** reviewed caller/target/trigger examples, denial and approval rules, revocation/account
-replacement, budget/manual-stop behavior and one owning API contract. The API can initially live
-in an existing binary. Fresh provisioning/catalogue ownership, broad grant administration and
+replacement, budget/manual-stop behavior, observable queued wake assessments and one owning API
+contract. The API can initially live in an existing binary. Fresh provisioning/catalogue ownership, broad grant administration and
 Session/Environment dispatch regrouping remain outside this decision. Routing/error reporting and
 incarnation fencing proceed independently; backend mutation/exposure waits for this outcome.
 
@@ -1765,8 +1774,9 @@ without an available environment. Update discovery, agent instructions and ownin
 
 **Exit:** deterministic coverage exercises idle suspension, authorized resume, readiness,
 reconnection to the same Sandbox's new incarnation and a successful newly requested exec; it also
-covers concurrent resume, denied/failed wake, admission/quiesce races and uncertain prior effects
-without replay. Reuse existing same-Sandbox rebind coverage; the new outcome is agent-requested
+covers concurrent resume, sender-visible queued denial/disabled/rate-limited wake through reads and
+watches, denied/failed wake, admission/quiesce races and uncertain prior effects without replay.
+Reuse existing same-Sandbox rebind coverage; the new outcome is agent-requested
 resume and recovery. Broader notices and fresh provisioning are not prerequisites. Optional
 model-controlled incarnation fencing landed in [#13427](https://github.com/agentydragon/ducktape/pull/13427);
 it remains an execution contract, but no longer an in-flight DAG item.
