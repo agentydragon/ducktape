@@ -576,7 +576,7 @@ concrete Sandbox choices; it does not
 store per-Sandbox Session defaults. On a new Thread open, the app resolves the defaults from its
 configured preset catalog using that Sandbox label, then overlays fields explicitly supplied for
 the Thread. `policy_sets` are the Sandbox's grants beside the deployment's defaults, and a set name
-the namespace does not hold is refused with 422 before the Sandbox exists.
+the namespace does not hold is refused before the Sandbox exists.
 The form records the picked preset in the URL (`/#/?preset=<name>`) so a launch form can be linked
 to.
 
