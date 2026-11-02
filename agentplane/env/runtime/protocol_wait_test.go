@@ -109,7 +109,7 @@ func TestWaitForHostQuiescedWakesForFinalReportPublishedAfterSnapshot(t *testing
 	go func() { observerDone <- engine.Run(observerCtx) }()
 	t.Cleanup(func() { stopObserver(); <-observerDone })
 	publishAppliedHostIntent(t, r)
-	initialChange := r.changes
+	initialChange := r.changesSince()
 	value := lifecycle.HostReport{Intent: proto.Clone(r.intent).(*runtimepb.LifecycleIntent), Report: report}
 	if err := cosi.Publish(t.Context(), r.lifecycleState, lifecycle.HostReportResource(value), value, "harness-host-report"); err != nil {
 		t.Fatal(err)
