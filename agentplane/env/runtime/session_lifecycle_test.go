@@ -374,6 +374,10 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	if seal == nil || seal.Cursor == 0 {
 		t.Fatalf("journal seal = %+v, want a nonzero cursor", seal)
 	}
+	progress, found, err := session.ReadLifecycleStatus(r.lifecycleContext, r.lifecycleState, s.ID())
+	if err != nil || !found || !progress.Sealed || progress.EnvironmentGeneration != environmentDesired(r).Generation || progress.SealUID != seal.IncarnationUID || progress.SealCursor != seal.Cursor {
+		t.Fatalf("Session seal status = %+v, found=%t err=%v; journal seal = %+v", progress, found, err, seal)
+	}
 	if err := r.store.WriteAcknowledgement(s.ID(), retained.Acknowledgement{Cursor: seal.Cursor - 1, Sealed: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -732,6 +736,14 @@ func TestNewIncarnationWaitsForTeardown(t *testing.T) {
 	}
 	if !sessionAdmissionOpen(r) {
 		t.Fatal("new incarnation did not reopen admission")
+	}
+	waitLifecycle(t, r, func() bool {
+		progress, found, err := session.ReadLifecycleStatus(r.lifecycleContext, r.lifecycleState, s.ID())
+		return err == nil && found && progress.EnvironmentGeneration == environmentDesired(r).Generation
+	}, "successor Session generation")
+	progress, found, err := session.ReadLifecycleStatus(r.lifecycleContext, r.lifecycleState, s.ID())
+	if err != nil || !found || progress.EnvironmentGeneration != environmentDesired(r).Generation || progress.Sealed || progress.SealUID != "" {
+		t.Fatalf("successor Session status retained predecessor seal: %+v, found=%t err=%v", progress, found, err)
 	}
 }
 

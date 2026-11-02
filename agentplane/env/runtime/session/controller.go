@@ -30,6 +30,7 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 			{Namespace: lifecycle.Namespace, Type: lifecycle.AdmissionCountType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.AggregateStatusType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: codexappserver.StatusType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: InspectionStatusType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: LifecycleStatusType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(c.manager.workers)),
@@ -37,7 +38,7 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 }
 
 func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
-	if ptr.Type() == OwnerStatusType {
+	if ptr.Type() == OwnerStatusType || ptr.Type() == InspectionStatusType {
 		return []resource.Pointer{resource.NewMetadata(lifecycle.Namespace, ReconcileSnapshotType, ptr.ID(), resource.VersionUndefined)}, nil
 	}
 	rows, err := safe.ReaderListAll[*typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]](ctx, r)
@@ -92,8 +93,13 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 		current = LifecycleStatus{EnvironmentGeneration: desiredState.Generation, SetupOperationID: current.SetupOperationID}
 	} else if current.EnvironmentGeneration != desiredState.Generation {
+		// A shutdown retry keeps its settled halt and process stop. Only the
+		// seal proof must be reconstructed for the new generation.
 		current.EnvironmentGeneration = desiredState.Generation
 		current.Error = ""
+		current.Sealed = false
+		current.SealUID = ""
+		current.SealCursor = 0
 	}
 	current.AdmissionClosed = s.admissionClosed()
 	if op, done := s.takeOperation(&s.setupJob); done {
@@ -266,13 +272,24 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 		if op, done := s.takeOperation(&s.sealing); done {
 			if op.Err() != nil {
+				current.Error = op.Err().Error()
+				if err := write(); err != nil {
+					return err
+				}
 				return op.Err()
 			}
 		}
 		s.mu.Lock()
 		inspected := s.inspection == nil && len(s.reconciliations) == 0
+		sealingPending := s.sealing != nil
 		s.mu.Unlock()
-		if current.Phase == Halted && current.ProcessStopped && inspected && outer.Stage >= lifecycle.Sealing && desiredState.SealUID != "" {
+		inspection, inspectionFound, err := ReadInspectionStatus(ctx, r, s.id)
+		if err != nil {
+			return err
+		}
+		inspected = inspected && inspectionFound && !inspection.Inspecting
+		fenceReady := outer.Generation == desiredState.Generation && outer.NativeStopped && outer.Stage >= lifecycle.Sealing
+		if current.Phase == Halted && current.ProcessStopped && inspected && fenceReady && desiredState.SealUID != "" {
 			s.closeAdmission(desiredState.Generation)
 			if s.journal.SealState() == nil {
 				if _, err := s.startOperation(&s.sealing, func(ctx context.Context) error {
@@ -284,7 +301,13 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 					current.Error = err.Error()
 					return write()
 				}
+				sealingPending = true
 			}
+		}
+		if seal := s.journal.SealState(); seal != nil && !sealingPending && current.Phase == Halted && current.ProcessStopped && inspected && fenceReady && seal.IncarnationUID == desiredState.SealUID {
+			current.Sealed = true
+			current.SealUID = seal.IncarnationUID
+			current.SealCursor = seal.Cursor
 		}
 		return write()
 	}

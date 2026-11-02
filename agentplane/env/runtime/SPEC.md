@@ -112,7 +112,12 @@ Quiesce selects the durable incarnation seal before publishing the draining revi
 completion requires settled admissions/setup, halted Sessions, shared app-server cleanup, all
 harness-domain process finalizers and inspection writes. Runtime then drains and fences Execution.
 Its fence completion names both the Execution attempt and lifecycle generation. Journals seal only
-after those exact native and Execution barriers. History sends final entries and seals, persists the
+after those exact native and Execution barriers. Each Session lifecycle controller projects a
+committed journal seal into its volatile status only after its halt, process stop and inspection
+have settled and the matching generation's global barriers permit sealing. The projection names
+the seal UID and cursor; a missing or stale projection cannot complete the environment barrier.
+The journal remains the durable seal authority, so recovery rechecks it and the fresh cleanup
+proofs before publishing status. History sends final entries and seals, persists the
 acknowledgements, and satisfies delivery only at each exact sealed cursor.
 
 Ordinary Close without a seal drains local work and creates no seal. Close preserving a seal waits
