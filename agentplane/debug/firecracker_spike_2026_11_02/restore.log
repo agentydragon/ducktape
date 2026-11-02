@@ -1,0 +1,20 @@
+2026-11-02T18:32:01.579048659 [anonymous-instance:main] Running Firecracker v1.17.0
+2026-11-02T18:32:01.579297569 [anonymous-instance:main] Listening on API socket ("/work/firecracker.sock").
+2026-11-02T18:32:01.579555134 [anonymous-instance:fc_api] API server started.
+2026-11-02T18:32:01.679376912 [anonymous-instance:fc_api] The API server received a Put request on "/snapshot/load" with body "{\"snapshot_path\": \"/work/evidence/vmstate\", \"mem_backend\": {\"backend_type\": \"File\", \"backend_path\": \"/work/evidence/memory\"}, \"resume_vm\": true}".
+2026-11-02T18:32:01.680092470 [anonymous-instance:main] Host CPU vendor ID: [65, 117, 116, 104, 101, 110, 116, 105, 99, 65, 77, 68]
+2026-11-02T18:32:01.680111265 [anonymous-instance:main] Snapshot CPU vendor ID: [65, 117, 116, 104, 101, 110, 116, 105, 99, 65, 77, 68]
+2026-11-02T18:32:01.691356690 [anonymous-instance:main] Artificially kick devices
+2026-11-02T18:32:01.691369634 [anonymous-instance:main] [Block:agentplane_config] notifying queues
+2026-11-02T18:32:01.691373250 [anonymous-instance:main] [Block:agentplane_runner] notifying queues
+2026-11-02T18:32:01.691376026 [anonymous-instance:main] [Block:credentials] notifying queues
+2026-11-02T18:32:01.691377399 [anonymous-instance:main] [Block:rootfs] notifying queues
+2026-11-02T18:32:01.691379563 [anonymous-instance:main] [Block:agentplane_trust] notifying queues
+2026-11-02T18:32:01.691380835 [anonymous-instance:main] [Block:workspace] notifying queues
+2026-11-02T18:32:01.691382118 [anonymous-instance:main] [Block:agentplane_launch] notifying queues
+2026-11-02T18:32:01.691383410 [anonymous-instance:main] [Block:state] notifying queues
+2026-11-02T18:32:01.691385633 [anonymous-instance:main] [Net:eth0] notifying queues
+2026-11-02T18:32:01.691418797 [anonymous-instance:fc_vcpu 0] Received a VcpuEvent::Resume message with immediate_exit enabled. immediate_exit was disabled before proceeding
+2026-11-02T18:32:01.691490642 [anonymous-instance:fc_api] The request was executed successfully. Status code: 204 No Content.
+2026-11-02T18:32:01.691578918 [anonymous-instance:fc_api] 'load snapshot' API request took 12209 us.
+[    4.929622] random: crng reseeded due to virtual machine fork
