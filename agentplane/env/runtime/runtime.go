@@ -21,10 +21,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
- "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
- "github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
- "github.com/agentydragon/ducktape/agentplane/env/runtime/session"
- "google.golang.org/protobuf/types/known/timestamppb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
@@ -36,12 +35,13 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
 	RuntimeUnitName                            = "agentplane-environment-runtime.service"
 	RuntimeScopeID  supervision.SystemdScopeID = supervision.SystemdEnvironmentRuntimeScopeID
-	HarnessScopeID     supervision.SystemdScopeID = "harness"
+	HarnessScopeID  supervision.SystemdScopeID = "harness"
 )
 
 // Config contains the resolved environment configuration.
@@ -121,7 +121,7 @@ type Runtime struct {
 	desired                  lifecycle.EnvironmentDesired
 	bootID                   string
 	supervisor               *supervision.Supervisor
-	admissionOpen bool
+	admissionOpen            bool
 	executorProxy            executorpb.ExecutorServer
 	executionOwner           *executionLifetime
 	activeAdmissions         uint64
@@ -131,8 +131,8 @@ type Runtime struct {
 	execCalls                map[uint64]context.CancelFunc
 	execCallID               uint64
 	fenceInFlight            uint64
- fenceDone chan struct{}
- fenceErr error
+	fenceDone                chan struct{}
+	fenceErr                 error
 	closing                  bool
 	failed                   bool
 	changes                  chan struct{}
@@ -141,17 +141,17 @@ type Runtime struct {
 	control                  *control.Server
 	bootstrapWait            func(context.Context) error
 	sessions                 *session.Manager
- store *retained.Store
- codexAppServer *codexappserver.Host
- createMu sync.Mutex
- sealPublishMu sync.Mutex
- idleSince *timestamppb.Timestamp
- startupComplete bool
- harnessSupervisor *supervision.Supervisor
- workspaceSupervisor *supervision.Supervisor
- harnessProcesses *supervision.Host
- sessionWorkers sync.WaitGroup
- sessionScripts *scripts.Runner
+	store                    *retained.Store
+	codexAppServer           *codexappserver.Host
+	createMu                 sync.Mutex
+	sealPublishMu            sync.Mutex
+	idleSince                *timestamppb.Timestamp
+	startupComplete          bool
+	harnessSupervisor        *supervision.Supervisor
+	workspaceSupervisor      *supervision.Supervisor
+	harnessProcesses         *supervision.Host
+	sessionWorkers           sync.WaitGroup
+	sessionScripts           *scripts.Runner
 	sessionWorkerDone        chan struct{}
 	sessionWorkerErr         error
 	ingress                  *ingressWorker
@@ -354,7 +354,7 @@ func (r *Runtime) startLifecycleEngineLocked() {
 func (r *Runtime) Close(ctx context.Context) error {
 	r.mu.Lock()
 	r.closing = true
- r.admissionOpen = false
+	r.admissionOpen = false
 	if r.activeTransitionCancel != nil {
 		r.activeTransitionCancel()
 	}
@@ -388,9 +388,15 @@ func (r *Runtime) Close(ctx context.Context) error {
 func (r *Runtime) finishClose() error {
 	r.mu.Lock()
 	desired := r.desired
- desired.Mode, desired.Generation = lifecycle.Closing, desired.Generation+1
- if sealedUID,sealed,err:=r.state.SealedUID();err!=nil {r.mu.Unlock();return err}else if sealed {desired.SealUID=sealedUID;desired.IncarnationUID=sealedUID}
- r.admissionOpen = false
+	desired.Mode, desired.Generation = lifecycle.Closing, desired.Generation+1
+	if sealedUID, sealed, err := r.state.SealedUID(); err != nil {
+		r.mu.Unlock()
+		return err
+	} else if sealed {
+		desired.SealUID = sealedUID
+		desired.IncarnationUID = sealedUID
+	}
+	r.admissionOpen = false
 	if err := lifecycle.PublishEnvironmentDesired(context.Background(), r.lifecycleState, desired); err != nil {
 		r.mu.Unlock()
 		return fmt.Errorf("publish Runtime closing state: %w", err)
@@ -546,16 +552,20 @@ func (r *Runtime) stopExecution(ctx context.Context) error {
 }
 
 func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, error) {
- facts, err := r.sessionFacts(context.Background())
- if err != nil { return nil, err }
- r.mu.Lock()
- desired, closing := r.desired, r.closing
- activeAdmissions := r.activeAdmissions
- activeExecution := r.activeExecutionCalls
- executionRecovering := r.executionOwner.recovering()
- ready := r.startupComplete && !r.failed
- r.mu.Unlock()
- if facts == nil { facts = &environmentruntimestatepb.EnvironmentRuntimeFacts{} }
+	facts, err := r.sessionFacts(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	r.mu.Lock()
+	desired, closing := r.desired, r.closing
+	activeAdmissions := r.activeAdmissions
+	activeExecution := r.activeExecutionCalls
+	executionRecovering := r.executionOwner.recovering()
+	ready := r.startupComplete && !r.failed
+	r.mu.Unlock()
+	if facts == nil {
+		facts = &environmentruntimestatepb.EnvironmentRuntimeFacts{}
+	}
 	bootstrapActive := false
 	if r.bootstrapHost != nil && r.bootstrapHost.Configured() {
 		request, requestFound, err := bootstrap.ReadRequest(context.Background(), r.lifecycleState)

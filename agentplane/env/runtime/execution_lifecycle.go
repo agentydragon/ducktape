@@ -46,10 +46,10 @@ type executionLossCompletion struct {
 }
 
 type executionFenceCompletion struct {
- LifecycleGeneration uint64
-	Generation uint64
-	UID        string
-	Error      string
+	LifecycleGeneration uint64
+	Generation          uint64
+	UID                 string
+	Error               string
 }
 
 type executionPhase uint8

@@ -2,7 +2,7 @@ package runtime
 
 import (
 	"context"
- "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	runtimecontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/control"
@@ -32,7 +32,9 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 			return status.Error(codes.Unavailable, "execution admission is closed")
 		}
 		progress, found, err := r.readSessionStatus(ctx)
- if err != nil {return err}
+		if err != nil {
+			return err
+		}
 		if found && progress.Generation == r.desired.Generation && progress.NativeStopped {
 			return status.Error(codes.FailedPrecondition, "environment native work has stopped")
 		}
@@ -132,7 +134,9 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 			return status.Error(codes.Unavailable, "Execution API is not ready for this incarnation")
 		}
 		progress, found, err := r.readSessionStatus(stream.Context())
- if err != nil {return err}
+		if err != nil {
+			return err
+		}
 		if found && progress.Generation == r.desired.Generation && progress.NativeStopped {
 			return status.Error(codes.FailedPrecondition, "environment native work has stopped")
 		}

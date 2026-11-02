@@ -28,12 +28,12 @@ type runtimeLifecycleController struct {
 }
 
 type closePlan struct {
- generation uint64
- sealUID string
- sessionsStarted bool
- sessionLossErr error
- fenceCtx context.Context
- cancelFence context.CancelFunc
+	generation      uint64
+	sealUID         string
+	sessionsStarted bool
+	sessionLossErr  error
+	fenceCtx        context.Context
+	cancelFence     context.CancelFunc
 }
 
 type closeOperation struct {
@@ -214,35 +214,49 @@ func (c *runtimeLifecycleController) stopSessions(ctx context.Context) error {
 }
 
 func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecycle.RuntimeCloseStage) error {
- p:=&c.plan
- switch stage {
- case lifecycle.RuntimeClosePreparing:return c.prepare()
- case lifecycle.RuntimeCloseNativeStopping:
-  if p.sessionsStarted{return c.r.waitForNativeStopped(p.fenceCtx,p.generation)}
-  return nil
- case lifecycle.RuntimeCloseExecutionFencing:return c.r.waitForExecutionFenced(p.fenceCtx,p.generation)
- case lifecycle.RuntimeCloseHostFlushing:
-  if p.sealUID!=""&&p.sessionsStarted{return c.r.waitSessionStage(p.fenceCtx,lifecycle.Quiesced)}
-  return nil
- case lifecycle.RuntimeCloseHostJoining:
-  if err:=c.r.stopIngress(p.fenceCtx);err!=nil{return fmt.Errorf("join History delivery: %w",err)}
-  if p.sessionsStarted{return c.stopSessions(p.fenceCtx)}
-  return nil
- case lifecycle.RuntimeCloseBootstrapSettling:return c.r.waitBootstrapSettled(ctx)
- default:return fmt.Errorf("unexpected Runtime Close stage %d",stage)
- }
+	p := &c.plan
+	switch stage {
+	case lifecycle.RuntimeClosePreparing:
+		return c.prepare()
+	case lifecycle.RuntimeCloseNativeStopping:
+		if p.sessionsStarted {
+			return c.r.waitForNativeStopped(p.fenceCtx, p.generation)
+		}
+		return nil
+	case lifecycle.RuntimeCloseExecutionFencing:
+		return c.r.waitForExecutionFenced(p.fenceCtx, p.generation)
+	case lifecycle.RuntimeCloseHostFlushing:
+		if p.sealUID != "" && p.sessionsStarted {
+			return c.r.waitSessionStage(p.fenceCtx, lifecycle.Quiesced)
+		}
+		return nil
+	case lifecycle.RuntimeCloseHostJoining:
+		if err := c.r.stopIngress(p.fenceCtx); err != nil {
+			return fmt.Errorf("join History delivery: %w", err)
+		}
+		if p.sessionsStarted {
+			return c.stopSessions(p.fenceCtx)
+		}
+		return nil
+	case lifecycle.RuntimeCloseBootstrapSettling:
+		return c.r.waitBootstrapSettled(ctx)
+	default:
+		return fmt.Errorf("unexpected Runtime Close stage %d", stage)
+	}
 }
 
 func (c *runtimeLifecycleController) prepare() error {
- r:=c.r
- r.transitionMu.Lock()
- defer r.transitionMu.Unlock()
- r.mu.Lock()
- defer r.mu.Unlock()
- if r.transitionUnsafe!=nil{return fmt.Errorf("prior Runtime transition has an uncertain Execution fence: %w",r.transitionUnsafe)}
- c.plan.generation=r.desired.Generation
- c.plan.sessionsStarted=r.sessions!=nil
- c.plan.sealUID=r.desired.SealUID
- c.plan.fenceCtx,c.plan.cancelFence=context.WithTimeout(context.Background(),executionFenceGrace)
- return nil
+	r := c.r
+	r.transitionMu.Lock()
+	defer r.transitionMu.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.transitionUnsafe != nil {
+		return fmt.Errorf("prior Runtime transition has an uncertain Execution fence: %w", r.transitionUnsafe)
+	}
+	c.plan.generation = r.desired.Generation
+	c.plan.sessionsStarted = r.sessions != nil
+	c.plan.sealUID = r.desired.SealUID
+	c.plan.fenceCtx, c.plan.cancelFence = context.WithTimeout(context.Background(), executionFenceGrace)
+	return nil
 }

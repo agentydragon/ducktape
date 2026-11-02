@@ -44,7 +44,7 @@ type runtimeTransitionWorker struct {
 
 type runtimeTransitionOutcome struct {
 	steps        []runtimeTransitionStep
-	generation uint64
+	generation   uint64
 	adoption     adoptionOutcome
 	adoptionPlan *adoptionPlan
 	quiesce      *quiescePlan

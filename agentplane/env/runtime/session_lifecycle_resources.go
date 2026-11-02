@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	environmentAdmissionCountType = "EnvironmentAdmissionCounts.agentplane"
-	journalSealType               = "JournalSeals.agentplane"
-	sessionLifecycleControllerName     = "environment-session-lifecycle"
+	environmentAdmissionCountType  = "EnvironmentAdmissionCounts.agentplane"
+	journalSealType                = "JournalSeals.agentplane"
+	sessionLifecycleControllerName = "environment-session-lifecycle"
 )
 
 // Specs contain scalar values and immutable time.Time values; no native handles or mutable references.
@@ -58,4 +58,3 @@ func (value environmentAdmissionCountSpec) DeepCopy() environmentAdmissionCountS
 
 func (journalSealSpec) resourceType() resource.Type     { return journalSealType }
 func (value journalSealSpec) DeepCopy() journalSealSpec { return value }
-

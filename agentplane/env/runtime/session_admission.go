@@ -2,15 +2,15 @@ package runtime
 
 import (
 	"context"
- "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
- runtimecontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	"errors"
+	runtimecontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/control"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"path/filepath"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/journal"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/workspace"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
@@ -42,8 +42,10 @@ func (r *Runtime) OpenSession(ctx context.Context, request *environmentruntimepb
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	expected, err := r.authorizeSession(ctx, true)
- if err != nil {return nil, err}
- if r.isClosing() {
+	if err != nil {
+		return nil, err
+	}
+	if r.isClosing() {
 		return nil, status.Error(codes.Aborted, "this Sandbox is quiesced")
 	}
 	spec := proto.Clone(request.Spec).(*sessionpb.SessionSpec)
@@ -258,33 +260,47 @@ func rpcError(err error) error {
 }
 
 func (r *Runtime) acceptingLocked() bool {
- return r.admissionOpen && !r.closing && !r.failed && r.startupComplete && r.desired.Mode == lifecycle.Running
+	return r.admissionOpen && !r.closing && !r.failed && r.startupComplete && r.desired.Mode == lifecycle.Running
 }
 
-func (r *Runtime) authorizeSession(ctx context.Context, running bool) (lifecycle.EnvironmentDesired,error) {
- epoch,err:=r.control.Authorize(ctx)
- if err!=nil{return lifecycle.EnvironmentDesired{},err}
- r.mu.Lock()
- defer r.mu.Unlock()
- if err:=r.authorizeSessionEpochLocked(epoch,running);err!=nil{return lifecycle.EnvironmentDesired{},err}
- return r.desired,nil
+func (r *Runtime) authorizeSession(ctx context.Context, running bool) (lifecycle.EnvironmentDesired, error) {
+	epoch, err := r.control.Authorize(ctx)
+	if err != nil {
+		return lifecycle.EnvironmentDesired{}, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.authorizeSessionEpochLocked(epoch, running); err != nil {
+		return lifecycle.EnvironmentDesired{}, err
+	}
+	return r.desired, nil
 }
 
-func (r *Runtime) authorizeSessionLocked(ctx context.Context,running bool)error {
- epoch,err:=r.control.Authorize(ctx)
- if err!=nil{return err}
- return r.authorizeSessionEpochLocked(epoch,running)
+func (r *Runtime) authorizeSessionLocked(ctx context.Context, running bool) error {
+	epoch, err := r.control.Authorize(ctx)
+	if err != nil {
+		return err
+	}
+	return r.authorizeSessionEpochLocked(epoch, running)
 }
 
-func (r *Runtime) authorizeSessionEpochLocked(epoch *runtimecontrol.Epoch,running bool)error {
- if r.closing||r.failed||!r.startupComplete{return status.Error(codes.Unavailable,"environment Runtime is unavailable")}
- if running&&!r.acceptingLocked(){return status.Error(codes.Aborted,"this Sandbox is quiesced")}
- if r.desired.Mode!=lifecycle.Running&&r.desired.Mode!=lifecycle.Quiescing{return status.Error(codes.Unavailable,"environment is not serving Session calls")}
- if epoch.IncarnationUID()!=r.desired.IncarnationUID{return status.Error(codes.Aborted,"control epoch does not match the active incarnation")}
- return nil
+func (r *Runtime) authorizeSessionEpochLocked(epoch *runtimecontrol.Epoch, running bool) error {
+	if r.closing || r.failed || !r.startupComplete {
+		return status.Error(codes.Unavailable, "environment Runtime is unavailable")
+	}
+	if running && !r.acceptingLocked() {
+		return status.Error(codes.Aborted, "this Sandbox is quiesced")
+	}
+	if r.desired.Mode != lifecycle.Running && r.desired.Mode != lifecycle.Quiescing {
+		return status.Error(codes.Unavailable, "environment is not serving Session calls")
+	}
+	if epoch.IncarnationUID() != r.desired.IncarnationUID {
+		return status.Error(codes.Aborted, "control epoch does not match the active incarnation")
+	}
+	return nil
 }
 
-func (r *Runtime) authorizeSessionRead(ctx context.Context)error {
- _,err:=r.authorizeSession(ctx,false)
- return err
+func (r *Runtime) authorizeSessionRead(ctx context.Context) error {
+	_, err := r.authorizeSession(ctx, false)
+	return err
 }

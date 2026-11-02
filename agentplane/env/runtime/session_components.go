@@ -6,11 +6,13 @@ import (
 	"path/filepath"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
+	"github.com/cosi-project/runtime/pkg/state"
 )
 
 func (r *Runtime) initializeSessions() error {
@@ -102,4 +104,11 @@ func (r *Runtime) ensureWorkspace(ctx context.Context, cwd string) (string, erro
 		}
 	}
 	return workspace.Ensure(ctx, cwd, config)
+}
+
+func (r *Runtime) initializeSessionLifecycle() error {
+	if err := r.lifecycleState.Create(r.lifecycleContext, lifecycleResourceFor(lifecycle.ResourceID, environmentAdmissionCountSpec{}), state.WithCreateOwner(lifecycle.EnvironmentOwner)); err != nil {
+		return err
+	}
+	return r.lifecycleEngine.RegisterController(&sessionLifecycleController{runtime: r})
 }

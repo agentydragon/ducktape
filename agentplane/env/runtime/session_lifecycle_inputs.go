@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/journal"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"

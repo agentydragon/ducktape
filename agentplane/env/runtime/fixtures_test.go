@@ -12,10 +12,10 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/state"

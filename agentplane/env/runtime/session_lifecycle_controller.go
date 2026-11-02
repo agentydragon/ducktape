@@ -2,13 +2,13 @@ package runtime
 
 import (
 	"context"
- "github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"fmt"
+	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -59,7 +59,7 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 	write := func() error {
 		changed, err := harnesshostlifecycle.WriteStatus(ctx, r, current)
 		if changed {
-            c.runtime.changed()
+			c.runtime.changed()
 			r.QueueReconcile()
 		}
 		return err
@@ -243,15 +243,20 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		c.runtime.mu.Unlock()
 		return nil
 	}
- current.NativeStopped = true
- fenced := c.runtime.config.CodexExecServer == nil && c.runtime.executionOwner == nil
- if c.runtime.executionLifecycle != nil {
-  signal, present, readErr := cosi.Read(ctx, r, executionSignalResource(executionSignal{}))
-  if readErr != nil {c.runtime.mu.Unlock();return readErr}
-  fenced = present && signal.Fence.LifecycleGeneration == desiredState.Generation && signal.Fence.Error == ""
- }
- c.runtime.mu.Unlock()
- if desiredState.SealUID != "" {c.runtime.requestExecutionFence(desiredState.Generation)}
+	current.NativeStopped = true
+	fenced := c.runtime.config.CodexExecServer == nil && c.runtime.executionOwner == nil
+	if c.runtime.executionLifecycle != nil {
+		signal, present, readErr := cosi.Read(ctx, r, executionSignalResource(executionSignal{}))
+		if readErr != nil {
+			c.runtime.mu.Unlock()
+			return readErr
+		}
+		fenced = present && signal.Fence.LifecycleGeneration == desiredState.Generation && signal.Fence.Error == ""
+	}
+	c.runtime.mu.Unlock()
+	if desiredState.SealUID != "" {
+		c.runtime.requestExecutionFence(desiredState.Generation)
+	}
 	if desiredState.SealUID != "" && !fenced {
 		current.Stage = harnesshostlifecycle.Fencing
 		return write()
@@ -304,7 +309,7 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		changed, err := harnesshostlifecycle.WriteStatus(ctx, r, current)
 		c.runtime.mu.Unlock()
 		if changed {
- c.runtime.changed()
+			c.runtime.changed()
 			r.QueueReconcile()
 		}
 		return err
@@ -331,7 +336,9 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		}
 	}
 	current.Stage = harnesshostlifecycle.Quiesced
- if desiredState.Mode == harnesshostlifecycle.Closing {current.Stage=harnesshostlifecycle.Closed}
+	if desiredState.Mode == harnesshostlifecycle.Closing {
+		current.Stage = harnesshostlifecycle.Closed
+	}
 	current.Blocker = harnesshostlifecycle.Blocker{}
 	return write()
 }
