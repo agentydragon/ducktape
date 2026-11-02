@@ -87,8 +87,8 @@ Source of truth: <../../cluster/cdk8s/kyverno/policies.py>.
 On `haku-sandbox` **and** `haku-ci` (agent-authored build compute), which share one
 allowlist chokepoint; currently mitmproxy. Pod egress to the public internet is
 allowlisted at L3/L4 only — mitmproxy terminates TLS but enforces no host list of its
-own, so the Cilium `toFQDNs` policy is the whole fence (an L7 allowlist is what
-iron-proxy adds, and these pods are not on it yet). In-cluster and node-IP destinations
+own, so the Cilium `toFQDNs` policy is the whole fence (per-workload L7 rules and
+credential placeholders are what Agentplane egress adds; haku-ui is on it, these pods are not). In-cluster and node-IP destinations
 (all of `*.allegedly.works`) are deliberately unfenced via `toEntities: cluster`; those
 services authenticate their own callers.
 Source of truth: <../../cluster/k8s/agents/haku-egress-proxy/>, <../../cluster/cdk8s/haku_ci/>.

@@ -125,8 +125,6 @@ spec:
             - confdir=/mitmproxy-data
             - --set
             - stream_large_bodies=1m
-            - --ignore-hosts
-            - api\.anthropic\.com
           image: mitmproxy/mitmproxy:12.2.3
           name: mitmproxy
           ports:
@@ -231,13 +229,6 @@ spec:
       ports:
         - port: 8080
           protocol: TCP
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: authentik
-      ports:
-        - port: 8081
-          protocol: TCP
   podSelector:
     matchLabels:
       app.kubernetes.io/name: haku-egress-proxy
@@ -303,7 +294,6 @@ spec:
               - matchPattern: "**.cluster.local"
               - matchPattern: "*.ankiweb.net"
               - matchName: alloy-otlp.allegedly.works
-              - matchName: api.anthropic.com
               - matchName: api.coinbase.com
               - matchName: bcr.bazel.build
               - matchName: cache.nixos.org
@@ -380,12 +370,6 @@ spec:
     - toFQDNs:
         - matchName: code.forgejo.org
         - matchName: data.forgejo.org
-      toPorts:
-        - ports:
-            - port: "443"
-              protocol: TCP
-    - toFQDNs:
-        - matchName: api.anthropic.com
       toPorts:
         - ports:
             - port: "443"

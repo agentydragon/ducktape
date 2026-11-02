@@ -136,19 +136,6 @@ def _mitmproxy(chart: Chart) -> None:
                                 # streaming loses no enforcement.
                                 "--set",
                                 "stream_large_bodies=1m",
-                                # Passthrough (raw TCP, no TLS interception) for Anthropic's control
-                                # plane. The haku-managed-agent worker drives Managed Agents sessions
-                                # over a long-lived HTTP/2 stream to api.anthropic.com; mitmproxy's
-                                # interception buffers/breaks that stream, so the worker claims work
-                                # but tool results never post and sessions deadlock at "idle". This
-                                # traffic carries only the scoped environment key and needs no
-                                # inspection. Egress still flows through the proxy (the CCNP
-                                # chokepoint is unchanged); only TLS interception is skipped here.
-                                # TODO(haku): tighten later — this passes ALL of api.anthropic.com
-                                #   through untouched. Revisit whether only the session stream needs
-                                #   passthrough (and whether to inspect the rest).
-                                "--ignore-hosts",
-                                r"api\.anthropic\.com",
                             ],
                             ports=[SERVICE.port.k8s_container_port()],
                             # Publish an endpoint only once the listener is up.
@@ -159,13 +146,10 @@ def _mitmproxy(chart: Chart) -> None:
                             volume_mounts=[k8s.VolumeMount(name="mitmproxy-data", mount_path="/mitmproxy-data")],
                             resources=k8s.ResourceRequirements(
                                 requests=_quantities(cpu="50m", memory="256Mi"),
-                                # Memory: headroom over the 512Mi that OOM-killed under haku-ci
-                                # build traffic.
-                                # TODO(vpa-memory-audit): 1Gi -> 3Gi. VPA observed a 1.15Gi
-                                # request / 1.73Gi upper bound, and mitmproxy was OOM-killed at 3Gi
-                                # again on 2026-09-08 after ~53h of traffic (#5846). The cause was
-                                # mitmweb's flow store, gone since the switch to mitmdump; observe
-                                # the working set under mitmdump and lower this to match.
+                                # Memory: headroom for CI build traffic (512Mi OOM-killed under it). The
+                                # 3Gi OOM kill of 2026-09-08 (#5846) was mitmweb's unbounded flow store,
+                                # gone since the switch to mitmdump; the idle working set is now 70-200Mi
+                                # (2026-11-02). TODO: lower the limit once a CI-peak working set is on record.
                                 limits=_quantities(cpu="500m", memory="3Gi"),
                             ),
                         )
@@ -196,8 +180,7 @@ def _mitmproxy(chart: Chart) -> None:
             selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
         ),
     )
-    # Allow proxy clients (haku-sandbox + haku-ci) to reach the egress proxy (port 8080) and
-    # the Authentik outpost to reach the mitmweb UI (port 8081) for proxy auth. Without the
+    # Allow proxy clients (haku-sandbox + haku-ci) to reach the egress proxy (port 8080). Without the
     # haku-ci ingress the runner/dind get `proxyconnect ... i/o timeout` on every egress.
     k8s.KubeNetworkPolicy(
         chart,
@@ -216,17 +199,7 @@ def _mitmproxy(chart: Chart) -> None:
                         for namespace in ("haku-sandbox", "haku-ci")
                     ],
                     ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(SERVICE.pod_port), protocol="TCP")],
-                ),
-                k8s.NetworkPolicyIngressRule(
-                    from_=[
-                        k8s.NetworkPolicyPeer(
-                            namespace_selector=k8s.LabelSelector(
-                                match_labels={"kubernetes.io/metadata.name": "authentik"}
-                            )
-                        )
-                    ],
-                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(8081), protocol="TCP")],
-                ),
+                )
             ],
             policy_types=["Ingress"],
         ),
