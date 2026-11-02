@@ -187,9 +187,6 @@ func nextRuntimeCloseStage(stage lifecycle.RuntimeCloseStage) (lifecycle.Runtime
 	case lifecycle.RuntimeCloseExecutionFencing:
 		return lifecycle.RuntimeCloseHostFlushing, nil
 	case lifecycle.RuntimeCloseHostFlushing:
-		if p.nativeCleanupErr != nil {
-			return errors.Join(p.nativeCleanupErr, p.sessionLossErr)
-		}
 		return lifecycle.RuntimeCloseHostJoining, nil
 	case lifecycle.RuntimeCloseHostJoining:
 		return lifecycle.RuntimeCloseBootstrapSettling, nil
