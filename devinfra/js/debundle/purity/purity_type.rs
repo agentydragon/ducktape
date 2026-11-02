@@ -216,6 +216,24 @@ impl Effects {
         }
     }
 
+    /// Add context to an existing member-read reason at `span`, without
+    /// changing its effect or position in evaluation order.
+    pub(crate) fn with_member_read_detail(mut self, span: Span, detail: String) -> Self {
+        for event in &mut self.events {
+            if let EffectEvent::Effect {
+                effect: Effect::Invoke(InvokeSite::MemberRead),
+                span: event_span,
+                detail: event_detail,
+                ..
+            } = event
+                && *event_span == span
+            {
+                *event_detail = Some(detail.clone());
+            }
+        }
+        self
+    }
+
     /// A coercion at `span` that `operands`, when present, can resolve
     /// against the values settled at the statement's program point.
     pub(crate) fn coerce(
