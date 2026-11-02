@@ -551,6 +551,38 @@ these as three actions, so an assignment edit reuses the cached
 `DebundleAnalyze` result; its `analysis` output group holds the projection and
 the artifact for running the last command locally.
 
+After a graph-only build, the analysis artifact may still be in the remote
+cache rather than the local output directory. Request its output group before
+assuming analysis must run again:
+
+```bash
+bazelisk build //path/to/spec:debundle --output_groups=analysis
+```
+
+This requests `<target>.analysis_projection` and `<target>.analysis`. With the
+same projection, sources and analysis engine, Bazel can retrieve the previous
+analysis action's outputs. Check the actual cache/execution result; a missing
+local file alone is not evidence of a cache miss.
+
+For a copied assignment experiment, use the matching analysis with fresh spec
+resolution. Saved-graph editing commands check their recorded YAML membership
+and contents; manually editing that YAML first makes the saved graph stale.
+Do not bypass that check. To collect reports across gate-rejected chunks
+without writing their JS trees, use:
+
+```bash
+debundle run <run args> --analysis analysis.dba \
+  --reports-only experiment-reports --emit-on-rejection
+```
+
+Add `--graphs` only when the next investigation needs saved-graph queries;
+summary and cycle reports do not require full graph serialization. Exit 3 means
+only gate rejection and complete inspection output; exit 1 may leave a partial
+report set. `--dry-run` or `--reports-only` alone does not
+establish a complete inventory after a gate failure. The first console error
+can concern another chunk, so inspect the selected chunk's native report and
+check report-set completeness separately.
+
 Selector failures follow the keep-going (default) and `--fail-fast` modes of
 <../SPEC.md> § Modes, in the order of `docs/selector_resolution.md` § Order. Bulk
 selector edits keep going, reporting every failure of a pass in each chunk's
