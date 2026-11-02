@@ -246,43 +246,47 @@ func TestIdleProcessExitConsumesCompletedCommandDemand(t *testing.T) {
 	}
 }
 
-func TestPreparationCompletionRefreshesStaleSchedulingInput(t *testing.T) {
-	var gate sync.Mutex
-	s, p, m := frameTestSessionWithControllerGate(t, []string{"/bin/cat"}, true, &gate)
-	withSessionControllerGate(t, s, &gate, func() {
-		// Wait for any in-flight reconcile before constructing the synthetic
-		// preparation. Otherwise it can overwrite the test's Preparing phase.
-		setSessionPhase(t, s, Preparing)
-		// Model the operation revision becoming visible before the worker refreshes
-		// its Session reconcile snapshot. The native process is already live, but input is stale.
-		m.publishMu.Lock()
-		defer m.publishMu.Unlock()
-		input, _, err := ReadReconcileSnapshot(m.ctx, m.state, s.id)
-		if err == nil {
-			input.ProcessID = ""
-			input.ProcessRunning = false
-			err = publish(m.ctx, m.state, s.id, input)
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		op := oneoff.New(m.ctx)
-		op.Register(&s.work)
-		s.mu.Lock()
-		s.preparation = op
-		s.mu.Unlock()
-		if err := op.Start(
-			&s.mu,
-			func(bool) error { return m.signalOperation(s.id) },
-			m.fail, func(context.Context) error { return nil }, nil, nil,
-		); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case <-op.Done():
-		case <-time.After(lifecycleTestTimeout):
-			t.Fatal("preparation operation did not finish")
-		}
-	})
-	waitSession(t, s, func(current LifecycleStatus) bool { return current.Phase == Ready && current.ProcessID == p.ID() }, "preparation ready after stale input")
+func TestPreparationCompletionSchedulesSessionController(t *testing.T) {
+	for _, staleInput := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unchanged-input", true: "stale-input"}[staleInput], func(t *testing.T) {
+			var gate sync.Mutex
+			s, p, m := frameTestSessionWithControllerGate(t, []string{"/bin/cat"}, true, &gate)
+			withSessionControllerGate(t, s, &gate, func() {
+				setSessionPhase(t, s, Preparing)
+				// Complete without the worker's normal snapshot refresh, so the
+				// operation revision alone must schedule the real QController.
+				if staleInput {
+					m.publishMu.Lock()
+					defer m.publishMu.Unlock()
+					input, _, err := ReadReconcileSnapshot(m.ctx, m.state, s.id)
+					if err == nil {
+						input.ProcessID = ""
+						input.ProcessRunning = false
+						err = publish(m.ctx, m.state, s.id, input)
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				op := oneoff.New(m.ctx)
+				op.Register(&s.work)
+				s.mu.Lock()
+				s.preparation = op
+				s.mu.Unlock()
+				if err := op.Start(
+					&s.mu,
+					func(bool) error { return m.signalOperation(s.id) },
+					m.fail, func(context.Context) error { return nil }, nil, nil,
+				); err != nil {
+					t.Fatal(err)
+				}
+				select {
+				case <-op.Done():
+				case <-time.After(lifecycleTestTimeout):
+					t.Fatal("preparation operation did not finish")
+				}
+			})
+			waitSession(t, s, func(current LifecycleStatus) bool { return current.Phase == Ready && current.ProcessID == p.ID() }, "preparation ready after completion signal")
+		})
+	}
 }
