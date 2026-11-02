@@ -61,6 +61,12 @@ queries against a fixed synthetic Prometheus TSDB and captures the full
 dashboard. Its target, scenario, and metrics fixture live beside the JSON.
 Neither mode contacts production or reads cluster credentials.
 
+TODO: Standardize on one approach after evaluating the cost and complexity of
+running Prometheus and maintaining queryable fixtures. Testing
+the dashboard queries is appealing, but compare that coverage with the fidelity
+and maintenance of recorded responses, including dashboards using other
+datasources.
+
 Run a target on the remote Docker-capable executor, for example:
 
 ```sh
