@@ -1212,7 +1212,11 @@ opaque to allocation-only proof, and the strict provider adapter refuses the
 operation. This gives no provider identity to exported property aliases.
 
 Anonymous function and arrow creation retain live lexical cells from ordered
-activations. A temporary join of the canonical nested identifier census with
+activations. Concise arrow bodies lower directly to an ordered return operation
+during canonical collection, using the same parameter validation and operation
+finalization as block bodies. They require no synthetic AST, second source scan
+or separate expression evaluator. The same unsupported-syntax boundary applies
+to both forms. A temporary join of the canonical nested identifier census with
 ordered binding declarations identifies which locals need cells, including
 deferred references and cells needed by a descendant closure. No additional
 source parse or scan is used. Each such parameter, `var`, `let` or `const` gets

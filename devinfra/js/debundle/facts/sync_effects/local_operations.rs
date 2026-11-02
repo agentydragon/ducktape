@@ -276,15 +276,7 @@ impl LocalBody {
         parameters: impl Iterator<Item = &'a Pat>,
         body: &FunctionBody,
     ) -> Option<Self> {
-        let mut bindings = BTreeMap::new();
-        for parameter in parameters {
-            if bindings
-                .insert(simple_binding(parameter)?, LocalBinding::Parameter)
-                .is_some()
-            {
-                return None;
-            }
-        }
+        let mut bindings = Self::parameter_bindings(parameters)?;
         let mut operations = Vec::new();
         let mut terminal = false;
         for statement in &body.stmts {
@@ -337,6 +329,42 @@ impl LocalBody {
                 _ => return None,
             }
         }
+        Self::from_operations(bindings, operations)
+    }
+
+    /// A concise arrow has the same ordered return semantics as a block body.
+    /// Retain that operation directly without manufacturing or revisiting AST.
+    pub(super) fn lower_expression<'a>(
+        parameters: impl Iterator<Item = &'a Pat>,
+        expression: &Expr,
+    ) -> Option<Self> {
+        Self::from_operations(
+            Self::parameter_bindings(parameters)?,
+            vec![LocalOperation::Return(Some(LocalExpression::lower(
+                expression,
+            )?))],
+        )
+    }
+
+    fn parameter_bindings<'a>(
+        parameters: impl Iterator<Item = &'a Pat>,
+    ) -> Option<BTreeMap<Id, LocalBinding>> {
+        let mut bindings = BTreeMap::new();
+        for parameter in parameters {
+            if bindings
+                .insert(simple_binding(parameter)?, LocalBinding::Parameter)
+                .is_some()
+            {
+                return None;
+            }
+        }
+        Some(bindings)
+    }
+
+    fn from_operations(
+        bindings: BTreeMap<Id, LocalBinding>,
+        operations: Vec<LocalOperation>,
+    ) -> Option<Self> {
         if !Self::expressions(&operations).all(|expression| expression.local_targets(&bindings)) {
             return None;
         }
