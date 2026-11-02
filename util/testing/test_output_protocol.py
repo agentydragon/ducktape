@@ -116,6 +116,42 @@ def test_duplicate_claim_fails_even_when_payload_is_equal(tmp_path: Path) -> Non
     assert len(list((tmp_path / "test-outputs" / RECORDS_DIR).glob("*.json"))) == 1
 
 
+def test_writer_serializes_null_checkpoint_and_omits_optional_gallery_fields(tmp_path: Path) -> None:
+    payload = publish_output(
+        tmp_path, case_id="example", checkpoint=None, role="diagnostics", data=b"diagnostics", suffix="json"
+    )
+    key = output_key("example", None, "diagnostics")
+    record_path = tmp_path / "test-outputs" / RECORDS_DIR / f"{key}.json"
+    record = json.loads(record_path.read_text())
+
+    assert payload.read_bytes() == b"diagnostics"
+    assert "checkpoint" in record
+    assert record["checkpoint"] is None
+    assert "label" not in record
+    assert "title" not in record
+
+
+def test_writer_rejects_orphan_payload_without_overwriting_it(tmp_path: Path) -> None:
+    key = output_key("orphaned", None, "diagnostics")
+    files_dir = tmp_path / "test-outputs" / FILES_DIR
+    files_dir.mkdir(parents=True)
+    payload_path = files_dir / f"{key}.json"
+    payload_path.write_bytes(b"existing orphan")
+
+    with pytest.raises(FileExistsError):
+        publish_output(
+            tmp_path,
+            case_id="orphaned",
+            checkpoint=None,
+            role="diagnostics",
+            data=b"replacement must fail",
+            suffix="json",
+        )
+
+    assert payload_path.read_bytes() == b"existing orphan"
+    assert list((tmp_path / "test-outputs" / RECORDS_DIR).glob("*.json")) == []
+
+
 def test_parallel_processes_claim_one_identity_once(tmp_path: Path) -> None:
     context = multiprocessing.get_context("fork")
     with context.Pool(processes=6) as pool:

@@ -46,7 +46,12 @@ def _write_temporary_file(directory: Path, prefix: str, data: bytes) -> Path:
 
 
 def _publish_record(record: OutputRecord, record_path: Path, records_dir: Path) -> None:
-    serialized = record.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8")
+    exclude = set()
+    if record.label is None:
+        exclude.add("label")
+    if record.title is None:
+        exclude.add("title")
+    serialized = record.model_dump_json(by_alias=True, exclude=exclude).encode("utf-8")
     temporary_path = _write_temporary_file(records_dir, f".{record_path.stem}.", serialized)
     try:
         # Hard-linking exposes the complete JSON file and refuses to replace an existing claim.
@@ -108,7 +113,7 @@ def publish_output(
         payload_installed = False
         try:
             # The record is not visible until this complete payload is in place.
-            temporary_payload.replace(payload_path)
+            os.link(temporary_payload, payload_path)
             payload_installed = True
             _fsync_directory(files_dir)
             _publish_record(record, record_path, records_dir)
