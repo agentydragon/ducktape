@@ -466,7 +466,11 @@ func failedInitialOperationHost(t *testing.T, failTeardown bool) (*Runtime, *ini
 }
 
 func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
+<<<<<<< HEAD
 	r, _, marker := failedInitialOperationHost(t, false)
+=======
+	r, store, marker := failedInitialOperationRuntime(t, false)
+>>>>>>> fdf81bca62 (Assert Runtime preserves failure while completing proved cleanup)
 
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
@@ -474,8 +478,8 @@ func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
 	defer cancelClose()
 	select {
 	case err := <-closeDone:
-		if err != nil {
-			t.Fatalf("Close after initial publication failure: %v", err)
+		if err == nil || !strings.Contains(err.Error(), store.initialFailure.Error()) {
+			t.Fatalf("Close after initial publication failure = %v, want original failure", err)
 		}
 	case <-closeCtx.Done():
 		r.lifecycleCancel()
@@ -489,6 +493,11 @@ func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
 	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("failed initial operation launched the native harness: stat err=%v", err)
 	}
+	owner, err := openEnvironmentOwner(r.config.StateDir)
+	if err != nil {
+		t.Fatalf("settled cleanup retained the environment owner: %v", err)
+	}
+	_ = owner.Close()
 }
 
 func TestCloseReportsTeardownOperationPublicationFailure(t *testing.T) {
