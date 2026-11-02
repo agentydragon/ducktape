@@ -96,10 +96,11 @@ func (r *Host) OpenSession(ctx context.Context, request *environmentruntimepb.Op
 		if err != nil {
 			return nil, rpcError(err)
 		}
-		if !proto.Equal(s.Attached().Spec, spec) {
+		attached := s.Attached()
+		if !proto.Equal(attached.Spec, spec) {
 			return nil, status.Errorf(codes.AlreadyExists, "session %s exists with a different spec", request.GetSessionId())
 		}
-		return &environmentruntimepb.OpenSessionResponse{Attached: s.Attached()}, nil
+		return &environmentruntimepb.OpenSessionResponse{Attached: attached}, nil
 	}
 	budget, err := r.config.ResolveModelConfig(ctx, spec.Harness, spec.Model)
 	if err != nil {
