@@ -4,6 +4,7 @@ import json
 import zipfile
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import pytest
 import pytest_bazel
@@ -287,8 +288,8 @@ def bound_visual(
     config = HarnessConfig(harness_path=bundle, title="Fixture test", expected_font_family=None)
     monkeypatch.setattr(HarnessConfig, "from_env", classmethod(lambda cls: config))
     monkeypatch.setenv("TEST_UNDECLARED_OUTPUTS_DIR", str(isolated_output_dir))
-    test_outputs = request.getfixturevalue("test_outputs")
-    return request.getfixturevalue("visual"), test_outputs
+    test_outputs = cast(BoundTestOutputs, request.getfixturevalue("test_outputs"))
+    return cast(VisualHarness, request.getfixturevalue("visual")), test_outputs
 
 
 @pytest.mark.asyncio(loop_scope="session")
