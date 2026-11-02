@@ -662,7 +662,7 @@ func ensureThreadArchivable(ctx context.Context, namespace string, thread thread
 	if err != nil {
 		return err
 	}
-	if sandbox.GetPod() == nil {
+	if sandbox.GetKubernetesDiagnostics().GetPod() == nil {
 		return nil
 	}
 	if !threadSandboxReady(sandbox) {
@@ -689,8 +689,8 @@ var (
 )
 
 func threadSandboxReady(sandbox *environmentpb.EnvironmentDescriptor) bool {
-	return sandbox != nil && sandbox.GetOperatingMode() == environmentpb.OperatingMode_OPERATING_MODE_RUNNING &&
-		sandbox.GetReadiness().GetState() == environmentpb.ReadinessState_READINESS_STATE_READY
+	return sandbox != nil && sandbox.GetObservedState().GetOperatingMode() == environmentpb.OperatingMode_OPERATING_MODE_RUNNING &&
+		sandbox.GetObservedState().GetReadiness().GetState() == environmentpb.ReadinessState_READINESS_STATE_READY
 }
 
 func threadReadHTTPError(err error) error {

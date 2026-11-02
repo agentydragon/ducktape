@@ -103,10 +103,12 @@ async def _wait_until_suspended_without_pod(client: Client, target: environment_
     ):
         with attempt:
             view = await client.get_environment(target)
-            assert view.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED, (
-                f"{target.name} is still {view.operating_mode}"
+            assert view.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED, (
+                f"{target.name} is still {view.observed_state.operating_mode}"
             )
-            assert not view.HasField("pod"), f"{target.name} still has its old Pod: {view.pod}"
+            assert not view.kubernetes_diagnostics.HasField("pod"), (
+                f"{target.name} still has its old Pod: {view.kubernetes_diagnostics.pod}"
+            )
 
 
 async def _wait_until_idle_suspended_without_pod(
@@ -121,11 +123,15 @@ async def _wait_until_idle_suspended_without_pod(
     ):
         with attempt:
             view = await client.get_environment(target)
-            assert view.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED, (
-                f"{target.name} is still {view.operating_mode}"
+            assert view.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED, (
+                f"{target.name} is still {view.observed_state.operating_mode}"
             )
-            assert view.suspended_by == "Idle", f"{target.name} stopped for {view.suspended_by}, not idleness"
-            assert not view.HasField("pod"), f"{target.name} still has its old Pod: {view.pod}"
+            assert view.observed_state.suspended_by == "Idle", (
+                f"{target.name} stopped for {view.observed_state.suspended_by}, not idleness"
+            )
+            assert not view.kubernetes_diagnostics.HasField("pod"), (
+                f"{target.name} still has its old Pod: {view.kubernetes_diagnostics.pod}"
+            )
             return view
     raise AssertionError("unreachable")
 
@@ -169,9 +175,9 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
     view = await sandbox(
         f"systest-explicit-resume-{uuid4().hex[:8]}", template=POD_TEMPLATE, idle_suspend_after_seconds=60
     )
-    assert view.HasField("pod")
+    assert view.kubernetes_diagnostics.HasField("pod")
     assert view.HasField("execution_account")
-    old_pod = view.pod
+    old_pod = view.kubernetes_diagnostics.pod
     target = view.target
     account = view.execution_account
     assert account.namespace == target.namespace
@@ -270,11 +276,11 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
     assert resumed_target["uid"] == target.uid, response
 
     resumed = await wait_until_running(client, target)
-    assert resumed.HasField("pod")
-    assert resumed.pod.uid != old_pod.uid
-    assert resumed.operating_mode == environment_service_pb2.OPERATING_MODE_RUNNING
+    assert resumed.kubernetes_diagnostics.HasField("pod")
+    assert resumed.kubernetes_diagnostics.pod.uid != old_pod.uid
+    assert resumed.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_RUNNING
 
-    resumed_model = scripted.model(resumed.pod.name, harness)
+    resumed_model = scripted.model(resumed.kubernetes_diagnostics.pod.name, harness)
     fresh_turn = await agent.run_shell(resumed_model, "printf 'EXPLICIT_RESUME_EXEC_OK\\n'")
     assert fresh_turn.input_confirmed
     assert fresh_turn.resumed
@@ -304,7 +310,7 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
                 "sandbox": MessageToDict(target, preserving_proto_field_name=True),
                 "execution_account": MessageToDict(account, preserving_proto_field_name=True),
                 "old_pod_uid": old_pod.uid,
-                "new_pod_uid": resumed.pod.uid,
+                "new_pod_uid": resumed.kubernetes_diagnostics.pod.uid,
                 "resume_outcome": response["outcome"],
                 "failed_command_id": failed_command_id,
                 "failed_turn_id": failed_turn_entry.event.turn_completed.turn_id,
@@ -348,14 +354,14 @@ class _ResumeRun:
         cls, cluster: Cluster, client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes, *, template: str
     ) -> _ResumeRun:
         view = await sandbox(f"systest-resume-{template}-{uuid4().hex[:8]}", template=template)
-        assert view.HasField("pod")
+        assert view.kubernetes_diagnostics.HasField("pod")
         run = cls(
             cluster=cluster,
             client=client,
             dispatcher=dispatcher,
             view=view,
             template=template,
-            original_incarnation=view.pod.uid,
+            original_incarnation=view.kubernetes_diagnostics.pod.uid,
             storage_volumes=_storage_volumes(cluster, view.target.uid),
         )
         run.save()
@@ -364,8 +370,8 @@ class _ResumeRun:
     @property
     def pod_name(self) -> str:
         """The Sandbox's current Pod: a Pod Sandbox's every incarnation keeps its name, a VM's launcher does not."""
-        assert self.view.HasField("pod")
-        return self.view.pod.name
+        assert self.view.kubernetes_diagnostics.HasField("pod")
+        return self.view.kubernetes_diagnostics.pod.name
 
     async def open(self, harness: session_pb2.Harness, *, cwd: str, instructions: str = "") -> Agent:
         """A Thread on the first model the deployment offers `harness`, with no native process yet."""
@@ -437,11 +443,11 @@ class _ResumeRun:
 
             resumed = await wait_until_running(self.client, self.view.target)
             assert resumed.target.uid == self.view.target.uid
-            assert resumed.HasField("pod")
-            assert resumed.pod.uid != self.original_incarnation
+            assert resumed.kubernetes_diagnostics.HasField("pod")
+            assert resumed.kubernetes_diagnostics.pod.uid != self.original_incarnation
             assert _storage_volumes(self.cluster, self.view.target.uid) == self.storage_volumes
             self.view = resumed
-            self.resumed_incarnation = resumed.pod.uid
+            self.resumed_incarnation = resumed.kubernetes_diagnostics.pod.uid
             self.checks.append("same_sandbox_new_incarnation_same_volumes")
             async for attempt in environment_runtime_startup_retries():
                 with attempt:
@@ -521,7 +527,7 @@ async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
     template, cwd = executor.template, executor.cwd
     run = await _ResumeRun.start(cluster, client, dispatcher, sandbox, template=template)
     markers = {harness: _marker(harness) for harness in (session_pb2.HARNESS_CLAUDE, session_pb2.HARNESS_CODEX)}
-    models = {harness: scripted.model(run.pod_name, harness) for harness in markers}
+    models = {harness: scripted.model(run.kubernetes_diagnostics.pod_name, harness) for harness in markers}
     for harness, marker in markers.items():
         agent = await run.open(harness, cwd=cwd)
         async with asyncio.TaskGroup() as turns:
@@ -532,7 +538,7 @@ async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
     await run.suspend_and_resume()
 
     # A VM's new launcher Pod has a name of its own.
-    models = {harness: scripted.model(run.pod_name, harness) for harness in markers}
+    models = {harness: scripted.model(run.kubernetes_diagnostics.pod_name, harness) for harness in markers}
     for harness, agent in run.agents.items():
         async with asyncio.TaskGroup() as turns:
             recall = turns.create_task(agent.run(RECALL_PROMPT))
@@ -557,7 +563,7 @@ async def codex_standing_instructions_after_suspend_and_compact(
     standing = "SESSION_STANDING_ORDER: consult Agentplane before declaring access unavailable."
     run = await _ResumeRun.start(cluster, client, dispatcher, sandbox, template=POD_TEMPLATE)
     agent = await run.open(session_pb2.HARNESS_CODEX, cwd=WORKING_DIRECTORY, instructions=standing)
-    model = scripted.model(run.pod_name, session_pb2.HARNESS_CODEX)
+    model = scripted.model(run.kubernetes_diagnostics.pod_name, session_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)
     async with asyncio.TaskGroup() as turns:
         seed = turns.create_task(agent.run("Remember SEEDED_CONTEXT_MARKER and reply ACK."))
@@ -568,7 +574,7 @@ async def codex_standing_instructions_after_suspend_and_compact(
     await run.seeded(session_pb2.HARNESS_CODEX, seed.result())
     await run.suspend_and_resume()
 
-    model = scripted.model(run.pod_name, session_pb2.HARNESS_CODEX)
+    model = scripted.model(run.kubernetes_diagnostics.pod_name, session_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)
     async with asyncio.TaskGroup() as turns:
         recall = turns.create_task(agent.run(RECALL_PROMPT))

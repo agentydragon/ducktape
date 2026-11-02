@@ -99,7 +99,7 @@ vi.mock("../threads/live", () => ({
 }));
 
 const readySandbox = makeReadySandbox("startup-test", "00000000-0000-4000-8000-000000000001");
-readySandbox.preset = "test-preset";
+readySandbox.configuration!.preset = "test-preset";
 const inventory = {
   snapshot: [readySandbox],
   health: { healthy: true, failing: {} },
@@ -114,8 +114,8 @@ vi.mock("./live", async (importOriginal) => ({
   }),
 }));
 const mutableSnapshot = live.snapshot;
-const readyPod = readySandbox.pod;
-const readyStatus = readySandbox.status;
+const readyPod = readySandbox.kubernetesDiagnostics!.pod;
+const readyStatus = readySandbox.kubernetesDiagnostics!.sandboxStatus;
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
@@ -143,17 +143,17 @@ afterEach(async () => {
   vi.restoreAllMocks();
   live.snapshot.threads = [];
   live.snapshot.thread_snapshot_uid = null;
-  readySandbox.operatingMode = OperatingMode.RUNNING;
-  readySandbox.phase = SandboxPhase.RUNNING;
-  readySandbox.pod = readyPod;
-  readySandbox.status = readyStatus;
-  readySandbox.readiness!.state = ReadinessState.READY;
+  readySandbox.observedState!.operatingMode = OperatingMode.RUNNING;
+  readySandbox.observedState!.phase = SandboxPhase.RUNNING;
+  readySandbox.kubernetesDiagnostics!.pod = readyPod;
+  readySandbox.kubernetesDiagnostics!.sandboxStatus = readyStatus;
+  readySandbox.observedState!.readiness!.state = ReadinessState.READY;
   readySandbox.target!.uid = "00000000-0000-4000-8000-000000000001";
   mutableSnapshot.sandbox_uid = readySandbox.target!.uid;
   inventory.snapshot = [readySandbox];
   sessionStorage.clear();
   rerender = async () => {};
-  readySandbox.binding = undefined;
+  readySandbox.configuration!.binding = undefined;
   presetDefaults = { ...DEFAULT_PRESET_DEFAULTS };
   modelCatalogResponse = null;
   centralSamplerEnabled = false;
@@ -476,9 +476,11 @@ function kubernetesItem(title: string): HTMLButtonElement {
 }
 
 it("opens the Kubernetes status items that have an unmet condition and no others", async () => {
-  readySandbox.status = { conditions: [{ type: "Ready", status: "False", reason: "TestNotReady" }] };
-  readySandbox.readiness!.state = ReadinessState.NOT_READY;
-  readySandbox.pod = {
+  readySandbox.kubernetesDiagnostics!.sandboxStatus = {
+    conditions: [{ type: "Ready", status: "False", reason: "TestNotReady" }],
+  };
+  readySandbox.observedState!.readiness!.state = ReadinessState.NOT_READY;
+  readySandbox.kubernetesDiagnostics!.pod = {
     ...readyPod!,
     status: { phase: "Running", conditions: [{ type: "Ready", status: "True", reason: "TestAllMet" }] },
   };
@@ -577,9 +579,9 @@ it("refreshes the runner snapshot and replaces old process and Session details",
 });
 
 it("reports suspended Runtime diagnostics without a read or wake request", async () => {
-  readySandbox.operatingMode = OperatingMode.SUSPENDED;
-  readySandbox.phase = SandboxPhase.SUSPENDED;
-  readySandbox.pod = undefined;
+  readySandbox.observedState!.operatingMode = OperatingMode.SUSPENDED;
+  readySandbox.observedState!.phase = SandboxPhase.SUSPENDED;
+  readySandbox.kubernetesDiagnostics!.pod = undefined;
   await render(async () => Response.json([]));
   await act(async () => tab("Status").click());
   await vi.waitFor(() =>
@@ -708,9 +710,9 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   expect(createThreadButton().disabled).toBe(false);
   expect(sessionStatus("Previously active thread")).toBe("Turn running · Runner feed active · harness running");
 
-  readySandbox.operatingMode = OperatingMode.SUSPENDED;
-  readySandbox.phase = SandboxPhase.SUSPENDED;
-  readySandbox.pod = undefined;
+  readySandbox.observedState!.operatingMode = OperatingMode.SUSPENDED;
+  readySandbox.observedState!.phase = SandboxPhase.SUSPENDED;
+  readySandbox.kubernetesDiagnostics!.pod = undefined;
   await rerender();
 
   const retainedRow = () =>
@@ -728,13 +730,13 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   expect((await createThreadTooltip())?.textContent).toContain("Resume it or enable wake on send");
   expect(sessions).not.toHaveBeenCalled();
 
-  readySandbox.wakeOnSend = true;
+  readySandbox.configuration!.wakeOnSend = true;
   await rerender();
   expect(container.textContent).toContain("Creating a thread will wake the Sandbox.");
   expect(createThreadButton().disabled).toBe(false);
   expect(sessions).not.toHaveBeenCalled();
 
-  readySandbox.wakeOnSend = false;
+  readySandbox.configuration!.wakeOnSend = false;
   await rerender();
   expect(createThreadButton().disabled).toBe(true);
 
@@ -1076,9 +1078,9 @@ it("offers Delete in the actions menu only for a suspended Sandbox", async () =>
   expect(deleteItem().textContent).toContain("Suspend the sandbox before deleting it");
   await act(async () => menuButton.click());
 
-  readySandbox.operatingMode = OperatingMode.SUSPENDED;
-  readySandbox.phase = SandboxPhase.SUSPENDED;
-  readySandbox.pod = undefined;
+  readySandbox.observedState!.operatingMode = OperatingMode.SUSPENDED;
+  readySandbox.observedState!.phase = SandboxPhase.SUSPENDED;
+  readySandbox.kubernetesDiagnostics!.pod = undefined;
   await rerender();
   await act(async () => menuButton.click());
   expect(deleteItem().disabled).toBe(false);

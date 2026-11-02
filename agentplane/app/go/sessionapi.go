@@ -207,7 +207,7 @@ func sessionGatewayError(_ context.Context, _ *gatewayruntime.ServeMux, _ gatewa
 func sessionDefaults(config Config, sandbox *environmentpb.EnvironmentDescriptor, setupWasSet bool, requestedSetup *string) (*sessionpb.SessionSpec, *string, error) {
 	defaults := &sessionpb.SessionSpec{}
 	var setupScript *string
-	if presetName := sandbox.GetPreset(); presetName != "" {
+	if presetName := sandbox.GetConfiguration().GetPreset(); presetName != "" {
 		preset, ok := config.SandboxPresets[presetName]
 		if !ok {
 			return nil, nil, errors.New("Sandbox names preset " + quote(presetName) + ", but it is not in the app's preset catalog")

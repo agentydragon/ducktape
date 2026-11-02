@@ -48,7 +48,7 @@ func TestSessionDefaultsMergeExplicitFieldsAndHonorSetupPresence(t *testing.T) {
 			},
 		},
 	}
-	sandbox := &environmentpb.EnvironmentDescriptor{Preset: proto.String("work")}
+	sandbox := &environmentpb.EnvironmentDescriptor{Configuration: &environmentpb.EnvironmentConfiguration{Preset: proto.String("work")}}
 	defaults, setup, err := sessionDefaults(config, sandbox, false, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +71,7 @@ func TestSessionDefaultsMergeExplicitFieldsAndHonorSetupPresence(t *testing.T) {
 	if _, setup, err = sessionDefaults(config, sandbox, true, &requested); err != nil || setup == nil || *setup != requested {
 		t.Fatalf("explicit setup_script should replace preset value; setup=%v err=%v", setup, err)
 	}
-	if _, _, err = sessionDefaults(config, &environmentpb.EnvironmentDescriptor{Preset: proto.String("missing")}, false, nil); err == nil {
+	if _, _, err = sessionDefaults(config, &environmentpb.EnvironmentDescriptor{Configuration: &environmentpb.EnvironmentConfiguration{Preset: proto.String("missing")}}, false, nil); err == nil {
 		t.Fatal("unknown Sandbox preset was accepted")
 	}
 }
@@ -245,7 +245,7 @@ func TestSessionOpeningGatewayPreservesPresetPresenceAndWireContract(t *testing.
 		{"zero", `{"harness":0}`, `,"setup_script":"override"`, sessionTestStringPtr("override"), sessionpb.Harness_HARNESS_UNSPECIFIED, "preset-model", "preset", "high"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &environmentpb.TargetHandle{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}, Preset: proto.String("work")}}
+			peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &environmentpb.TargetHandle{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}, Configuration: &environmentpb.EnvironmentConfiguration{Preset: proto.String("work")}}}
 			handler := sessionTestGateway(t, peer)
 			body := `{"session_id":"` + id + `","sandbox_uid":"uid","spec":` + test.spec + test.setup + `}`
 			response := sessionTestRequest(handler, http.MethodPost, "/sandboxes/demo/sessions", body)

@@ -325,14 +325,14 @@ func TestListAndGetReturnTheExactExecutionAccountIdentity(t *testing.T) {
 	if got.GetTarget().GetUid() != sandboxUID || got.GetExecutionAccount().GetUid() != executionUID {
 		t.Fatalf("GetEnvironment returned target/account %+v / %+v", got.GetTarget(), got.GetExecutionAccount())
 	}
-	if got.GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_AVAILABLE ||
-		got.GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_ALLOWED_OWN_SERVICE_ACCOUNT {
-		t.Fatalf("explicit resume eligibility = %+v", got.GetResumeEligibility())
+	if got.GetActions().GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_AVAILABLE ||
+		got.GetActions().GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_ALLOWED_OWN_SERVICE_ACCOUNT {
+		t.Fatalf("explicit resume eligibility = %+v", got.GetActions().GetResumeEligibility())
 	}
-	if got.GetWakeGeneration() != 0 || got.GetResumeToken() != lifecycle.NewResumeToken(lifecycle.Target{
+	if got.GetActions().GetWakeGeneration() != 0 || got.GetActions().GetResumeToken() != lifecycle.NewResumeToken(lifecycle.Target{
 		Namespace: discoveryNamespace, Name: sandboxName, UID: sandboxUID,
 	}, 0) {
-		t.Fatalf("generation-bound resume precondition = generation %d, token %q", got.GetWakeGeneration(), got.GetResumeToken())
+		t.Fatalf("generation-bound resume precondition = generation %d, token %q", got.GetActions().GetWakeGeneration(), got.GetActions().GetResumeToken())
 	}
 	var unchanged sandboxapi.Sandbox
 	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, &unchanged); err != nil {
@@ -360,17 +360,17 @@ func TestDiscoverResumeAndReadThroughOneService(t *testing.T) {
 	}
 	descriptor := listed.Items[0]
 	resumed, err := rpc.ResumeEnvironment(ctx, &environmentpb.ResumeEnvironmentRequest{
-		Target: descriptor.Target, ResumeToken: descriptor.ResumeToken,
+		Target: descriptor.Target, ResumeToken: descriptor.Actions.ResumeToken,
 	})
 	if err != nil || resumed.GetOutcome() != environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED || resumed.GetWakeGeneration() != 8 {
 		t.Fatalf("ResumeEnvironment = %+v, %v", resumed, err)
 	}
 	current, err := rpc.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: descriptor.Target})
-	if err != nil || current.GetWakeGeneration() != 8 || current.GetResumeToken() == descriptor.GetResumeToken() {
+	if err != nil || current.GetActions().GetWakeGeneration() != 8 || current.GetActions().GetResumeToken() == descriptor.GetActions().GetResumeToken() {
 		t.Fatalf("GetEnvironment after resume = %+v, %v", current, err)
 	}
-	if current.GetReadiness().GetState() != environmentpb.ReadinessState_READINESS_STATE_NOT_READY {
-		t.Fatalf("resume acceptance invented readiness: %+v", current.GetReadiness())
+	if current.GetObservedState().GetReadiness().GetState() != environmentpb.ReadinessState_READINESS_STATE_NOT_READY {
+		t.Fatalf("resume acceptance invented readiness: %+v", current.GetObservedState().GetReadiness())
 	}
 }
 
@@ -386,13 +386,13 @@ func TestDiscoveryReportsResumeDenialAndReadinessFactsWithoutEffects(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.GetReadiness().GetState() != environmentpb.ReadinessState_READINESS_STATE_NOT_READY ||
-		got.GetReadiness().GetReason() != "ReadyConditionUnavailable" {
-		t.Fatalf("current readiness descriptor = %+v", got.GetReadiness())
+	if got.GetObservedState().GetReadiness().GetState() != environmentpb.ReadinessState_READINESS_STATE_NOT_READY ||
+		got.GetObservedState().GetReadiness().GetReason() != "ReadyConditionUnavailable" {
+		t.Fatalf("current readiness descriptor = %+v", got.GetObservedState().GetReadiness())
 	}
-	if got.GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED ||
-		got.GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED || got.GetResumeToken() != "" {
-		t.Fatalf("denied resume facts = eligibility %+v token=%q", got.GetResumeEligibility(), got.GetResumeToken())
+	if got.GetActions().GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED ||
+		got.GetActions().GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED || got.GetActions().GetResumeToken() != "" {
+		t.Fatalf("denied resume facts = eligibility %+v token=%q", got.GetActions().GetResumeEligibility(), got.GetActions().GetResumeToken())
 	}
 	var unchanged sandboxapi.Sandbox
 	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, &unchanged); err != nil {
@@ -419,13 +419,13 @@ func TestLegacyWakeOnSendAvailabilityIsSeparateFromExplicitResumeEligibility(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.GetAutomaticWake() != environmentpb.AutomaticWakeState_AUTOMATIC_WAKE_STATE_AVAILABLE {
-		t.Fatalf("automatic wake projection = %s, want broker-enabled availability", got.GetAutomaticWake())
+	if got.GetActions().GetAutomaticWake() != environmentpb.AutomaticWakeState_AUTOMATIC_WAKE_STATE_AVAILABLE {
+		t.Fatalf("automatic wake projection = %s, want broker-enabled availability", got.GetActions().GetAutomaticWake())
 	}
-	if got.GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED ||
-		got.GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED ||
-		got.GetResumeToken() != "" {
-		t.Fatalf("explicit resume projection = %+v token=%q, want policy denial and no token", got.GetResumeEligibility(), got.GetResumeToken())
+	if got.GetActions().GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED ||
+		got.GetActions().GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED ||
+		got.GetActions().GetResumeToken() != "" {
+		t.Fatalf("explicit resume projection = %+v token=%q, want policy denial and no token", got.GetActions().GetResumeEligibility(), got.GetActions().GetResumeToken())
 	}
 	var unchanged sandboxapi.Sandbox
 	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, &unchanged); err != nil {
@@ -476,24 +476,24 @@ func TestGetReturnsTheCanonicalSandboxAndCurrentPodProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.GetCreatedAt().AsTime() != createdAt.Time || got.GetBinding().GetBootstrap() != sandbox.Spec.Bootstrap || got.GetPreset() != "gpu-workbench" {
-		t.Fatalf("creation/binding/preset projection = %v / %v / %q", got.GetCreatedAt(), got.GetBinding(), got.GetPreset())
+	if got.GetObservedState().GetCreatedAt().AsTime() != createdAt.Time || got.GetConfiguration().GetBinding().GetBootstrap() != sandbox.Spec.Bootstrap || got.GetConfiguration().GetPreset() != "gpu-workbench" {
+		t.Fatalf("creation/binding/preset projection = %v / %v / %q", got.GetObservedState().GetCreatedAt(), got.GetConfiguration().GetBinding(), got.GetConfiguration().GetPreset())
 	}
-	if got.GetPod().GetUid() != "pod-uid-current" || got.GetPod().GetNodeName() != "worker-a" || got.GetPod().GetStatus().AsMap()["phase"] != "Running" ||
-		len(got.GetPod().GetOwnerReferences()) != 1 || !got.GetPod().GetOwnerReferences()[0].GetController() {
-		t.Fatalf("current Pod projection = %v", got.GetPod())
+	if got.GetKubernetesDiagnostics().GetPod().GetUid() != "pod-uid-current" || got.GetKubernetesDiagnostics().GetPod().GetNodeName() != "worker-a" || got.GetKubernetesDiagnostics().GetPod().GetStatus().AsMap()["phase"] != "Running" ||
+		len(got.GetKubernetesDiagnostics().GetPod().GetOwnerReferences()) != 1 || !got.GetKubernetesDiagnostics().GetPod().GetOwnerReferences()[0].GetController() {
+		t.Fatalf("current Pod projection = %v", got.GetKubernetesDiagnostics().GetPod())
 	}
-	incarnation, ok := got.GetStatus().AsMap()["incarnation"].(map[string]any)
+	incarnation, ok := got.GetKubernetesDiagnostics().GetSandboxStatus().AsMap()["incarnation"].(map[string]any)
 	if !ok || incarnation["uid"] != "pod-uid-current" {
-		t.Fatalf("raw Sandbox status = %v", got.GetStatus())
+		t.Fatalf("raw Sandbox status = %v", got.GetKubernetesDiagnostics().GetSandboxStatus())
 	}
-	if got.GetReadiness().GetState() != environmentpb.ReadinessState_READINESS_STATE_READY ||
-		got.GetPhase() != environmentpb.SandboxPhase_SANDBOX_PHASE_RUNNING || got.GetSuspendedBy() != "Idle" ||
-		got.GetIdleSuspendAfter().AsDuration() != 3*time.Minute || got.GetIdleSuspendAt().AsTime() != idleSuspendAt.Time {
+	if got.GetObservedState().GetReadiness().GetState() != environmentpb.ReadinessState_READINESS_STATE_READY ||
+		got.GetObservedState().GetPhase() != environmentpb.SandboxPhase_SANDBOX_PHASE_RUNNING || got.GetObservedState().GetSuspendedBy() != "Idle" ||
+		got.GetConfiguration().GetIdleSuspendAfter().AsDuration() != 3*time.Minute || got.GetObservedState().GetIdleSuspendAt().AsTime() != idleSuspendAt.Time {
 		t.Fatalf("Sandbox status projection = %v", got)
 	}
-	if len(got.GetAutosuspendBlockers()) != 2 || got.GetAutosuspendBlockers()[0].GetSessionId() != sessionID {
-		t.Fatalf("autosuspend blockers = %v", got.GetAutosuspendBlockers())
+	if len(got.GetObservedState().GetAutosuspendBlockers()) != 2 || got.GetObservedState().GetAutosuspendBlockers()[0].GetSessionId() != sessionID {
+		t.Fatalf("autosuspend blockers = %v", got.GetObservedState().GetAutosuspendBlockers())
 	}
 	if _, err := rpc.GetEnvironment(bearing(t, foreignToken), &environmentpb.GetEnvironmentRequest{Target: target}); status.Code(err) != codes.NotFound {
 		t.Fatalf("foreign caller GetEnvironment error = %v, want NotFound", err)
@@ -513,8 +513,8 @@ func TestGetDoesNotProjectAReplacedPodWithTheSameName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.GetPod() != nil || got.GetRuntimeIncarnationUid() != "pod-uid-expected" {
-		t.Fatalf("replacement Pod was projected as current: Pod=%v incarnationUID=%q", got.GetPod(), got.GetRuntimeIncarnationUid())
+	if got.GetKubernetesDiagnostics().GetPod() != nil || got.GetObservedState().GetRuntimeIncarnationUid() != "pod-uid-expected" {
+		t.Fatalf("replacement Pod was projected as current: Pod=%v incarnationUID=%q", got.GetKubernetesDiagnostics().GetPod(), got.GetObservedState().GetRuntimeIncarnationUid())
 	}
 }
 
@@ -540,9 +540,9 @@ func TestDelegatedActionsUseTheEffectiveCallerAndKeepTargetUIDFences(t *testing.
 	if got.GetExecutionAccount().GetUid() != executionUID {
 		t.Fatalf("delegated GetEnvironment execution account = %+v", got.GetExecutionAccount())
 	}
-	if got.GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_AVAILABLE ||
-		got.GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_ALLOWED_OWN_SERVICE_ACCOUNT {
-		t.Fatalf("delegated resume eligibility used the actor instead of effective caller: %+v", got.GetResumeEligibility())
+	if got.GetActions().GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_AVAILABLE ||
+		got.GetActions().GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_ALLOWED_OWN_SERVICE_ACCOUNT {
+		t.Fatalf("delegated resume eligibility used the actor instead of effective caller: %+v", got.GetActions().GetResumeEligibility())
 	}
 
 	for _, target := range []*environmentpb.TargetHandle{
@@ -960,7 +960,7 @@ func TestInventoryReaderListAndGetAreBroadButOrdinaryCallersStayScoped(t *testin
 		if err != nil || got.GetTarget().GetName() != target.Name || got.ExecutionAccount != nil {
 			t.Fatalf("reader get = %v, %v", got, err)
 		}
-		if target.Name == "deleting" && (got.ResumeEligibility != nil || got.ResumeToken != "" || got.AutomaticWake != environmentpb.AutomaticWakeState_AUTOMATIC_WAKE_STATE_NOT_AVAILABLE) {
+		if target.Name == "deleting" && (got.GetActions().GetResumeEligibility() != nil || got.GetActions().GetResumeToken() != "" || got.GetActions().GetAutomaticWake() != environmentpb.AutomaticWakeState_AUTOMATIC_WAKE_STATE_NOT_AVAILABLE) {
 			t.Fatalf("deleting environment advertises resume: %v", got)
 		}
 	}

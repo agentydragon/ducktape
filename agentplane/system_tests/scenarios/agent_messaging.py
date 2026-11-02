@@ -102,10 +102,10 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
         )
         sender_started = starting.create_task(sandbox(f"systest-msg-from-{harness}", policies=[send_grant.POLICY_SET]))
     recipient, sender = recipient_started.result(), sender_started.result()
-    assert recipient.HasField("pod")
-    assert sender.HasField("pod")
-    recipient_model = scripted.model(recipient.pod.name, harness)
-    sender_model = scripted.model(sender.pod.name, harness)
+    assert recipient.kubernetes_diagnostics.HasField("pod")
+    assert sender.kubernetes_diagnostics.HasField("pod")
+    recipient_model = scripted.model(recipient.kubernetes_diagnostics.pod.name, harness)
+    sender_model = scripted.model(sender.kubernetes_diagnostics.pod.name, harness)
     recipient_agent = await Agent.open(
         client,
         dispatcher,

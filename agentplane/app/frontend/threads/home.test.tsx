@@ -34,7 +34,7 @@ afterEach(async () => {
 });
 
 const SANDBOX = readySandbox("test-sandbox", "00000000-0000-4000-8000-000000000001");
-SANDBOX.pod = undefined;
+SANDBOX.kubernetesDiagnostics!.pod = undefined;
 
 function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "name">): ThreadView {
   return {

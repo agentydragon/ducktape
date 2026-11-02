@@ -567,11 +567,37 @@ type RuntimeConfiguration = {
 type EnvironmentDescriptor = {
   target: TargetRef;
   execution_account: AccountRef;
-  readiness: { state: "ready" } | { state: "not_ready"; reason: string };
-  workspace: { root: string }; // absolute; supplied by runtime/configuration owner
-  instructions: string;
-  configurations: RuntimeConfiguration[];
-  observed_at: Timestamp;
+  configuration: {
+    template: string;
+    workspace: { root: string }; // absolute; supplied by runtime/configuration owner
+    instructions: string;
+    configurations: RuntimeConfiguration[];
+    configurations_availability: "configured" | "absent" | "unavailable";
+    bootstrap?: string;
+    preset?: string;
+    wake_on_send: boolean;
+    idle_suspend_after_seconds?: integer;
+  };
+  observed_state: {
+    readiness: { state: "ready" } | { state: "not_ready"; reason: string };
+    observed_at: Timestamp;
+    operating_mode: "running" | "suspended" | "unspecified";
+    phase: string;
+    runtime_incarnation_uid?: OpaqueId;
+    created_at?: Timestamp;
+    suspended_by?: "idle" | "requested";
+    idle_suspend_at?: Timestamp;
+  };
+  actions: {
+    resume: "available" | "not_available" | "not_required" | "unspecified";
+    resume_eligibility?: { state: "available" | "denied" | "unspecified"; reason: string };
+    wake_generation: integer;
+    resume_token?: OpaqueToken;
+  };
+  kubernetes_diagnostics: {
+    sandbox_status: Record<string, unknown>;
+    current_pod?: { name: string; uid: OpaqueId; status: Record<string, unknown> };
+  };
 };
 type TemplateDescriptor = {
   template: TemplateRef;

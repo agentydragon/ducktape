@@ -585,17 +585,22 @@ func TestThreadReadRouteRegistrationPublishesOpenAPIPaths(t *testing.T) {
 
 func TestThreadSandboxReadinessRequiresRunningReadyPod(t *testing.T) {
 	ready := &environmentpb.EnvironmentDescriptor{
-		OperatingMode: environmentpb.OperatingMode_OPERATING_MODE_RUNNING,
-		Readiness:     &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_READY},
+		ObservedState: &environmentpb.EnvironmentObservedState{
+			OperatingMode: environmentpb.OperatingMode_OPERATING_MODE_RUNNING,
+			Readiness:     &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_READY},
+		},
 	}
 	if !threadSandboxReady(ready) {
 		t.Fatal("running Sandbox with Ready=True was rejected")
 	}
-	if threadSandboxReady(&environmentpb.EnvironmentDescriptor{Readiness: ready.GetReadiness()}) {
+	if threadSandboxReady(&environmentpb.EnvironmentDescriptor{ObservedState: ready.GetObservedState()}) {
 		t.Fatal("Ready condition without a reported mode was accepted")
 	}
 	if threadSandboxReady(&environmentpb.EnvironmentDescriptor{
-		OperatingMode: environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED, Readiness: ready.GetReadiness(),
+		ObservedState: &environmentpb.EnvironmentObservedState{
+			OperatingMode: environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED,
+			Readiness:     ready.GetObservedState().GetReadiness(),
+		},
 	}) {
 		t.Fatal("suspended Sandbox was accepted")
 	}
@@ -605,10 +610,12 @@ func TestEnsureThreadArchivableRejectsBusyEnvironmentRuntime(t *testing.T) {
 	id := uuid.New()
 	thread := threads.Thread{ID: id}
 	sandbox := &environmentpb.EnvironmentDescriptor{
-		Target:        &environmentpb.TargetHandle{Namespace: "team", Name: "sandbox", Uid: "sandbox-uid"},
-		OperatingMode: environmentpb.OperatingMode_OPERATING_MODE_RUNNING,
-		Readiness:     &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_READY},
-		Pod:           &environmentpb.SandboxPod{Name: "environment-runtime-pod"},
+		Target: &environmentpb.TargetHandle{Namespace: "team", Name: "sandbox", Uid: "sandbox-uid"},
+		ObservedState: &environmentpb.EnvironmentObservedState{
+			OperatingMode: environmentpb.OperatingMode_OPERATING_MODE_RUNNING,
+			Readiness:     &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_READY},
+		},
+		KubernetesDiagnostics: &environmentpb.KubernetesDiagnostics{Pod: &environmentpb.SandboxPod{Name: "environment-runtime-pod"}},
 	}
 	inventory := &threadReadInventoryFake{sandbox: sandbox}
 	environmentRuntime := &threadReadEnvironmentRuntimeFake{status: &sessionpb.EnvironmentRuntimeStatus{Sessions: []*sessionpb.SessionStatus{{SessionId: id.String(), Busy: true}}}}
@@ -625,7 +632,7 @@ func TestEnsureThreadArchivableRejectsBusyEnvironmentRuntime(t *testing.T) {
 	if err := ensureThreadArchivable(context.Background(), "tools", thread, historydata.FoldSummary{Sandbox: "sandbox", SandboxUID: "sandbox-uid"}, inventory, environmentRuntime); err != nil {
 		t.Fatalf("idle Environment Runtime archive check = %v, want nil", err)
 	}
-	sandbox.OperatingMode = environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED
+	sandbox.ObservedState.OperatingMode = environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED
 	if err := ensureThreadArchivable(context.Background(), "tools", thread, historydata.FoldSummary{Sandbox: "sandbox", SandboxUID: "sandbox-uid"}, inventory, environmentRuntime); !errors.Is(err, errThreadEnvironmentRuntimeUnready) {
 		t.Fatalf("unready Environment Runtime archive check = %v, want errThreadEnvironmentRuntimeUnready", err)
 	}

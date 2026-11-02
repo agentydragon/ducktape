@@ -31,8 +31,10 @@ func (f *environmentFixture) GetEnvironment(
 ) (*environmentpb.EnvironmentDescriptor, error) {
 	f.getRequest = request
 	return &environmentpb.EnvironmentDescriptor{
-		Target:    request.GetTarget(),
-		Readiness: &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_NOT_READY},
+		Target: request.GetTarget(),
+		ObservedState: &environmentpb.EnvironmentObservedState{
+			Readiness: &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_NOT_READY},
+		},
 	}, nil
 }
 

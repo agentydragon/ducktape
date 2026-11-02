@@ -66,9 +66,9 @@ async def test_go_app_serves_environment_and_thread_views_from_generated_contrac
     assert environment_response.status_code == 200, environment_response.text
     environment = ParseDict(environment_response.json(), environment_service_pb2.EnvironmentDescriptor())
     assert environment.target == target
-    assert environment.operating_mode == environment_service_pb2.OPERATING_MODE_RUNNING
-    assert environment.HasField("pod")
-    assert environment.readiness.state == environment_service_pb2.READINESS_STATE_READY
+    assert environment.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_RUNNING
+    assert environment.kubernetes_diagnostics.HasField("pod")
+    assert environment.observed_state.readiness.state == environment_service_pb2.READINESS_STATE_READY
 
     templates = await http.get("/upstream/environments/v1/environment-templates")
     assert templates.status_code == 200, templates.text
@@ -96,9 +96,9 @@ async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(
     assert created_response.status_code == 200, created_response.text
     created = ParseDict(created_response.json(), environment_service_pb2.EnvironmentDescriptor())
     assert created.target == target
-    assert created.operating_mode == environment_service_pb2.OPERATING_MODE_UNSPECIFIED
-    assert not created.HasField("pod")
-    assert created.wake_on_send is False
+    assert created.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_UNSPECIFIED
+    assert not created.kubernetes_diagnostics.HasField("pod")
+    assert created.configuration.wake_on_send is False
     missing = await http.get(
         f"/upstream/environments/v1/environments/{target.namespace}/missing", params={"target.uid": "missing-uid"}
     )
@@ -112,7 +112,7 @@ async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(
     assert (
         ParseDict(
             (await http.get(route, params=params)).json(), environment_service_pb2.EnvironmentDescriptor()
-        ).wake_on_send
+        ).configuration.wake_on_send
         is True
     )
     stale = await http.delete(route, params={"target.uid": "stale-uid"})

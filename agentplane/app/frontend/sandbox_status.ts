@@ -13,7 +13,7 @@ type RawObject = Record<string, unknown>;
 
 /** The controller's lifecycle phase, normalized without deriving it from the requested operating mode. */
 export function sandboxPhase(sandbox: EnvironmentDescriptor): string {
-  switch (sandbox.phase) {
+  switch (sandbox.observedState?.phase) {
     case SandboxPhase.UNSPECIFIED:
       return "Unspecified";
     case SandboxPhase.CREATING:
@@ -34,7 +34,7 @@ export function sandboxPhase(sandbox: EnvironmentDescriptor): string {
 }
 
 export function sandboxOperatingMode(sandbox: EnvironmentDescriptor): string | null {
-  switch (sandbox.operatingMode) {
+  switch (sandbox.observedState?.operatingMode) {
     case OperatingMode.RUNNING:
       return "Running";
     case OperatingMode.SUSPENDED:
@@ -46,7 +46,7 @@ export function sandboxOperatingMode(sandbox: EnvironmentDescriptor): string | n
 
 /** Converts a present protobuf Duration to seconds while keeping absent and zero durations distinct. */
 export function sandboxIdleSuspendAfterSeconds(sandbox: EnvironmentDescriptor): number | null {
-  const duration = sandbox.idleSuspendAfter;
+  const duration = sandbox.configuration?.idleSuspendAfter;
   return duration === undefined ? null : Number(duration.seconds) + duration.nanos / 1_000_000_000;
 }
 
@@ -107,17 +107,17 @@ export function rawConditions(status: RawObject | null | undefined): RawConditio
 }
 
 export function podPhase(sandbox: EnvironmentDescriptor): string | null {
-  return rawString(rawObject(sandbox.pod?.status)?.phase);
+  return rawString(rawObject(sandbox.kubernetesDiagnostics?.pod?.status)?.phase);
 }
 
 export function podIp(sandbox: EnvironmentDescriptor): string | null {
-  return rawString(rawObject(sandbox.pod?.status)?.podIP);
+  return rawString(rawObject(sandbox.kubernetesDiagnostics?.pod?.status)?.podIP);
 }
 
 /** Whether the current Sandbox incarnation is the VMI-backed Pod whose serial console is available. */
 export function hasVmConsole(sandbox: EnvironmentDescriptor | null): boolean {
   return (
-    (sandbox ? sandbox.pod?.ownerReferences : null)?.some(
+    (sandbox ? sandbox.kubernetesDiagnostics?.pod?.ownerReferences : null)?.some(
       (owner) =>
         owner.controller && owner.kind === "VirtualMachineInstance" && owner.apiVersion.startsWith("kubevirt.io/")
     ) ?? false
@@ -125,7 +125,10 @@ export function hasVmConsole(sandbox: EnvironmentDescriptor | null): boolean {
 }
 
 export function sandboxReady(sandbox: EnvironmentDescriptor | null | undefined): boolean {
-  return sandbox?.operatingMode === OperatingMode.RUNNING && sandbox.readiness?.state === ReadinessState.READY;
+  return (
+    sandbox?.observedState?.operatingMode === OperatingMode.RUNNING &&
+    sandbox.observedState?.readiness?.state === ReadinessState.READY
+  );
 }
 
 export function sandboxSuspended(sandbox: EnvironmentDescriptor | null | undefined): boolean {
@@ -147,7 +150,7 @@ export function sandboxStarting(sandbox: EnvironmentDescriptor): boolean {
 
 /** Why a Sandbox is suspended, as the views word it; null while it runs and until the controller reports. */
 export function suspensionReason(sandbox: EnvironmentDescriptor): "idle" | "on request" | null {
-  const suspendedBy = sandbox.suspendedBy;
+  const suspendedBy = sandbox.observedState?.suspendedBy;
   switch (suspendedBy) {
     case "Idle":
       return "idle";
@@ -160,7 +163,7 @@ export function suspensionReason(sandbox: EnvironmentDescriptor): "idle" | "on r
 
 export function sandboxSummary(sandbox: EnvironmentDescriptor): { label: string; kind: SandboxStatusKind } {
   const phase = sandboxPhase(sandbox);
-  const pod = sandbox.pod;
+  const pod = sandbox.kubernetesDiagnostics?.pod;
   const reason = suspensionReason(sandbox);
   const withReason = (label: string): string => (reason === null ? label : `${label} (${reason})`);
   if (phase === "Unspecified") return { label: "Status unknown", kind: "pending" };
@@ -242,7 +245,7 @@ export function sandboxStatusDetail(sandbox: EnvironmentDescriptor): string {
   const lines = [`Sandbox: ${sandboxSummary(sandbox).label}`];
   const reason = suspensionReason(sandbox);
   const idleSuspendAfterSeconds = sandboxIdleSuspendAfterSeconds(sandbox);
-  const pod = sandbox.pod;
+  const pod = sandbox.kubernetesDiagnostics?.pod;
   if (reason !== null) {
     lines.push(
       reason === "idle" && idleSuspendAfterSeconds
@@ -251,7 +254,9 @@ export function sandboxStatusDetail(sandbox: EnvironmentDescriptor): string {
     );
   }
   lines.push(
-    ...rawConditions(rawObject(sandbox.status)).map((condition) => `Sandbox condition · ${conditionLine(condition)}`)
+    ...rawConditions(rawObject(sandbox.kubernetesDiagnostics?.sandboxStatus)).map(
+      (condition) => `Sandbox condition · ${conditionLine(condition)}`
+    )
   );
   if (pod) {
     const status = pod.status;

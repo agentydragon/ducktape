@@ -174,14 +174,16 @@ async def vm_sandbox_turn(
     template: str,
 ) -> None:
     view = await sandbox(f"systest-vm-{harness}", template=template)
-    assert view.HasField("pod")
+    assert view.kubernetes_diagnostics.HasField("pod")
     identity = await runner_credentials.check_vm_runner_certificate(cluster, view)
     if template == SUPERVISION_TEMPLATE:
         async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.1), reraise=True):
             with attempt:
                 check_boot()
-                assert systemd_supervision_passed(view.pod.uid), "Missing this VM's supervisor check receipt"
-    model = scripted.model(view.pod.name, harness)
+                assert systemd_supervision_passed(view.kubernetes_diagnostics.pod.uid), (
+                    "Missing this VM's supervisor check receipt"
+                )
+    model = scripted.model(view.kubernetes_diagnostics.pod.name, harness)
     with tracer.start_as_current_span(
         "system_test.session.open",
         attributes={"harness": session_pb2.Harness.Name(harness), "sandbox.name": view.target.name},
@@ -214,7 +216,9 @@ async def vm_sandbox_turn(
     )
     assert systemctl_denial is not None, turn.transcript
     assert "PING" in turn.answer, turn.transcript
-    await runner_credentials.assert_vm_runner_identity_unchanged(cluster, view.pod.name, identity)
+    await runner_credentials.assert_vm_runner_identity_unchanged(
+        cluster, view.kubernetes_diagnostics.pod.name, identity
+    )
 
 
 async def _capture_native_profile(cluster: Cluster, sandbox_name: str, sandbox_uid: str) -> Path:
@@ -250,8 +254,8 @@ async def codex_tool_oom(
     native_profile: bool,
 ) -> None:
     view = await sandbox("systest-vm-codex-oom", template=OOM_TEMPLATE)
-    assert view.HasField("pod")
-    model = scripted.model(view.pod.name, session_pb2.HARNESS_CODEX)
+    assert view.kubernetes_diagnostics.HasField("pod")
+    model = scripted.model(view.kubernetes_diagnostics.pod.name, session_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)
     evidence: dict[str, Any] = {}
     try:
@@ -346,8 +350,8 @@ async def codex_tool_oom(
             assert list(final.processes) == list(original.processes)
             assert final.sessions[0].native_session_id == session.native_session_id
             current = await client.get_environment(view.target)
-            assert current.HasField("pod")
-            assert current.pod.uid == view.pod.uid
+            assert current.kubernetes_diagnostics.HasField("pod")
+            assert current.kubernetes_diagnostics.pod.uid == view.kubernetes_diagnostics.pod.uid
             evidence["passed"] = True
     finally:
         scenario_failed = sys.exc_info()[0] is not None

@@ -18,56 +18,61 @@ import (
 const PresetLabel = "agentplane.allegedly.works/preset"
 
 func sandboxView(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*environmentpb.EnvironmentDescriptor, error) {
-	view := &environmentpb.EnvironmentDescriptor{
-		Target:   &environmentpb.TargetHandle{Namespace: resource.Namespace, Name: resource.Name, Uid: string(resource.UID)},
-		Template: resource.Spec.Template, StopStage: string(resource.Status.StopStage),
-		WakeOnSend:          resource.Spec.WakeOnSend,
-		Phase:               sandboxPhase(resource),
+	configuration := &environmentpb.EnvironmentConfiguration{
+		Template: resource.Spec.Template, WakeOnSend: resource.Spec.WakeOnSend,
+	}
+	observedState := &environmentpb.EnvironmentObservedState{
+		Phase: sandboxPhase(resource), StopStage: string(resource.Status.StopStage),
 		AutosuspendBlockers: make([]*environmentlifecyclepb.AutosuspendBlocker, 0, len(resource.Status.IdleSuspendBlockers)),
 	}
-	view.Readiness = &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_NOT_READY}
+	diagnostics := &environmentpb.KubernetesDiagnostics{}
+	view := &environmentpb.EnvironmentDescriptor{
+		Target:        &environmentpb.TargetHandle{Namespace: resource.Namespace, Name: resource.Name, Uid: string(resource.UID)},
+		Configuration: configuration, ObservedState: observedState, KubernetesDiagnostics: diagnostics,
+	}
+	observedState.Readiness = &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_NOT_READY}
 	if condition := meta.FindStatusCondition(resource.Status.Conditions, sandboxapi.ConditionReady); condition != nil {
-		view.Readiness.Reason, view.Readiness.Detail = condition.Reason, condition.Message
+		observedState.Readiness.Reason, observedState.Readiness.Detail = condition.Reason, condition.Message
 		if condition.Status == metav1.ConditionTrue {
-			view.Readiness.State = environmentpb.ReadinessState_READINESS_STATE_READY
+			observedState.Readiness.State = environmentpb.ReadinessState_READINESS_STATE_READY
 		}
 	} else {
-		view.Readiness.Reason = "ReadyConditionUnavailable"
+		observedState.Readiness.Reason = "ReadyConditionUnavailable"
 	}
 	if resource.Status.Incarnation != nil {
-		view.RuntimeIncarnationUid = resource.Status.Incarnation.UID
+		observedState.RuntimeIncarnationUid = resource.Status.Incarnation.UID
 	}
 	for _, blocker := range resource.Status.IdleSuspendBlockers {
-		view.AutosuspendBlockers = append(view.AutosuspendBlockers, &environmentlifecyclepb.AutosuspendBlocker{
+		observedState.AutosuspendBlockers = append(observedState.AutosuspendBlockers, &environmentlifecyclepb.AutosuspendBlocker{
 			Reason: string(blocker.Reason), SessionId: blocker.SessionID,
 		})
 	}
 	if !resource.CreationTimestamp.IsZero() {
-		view.CreatedAt = timestamppb.New(resource.CreationTimestamp.Time)
+		observedState.CreatedAt = timestamppb.New(resource.CreationTimestamp.Time)
 	}
 	if resource.Spec.Bootstrap != "" {
-		view.Binding = &environmentpb.SandboxBinding{Bootstrap: resource.Spec.Bootstrap}
+		configuration.Binding = &environmentpb.SandboxBinding{Bootstrap: resource.Spec.Bootstrap}
 	}
 	if preset, ok := resource.Labels[PresetLabel]; ok {
-		view.Preset = &preset
+		configuration.Preset = &preset
 	}
 	if resource.Status.OperatingMode != "" {
 		switch resource.Status.OperatingMode {
 		case sandboxapi.OperatingModeRunning:
-			view.OperatingMode = environmentpb.OperatingMode_OPERATING_MODE_RUNNING
+			observedState.OperatingMode = environmentpb.OperatingMode_OPERATING_MODE_RUNNING
 		case sandboxapi.OperatingModeSuspended:
-			view.OperatingMode = environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED
+			observedState.OperatingMode = environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED
 		}
 	}
 	if resource.Status.SuspendedBy != nil {
 		suspendedBy := string(*resource.Status.SuspendedBy)
-		view.SuspendedBy = &suspendedBy
+		observedState.SuspendedBy = &suspendedBy
 	}
 	if resource.Status.IdleSuspendAt != nil {
-		view.IdleSuspendAt = timestamppb.New(resource.Status.IdleSuspendAt.Time)
+		observedState.IdleSuspendAt = timestamppb.New(resource.Status.IdleSuspendAt.Time)
 	}
 	if resource.Spec.IdleSuspendAfter != nil {
-		view.IdleSuspendAfter = durationpb.New(resource.Spec.IdleSuspendAfter.Duration)
+		configuration.IdleSuspendAfter = durationpb.New(resource.Spec.IdleSuspendAfter.Duration)
 	}
 	statusValue, err := jsonValue(resource.Status)
 	if err != nil {
@@ -76,12 +81,12 @@ func sandboxView(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*environmentpb.
 	if _, ok := statusValue["conditions"]; !ok {
 		statusValue["conditions"] = []any{}
 	}
-	view.Status, err = structpb.NewStruct(statusValue)
+	diagnostics.SandboxStatus, err = structpb.NewStruct(statusValue)
 	if err != nil {
 		return nil, fmt.Errorf("encode Sandbox status: %w", err)
 	}
 	if pod != nil && resource.Status.Incarnation != nil && string(pod.UID) == resource.Status.Incarnation.UID {
-		view.Pod, err = sandboxPodView(pod)
+		diagnostics.Pod, err = sandboxPodView(pod)
 		if err != nil {
 			return nil, err
 		}

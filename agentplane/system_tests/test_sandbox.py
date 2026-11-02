@@ -27,11 +27,13 @@ def _environment(
     return environment_service_pb2.EnvironmentDescriptor(
         target=environment_service_pb2.TargetHandle(namespace=namespace, name=name, uid=uid),
         execution_account=environment_service_pb2.AccountHandle(namespace="test", name="runner"),
-        operating_mode=operating_mode,
-        readiness=environment_service_pb2.Readiness(
-            state=environment_service_pb2.READINESS_STATE_READY
-            if ready
-            else environment_service_pb2.READINESS_STATE_NOT_READY
+        observed_state=environment_service_pb2.EnvironmentObservedState(
+            operating_mode=operating_mode,
+            readiness=environment_service_pb2.Readiness(
+                state=environment_service_pb2.READINESS_STATE_READY
+                if ready
+                else environment_service_pb2.READINESS_STATE_NOT_READY
+            ),
         ),
     )
 

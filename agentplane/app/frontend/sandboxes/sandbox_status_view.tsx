@@ -184,9 +184,9 @@ function StatusItem({
  * containers. An item starts open when something in it is not as it should be.
  */
 function KubernetesStatus({ sandbox }: { sandbox: EnvironmentDescriptor }): JSX.Element {
-  const sandboxConditions = rawConditions(sandbox.status);
-  const podConditions = rawConditions(sandbox.pod?.status ?? null);
-  const containers = containerStatuses(sandbox.pod?.status ?? null);
+  const sandboxConditions = rawConditions(sandbox.kubernetesDiagnostics?.sandboxStatus);
+  const podConditions = rawConditions(sandbox.kubernetesDiagnostics?.pod?.status ?? null);
+  const containers = containerStatuses(sandbox.kubernetesDiagnostics?.pod?.status ?? null);
   const unmet = (conditions: RawCondition[]): boolean => conditions.some((condition) => condition.status !== "True");
   const open = [
     ...(unmet(sandboxConditions) ? ["sandbox"] : []),
@@ -204,7 +204,7 @@ function KubernetesStatus({ sandbox }: { sandbox: EnvironmentDescriptor }): JSX.
           </Text>
         )}
       </StatusItem>
-      {sandbox.pod && (
+      {sandbox.kubernetesDiagnostics?.pod && (
         <>
           <StatusItem value="pod" title="Pod conditions" summary={conditionsSummary(podConditions)}>
             {podConditions.length > 0 ? (
@@ -248,20 +248,17 @@ function SandboxDetails({
   sandbox: EnvironmentDescriptor;
   onError: (message: string | null) => void;
 }): JSX.Element {
-  const pod = sandbox.pod;
+  const pod = sandbox.kubernetesDiagnostics?.pod;
+  const createdAt = sandbox.observedState?.createdAt;
   const startedAt = rawString(pod?.status?.startTime);
   return (
     <Table>
       <Table.Tbody>
         <Detail label="State">{sandboxSummary(sandbox).label}</Detail>
         <Detail label="Created">
-          {sandbox.createdAt ? (
-            <TimeAgo value={new Date(Number(sandbox.createdAt.seconds) * 1000 + sandbox.createdAt.nanos / 1e6)} />
-          ) : (
-            "—"
-          )}
+          {createdAt ? <TimeAgo value={new Date(Number(createdAt.seconds) * 1000 + createdAt.nanos / 1e6)} /> : "—"}
         </Detail>
-        {sandbox.preset && <Detail label="Preset">{sandbox.preset}</Detail>}
+        {sandbox.configuration?.preset && <Detail label="Preset">{sandbox.configuration?.preset}</Detail>}
         <Detail
           label="ServiceAccount"
           help="The subject its policy bindings name. Two sandboxes sharing an account share what they may do."
@@ -531,7 +528,10 @@ function EnvironmentRuntimeDiagnostics({
   );
   useEffect(() => {
     if (!active) return;
-    if (sandbox.phase === SandboxPhase.SUSPENDED || sandbox.operatingMode === OperatingMode.SUSPENDED) {
+    if (
+      sandbox.observedState?.phase === SandboxPhase.SUSPENDED ||
+      sandbox.observedState?.operatingMode === OperatingMode.SUSPENDED
+    ) {
       setState({ kind: "suspended" });
       return;
     }
@@ -548,7 +548,7 @@ function EnvironmentRuntimeDiagnostics({
     return () => {
       current = false;
     };
-  }, [active, refreshVersion, target, sandbox.operatingMode, sandbox.phase]);
+  }, [active, refreshVersion, target, sandbox.observedState?.operatingMode, sandbox.observedState?.phase]);
   const threadsById = new Map(threads.map((thread) => [thread.id, thread]));
 
   return (

@@ -14,20 +14,24 @@ import {
 export function testSandbox(name: string, uid: string, namespace = "agentplane-test"): EnvironmentDescriptor {
   return create(EnvironmentDescriptorSchema, {
     target: { name, uid, namespace },
-    createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
     executionAccount: { namespace, name, uid: `${uid}-account` },
-    readiness: { state: ReadinessState.NOT_READY, reason: "ReadyConditionUnavailable" },
+    configuration: {},
+    observedState: {
+      createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
+      readiness: { state: ReadinessState.NOT_READY, reason: "ReadyConditionUnavailable" },
+    },
+    kubernetesDiagnostics: {},
   });
 }
 
 /** A running Sandbox with a ready Pod; callers can change fields for their scenario. */
 export function readySandbox(name: string, uid: string): EnvironmentDescriptor {
   const sandbox = testSandbox(name, uid);
-  sandbox.operatingMode = OperatingMode.RUNNING;
-  sandbox.readiness = create(ReadinessSchema, { state: ReadinessState.READY });
-  sandbox.phase = SandboxPhase.RUNNING;
-  sandbox.status = { conditions: [{ type: "Ready", status: "True" }] };
-  sandbox.pod = create(SandboxPodSchema, {
+  sandbox.observedState!.operatingMode = OperatingMode.RUNNING;
+  sandbox.observedState!.readiness = create(ReadinessSchema, { state: ReadinessState.READY });
+  sandbox.observedState!.phase = SandboxPhase.RUNNING;
+  sandbox.kubernetesDiagnostics!.sandboxStatus = { conditions: [{ type: "Ready", status: "True" }] };
+  sandbox.kubernetesDiagnostics!.pod = create(SandboxPodSchema, {
     name,
     namespace: sandbox.target!.namespace,
     uid: `${uid}-pod`,
@@ -43,9 +47,9 @@ export function readySandbox(name: string, uid: string): EnvironmentDescriptor {
 /** A suspended Sandbox with no current Pod. */
 export function suspendedSandbox(name: string, uid: string): EnvironmentDescriptor {
   const sandbox = testSandbox(name, uid);
-  sandbox.operatingMode = OperatingMode.SUSPENDED;
-  sandbox.readiness = create(ReadinessSchema, { state: ReadinessState.NOT_READY, reason: "Suspended" });
-  sandbox.phase = SandboxPhase.SUSPENDED;
-  sandbox.status = {};
+  sandbox.observedState!.operatingMode = OperatingMode.SUSPENDED;
+  sandbox.observedState!.readiness = create(ReadinessSchema, { state: ReadinessState.NOT_READY, reason: "Suspended" });
+  sandbox.observedState!.phase = SandboxPhase.SUSPENDED;
+  sandbox.kubernetesDiagnostics!.sandboxStatus = {};
   return sandbox;
 }

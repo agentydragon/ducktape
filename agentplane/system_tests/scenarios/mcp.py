@@ -120,7 +120,7 @@ class ScriptedAgent:
         model: str,
         upstream: ScriptedUpstream,
     ) -> ScriptedAgent:
-        assert sandbox.HasField("pod")
+        assert sandbox.kubernetes_diagnostics.HasField("pod")
         agent = await Agent.open(
             client,
             dispatcher,
@@ -129,7 +129,7 @@ class ScriptedAgent:
             harness=harness,
             model=model,
         )
-        return cls(agent=agent, model=upstream.model(sandbox.pod.name, harness))
+        return cls(agent=agent, model=upstream.model(sandbox.kubernetes_diagnostics.pod.name, harness))
 
     async def run(self, *args: str) -> action_service_pb2.ActionRequest:
         """The receipt `agentplane --json ARGS` printed, as the harness reported it to the model."""
@@ -616,7 +616,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
         )
         view = await wait_until_running(client, environment_target)
         assert view.target.uid == target["uid"]
-        assert view.HasField("pod")
+        assert view.kubernetes_diagnostics.HasField("pod")
         # The Action Service holds the grant once it acknowledges the binding.
         await policy_objects.wait_actions_ready(f"{name}.launcher")
 
@@ -664,7 +664,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
 
         # The launched Sandbox's turn asks for the same read with its own account, which no grant names.
         own = await _play_cli_turn(
-            scripted.model(view.pod.name, harness),
+            scripted.model(view.kubernetes_diagnostics.pod.name, harness),
             *_submission(
                 ORCHESTRATION_GROUP,
                 "read_turns",

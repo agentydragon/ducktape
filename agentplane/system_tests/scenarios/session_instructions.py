@@ -95,8 +95,8 @@ async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session
 ) -> None:
     """Two sessions on one sandbox, as in the real-model scenario: what each sends the model shows
     whether the app, the Dispatcher and the runner carried the instruction, and to that session only."""
-    assert view.HasField("pod")
-    model = scripted.model(view.pod.name, harness)
+    assert view.kubernetes_diagnostics.HasField("pod")
+    model = scripted.model(view.kubernetes_diagnostics.pod.name, harness)
 
     instructed = await Agent.open(
         client,

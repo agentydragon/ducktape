@@ -21,7 +21,7 @@ export function WakeOnSendCheckbox({
   label?: string;
   onError: (message: string | null) => void;
 }): JSX.Element {
-  const stored = sandbox.wakeOnSend;
+  const stored = sandbox.configuration?.wakeOnSend ?? false;
   const [requested, setRequested] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
   useEffect(() => {
