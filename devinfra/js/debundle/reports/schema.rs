@@ -728,7 +728,6 @@ pub enum OrderedCallAdmissionRefusal {
     UnknownTarget,
     MultipleTargets,
     NonLocalTarget,
-    TaintedLocalTarget,
     UnsupportedReceiver,
 }
 

@@ -3,8 +3,8 @@
 An ordered call whose operands are already evaluated can be declined before its
 effect transfer runs. The saved graph currently reports the conservative call
 site, but the generic `opaque_execution` reason does not show whether admission
-failed for an unknown target, multiple targets, a non-local target, a tainted
-local target, or an unsupported receiver. This can send an investigation toward
+failed for an unknown target, multiple targets, a non-local target, or an
+unsupported receiver. This can send an investigation toward
 the wrong part of call analysis. A completed effects-only call and an
 incomplete invocation are separate cases.
 
