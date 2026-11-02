@@ -16,8 +16,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/liveinventory"
+	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	"github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
+	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -1230,7 +1232,7 @@ func TestEnvironmentListForwardsPagination(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		return nil
 	}}
-	RegisterStreamingRoutes(server, StreamingDependencies{DispatcherHTTP: upstream})
+	RegisterStreamingRoutes(server, StreamingDependencies{EnvironmentHTTP: upstream})
 	request := httptest.NewRequest(http.MethodGet, "/upstream/environments/v1/environments?limit=17&page_token=opaque", nil)
 	request.Header.Set("Authorization", "Bearer accepted")
 	response := httptest.NewRecorder()
@@ -1240,7 +1242,7 @@ func TestEnvironmentListForwardsPagination(t *testing.T) {
 	}
 }
 
-func TestEnvironmentMutationFacadeOnlyForwardsKnownMethods(t *testing.T) {
+func TestEnvironmentFacadeForwardsGeneratedRoutes(t *testing.T) {
 	authentication := newStreamTestAuth(t)
 	server := NewHTTPServer(authentication)
 	var forwarded []string
@@ -1249,7 +1251,7 @@ func TestEnvironmentMutationFacadeOnlyForwardsKnownMethods(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		return nil
 	}}
-	RegisterStreamingRoutes(server, StreamingDependencies{DispatcherHTTP: upstream})
+	RegisterStreamingRoutes(server, StreamingDependencies{EnvironmentHTTP: upstream})
 	handler := server.Handler(authentication)
 	for _, test := range []struct {
 		method, path string
@@ -1262,9 +1264,6 @@ func TestEnvironmentMutationFacadeOnlyForwardsKnownMethods(t *testing.T) {
 		{http.MethodPatch, "/upstream/environments/v1/environments/team/box:wake-policy", http.StatusOK},
 		{http.MethodPatch, "/upstream/environments/v1/environments/team/box:idle-suspend", http.StatusOK},
 		{http.MethodDelete, "/upstream/environments/v1/environments/team/box?target.uid=old", http.StatusOK},
-		{http.MethodPost, "/upstream/environments/v1/environments/team/box:unknown", http.StatusNotFound},
-		{http.MethodPatch, "/upstream/environments/v1/environments/team/box:resume", http.StatusNotFound},
-		{http.MethodDelete, "/upstream/environments/v1/environments/team/box:resume", http.StatusNotFound},
 	} {
 		request := httptest.NewRequest(test.method, test.path, nil)
 		request.Header.Set("Authorization", "Bearer accepted")
@@ -1291,7 +1290,7 @@ func TestEnvironmentWatchRequiresAppCallerAndForwardsOnlyInventory(t *testing.T)
 		w.WriteHeader(http.StatusOK)
 		return nil
 	}}
-	RegisterStreamingRoutes(server, StreamingDependencies{DispatcherHTTP: upstream})
+	RegisterStreamingRoutes(server, StreamingDependencies{EnvironmentHTTP: upstream})
 	path := "/upstream/environments/v1/environments:watch"
 	unauthenticated := httptest.NewRecorder()
 	server.Handler(authentication).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, path, nil))
@@ -1321,7 +1320,7 @@ func TestEnvironmentGetRequiresAppCallerAndForwardsOnlyTarget(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		return nil
 	}}
-	RegisterStreamingRoutes(server, StreamingDependencies{DispatcherHTTP: upstream})
+	RegisterStreamingRoutes(server, StreamingDependencies{EnvironmentHTTP: upstream})
 	path := "/upstream/environments/v1/environments/team-a/sandbox-1?target.uid=22222222-2222-4222-8222-222222222222"
 	unauthenticated := httptest.NewRecorder()
 	server.Handler(authentication).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, path, nil))
@@ -1342,32 +1341,31 @@ func TestEnvironmentGetRequiresAppCallerAndForwardsOnlyTarget(t *testing.T) {
 	}
 }
 
-func TestEnvironmentGetDoesNotExposeWildcardOrWatchRoutes(t *testing.T) {
+func TestEnvironmentGeneratedFacadeRejectsUnknownAndDispatcherRoutes(t *testing.T) {
 	authentication := newStreamTestAuth(t)
 	server := NewHTTPServer(authentication)
-	calls := 0
-	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, _ *http.Request, _ context.Context, _, _ string) error {
-		calls++
-		w.WriteHeader(http.StatusOK)
-		return nil
-	}}
-	RegisterStreamingRoutes(server, StreamingDependencies{DispatcherHTTP: upstream})
+	generated, err := facade.NewHandler(t.Context(), "127.0.0.1:1", time.Second, environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	RegisterStreamingRoutes(server, StreamingDependencies{EnvironmentHTTP: proxy.NewHandlerUpstream(generated, "")})
 	handler := server.Handler(authentication)
-	for _, path := range []string{
-		"/upstream/environments/v1/environments/team-a/sandbox-1/extra",
-		"/upstream/environments/v1/environments/team-a/sandbox-1:watch",
-		"/upstream/environments/v1/environments/team-a/sandbox-1:watch/extra",
+	for _, test := range []struct {
+		method, path string
+		status       int
+	}{
+		{http.MethodGet, "/upstream/environments/v1/environments/team-a/sandbox-1/extra", http.StatusNotFound},
+		{http.MethodPost, "/upstream/environments/v1/environments/team-a/sandbox-1:unknown", http.StatusNotImplemented},
+		{http.MethodPatch, "/upstream/environments/v1/environments/team-a/sandbox-1:resume", http.StatusNotImplemented},
+		{http.MethodGet, "/upstream/environments/v1/dispatches:watch", http.StatusNotFound},
 	} {
-		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request := httptest.NewRequest(test.method, test.path, nil)
 		request.Header.Set("Authorization", "Bearer accepted")
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
-		if response.Code != http.StatusNotFound {
-			t.Errorf("GET %s = %d, want 404", path, response.Code)
+		if response.Code != test.status {
+			t.Errorf("%s %s = %d, want %d", test.method, test.path, response.Code, test.status)
 		}
-	}
-	if calls != 0 {
-		t.Fatalf("wildcard or WatchEnvironment paths reached upstream %d times", calls)
 	}
 }
 
@@ -1382,7 +1380,7 @@ func TestEnvironmentGetCancelsUpstreamWithRequest(t *testing.T) {
 		canceled <- ctx.Err()
 		return ctx.Err()
 	}}
-	RegisterStreamingRoutes(server, StreamingDependencies{DispatcherHTTP: upstream})
+	RegisterStreamingRoutes(server, StreamingDependencies{EnvironmentHTTP: upstream})
 	ctx, cancel := context.WithCancel(context.Background())
 	request := httptest.NewRequest(http.MethodGet, "/upstream/environments/v1/environments/team-a/sandbox-1?target.uid=uid", nil).WithContext(ctx)
 	request.Header.Set("Authorization", "Bearer accepted")

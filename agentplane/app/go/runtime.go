@@ -269,12 +269,20 @@ func run(ctx context.Context, config Config) error {
 		facadeContext, config.SessionDispatcherTarget,
 		time.Duration(config.SessionDispatcherRequestTimeoutSecs*float64(time.Second)),
 		session_dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint,
-		environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint,
 	)
 	if err != nil {
 		return fmt.Errorf("configure generated Session Dispatcher HTTP facade: %w", err)
 	}
 	dispatcherGateway := proxy.NewHandlerUpstream(dispatcherFacade, config.SessionDispatcherTokenFile)
+	environmentFacade, err := facade.NewHandler(
+		facadeContext, config.SessionDispatcherTarget,
+		time.Duration(config.SessionDispatcherRequestTimeoutSecs*float64(time.Second)),
+		environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint,
+	)
+	if err != nil {
+		return fmt.Errorf("configure generated Environment Service HTTP facade: %w", err)
+	}
+	environmentGateway := proxy.NewHandlerUpstream(environmentFacade, config.SessionDispatcherTokenFile)
 	historyFacade, err := facade.NewHandler(
 		facadeContext, config.HistoryServiceTarget,
 		time.Duration(config.HistoryServiceRequestTimeoutSeconds*float64(time.Second)),
@@ -356,7 +364,7 @@ func run(ctx context.Context, config Config) error {
 		Live: liveIndex, Sandboxes: environments, Threads: threadStore, History: history, HistoryFollower: historyReaderClient,
 		ActionPolicy: actionClient, Federator: federator,
 		ActionServiceURL: config.ActionFederation.ServiceURL,
-		DispatcherHTTP:   dispatcherGateway, ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
+		DispatcherHTTP:   dispatcherGateway, EnvironmentHTTP: environmentGateway, ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
 		HistoryHTTP: historyGateway, NotificationHTTP: notificationGateway,
 		Notifications:    notifications_operatorpb.NewNotificationsOperatorClient(notificationConn),
 		NotificationWait: time.Duration(config.NotificationsRequestTimeoutSeconds * float64(time.Second)),

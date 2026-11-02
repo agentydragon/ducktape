@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
@@ -35,7 +34,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 const (
@@ -89,6 +87,7 @@ type StreamingDependencies struct {
 	Federator        policyaccess.ActionFederator
 	ActionServiceURL string
 	DispatcherHTTP   streamingUpstream
+	EnvironmentHTTP  streamingUpstream
 	ActionHTTP       streamingUpstream
 	ConnectionHTTP   streamingUpstream
 	HistoryHTTP      streamingUpstream
@@ -106,14 +105,9 @@ type StreamingDependencies struct {
 // operator-facing HTTP facades. The server owns the shared auth/session middleware and drain gate.
 func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependencies) {
 	routes := newStreamingRoutes(server, dependencies)
-	server.RegisterRawRoute("GET /upstream/environments/v1/environments", http.HandlerFunc(routes.environmentList), false)
-	server.RegisterRawRoute("POST /upstream/environments/v1/environments", http.HandlerFunc(routes.environmentList), false)
-	server.RegisterRawRoute("GET /upstream/environments/v1/environment-templates", http.HandlerFunc(routes.environmentTemplates), false)
-	server.RegisterRawRoute("GET /upstream/environments/v1/environments:watch", http.HandlerFunc(routes.environmentWatch), false)
-	server.RegisterRawRoute("GET /upstream/environments/v1/environments/{namespace}/{name}", http.HandlerFunc(routes.environmentGet), false)
-	server.RegisterRawRoute("POST /upstream/environments/v1/environments/{namespace}/{name}", http.HandlerFunc(routes.environmentMutation), false)
-	server.RegisterRawRoute("PATCH /upstream/environments/v1/environments/{namespace}/{name}", http.HandlerFunc(routes.environmentMutation), false)
-	server.RegisterRawRoute("DELETE /upstream/environments/v1/environments/{namespace}/{name}", http.HandlerFunc(routes.environmentMutation), false)
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete} {
+		server.RegisterRawRoute(method+" /upstream/environments/{path...}", http.HandlerFunc(routes.environmentFacade), false)
+	}
 	server.RegisterRawRoute("GET /live/sandboxes/{name}", http.HandlerFunc(routes.liveSandbox), false)
 	server.RegisterRawRoute("GET /live/sandboxes/{name}/egress/decisions", http.HandlerFunc(routes.liveDecisions), false)
 	server.RegisterRawRoute("GET /threads/{thread_id}/events/stream", http.HandlerFunc(routes.threadEvents), false)
@@ -568,8 +562,13 @@ func (r *streamingRoutes) environmentLifetime(request *http.Request) (context.Co
 	return ctx, cancel, nil
 }
 
-func (r *streamingRoutes) environmentFacade(w http.ResponseWriter, request *http.Request, path string) {
-	if r.deps.DispatcherHTTP == nil {
+func (r *streamingRoutes) environmentFacade(w http.ResponseWriter, request *http.Request) {
+	path := request.PathValue("path")
+	if !proxy.GeneratedFacadeRouteAllowed(request.Method, path) {
+		writeDetailError(w, http.StatusNotFound, "unknown Environment Service facade route")
+		return
+	}
+	if r.deps.EnvironmentHTTP == nil {
 		writeDetailError(w, http.StatusServiceUnavailable, "Environment Service is not configured")
 		return
 	}
@@ -579,47 +578,7 @@ func (r *streamingRoutes) environmentFacade(w http.ResponseWriter, request *http
 		return
 	}
 	defer cancel()
-	r.forwardFacade(w, request, ctx, r.deps.DispatcherHTTP, path, "")
-}
-
-// environmentList forwards the service's pagination parameters without assembling pages in the app.
-func (r *streamingRoutes) environmentList(w http.ResponseWriter, request *http.Request) {
-	r.environmentFacade(w, request, "v1/environments")
-}
-
-func (r *streamingRoutes) environmentTemplates(w http.ResponseWriter, request *http.Request) {
-	r.environmentFacade(w, request, "v1/environment-templates")
-}
-
-func (r *streamingRoutes) environmentMutation(w http.ResponseWriter, request *http.Request) {
-	namespace, segment := request.PathValue("namespace"), request.PathValue("name")
-	name, action, hasAction := strings.Cut(segment, ":")
-	allowed := request.Method == http.MethodDelete && !hasAction ||
-		request.Method == http.MethodPost && (action == "suspend" || action == "resume") ||
-		request.Method == http.MethodPatch && (action == "wake-policy" || action == "idle-suspend")
-	if !allowed || len(validation.IsDNS1123Label(namespace)) > 0 || len(validation.IsDNS1123Subdomain(name)) > 0 {
-		http.NotFound(w, request)
-		return
-	}
-	r.environmentFacade(w, request, "v1/environments/"+namespace+"/"+segment)
-}
-
-// environmentWatch allows either an authenticated app service caller or an operator session.
-// It forwards only the inventory watch, using the app's explicitly granted service identity.
-func (r *streamingRoutes) environmentWatch(w http.ResponseWriter, request *http.Request) {
-	r.environmentFacade(w, request, "v1/environments:watch")
-}
-
-// environmentGet maps the explicit public target path to the generated EnvironmentService
-// GetEnvironment facade. The route is intentionally two path segments, never an upstream path
-// wildcard; TargetHandle UID remains in the query string for the generated handler.
-func (r *streamingRoutes) environmentGet(w http.ResponseWriter, request *http.Request) {
-	namespace, name := request.PathValue("namespace"), request.PathValue("name")
-	if len(validation.IsDNS1123Label(namespace)) > 0 || len(validation.IsDNS1123Subdomain(name)) > 0 {
-		http.NotFound(w, request)
-		return
-	}
-	r.environmentFacade(w, request, "v1/environments/"+namespace+"/"+name)
+	r.forwardFacade(w, request, ctx, r.deps.EnvironmentHTTP, path, "")
 }
 
 func (r *streamingRoutes) dispatcher(w http.ResponseWriter, request *http.Request) {
