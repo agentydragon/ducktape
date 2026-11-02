@@ -282,7 +282,7 @@ func (s *Service) caller(ctx context.Context) (CallerIdentity, error) {
 	default:
 		return CallerIdentity{}, status.Error(codes.Unauthenticated, "call not admitted")
 	}
-	if err := validateAttribution(attribution); err != nil {
+	if err := validateAttribution(attribution, nil); err != nil {
 		return CallerIdentity{}, status.Error(codes.Unauthenticated, "call attribution is invalid")
 	}
 	return CallerIdentity{

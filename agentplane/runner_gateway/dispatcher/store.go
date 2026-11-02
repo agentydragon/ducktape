@@ -125,7 +125,7 @@ type Store struct {
 	QueueCap int
 }
 
-func validateAttribution(attribution *AdmissionAttribution) error {
+func validateAttribution(attribution *AdmissionAttribution, wakeCaller *Account) error {
 	if attribution == nil {
 		return nil
 	}
@@ -133,6 +133,9 @@ func validateAttribution(attribution *AdmissionAttribution) error {
 		if identity.Namespace == "" || identity.Name == "" || identity.UID == "" {
 			return errors.New("admission attribution requires complete ServiceAccount identities")
 		}
+	}
+	if wakeCaller != nil && *wakeCaller != attribution.EffectiveCaller.Account {
+		return errors.New("wake caller does not match admission effective caller")
 	}
 	if attribution.ActorPod != nil && (attribution.ActorPod.Name == "" || attribution.ActorPod.UID == "") {
 		return errors.New("admission attribution has incomplete actor Pod proof")
@@ -177,6 +180,7 @@ func scanAdmissionAttribution(
 	actorPodName, actorPodUID sql.NullString,
 	effectiveCaller *ServiceAccountIdentity,
 	requestID, executionID sql.NullString,
+	wakeCaller *Account,
 ) (*AdmissionAttribution, error) {
 	if actorPodName.Valid != actorPodUID.Valid || requestID.Valid != executionID.Valid {
 		return nil, errors.New("admission attribution is incomplete")
@@ -195,7 +199,7 @@ func scanAdmissionAttribution(
 	if requestID.Valid {
 		attribution.Action = &ActionCorrelation{RequestID: requestID.String, ExecutionID: executionID.String}
 	}
-	if err := validateAttribution(attribution); err != nil {
+	if err := validateAttribution(attribution, wakeCaller); err != nil {
 		return nil, err
 	}
 	return attribution, nil
@@ -320,7 +324,7 @@ func scanDispatchColumns(row interface{ Scan(...any) error }, additional ...any)
 	if err != nil {
 		return nil, err
 	}
-	d.Attribution, err = scanAdmissionAttribution(actor, actorPodName, actorPodUID, effectiveCaller, actionRequestID, actionExecutionID)
+	d.Attribution, err = scanAdmissionAttribution(actor, actorPodName, actorPodUID, effectiveCaller, actionRequestID, actionExecutionID, d.WakeCaller)
 	if err != nil {
 		return nil, err
 	}
@@ -345,7 +349,7 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		return nil, errors.New("command_id, session_id and sandbox are required")
 	}
 	if caller != nil {
-		if err := validateAttribution(caller.Attribution); err != nil {
+		if err := validateAttribution(caller.Attribution, wakeCaller); err != nil {
 			return nil, err
 		}
 	}
@@ -606,12 +610,12 @@ func scanOpening(row interface{ Scan(...any) error }) (*Opening, error) {
 	if err != nil {
 		return nil, err
 	}
-	o.Attribution, err = scanAdmissionAttribution(o.Creator, creatorPodName, creatorPodUID, effectiveCaller, actionRequestID, actionExecutionID)
-	if err != nil {
-		return nil, err
-	}
 	if callerNS.Valid && callerName.Valid {
 		o.WakeCaller = &Account{callerNS.String, callerName.String}
+	}
+	o.Attribution, err = scanAdmissionAttribution(o.Creator, creatorPodName, creatorPodUID, effectiveCaller, actionRequestID, actionExecutionID, o.WakeCaller)
+	if err != nil {
+		return nil, err
 	}
 	if incarnation.Valid {
 		o.WakeFromIncarnation = &incarnation.String
@@ -644,7 +648,7 @@ func (s *Store) OpenSessionWithIdentity(ctx context.Context, sessionID, sandboxN
 		executionPrincipal.Account.Name == "" || creator.Account.Namespace == "" || creator.Account.Name == "" || creator.UID == "" {
 		return nil, errors.New("execution principal and creator identity are required")
 	}
-	if err := validateAttribution(attribution); err != nil {
+	if err := validateAttribution(attribution, wakeCaller); err != nil {
 		return nil, err
 	}
 	if attribution != nil && attribution.Actor != *creator {

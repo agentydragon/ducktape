@@ -252,20 +252,72 @@ func TestLegacyWakeCallerWithoutUIDDoesNotWake(t *testing.T) {
 	}
 }
 
-func TestWakePrincipalRequiresEffectiveIdentityAlignment(t *testing.T) {
+func TestWakeAttributionRequiresEffectiveIdentityAlignment(t *testing.T) {
 	actor := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: "actions"}, UID: "actor-uid"}
 	effective := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: "delegate"}, UID: "effective-uid"}
 	attribution := &AdmissionAttribution{Actor: actor, EffectiveCaller: effective}
-	if got := effectiveWakePrincipal(&effective.Account, attribution); got == nil || *got != effective {
-		t.Fatalf("effective wake principal=%+v, want %+v", got, effective)
+	if err := validateAttribution(attribution, &effective.Account); err != nil {
+		t.Fatalf("valid effective wake identity: %v", err)
 	}
-	if got := effectiveWakePrincipal(&actor.Account, attribution); got != nil {
-		t.Fatalf("actor account was accepted as effective wake principal: %+v", got)
+	if err := validateAttribution(attribution, &actor.Account); err == nil {
+		t.Fatal("actor account was accepted as effective wake caller")
 	}
 	withoutUID := *attribution
 	withoutUID.EffectiveCaller.UID = ""
-	if got := effectiveWakePrincipal(&effective.Account, &withoutUID); got != nil {
-		t.Fatalf("unproven effective caller UID was accepted: %+v", got)
+	if err := validateAttribution(&withoutUID, &effective.Account); err == nil {
+		t.Fatal("effective caller without a UID was accepted")
+	}
+}
+
+func TestStoreRejectsMismatchedWakeCaller(t *testing.T) {
+	for _, kind := range []string{"dispatch", "opening"} {
+		t.Run(kind, func(t *testing.T) {
+			ctx := context.Background()
+			store := testStore(t, 3)
+			actor := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: "actions"}, UID: "actor-uid"}
+			effective := ServiceAccountIdentity{Account: Account{Namespace: "agentplane", Name: "delegate"}, UID: "effective-uid"}
+			attribution := wakeAttribution(actor, effective)
+			sandboxUID := uuid.NewString()
+			const sessionID = "wake-attribution-session"
+			const commandID = "wake-attribution-command"
+			if kind == "dispatch" {
+				openWakeableSession(t, store, sessionID, "sandbox", sandboxUID, actor, effective)
+			}
+			write := func(wakeCaller *Account) error {
+				if kind == "opening" {
+					_, err := store.OpenSessionWithIdentity(ctx, sessionID, "sandbox", sandboxUID,
+						&sessionpb.SessionSpec{}, nil, wakeCaller, &effective, &actor, attribution)
+					return err
+				}
+				_, err := store.EnqueueForCaller(ctx, sessionID, "sandbox", sandboxUID,
+					input(commandID, "hello"), wakeCaller,
+					CallerIdentity{ServiceAccountIdentity: effective, Attribution: attribution})
+				return err
+			}
+			if err := write(&actor.Account); err == nil {
+				t.Fatal("store accepted a wake caller different from the effective caller")
+			}
+			if err := write(&effective.Account); err != nil {
+				t.Fatal("store rejected matching wake attribution:", err)
+			}
+			var err error
+			if kind == "opening" {
+				_, err = store.DB.ExecContext(ctx, "UPDATE session_opening SET wake_caller_name=$1 WHERE session_id=$2", actor.Name, sessionID)
+			} else {
+				_, err = store.DB.ExecContext(ctx, "UPDATE dispatch SET wake_caller_name=$1 WHERE command_id=$2", actor.Name, commandID)
+			}
+			if err != nil {
+				t.Fatal("modify persisted wake caller:", err)
+			}
+			if kind == "opening" {
+				_, err = store.GetOpening(ctx, sessionID)
+			} else {
+				_, err = store.GetDispatch(ctx, commandID)
+			}
+			if err == nil {
+				t.Fatal("store decoded a mismatched wake caller without an error")
+			}
+		})
 	}
 }
 
