@@ -46,6 +46,49 @@ The scenario's Runner status checks track the Codex harness and Session, not
 this separate embedded Execution service. They establish harness survival,
 not executor continuity.
 
+## Later exit-143 attempt (PR #14018)
+
+The same VM test failed on PR [#14018](https://github.com/agentydragon/ducktape/pull/14018),
+head `c18e229587b30411ab4fdd7309dfef154f916656`, with guest kernel
+`6.12.115-2`. [BuildBuddy invocation
+`7b9ee9a0-7ed8-53c9-af83-197e6b7fe6e6`](https://app.buildbuddy.io/invocation/7b9ee9a0-7ed8-53c9-af83-197e6b7fe6e6)
+failed `codex_tool_oom`: the test expected the allocating command to exit 137,
+but its native Session reported exit 143 and only `VM_OOM_ALLOCATING` output.
+The retained `vm-codex-oom.json` contains only the pre-command snapshot: the
+unit had a 96 MiB limit, `memory.oom.group=0`, and zero OOM counters. No
+post-command cgroup snapshot was recorded. The guest console and journal have
+no memcg OOM message for this attempt; that does not prove no OOM event occurred.
+
+The native Session event stream records the command starting at 23:25:08.789Z
+and returning exit 143 at 23:25:36.489Z. In between, `systemd[1]` began
+stopping the same transient unit at 23:25:32.755Z. It deactivated at
+23:25:37.253Z, stopped at 23:25:37.271Z, and reported a 96 MiB peak. Runtime
+logged `embedded Execution backend loss fenced` at 23:25:39.065Z. Its error
+chain was `execution backend lost` → `execution backend stopped responding`
+→ WebSocket dial handshake to `127.0.0.1:4501` failed with
+`context deadline exceeded`. The successor unit started at 23:25:39.883Z and
+was active at 23:25:41.790Z.
+
+The monitor in [the executor service](../execution/codexexecserver/server.go)
+uses a five-second interval, three-second deadline, and three consecutive
+failures. It logs only the final error, not each failed probe or its timestamp.
+The [native unit configuration](../supervision/systemd.go) sets
+`KillMode=control-group` and `KillSignal=15` (`SIGTERM`). The stop request
+preceded the command's exit, so the 143 result is strongly consistent with
+Runtime stopping the executor unit after health failure and the unit's SIGTERM
+reaching the command. It does not establish why the local WebSocket endpoint
+stalled.
+
+This failure used the new package, but it does not show whether the package
+update caused or prevented the handshake stall. The old-kernel [#13769
+attempt](https://app.buildbuddy.io/invocation/0bffd229-a7da-53ab-b0a5-ce614364b378)
+ran Linux `6.12.63-1`; its OOM command returned 137, its same-Session follow-up
+returned 0 in a different transient unit, and Runtime logged the same class of
+health fence after a memcg OOM. That shows the fence can occur on the old pin;
+it does not exclude kernel causality for either attempt. Per-probe timestamps
+and executor process/socket evidence around the stall would be needed to
+identify why the health handshake stopped responding.
+
 ## Causal boundary
 
 The retained evidence proves the tool's memcg victim, a later exec-server
