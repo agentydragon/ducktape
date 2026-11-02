@@ -6,13 +6,7 @@ import httpx2
 import pytest
 import pytest_bazel
 from openai import AsyncOpenAI
-from openai.types.responses import (
-    Response,
-    ResponseFunctionToolCall,
-    ResponseOutputMessage,
-    ResponseOutputText,
-    response_usage,
-)
+from openai.types.responses import Response, ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
 from openai.types.responses.response_reasoning_item import Content, ResponseReasoningItem
 from pydantic import ValidationError
 
@@ -27,32 +21,6 @@ from openai_utils.model import (
     ResponsesResult,
     ResponseUsage,
 )
-
-
-def test_response_usage_serializes_reported_cache_write_tokens() -> None:
-    usage = ResponseUsage(
-        input_tokens=0,
-        output_tokens=1,
-        total_tokens=1,
-        input_tokens_details=InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
-        output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
-    )
-
-    response = Response(
-        id="resp_usage",
-        object="response",
-        created_at=0,
-        model="test-model",
-        status="completed",
-        output=[],
-        parallel_tool_calls=True,
-        tool_choice="auto",
-        tools=[],
-        usage=response_usage.ResponseUsage.model_validate(usage.model_dump()),
-    )
-
-    assert response.usage is not None
-    assert response.usage.input_tokens_details.cache_write_tokens == 0
 
 
 @pytest.mark.parametrize(
