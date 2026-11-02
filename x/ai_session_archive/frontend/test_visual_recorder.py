@@ -16,9 +16,9 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 @pytest.mark.parametrize("width", [1440, 390], ids=["desktop", "mobile"])
-async def test_transcript_recording(visual: VisualHarness, case_id: str, width: int) -> None:
+async def test_transcript_recording(visual: VisualHarness, width: int) -> None:
     async with visual.open(
-        "archive-recorder", viewport=Viewport(width=width, height=1000), color_scheme="light", case_id=case_id
+        "archive-recorder", viewport=Viewport(width=width, height=1000), color_scheme="light"
     ) as view:
         page = view.page
         history = page.get_by_role("region", name="Conversation records", exact=True)

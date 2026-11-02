@@ -12,7 +12,7 @@ pytest_plugins = ("util.testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
-async def test_app_hash_navigation(visual: VisualHarness, case_id: str) -> None:
+async def test_app_hash_navigation(visual: VisualHarness) -> None:
     slug = "example/2026-01-01"
     snapshot = {
         "slug": slug,
@@ -48,7 +48,7 @@ async def test_app_hash_navigation(visual: VisualHarness, case_id: str) -> None:
     async def respond(route: Route) -> None:
         await route.fulfill(json=responses[urlsplit(route.request.url).path])
 
-    async with visual.open(case_id=case_id) as view:
+    async with visual.open() as view:
         await view.page.route("**/auth/me", respond)
         await view.page.route("**/api/**", respond)
         await view.page.evaluate("() => { window.location.hash = '/missing'; window.mountApp(); }")

@@ -26,11 +26,9 @@ if not _SCENES:
 
 @pytest_asyncio.fixture(loop_scope="session")
 async def view(
-    visual: VisualHarness, scene: str, color_scheme: Literal["light", "dark"], viewport: Viewport, case_id: str
+    visual: VisualHarness, scene: str, color_scheme: Literal["light", "dark"], viewport: Viewport
 ) -> AsyncIterator[VisualPage]:
-    async with visual.open(
-        query={"scene": scene}, viewport=viewport, color_scheme=color_scheme, case_id=case_id
-    ) as view:
+    async with visual.open(query={"scene": scene}, viewport=viewport, color_scheme=color_scheme) as view:
         yield view
 
 
@@ -55,11 +53,10 @@ async def test_dashboard(view: VisualPage, scene: str) -> None:
     await view.capture(target=view.page.locator("#app"))
 
 
-async def test_live_subscription(visual: VisualHarness, case_id: str) -> None:
+async def test_live_subscription(visual: VisualHarness) -> None:
     async with visual.open(
         query={"scene": "hot", "live": "1"},
         frozen_now_ms=int(datetime.fromisoformat(_FIXTURES["hot"]["fetched_at"]).timestamp() * 1000),
-        case_id=case_id,
     ) as view:
         page = view.page
         await expect(page.locator("html")).to_have_attribute("data-quota-stream", "connected")

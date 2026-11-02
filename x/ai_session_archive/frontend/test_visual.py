@@ -13,12 +13,9 @@ pytest_plugins = ("util.testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
-async def test_session_list_and_compact_import_progress(visual: VisualHarness, case_id: str) -> None:
+async def test_session_list_and_compact_import_progress(visual: VisualHarness) -> None:
     async with visual.open(
-        "session-list-and-compact-import-progress",
-        viewport=Viewport(width=1440, height=1000),
-        color_scheme="light",
-        case_id=case_id,
+        "session-list-and-compact-import-progress", viewport=Viewport(width=1440, height=1000), color_scheme="light"
     ) as view:
         page = view.page
         await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
@@ -66,9 +63,9 @@ async def test_session_list_and_compact_import_progress(visual: VisualHarness, c
         await page.keyboard.press("Escape")
 
 
-async def test_import_progress_details(visual: VisualHarness, case_id: str) -> None:
+async def test_import_progress_details(visual: VisualHarness) -> None:
     async with visual.open(
-        "import-progress-details", viewport=Viewport(width=1440, height=1000), color_scheme="light", case_id=case_id
+        "import-progress-details", viewport=Viewport(width=1440, height=1000), color_scheme="light"
     ) as view:
         page = view.page
         await page.get_by_role("link", name="Import details").click()
@@ -85,12 +82,9 @@ async def test_import_progress_details(visual: VisualHarness, case_id: str) -> N
         await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
 
 
-async def test_compact_import_progress_on_mobile(visual: VisualHarness, case_id: str) -> None:
+async def test_compact_import_progress_on_mobile(visual: VisualHarness) -> None:
     async with visual.open(
-        "compact-import-progress-mobile",
-        viewport=Viewport(width=390, height=844),
-        color_scheme="light",
-        case_id=case_id,
+        "compact-import-progress-mobile", viewport=Viewport(width=390, height=844), color_scheme="light"
     ) as view:
         page = view.page
         progress = page.get_by_role("region", name="Import progress by machine")
@@ -138,12 +132,9 @@ async def test_compact_import_progress_on_mobile(visual: VisualHarness, case_id:
         assert refresh_bounds["y"] + refresh_bounds["height"] <= sidebar_bounds["y"] + sidebar_bounds["height"]
 
 
-async def test_inferred_subagent_parent_link(visual: VisualHarness, case_id: str) -> None:
+async def test_inferred_subagent_parent_link(visual: VisualHarness) -> None:
     async with visual.open(
-        "inferred-subagent-parent-link",
-        viewport=Viewport(width=1440, height=1000),
-        color_scheme="light",
-        case_id=case_id,
+        "inferred-subagent-parent-link", viewport=Viewport(width=1440, height=1000), color_scheme="light"
     ) as view:
         page = view.page
         await page.get_by_role("checkbox", name="Subagents", exact=True).click()
@@ -162,8 +153,8 @@ async def test_inferred_subagent_parent_link(visual: VisualHarness, case_id: str
 @pytest.mark.parametrize(
     "viewport", [Viewport(width=1440, height=1000), Viewport(width=390, height=844)], ids=["desktop", "mobile"]
 )
-async def test_related_sessions_menu_stays_with_title(visual: VisualHarness, case_id: str, viewport: Viewport) -> None:
-    async with visual.open("long-child-list", viewport=viewport, color_scheme="light", case_id=case_id) as view:
+async def test_related_sessions_menu_stays_with_title(visual: VisualHarness, viewport: Viewport) -> None:
+    async with visual.open("long-child-list", viewport=viewport, color_scheme="light") as view:
         page = view.page
         if viewport.width <= 760:
             await page.get_by_role("button", name="Session list").click()
@@ -195,9 +186,9 @@ async def test_related_sessions_menu_stays_with_title(visual: VisualHarness, cas
     "viewport", [Viewport(width=1440, height=780), Viewport(width=390, height=844)], ids=["desktop", "mobile"]
 )
 async def test_long_child_list_stays_scrollable_without_covering_transcript(
-    visual: VisualHarness, case_id: str, viewport: Viewport
+    visual: VisualHarness, viewport: Viewport
 ) -> None:
-    async with visual.open("long-child-list", viewport=viewport, color_scheme="light", case_id=case_id) as view:
+    async with visual.open("long-child-list", viewport=viewport, color_scheme="light") as view:
         page = view.page
         if viewport.width <= 760:
             await page.get_by_role("button", name="Session list").click()
@@ -273,12 +264,9 @@ async def test_long_child_list_stays_scrollable_without_covering_transcript(
 
 
 @pytest.mark.parametrize("width", [1440, 390], ids=["desktop", "mobile"])
-async def test_shared_transcript_disclosures(visual: VisualHarness, case_id: str, width: int) -> None:
+async def test_shared_transcript_disclosures(visual: VisualHarness, width: int) -> None:
     async with visual.open(
-        "shared-transcript-disclosures",
-        viewport=Viewport(width=width, height=1000),
-        color_scheme="light",
-        case_id=case_id,
+        "shared-transcript-disclosures", viewport=Viewport(width=width, height=1000), color_scheme="light"
     ) as view:
         page = view.page
         await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
@@ -324,9 +312,9 @@ async def test_shared_transcript_disclosures(visual: VisualHarness, case_id: str
 
 
 @pytest.mark.parametrize("width", [1440, 390], ids=["desktop", "mobile"])
-async def test_codex_work_steps(visual: VisualHarness, case_id: str, width: int) -> None:
+async def test_codex_work_steps(visual: VisualHarness, width: int) -> None:
     async with visual.open(
-        "codex-work-steps", viewport=Viewport(width=width, height=1000), color_scheme="light", case_id=case_id
+        "codex-work-steps", viewport=Viewport(width=width, height=1000), color_scheme="light"
     ) as view:
         page = view.page
         await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
@@ -368,9 +356,9 @@ async def test_codex_work_steps(visual: VisualHarness, case_id: str, width: int)
 
 
 @pytest.mark.parametrize("width", [1440, 390], ids=["desktop", "mobile"])
-async def test_claude_attachment_widgets(visual: VisualHarness, case_id: str, width: int) -> None:
+async def test_claude_attachment_widgets(visual: VisualHarness, width: int) -> None:
     async with visual.open(
-        "claude-attachment-widgets", viewport=Viewport(width=width, height=1000), color_scheme="light", case_id=case_id
+        "claude-attachment-widgets", viewport=Viewport(width=width, height=1000), color_scheme="light"
     ) as view:
         page = view.page
         await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
@@ -400,8 +388,8 @@ if __name__ == "__main__":
 @pytest.mark.parametrize(
     "viewport", [Viewport(width=1440, height=1000), Viewport(width=390, height=844)], ids=["desktop", "mobile"]
 )
-async def test_session_kind_filters(visual: VisualHarness, case_id: str, viewport: Viewport) -> None:
-    async with visual.open("session-kind-filters", viewport=viewport, color_scheme="light", case_id=case_id) as view:
+async def test_session_kind_filters(visual: VisualHarness, viewport: Viewport) -> None:
+    async with visual.open("session-kind-filters", viewport=viewport, color_scheme="light") as view:
         page = view.page
         if viewport.width < 600:
             await page.get_by_role("button", name="Session list", exact=True).click()
