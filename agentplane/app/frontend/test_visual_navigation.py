@@ -356,9 +356,7 @@ async def test_composer_more_menu(view: VisualPage, app: AgentplaneFixture) -> N
 
 
 @DESKTOP_AND_MOBILE
-async def test_long_thread_name_sandbox_label(
-    view: VisualPage, app: AgentplaneFixture, viewport: Viewport, case_id: str
-) -> None:
+async def test_long_thread_name_sandbox_label(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
     """A phone's topbar gives a long thread name the row and drops the Sandbox label, which the More
     menu still lists; a desktop topbar has room for both."""
     await app.name_thread(IDLE_THREAD, "Idle thread whose long name leaves its Sandbox no room in a phone topbar")

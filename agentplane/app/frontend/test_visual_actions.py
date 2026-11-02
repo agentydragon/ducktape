@@ -343,9 +343,7 @@ EXAMPLES = (
 
 @DESKTOP_AND_MOBILE
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda example: example.key)
-async def test_action_presentations(
-    view: VisualPage, app: AgentplaneFixture, example: ActionExample, case_id: str
-) -> None:
+async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, example: ActionExample) -> None:
     page = view.page
     registered = await page.evaluate("window.agentplaneVisual.actionRendererKeys()")
     keys = [item.key for item in EXAMPLES]

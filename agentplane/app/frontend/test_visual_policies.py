@@ -489,13 +489,7 @@ async def test_sandbox_action_results(
     ],
 )
 async def test_compact_action_summaries(
-    view: VisualPage,
-    app: AgentplaneFixture,
-    case_id: str,
-    group: str,
-    name: str,
-    arguments: dict[str, object],
-    visible: str,
+    view: VisualPage, app: AgentplaneFixture, group: str, name: str, arguments: dict[str, object], visible: str
 ) -> None:
     await app.show_action_preview(group, name, arguments)
     await app.mount_thread(IDLE_THREAD)
@@ -600,7 +594,6 @@ async def test_compact_action_summaries(
 async def test_compact_exec_long_command(
     view: VisualPage,
     app: AgentplaneFixture,
-    case_id: str,
     group: str,
     name: str,
     arguments: dict[str, object],
@@ -661,9 +654,7 @@ async def test_action_argument_fallbacks_use_json_view(
 
 
 @DESKTOP_AND_MOBILE
-async def test_compact_pr_with_description_offers_card_decisions(
-    view: VisualPage, app: AgentplaneFixture, case_id: str
-) -> None:
+async def test_compact_pr_with_description_offers_card_decisions(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.show_action_preview(
         "github",
         "create_pull_request",
@@ -699,9 +690,7 @@ async def test_compact_pr_with_description_offers_card_decisions(
 
 
 @DESKTOP_AND_MOBILE
-async def test_compact_pull_request_search_offers_card_decisions(
-    view: VisualPage, app: AgentplaneFixture, case_id: str
-) -> None:
+async def test_compact_pull_request_search_offers_card_decisions(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.show_action_preview(
         "github",
         "search_pull_requests",
@@ -989,9 +978,7 @@ async def test_action_history_receipt(view: VisualPage, app: AgentplaneFixture) 
 
 
 @DESKTOP_AND_MOBILE
-async def test_gmail_draft_history_keeps_request_and_result_together(
-    view: VisualPage, app: AgentplaneFixture, case_id: str
-) -> None:
+async def test_gmail_draft_history_keeps_request_and_result_together(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.GMAIL_DRAFT_HISTORY)
     await app.mount_app("/actions")
     page = view.page
@@ -1189,7 +1176,7 @@ async def test_sandbox_policy_grant_pick_updates_options(view: VisualPage, app: 
 
 
 @DESKTOP_AND_MOBILE
-async def test_action_history_filter(view: VisualPage, app: AgentplaneFixture, case_id: str) -> None:
+async def test_action_history_filter(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
     page = view.page
@@ -1212,7 +1199,7 @@ async def test_action_history_filter(view: VisualPage, app: AgentplaneFixture, c
 
 @DESKTOP_AND_MOBILE
 @pytest.mark.parametrize("kind", ["text", "json", "email", "manifest"])
-async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, case_id: str, kind: str) -> None:
+async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, kind: str) -> None:
     text = "\n".join(f"Long action content line {index + 1}" for index in range(48))
     group, name = "example_docs", "long_text"
     arguments: dict[str, object] = {"lines": text.splitlines()}
