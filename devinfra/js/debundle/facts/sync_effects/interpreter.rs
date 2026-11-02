@@ -913,6 +913,16 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         } else {
             None
         };
+        if callee.iter().any(|value| {
+            matches!(
+                value,
+                AbstractValue::Value(Value::Top) | AbstractValue::SymbolicInput(_)
+            )
+        }) {
+            // A retained known callback does not remove an unknown callee
+            // alternative. Keep its original lexical call-site diagnostic.
+            self.outcome.lose_call_target(self.owner, span);
+        }
         let mut reached = callee.clone();
         reached.extend(arguments.iter().flatten().cloned());
         // Another activation receives these capabilities. Its descriptor or
