@@ -89,7 +89,19 @@ func TestTheGroupReadsTheToolsAgainEveryRefresh(t *testing.T) {
 	awaitGroup(t, groups, offering("test_second"))
 }
 
-func TestAToolListTheCatalogCannotHoldWithdrawsTheGroupUntilItIsFixed(t *testing.T) {
+func TestAToolTheCatalogCannotHoldIsLeftOutAndTheOthersAreOffered(t *testing.T) {
+	mixed := newServer()
+	mixed.AddTool(&mcp.Tool{Name: "test_good", InputSchema: objectSchema}, answering(&calls{}, textResult("unused")))
+	mixed.AddTool(&mcp.Tool{
+		Name: "test_invalid", InputSchema: json.RawMessage(`{"type": "object", "properties": {"test": {"type": 1}}}`),
+	}, answering(&calls{}, textResult("unused")))
+	u := newUpstream(t, mixed, &mcp.StreamableHTTPOptions{Stateless: true})
+	groups := mcpGroup(t, httpConfig(u.url()))
+	supervise(t, groups, nil, executorTiming())
+	awaitGroup(t, groups, offering("test_good"))
+}
+
+func TestAToolListOfOnlyToolsTheCatalogCannotHoldWithdrawsTheGroupUntilItIsFixed(t *testing.T) {
 	invalid := newServer()
 	invalid.AddTool(&mcp.Tool{
 		Name: "test_invalid", InputSchema: json.RawMessage(`{"type": "object", "properties": {"test": {"type": 1}}}`),
