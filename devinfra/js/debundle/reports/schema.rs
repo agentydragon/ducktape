@@ -719,6 +719,19 @@ pub enum OrderedFieldReadRefusal {
     MissingHeapValue,
 }
 
+/// The first ordered call admission condition that rejected the evaluated
+/// target and receiver. This describes the refusal only; it does not change
+/// target classification or the conservative fallback.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrderedCallAdmissionRefusal {
+    UnknownTarget,
+    MultipleTargets,
+    NonLocalTarget,
+    TaintedLocalTarget,
+    UnsupportedReceiver,
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ExecutionPrecisionLoss {
     pub reason: ExecutionPrecisionLossReason,
@@ -754,6 +767,8 @@ pub enum ExecutionPrecisionLossReason {
         operation: ExecutionOperation,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ordered_field_read_refusal: Option<OrderedFieldReadRefusal>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ordered_call_admission_refusal: Option<OrderedCallAdmissionRefusal>,
     },
     /// `new` of a local class whose construction proof failed. The rejection
     /// names the first failed check, not every check that would fail.
@@ -856,6 +871,7 @@ impl std::fmt::Display for ExecutionPrecisionLossReason {
             Self::UnsupportedOperation {
                 operation,
                 ordered_field_read_refusal,
+                ordered_call_admission_refusal,
             } => {
                 let operation = serde_json::to_value(operation)
                     .expect("execution operations serialize as strings");
@@ -870,6 +886,15 @@ impl std::fmt::Display for ExecutionPrecisionLossReason {
                     write!(
                         f,
                         "; ordered_field_read_refusal: {}",
+                        refusal.as_str().expect("unit variant")
+                    )?;
+                }
+                if let Some(refusal) = ordered_call_admission_refusal {
+                    let refusal = serde_json::to_value(refusal)
+                        .expect("ordered call admission refusals serialize as strings");
+                    write!(
+                        f,
+                        "; ordered_call_admission_refusal: {}",
                         refusal.as_str().expect("unit variant")
                     )?;
                 }

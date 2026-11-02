@@ -1500,8 +1500,11 @@ at that call's operand/result transfer; adding a timing premise or replaying its
 source operands does not supply the missing value. Budget
 records include their limit; each loss carries its lexical statement ordinal and,
 when available, its source location. Nested reasons retain their original source
-site. This evidence is separate from purity reasons and does not certify author
-contracts. See [the report contract](../SPEC.md#synchronous-execution-diagnostics).
+site. An `unsupported_operation` / `opaque_execution` loss may also carry
+`ordered_call_admission_refusal`, which distinguishes a declined unknown,
+multiple, or non-local target from a tainted local target or unsupported
+receiver. This evidence is separate from purity reasons and does not certify
+author contracts. See [the report contract](../SPEC.md#synchronous-execution-diagnostics).
 
 For a directly called imported bare callback factory, read the node's
 `synchronous_execution.callback_factory_uses`, then resolve each `summary_ref`

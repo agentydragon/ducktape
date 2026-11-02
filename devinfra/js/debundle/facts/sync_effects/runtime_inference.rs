@@ -19,7 +19,9 @@ use crate::facts::{
     PreparedPurity,
 };
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
-use crate::reports::schema::{NativeProgramPointKind, NativeProgramPointStep};
+use crate::reports::schema::{
+    NativeProgramPointKind, NativeProgramPointStep, OrderedCallAdmissionRefusal,
+};
 use source_identity::SourceUnitOrdinal;
 use std::cell::{Cell, RefCell};
 
@@ -79,7 +81,7 @@ pub(super) enum CallTransfer {
     Values(Values),
     /// The ordered operand path declined this target. Its source-based
     /// helpers cannot safely replay already evaluated operands.
-    UnsupportedOperands,
+    UnsupportedOperands(OrderedCallAdmissionRefusal),
 }
 
 impl CallTransfer {
