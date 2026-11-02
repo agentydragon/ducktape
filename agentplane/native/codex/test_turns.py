@@ -57,6 +57,27 @@ async def test_baseline_turn(codex: CodexHarness, openai_responses: OpenAIRespon
     frames.assert_item_lifecycles(captured, wire.UserMessageItem)
 
 
+async def test_unspecified_effort_uses_codex_default_at_thread_and_turn_start(
+    codex: CodexHarness, openai_responses: OpenAIResponses
+) -> None:
+    async with codex.start(openai_responses, effort=None) as run:
+        thread_start = next(frame for frame in run.client_frames() if frame.get("method") == "thread/start")
+        thread_config = thread_start["params"].get("config", {})
+        assert "model_reasoning_effort" not in thread_config
+
+        turn = await run.start_turn("Reply with exactly: CODEX_UNSPECIFIED_EFFORT_OK")
+        turn_start = next(frame for frame in run.client_frames() if frame.get("method") == "turn/start")
+        assert "effort" not in turn_start["params"]
+        async with await openai_responses.await_next_request() as exchange:
+            assert exchange.request.model == MODEL
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [responses_sse.Message("CODEX_UNSPECIFIED_EFFORT_OK")], model=MODEL
+                ).events
+            )
+        assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
+
+
 async def test_turn_effort_override_reaches_responses(codex: CodexHarness, openai_responses: OpenAIResponses) -> None:
     async with codex.start(openai_responses) as run:
         for effort in ("low", "high"):

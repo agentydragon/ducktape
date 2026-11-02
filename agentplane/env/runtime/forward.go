@@ -35,7 +35,8 @@ func (r *Runtime) authorizeHostCall(ctx context.Context, mutation bool) (*harnes
 		if r.intent == nil || (r.intent.Mode != runtimepb.LifecycleIntent_RUNNING && r.intent.Mode != runtimepb.LifecycleIntent_QUIESCING) {
 			return status.Error(codes.FailedPrecondition, "environment generation is not serving Host RPCs")
 		}
-		if r.host == nil || !r.host.connected || r.host.report == nil || !r.host.report.Ready || !proto.Equal(r.host.report.Binding, r.intent.Binding) {
+		report := r.hostReportLocked()
+		if r.host == nil || !r.host.connected || report == nil || !report.Ready || !proto.Equal(report.Binding, r.intent.Binding) {
 			return status.Error(codes.Unavailable, "Harness Host has not applied the active environment generation")
 		}
 		if epoch.IncarnationUID() != r.intent.IncarnationUid {
@@ -45,7 +46,6 @@ func (r *Runtime) authorizeHostCall(ctx context.Context, mutation bool) (*harnes
 		binding = proto.Clone(r.intent.Binding).(*runtimepb.Binding)
 		if mutation {
 			r.activeAdmissions++
-			r.idleSince = nil
 			r.changedLocked()
 			admitted = true
 		}
@@ -135,26 +135,26 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 	err := r.control.Admit(ctx, func(epoch *runtimecontrol.Epoch) error {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		if r.closing || r.executionRecovering || r.intent == nil || (r.intent.Mode != runtimepb.LifecycleIntent_RUNNING && r.intent.Mode != runtimepb.LifecycleIntent_QUIESCING) {
+		if r.closing || r.executionOwner.recovering() || r.intent == nil || (r.intent.Mode != runtimepb.LifecycleIntent_RUNNING && r.intent.Mode != runtimepb.LifecycleIntent_QUIESCING) {
 			return status.Error(codes.Unavailable, "execution admission is closed")
 		}
-		if r.host != nil && r.host.report != nil && r.host.report.NativeStopped && proto.Equal(r.host.report.Binding, r.intent.Binding) {
+		report := r.hostReportLocked()
+		if r.host != nil && report != nil && report.NativeStopped && proto.Equal(report.Binding, r.intent.Binding) {
 			return status.Error(codes.FailedPrecondition, "environment native work has stopped")
 		}
 		if err := validateExecutionScope(scope, r.config.Launch.Sandbox, epoch.SandboxUID(), epoch.IncarnationUID()); err != nil {
 			return err
 		}
-		if r.executionServer == nil || r.executionUID != scope.ExpectedIncarnationUid {
+		client = r.executionOwner.executor(scope.ExpectedIncarnationUid)
+		if client == nil {
 			return status.Error(codes.Unavailable, "Execution API is not ready for this incarnation")
 		}
-		client = r.executionServer
 		outgoing, cancel = context.WithCancel(ctx)
 		r.execCallID++
 		callID = r.execCallID
 		r.execCalls[callID] = cancel
 		r.activeAdmissions++
 		r.activeExecutionCalls++
-		r.idleSince = nil
 		r.changedLocked()
 		admitted = true
 		return nil
@@ -223,23 +223,24 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 	err := r.control.Admit(stream.Context(), func(epoch *runtimecontrol.Epoch) error {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		if r.closing || r.executionRecovering || r.intent == nil || r.intent.Mode != runtimepb.LifecycleIntent_RUNNING {
+		if r.closing || r.executionOwner.recovering() || r.intent == nil || r.intent.Mode != runtimepb.LifecycleIntent_RUNNING {
 			return status.Error(codes.Unavailable, "execution admission is closed")
 		}
 		if err := validateExecutionScope(request.GetScope(), r.config.Launch.Sandbox, epoch.SandboxUID(), epoch.IncarnationUID()); err != nil {
 			return err
 		}
-		if r.executionServer == nil || r.executionUID != request.GetScope().ExpectedIncarnationUid {
+		client = r.executionOwner.executor(request.GetScope().ExpectedIncarnationUid)
+		if client == nil {
 			if r.config.CodexExecServer == nil {
 				unconfigured = true
 				return nil
 			}
 			return status.Error(codes.Unavailable, "Execution API is not ready for this incarnation")
 		}
-		if r.host != nil && r.host.report != nil && r.host.report.NativeStopped && proto.Equal(r.host.report.Binding, r.intent.Binding) {
+		report := r.hostReportLocked()
+		if r.host != nil && report != nil && report.NativeStopped && proto.Equal(report.Binding, r.intent.Binding) {
 			return status.Error(codes.FailedPrecondition, "environment native work has stopped")
 		}
-		client = r.executionServer
 		streamCtx, cancel = context.WithCancel(stream.Context())
 		stopEpoch := context.AfterFunc(epoch.Context(), cancel)
 		oldCancel := cancel
@@ -247,9 +248,7 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 		r.execStreamID++
 		streamID = r.execStreamID
 		r.execStreams[streamID] = cancel
-		r.activeExecStreams++
 		r.activeExecutionCalls++
-		r.idleSince = nil
 		r.changedLocked()
 		return nil
 	})
@@ -266,9 +265,6 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 		cancel()
 		r.mu.Lock()
 		delete(r.execStreams, streamID)
-		if r.activeExecStreams > 0 {
-			r.activeExecStreams--
-		}
 		if r.activeExecutionCalls > 0 {
 			r.activeExecutionCalls--
 		}

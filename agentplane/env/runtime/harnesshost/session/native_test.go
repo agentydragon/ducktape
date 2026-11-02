@@ -328,7 +328,7 @@ func frameTestSessionWithControllerGate(t *testing.T, command []string, withCont
 			t.Error(err)
 		}
 	})
-	bootstrapHost, err := bootstrap.NewHost(bootstrap.Config{}, bootstrap.Dependencies{Context: ctx, State: resources, Workers: &workers, Admission: func(ctx context.Context, _ runnerlifecycle.Desired, work func(context.Context) error) error {
+	bootstrapHost, err := bootstrap.NewHost(bootstrap.Config{}, bootstrap.Dependencies{Context: ctx, State: resources, Workers: &workers, Admission: func(ctx context.Context, _ runnerlifecycle.EnvironmentDesired, work func(context.Context) error) error {
 		return work(ctx)
 	}, OnError: func(err error) {
 		if err != nil {

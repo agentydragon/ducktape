@@ -16,6 +16,7 @@ import (
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
+	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -52,11 +53,12 @@ type Runner struct {
 	runtimeBridge       RuntimeBridge
 }
 
-func New(config Config) (*Runner, error) {
-	return newRunner(config, nil)
-}
-
-func newRunner(config Config, lifecycleState state.State) (*Runner, error) {
+// NewEmbedded registers Host controllers in the Runtime-owned engine and store.
+// Runtime retains responsibility for stopping and joining that engine.
+func NewEmbedded(config Config, lifecycleState state.State, engine *cosiruntime.Runtime, engineDone <-chan struct{}) (*Runner, error) {
+	if lifecycleState == nil || engine == nil || engineDone == nil {
+		return nil, errors.New("embedded Host requires Runtime state, engine and completion signal")
+	}
 	if err := config.resolveSessionReconcileConcurrency(); err != nil {
 		return nil, err
 	}
@@ -101,7 +103,7 @@ func newRunner(config Config, lifecycleState state.State) (*Runner, error) {
 		_ = owner.Close()
 		return nil, err
 	}
-	l, err := newLifecycle(r, lifecycleState)
+	l, err := newLifecycle(r, lifecycleState, engine, engineDone)
 	if err != nil {
 		cancel()
 		_ = owner.Close()
@@ -113,7 +115,12 @@ func newRunner(config Config, lifecycleState state.State) (*Runner, error) {
 		_ = owner.Close()
 		return nil, err
 	}
-	go l.run()
+	if err := l.registerControllers(); err != nil {
+		cancel()
+		_ = owner.Close()
+		return nil, err
+	}
+	go l.observeSharedEngine()
 	return r, nil
 }
 
@@ -146,7 +153,7 @@ func (r *Runner) configureSessions() error {
 	if err != nil {
 		return err
 	}
-	return r.lifecycle.engine.RegisterQController(r.sessions.Controller())
+	return nil
 }
 
 func (r *Runner) changed() {
@@ -217,13 +224,15 @@ func (r *Runner) finishClose() error {
 	r.mu.Unlock()
 	r.changed()
 	if err == nil {
-		err = r.lifecycle.wait(r.ctx, runnerlifecycle.Closed)
+		err = r.WaitClosed(r.ctx)
 	}
 	if err != nil {
 		return err
 	}
 	// Controllers stop before joining workers, so no new operation can race Wait.
 	r.cancel()
+	// Runtime stops the shared engine only after every Host controller has
+	// published Closed. Join it before releasing Host-owned native state.
 	<-r.lifecycle.done.Done()
 	r.lifecycle.workers.Wait()
 	errs := []error{r.sessions.Close()}
@@ -232,4 +241,36 @@ func (r *Runner) finishClose() error {
 		return err
 	}
 	return r.owner.Close()
+}
+
+// WaitClosed observes the Host controller's native cleanup barrier without
+// waiting for its final owner release, which follows the shared engine join.
+func (r *Runner) WaitClosed(ctx context.Context) error {
+	closed := func() (bool, error) {
+		status, found, err := runnerlifecycle.ReadStatus(context.Background(), r.lifecycle.state)
+		if err != nil || !found {
+			return false, err
+		}
+		if status.Error != "" {
+			return false, errors.New(status.Error)
+		}
+		desired, found, err := runnerlifecycle.ReadDesired(context.Background(), r.lifecycle.state)
+		if err != nil || !found {
+			return false, err
+		}
+		return status.Stage == runnerlifecycle.Closed && status.Generation == desired.Generation, nil
+	}
+	if done, err := closed(); err != nil || done {
+		return err
+	}
+	err := r.lifecycle.wait(ctx, runnerlifecycle.Closed)
+	if err == nil {
+		return nil
+	}
+	// Host cancels its own context after publishing Closed. A waiter racing
+	// that cancellation must still accept the durable terminal barrier.
+	if done, readErr := closed(); readErr == nil && done {
+		return nil
+	}
+	return err
 }

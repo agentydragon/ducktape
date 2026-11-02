@@ -5,22 +5,6 @@
     "gc": true,
     "gcDelay": "1h",
     "gcInterval": "24h",
-    "remoteCache": true,
-    "storageDriver": {
-      "name": "s3",
-      "rootdirectory": "/zot",
-      "region": "us-east-1",
-      "regionendpoint": "http://seaweedfs-s3.seaweedfs.svc:8333",
-      "bucket": "registry-cache",
-      "secure": false,
-      "skipverify": true,
-      "forcepathstyle": true
-    },
-    "cacheDriver": {
-      "name": "redis",
-      "url": "redis://oci-cache-valkey-master.oci-cache.svc.cluster.local:6379",
-      "keyprefix": "zot"
-    },
     "retention": {
       "delay": "24h",
       "policies": [

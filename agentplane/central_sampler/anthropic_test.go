@@ -145,7 +145,7 @@ func TestAnthropicRequestLoggingFailurePreventsDispatch(t *testing.T) {
 	store := newTestStore(t)
 	setup := ""
 	request := &samplerpb.OpenSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model"}, SetupScript: &setup}
-	session, err := store.OpenSession(t.Context(), request, "fixture-account", protocol.APIStyleAnthropicMessages)
+	session, err := openStoreSession(t, store, request, "fixture-account", protocol.APIStyleAnthropicMessages)
 	if err != nil {
 		t.Fatal(err)
 	}

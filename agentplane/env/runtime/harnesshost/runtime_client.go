@@ -154,6 +154,9 @@ func (r *Runner) ApplyIntent(ctx context.Context, intent *runtimepb.LifecycleInt
 			err = readErr
 		} else {
 			input.ExecutionFenced = intent.ExecutionFenced
+			input.RuntimeBootID = intent.Binding.RuntimeBootId
+			input.HostBootID = intent.Binding.HostBootId
+			input.Generation = intent.Binding.Generation
 			err = publishLifecycle(r.lifecycle, "runner", input)
 		}
 	}

@@ -328,6 +328,7 @@ py_library(
         "//agentplane/mcp_edge:oauth_settings",
         "//agentplane/system_tests:mcp_servers",
         "//cluster/cdk8s/agentplane:actions",
+        "//cluster/cdk8s/agentplane:environment",
         "@pypi//bcrypt",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

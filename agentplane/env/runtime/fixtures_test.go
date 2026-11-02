@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -46,7 +45,7 @@ func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string
 	t.Helper()
 	root := t.TempDir()
 	launch := configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}, Bootstrap: bootstrap}
-	config := Config{StateDir: root, Launch: launch, Supervision: "subprocess", InitializationCwd: workspace, Control: insecureControl(), ExecutionSocket: filepath.Join(root, "execution.sock")}
+	config := Config{StateDir: root, Launch: launch, Supervision: "subprocess", InitializationCwd: workspace, Control: insecureControl()}
 	return runtimeTestConfig{Config: config, host: harnesshost.Config{StateDir: root, Launch: launch, WorkspaceRoot: workspace, InitializationCwd: workspace, Claude: &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test"}, HTTPClient: http.DefaultClient}}
 }
 
@@ -57,17 +56,17 @@ func insecureControl() configuration.EnvironmentRuntimeControlConfiguration {
 // The fixture composes production Runtime and Host through their direct coordinator.
 func newLifecycleRunner(t *testing.T, config runtimeTestConfig) *Runtime {
 	t.Helper()
-	config.ExecutionSocket = filepath.Join(t.TempDir(), "execution.sock")
 	r, err := newRuntime(config.Config, nil, config.deps)
 	if err != nil {
 		t.Fatal(err)
 	}
 	historyTarget := startAcknowledgingHistory(t)
 	config.host.StateDir = config.StateDir
-	host, err := harnesshost.New(config.host)
+	host, err := harnesshost.NewEmbedded(config.host, r.lifecycleState, r.lifecycleEngine, r.lifecycleDone)
 	if err != nil {
 		t.Fatal(err)
 	}
+	r.startLifecycleEngine()
 	ctx, cancel := context.WithCancel(context.Background())
 	child := &localHostLifetime{host: host, cancel: cancel, done: make(chan struct{})}
 	r.hostLifetime = child
@@ -75,8 +74,16 @@ func newLifecycleRunner(t *testing.T, config runtimeTestConfig) *Runtime {
 	t.Cleanup(func() {
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 		defer closeCancel()
-		if err := r.Close(closeCtx); (err != nil) != config.expectCloseError {
-			t.Errorf("Runtime close error=%v, expected error=%v", err, config.expectCloseError)
+		closeErr := r.Close(closeCtx)
+		if (closeErr != nil) != config.expectCloseError {
+			t.Errorf("Runtime close error=%v, expected error=%v", closeErr, config.expectCloseError)
+		}
+		if config.expectCloseError && closeErr != nil {
+			// An unproved fence deliberately retains the shared engine and owner.
+			// This fixture owns only temporary state, so stop the engine to join
+			// the remaining Host goroutines after the test's assertions.
+			r.lifecycleCancel()
+			<-r.lifecycleDone
 		}
 		cancel()
 		select {
@@ -91,7 +98,7 @@ func newLifecycleRunner(t *testing.T, config runtimeTestConfig) *Runtime {
 	waitRuntime(t, r, func() bool {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		return r.host != nil && r.host.report != nil && r.host.report.Ready && r.host.report.NativeStopped
+		return r.host != nil && r.hostReportLocked() != nil && r.hostReportLocked().Ready && r.hostReportLocked().NativeStopped
 	}, "Host initial binding")
 	if err := r.adoptIncarnation(context.Background(), "test-incarnation"); err != nil {
 		t.Fatal(err)
@@ -178,10 +185,9 @@ func (p *localHostLifetime) Wait(ctx context.Context) (int, error) {
 
 func (p *localHostLifetime) Stop(ctx context.Context) error {
 	p.cancel()
-	select {
-	case <-p.done:
-		return p.host.Close(ctx)
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return ctx.Err()
 }
+
+func (p *localHostLifetime) WaitClosed(ctx context.Context) error { return p.host.WaitClosed(ctx) }
+
+func (p *localHostLifetime) Cleanup(ctx context.Context) error { return p.host.Close(ctx) }

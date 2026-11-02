@@ -3,8 +3,10 @@
 use super::super::allocation_transfer::{
     self, AllocationContext, AllocationJudgment, AllocationValue, LiteralHeap, LiteralLayout,
 };
+use super::super::local_transfer::{self, LocalContext, LocalFrame};
 use super::super::value_model::{
-    AbstractValue, Context, DenseArray, ProviderScopeId, SymbolicInputId, ValueExpr, Values,
+    AbstractValue, Context, DenseArray, OwnPropertyShape, ProviderScopeId, SymbolicInputId,
+    ValueExpr, Values,
 };
 use super::ExecutionIndex;
 use crate::analysis_inputs::{ForeignInvocation, ForeignReturn};
@@ -12,6 +14,7 @@ use crate::facts::abstract_domain::foreign_call::DerivedForeignCall;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use imbl::OrdMap;
 use std::collections::{BTreeMap, BTreeSet};
+use swc_common::Span;
 use swc_ecma_ast::Id;
 
 struct ProviderContext<'a> {
@@ -45,11 +48,49 @@ impl AllocationContext for ProviderContext<'_> {
     }
 }
 
-/// Called only for a canonically lowered, whole-body direct return. The same
-/// source collector retained syntax coverage before ValueExpr erased anything.
+impl LocalContext for ProviderContext<'_> {
+    fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<AllocationValue> {
+        // The frame starts with scoped symbolic parameters only. Other entries
+        // are instantiated/assigned by the same covered local operations.
+        Some(AllocationValue {
+            values: frame.environment.get(binding)?.clone(),
+            judgment: AllocationJudgment::CoveredAllocationOnly(Default::default()),
+        })
+    }
+    fn literal_layout(&self, allocation: u32) -> LiteralLayout {
+        self.index.allocation_layout(allocation)
+    }
+    fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
+        self.index.ordinary_record_shape(allocation)
+    }
+    fn object_properties_are_settled(&self, _allocation: u32) -> bool {
+        // This isolated query starts with an empty heap and refuses every
+        // operation capable of external mutation or publication.
+        true
+    }
+    fn heap(&mut self) -> LiteralHeap<'_> {
+        AllocationContext::heap(self)
+    }
+    fn unproved_field_write(
+        &mut self,
+        _frame: &mut LocalFrame,
+        _receivers: &Values,
+        _values: &Values,
+        _span: Span,
+    ) {
+        // The shared kernel returns None; there is no application state to
+        // publish into, and this query cannot certify the body.
+    }
+    fn publish_throw(&mut self, _values: &Values) {
+        // The shared abrupt result makes the allocation judgment opaque.
+    }
+}
+
+/// The canonical source collector retained whole-body syntax coverage before
+/// value lowering. Direct returns and ordered bodies share their transfers
+/// with application execution; refusal never retries the legacy AST evaluator.
 pub(super) fn derive(index: &ExecutionIndex, callable: u32) -> Option<DerivedForeignCall> {
     let body = index.callables.get(&callable)?;
-    let expression = body.allocation_return.as_ref()?;
     let scope = ProviderScopeId::fresh()?;
     let parameters = body
         .params
@@ -73,7 +114,17 @@ pub(super) fn derive(index: &ExecutionIndex, callable: u32) -> Option<DerivedFor
         arrays: OrdMap::new(),
         revision: 0,
     };
-    let result = allocation_transfer::transfer(&mut context, expression)?;
+    let result = if let Some(expression) = &body.allocation_return {
+        allocation_transfer::transfer(&mut context, expression)?
+    } else {
+        let mut frame = LocalFrame::new(std::mem::take(&mut context.parameters));
+        let judgment =
+            local_transfer::execute(&mut context, body.local_body.as_ref()?, &mut frame)?;
+        AllocationValue {
+            values: frame.returns,
+            judgment,
+        }
+    };
     let AllocationJudgment::CoveredAllocationOnly(dependencies) = result.judgment else {
         return None;
     };

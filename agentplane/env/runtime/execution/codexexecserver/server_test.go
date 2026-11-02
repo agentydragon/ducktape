@@ -2,12 +2,18 @@ package codexexecserver
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	executorcontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/coder/websocket"
 )
@@ -62,6 +68,77 @@ func TestProbeRequiresValidRPCAndBoundsUnresponsiveServer(t *testing.T) {
 				t.Fatalf("probe = %v, want error containing %q", err, test.wantError)
 			}
 		})
+	}
+}
+
+func TestFenceContainerBindsDelayedInspectToObservedGeneration(t *testing.T) {
+	socket := filepath.Join(t.TempDir(), "companion.sock")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	fenceRequest := make(chan executorcontrol.Request, 1)
+	served := make(chan error, 1)
+	go func() {
+		first, err := listener.Accept()
+		if err != nil {
+			served <- err
+			return
+		}
+		_ = first.SetDeadline(time.Now().Add(3 * time.Second))
+		var inspect executorcontrol.Request
+		if err := json.NewDecoder(first).Decode(&inspect); err != nil || inspect.Operation != "inspect" {
+			served <- fmt.Errorf("initial inspect = %+v, %v", inspect, err)
+			_ = first.Close()
+			return
+		}
+		if err := json.NewEncoder(first).Encode(executorcontrol.Status{Generation: "g1", Owned: true}); err != nil {
+			served <- err
+			_ = first.Close()
+			return
+		}
+		// G1 is fenced and G2 is claimed before the delayed inspect response is acted on.
+		var fence executorcontrol.Request
+		if err := json.NewDecoder(first).Decode(&fence); err != nil {
+			served <- err
+			_ = first.Close()
+			return
+		}
+		fenceRequest <- fence
+		_ = first.Close()
+		second, err := listener.Accept()
+		if err != nil {
+			served <- err
+			return
+		}
+		defer second.Close()
+		_ = second.SetDeadline(time.Now().Add(3 * time.Second))
+		if err := json.NewDecoder(second).Decode(&inspect); err != nil || inspect.Operation != "inspect" {
+			served <- fmt.Errorf("successor inspect = %+v, %v", inspect, err)
+			return
+		}
+		if err := json.NewEncoder(second).Encode(executorcontrol.Status{Generation: "g2", Owned: true}); err != nil {
+			served <- err
+			return
+		}
+		var extra executorcontrol.Request
+		if err := json.NewDecoder(second).Decode(&extra); err != io.EOF {
+			served <- fmt.Errorf("unexpected request for successor: %+v, %v", extra, err)
+			return
+		}
+		served <- nil
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := FenceContainer(ctx, socket, "g1"); err != nil {
+		t.Fatal(err)
+	}
+	if request := <-fenceRequest; request.Operation != "fence" || request.Generation != "g1" {
+		t.Fatalf("delayed fence request = %+v, want g1", request)
+	}
+	if err := <-served; err != nil {
+		t.Fatal(err)
 	}
 }
 

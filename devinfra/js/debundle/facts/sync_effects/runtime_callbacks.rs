@@ -2,6 +2,7 @@ use super::super::value_model::{Context, Values};
 use super::interpreter::{Executor, Outcome};
 use crate::reports::schema::{ExecutionPrecisionLossReason, HavocReach};
 use source_identity::SourceUnitOrdinal;
+use swc_common::Span;
 
 pub(super) enum CallbackOperation {
     PromoteRaw {
@@ -26,6 +27,7 @@ pub(super) enum CallbackOperation {
         captured: Context,
         reason: ExecutionPrecisionLossReason,
         reach: HavocReach,
+        span: Span,
     },
 }
 
@@ -76,9 +78,9 @@ pub(super) fn dispatch(
             captured,
             reason,
             reach,
-        } => CallbackResult::Outcome(Box::new(
-            executor
-                .bounded_invocation_fallback_transfer(owner, &arguments, &captured, reason, reach),
-        )),
+            span,
+        } => CallbackResult::Outcome(Box::new(executor.bounded_invocation_fallback_transfer(
+            owner, &arguments, &captured, reason, reach, span,
+        ))),
     }
 }

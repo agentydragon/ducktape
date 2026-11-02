@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -191,9 +190,6 @@ func startNativeExecutionTestServer(t *testing.T, notify bool) (string, <-chan s
 func TestOpenSessionEndsWhenObserverEpochIsSuperseded(t *testing.T) {
 	url, opened, closed := startNativeExecutionTestServer(t, false)
 	r := newExecutionRuntime(t, url, nil)
-	if _, err := os.Stat(r.config.ExecutionSocket); !os.IsNotExist(err) {
-		t.Fatalf("direct Execution fixture unexpectedly served a private RPC socket: %v", err)
-	}
 	client := startDirectExecutionTestClient(t, r, "incarnation-1")
 	stream, err := client.open(client.callCtx, "sampler-session", "open-before-supersession")
 	if err != nil {
@@ -263,13 +259,13 @@ func (e *blockingDirectExecutor) StartProcess(ctx context.Context, _ *executorpb
 }
 
 func TestDirectUnaryExecutionCallHoldsAdmissionUntilCompletion(t *testing.T) {
-	url, _, _ := startNativeExecutionTestServer(t, false)
-	r := newExecutionRuntime(t, url, nil)
-	client := startDirectExecutionTestClient(t, r, "incarnation-1")
 	executor := &blockingDirectExecutor{started: make(chan struct{}), release: make(chan struct{})}
-	r.mu.Lock()
-	r.executionServer = executor
-	r.mu.Unlock()
+	config := executionRuntimeConfig(t, "ws://unused", nil)
+	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
+		return &executionServiceHandle{executor: executor, fence: func(context.Context) error { return nil }}, nil
+	}
+	r := newLifecycleRunner(t, config)
+	client := startDirectExecutionTestClient(t, r, "incarnation-1")
 	completed := make(chan error, 1)
 	go func() {
 		_, err := client.executor.StartProcess(client.callCtx, &executorpb.StartProcessRequest{Scope: client.scope("unary-session")})
@@ -354,5 +350,32 @@ func TestStaleExecutionIncarnationReportsVerifiedIdentity(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDirectExecutionAdmissionClosesOnBackendLossBeforeControllerEvent(t *testing.T) {
+	backendLife, loseBackend := context.WithCancel(t.Context())
+	executor := &blockingDirectExecutor{started: make(chan struct{}), release: make(chan struct{})}
+	close(executor.release)
+	config := executionRuntimeConfig(t, "ws://unused", nil)
+	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
+		// There is deliberately no ProcessExit notification: admission must observe
+		// the backend lifetime without waiting for a queued COSI loss event.
+		return &executionServiceHandle{
+			executor: executor, backendLife: backendLife,
+			fence: func(context.Context) error { return nil },
+		}, nil
+	}
+	r := newLifecycleRunner(t, config)
+	client := startDirectExecutionTestClient(t, r, "incarnation-1")
+	loseBackend()
+	_, err := client.executor.StartProcess(client.callCtx, &executorpb.StartProcessRequest{Scope: client.scope("lost-backend-session")})
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("execution admission after backend loss: %v", err)
+	}
+	select {
+	case <-executor.started:
+		t.Fatal("backend loss dispatched a new execution call")
+	default:
 	}
 }

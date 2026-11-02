@@ -496,7 +496,7 @@ func TestClosePublicationFailureKeepsAdmissionClosed(t *testing.T) {
 	}
 	workspace := t.TempDir()
 	proxy := modelConfigServer(t)
-	r, err := newRunner(lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), store)
+	r, err := newTestRunner(lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -678,14 +678,11 @@ func TestNewIncarnationWaitsForTeardown(t *testing.T) {
 func TestLifecycleWatchStopsWithRunner(t *testing.T) {
 	runnerCtx, cancelRunner := context.WithCancel(context.Background())
 	defer cancelRunner()
-	l, err := newLifecycle(&Runner{ctx: runnerCtx}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	l := newLifecycleWatchFixture(runnerCtx)
 	cancelRunner()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
-	err = watchLifecycle(ctx, l, "never-created", func(runnerInputSpec) (bool, error) { return false, nil })
+	err := watchLifecycle(ctx, l, "never-created", func(runnerInputSpec) (bool, error) { return false, nil })
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("watch after runner cancellation = %v, want context.Canceled", err)
 	}
@@ -695,10 +692,7 @@ func TestLifecycleWatchWaitsForResourceCreation(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		l, err := newLifecycle(&Runner{ctx: ctx}, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
+		l := newLifecycleWatchFixture(ctx)
 		done := make(chan error, 1)
 		go func() {
 			done <- watchLifecycle(ctx, l, "created-later", func(current runnerInputSpec) (bool, error) {

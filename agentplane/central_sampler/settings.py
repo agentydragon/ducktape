@@ -192,6 +192,7 @@ class Settings(BaseModel):
     connections: dict[str, ConnectionConfig] = Field(min_length=1)
     models: dict[str, ModelConfig] = Field(min_length=1)
 
+    platform_instructions: str | None = Field(default=None, min_length=1)
     audience: str
     allowed_accounts: set[str] = Field(min_length=1)
     code_mode_host: Path
@@ -221,6 +222,15 @@ class Settings(BaseModel):
     lease_seconds: int = Field(gt=30)
     auto_compact_tokens: int | None = Field(default=None, gt=0)
     kubeconfig: Path | None = None
+
+    @field_validator("platform_instructions")
+    @classmethod
+    def nonempty_platform_instructions(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not value.strip():
+            raise ValueError("platform_instructions must not be empty")
+        return value.strip()
 
     @model_validator(mode="after")
     def validate_model_connections(self) -> Self:

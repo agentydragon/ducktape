@@ -134,7 +134,7 @@ class CodexRun:
         environment: Mapping[str, str],
         thread_cwd: str,
         model: str,
-        effort: str,
+        effort: str | None,
         persist: bool = False,
         config: dict[str, object] | None = None,
         instructions: str = "",

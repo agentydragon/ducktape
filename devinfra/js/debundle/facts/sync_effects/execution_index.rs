@@ -3,6 +3,7 @@
 mod callback_arguments;
 mod prototype_properties;
 
+use super::local_operations::LocalBody;
 use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
 use super::noninvoking_initialization::OriginalInitializer;
 use super::value_model::{
@@ -1278,6 +1279,7 @@ struct Callable {
     /// Syntax coverage is retained during the same value lowering below.
     direct_return_site: Option<CallSite>,
     allocation_return: Option<ValueExpr>,
+    local_body: Option<LocalBody>,
     local_functions: BTreeSet<Id>,
     literal_captures: BTreeSet<Id>,
     literal_exposures: BTreeSet<Id>,
@@ -1511,6 +1513,7 @@ impl Default for Callable {
             returns: Vec::new(),
             direct_return_site: None,
             allocation_return: None,
+            local_body: None,
             local_functions: BTreeSet::new(),
             literal_captures: BTreeSet::new(),
             literal_exposures: BTreeSet::new(),
@@ -2095,18 +2098,39 @@ pub(super) fn object_own_data_read_property(
     value: &ValueExpr,
     is_declared: impl Fn(&Id) -> bool,
 ) -> Option<&'static str> {
-    let ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) = value else {
+    let [
+        IntrinsicSlot::Global(NativeIntrinsic::Object),
+        IntrinsicSlot::Static(NativeIntrinsic::Object, property),
+    ] = native_own_data_read_slots(value, is_declared)?
+    else {
         return None;
     };
-    let ValueExpr::Binding(object) = receiver.as_ref() else {
-        return None;
-    };
-    if object.0.as_ref() != "Object" || is_declared(object) {
-        return None;
-    }
     builtins::data_property("Object", property)
         .filter(|data| data.value == builtins::PropertyValue::Function)
         .map(|data| data.name)
+}
+
+/// Slot obligations for an exact native own-data lookup. Receiver and key
+/// evaluation remain with the indexed operation's caller.
+pub(super) fn native_own_data_read_slots(
+    value: &ValueExpr,
+    is_declared: impl Fn(&Id) -> bool,
+) -> Option<[IntrinsicSlot; 2]> {
+    let ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) = value else {
+        return None;
+    };
+    let ValueExpr::Binding(binding) = receiver.as_ref() else {
+        return None;
+    };
+    if is_declared(binding) {
+        return None;
+    }
+    let family = NativeIntrinsic::for_global_binding(binding.0.as_ref())?;
+    let property = builtins::own_data_property_name(binding.0.as_ref(), property)?;
+    Some([
+        IntrinsicSlot::Global(family),
+        IntrinsicSlot::Static(family, property),
+    ])
 }
 
 fn receiver_uses_intrinsic_alias(
@@ -5614,9 +5638,9 @@ struct ExecutionIndex {
     /// Slot flags of the completed census and validated inputs; set with
     /// `semantic_facts`.
     integrity: IntegrityFlags,
-    /// Exact top-level own-data reads of the global `Object` by initializer
-    /// start, with the property each reads.
-    native_own_data_reads: BTreeMap<u32, &'static str>,
+    /// Native own-data lookups from the canonical operation index, with the
+    /// slots required at each read's source position.
+    native_own_data_reads: BTreeMap<u32, [IntrinsicSlot; 2]>,
     class_values: BTreeMap<u32, ClassValueFacts>,
     class_owners: BTreeMap<u32, SourceUnitOrdinal>,
     class_bindings: BTreeMap<u32, Id>,
@@ -6070,6 +6094,13 @@ impl BundleGlobalContext<'_> {
 }
 
 impl ExecutionIndex {
+    pub(super) fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
+        if self.array_elements.contains_key(&allocation) {
+            return None;
+        }
+        self.own_descriptor_shapes.get(&allocation)
+    }
+
     pub(super) fn allocation_layout(
         &self,
         allocation: u32,
@@ -9823,17 +9854,16 @@ impl ExecutionIndex {
         self.all_native_point_effects = all;
     }
 
-    /// An exact top-level `Object.<property>` own-data read: the original
-    /// `%Object%` binding and `%Object.<property>%` slot, intact or asserted at
-    /// that read.
+    /// The exact native binding and own-data slot, intact or asserted at this
+    /// read. Dynamic name resolution cannot establish the receiver identity.
     fn native_own_data_read_premise(&self, span: Span) -> Option<NativePremise> {
-        let property = self.native_own_data_reads.get(&span.lo.0)?;
+        if !self.dynamic_scope_owners.is_empty() {
+            return None;
+        }
+        let slots = self.native_own_data_reads.get(&span.lo.0)?;
         native_premise(
             &self.integrity,
-            &[
-                IntrinsicSlot::Global(NativeIntrinsic::Object),
-                IntrinsicSlot::Static(NativeIntrinsic::Object, property),
-            ],
+            slots,
             Some(span.lo.0),
             crate::reports::schema::InferenceRule::NativeOwnDataRead,
         )
@@ -11113,6 +11143,26 @@ impl Visit for ExecutionIndex {
                 .callables
                 .get_mut(&function.span.lo.0)
                 .unwrap()
+                .local_body = (!function.is_async
+                && !function.is_generator
+                && function.decorators.is_empty()
+                && function.type_params.is_none()
+                && function.return_type.is_none()
+                && function
+                    .params
+                    .iter()
+                    .all(|param| param.decorators.is_empty()))
+            .then(|| {
+                LocalBody::lower(
+                    function.params.iter().map(|parameter| &parameter.pat),
+                    function.body.as_ref()?,
+                )
+            })
+            .flatten();
+            index
+                .callables
+                .get_mut(&function.span.lo.0)
+                .unwrap()
                 .direct_return_site = (!function.is_async
                 && !function.is_generator
                 && function.decorators.is_empty()
@@ -11156,6 +11206,21 @@ impl Visit for ExecutionIndex {
         }
         let params = arrow.params.iter().map(Parameter::from_pattern).collect();
         self.with_callable(arrow.span, params, |index| {
+            index
+                .callables
+                .get_mut(&arrow.span.lo.0)
+                .unwrap()
+                .local_body = (!arrow.is_async
+                && !arrow.is_generator
+                && arrow.type_params.is_none()
+                && arrow.return_type.is_none())
+            .then(|| match arrow.body.as_ref() {
+                ArrowFunctionBody::FunctionBody(body) => {
+                    LocalBody::lower(arrow.params.iter(), body)
+                }
+                ArrowFunctionBody::Expr(_) => None,
+            })
+            .flatten();
             index
                 .callables
                 .get_mut(&arrow.span.lo.0)
@@ -13033,9 +13098,10 @@ fn infer_foreign_calls<'f>(
             ) && index
                 .callables
                 .get(&declaration_start)
-                .is_some_and(|callable| callable.allocation_return.is_some())
-            {
-                // This migrated slice consumes the central value transfers.
+                .is_some_and(|callable| {
+                    callable.allocation_return.is_some() || callable.local_body.is_some()
+                }) {
+                // This migrated slice consumes the central value/operation transfers.
                 // A failed access/coverage judgment must not retry the AST evaluator.
                 strict_provider::derive(index, declaration_start)?
             } else {

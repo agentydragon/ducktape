@@ -20,6 +20,7 @@ from agentplane.system_tests.k3s import dex, fixture_chart, mcp_fixture_servers
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import McpInputs, Models
 from cluster.cdk8s.agentplane import actions
+from cluster.cdk8s.agentplane.environment import SessionDelegationProps
 
 DEX_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-dex:unset"
 MCP_EVERYTHING_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-mcp-everything:unset"
@@ -30,6 +31,7 @@ _TRUST_BUNDLE = "test-fixture-ca"
 _TRUST_BUNDLE_KEY = "ca-certificates.crt"
 _TRUST_BUNDLE_DIR = "/etc/test-fixture-ca"
 _MCP_EDGE_TEST_CALLER = "mcp-edge-test-caller"
+DELEGATION_SANDBOX_NAME = "systest-delegation-caller"
 _OPERATOR = dex.Operator(email="test-operator@k3s-fixture.invalid", username="test-operator", user_id="test-operator")
 _OPERATOR_PASSWORD = "test-k3s-operator-password"
 _MCP_EDGE_LOGIN = dex.StaticClient(
@@ -57,10 +59,25 @@ def objects(
             "sandbox": env.actions.action_groups["sandbox"],
         },
         oauth_secret_items=("client-secret",),
+        session_delegation=SessionDelegationProps(
+            direct_tools_by_group={
+                "environments": frozenset({"list", "get"}),
+                "sessions": frozenset(
+                    {"open", "submit_input", "observe_input", "get", "read_turns", "cancel_input", "interrupt_turn"}
+                ),
+            }
+        ),
     )
     mcp_edge_config = replace(
         env.mcp_edge,
-        mintable_accounts=frozenset({ServiceAccountRef(namespace=NAMESPACE, name=_MCP_EDGE_TEST_CALLER)}),
+        # The Sandbox controller creates and labels the delegation caller's ServiceAccount. It is
+        # deliberately absent from this chart so the OAuth fixture exercises that owner boundary.
+        mintable_accounts=frozenset(
+            {
+                ServiceAccountRef(namespace=NAMESPACE, name=_MCP_EDGE_TEST_CALLER),
+                ServiceAccountRef(namespace=NAMESPACE, name=DELEGATION_SANDBOX_NAME),
+            }
+        ),
         oauth_secret_name=_MCP_EDGE_OAUTH_SECRET,
     )
     env = replace(env, actions=actions_config, mcp_edge=mcp_edge_config)

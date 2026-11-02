@@ -8,8 +8,10 @@ from __future__ import annotations
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
+from agentplane.action_service.policies.resources import CALLER_LABEL
 from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.haku import ui_egress
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -40,6 +42,27 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
+    )
+    # haku-ui's own Action caller (ui_egress.py). Haku-authored workloads run in this namespace, so
+    # the account and its bindings are ours: Haku can create Pods as it but cannot create, label or
+    # bind ServiceAccounts here (the haku-state-workload-deployer Role has none). No Kubernetes
+    # permissions; the Pod mounts only the projected token the egress sidecar presents.
+    k8s.KubeServiceAccount(
+        chart,
+        "haku-ui-service-account",
+        metadata=k8s.ObjectMeta(
+            name=ui_egress.SERVICE_ACCOUNT,
+            namespace=NAMESPACE,
+            labels={CALLER_LABEL: "true"},
+            annotations={
+                "description": (
+                    "The principal haku-ui reaches agentplane-staging as: Home Assistant and Grocy reads through "
+                    "the egress proxy, and <tool-call> Action requests that wait for the operator. Its grants "
+                    "stay a subset of claude-ai's (haku/ui_egress.py)."
+                )
+            },
+        ),
+        automount_service_account_token=False,
     )
     # Haku's only write-capable RBAC. Deliberately an explicit resource allowlist with NO
     # httproutes/gateways/networkpolicies -- Haku must never open a public door or loosen its own

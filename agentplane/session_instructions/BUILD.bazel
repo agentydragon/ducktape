@@ -1,0 +1,31 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "session_instructions",
+    srcs = ["instructions.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/session_instructions",
+)
+
+py_library(
+    name = "platform_instructions",
+    srcs = ["platform_instructions.py"],
+    data = ["platform_instructions.j2"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//jinja2",
+    ],
+)
+
+py_test(
+    name = "test_platform_instructions",
+    srcs = ["test_platform_instructions.py"],
+    deps = [
+        ":platform_instructions",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

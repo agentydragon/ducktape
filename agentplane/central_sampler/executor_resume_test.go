@@ -697,7 +697,7 @@ func resumedExecutorStore(t *testing.T, api protocol.APIStyle) (*Store, Owner, *
 	t.Helper()
 	store := newTestStore(t)
 	request := &samplerpb.OpenSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model"}, Executor: &sandboxpb.SandboxDestination{Sandbox: "sandbox", SandboxUid: "sandbox-uid", Owner: &sandboxpb.ServiceAccount{Namespace: "agents", Name: "sandbox"}}, ExpectedIncarnationUid: "original"}
-	session, err := store.OpenSession(t.Context(), request, "fixture-account", api)
+	session, err := openStoreSession(t, store, request, "fixture-account", api)
 	if err != nil {
 		t.Fatal(err)
 	}

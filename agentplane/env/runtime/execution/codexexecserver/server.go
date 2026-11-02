@@ -28,6 +28,42 @@ const (
 	executorStopGrace  = 5 * time.Second
 )
 
+type (
+	Start func(context.Context) (*supervision.Instance, error)
+	Probe func(context.Context) error
+)
+
+// Readiness contains the independently configurable executor startup windows.
+type Readiness struct {
+	Timeout       time.Duration
+	ProbeTimeout  time.Duration
+	ProbeInterval time.Duration
+}
+
+// Resolve supplies defaults for omitted windows and rejects invalid direct Go configuration.
+func (r Readiness) Resolve() (Readiness, error) {
+	if err := resolveDuration("Codex exec-server readiness timeout", &r.Timeout, 20*time.Second); err != nil {
+		return Readiness{}, err
+	}
+	if err := resolveDuration("Codex exec-server readiness probe timeout", &r.ProbeTimeout, 2*time.Second); err != nil {
+		return Readiness{}, err
+	}
+	if err := resolveDuration("Codex exec-server readiness probe interval", &r.ProbeInterval, 100*time.Millisecond); err != nil {
+		return Readiness{}, err
+	}
+	return r, nil
+}
+
+func resolveDuration(name string, value *time.Duration, defaultValue time.Duration) error {
+	if *value < 0 {
+		return fmt.Errorf("%s must be positive", name)
+	}
+	if *value == 0 {
+		*value = defaultValue
+	}
+	return nil
+}
+
 // ErrExecutionBackendLost marks an established executor that stopped or became
 // unhealthy. It is only a diagnostic; the caller must still prove the backend's
 // process domain was fenced before treating the loss as recoverable.
@@ -140,8 +176,7 @@ func ProbeAt(endpoint string) Probe {
 	return func(ctx context.Context) error { return probe(ctx, endpoint) }
 }
 
-// Monitor bounds dispatcher liveness for a standalone service. The same probe
-// windows and failure budget are used by the embedded lifecycle controller.
+// Monitor bounds dispatcher liveness for standalone and embedded service lifetimes.
 func Monitor(ctx context.Context, endpoint string) error {
 	ticker := time.NewTicker(healthInterval)
 	defer ticker.Stop()
@@ -237,7 +272,8 @@ type Refusal struct{ Reason string }
 
 func (r Refusal) Error() string { return "executor companion refused to start Codex: " + r.Reason }
 
-// FenceContainer waits for a fresh idle process-domain generation after the prior owner is fenced.
+// FenceContainer waits for an idle generation at startup, or proof that the
+// specified previous owner's generation was fenced during shutdown.
 func FenceContainer(ctx context.Context, socket, previous string) error {
 	return retry.Do(ctx, retry.NewConstant(200*time.Millisecond), func(ctx context.Context) error {
 		attempt, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -247,11 +283,16 @@ func FenceContainer(ctx context.Context, socket, previous string) error {
 			return retry.RetryableError(err)
 		}
 		defer connection.Close()
+		if previous != "" && status.Generation != previous {
+			// Generation changes only after a proven fence (or whole-container replacement).
+			// A successor may already have claimed the new generation.
+			return nil
+		}
 		if !status.Owned && status.Generation != previous {
 			return nil
 		}
 		if status.Owned {
-			if err := json.NewEncoder(connection).Encode(executorcontrol.Request{Operation: "fence"}); err != nil {
+			if err := json.NewEncoder(connection).Encode(executorcontrol.Request{Operation: "fence", Generation: status.Generation}); err != nil {
 				return retry.RetryableError(err)
 			}
 		}

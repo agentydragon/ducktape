@@ -3,7 +3,10 @@
 The environment has three component owners in one management process. Environment Runtime owns identity, bootstrap, public
 control and coordinated drain. Harness Host owns native Sessions, setup, app-server, journals and
 History ingress. Execution Service owns typed execution and the native exec-server. Each component
-has its own lifecycle state; no COSI engine crosses the component boundary.
+has distinct typed lifecycle resources in one Runtime-owned COSI engine. Runtime owns the engine
+and joins it after Host controllers reach Closed and before either component releases its state owner.
+The Host still owns its Session, journal and native process resources; Runtime owns bootstrap and
+environment process resources. Their process controllers use separate namespaces and finalizers.
 
 ```mermaid
 flowchart LR
@@ -85,6 +88,21 @@ Close callers share one cleanup; cancellation ends only the caller's wait. Engin
 errors remain failures, and incomplete cleanup retains ownership. Controllers stop before worker joins;
 journals close after workers, and the Host owner releases last. Runtime retains the environment owner
 until its Host and Execution domains are fenced.
+
+Runtime's own COSI engine also runs its Close aggregate alongside bootstrap and process controllers.
+The same Runtime lifecycle coordinator owns sequence-bound adoption and Quiesce transition statuses. The Gateway holds
+transition serialization while it waits for an exact sequence; canceled WatchState epochs stop
+future adoption stages, and an interrupted Execution start must settle through the Execution fence
+barrier before a successor can enter. A published Running intent remains current after watch loss.
+If a prior transition already requested drain, its exact Host generation is reconciled before
+another incarnation can be adopted. Conditional Quiesce seals durably before publishing a new
+Quiescing intent and preserves a healthy generation on repeated calls. Close cancels an active
+transition, then waits for its status and any uncertain-fence proof before continuing.
+The aggregate observes a Closing desired generation and advances through bound Host native-stop,
+Execution fence, optional Host flush, Host join and bootstrap settlement. Blocking waits and stops run
+in coordinator-owned one-shot workers, leaving the COSI event loop free. Its ready-to-join status
+allows Runtime to stop and join that engine, join its workers, fence the Pod PID namespace and release
+the environment owner. Failed or uncertain stages retain that owner and are not replayed.
 
 ## Process domains
 

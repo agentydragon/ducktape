@@ -133,7 +133,7 @@ spec:
       requests:
         cpu: 100m
         memory: 512Mi
-        storage: 1700Gi
+        storage: 2500Gi
       storageClassName: piraeus-hdd-local
       tolerations:
         - effect: NoSchedule
@@ -423,7 +423,6 @@ spec:
               - monitoring
               - nix-cache
               - ntfy
-              - oci-cache
               - plaid-mcp
               - public-coder-agent
               - session-backup
@@ -455,7 +454,6 @@ spec:
               - monitoring
               - nix-cache
               - ntfy
-              - oci-cache
               - plaid-mcp
               - public-coder-agent
               - session-backup
@@ -487,7 +485,6 @@ spec:
               - monitoring
               - nix-cache
               - ntfy
-              - oci-cache
               - plaid-mcp
               - public-coder-agent
               - session-backup

@@ -23,7 +23,7 @@ func boundaryHost(t *testing.T) (*Runner, context.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 	root := t.TempDir()
-	r, err := New(Config{StateDir: root, Launch: configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{UID: "sandbox"}}})
+	r, err := newTestRunner(Config{StateDir: root, Launch: configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{UID: "sandbox"}}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,6 +116,9 @@ func TestHostSealsOnlyAfterMatchingExecutionFence(t *testing.T) {
 	if err := r.ApplyIntent(ctx, drain); err != nil {
 		t.Fatal(err)
 	}
+	if err := r.ApplyIntent(ctx, intentFor(r, 2, runtimepb.LifecycleIntent_QUIESCING)); err == nil {
+		t.Fatal("same-generation Execution fence regressed")
+	}
 	if err := r.lifecycle.wait(ctx, runnerlifecycle.Flushing); err != nil {
 		t.Fatal(err)
 	}
@@ -135,6 +138,70 @@ func TestHostSealsOnlyAfterMatchingExecutionFence(t *testing.T) {
 	}
 	if contents, err := os.ReadFile(marker); err != nil || string(contents) != "runtime-owned" {
 		t.Fatalf("Host mutated environment marker: %q, %v", contents, err)
+	}
+}
+
+func TestRunnerFenceRequiresExactBinding(t *testing.T) {
+	r, _ := boundaryHost(t)
+	intent := intentFor(r, 2, runtimepb.LifecycleIntent_QUIESCING)
+	input := runnerInputSpec{ExecutionFenced: true, RuntimeBootID: intent.Binding.RuntimeBootId, HostBootID: intent.Binding.HostBootId, Generation: 2}
+	if !runnerFenceMatches(input, intent, 2) {
+		t.Fatal("matching COSI fence was rejected")
+	}
+	for name, mutate := range map[string]func(*runnerInputSpec){
+		"stale generation": func(value *runnerInputSpec) { value.Generation-- },
+		"runtime boot":     func(value *runnerInputSpec) { value.RuntimeBootID = "old-runtime" },
+		"host boot":        func(value *runnerInputSpec) { value.HostBootID = "old-host" },
+		"unfenced":         func(value *runnerInputSpec) { value.ExecutionFenced = false },
+	} {
+		t.Run(name, func(t *testing.T) {
+			stale := input
+			mutate(&stale)
+			if runnerFenceMatches(stale, intent, 2) {
+				t.Fatal("nonmatching COSI fence accepted")
+			}
+		})
+	}
+	if runnerFenceMatches(input, intent, 3) {
+		t.Fatal("fact from an earlier desired generation accepted")
+	}
+}
+
+func TestHostUsesCosiExecutionFenceFact(t *testing.T) {
+	r, ctx := boundaryHost(t)
+	if err := r.ApplyIntent(ctx, intentFor(r, 1, runtimepb.LifecycleIntent_RUNNING)); err != nil {
+		t.Fatal(err)
+	}
+	drain := intentFor(r, 2, runtimepb.LifecycleIntent_QUIESCING)
+	if err := r.ApplyIntent(ctx, drain); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.lifecycle.waitFor(ctx, func() (bool, error) {
+		return r.lifecycle.status().Stage == runnerlifecycle.Fencing, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	input, found, err := lifecycleRead[runnerInputSpec](ctx, r.lifecycle.state, runnerlifecycle.ResourceID)
+	if err == nil && found {
+		input.ExecutionFenced = true
+		input.RuntimeBootID = drain.Binding.RuntimeBootId
+		input.HostBootID = drain.Binding.HostBootId
+		input.Generation = drain.Binding.Generation
+		err = publishLifecycle(r.lifecycle, runnerlifecycle.ResourceID, input)
+	}
+	r.mu.Unlock()
+	if err != nil || !found {
+		t.Fatalf("publish COSI fence: found=%t err=%v", found, err)
+	}
+	if err := r.lifecycle.wait(ctx, runnerlifecycle.Flushing); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	intentFenced := r.intent.ExecutionFenced
+	r.mu.Unlock()
+	if intentFenced {
+		t.Fatal("test did not isolate the COSI fact from the in-memory intent")
 	}
 }
 

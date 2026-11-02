@@ -906,6 +906,15 @@ returns a primitive Symbol suitable for a computed class method key. A
 shadowed `Symbol` receiver still fails the table check. See the
 [Symbol constructor specification](https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-properties-of-the-symbol-constructor).
 
+The canonical execution index supplies eager member-read candidates, including
+computed class keys, to the shared native own-data proof. The proof requires
+both the global binding and its exact static slot to be intact or asserted at
+that site. Heap collection consumes only that lookup certificate and still
+visits its operands; static initializers keep their own effects. The executor
+uses the same slot obligations, and purity records a failed lookup obligation
+when the slots are unproved. No purity verdict for a whole class discharges a
+heap frontier.
+
 ## Function-valued data properties — reads vs calls
 
 `DATA_PROPERTIES` lists static-property _reads_ of function-valued built-ins

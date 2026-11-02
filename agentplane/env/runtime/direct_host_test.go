@@ -6,13 +6,47 @@ import (
 	"sync"
 	"testing"
 
+	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+	"go.uber.org/zap"
+
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
+	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	"google.golang.org/protobuf/proto"
 )
+
+func startHostIntentController(t *testing.T, r *Runtime) {
+	t.Helper()
+	r.lifecycleState = state.WrapCore(namespaced.NewState(inmem.Build))
+	engine, err := cosiruntime.NewRuntime(r.lifecycleState, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.RegisterController(&hostReportController{runtime: r}); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.RegisterController(&hostIntentController{runtime: r}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- engine.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+}
+
+func publishAppliedHostIntent(t *testing.T, r *Runtime) {
+	t.Helper()
+	value := hostIntentStatus{Intent: intentValue(r.intent), Applied: true}
+	if err := cosi.Publish(t.Context(), r.lifecycleState, hostIntentStatusResource(value), value, "environment-host-intent"); err != nil {
+		t.Fatal(err)
+	}
+}
 
 type heldHostPeer struct {
 	mu           sync.Mutex
@@ -67,6 +101,7 @@ func TestDirectHostFenceWaitsForHostToApplyIt(t *testing.T) {
 		config: Config{Launch: configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{UID: "sandbox"}}},
 		bootID: "runtime", changes: make(chan struct{}),
 	}
+	startHostIntentController(t, r)
 	initialRelease := make(chan struct{})
 	close(initialRelease)
 	peer := &heldHostPeer{
@@ -78,10 +113,11 @@ func TestDirectHostFenceWaitsForHostToApplyIt(t *testing.T) {
 	waitRuntime(t, r, func() bool {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		return r.host != nil && r.host.report != nil && r.host.report.Ready
+		return r.host != nil && r.hostReportLocked() != nil && r.hostReportLocked().Ready
 	}, "initial direct Host report")
 	r.mu.Lock()
 	binding := proto.Clone(r.intent.Binding).(*runtimepb.Binding)
+	sampledIntent := intentValue(r.intent)
 	r.mu.Unlock()
 	if err := r.setExecutionFenced(binding); err != nil {
 		t.Fatal(err)
@@ -90,6 +126,24 @@ func TestDirectHostFenceWaitsForHostToApplyIt(t *testing.T) {
 	case <-peer.fenceStarted:
 	case <-ctx.Done():
 		t.Fatal("fenced intent was not sent to Host")
+	}
+	// Reports carry only the generation, so this old ready sample is byte-identical
+	// to the sample after the fence. It must not reopen admission while Apply is held.
+	oldReport, err := peer.Report()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	host := r.host
+	r.mu.Unlock()
+	if err := r.acceptReport(host, oldReport, sampledIntent); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	premature := r.hostReportLocked()
+	r.mu.Unlock()
+	if premature != nil {
+		t.Fatalf("unapplied same-generation fence restored ready report: %v", premature)
 	}
 	probe, cancelProbe := context.WithCancel(ctx)
 	cancelProbe()
@@ -106,8 +160,20 @@ func TestDirectHostFenceWaitsForHostToApplyIt(t *testing.T) {
 	waitRuntime(t, r, func() bool {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		return r.host != nil && r.host.report != nil && r.host.report.Ready && proto.Equal(r.host.report.Binding, binding)
+		return r.host != nil && r.hostReportLocked() != nil && r.hostReportLocked().Ready && proto.Equal(r.hostReportLocked().Binding, binding)
 	}, "same-generation Host report after Execution fence")
+	// Application can also finish between sampling and accepting an old report.
+	// Its generation still matches, but its exact sampled intent must not be retagged.
+	oldReport.Ready = false
+	if err := r.acceptReport(host, oldReport, sampledIntent); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	after := r.hostReportLocked()
+	r.mu.Unlock()
+	if after == nil || !after.Ready {
+		t.Fatalf("delayed old report overwrote applied fence readiness: %v", after)
+	}
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatalf("coordinator exit = %v, want cancellation", err)
@@ -130,6 +196,7 @@ func TestDirectHostIntentPublishedWhileApplyIsBlocked(t *testing.T) {
 		config: Config{Launch: configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{UID: "sandbox"}}},
 		bootID: "runtime", changes: make(chan struct{}),
 	}
+	startHostIntentController(t, r)
 	peer := &heldHostPeer{started: make(chan struct{}, 1), release: make(chan struct{})}
 	done := make(chan error, 1)
 	go func() { done <- r.connectHost(ctx, nil, peer) }()
@@ -142,7 +209,7 @@ func TestDirectHostIntentPublishedWhileApplyIsBlocked(t *testing.T) {
 	// acquire Runtime's lock and the coordinator must apply the latest version.
 	r.mu.Lock()
 	want := r.setIntentLocked(runtimepb.LifecycleIntent_INACTIVE, "", "", false)
-	unexpected := r.host.report
+	unexpected := r.hostReportLocked()
 	r.mu.Unlock()
 	if unexpected != nil {
 		t.Fatalf("blocked old intent acknowledged newer generation: %v", unexpected)
@@ -151,7 +218,7 @@ func TestDirectHostIntentPublishedWhileApplyIsBlocked(t *testing.T) {
 	waitRuntime(t, r, func() bool {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		return r.host != nil && r.host.report != nil && r.host.report.Ready && proto.Equal(r.host.report.Binding, want.Binding)
+		return r.host != nil && r.hostReportLocked() != nil && r.hostReportLocked().Ready && proto.Equal(r.hostReportLocked().Binding, want.Binding)
 	}, "latest direct Host intent report")
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {
@@ -166,21 +233,23 @@ func TestDirectHostReportCopiesAndDropsStaleGeneration(t *testing.T) {
 		host: host, intent: &runtimepb.LifecycleIntent{Binding: proto.Clone(binding).(*runtimepb.Binding), Mode: runtimepb.LifecycleIntent_RUNNING},
 		changes: make(chan struct{}),
 	}
+	r.lifecycleState = state.WrapCore(namespaced.NewState(inmem.Build))
+	publishAppliedHostIntent(t, r)
 	stale := &runtimepb.HostReport{
 		Binding: &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1},
 		Ready:   true, Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{},
 	}
-	if err := r.acceptReport(host, stale); err != nil || host.report != nil {
-		t.Fatalf("stale report accepted: report=%v err=%v", host.report, err)
+	if err := r.acceptReport(host, stale, intentValue(r.intent)); err != nil || r.hostReportLocked() != nil {
+		t.Fatalf("stale report accepted: report=%v err=%v", r.hostReportLocked(), err)
 	}
 	report := &runtimepb.HostReport{Binding: binding, Ready: true, Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{}}
-	if err := r.acceptReport(host, report); err != nil {
+	if err := r.acceptReport(host, report, intentValue(r.intent)); err != nil {
 		t.Fatal(err)
 	}
 	report.Binding.Generation = 3
 	report.Ready = false
-	if host.report.Binding.Generation != 2 || !host.report.Ready {
-		t.Fatalf("Runtime retained caller-owned report: %v", host.report)
+	if r.hostReportLocked().Binding.Generation != 2 || !r.hostReportLocked().Ready {
+		t.Fatalf("Runtime retained caller-owned report: %v", r.hostReportLocked())
 	}
 }
 
@@ -190,10 +259,8 @@ func TestDirectHostExecutionReadinessFollowsOwnerLifetime(t *testing.T) {
 	if err != nil || ready {
 		t.Fatalf("readiness before Execution owner = %t, %v", ready, err)
 	}
-	handle := &localExecutionHandle{}
-	r.executionOwner = handle
-	r.executionServer = &executorpb.UnimplementedExecutorServer{}
-	r.executionUID = "incarnation"
+	handle := newControllerExecutionHandle(nil)
+	r.executionOwner = &executionLifetime{handle: handle, uid: "incarnation", admitted: true}
 	ready, err = r.HostExecutionReady(t.Context())
 	if err != nil || !ready {
 		t.Fatalf("readiness with active Execution owner = %t, %v", ready, err)
@@ -208,16 +275,16 @@ func TestDirectHostExecutionReadinessFollowsOwnerLifetime(t *testing.T) {
 	handle.mu.Lock()
 	handle.expected = false
 	handle.mu.Unlock()
-	r.executionRecovering = true
+	r.executionOwner.admitted = false
 	ready, err = r.HostExecutionReady(t.Context())
 	if err != nil || ready {
 		t.Fatalf("readiness during fenced recovery = %t, %v", ready, err)
 	}
 
-	r.executionRecovering = false
+	r.executionOwner.admitted = true
 	backendLife, backendLost := context.WithCancel(t.Context())
-	service := &executionServiceHandle{done: make(chan struct{}), backendLife: backendLife}
-	r.executionOwner = service
+	service := &executionServiceHandle{executor: &executorpb.UnimplementedExecutorServer{}, done: make(chan struct{}), backendLife: backendLife}
+	r.executionOwner = &executionLifetime{handle: service, uid: "incarnation", admitted: true}
 	ready, err = r.HostExecutionReady(t.Context())
 	if err != nil || !ready {
 		t.Fatalf("readiness while embedded service is running = %t, %v", ready, err)

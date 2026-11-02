@@ -53,6 +53,9 @@ func lifecycleWrite[T lifecycleSpec[T]](ctx context.Context, writer controller.R
 type runnerInputSpec struct {
 	Admissions      int
 	ExecutionFenced bool
+	RuntimeBootID   string
+	HostBootID      string
+	Generation      uint64
 }
 type journalSealSpec struct {
 	Present        bool

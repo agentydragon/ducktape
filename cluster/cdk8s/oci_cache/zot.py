@@ -1,6 +1,5 @@
-"""The Zot OCI pull-through cache: its Namespace, the `registry-cache` SeaweedFS `PrivateBucket`
-holding its content, the Deployment (Zot plus the nginx basic-auth sidecar for the public
-endpoint), Service, HTTPRoute, ServiceMonitor and dedupe-cache `RedisReplication`.
+"""The Zot OCI pull-through cache: its Namespace, persistent volume, Deployment
+(Zot plus the nginx basic-auth sidecar), Service, HTTPRoute and ServiceMonitor.
 
 Hand-written beside the generated output (cluster/k8s/oci-cache): `kustomization.yaml`
 (its configMapGenerator renders `config.json` and `public-auth-proxy.conf`) and
@@ -11,8 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart, Size
-from cdk8s_plus_34 import Cpu, k8s
+from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import k8s
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import namespaces
@@ -21,9 +20,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
-from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/oci-cache"
 _NAMESPACE = "oci-cache"
@@ -33,7 +30,6 @@ _PODS = Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),))
 HTTP = ServiceRef(name=_NAMESPACE, port=Port(name="http", number=80), pods=_PODS, target_port=5000)
 # The nginx sidecar's authenticated port on the same Service.
 _PUBLIC_AUTH = ServiceRef(name=_NAMESPACE, port=Port(name="public-auth", number=8080), pods=_PODS)
-_VALKEY = "oci-cache-valkey"
 
 
 def _tcp_probe(port: str, *, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
@@ -44,20 +40,20 @@ def _tcp_probe(port: str, *, initial_delay_seconds: int, period_seconds: int) ->
     )
 
 
-def _storage(chart: Chart) -> s3.PrivateBucket:
-    return s3.PrivateBucket(
+def _deployment(chart: Chart) -> None:
+    # One writer: BoltDB and its corresponding blob files live on the same volume.
+    k8s.KubePersistentVolumeClaim(
         chart,
-        "storage",
-        name="registry-cache",
-        tenant=_NAMESPACE,
-        # The existing cache bucket was handed to the tenant-local CR.
-        adopt_existing=True,
-        description="Zot's OCI pull-through cache: manifests and blobs.",
-        key_fields=None,
+        "cache-pvc",
+        metadata=k8s.ObjectMeta(
+            name="zot-cache", namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
+        ),
+        spec=k8s.PersistentVolumeClaimSpec(
+            access_modes=["ReadWriteOnce"],
+            storage_class_name="piraeus-hdd-2",
+            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("100Gi")}),
+        ),
     )
-
-
-def _deployment(chart: Chart, *, storage: s3.PrivateBucket) -> None:
     k8s.KubeDeployment(
         chart,
         "deployment",
@@ -69,9 +65,8 @@ def _deployment(chart: Chart, *, storage: s3.PrivateBucket) -> None:
                 "description": (
                     "Zot OCI pull-through cache. On-demand mirror for docker.io, ghcr.io, quay.io,"
                     " registry.k8s.io and gcr.io addressed by path prefix (/docker-hub, /ghcr, /quay, /k8s,"
-                    " /gcr). Durable content in the SeaweedFS registry-cache bucket (S3); dedupe index in the"
-                    " oci-cache-valkey RedisReplication. No PVC — the only local state is ephemeral upload"
-                    " staging on emptyDir, so the pod reschedules freely. The in-cluster Service is"
+                    " /gcr). Content and local BoltDB indexes share a replicated Piraeus filesystem. The"
+                    " in-cluster Service is"
                     " intentionally unauthenticated for Docker registry-mirror compatibility; the public"
                     " endpoint is authenticated by the nginx sidecar."
                 )
@@ -85,6 +80,8 @@ def _deployment(chart: Chart, *, storage: s3.PrivateBucket) -> None:
                 metadata=k8s.ObjectMeta(labels=_PODS.selector),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
+                    # The replicated HDD class permits remote access only within hil-ovh.
+                    node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
                     security_context=k8s.PodSecurityContext(
                         fs_group=65532, seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")
                     ),
@@ -96,12 +93,6 @@ def _deployment(chart: Chart, *, storage: s3.PrivateBucket) -> None:
                             args=["serve", "/etc/zot/config.json"],
                             ports=[
                                 k8s.ContainerPort(name=HTTP.port.name, container_port=HTTP.pod_port, protocol="TCP")
-                            ],
-                            # docker/distribution S3 driver reads the AWS default credential
-                            # chain when accesskey/secretkey are omitted from config.json.
-                            env=[
-                                storage.access_key.env_var("AWS_ACCESS_KEY_ID"),
-                                storage.secret_key.env_var("AWS_SECRET_ACCESS_KEY"),
                             ],
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path="/etc/zot", read_only=True),
@@ -178,7 +169,8 @@ def _deployment(chart: Chart, *, storage: s3.PrivateBucket) -> None:
                             ),
                         ),
                         k8s.Volume(
-                            name="cache", empty_dir=k8s.EmptyDirVolumeSource(size_limit=k8s.Quantity.from_string("5Gi"))
+                            name="cache",
+                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name="zot-cache"),
                         ),
                     ],
                 ),
@@ -190,7 +182,7 @@ def _deployment(chart: Chart, *, storage: s3.PrivateBucket) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAMESPACE, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO)
-    _deployment(chart, storage=_storage(chart))
+    _deployment(chart)
     k8s.KubeService(
         chart,
         "service",
@@ -246,24 +238,6 @@ def chart(app: App) -> Chart:
         ),
         selector=ServiceMonitorSpecSelector(match_labels=HTTP.labels),
         endpoints=[Endpoint.plain(port=HTTP.port.name, scrape_timeout="10s")],
-    )
-    valkey_instance(
-        chart,
-        name=_VALKEY,
-        namespace=_NAMESPACE,
-        description=(
-            "Shared dedupe/metadata cache for the Zot OCI pull-through cache. Zot's cacheDriver points here"
-            " (remoteCache); the durable content lives in S3, so this holds only rebuildable metadata/dedupe"
-            " state. Losing it is acceptable but may cause brief cache misses or require a Zot restart/Valkey"
-            " flush for stale metadb entries. Uses OVH HDD node-local storage so the operator can rebuild a"
-            " fresh Valkey replica without depending on the SeaweedFS CSI path."
-        ),
-        memory_request=Size.mebibytes(64),
-        cpu_limit=Cpu.millis(200),
-        memory_limit=Size.mebibytes(256),
-        max_memory_percent_of_limit=80,
-        storage_class="piraeus-hdd-local",
-        storage_size=Size.gibibytes(2),
     )
     return chart
 

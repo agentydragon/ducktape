@@ -2,13 +2,16 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestExecutionSessionAdmissionClosesWhenRuntimeQuiesces(t *testing.T) {
@@ -90,6 +93,9 @@ func TestIncarnationReplacementFencesExecutionBeforeStartingSuccessor(t *testing
 		}}, nil
 	}
 	r := newLifecycleRunner(t, config)
+	r.mu.Lock()
+	priorBinding := proto.Clone(r.intent.Binding).(*runtimepb.Binding)
+	r.mu.Unlock()
 	done := make(chan error, 1)
 	go func() { done <- r.adoptIncarnation(context.Background(), "successor") }()
 	select {
@@ -115,6 +121,76 @@ func TestIncarnationReplacementFencesExecutionBeforeStartingSuccessor(t *testing
 	mu.Unlock()
 	if !reflect.DeepEqual(after, []string{"start:test-incarnation", "fence:test-incarnation", "start:successor"}) {
 		t.Fatalf("replacement ordering: %v", after)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	report := r.hostReportLocked()
+	if r.intent == nil || report == nil || r.intent.Binding.Generation <= priorBinding.Generation ||
+		!proto.Equal(r.intent.Binding, report.Binding) {
+		t.Fatalf("successor Host did not acknowledge its new binding: prior=%v intent=%v report=%v", priorBinding, r.intent, report)
+	}
+}
+
+func TestCanceledAdoptionReconcilesExactDrainBeforeSuccessor(t *testing.T) {
+	config := executionRuntimeConfig(t, "ws://unused", nil)
+	start := config.deps.startExecution
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	defer once.Do(func() { close(release) })
+	var mu sync.Mutex
+	var fenceCount int
+	config.deps.startExecution = func(ctx context.Context, config Config, uid string) (executionHandle, error) {
+		handle, err := start(ctx, config, uid)
+		if err != nil {
+			return nil, err
+		}
+		return &recordingExecutionHandle{executionHandle: handle, beforeFence: func(ctx context.Context) error {
+			if uid == "test-incarnation" {
+				mu.Lock()
+				fenceCount++
+				if fenceCount == 1 {
+					close(entered)
+				}
+				mu.Unlock()
+				select {
+				case <-release:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+			return nil
+		}}, nil
+	}
+	r := newLifecycleRunner(t, config)
+	epoch, cancelEpoch := context.WithCancel(context.Background())
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- r.adoptIncarnation(epoch, "successor") }()
+	select {
+	case <-entered:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("old generation did not start its fence")
+	}
+	r.mu.Lock()
+	previousGeneration := r.intent.Binding.Generation
+	r.mu.Unlock()
+	cancelEpoch()
+	once.Do(func() { close(release) })
+	if err := waitClose(t, firstDone); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled adoption = %v", err)
+	}
+	if err := r.adoptIncarnation(context.Background(), "successor"); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	finalGeneration := r.intent.Binding.Generation
+	r.mu.Unlock()
+	if finalGeneration != previousGeneration+1 {
+		t.Fatalf("successor replayed the old drain: final generation %d, canceled generation %d", finalGeneration, previousGeneration)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if fenceCount != 1 {
+		t.Fatalf("old Execution fence attempts = %d, want one", fenceCount)
 	}
 }
 

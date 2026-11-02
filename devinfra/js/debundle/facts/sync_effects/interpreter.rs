@@ -1,8 +1,10 @@
 //! Call-site execution effects distinguish function values from function bodies: returning a closure never executes it.
 
+use super::super::local_operations::LocalBody;
+use super::super::local_transfer::{self, LocalContext, LocalFrame};
 use super::super::value_model::{
     AbstractValue, ArrayIteration, CallSite, Captured, CapturedContext, Context, DenseArray,
-    FrozenNamespaceProof, MemberKey, RetainedResultKind, ValueExpr, Values,
+    FrozenNamespaceProof, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr, Values,
 };
 use super::runtime_callbacks::{CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
@@ -10,7 +12,7 @@ use super::runtime_inference::{ProgramPoint, RuntimeOperation, RuntimeQueries, R
 use super::{
     Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, LocalConstructor,
     MemberValueWrite, NativeIntrinsic, NativePointEffects, Parameter, RetainedCallbackCall,
-    native_call_identity_key, object_own_data_read_property,
+    native_call_identity_key, native_own_data_read_slots, object_own_data_read_property,
 };
 use crate::analysis_inputs::{AnalysisInputs, NativeInputKind, ProofDependencies};
 use crate::facts::ExportReentryPolicy;
@@ -824,6 +826,68 @@ impl super::super::allocation_transfer::AllocationContext
     }
 }
 
+struct LocalExecutionContext<'a, 'source, 'rule> {
+    executor: &'a mut Executor<'source, 'rule>,
+    outcome: &'a mut Outcome,
+    owner: SourceUnitOrdinal,
+}
+
+impl LocalContext for LocalExecutionContext<'_, '_, '_> {
+    fn read_binding(
+        &mut self,
+        binding: &Id,
+        frame: &mut LocalFrame,
+    ) -> Option<super::super::allocation_transfer::AllocationValue> {
+        if self.executor.inputs.top_bindings.contains(binding) {
+            self.executor
+                .promote_top_effects(vec![binding], Vec::new(), self.owner, self.outcome);
+        }
+        let values = self.executor.evaluate_binding(binding, &frame.environment);
+        if self.executor.inputs.top_bindings.contains(binding) {
+            frame
+                .borrowed_records
+                .extend(self.executor.reachable_objects(&values));
+        }
+        // Timing is covered; the read alone cannot certify a closed input.
+        Some(super::super::allocation_transfer::AllocationValue::opaque(
+            values,
+        ))
+    }
+    fn literal_layout(&self, allocation: u32) -> super::super::allocation_transfer::LiteralLayout {
+        self.executor.inputs.index.allocation_layout(allocation)
+    }
+    fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
+        self.executor.inputs.index.ordinary_record_shape(allocation)
+    }
+    fn object_properties_are_settled(&self, allocation: u32) -> bool {
+        self.executor
+            .state
+            .object_properties_are_settled(&allocation)
+    }
+    fn heap(&mut self) -> super::super::allocation_transfer::LiteralHeap<'_> {
+        self.executor.literal_heap()
+    }
+    fn unproved_field_write(
+        &mut self,
+        frame: &mut LocalFrame,
+        receivers: &Values,
+        values: &Values,
+        span: Span,
+    ) {
+        self.executor.local_field_write_fallback(
+            frame,
+            receivers,
+            values,
+            self.owner,
+            span,
+            self.outcome,
+        );
+    }
+    fn publish_throw(&mut self, values: &Values) {
+        self.executor.publish_values(values);
+    }
+}
+
 impl<'source, 'rule> Executor<'source, 'rule> {
     pub(super) fn new(
         inputs: &'rule ExecutionInputs<'source>,
@@ -1480,33 +1544,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn native_member_lookup_is_data(&self, callee: &ValueExpr, site: Option<u32>) -> bool {
-        let ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) = callee else {
-            return false;
-        };
-        let ValueExpr::Binding(binding) = receiver.as_ref() else {
-            return false;
-        };
-        if self.inputs.flow.is_declared(binding)
-            || self.inputs.shadowed.contains(binding.0.as_ref())
-            || !self.inputs.index.dynamic_scope_owners.is_empty()
-        {
+        if !self.inputs.index.dynamic_scope_owners.is_empty() {
             return false;
         }
-        let Some(family) = NativeIntrinsic::for_global_binding(binding.0.as_ref()) else {
-            return false;
-        };
-        let Some(property) = crate::facts::abstract_domain::builtins::own_data_property_name(
-            binding.0.as_ref(),
-            property,
-        ) else {
+        let Some(slots) = native_own_data_read_slots(callee, |binding| {
+            self.inputs.flow.is_declared(binding)
+                || self.inputs.shadowed.contains(binding.0.as_ref())
+        }) else {
             return false;
         };
         let Some(premise) = native_premise(
             &self.inputs.index.integrity,
-            &[
-                IntrinsicSlot::Global(family),
-                IntrinsicSlot::Static(family, property),
-            ],
+            &slots,
             site,
             InferenceRule::NativeOwnDataRead,
         ) else {
@@ -4875,17 +4924,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         if !certified_data_receivers.contains(&object) {
                             self.state.tainted_objects.insert(object);
                         }
-                        let properties = self
-                            .state
-                            .prefix_object_properties
-                            .entry(object)
-                            .or_default();
-                        let values_for_property = properties.entry(property.clone()).or_default();
-                        let before = values_for_property.len();
-                        values_for_property.extend(values.iter().cloned());
-                        if values_for_property.len() != before {
-                            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
-                        }
+                        self.literal_heap()
+                            .write_property(object, property.clone(), &values);
                         if may_be_published {
                             self.publish_values(&values);
                         }
@@ -6365,6 +6405,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     HavocReach::Global {
                         cause: GlobalReachCause::EscapedCallbackPool,
                     },
+                    DUMMY_SP,
                 );
                 self.apply_rebind_effects(&nested.effects.rebinds);
                 outcome.absorb_binding_effects(&mut nested.effects, self.state.assumption.as_ref());
@@ -6432,6 +6473,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         captured: &Context,
         reason: ExecutionPrecisionLossReason,
         reach: HavocReach,
+        span: Span,
     ) -> Outcome {
         let result =
             self.request_callback_operation(CallbackOperation::BoundedInvocationFallback {
@@ -6440,6 +6482,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 captured: captured.clone(),
                 reason,
                 reach,
+                span,
             });
         let CallbackResult::Outcome(result) = result else {
             unreachable!("bounded callback fallback returns an outcome");
@@ -6454,6 +6497,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         captured: &Context,
         reason: ExecutionPrecisionLossReason,
         reach: HavocReach,
+        span: Span,
     ) -> Outcome {
         let effect_owner = self.state.current_top_owner.unwrap_or(owner);
         if self.state.array_iteration_depth > 0 {
@@ -6465,7 +6509,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // repeatedly. Reusing earlier fallback roots only adds constraints.
         let mut outcome = std::mem::take(&mut self.state.fallback_outcome);
         let rebinds_before = outcome.effects.rebinds.len();
-        outcome.lose_precision(reason.clone(), reach.clone(), owner, DUMMY_SP);
+        outcome.lose_precision(reason.clone(), reach.clone(), owner, span);
         outcome.unknown_call = true;
         self.widen_native_effects();
         outcome.executed_owners.insert(owner);
@@ -6651,7 +6695,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             executed_owners: BTreeSet::from([owner]),
             ..Outcome::default()
         };
-        result.lose_precision(reason, reach, owner, DUMMY_SP);
+        result.lose_precision(reason, reach, owner, span);
         result
     }
 
@@ -7489,6 +7533,88 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    /// Stop the frame without replaying its earlier operations. An unproved
+    /// store may call a setter and publish any capability the remainder can
+    /// reach, including objects whose local binding has since been replaced.
+    fn local_field_write_fallback(
+        &mut self,
+        frame: &LocalFrame,
+        receivers: &Values,
+        values: &Values,
+        owner: SourceUnitOrdinal,
+        span: Span,
+        outcome: &mut Outcome,
+    ) {
+        let mut reached = frame.inputs.clone();
+        reached.extend(frame.environment.values().flatten().cloned());
+        reached.extend(
+            frame
+                .fresh_records
+                .iter()
+                .map(|object| AbstractValue::Value(Value::Alloc(Kind::Object, *object))),
+        );
+        reached.extend(receivers.iter().cloned());
+        reached.extend(values.iter().cloned());
+        self.publish_values(&reached);
+        let mut fallback = self.bounded_invocation_fallback(
+            owner,
+            &[reached],
+            &frame.environment,
+            ExecutionPrecisionLossReason::UnsupportedOperation {
+                operation: ExecutionOperation::PropertyWrite,
+            },
+            HavocReach::Global {
+                cause: GlobalReachCause::UnmodelledOperation,
+            },
+            span,
+        );
+        outcome.absorb_binding_effects(&mut fallback.effects, self.state.assumption.as_ref());
+        outcome.executed_owners.extend(fallback.executed_owners);
+        outcome.unknown_call |= fallback.unknown_call;
+        outcome.inherit_completeness(fallback.complete, fallback.effects.precision_losses);
+        outcome.returns.extend(fallback.returns);
+        outcome
+            .returns
+            .insert(AbstractValue::Value(Value::Unavailable));
+    }
+
+    fn execute_local_body(
+        &mut self,
+        body: &LocalBody,
+        environment: Context,
+        owner: SourceUnitOrdinal,
+    ) -> Outcome {
+        let mut frame = LocalFrame::new(environment);
+        frame.borrowed_records = self.reachable_objects(&frame.inputs);
+        let mut outcome = Outcome {
+            complete: true,
+            ..Outcome::default()
+        };
+        outcome.executed_owners.insert(owner);
+        // The source-covered application consumer supplies access effects and
+        // conservative fallback. The shared kernel controls operation order.
+        let coverage = local_transfer::execute(
+            &mut LocalExecutionContext {
+                executor: self,
+                outcome: &mut outcome,
+                owner,
+            },
+            body,
+            &mut frame,
+        );
+        assert!(
+            coverage.is_some() || !outcome.complete,
+            "covered local values use shared transfers or an explicit conservative fallback"
+        );
+        for value in &frame.returns {
+            if let AbstractValue::OwnDescriptorMap(site) = value {
+                self.invalidate_own_descriptor_map(*site);
+            }
+        }
+        outcome.returns.extend(frame.returns);
+        outcome
+    }
+
     fn invoke(
         &mut self,
         key: u32,
@@ -7601,6 +7727,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 captured_context,
                 reason,
                 reach,
+                DUMMY_SP,
             );
         }
         self.state.active.insert(active_invocation);
@@ -7654,6 +7781,39 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         self.state.array_iteration_unsupported = true;
                     }
                 }
+            }
+        }
+        if !unsupported_inputs
+            && self.inputs.index.dynamic_scope_owners.is_empty()
+            && let Some(body) = &callable.local_body
+            && body.reads().iter().all(|binding| {
+                body.bindings.contains_key(binding)
+                    || env.contains_key(binding)
+                    || self.inputs.top_bindings.contains(binding)
+            })
+        {
+            // Keep existing record/input and array-iteration write proofs on
+            // their established path until they consume ordered operations.
+            // In particular, an unrebound parameter cannot become a fresh
+            // receiver in this call-free, member-read-free local grammar.
+            let established_writes =
+                !callable.member_value_writes.is_empty()
+                    && (self.state.array_iteration_depth > 0
+                        || self.fresh_local_record_receiver(key, callable).is_some()
+                        || callable.member_value_writes.iter().any(|write| {
+                            callable.params.iter().any(|parameter| {
+                                parameter.binding.as_ref() == Some(&write.receiver)
+                            }) && !callable
+                                .local_assignments
+                                .iter()
+                                .any(|(binding, _)| binding == &write.receiver)
+                        }));
+            if !established_writes {
+                let outcome = self.execute_local_body(body, env, callable.owner);
+                self.state.active.remove(&active_invocation);
+                self.state.invocation_depth -= 1;
+                self.remember_invocation(signature, &outcome);
+                return outcome;
             }
         }
         for (id, value) in &callable.local_assignments {
@@ -9097,20 +9257,17 @@ pub(crate) fn prepare_synchronous_call_index_with_source_facts(
     let mut native_own_data_read_candidates: BTreeMap<SourceUnitOrdinal, Vec<Span>> =
         BTreeMap::new();
     let mut native_own_data_reads = BTreeMap::new();
-    for writes in index.binding_declaration_writes.values() {
-        if let [write] = writes.as_slice()
-            && write.direct_top_level
-            && write.simple_identifier
-            && let Some(initializer) = &write.initializer
-            && let Some(property) =
-                object_own_data_read_property(initializer, |id| flow.is_declared(id))
-            && let Some(span) = write.initializer_span
+    for call in index.top_calls.iter().flatten() {
+        if call.kind == CallKind::LocalMemberRead
+            && let Some(slots) = native_own_data_read_slots(&call.callee, |binding| {
+                flow.is_declared(binding) || shadowed.contains(binding.0.as_ref())
+            })
         {
             native_own_data_read_candidates
-                .entry(write.owner)
+                .entry(call.owner)
                 .or_default()
-                .push(span);
-            native_own_data_reads.insert(span.lo.0, property);
+                .push(call.span);
+            native_own_data_reads.insert(call.span.lo.0, slots);
         }
     }
     index.native_own_data_reads = native_own_data_reads;

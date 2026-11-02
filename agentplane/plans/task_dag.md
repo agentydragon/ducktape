@@ -139,6 +139,33 @@ accepted [Electric exception](electric_ha.md). K3s fixtures remain single-replic
 nested K3s roll and associated RBE kernel change are waived. Arbitrary JS-state restoration and
 the broader runtime redesign remain outside this sprint.
 
+### Environment Runtime audit follow-through
+
+**In review, operator dispatch 2026-11-01 UTC; `/root` integrates [native stack #13562](https://github.com/agentydragon/ducktape/stack/13562).**
+The Runtime, Host and Execution management code share a process and COSI engine. The executor
+companion remains a separate Pod PID-1 process; VM native workload and executor slices remain
+separate. These outcomes are independent of the later `SYSTEMD_UNIT_COSI_DESIGN` decision.
+
+- `RUNTIME_COMPANION_FENCE_GENERATION` — [#13567](https://github.com/agentydragon/ducktape/pull/13567): bind fence requests and
+  lease closure to the exact executor generation, so delayed requests cannot fence a successor.
+  Exit: deterministic duplicate/stale fence regressions, including changed-generation proof and
+  startup fencing; preserve uncertain-outcome handling.
+- `RUNTIME_EXECUTION_LIFECYCLE` — [#13572](https://github.com/agentydragon/ducktape/pull/13572) and [#13582](https://github.com/agentydragon/ducktape/pull/13582): consolidate the production Execution
+  lifecycle and its redundant test-only controller, and remove unnecessary embedded self-health
+  transport where feasible. Exit: one clear owner, native readiness, loss handling and fence proof;
+  standalone API and companion isolation retain their documented behavior.
+- `RUNTIME_HOST_COSI` — [#13569](https://github.com/agentydragon/ducktape/pull/13569), [#13573](https://github.com/agentydragon/ducktape/pull/13573), and [#13579](https://github.com/agentydragon/ducktape/pull/13579): reduce the in-process intent/report bridge in
+  favor of typed shared state. Exit: exact-generation admission, native stop, Execution fence and
+  History seal acknowledgement retain their ordering under cancellation, replacement and shutdown.
+- `RUNTIME_TRANSITION_COSI` — [#13564](https://github.com/agentydragon/ducktape/pull/13564), [#13566](https://github.com/agentydragon/ducktape/pull/13566), [#13580](https://github.com/agentydragon/ducktape/pull/13580), and [#13581](https://github.com/agentydragon/ducktape/pull/13581): make lifecycle transition inputs and barrier outcomes
+  explicit, reduce mirrored Execution state, and simplify obsolete Runtime/Host lifecycle paths.
+  Exit: no replay of uncertain effects; race coverage for epoch cancellation, engine loss and Close
+  during an in-flight fence. Preserve separate process-domain and durable-history proofs.
+
+Each implementation is independently reviewable; the native PR stack is a review ordering, not a
+technical dependency between these outcomes. Required Pod and VM system coverage precedes merging
+staging-impacting changes. Finished nodes leave the DAG when the corresponding outcome lands.
+
 ### Dispatch order and prerequisites
 
 Give concrete reliability regressions first attention. Caller-authorized resume waits on its
@@ -178,9 +205,9 @@ The original native-cleanup timeout remains unexplained; the closed
 [#13442](https://github.com/agentydragon/ducktape/pull/13442) path-reconstruction workaround is not
 selected. A later, separate [Runtime.Close caller-deadline failure](../env/runtime/debug/2026-11-01_runtime_close_wait_timeout.md)
 also lacks causal evidence. On recurrence, capture shutdown-stage/join evidence before attributing
-either failure or claiming it fixed. Passing later tests does not establish either cause. Eventual
-COSI ownership remains a separate operator decision. The combined management process and its direct
-component calls are implemented; that does not establish the cause of either earlier failure.
+either failure or claiming it fixed. Passing later tests does not establish either cause. The selected
+Runtime COSI improvements below do not establish the cause of either earlier failure. The broader
+systemd-unit ownership decision remains separate.
 
 Small launch-UX work can proceed alongside these tracks. Fresh-VM latency and VM-based Bazel are
 next and are independent of each other; image/layering work becomes a prerequisite only when the
@@ -470,6 +497,8 @@ flowchart TD
     SESSION_PLATFORM_GUIDANCE[In review: default platform guidance]
     SESSION_PLATFORM_GUIDANCE_ACTIVATION[Held draft: activate managed sampler guidance]
     PLATFORM_GUIDANCE_OWNERSHIP_DESIGN[Later decision: platform-guidance ownership and composition]
+    PLATFORM_GUIDANCE_SINGLE_OWNER[Later refactor: one platform-guidance owner]
+    PLATFORM_GUIDANCE_OWNERSHIP_DESIGN --> PLATFORM_GUIDANCE_SINGLE_OWNER
     SESSION_OPEN_CONFIGURATION[Candidate: valid optional opening configuration]
     SESSION_DELEGATION_ACTIVATION[Held draft: expose staging delegation tools]
     APP_ENVIRONMENT_DISCOVERY[Later: app inventory through backend Discovery]
@@ -618,7 +647,7 @@ configuration activation, not unrelated delegation backend/client implementation
 
 ### `PLATFORM_GUIDANCE_OWNERSHIP_DESIGN` — decide platform-guidance ownership and composition
 
-**Later decision; current duplication is accepted.** Explore one authoritative owner/source for
+**Later decision; current duplication is accepted.** Design one authoritative owner/source for
 platform guidance while allowing placement- and environment-specific variants. Compare ownership and
 composition in the native Harness Host and Central Sampler. The existing shared template is a textual
 source of truth; it does not settle which services distribute or compose guidance, or how deployment-
@@ -635,6 +664,20 @@ guidance service, new network dependency, Dispatcher ownership, or runtime-unifi
 It is independent of the [default guidance implementation](#session_platform_guidance--platform-guidance-independent-of-presets)
 and its [managed activation hold](#session_platform_guidance_activation--enable-managed-sampler-platform-guidance),
 and does not block either one or current reliability and delegation work.
+
+### `PLATFORM_GUIDANCE_SINGLE_OWNER` — consolidate platform-guidance ownership
+
+**Future refactor; blocked on `PLATFORM_GUIDANCE_OWNERSHIP_DESIGN` review.** Put the job of knowing
+the platform instructions in one authoritative owner, then migrate native Harness Host and Central
+Sampler consumers to it. Remove independently maintained guidance configuration and selection rules
+from those consumers. Shared template text alone does not complete this refactor. Consumers may
+cache or materialize resolved guidance; deployment-specific content, harness differences and
+per-environment instructions still need truthful composition under the reviewed design.
+
+Preserve frozen instructions for existing Sessions, additive caller instructions and harness/provider
+base prompts. Exit with both native and central workflows using the common owner and the redundant
+ownership removed. Owner placement and distribution remain design choices; this item does not
+require a new service and does not block #13384 or its managed activation.
 
 ### `SESSION_OPEN_CONFIGURATION` — schema-valid optional opening configuration
 

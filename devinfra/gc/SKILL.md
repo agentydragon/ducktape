@@ -66,7 +66,9 @@ workspace-gc repo-cache             # the repo-contents-cache slice only
 git worktree prune --dry-run --verbose   # stale admin records
 ```
 
-Add `--all` to show KEEP rows too. Omit `--sizes` for a quick first pass on a large cache.
+Repo-cache reports summarize PRUNE and KEEP entries and list REVIEW entries; use `--verbose`
+to list PRUNE entries and individual deletion results, or `--all` to list all cache entries.
+Add `--all` to show KEEP rows in other domains too. Omit `--sizes` for a quick first pass on a large cache.
 Pass `--no-prs` to skip the GitHub PR cross-check (offline, or to avoid one API call per
 branch on a repo with many branches). The base scanner covers one output-user-root at a time
 (default `$XDG_CACHE_HOME/bazel/_bazel_$USER`) plus, always, every Claude Code per-session base

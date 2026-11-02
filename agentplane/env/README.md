@@ -5,6 +5,12 @@ external control, and coordinated lifecycle. Harness Host owns native Sessions a
 Execution Service owns typed process and filesystem execution. The Runner Gateway remains a
 control-plane service outside `env/`.
 
+The deployment renders the shared
+[`Session guide`](../session_instructions/platform_instructions.j2) with concrete service URLs and
+the selected runtime's ownership description. Native and central backends append the child's own
+notification destination and additional standing instructions. Detailed workflows live behind the
+services' `/llms.txt` indexes.
+
 ## Layout and entrypoints
 
 `//agentplane/env/runtime/cmd:agentplane-environment-runtime` runs the environment owner,

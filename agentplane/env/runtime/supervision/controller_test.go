@@ -30,6 +30,75 @@ const (
 	processTestTimeout                        = 10 * time.Second
 )
 
+func TestProcessControllersShareEngineWithDistinctNamespaceOwnership(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		store := state.WrapCore(namespaced.NewState(inmem.Build))
+		engine, err := runtime.NewRuntime(store, zap.L().Named("shared-process-test"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var workers sync.WaitGroup
+		const runtimeNamespace resource.Namespace = "environment-runtime"
+		const hostNamespace resource.Namespace = "runner"
+		runtimeHost := NewHost(ctx, store, runtimeNamespace, &workers, func(err error) { t.Errorf("Runtime process: %v", err) })
+		harnessHost := NewHost(ctx, store, hostNamespace, &workers, func(err error) { t.Errorf("Host process: %v", err) })
+		for _, host := range []*Host{runtimeHost, harnessHost} {
+			if err := engine.RegisterQController(host.Controller()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		engineDone := make(chan error, 1)
+		go func() { engineDone <- engine.Run(ctx) }()
+		defer func() {
+			cancel()
+			if err := <-engineDone; err != nil {
+				t.Errorf("shared engine: %v", err)
+			}
+			workers.Wait()
+		}()
+		for _, pair := range []struct {
+			host  *Host
+			owner string
+		}{{runtimeHost, "environment-runtime"}, {harnessHost, "harness-host"}} {
+			finished := make(chan error, 1)
+			var once sync.Once
+			if err := pair.host.requestNative(ctx, "same-id", DesiredState{Owner: pair.owner, StopTimeout: time.Second}, func(context.Context) (*Instance, error) {
+				return &Instance{Done: finished, Stop: func(context.Context) error { once.Do(func() { close(finished) }); return nil }}, nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, pair := range []struct {
+			host  *Host
+			owner string
+		}{{runtimeHost, "environment-runtime"}, {harnessHost, "harness-host"}} {
+			var current Status
+			for range 20 {
+				synctest.Wait()
+				current, _, err = ReadStatus(ctx, store, pair.host.namespace, "same-id")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if current.Phase == Running {
+					break
+				}
+			}
+			if current.Phase != Running || current.Owner != pair.owner {
+				t.Fatalf("%s status = %+v", pair.host.namespace, current)
+			}
+			desired, err := store.Get(ctx, resourceFor(pair.host.namespace, "same-id", DesiredState{}).Metadata())
+			if err != nil || !desired.Metadata().Finalizers().Has(pair.host.Controller().Name()) {
+				t.Fatalf("%s finalizer missing: desired=%v err=%v", pair.host.namespace, desired, err)
+			}
+			if err := pair.host.requestStop("same-id"); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+}
+
 type processTestRequestSpec struct {
 	Active        bool
 	Generation    uint64

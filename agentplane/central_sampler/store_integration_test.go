@@ -19,9 +19,24 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/session_instructions"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
+
+const fixturePlatformInstructions = "Fixture Agentplane platform guidance."
+
+func openStoreSession(t *testing.T, store *Store, request *samplerpb.OpenSessionRequest, ownerUID string, api protocol.APIStyle) (*Session, error) {
+	t.Helper()
+	if request.GetExecutor() == nil {
+		request.Executor = &sandboxespb.SandboxDestination{
+			Owner:   &sandboxespb.ServiceAccount{Namespace: "fixture", Name: "executor"},
+			Sandbox: "fixture-sandbox", SandboxUid: "fixture-sandbox-uid",
+		}
+	}
+	platformInstructions := fixturePlatformInstructions
+	return store.OpenSession(t.Context(), request, ownerUID, api, &platformInstructions)
+}
 
 func openSessionForStore(t *testing.T, store *Store, setup string) *Session {
 	t.Helper()
@@ -32,11 +47,148 @@ func openSessionForStore(t *testing.T, store *Store, setup string) *Session {
 		},
 		SetupScript: &setup,
 	}
-	session, err := store.OpenSession(t.Context(), request, "fixture-account", protocol.APIStyleResponses)
+	session, err := openStoreSession(t, store, request, "fixture-account", protocol.APIStyleResponses)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return session
+}
+
+func TestStoreOpeningFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) {
+	store := newTestStore(t)
+	guideA, guideB := "Fixture platform guide A.", "Fixture platform guide B."
+	briefing := "\n  Fixture caller briefing.\n"
+	request := &samplerpb.OpenSessionRequest{
+		SessionId: uuid.NewString(),
+		Spec: &sessionpb.SessionSpec{
+			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model", Instructions: briefing,
+		},
+		Executor: &sandboxespb.SandboxDestination{
+			Owner:   &sandboxespb.ServiceAccount{Namespace: "fixture-executor-namespace", Name: "fixture-execution-account"},
+			Sandbox: "fixture-executor", SandboxUid: "fixture-executor-uid",
+		},
+	}
+	checkDestination := func(prompt, sessionID string) {
+		t.Helper()
+		start := strings.IndexByte(prompt, '{')
+		if start < 0 {
+			t.Fatal("stored prompt has no structured notification destination")
+		}
+		var destination sessioninstructions.Destination
+		if err := json.NewDecoder(strings.NewReader(prompt[start:])).Decode(&destination); err != nil {
+			t.Fatal(err)
+		}
+		if destination.SessionID != sessionID || destination.Sandbox.Namespace != request.Executor.Owner.Namespace ||
+			destination.Sandbox.Name != request.Executor.Sandbox || destination.Sandbox.UID != request.Executor.SandboxUid {
+			t.Fatalf("notification destination=%+v, want executor=%v child=%q", destination, request.Executor, sessionID)
+		}
+	}
+	opened, err := store.OpenSession(t.Context(), request, "fixture-caller-uid", protocol.APIStyleResponses, &guideA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var storedRequest samplerpb.OpenSessionRequest
+	if err := proto.Unmarshal(opened.Configuration, &storedRequest); err != nil {
+		t.Fatal(err)
+	}
+	if !proto.Equal(&storedRequest, request) {
+		t.Fatalf("stored opening rewrote the raw request: %v", &storedRequest)
+	}
+	owner, err := store.Claim(t.Context(), opened.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AppendInput(t.Context(), owner, "Fixture existing conversation input."); err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.Read(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.Instructions == nil || !strings.Contains(*before.Instructions, guideA) ||
+		!strings.Contains(*before.Instructions, strings.TrimSpace(briefing)) {
+		t.Fatalf("stored prompt did not retain both guide and briefing: %v", before.Instructions)
+	}
+	checkDestination(*before.Instructions, request.SessionId)
+	beforeContext, err := json.Marshal(before.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := store.OpenSession(t.Context(), proto.Clone(request).(*samplerpb.OpenSessionRequest), "fixture-caller-uid", protocol.APIStyleResponses, &guideB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.ConversationID != opened.ConversationID || !bytes.Equal(reopened.Configuration, opened.Configuration) {
+		t.Fatal("duplicate open replaced the conversation or raw opening")
+	}
+	after, err := store.Read(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterContext, err := json.Marshal(after.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Instructions == nil || *after.Instructions != *before.Instructions || !bytes.Equal(beforeContext, afterContext) {
+		t.Fatal("duplicate open changed the frozen prompt or conversation context")
+	}
+	changed := proto.Clone(request).(*samplerpb.OpenSessionRequest)
+	changed.Spec.Instructions = "Fixture replacement briefing."
+	if _, err := store.OpenSession(t.Context(), changed, "fixture-caller-uid", protocol.APIStyleResponses, &guideB); !errors.Is(err, ErrConflict) {
+		t.Fatalf("changed caller briefing error=%v, want ErrConflict", err)
+	}
+	freshRequest := proto.Clone(request).(*samplerpb.OpenSessionRequest)
+	freshRequest.SessionId = uuid.NewString()
+	fresh, err := store.OpenSession(t.Context(), freshRequest, "fixture-caller-uid", protocol.APIStyleResponses, &guideB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	freshOwner, err := store.Claim(t.Context(), fresh.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	freshConversation, err := store.Read(t.Context(), freshOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if freshConversation.Instructions == nil || !strings.Contains(*freshConversation.Instructions, guideB) || strings.Contains(*freshConversation.Instructions, guideA) {
+		t.Fatal("new Session did not receive the current guide")
+	}
+	checkDestination(*freshConversation.Instructions, freshRequest.SessionId)
+}
+
+func TestStoreOpeningWithoutPlatformGuidanceKeepsCallerPromptAcrossActivation(t *testing.T) {
+	store := newTestStore(t)
+	request := &samplerpb.OpenSessionRequest{
+		SessionId: uuid.NewString(),
+		Spec: &sessionpb.SessionSpec{
+			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model", Instructions: "\n  Fixture raw caller prompt.\n",
+		},
+		Executor: &sandboxespb.SandboxDestination{
+			Owner:   &sandboxespb.ServiceAccount{Namespace: "fixture", Name: "fixture-executor"},
+			Sandbox: "fixture-executor", SandboxUid: "fixture-executor-uid",
+		},
+	}
+	opened, err := store.OpenSession(t.Context(), request, "fixture-caller-uid", protocol.APIStyleResponses, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := store.Claim(t.Context(), opened.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guide := "Fixture enabled platform guide."
+	reopened, err := store.OpenSession(t.Context(), request, "fixture-caller-uid", protocol.APIStyleResponses, &guide)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := store.Read(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.ConversationID != opened.ConversationID || conversation.Instructions == nil || *conversation.Instructions != request.Spec.Instructions {
+		t.Fatal("guide activation changed a previously opened caller-only conversation")
+	}
 }
 
 func TestStoreFencesEveryWriteToTheLiveLeaseGeneration(t *testing.T) {
@@ -126,7 +278,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	}
 	const previousIncarnationUID = "fixture-previous-incarnation"
 	const replacementIncarnationUID = "fixture-replacement-incarnation"
-	session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
+	session, err := openStoreSession(t, store, &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
 			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
@@ -648,7 +800,7 @@ func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
 	for _, api := range []protocol.APIStyle{protocol.APIStyleResponses, protocol.APIStyleAnthropicMessages} {
 		t.Run(string(api), func(t *testing.T) {
 			store := newTestStore(t)
-			session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
+			session, err := openStoreSession(t, store, &samplerpb.OpenSessionRequest{
 				SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{
 					Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
 				},
@@ -1517,7 +1669,7 @@ func TestDescribePreservesSessionConfigurationAndUpdatesModel(t *testing.T) {
 		Owner:   &sandboxespb.ServiceAccount{Namespace: "fixture", Name: "executor"},
 		Sandbox: "fixture-sandbox", SandboxUid: "fixture-sandbox-uid",
 	}
-	session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
+	session, err := openStoreSession(t, store, &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(), Spec: spec, Executor: executor, ExpectedIncarnationUid: "fixture-incarnation-uid",
 	}, "fixture-account", protocol.APIStyleResponses)
 	if err != nil {
@@ -1826,14 +1978,14 @@ func TestStoreReopeningIgnoresRetiredSessionRouting(t *testing.T) {
 	request := &samplerpb.OpenSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model"}}
 	legacy := proto.Clone(request).(*samplerpb.OpenSessionRequest)
 	legacy.Spec.ProtoReflect().SetUnknown([]byte{0x32, 0x00})
-	if _, err := store.OpenSession(t.Context(), legacy, "fixture-account", protocol.APIStyleResponses); err != nil {
+	if _, err := openStoreSession(t, store, legacy, "fixture-account", protocol.APIStyleResponses); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.OpenSession(t.Context(), request, "fixture-account", protocol.APIStyleResponses); err != nil {
+	if _, err := openStoreSession(t, store, request, "fixture-account", protocol.APIStyleResponses); err != nil {
 		t.Fatalf("reopening with retired metadata: %v", err)
 	}
 	request.Spec.Model = "different"
-	if _, err := store.OpenSession(t.Context(), request, "fixture-account", protocol.APIStyleResponses); !errors.Is(err, ErrConflict) {
+	if _, err := openStoreSession(t, store, request, "fixture-account", protocol.APIStyleResponses); !errors.Is(err, ErrConflict) {
 		t.Fatalf("changed session spec accepted: %v", err)
 	}
 }

@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/bootstrap"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 )
 
@@ -67,6 +69,27 @@ func TestCanceledBootstrapWaiterDoesNotCancelWorkAndCloseWaits(t *testing.T) {
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
 	waitRuntime(t, r, r.isClosing, "Runtime close request")
+	callerCtx, cancelCaller := context.WithCancel(context.Background())
+	cancelCaller()
+	if err := r.Close(callerCtx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled Close waiter = %v, want context cancellation", err)
+	}
+	waitRuntime(t, r, func() bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.desired.Mode == lifecycle.Closing
+	}, "published Runtime closing generation")
+	r.mu.Lock()
+	closeGeneration := r.desired.Generation
+	r.mu.Unlock()
+	waitRuntime(t, r, func() bool {
+		status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
+		return err == nil && found && status.Generation == closeGeneration
+	}, "generation-bound Runtime Close status")
+	status, _, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
+	if err != nil || status.Stage == lifecycle.RuntimeCloseReadyToJoin {
+		t.Fatalf("Close status during accepted bootstrap = %+v, %v", status, err)
+	}
 	select {
 	case err := <-closeDone:
 		t.Fatalf("Close returned while the accepted bootstrap was running: %v", err)
@@ -92,6 +115,39 @@ func TestCanceledBootstrapWaiterDoesNotCancelWorkAndCloseWaits(t *testing.T) {
 	}
 	if data, err := os.ReadFile(count); err != nil || string(data) != "b" {
 		t.Fatalf("bootstrap effect after restart = %q, %v; want one execution", data, err)
+	}
+}
+
+func TestRuntimeCloseEngineCancelJoinsBootstrapWaitAndRetainsOwner(t *testing.T) {
+	stateDir := t.TempDir()
+	started := filepath.Join(stateDir, "bootstrap-started")
+	release := filepath.Join(stateDir, "bootstrap-release")
+	script := fmt.Sprintf(": > %s\nwhile [ ! -f %s ]; do sleep 0.01; done", shellQuote(started), shellQuote(release))
+	proxy := modelConfigServer(t)
+	config := lifecycleConfig(t, proxy.URL, t.TempDir(), &script, "/bin/false")
+	config.StateDir = stateDir
+	config.expectCloseError = true
+	r := newLifecycleRunner(t, config)
+	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })
+	waitForFile(t, started)
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- r.Close(context.Background()) }()
+	waitRuntime(t, r, func() bool {
+		status, found, err := lifecycle.ReadRuntimeCloseStatus(context.Background(), r.lifecycleState)
+		return err == nil && found && status.Stage == lifecycle.RuntimeCloseBootstrapSettling
+	}, "Runtime bootstrap settlement barrier")
+	r.lifecycleCancel()
+	select {
+	case <-r.lifecycleDone:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("Close worker held the canceled COSI engine waiting for bootstrap status")
+	}
+	if err := waitClose(t, closeDone); err == nil {
+		t.Fatal("Close succeeded after its lifecycle engine was canceled")
+	}
+	if owner, err := openEnvironmentOwner(stateDir); err == nil {
+		_ = owner.Close()
+		t.Fatal("engine cancellation released environment owner")
 	}
 }
 

@@ -19,6 +19,14 @@ const hostStartupTimeout = 90 * time.Second
 // Runtime owns the environment lifecycle and management-process lifetime.
 func (r *Runtime) Run(ctx context.Context) error {
 	if err := r.startHost(ctx); err != nil {
+		r.lifecycleStartMu.Lock()
+		unsafe := r.lifecycleInitErr != nil
+		r.lifecycleStartMu.Unlock()
+		if unsafe {
+			// No Host native work has started. The partial controller set cannot
+			// be run safely; retain the environment owner for process-level fencing.
+			return fmt.Errorf("start Harness Host: %w", err)
+		}
 		return errors.Join(fmt.Errorf("start Harness Host: %w", err), r.Close(context.Background()))
 	}
 	startupCtx, cancelStartup := context.WithTimeout(ctx, hostStartupTimeout)
@@ -52,6 +60,14 @@ func (r *Runtime) Run(ctx context.Context) error {
 }
 
 func (r *Runtime) startHost(ctx context.Context) error {
+	r.lifecycleStartMu.Lock()
+	defer r.lifecycleStartMu.Unlock()
+	r.mu.Lock()
+	closing := r.closing
+	r.mu.Unlock()
+	if closing {
+		return errors.New("environment Runtime is closing")
+	}
 	config := r.config.HostConfig
 	if r.config.CodexExecServer != nil {
 		config.ExecServerURL = r.config.CodexExecServer.URL
@@ -65,8 +81,12 @@ func (r *Runtime) startHost(ctx context.Context) error {
 		// supervisor would race it for native and workspace-helper exits.
 		config.ProcessSupervisor = r.supervisor
 	}
-	host, err := harnesshost.New(config)
+	if r.deps.beforeHostConstruction != nil {
+		r.deps.beforeHostConstruction()
+	}
+	host, err := harnesshost.NewEmbedded(config, r.lifecycleState, r.lifecycleEngine, r.lifecycleDone)
 	if err != nil {
+		r.lifecycleInitErr = err
 		return err
 	}
 	hostCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
@@ -75,6 +95,7 @@ func (r *Runtime) startHost(ctx context.Context) error {
 	r.hostLifetime = process
 	r.hostExit = make(chan childExit, 1)
 	r.mu.Unlock()
+	r.startLifecycleEngineLocked()
 	go func() {
 		process.err = host.Run(hostCtx, r.config.HostIngress, r)
 		close(process.done)
@@ -111,16 +132,12 @@ type embeddedHostLifetime struct {
 
 func (p *embeddedHostLifetime) Stop(ctx context.Context) error {
 	p.cancel()
-	select {
-	case <-p.done:
-		// Run joins its own workers before returning. Close's cached result
-		// distinguishes successful native cleanup from a lifecycle-channel
-		// failure that caused Run to return an error.
-		return p.host.Close(ctx)
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return ctx.Err()
 }
+
+func (p *embeddedHostLifetime) WaitClosed(ctx context.Context) error { return p.host.WaitClosed(ctx) }
+
+func (p *embeddedHostLifetime) Cleanup(ctx context.Context) error { return p.host.Close(ctx) }
 
 func (p *embeddedHostLifetime) Wait(ctx context.Context) (int, error) {
 	select {
@@ -141,9 +158,10 @@ func (r *Runtime) waitForInitialHost(ctx context.Context) error {
 			r.mu.Unlock()
 			return errors.New("Runtime failed while starting Harness Host")
 		}
+		report := r.hostReportLocked()
 		if r.host != nil && r.host.connected && r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_INACTIVE &&
-			r.host.report != nil && r.host.report.Ready && r.host.report.NativeStopped &&
-			protoEqualBindings(r.host.report.Binding, r.intent.Binding) {
+			report != nil && report.Ready && report.NativeStopped &&
+			protoEqualBindings(report.Binding, r.intent.Binding) {
 			r.mu.Unlock()
 			return nil
 		}

@@ -26,7 +26,13 @@ environment generation it applied. Runtime applies a
 `LifecycleIntent` containing the Sandbox UID, incarnation UID, mode and seal UID. The initial mode
 is `INACTIVE`. Session RPCs are forwarded only after the Host reports `ready` for the exact binding.
 Runtime passes a copied binding with each direct Session call; Host checks it at ingress and inside
-its admission barrier. Intent and report snapshots are copied across the ownership boundary.
+its admission barrier. Runtime publishes immutable typed Host intent in the shared COSI store. A dedicated controller
+applies each intent once and records its exact binding and Execution fence acknowledgement before
+Runtime can finish that barrier. Failed or uncertain application is terminal; controller restart does
+not replay it. A separate COSI controller publishes immutable Host report snapshots while application waits for
+Session setup. Admission and drain waiters read that shared report for the exact applied intent,
+including its same-generation Execution fence value; an older ready sample cannot reopen admission
+during fence application. Engine shutdown joins both controllers before owner release.
 
 For quiesce and replacement, Runtime first asks Host to stop admissions and drain native work.
 `native_stopped` is reported only after admitted setup, Session calls, shared app-server work and
@@ -44,14 +50,33 @@ fenced.
 
 Execution calls admitted through Runtime's public Gateway-facing gRPC server pass its control
 interceptors, epoch and scope checks, and admission accounting before Runtime calls the embedded
-adapter directly. An OpenSession stream uses the public server stream with an epoch-cancelled
+adapter directly. One Runtime-owned lifetime holds the native handle and immutable incarnation UID;
+admission reads the adapter from that owner and closes immediately on its backend loss or stop request,
+without waiting for a COSI event. An uncertain fence retains that owner with admission closed.
+An OpenSession stream uses the public server stream with an epoch-cancelled
 context; cancellation and adapter shutdown settle its workers before native backend fencing.
+
+Incarnation adoption and conditional Quiesce are sequence-bound requests to Runtime's single COSI
+lifecycle coordinator, which also owns Close. Each blocking Host, Execution and durable-state boundary publishes its
+stage before a Runtime-owned worker performs it; the Gateway waits for the matching terminal
+status while holding transition serialization. A canceled WatchState epoch stops subsequent
+adoption stages and cannot release a successor until any in-flight Execution start has a proven
+fence. A Running intent already published by that epoch remains current until a successor or
+Close requests its own drain. A prior requested drain is reconciled against its exact binding
+instead of issuing another stop generation. Quiesce seals durably before publishing its intent;
+repeated requests preserve a healthy generation. Close cancels an active transition and waits
+for its settlement before preparing shutdown.
 
 SIGTERM follows the same Host drain and Execution fence path. When shutdown does not have an
 incarnation seal request, Runtime sends `CLOSING` with an empty seal UID; this drains local work
-without claiming a durable History seal. Runtime waits for accepted bootstrap work to settle before
-releasing its legacy owner lock. A failed bootstrap is a settled durable failure and does not by
-itself make process cleanup fail.
+without claiming a durable History seal. Runtime publishes a generation-bound Closing request to
+its COSI lifecycle engine. Its aggregate coordinator advances only after the matching Host native
+stop, Execution call drain and backend fence, optional exact History seal acknowledgement, Host join,
+and accepted bootstrap settlement. Blocking steps run in Runtime-owned workers. The aggregate's
+ready-to-join status is not a successful Close: Runtime then joins its engine and workers, fences
+the Pod PID namespace when applicable, and releases its legacy owner lock last. A failed or uncertain
+fence keeps that lock; canceling a Close caller only stops that caller's wait. A failed bootstrap is
+a settled durable failure and does not by itself make process cleanup fail.
 While bootstrap is running, Runtime reports the `Bootstrap` autosuspend blocker; it clears when the
 bootstrap reaches a terminal state.
 
@@ -107,11 +132,11 @@ between them. The same immutable config files are passed to Host; Runtime constr
 per-incarnation Execution API config in memory.
 
 Runtime and Host call each other directly in all supervision modes. Runtime checks its embedded
-Execution owner, backend lifetime and serving state for Host readiness; the Execution health socket remains an
-Execution-local startup check. The Pod execution companion retains its separate external socket.
+Execution owner, backend lifetime and serving state for Host readiness. Native protocol probing
+establishes Execution readiness. The Pod execution companion retains its separate external socket.
 
-On startup Runtime locks the legacy owner inode before opening the old Session directory, fences
-previous Host and Execution owners, starts Host,
-and waits for an exact-binding initial `INACTIVE`, `ready`, `native_stopped` report before opening
-Gateway control. A Gateway incarnation is not admitted until the previous incarnation has completed
-its lifecycle and process fences.
+On startup Runtime locks its environment owner inode before opening the Session directory, starts
+Host, and waits for an exact-binding initial `INACTIVE`, `ready`, `native_stopped` report before
+opening Gateway control. During incarnation adoption, Execution fences its prior native owner before
+the new execution lifetime is admitted. A Gateway incarnation is not admitted until the previous
+incarnation has completed its lifecycle and process fences.

@@ -15,6 +15,22 @@ uses TokenReview and the allowed-account policy; Session UUID knowledge grants n
 Reusing an identifier with a different payload conflicts. The integration app owns neither this
 admission nor the continuation database.
 
+`spec.instructions` is the caller's briefing. Callers that expose an additive
+`additional_instructions` parameter map it to this field; it never replaces Agentplane guidance.
+At the first durable open, the Store composes the configured `platform_instructions`, the current
+executor Sandbox and child Session notification destination, then the caller briefing. It persists
+that effective prompt separately from the raw opening request, which remains the idempotency key.
+An exact duplicate open reuses the stored prompt even if the configured guide has changed; a new
+Session receives the current guide. Provider and harness base instructions remain separate.
+
+If `platform_instructions` is omitted, startup logs a warning and new Sessions retain the previous
+caller-only prompt. An explicitly configured guide must be nonempty. This allows the reader to
+deploy before managed configuration enables the guide; the omission is controlled by the operator,
+never by a Session's opening request. Enabling or changing the guide affects only new Sessions.
+
+Opening or briefing a Session does not start a provider turn. Optional setup may execute first, but
+the first model turn starts only after an explicit `SubmitInput`.
+
 `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, `InterruptTurn` and `Compact` admit durable,
 idempotent commands. A returned admission is not execution completion. `GetCommand` exposes its
 outcome; `FollowEvents` replays committed evidence. `GetSession` and `ListSessions` provide persisted
@@ -165,7 +181,7 @@ The pinned code-mode host V1 passes `delegate/response` errors to JavaScript as 
 the delegate response has a `message` field but no structured error or cause field. Catching code
 must parse the JSON string for these fields; native `Error` properties require a host protocol change.
 
-Process handles inherit upstream's detached retention limit: pinned Codex 0.162.1 retains a
+Process handles inherit upstream's detached retention limit: pinned Codex 0.166.0 retains a
 disconnected native session for 30 seconds, then expires it and terminates processes still running
 in that session. This is upstream behavior, not sampler or adapter persistence. The adapter's gRPC
 `OpenSession` stream owns its local WebSocket connection to that Codex session; stream lifetime and
@@ -483,8 +499,8 @@ on live adapter connections, not Codex native sessions, sampler conversations, o
 `max_live_sessions` setting. The sampler releases its connection when no live cells or processes
 require it; Runner drain or observer fencing closes it as well. The adapter introduces no durable
 session persistence or process policy. A stream loss leaves the native Codex session detached for up
-to 30 seconds, after which pinned Codex 0.162.1 expires it and terminates remaining processes. See
-the [Executor API resource and lifecycle contract](../executor/README.md) for connection budgets
+to 30 seconds, after which pinned Codex 0.166.0 expires it and terminates remaining processes. See
+the [Executor API resource and lifecycle contract](../env/runtime/execution/SPEC.md) for connection budgets
 and ownership.
 
 Each unary operation carries the sampler's Sandbox scope, execution-session ID and durable nested
@@ -496,7 +512,8 @@ frames to the sampler's existing boundary journal without exposing native JSON a
 For `view_image` block reads, frame payloads are stored as byte counts and SHA-256 digests so raw
 image bytes remain excluded from the journal. Dispatcher does not relay tools. Every provider
 request carries Codex's `gpt-6.1-sol` base instructions as Responses `instructions` or Anthropic
-`system`, whatever the model. Standing instructions are supported; remote
+`system`, whatever the model. The stored effective Session prompt is added as standing guidance;
+it does not replace the provider/harness base. Standing instructions are supported; remote
 AGENTS.md discovery, subagents, skills/MCP and approvals/hooks are deferred.
 
 The conversation carries Codex's `<environment_context>` user message: the Session cwd, the name of

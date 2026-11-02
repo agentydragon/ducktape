@@ -170,7 +170,7 @@ func serveControl(
 				return
 			}
 			var responseStatus control.Status
-			if request.Operation == "claim" {
+			if request.Operation == "claim" && request.Generation == "" {
 				state.mu.Lock()
 				if state.status.Owned || state.fencing {
 					state.mu.Unlock()
@@ -215,7 +215,10 @@ func serveControl(
 					return
 				}
 				go waitForExecutor(process, expectedExit, func() { state.unexpectedExit(process) })
-			} else if (request.Operation != "inspect" && request.Operation != "fence") || len(request.Environment) != 0 {
+			} else if len(request.Environment) != 0 ||
+				(request.Operation == "inspect" && request.Generation != "") ||
+				(request.Operation == "fence" && request.Generation == "") ||
+				(request.Operation != "inspect" && request.Operation != "fence") {
 				return
 			} else {
 				state.mu.Lock()
@@ -235,17 +238,17 @@ func serveControl(
 				// serving only after the workload is proven absent.
 				var one [1]byte
 				_, _ = c.Read(one[:])
-				state.requestFence()
+				state.requestFence(responseStatus.Generation)
 				return
 			}
 			if request.Operation == "fence" {
-				state.requestFence()
+				state.requestFence(request.Generation)
 				return
 			}
 			_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
 			var next control.Request
-			if decoder.Decode(&next) == nil && next.Operation == "fence" {
-				state.requestFence()
+			if decoder.Decode(&next) == nil && next.Operation == "fence" && next.Generation == responseStatus.Generation && len(next.Environment) == 0 {
+				state.requestFence(next.Generation)
 			}
 		}(connection)
 	}
@@ -258,22 +261,31 @@ type companionOwnership struct {
 	lease         net.Conn
 	expectedExit  *atomic.Bool
 	fencing       bool
+	pendingFence  string
 	fenceRequests chan struct{}
 }
 
-func (s *companionOwnership) requestFence() {
+func (s *companionOwnership) requestFence(generation string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if generation == "" || s.status.Generation != generation || !s.status.Owned || s.fencing || s.pendingFence == generation {
+		return
+	}
+	s.pendingFence = generation
 	select {
 	case s.fenceRequests <- struct{}{}:
 	default:
+		// A previous wake-up will consume pendingFence. Keep the newest generation.
 	}
 }
 
 func (s *companionOwnership) unexpectedExit(process *supervision.Process) {
 	s.mu.Lock()
 	unexpected := s.process == process && s.expectedExit != nil && !s.expectedExit.Load()
+	generation := s.status.Generation
 	s.mu.Unlock()
 	if unexpected {
-		s.requestFence()
+		s.requestFence(generation)
 	}
 }
 
@@ -288,7 +300,9 @@ func (s *companionOwnership) fenceLoop(
 			return
 		case <-s.fenceRequests:
 			s.mu.Lock()
-			if !s.status.Owned || s.fencing {
+			generation := s.pendingFence
+			s.pendingFence = ""
+			if generation == "" || s.status.Generation != generation || !s.status.Owned || s.fencing {
 				s.mu.Unlock()
 				continue
 			}

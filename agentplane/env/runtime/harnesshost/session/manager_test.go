@@ -44,7 +44,7 @@ func withTestSessionFacilities(t *testing.T, config Config) Config {
 	}
 	bootstrapHost, err := bootstrap.NewHost(bootstrap.Config{}, bootstrap.Dependencies{
 		Context: config.Context, State: config.State, Workers: &workers,
-		Admission: func(ctx context.Context, _ runnerlifecycle.Desired, work func(context.Context) error) error {
+		Admission: func(ctx context.Context, _ runnerlifecycle.EnvironmentDesired, work func(context.Context) error) error {
 			return work(ctx)
 		},
 		OnError: func(err error) {

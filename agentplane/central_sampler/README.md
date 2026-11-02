@@ -1,7 +1,7 @@
 # Central sampler
 
 An independent, opt-in runner type backed by its own PostgreSQL database. The sampler owns the
-Responses and native Anthropic Messages loops and lazily starts one shared pinned **Codex 0.162.1** JavaScript host for many
+Responses and native Anthropic Messages loops and lazily starts one shared pinned **Codex 0.166.0** JavaScript host for many
 logical Sessions. `store()` / `load()` values persist across cells and idle turns in that host's
 memory. Each code-mode cell runs in a fresh V8 isolate with no JavaScript globals shared between
 cells, and provider continuation remains in the sampler. `notify()` outputs are queued durably and
@@ -52,7 +52,8 @@ Gateway and History. The service and its shared JavaScript host use the Pod cont
 CPU and memory limits.
 
 Server-owned configuration names the service, provider connections and credential sources,
-model contracts and per-model reasoning-effort allowlists, TokenReview audience and allowed caller accounts,
+model contracts and per-model reasoning-effort allowlists, the rendered Agentplane
+optional `platform_instructions`, TokenReview audience and allowed caller accounts,
 code-mode host binary, executor-side Codex path, logs, concurrency/deadlines and limits. Each named connection uses `auth.type` (`bearer` or `anthropic_api_key`) and exactly one of
 `auth.credential` or `auth.credential_file`; the service reads the file before each request so projected service-account tokens can rotate. `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL`
 overrides `database_url` in the JSON settings, so database credentials can stay in a Secret-backed
@@ -61,7 +62,7 @@ environment variable. Gateway mode requires `gateway_target` and a rotating proj
 local-test targets. It keeps one `OpenSession` gRPC stream to Runner and sends process and file
 operations as typed unary RPCs. Runner owns the connection to Codex's exec-server; the gRPC stream
 is not the Codex session itself. Closing the stream releases that adapter connection without
-sending a process-termination request. Pinned Codex 0.162.1 keeps a detached native session for up
+sending a process-termination request. Pinned Codex 0.166.0 keeps a detached native session for up
 to 30 seconds, then expires it and terminates processes still running in it. The adapter adds no
 durable session storage or new process policy. Unary request IDs correlate with the
 sampler's durable intent journal; they do not deduplicate or cache server results. Configure
@@ -99,7 +100,7 @@ before stopping the shared host. The gRPC server can durably admit commands unti
 other replicas continue admitting throughout. Active effects retain the existing bounded drain and
 uncertain outcome handling. The Executor adapter separately limits each Runner to eight open or opening
 streams; that is a connection limit, not a limit on resident sampler Sessions or active execution.
-See the [Executor API resource and lifecycle contract](../executor/README.md).
+See the [Executor API resource and lifecycle contract](../env/runtime/execution/SPEC.md).
 
 Host failure interrupts pending work for every attached Session; later code-mode work may start a
 fresh host, but in-flight provider or executor effects are never replayed automatically. Configure CPU
@@ -119,7 +120,10 @@ container limits stop meeting the production resource contract.
   account in `ingress.sampler_accounts`; it retains the distinct executor Sandbox identity.
 - The app's `HARNESS_CENTRAL_SAMPLER` model list offers **Central sampler** alongside Codex and Claude.
   App and Actions callers do not supply service names or endpoints. A non-empty setup script runs once on the bound executor, in the resolved working directory,
-  before sampling starts. Its stdout, stderr and terminal outcome are retained in History.
+  before sampling starts. Opening only reserves the Session and may run setup; the first model turn
+  requires an explicit `SubmitInput`. Caller `additional_instructions` are an additive briefing
+  mapped into `SessionSpec.instructions`, after server-owned platform guidance and the child
+  notification destination. Its stdout, stderr and terminal outcome are retained in History.
 - LLM ingress must allow the sampler account in `central_sampler_accounts` to accept its
   `x-agentplane-session-id` claim. Ingress validates a canonical UUID and generates trusted
   metadata. Langfuse links filter by public Session ID; Sandbox identity describes execution.

@@ -217,14 +217,25 @@ def test_delete_yields_to_a_running_bazel_command(cache: FakeCache, proc: Path, 
     assert gc.recorded_inputs_of(cache.unreferenced).is_file()
 
 
-def test_report_names_entries_relative_to_the_cache(cache: FakeCache, proc: Path, mountinfo: Path) -> None:
+def test_report_summarizes_prunable_entries_and_retains_details_on_request(
+    cache: FakeCache, proc: Path, mountinfo: Path
+) -> None:
     entries = list(_scan(cache, proc, mountinfo).values())
+    name = f"{_hash('c')}/{_uuid('3')}"
+    compact = gc.render_report(entries, contents=cache.contents, include_kept=False, include_sizes=True)
+    detailed = gc.render_report(
+        entries, contents=cache.contents, include_kept=False, include_sizes=False, include_prunable=True
+    )
+    all_entries = gc.render_report(entries, contents=cache.contents, include_kept=True, include_sizes=False)
 
-    report = gc.render_report(entries, contents=cache.contents, include_kept=False, include_sizes=False)
-
-    rows = [line.split() for line in report.splitlines()[1:-1]]
-    assert sorted(row[0] for row in rows) == ["PRUNE", "REVIEW", "REVIEW"]
-    assert f"{_hash('c')}/{_uuid('3')}" in {row[2] for row in rows}
+    assert name not in compact
+    assert "1 prunable, 2 kept, 2 review" in compact
+    assert "prunable size unavailable" not in compact
+    assert str(cache.missing_inputs.relative_to(cache.contents)) in compact
+    assert name in detailed
+    assert str(cache.referenced.relative_to(cache.contents)) not in detailed
+    assert name in all_entries
+    assert str(cache.referenced.relative_to(cache.contents)) in all_entries
 
 
 @pytest.mark.parametrize("reason", [*gc.RetainedEntryReason, *gc.ReviewEntryReason], ids=str)

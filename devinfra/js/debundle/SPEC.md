@@ -1207,6 +1207,35 @@ Ordinary eager reads and synchronous callback reads stay between the known
 preceding and following writes of the binding, including `var` initializers
 and later assignments, even when the eager reader's source unit is pure.
 
+For ordinary synchronous functions and block-bodied arrows with simple
+parameters, the canonical index can retain a complete straight-line local
+body: simple declarations, local assignments and sequences, unconditional
+noncoercing values, and terminal return or throw. Execution initializes `var`
+locals to `undefined`, retains lexical TDZ and const-write errors, and applies
+local writes in source order. Only completing paths reach the next operation;
+binding observations retain callback-path provenance through ordinary outcome
+composition and invocation memos. Thrown capabilities remain conservatively
+published. The value operations use the shared literal-allocation transfers.
+Static field assignments through a local or parameter binding also execute in
+order when the receiver is one settled ordinary record allocated during this
+invocation and the field is an existing own data property. This permits local
+aliases, replacement of a parameter by a fresh record, and record self-links.
+Sites already represented in the heap or reachable through inputs or observed
+external bindings retain conservative handling because allocation generations
+are not distinguished.
+The receiver reference is evaluated before the right-hand side, even if that
+side replaces the binding. Stores join values in the shared allocation-site
+heap; they do not overwrite earlier abstract values. An unproved store stops
+ordered execution and conservatively summarizes the remaining body, retaining
+input, local and newly allocated capabilities and possible setter effects.
+Its precision loss identifies the assignment's source span.
+Calls, member reads, computed writes, branches, unknown free bindings, dynamic
+scope and unsupported syntax retain the conservative execution path. This
+coverage does not certify initializer effects or an imported provider summary.
+Certified record writes, writes through unrebound parameters and
+array-iteration writes retain their established execution path while their
+proof obligations are migrated to ordered operations.
+
 Synchronous execution also completes an exact member read from a TS enum
 object when, at the read, the binding is `PlainData`, no statement but its
 declaration writes it, its initializer has run, and the static key is one of
@@ -1644,6 +1673,15 @@ A native premise is an integrity flag on an intrinsic slot: `%Set%`,
 `%Object.freeze%`, `%Array.prototype%`, `%ArrayIteratorPrototype%`. A slot is
 intact when no write in the closed whole-program write census (§ Inferred
 native property-key domains) can reach it; it is unknown otherwise.
+
+An indexed eager static read of an unshadowed native binding's known own data
+property shares its exact binding and property-slot proof across synchronous
+execution, purity and heap ordering. This includes reads in computed class
+keys, such as `Symbol.dispose`. Receiver and key evaluation, other class
+initialization effects and invocation of the resulting value retain their
+ordinary checks. A shadowed binding, dynamic scope or unproved slot integrity
+keeps conservative lookup effects. Exact author inputs retain their declared
+operation and source-site scope.
 
 A `%Set%` or `%Object.freeze%` slot is an own data property of the global
 object or of a census constructor or namespace. A property write, update,
@@ -2107,23 +2145,35 @@ native identity or coercion behavior. Any unsupported input access or transfer
 declines the summary. A failed migrated query does not retry a different
 evaluator. Other supported bodies retain their existing strict source proof.
 
+Covered straight-line bodies use the same ordered local-operation executor as
+application execution. This includes local declarations and assignments,
+sequences, returns, and checked writes to existing own data fields of fresh
+ordinary records, including aliases and self-links. A provider query starts
+with scoped opaque parameters and an empty private heap. Only its parameters
+and instantiated locals can supply binding values. Every reached value
+judgment composes, including discarded expressions; input mutation, external
+captures, unproved field writes and possible abrupt completion decline the
+summary. Argument retention is derived by traversing the returned graph,
+including cycles. The query uses no additional source parse or AST evaluator.
+
 Source coverage excludes async/generator functions, defaults/rest/destructuring,
-extra statements, assignments, sequence/template syntax, other operators,
-member reads, computed/spread/accessor/prototype fields, calls, throws and
-control-flow statements. Every operand, test and arm must retain source coverage
+template syntax, other operators,
+member reads, computed/spread/accessor/prototype fields, calls and
+unsupported control-flow statements. A source-covered throw still prevents the
+allocation-only certificate. Every operand, test and arm must retain source coverage
 and covered access evidence; an outer supported operation cannot hide an
 unsupported or effectful child. Possible abrupt completion prevents the
 certificate. Local-assignment pre-evaluation and a complete synchronous
 execution outcome do not establish this certificate. Child transfer judgments
 and proof dependencies compose; this premise-free consumer
 declines any unexpected nonempty dependency set rather than discarding it.
-This bounded expression transfer is not general source-order execution coverage.
+Expression and ordered-body coverage remain bounded to these supported forms.
 
 A directly imported, stable top-level function or class declaration of another
 analyzed chunk receives a summary when every operation its call performs runs
 no other code. The body may read only its parameters and its own `const`/`let`
-bindings (`var` included; a read before the first declaration has no
-summary). It may create primitives, closures, and object or array literals with
+bindings (`var` reads before initialization yield `undefined`; lexical TDZ
+reads have no summary). It may create primitives, closures, and object or array literals with
 literal keys other than `__proto__`. It may construct an argument-free
 `Map`/`Set`/`WeakMap`/`WeakSet` whose global slot is intact in every analyzed
 chunk's census. A class may also define instance fields and write its declared

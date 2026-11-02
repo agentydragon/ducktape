@@ -118,7 +118,6 @@ TENANTS = {
     "monitoring",  # monitoring/mimir.py, monitoring/tempo.py, monitoring/grafana_instance.py
     "nix-cache",  # nix_cache/attic.py
     "ntfy",  # ntfy.py
-    "oci-cache",  # oci_cache/zot.py
     "plaid-mcp",  # plaid_mcp/db.py
     "public-coder-agent",  # public_coder/backup.py
     "session-backup",  # session_backup.py
@@ -362,7 +361,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 ),
                 "hdd-piraeus-102453": _volume_topology(
                     rack="hil-ovh-h109b04",
-                    storage="1700Gi",
+                    storage="2500Gi",  # This node has a larger HDD pool.
                     storage_class="piraeus-hdd-local",
                     disk="hdd",
                     replicas=1,

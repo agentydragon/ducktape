@@ -11,8 +11,8 @@ backend, process placement, collective resource limits and failure scope.
 
 Environment Runtime runs this service in-process and calls its adapter directly. Host asks Runtime
 for in-process readiness before starting its shared Codex app-server; Runtime owns startup, health,
-shutdown and fencing. The embedded service keeps a health-only Unix socket throughout its lifetime
-for Runtime's startup verification. In Pods, the `companion` subcommand runs as PID 1 in the isolated
+shutdown and fencing. Native protocol probing establishes readiness without a local listener. In Pods,
+the `companion` subcommand runs as PID 1 in the isolated
 Codex container and owns the native
 exec-server namespace. Gateway and the central sampler continue to use the unchanged `Executor` wire
 protocol. The independent service is exercised by
@@ -70,7 +70,7 @@ waits for the namespace to contain only PID 1 before publishing a fresh idle gen
 companion stays available for the next claim. An unexpected executor exit triggers the same
 process-domain fence and closes the ownership lease so Runtime can recover the backend. If the
 in-container proof fails, the companion exits so the outer runtime can fence the whole namespace.
-Runtime starts the API, waits for standard gRPC Health on the private socket, and joins its shutdown
+Runtime starts the API, waits for native protocol readiness, and joins its shutdown
 and 90-second backend fence before replacement. A failed cleanup is never an execution success receipt.
 
 All backends launch only `codex exec-server`; no harness configuration or provider credentials are
@@ -88,7 +88,7 @@ replays execution requests.
 
 - `adapter/`: typed process/file operations, native session and WebSocket lifetime, bounded frames and
   cancellation, used by both embedded and standalone service modes.
-- `codexexecserver/`: native launch/probe/fence backends and the COSI lifecycle used by Execution Service.
+- `codexexecserver/`: native launch/probe/fence backends.
 - `companion/`: Pod PID-1 ownership protocol and its client, shared reaper integration.
 - `service/`: environment identity, state-directory ownership and serving lifetime.
 - `cmd/`: executable entrypoint; `testing/`: real container service acceptance.
