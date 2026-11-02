@@ -102,8 +102,10 @@ type processHostSnapshot struct {
 // NewHost binds generic supervision to the caller's state, lifetime and worker barrier.
 func NewHost(ctx context.Context, store state.State, namespace resource.Namespace, domain Domain, workers *sync.WaitGroup, onError func(error)) *Host {
 	return &Host{
-		hostRegistry: &hostRegistry{state: store, namespace: namespace,
-			entries: make(map[string]*processHostEntry), retired: make(map[string]struct{})},
+		hostRegistry: &hostRegistry{
+			state: store, namespace: namespace,
+			entries: make(map[string]*processHostEntry), retired: make(map[string]struct{}),
+		},
 		ctx: ctx, domain: domain, workers: workers, onError: onError,
 	}
 }
