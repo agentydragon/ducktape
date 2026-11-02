@@ -138,6 +138,10 @@ func (r *Runtime) startExecutionService(ctx context.Context, config Config, inca
 	if err != nil {
 		return nil, err
 	}
+	serviceConfig.ProcessHost = r.processes
+	r.mu.Lock()
+	serviceConfig.ProcessGeneration = r.desired.Generation
+	r.mu.Unlock()
 	handle := newExecutionServiceHandle(serviceConfig, service.RunEmbedded)
 	stopUnready := func(cause error) (executionHandle, error) {
 		fenceCtx, cancel := context.WithTimeout(context.Background(), executionFenceGrace)

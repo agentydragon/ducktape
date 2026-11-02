@@ -117,6 +117,18 @@ type NativeConfig struct {
 	StateDir    string
 	Environment map[string]string
 	Supervisor  *supervision.Supervisor
+	// LaunchProcess binds an embedded native executor to Runtime's process
+	// controller. Standalone execution retains its own supervisor lifetime.
+	LaunchProcess func(context.Context, supervision.ProcessConfig) (*supervision.ManagedProcess, error)
+}
+
+type nativeProcess interface {
+	PID() int
+	Stdout() io.Reader
+	Stderr() io.Reader
+	Wait(context.Context) (int, error)
+	Stop(context.Context) error
+	ExitDescription() string
 }
 
 // NativeStart creates the platform-specific launch adapter used by the exec-server lifecycle.
@@ -132,20 +144,32 @@ func NativeStart(config NativeConfig) Start {
 		if config.Config.ContainerSocket != "" {
 			return claimContainer(ctx, config.Config.ContainerSocket, env)
 		}
-		if config.Supervisor == nil {
+		if config.Supervisor == nil && config.LaunchProcess == nil {
 			return nil, errors.New("Codex exec-server supervisor is not configured")
 		}
-		process, err := config.Supervisor.NewProcess(supervision.ProcessConfig{
-			Command:   []string{config.Binary, "exec-server", "--listen", config.Config.URL},
-			Dir:       config.StateDir,
-			Env:       env,
-			StopGrace: executorStopGrace,
-		})
-		if err != nil {
-			return nil, err
+		processConfig := supervision.ProcessConfig{
+			Command:      []string{config.Binary, "exec-server", "--listen", config.Config.URL},
+			Dir:          config.StateDir,
+			Env:          env,
+			StopGrace:    executorStopGrace,
+			FenceTimeout: fenceDeadline,
 		}
-		if err := process.Start(ctx); err != nil {
-			return nil, err
+		var process nativeProcess
+		if config.LaunchProcess != nil {
+			managed, err := config.LaunchProcess(ctx, processConfig)
+			if err != nil {
+				return nil, err
+			}
+			process = managed
+		} else {
+			native, err := config.Supervisor.NewProcess(processConfig)
+			if err != nil {
+				return nil, err
+			}
+			if err := native.Start(ctx); err != nil {
+				return nil, err
+			}
+			process = native
 		}
 		go func() { _, _ = io.Copy(io.Discard, process.Stdout()) }()
 		go func() {

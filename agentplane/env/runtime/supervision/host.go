@@ -71,6 +71,7 @@ type processHostEntry struct {
 	stop  *processStopSlot
 
 	revision uint64
+	systemd  SystemdObservation
 }
 
 type processHostSnapshot struct {
@@ -88,6 +89,7 @@ type processHostSnapshot struct {
 	stopDone    bool
 	stopErr     error
 	fenced      bool
+	systemd     SystemdObservation
 }
 
 // NewHost binds generic supervision to the caller's state, lifetime and worker barrier.
@@ -187,6 +189,7 @@ func (h *Host) snapshot(id string) (processHostSnapshot, bool) {
 	}
 
 	var snapshot processHostSnapshot
+	snapshot.systemd = entry.systemd
 	if start := entry.start; start != nil {
 		snapshot.startClaimed = true
 		snapshot.startDone = processSlotDone(start.done)
@@ -304,6 +307,21 @@ func (h *Host) runStart(entry *processHostEntry, start *processStartSlot) {
 	if stopForUnusableStart {
 		_ = h.requestStop(entry.id)
 	}
+}
+
+// observeSystemd records only newer observations for an immutable attempt ID.
+// Retired IDs cannot be registered again within this Host's lifetime.
+func (h *Host) observeSystemd(id string, observation SystemdObservation) {
+	h.mu.Lock()
+	entry := h.entries[id]
+	if entry == nil || observation.Revision <= entry.systemd.Revision {
+		h.mu.Unlock()
+		return
+	}
+	entry.systemd = observation
+	err := h.publishInputLocked(entry)
+	h.mu.Unlock()
+	h.notify(err)
 }
 
 func (h *Host) startObserverLocked(entry *processHostEntry, instance *Instance) {

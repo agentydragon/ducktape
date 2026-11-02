@@ -23,6 +23,18 @@ COSI-managed launches use `ProcessDesiredStates`, `ProcessStatuses` and a finali
 Launch callbacks and native handles stay in the registry. Teardown joins an in-flight start and
 fences any instance it returns before releasing the finalizer. Owners check remaining process
 intents before acknowledging cleanup; a reader observing leader exit cannot hide a failed fence.
+VM native-process status also carries the latest typed systemd observation for that attempt,
+including start-request acceptance or an unconfirmed reply, the expected and observed invocation IDs
+and captured cgroup. A lost start reply remains unconfirmed after later manager observations. The
+observed exit code or unknown-exit error is retained separately from later unit snapshots and is
+published before waiting for the domain fence.
+Workspace-helper diagnostics
+read this status rather than issuing a second manager query. A manager read error retains the last
+snapshot and marks it stale with the error. Observations may lag the manager; they are diagnostic
+facts, not evidence that a process domain is fenced. Pod processes have no systemd observation.
+Embedded VM Execution registers its exec-server with the Runtime process controller as well;
+standalone Execution retains its independent supervisor. Execution's managed fence timeout is
+90 seconds, independent of the unit's 5-second systemd stop grace.
 
 Runtime coordinates its embedded process owners with direct calls. Host reports native stop against the
 exact Runtime/Host boot IDs and lifecycle generation. Runtime fences Execution before authorizing
@@ -33,7 +45,7 @@ barriers. Host lifetime loss closes admission and drains native work without inv
 ## VM services
 
 The launchers use [go-systemd's D-Bus bindings](https://github.com/coreos/go-systemd/tree/v22.7.0/dbus)
-over systemd's root-only `/run/systemd/private` socket. The bindings own connection setup, job
+over the system API bus. The bindings own connection setup, job
 completion tracking and property-change subscriptions. Native launches are transient `Type=exec`
 services; they need no supervisor subprocess or `systemd-run` helper. Systemd applies resource and
 identity settings before exec. Native units use `Restart=no`; their owner decides whether a

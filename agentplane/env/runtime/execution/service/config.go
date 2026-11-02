@@ -30,6 +30,9 @@ type Config struct {
 	Backend          string                    `json:"backend"`
 	Readiness        codexexecserver.Readiness `json:"-"`
 	Systemd          *SystemdConfig            `json:"systemd,omitempty"`
+	// ProcessHost is supplied only by embedded Runtime, never by config files.
+	ProcessHost       *supervision.Host `json:"-"`
+	ProcessGeneration uint64            `json:"-"`
 }
 
 type SystemdConfig struct {

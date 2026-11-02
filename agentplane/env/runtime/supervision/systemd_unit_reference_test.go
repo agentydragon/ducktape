@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-
-	systemd "github.com/coreos/go-systemd/v22/dbus"
 )
 
 type fakeRetainedReferenceBus struct {
@@ -26,13 +24,13 @@ func (b *fakeRetainedReferenceBus) refUnit(ctx context.Context, _ string) error 
 	return nil
 }
 
-func TestSystemdUnitManagerReferenceOutlivesSetupContext(t *testing.T) {
+func TestSystemdUnitReferenceOutlivesSetupContext(t *testing.T) {
 	setupCtx, cancelSetup := context.WithCancel(context.Background())
 	bus := &fakeRetainedReferenceBus{connected: true}
 	var lifetime context.Context
-	reference, err := openSystemdUnitManagerReferenceWith(setupCtx, "fixture.service", func(life context.Context) (*systemd.Conn, systemdReferenceBus, error) {
+	reference, err := referenceSystemdUnitWith(setupCtx, "fixture.service", func(life context.Context) (systemdReferenceBus, error) {
 		lifetime = life
-		return nil, bus, nil
+		return bus, nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -52,15 +50,15 @@ func TestSystemdUnitManagerReferenceOutlivesSetupContext(t *testing.T) {
 	}
 }
 
-func TestSystemdUnitManagerReferenceSetupCancellationStopsDial(t *testing.T) {
+func TestSystemdUnitReferenceSetupCancellationStopsDial(t *testing.T) {
 	setupCtx, cancelSetup := context.WithCancel(context.Background())
 	dialStarted := make(chan struct{})
 	dialDone := make(chan error, 1)
 	go func() {
-		_, err := openSystemdUnitManagerReferenceWith(setupCtx, "fixture.service", func(life context.Context) (*systemd.Conn, systemdReferenceBus, error) {
+		_, err := referenceSystemdUnitWith(setupCtx, "fixture.service", func(life context.Context) (systemdReferenceBus, error) {
 			close(dialStarted)
 			<-life.Done()
-			return nil, nil, life.Err()
+			return nil, life.Err()
 		})
 		dialDone <- err
 	}()

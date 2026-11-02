@@ -35,9 +35,14 @@ func (h *Host) Launch(ctx context.Context, owner string, generation uint64, supe
 	}
 	p := &ManagedProcess{host: h, id: uuid.NewString(), native: native}
 	deadline, _ := ctx.Deadline()
+	stopTimeout := config.FenceTimeout
+	if stopTimeout == 0 {
+		stopTimeout = config.StopGrace + 5*time.Second
+	}
 	err = h.requestNative(ctx, p.id, DesiredState{
-		Owner: owner, Generation: generation, StartDeadline: deadline, StopTimeout: config.StopGrace + 5*time.Second,
+		Owner: owner, Generation: generation, StartDeadline: deadline, StopTimeout: stopTimeout,
 	}, func(startCtx context.Context) (*Instance, error) {
+		native.ObserveSystemd(func(observation SystemdObservation) { h.observeSystemd(p.id, observation) })
 		if err := native.Start(startCtx); err != nil {
 			return nil, err
 		}
@@ -160,9 +165,20 @@ func (p *ManagedProcess) Write(ctx context.Context, data []byte) error {
 func (p *ManagedProcess) WriteLine(ctx context.Context, line string) error {
 	return p.native.WriteLine(ctx, line)
 }
-func (p *ManagedProcess) CloseStdin() error          { return p.native.CloseStdin() }
-func (p *ManagedProcess) ExitDescription() string    { return p.native.ExitDescription() }
-func (p *ManagedProcess) BackendDescription() string { return p.native.BackendDescription() }
+func (p *ManagedProcess) CloseStdin() error       { return p.native.CloseStdin() }
+func (p *ManagedProcess) ExitDescription() string { return p.native.ExitDescription() }
+
+// BackendDescription reports the last controller observation without making a
+// second systemd query. It is diagnostic evidence, not a cleanup fence.
+func (p *ManagedProcess) BackendDescription() string {
+	status, found, err := ReadStatus(context.Background(), p.host.state, p.host.namespace, p.id)
+	if err != nil || !found || status.Systemd.Revision == 0 {
+		return p.native.ExitDescription()
+	}
+	observation := status.Systemd
+	unit := observation.Snapshot
+	return fmt.Sprintf("%s: last_observed_revision=%d start_state=%s start_error=%s expected_invocation=%s observed_invocation=%s cgroup=%s active=%s sub=%s unit_job=%d main_pid=%d exec_pid=%d exec_code=%d exec_status=%d result=%s error=%s exit_state=%s exit_code=%d exit_error=%s", observation.Unit, observation.Revision, observation.StartState, observation.StartError, observation.ExpectedInvocationID, unit.InvocationID, observation.CapturedControlGroup, unit.ActiveState, unit.SubState, unit.JobID, unit.MainPID, unit.ExecMainPID, unit.ExecMainCode, unit.ExecMainStatus, unit.Result, observation.Error, observation.ExitState, observation.ExitCode, observation.ExitError)
+}
 
 // ID is the immutable identity of this native launch.
 func (p *ManagedProcess) ID() string { return p.id }

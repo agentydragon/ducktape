@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -101,6 +102,15 @@ func TestSystemdKernelFixture(t *testing.T) {
 
 	t.Run("streams_and_environment", func(t *testing.T) {
 		p := startSystemdProof(t, ctx, supervisor, dir, "printf 'out:%s:%s:%s\\n' \"$(id -u)\" \"$(id -g)\" \"$PWD\"; printf 'err:%s\\n' \"$SENTINEL\" >&2; printf 'home:%s\\n' \"$HOME\"; test -z \"${AGENTPLANE_PARENT_ONLY_SENTINEL+x}\"; IFS= read -r line; printf 'input:%s\\n' \"$line\"")
+		var observationMu sync.Mutex
+		var latest SystemdObservation
+		p.ObserveSystemd(func(observation SystemdObservation) {
+			observationMu.Lock()
+			defer observationMu.Unlock()
+			if observation.Revision > latest.Revision {
+				latest = observation
+			}
+		})
 		stdout, stderr := readProofStreams(p)
 		unitName := systemdProofUnitName(t, p)
 		if err := p.WriteLine(ctx, "verbatim input"); err != nil {
@@ -109,6 +119,12 @@ func TestSystemdKernelFixture(t *testing.T) {
 		code, err := p.Wait(ctx)
 		if err != nil || code != 0 {
 			t.Fatalf("wait code=%d err=%v", code, err)
+		}
+		observationMu.Lock()
+		observed := latest
+		observationMu.Unlock()
+		if observed.Unit != unitName || observed.Revision < 2 || observed.StartState != SystemdStartAccepted || observed.ExpectedInvocationID == "" || observed.CapturedControlGroup == "" || observed.ExitState != SystemdExitObserved || observed.ExitCode != 0 {
+			t.Fatalf("systemd observations did not retain attempt identity: %+v", observed)
 		}
 		want := fmt.Sprintf("out:%d:%d:%s\nhome:/explicit/proof-home\ninput:verbatim input\n", launcher.AgentUID, launcher.AgentGID, dir)
 		if got := <-stdout; got != want {

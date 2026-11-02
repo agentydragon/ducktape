@@ -360,6 +360,110 @@ func TestProcessControllerStartsOnceAndRetainsTerminalStatus(t *testing.T) {
 	})
 }
 
+func TestProcessControllerRetainsSystemdObservationsAcrossFence(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := newProcessControllerTestRuntime(t)
+		const id = "systemd-attempt"
+		done := make(chan error, 1)
+		stopEntered := make(chan struct{})
+		releaseStop := make(chan struct{})
+		var release sync.Once
+		t.Cleanup(func() { release.Do(func() { close(releaseStop) }) })
+		observers := make(chan func(SystemdObservation), 1)
+		var starts atomic.Int32
+		f.requester.setLaunch(id, func(context.Context) (*Instance, error) {
+			starts.Add(1)
+			observe := func(observation SystemdObservation) { f.host.observeSystemd(id, observation) }
+			observers <- observe
+			observe(SystemdObservation{Revision: 1, Unit: "old.service", Snapshot: SystemdUnitSnapshot{InvocationID: "old", ActiveState: "active"}})
+			return &Instance{
+				Done: done, PID: 123,
+				Stop: func(context.Context) error {
+					close(stopEntered)
+					<-releaseStop
+					return nil
+				},
+			}, nil
+		})
+		f.publishRequest(t, id, processTestRequestSpec{Active: true, Generation: 1, Revision: 1})
+		initial := waitProcessStatus(t, f, id, "initial systemd observation", func(status Status) bool {
+			return status.Phase == Running && status.Systemd.Revision == 1
+		})
+		if initial.Systemd.Unit != "old.service" || initial.Systemd.Snapshot.InvocationID != "old" {
+			t.Fatalf("initial observation = %+v", initial.Systemd)
+		}
+		observe := <-observers
+		observe(SystemdObservation{Revision: 3, Unit: "old.service", Snapshot: SystemdUnitSnapshot{InvocationID: "old", ActiveState: "failed"}, Error: "manager disconnected"})
+		observe(SystemdObservation{Revision: 2, Unit: "old.service", Snapshot: SystemdUnitSnapshot{InvocationID: "old", ActiveState: "active"}})
+		current := waitProcessStatus(t, f, id, "newest systemd observation", func(status Status) bool {
+			return status.Systemd.Revision == 3
+		})
+		if current.Systemd.Error != "manager disconnected" || current.Systemd.Snapshot.ActiveState != "failed" {
+			t.Fatalf("newest observation = %+v", current.Systemd)
+		}
+		observe(SystemdObservation{Revision: 4, Unit: "old.service", ExitState: SystemdExitObserved, ExitCode: 23})
+		waitProcessStatus(t, f, id, "exit observation before cleanup", func(status Status) bool {
+			return status.Systemd.ExitState == SystemdExitObserved && status.Systemd.ExitCode == 23
+		})
+		done <- nil
+		close(done)
+		stopping := waitProcessStatus(t, f, id, "fence pending", func(status Status) bool { return status.Phase == Stopping })
+		<-stopEntered
+		if stopping.Systemd.Revision != 4 || stopping.Systemd.ExitCode != 23 {
+			t.Fatalf("observation lost before fence: %+v", stopping)
+		}
+		desired, err := f.state.Get(f.ctx, resourceFor(processTestNamespace, id, DesiredState{}).Metadata())
+		if err != nil || !desired.Metadata().Finalizers().Has(f.host.Controller().Name()) {
+			t.Fatalf("fence must retain finalizer: desired=%v err=%v", desired, err)
+		}
+		release.Do(func() { close(releaseStop) })
+		exited := waitProcessStatus(t, f, id, "fenced", func(status Status) bool { return status.Phase == Exited })
+		if exited.Systemd.Revision != 4 || starts.Load() != 1 {
+			t.Fatalf("terminal status=%+v starts=%d", exited, starts.Load())
+		}
+		f.publishRequest(t, id, processTestRequestSpec{Active: false, Generation: 1, Revision: 2})
+		synctest.Wait()
+		observe(SystemdObservation{Revision: 5, Unit: "stale.service"})
+		synctest.Wait()
+		if _, found := f.status(t, id); found {
+			t.Fatal("stale observation recreated retired process status")
+		}
+	})
+}
+
+func TestProcessControllerPublishesSystemdEvidenceWhileStartIsBlocked(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := newProcessControllerTestRuntime(t)
+		const id = "uncertain-systemd-start"
+		release := make(chan struct{})
+		var released sync.Once
+		t.Cleanup(func() { released.Do(func() { close(release) }) })
+		var starts atomic.Int32
+		f.requester.setLaunch(id, func(context.Context) (*Instance, error) {
+			starts.Add(1)
+			f.host.observeSystemd(id, SystemdObservation{Revision: 1, Unit: "uncertain.service", Error: "manager disconnected"})
+			<-release
+			return nil, errors.New("fenced start failure")
+		})
+		f.publishRequest(t, id, processTestRequestSpec{Active: true, Generation: 1, Revision: 1})
+		starting := waitProcessStatus(t, f, id, "blocked systemd start", func(status Status) bool {
+			return status.Phase == Starting && status.Systemd.Revision == 1
+		})
+		if starting.Systemd.Unit != "uncertain.service" || starting.Systemd.Error != "manager disconnected" || starts.Load() != 1 {
+			t.Fatalf("starting status=%+v starts=%d", starting, starts.Load())
+		}
+		desired, err := f.state.Get(f.ctx, resourceFor(processTestNamespace, id, DesiredState{}).Metadata())
+		if err != nil || !desired.Metadata().Finalizers().Has(f.host.Controller().Name()) {
+			t.Fatalf("unresolved start must retain finalizer: desired=%v err=%v", desired, err)
+		}
+		released.Do(func() { close(release) })
+		exited := waitProcessStatus(t, f, id, "fenced start failure", func(status Status) bool { return status.Phase == Exited })
+		if exited.StartError != "fenced start failure" || starts.Load() != 1 {
+			t.Fatalf("terminal status=%+v starts=%d", exited, starts.Load())
+		}
+	})
+}
+
 func TestProcessTeardownWaitsForLateStartAndStopBarrier(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		f := newProcessControllerTestRuntime(t)

@@ -107,6 +107,7 @@ func (b *systemdBackend) start(ctx context.Context, p *Process) error {
 	b.conn = conn
 	b.cancel = cancelConnection
 	b.name = b.launcher.scope + uuid.NewString() + ".service"
+	p.observeSystemdStart(b.name, SystemdPreparing, nil)
 	b.updates = make(chan *systemd.PropertiesUpdate, 32)
 	b.updateErrors = make(chan error, 1)
 	// Use the upstream typed notification API only as a hint; every observation
@@ -179,17 +180,20 @@ func (b *systemdBackend) start(ctx context.Context, p *Process) error {
 			return bus.StartTransientUnitContext(c, name, "fail", properties, completed)
 		}
 	}
+	p.observeSystemdStart(b.name, SystemdStartSubmitted, nil)
 	job, err := start(launchCtx, conn, b.name, props, completion)
 	cancel()
 	b.accepted = err == nil
 	if err != nil {
-		fenceErr := b.fenceUntilCertain()
+		p.observeSystemdStart(b.name, SystemdStartUnconfirmed, err)
+		fenceErr := b.fenceUntilCertain(p)
 		b.release()
 		closeFiles(stdinWriter, stdoutReader, stderrReader)
 		return errors.Join(fmt.Errorf("start systemd native unit %s: %w", b.name, err), fenceErr)
 	}
+	p.observeSystemdStart(b.name, SystemdStartAccepted, nil)
 	if err = ctx.Err(); err != nil {
-		fenceErr := b.fenceUntilCertain()
+		fenceErr := b.fenceUntilCertain(p)
 		b.release()
 		closeFiles(stdinWriter, stdoutReader, stderrReader)
 		return errors.Join(err, fenceErr)
@@ -212,6 +216,7 @@ func (b *systemdBackend) start(ctx context.Context, p *Process) error {
 			} else {
 				service, observeErr := ReadSystemdUnit(ctx, conn, b.name)
 				if observeErr != nil {
+					p.observeSystemd(b.name, "", "", service, observeErr)
 					err = observeErr
 				} else {
 					pid := service.ExecMainPID
@@ -225,6 +230,7 @@ func (b *systemdBackend) start(ctx context.Context, p *Process) error {
 					}
 					b.group = service.ControlGroup
 					b.invocationID = service.InvocationID
+					p.observeSystemd(b.name, b.invocationID, b.group, service, nil)
 					p.setNativePID(int(pid))
 					go b.reap(p)
 					return nil
@@ -233,7 +239,7 @@ func (b *systemdBackend) start(ctx context.Context, p *Process) error {
 		}
 	}
 
-	fenceErr := b.fenceUntilCertain()
+	fenceErr := b.fenceUntilCertain(p)
 	b.release()
 	closeFiles(stdinWriter, stdoutReader, stderrReader)
 	return errors.Join(err, fenceErr)
@@ -260,7 +266,7 @@ func (b *systemdBackend) release() {
 
 // A manager failure is a fencing barrier. Never publish waitDone or release
 // state ownership merely because observation/StopUnit lost its connection.
-func (b *systemdBackend) fenceUntilCertain() error {
+func (b *systemdBackend) fenceUntilCertain(p *Process) error {
 	conn := b.conn
 	cancelConnection := func() {}
 	defer func() {
@@ -274,7 +280,7 @@ func (b *systemdBackend) fenceUntilCertain() error {
 		// Only the original live connection supplies FIFO ordering behind an
 		// uncertain start. Replacement absence alone must never release admission.
 		ordered := b.accepted || (conn == b.conn && conn.Connected())
-		err := fenceSystemdUnit(ctx, nativeSystemdUnitManager{backend: b, conn: conn}, b.name, SystemdFence{
+		err := fenceSystemdUnit(ctx, nativeSystemdUnitManager{backend: b, conn: conn, process: p}, b.name, SystemdFence{
 			Ordered: ordered, InvocationID: b.invocationID, ControlGroup: b.group,
 		}, systemdGroupEmpty)
 		cancel()
@@ -300,10 +306,13 @@ func (b *systemdBackend) fenceUntilCertain() error {
 type nativeSystemdUnitManager struct {
 	backend *systemdBackend
 	conn    *systemd.Conn
+	process *Process
 }
 
 func (m nativeSystemdUnitManager) snapshot(ctx context.Context, name string) (SystemdUnitSnapshot, error) {
-	return ReadSystemdUnit(ctx, m.conn, name)
+	snapshot, err := ReadSystemdUnit(ctx, m.conn, name)
+	m.process.observeSystemd(name, m.backend.invocationID, m.backend.group, snapshot, err)
+	return snapshot, err
 }
 
 func (m nativeSystemdUnitManager) stop(ctx context.Context, _ string) (<-chan string, error) {
@@ -425,6 +434,7 @@ func (b *systemdBackend) reap(p *Process) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		props, err := b.readSnapshotOn(ctx, readConn)
 		cancel()
+		p.observeSystemd(b.name, b.invocationID, b.group, props, err)
 		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) && readConn.Connected() {
 				zap.L().Warn("native systemd process observation timed out; retrying", zap.String("unit", b.name), zap.Error(err))
@@ -474,12 +484,15 @@ func (b *systemdBackend) reap(p *Process) {
 	}
 
 	cancel()
-	fenceErr := b.fenceUntilCertain()
-	_ = p.CloseStdin()
-	b.release()
 	if !statusObserved {
 		observationErr = errors.Join(observationErr, errors.New("native systemd exit status was not observed"))
 	}
+	// Exit evidence is useful while the domain fence is still pending. It must
+	// never be interpreted as proof that descendants have been removed.
+	p.observeSystemdExit(code, statusObserved, observationErr)
+	fenceErr := b.fenceUntilCertain(p)
+	_ = p.CloseStdin()
+	b.release()
 	p.completeWith(code, errors.Join(observationErr, fenceErr))
 }
 
@@ -521,13 +534,6 @@ func (b *systemdBackend) stop(ctx context.Context, p *Process) error {
 	}
 	_, err = p.Wait(ctx)
 	return err
-}
-
-func (b *systemdBackend) description(p *Process) string {
-	if b.conn == nil {
-		return p.ExitDescription()
-	}
-	return b.name + ": " + b.diagnostics()
 }
 
 // Notifications are hints: upstream may coalesce/drop overflowing updates, and

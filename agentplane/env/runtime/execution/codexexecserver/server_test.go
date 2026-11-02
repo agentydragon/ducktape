@@ -3,20 +3,118 @@ package codexexecserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	executorcontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/coder/websocket"
+	"github.com/cosi-project/runtime/pkg/controller/runtime"
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+	"go.uber.org/zap"
 )
+
+func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == supervision.SupervisorMode {
+		os.Exit(supervision.SupervisorMain(os.Args[2:]))
+	}
+	os.Exit(m.Run())
+}
+
+func TestNativeStartUsesManagedProcessAdmission(t *testing.T) {
+	wantErr := errors.New("managed admission refused")
+	var observed supervision.ProcessConfig
+	start := NativeStart(NativeConfig{
+		Config: Config{URL: "ws://127.0.0.1:4501"}, Binary: "/bin/codex", StateDir: "/state",
+		Environment: map[string]string{"PATH": "/bin", "OPENAI_API_KEY": "secret"},
+		LaunchProcess: func(_ context.Context, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
+			observed = config
+			return nil, wantErr
+		},
+	})
+	if _, err := start(context.Background()); !errors.Is(err, wantErr) {
+		t.Fatalf("managed start error = %v, want %v", err, wantErr)
+	}
+	if observed.StopGrace != executorStopGrace || observed.FenceTimeout != fenceDeadline || observed.Dir != "/state" || strings.Join(observed.Command, " ") != "/bin/codex exec-server --listen ws://127.0.0.1:4501" {
+		t.Fatalf("managed process configuration = %+v", observed)
+	}
+	if _, found := observed.Env["OPENAI_API_KEY"]; found || observed.Env["PATH"] != "/bin" {
+		t.Fatal("managed executor received an unexpected environment")
+	}
+}
+
+func TestNativeStartIsOwnedAndFencedByProcessController(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	store := state.WrapCore(namespaced.NewState(inmem.Build))
+	engine, err := runtime.NewRuntime(store, zap.L().Named("executor-process-test"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var workers sync.WaitGroup
+	const namespace resource.Namespace = "executor-test"
+	host := supervision.NewHost(ctx, store, namespace, &workers, func(err error) { t.Errorf("process host: %v", err) })
+	if err := engine.RegisterQController(host.Controller()); err != nil {
+		t.Fatal(err)
+	}
+	engineDone := make(chan error, 1)
+	go func() { engineDone <- engine.Run(ctx) }()
+	defer func() {
+		cancel()
+		if err := <-engineDone; err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("process engine: %v", err)
+		}
+		workers.Wait()
+	}()
+	binary := filepath.Join(t.TempDir(), "executor")
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\nexec /bin/sleep 60\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	supervisor := supervision.NewSubprocessSupervisor(nil)
+	start := NativeStart(NativeConfig{
+		Config: Config{URL: "ws://127.0.0.1:4501"}, Binary: binary, StateDir: t.TempDir(),
+		LaunchProcess: func(ctx context.Context, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
+			return host.Launch(ctx, "execution-service", 42, supervisor, config)
+		},
+	})
+	instance, err := start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = instance.Stop(context.Background()) }()
+	items, err := store.List(ctx, resource.NewMetadata(namespace, supervision.DesiredStateType, "", resource.VersionUndefined))
+	if err != nil || len(items.Items) != 1 {
+		t.Fatalf("executor desired states = %v, error %v", items, err)
+	}
+	id := items.Items[0].Metadata().ID()
+	desired, found, err := supervision.ReadDesiredState(ctx, store, namespace, id)
+	if err != nil || !found || desired.Owner != "execution-service" || desired.Generation != 42 || desired.StopTimeout != fenceDeadline {
+		t.Fatalf("executor desired state = %+v, found=%t, error=%v", desired, found, err)
+	}
+	status, found, err := supervision.ReadStatus(ctx, store, namespace, id)
+	if err != nil || !found || status.Phase != supervision.Running || status.PID != instance.PID {
+		t.Fatalf("executor process status = %+v, found=%t, error=%v", status, found, err)
+	}
+	if err := instance.Stop(ctx); err != nil {
+		t.Fatalf("fence managed executor: %v", err)
+	}
+	if _, found, err := supervision.ReadDesiredState(ctx, store, namespace, id); err != nil || found {
+		t.Fatalf("executor intent after fence: found=%t error=%v", found, err)
+	}
+}
 
 func TestProbeRequiresValidRPCAndBoundsUnresponsiveServer(t *testing.T) {
 	for _, test := range []struct {

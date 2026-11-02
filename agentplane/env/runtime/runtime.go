@@ -315,6 +315,10 @@ func (r *Runtime) startLifecycleEngineLocked() {
 	r.lifecycleStartOnce.Do(func() {
 		go func() {
 			defer close(r.lifecycleDone)
+			// A dead engine cannot advance process finalizers. Cancel its host
+			// lifetime so managed process waiters fail instead of waiting forever;
+			// the outer Runtime retains ownership when cleanup is unproven.
+			defer r.lifecycleCancel()
 			if err := r.lifecycleEngine.Run(r.lifecycleContext); r.lifecycleContext.Err() == nil {
 				if err == nil {
 					err = errors.New("engine returned without shutdown")

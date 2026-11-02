@@ -228,6 +228,9 @@ func TestRuntimeRetainsOwnerAfterLifecycleEngineFailure(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("failing lifecycle engine did not stop")
 	}
+	if !errors.Is(r.lifecycleContext.Err(), context.Canceled) {
+		t.Fatalf("process host lifetime after engine failure = %v, want canceled", r.lifecycleContext.Err())
+	}
 	if err := r.Close(ctx); !errors.Is(err, failure) {
 		t.Fatalf("Runtime Close after engine failure = %v", err)
 	}
