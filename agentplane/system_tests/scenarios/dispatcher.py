@@ -948,18 +948,25 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                             if member.name == "state/runtime-resources.db":
                                 archived_file = runner_archive.extractfile(member)
                                 assert archived_file is not None
-                                database = archived_file.read()
-                                # The bbolt file contains COSI's encoded resource. Decode the
-                                # Session record rather than treating a matching byte sequence
-                                # elsewhere in the database as proof of the reservation.
-                                prefix = (
-                                    f'{{"type":"SessionRecords.agentplane","data":{{"id":"{session}","record":'
-                                ).encode()
-                                offset = database.find(prefix)
-                                assert offset >= 0, "archived COSI state lacks the Session resource"
-                                resource, _ = json.JSONDecoder().raw_decode(database[offset:].decode(errors="replace"))
-                                assert resource["data"]["id"] == session
-                                assert early_session_payload.decode() in resource["data"]["record"]["Instructions"]
+                                database_path = archive_dir / "archived-runtime-resources.db"
+                                database_path.write_bytes(archived_file.read())
+                                inspected = await asyncio.to_thread(
+                                    subprocess.run,
+                                    [
+                                        str(
+                                            get_required_path(
+                                                "_main/agentplane/env/runtime/harnesshost/retained/testing/archive_cosi_inspect_/archive_cosi_inspect"
+                                            )
+                                        ),
+                                        str(database_path),
+                                        session,
+                                        early_session_payload.decode(),
+                                    ],
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=10,
+                                )
+                                assert inspected.returncode == 0, inspected.stderr
                                 session_record_found = True
                             for suffix, expected_payload in expected.items():
                                 if member.name.endswith(suffix):

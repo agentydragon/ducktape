@@ -28,13 +28,15 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+	"github.com/cosi-project/runtime/pkg/state/impl/store"
+	"go.etcd.io/bbolt"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 func openTestState(stateDir string) (state.State, io.Closer, error) {
-	return cosistate.Open(stateDir, lifecycle.Namespace, SelectionCodec(), retained.SessionRecordCodec())
+	return cosistate.Open(stateDir, lifecycle.Namespace, SelectionRegistration(), retained.SessionRecordRegistration(), retained.IngressAckRegistration())
 }
 
 const bootstrapTestTimeout = 10 * time.Second
@@ -63,7 +65,7 @@ func TestFailedDurablePutDoesNotExposeSelection(t *testing.T) {
 	backing := failedBackingStore{err: failure}
 	build := inmem.NewStateWithOptions(inmem.WithBackingStore(backing))
 	store := state.WrapCore(namespaced.NewState(func(ns resource.Namespace) state.CoreState { return build(ns) }))
-	if err := publish(t.Context(), store, ResourceID, Selection{Script: "printf effect"}); !errors.Is(err, failure) {
+	if err := publishSelection(t.Context(), store, ResourceID, Selection{Script: "printf effect"}); !errors.Is(err, failure) {
 		t.Fatalf("selection write = %v, want backing store error", err)
 	}
 	if _, found, err := ReadSelection(t.Context(), store); err != nil || found {
@@ -424,7 +426,7 @@ func TestInterruptedAttemptIsReconstructedWithoutRerunning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := publish(t.Context(), store, ResourceID, Selection{Script: script}); err != nil {
+	if err := publishSelection(t.Context(), store, ResourceID, Selection{Script: script}); err != nil {
 		t.Fatal(err)
 	}
 	if err := closer.Close(); err != nil {
@@ -463,7 +465,7 @@ func TestSelectionWithoutTerminalEventIsInterruptedAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := publish(t.Context(), store, ResourceID, Selection{Script: script}); err != nil {
+	if err := publishSelection(t.Context(), store, ResourceID, Selection{Script: script}); err != nil {
 		t.Fatal(err)
 	}
 	if err := closer.Close(); err != nil {
@@ -488,7 +490,7 @@ func TestOutputWithoutTerminalEventIsInterruptedAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := publish(t.Context(), store, ResourceID, Selection{Script: script}); err != nil {
+	if err := publishSelection(t.Context(), store, ResourceID, Selection{Script: script}); err != nil {
 		t.Fatal(err)
 	}
 	if err := closer.Close(); err != nil {
@@ -527,7 +529,7 @@ func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := string([]byte{0xff, 0x00, 'x'})
-	if err := publish(t.Context(), store, ResourceID, Selection{Script: script}); err != nil {
+	if err := publishSelection(t.Context(), store, ResourceID, Selection{Script: script}); err != nil {
 		t.Fatal(err)
 	}
 	sessions, err := retained.NewStore(filepath.Join(stateDir, "sessions"), store)
@@ -549,6 +551,31 @@ func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 	if err := sessions.Write("session-1", record); err != nil {
 		t.Fatal(err)
 	}
+	ack := retained.Acknowledgement{Cursor: 43, Sealed: true}
+	if err := sessions.WriteAcknowledgement("session-1", ack); err != nil {
+		t.Fatal(err)
+	}
+	metadata := []struct {
+		pointer resource.Metadata
+		owner   string
+	}{
+		{*SelectionResourceValue(Selection{}).Metadata(), HostOwner},
+		{*retained.SessionResource("session-1", retained.Record{}).Metadata(), lifecycle.HostOwner},
+		{*retained.AcknowledgementResource("session-1", retained.Acknowledgement{}).Metadata(), lifecycle.HostOwner},
+	}
+	versions := make([]resource.Version, len(metadata))
+	for i, item := range metadata {
+		current, err := store.Get(t.Context(), &item.pointer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		updated := current.DeepCopy()
+		updated.Metadata().Finalizers().Add("retention-proof")
+		if err := store.Update(t.Context(), updated, state.WithUpdateOwner(item.owner)); err != nil {
+			t.Fatal(err)
+		}
+		versions[i] = updated.Metadata().Version()
+	}
 	if err := publish(t.Context(), store, ResourceID, Request{Requested: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -563,9 +590,22 @@ func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = restoredCloser.Close() })
+	for i, item := range metadata {
+		value, err := restored.Get(t.Context(), &item.pointer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if value.Metadata().Owner() != item.owner || !value.Metadata().Version().Equal(versions[i]) || !value.Metadata().Finalizers().Has("retention-proof") {
+			t.Fatalf("restored %s metadata = %v, want owner=%s version=%s finalizer", item.pointer.Type(), value.Metadata(), item.owner, versions[i])
+		}
+	}
 	restoredSessions, err := retained.NewStore(filepath.Join(stateDir, "sessions"), restored)
 	if err != nil {
 		t.Fatal(err)
+	}
+	gotAck, err := restoredSessions.ReadAcknowledgement("session-1")
+	if err != nil || gotAck == nil || *gotAck != ack {
+		t.Fatalf("restored acknowledgement = %+v, %v", gotAck, err)
 	}
 	ids, err := restoredSessions.SessionIDs()
 	if err != nil || len(ids) != 1 || ids[0] != "session-1" {
@@ -615,7 +655,7 @@ func TestDifferingSelectedScriptIsRejectedAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := publish(t.Context(), store, ResourceID, Selection{Script: "printf one"}); err != nil {
+	if err := publishSelection(t.Context(), store, ResourceID, Selection{Script: "printf one"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := closer.Close(); err != nil {
@@ -656,36 +696,71 @@ func TestRequestDetectsAdmissionGuardThatSkippedEffect(t *testing.T) {
 	}
 }
 
-func TestSelectionMarshalerRejectsMalformedData(t *testing.T) {
-	for _, test := range []struct {
-		name     string
-		data     string
-		rejected bool
-	}{
-		{name: "valid", data: `{"script":"YWJj"}`},
-		{name: "unknown field", data: `{"script":"YWJj","extra":true}`, rejected: true},
-		{name: "trailing value", data: `{"script":"YWJj"} {}`, rejected: true},
-		{name: "empty script", data: `{"script":""}`, rejected: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			value, err := (selectionMarshaler{}).UnmarshalResource([]byte(test.data))
-			if !test.rejected && (err != nil || value.(*typed.Resource[Selection, componentExtension[Selection]]).TypedSpec().Script != "abc") {
-				t.Fatalf("decode valid selection = %+v, %v", value, err)
-			}
-			if test.rejected && err == nil {
-				t.Fatal("decode accepted non-strict selection")
-			}
-		})
+func TestOldJSONCOSIEncodingIsRejected(t *testing.T) {
+	stateDir := t.TempDir()
+	db, err := bbolt.Open(filepath.Join(stateDir, "runtime-resources.db"), 0o600, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = db.Update(func(tx *bbolt.Tx) error {
+		ns, err := tx.CreateBucketIfNotExists([]byte(lifecycle.Namespace))
+		if err != nil {
+			return err
+		}
+		kind, err := ns.CreateBucketIfNotExists([]byte(SelectionType))
+		if err != nil {
+			return err
+		}
+		return kind.Put([]byte(ResourceID), []byte(`{"type":"BootstrapSelections.agentplane","data":{"script":"YWJj"}}`))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	resources, closer, err := openTestState(stateDir)
+	if err == nil {
+		defer closer.Close()
+		_, _, err = ReadSelection(t.Context(), resources)
+	}
+	if err == nil {
+		t.Fatal("old JSON COSI resource was accepted after restart")
+	}
+}
+
+func TestSelectionProtobufRoundTripPreservesExactBytes(t *testing.T) {
+	script := string([]byte{0, 0xff, '\n', 'x'})
+	selected := SelectionResourceValue(Selection{Script: script})
+	if err := selected.Metadata().SetOwner(HostOwner); err != nil {
+		t.Fatal(err)
+	}
+	marshaler := store.ProtobufMarshaler{}
+	encoded, err := marshaler.MarshalResource(selected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := marshaler.UnmarshalResource(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateSelectionResource(restored); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(restored.(*SelectionResource).TypedSpec().Value.Script); got != script {
+		t.Fatalf("script = %q, want %q", got, script)
+	}
+	if _, err := marshaler.UnmarshalResource([]byte(`{"type":"BootstrapSelections.agentplane","data":{"script":"YWJj"}}`)); err == nil {
+		t.Fatal("old JSON persistence was accepted")
 	}
 }
 
 func TestSelectionByteLimit(t *testing.T) {
-	marshal := selectionMarshaler{}
 	maximum := strings.Repeat("x", maximumBootstrapBytes)
-	if _, err := marshal.MarshalResource(componentResource(ResourceID, Selection{Script: maximum})); err != nil {
+	if err := validateScript(maximum); err != nil {
 		t.Fatalf("maximum selected bytes rejected: %v", err)
 	}
-	if _, err := marshal.MarshalResource(componentResource(ResourceID, Selection{Script: maximum + "x"})); err == nil {
+	if err := validateScript(maximum + "x"); err == nil {
 		t.Fatal("oversize bootstrap selection accepted")
 	}
 }

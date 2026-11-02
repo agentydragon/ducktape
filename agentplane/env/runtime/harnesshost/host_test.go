@@ -185,7 +185,7 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 	if err := retained.EnsureDirectory(config.StateDir); err != nil {
 		t.Fatal(err)
 	}
-	resources, backing, err := cosistate.Open(config.StateDir, harnesshostlifecycle.Namespace, retained.SessionRecordCodec())
+	resources, backing, err := cosistate.Open(config.StateDir, harnesshostlifecycle.Namespace, retained.SessionRecordRegistration(), retained.IngressAckRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resources, reopenedBacking, err := cosistate.Open(config.StateDir, harnesshostlifecycle.Namespace, retained.SessionRecordCodec())
+	resources, reopenedBacking, err := cosistate.Open(config.StateDir, harnesshostlifecycle.Namespace, retained.SessionRecordRegistration(), retained.IngressAckRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}

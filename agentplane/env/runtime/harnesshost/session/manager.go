@@ -27,7 +27,6 @@ type Manager struct {
 	dependencies  sessionDependencies
 	destination   func(string) string
 	publishSeal   func(string, *journal.SealState) error
-	publishAck    func(string, retained.Acknowledgement) error
 	changed       func()
 	fail          func(error)
 	workers       int
@@ -41,7 +40,7 @@ type Manager struct {
 }
 
 func NewManager(config Config) (*Manager, error) {
-	if config.Context == nil || config.State == nil || config.Store == nil || config.Destination == nil || config.Scripts == nil || config.WaitBootstrap == nil || config.Environment == nil || config.EnsureWorkspace == nil || config.LaunchProcess == nil || config.ResolveModelConfig == nil || config.PublishSeal == nil || config.PublishAck == nil || config.OnChange == nil || config.OnError == nil || config.ReconcileConcurrency <= 0 {
+	if config.Context == nil || config.State == nil || config.Store == nil || config.Destination == nil || config.Scripts == nil || config.WaitBootstrap == nil || config.Environment == nil || config.EnsureWorkspace == nil || config.LaunchProcess == nil || config.ResolveModelConfig == nil || config.PublishSeal == nil || config.OnChange == nil || config.OnError == nil || config.ReconcileConcurrency <= 0 {
 		return nil, fmt.Errorf("invalid Session manager dependencies")
 	}
 	if config.Claude != nil {
@@ -55,8 +54,8 @@ func NewManager(config Config) (*Manager, error) {
 	m := &Manager{
 		ctx: config.Context, state: config.State, store: config.Store,
 		workspaceRoot: config.WorkspaceRoot, destination: config.Destination, environment: config.Environment,
-		publishSeal: config.PublishSeal, publishAck: config.PublishAck,
-		changed: config.OnChange, fail: config.OnError,
+		publishSeal: config.PublishSeal,
+		changed:     config.OnChange, fail: config.OnError,
 		workers: config.ReconcileConcurrency, sessions: map[string]*Session{}, freshReservations: map[string]struct{}{},
 	}
 	m.dependencies = sessionDependencies{
@@ -232,11 +231,6 @@ func (m *Manager) Reopen(ctx context.Context, s *Session) error {
 	}
 	if err := m.publishSeal(s.id, s.journal.SealState()); err != nil {
 		return err
-	}
-	if ack != nil {
-		if err := m.publishAck(s.id, *ack); err != nil {
-			return err
-		}
 	}
 	if reopening || writeAck {
 		m.changed()

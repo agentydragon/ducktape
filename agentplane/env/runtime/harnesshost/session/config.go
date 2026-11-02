@@ -39,7 +39,6 @@ type Config struct {
 	LaunchProcess        func(context.Context, string, supervision.ProcessConfig) (*supervision.ManagedProcess, error)
 	ResolveModelConfig   func(context.Context, sessionpb.Harness, string) (*int, error)
 	PublishSeal          func(string, *journal.SealState) error
-	PublishAck           func(string, retained.Acknowledgement) error
 	OnChange             func()
 	OnError              func(error)
 	ReconcileConcurrency int

@@ -6,7 +6,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/journal"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
@@ -21,12 +20,6 @@ func (l *lifecycle) publishSeal(id string, seal *journal.SealState) error {
 		value = journalSealSpec{Present: true, IncarnationUID: seal.IncarnationUID, Cursor: seal.Cursor}
 	}
 	return publishLifecycle(l, id, value)
-}
-
-func (l *lifecycle) publishAck(id string, ack retained.Acknowledgement) error {
-	l.publishMu.Lock()
-	defer l.publishMu.Unlock()
-	return publishLifecycle(l, id, ingressAckSpec{Cursor: ack.Cursor, Sealed: ack.Sealed})
 }
 
 // Host publishers serialize compound snapshots; COSI handles conflicts and no-op updates.

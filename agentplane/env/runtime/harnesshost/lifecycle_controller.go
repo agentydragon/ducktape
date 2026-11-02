@@ -6,6 +6,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
@@ -26,7 +27,7 @@ func harnessHostFenceMatches(applied harnesshostlifecycle.HostIntentStatus, inte
 func (*harnessHostLifecycleController) Name() string { return harnessHostControllerName }
 func (*harnessHostLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{harnesshostlifecycle.DesiredStateType, harnesshostlifecycle.HostIntentStatusType, harnessHostAdmissionCountType, session.InspectionStatusType, session.LifecycleStatusType, journalSealType, ingressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
+	for _, kind := range []string{harnesshostlifecycle.DesiredStateType, harnesshostlifecycle.HostIntentStatusType, harnessHostAdmissionCountType, session.InspectionStatusType, session.LifecycleStatusType, journalSealType, retained.IngressAckType, codexappserver.StatusType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: harnesshostlifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -325,13 +326,13 @@ func (c *harnessHostLifecycleController) reconcile(ctx context.Context, r contro
 		if err != nil {
 			return err
 		}
-		ack, ackFound, err := lifecycleRead[ingressAckSpec](ctx, r, s.ID())
+		ack, ackFound, err := retained.ReadAcknowledgement(ctx, r, s.ID())
 		if err != nil {
 			return err
 		}
 		if !ackFound || !ack.Sealed || ack.Cursor != seal.Cursor {
 			current.Blocker = harnesshostlifecycle.Blocker{
-				Kind: harnesshostlifecycle.IngressAcknowledgementPending, ResourceType: ingressAckType,
+				Kind: harnesshostlifecycle.IngressAcknowledgementPending, ResourceType: retained.IngressAckType,
 				ResourceID: s.ID(), ResourcePresent: ackFound, JournalSealPresent: sealFound && seal.Present,
 				JournalSealUID: seal.IncarnationUID, ExpectedJournalSealUID: desiredState.SealUID,
 				JournalSealCursor: seal.Cursor, AcknowledgementPresent: ackFound,

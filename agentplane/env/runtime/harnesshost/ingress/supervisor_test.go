@@ -16,10 +16,7 @@ func TestSupervisorStartsOneWorkerPerUnsealedSessionAndJoinsOnCancel(t *testing.
 	defer timeout()
 	runCtx, cancel := context.WithCancel(waitCtx)
 	defer cancel()
-	store, err := retained.NewStore(t.TempDir(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := newTestStore(t)
 	sealed := Source{ID: "sealed-session"}
 	if err := store.WriteAcknowledgement(sealed.ID, retained.Acknowledgement{Sealed: true}); err != nil {
 		t.Fatal(err)
@@ -103,10 +100,7 @@ func TestSupervisorReportsDeliveryFailureAndRetriesUntilCancel(t *testing.T) {
 	defer timeout()
 	runCtx, cancel := context.WithCancel(waitCtx)
 	defer cancel()
-	store, err := retained.NewStore(t.TempDir(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := newTestStore(t)
 	wantErr := errors.New("acknowledgement publication failed")
 	failure := make(chan error, 1)
 	started := make(chan int, 2)

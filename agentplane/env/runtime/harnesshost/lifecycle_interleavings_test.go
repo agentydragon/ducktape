@@ -124,9 +124,6 @@ func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 			if err := r.store.WriteAcknowledgement(s.ID(), ack); err != nil {
 				t.Fatal(err)
 			}
-			if err := r.lifecycle.publishAck(s.ID(), ack); err != nil {
-				t.Fatal(err)
-			}
 		}
 		released[event] = true
 		if released["admission"] && released["setup"] {
@@ -162,9 +159,6 @@ func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 		}
 		ack := retained.Acknowledgement{Cursor: seal.Cursor, Sealed: true}
 		if err := r.store.WriteAcknowledgement(s.ID(), ack); err != nil {
-			t.Fatal(err)
-		}
-		if err := r.lifecycle.publishAck(s.ID(), ack); err != nil {
 			t.Fatal(err)
 		}
 		waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == harnesshostlifecycle.Quiesced }, "exact acknowledgement")

@@ -1,0 +1,30 @@
+// Durable COSI resource specs owned by the Environment Runtime and Harness Host.
+syntax = "proto3";
+
+package agentplane.env.runtime.cosistate;
+
+import "agentplane/proto/session.proto";
+import "agentplane/proto/delegation.proto";
+
+message BootstrapSelectionSpec {
+  // The selected script is compared and executed byte for byte.
+  bytes script = 1;
+}
+
+message SessionRecordSpec {
+  .agentplane.proto.Harness harness = 1;
+  string cwd = 2;
+  string model = 3;
+  optional int64 total_context_budget_tokens = 4;
+  string reasoning_effort = 5;
+  string instructions = 6;
+  bytes setup_script = 7;
+  string event_source_id = 8;
+  optional string native_session_id = 9;
+  .agentplane.proto.ServiceAccountIdentity execution_principal = 10;
+}
+
+message IngressAckSpec {
+  uint64 cursor = 1;
+  bool sealed = 2;
+}

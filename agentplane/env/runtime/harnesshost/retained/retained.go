@@ -1,7 +1,7 @@
 package retained
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -10,8 +10,10 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/google/uuid"
 )
@@ -175,12 +177,14 @@ func (r Record) Spec() *sessionpb.SessionSpec {
 }
 
 type Acknowledgement struct {
-	Cursor uint64 `json:"cursor"`
-	Sealed bool   `json:"sealed"`
+	Cursor uint64
+	Sealed bool
 }
 
-// Store owns Session directories and their ingress acknowledgements. Session
-// records are stored in the shared COSI state.
+func (acknowledgement Acknowledgement) DeepCopy() Acknowledgement { return acknowledgement }
+
+// Store owns Session directories and the shared COSI state for Session records
+// and ingress acknowledgements.
 type Store struct {
 	mu    sync.Mutex
 	root  string
@@ -211,20 +215,15 @@ func (s *Store) Directory(sessionID string) (string, error) {
 func (s *Store) ReadAcknowledgement(sessionID string) (*Acknowledgement, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	directory, err := s.Directory(sessionID)
+	if s.state == nil {
+		return nil, errors.New("Session COSI state is required")
+	}
+	acknowledgement, found, err := ReadAcknowledgement(context.Background(), s.state, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(filepath.Join(directory, "acknowledgement.json"))
-	if errors.Is(err, os.ErrNotExist) {
+	if !found {
 		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var acknowledgement Acknowledgement
-	if err := json.Unmarshal(data, &acknowledgement); err != nil {
-		return nil, err
 	}
 	return &acknowledgement, nil
 }
@@ -232,34 +231,15 @@ func (s *Store) ReadAcknowledgement(sessionID string) (*Acknowledgement, error) 
 func (s *Store) WriteAcknowledgement(sessionID string, acknowledgement Acknowledgement) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.replace(sessionID, "acknowledgement.json", acknowledgement)
-}
-
-func (s *Store) replace(sessionID, name string, value any) error {
-	directory, err := s.Directory(sessionID)
-	if err != nil {
+	if s.state == nil {
+		return errors.New("Session COSI state is required")
+	}
+	if _, err := ValidateSessionID(sessionID); err != nil {
 		return err
 	}
-	if err := EnsureDirectory(directory); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return err
-	}
-	temporary := filepath.Join(directory, name+".tmp")
-	file, err := os.OpenFile(temporary, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o666)
-	if err != nil {
-		return err
-	}
-	_, writeErr := file.Write(data)
-	syncErr := file.Sync()
-	closeErr := file.Close()
-	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
-		return err
-	}
-	if err := os.Rename(temporary, filepath.Join(directory, name)); err != nil {
-		return err
-	}
-	return syncDirectory(directory)
+	return safe.StateModify(context.Background(), s.state, AcknowledgementResource(sessionID, acknowledgement), func(current *IngressAckResource) error {
+		current.TypedSpec().Value.Cursor = acknowledgement.Cursor
+		current.TypedSpec().Value.Sealed = acknowledgement.Sealed
+		return nil
+	}, state.WithUpdateOwner(lifecycle.HostOwner))
 }

@@ -1,12 +1,9 @@
 package bootstrap
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -358,7 +355,7 @@ func (h *Host) runBootstrap(ctx context.Context) error {
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		if err := publish(ctx, h.state, ResourceID, Selection{Script: *script}); err != nil {
+		if err := publishSelection(ctx, h.state, ResourceID, Selection{Script: *script}); err != nil {
 			return err
 		}
 		selected, found, err = ReadSelection(ctx, h.state)
@@ -434,16 +431,4 @@ func bootstrapErrorForLog(log *Log) error {
 	default:
 		return nil
 	}
-}
-
-func decodeSelection(data []byte, value any) error {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(value); err != nil {
-		return err
-	}
-	if err := decoder.Decode(new(any)); err != io.EOF {
-		return errors.New("unexpected trailing JSON data")
-	}
-	return nil
 }

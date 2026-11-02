@@ -55,10 +55,7 @@ func (r *Host) Run(ctx context.Context, endpoint configuration.Endpoint, bridge 
 func (r *Host) newIngressSupervisor(endpoint configuration.Endpoint) *ingress.Supervisor {
 	return ingress.NewSupervisor(ingress.SupervisorConfig{
 		Target: endpoint.Target, Bearer: endpoint.Bearer, Store: r.store, Changes: r.changesSince, Inventory: r.ingressSources, OnWorkerFailure: r.fail,
-		OnAcknowledgement: func(id string, ack retained.Acknowledgement) error {
-			if err := r.lifecycle.publishAck(id, ack); err != nil {
-				return err
-			}
+		OnAcknowledgement: func(_ string, _ retained.Acknowledgement) error {
 			r.changed()
 			return nil
 		},

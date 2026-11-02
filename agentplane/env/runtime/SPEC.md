@@ -29,9 +29,13 @@ in `StateDir/runtime-resources.db`. Harness Host reserves each record, then upda
 effort and native Session identity through field-scoped COSI writes under the Host owner. Its in-memory
 Session copy follows successful durable writes; concurrent changes to one Session retain write order.
 If a native frame's record update fails, Host commits the raw frame and stops receiving so recovery
-can inspect that outcome.
-Journals, native continuations and History ACK positions remain
-under `StateDir/sessions`.
+can inspect that outcome. Journals and native continuations remain under `StateDir/sessions`;
+the Harness Host's latest History acknowledgement cursor and seal bit are persisted as
+`IngressAcks` COSI resources in `StateDir/runtime-resources.db`.
+All three durable resource types use COSI's protobuf resource encoding. Reload restores
+their owner, version and finalizers from the persisted metadata. Runtime rejects the former
+JSON COSI encoding; it does not import old Session or acknowledgement JSON files. Keep the
+state volume with the binary version that wrote it when planning this hard cutover.
 
 ## Lifecycle boundary
 

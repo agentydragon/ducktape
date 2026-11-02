@@ -5,11 +5,13 @@ import (
 	"context"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
+	persistencepb "github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate/persistentpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 )
 
@@ -92,7 +94,27 @@ func ReadStatus(ctx context.Context, reader controller.Reader) (Status, bool, er
 }
 
 func ReadSelection(ctx context.Context, reader controller.Reader) (Selection, bool, error) {
-	return componentRead[Selection](ctx, reader, ResourceID)
+	value, err := safe.ReaderGet[*SelectionResource](ctx, reader, SelectionResourceValue(Selection{}).Metadata())
+	if state.IsNotFoundError(err) {
+		return Selection{}, false, nil
+	}
+	if err != nil {
+		return Selection{}, false, err
+	}
+	if err := validateScript(string(value.TypedSpec().Value.Script)); err != nil {
+		return Selection{}, false, err
+	}
+	return Selection{Script: string(value.TypedSpec().Value.Script)}, true, nil
+}
+
+func publishSelection(ctx context.Context, writer state.State, id string, value Selection) error {
+	if err := validateScript(value.Script); err != nil {
+		return err
+	}
+	return safe.StateModify(ctx, writer, SelectionResourceValue(value), func(current *SelectionResource) error {
+		current.TypedSpec().Value = &persistencepb.BootstrapSelectionSpec{Script: []byte(value.Script)}
+		return nil
+	}, state.WithUpdateOwner(HostOwner))
 }
 
 func isTerminal(phase Phase) bool {
@@ -103,7 +125,5 @@ func (Request) resourceType() resource.Type           { return RequestType }
 func (value Request) DeepCopy() Request               { return value }
 func (Status) resourceType() resource.Type            { return StatusType }
 func (value Status) DeepCopy() Status                 { return value }
-func (Selection) resourceType() resource.Type         { return SelectionType }
-func (value Selection) DeepCopy() Selection           { return value }
 func (operationState) resourceType() resource.Type    { return OperationStateType }
 func (value operationState) DeepCopy() operationState { return value }

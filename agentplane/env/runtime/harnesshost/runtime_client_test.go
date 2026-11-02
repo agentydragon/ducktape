@@ -262,9 +262,6 @@ func TestHostSealsOnlyAfterMatchingExecutionFence(t *testing.T) {
 	if err := r.store.WriteAcknowledgement("session", ack); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.lifecycle.publishAck("session", ack); err != nil {
-		t.Fatal(err)
-	}
 	if err := r.lifecycle.wait(ctx, harnesshostlifecycle.Quiesced); err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,7 @@
 package retained
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -67,7 +68,7 @@ func TestSessionRecordsUseCOSIState(t *testing.T) {
 
 func TestConcurrentSessionFieldsSurviveRestart(t *testing.T) {
 	root := t.TempDir()
-	resources, backing, err := cosistate.Open(root, lifecycle.Namespace, SessionRecordCodec())
+	resources, backing, err := cosistate.Open(root, lifecycle.Namespace, SessionRecordRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +105,7 @@ func TestConcurrentSessionFieldsSurviveRestart(t *testing.T) {
 	if err := backing.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, reopenedBacking, err := cosistate.Open(root, lifecycle.Namespace, SessionRecordCodec())
+	reopened, reopenedBacking, err := cosistate.Open(root, lifecycle.Namespace, SessionRecordRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,6 +135,81 @@ func TestSessionFieldUpdateDoesNotCreateRecord(t *testing.T) {
 	}
 	if exists, err := store.Exists("missing"); err != nil || exists {
 		t.Fatalf("missing record created: exists=%t, err=%v", exists, err)
+	}
+}
+
+func TestIngressAcknowledgementsUsePersistentCOSIAndIgnoreLegacyJSON(t *testing.T) {
+	root := t.TempDir()
+	sessionsRoot := filepath.Join(root, "sessions")
+	legacyDirectory := filepath.Join(sessionsRoot, "session-1")
+	if err := os.MkdirAll(legacyDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legacyJSON := []byte(`{"cursor":777,"sealed":true}`)
+	legacyPath := filepath.Join(legacyDirectory, "acknowledgement.json")
+	if err := os.WriteFile(legacyPath, legacyJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stateDir := filepath.Join(root, "state")
+	if err := os.Mkdir(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	resources, backing, err := cosistate.Open(stateDir, lifecycle.Namespace, SessionRecordRegistration(), IngressAckRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewStore(sessionsRoot, resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ack, err := store.ReadAcknowledgement("session-1"); err != nil || ack != nil {
+		t.Fatalf("legacy file acknowledgement = %+v, err=%v; want no COSI state", ack, err)
+	}
+	sealed := Acknowledgement{Cursor: 12, Sealed: true}
+	if err := store.WriteAcknowledgement("session-1", sealed); err != nil {
+		t.Fatal(err)
+	}
+	if err := backing.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, reopenedBacking, err := cosistate.Open(stateDir, lifecycle.Namespace, SessionRecordRegistration(), IngressAckRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopenedStore, err := NewStore(sessionsRoot, reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := reopenedStore.ReadAcknowledgement("session-1")
+	if err != nil || got == nil || *got != sealed {
+		t.Fatalf("reopened sealed COSI acknowledgement = %+v, err=%v; want %+v", got, err, sealed)
+	}
+	unsealed := sealed
+	unsealed.Sealed = false
+	if err := reopenedStore.WriteAcknowledgement("session-1", unsealed); err != nil {
+		t.Fatal(err)
+	}
+	if err := reopenedBacking.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopenedAgain, reopenedAgainBacking, err := cosistate.Open(stateDir, lifecycle.Namespace, SessionRecordRegistration(), IngressAckRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopenedAgainBacking.Close()
+	unsealedStore, err := NewStore(sessionsRoot, reopenedAgain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = unsealedStore.ReadAcknowledgement("session-1")
+	if err != nil || got == nil || *got != unsealed {
+		t.Fatalf("reopened unsealed COSI acknowledgement = %+v, err=%v; want %+v", got, err, unsealed)
+	}
+	if got, err := os.ReadFile(legacyPath); err != nil || !bytes.Equal(got, legacyJSON) {
+		t.Fatalf("legacy file changed: %q, err=%v", got, err)
 	}
 }
 

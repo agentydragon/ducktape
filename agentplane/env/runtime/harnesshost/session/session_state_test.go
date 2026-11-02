@@ -164,7 +164,6 @@ func newSessionTestManager(t *testing.T, environment map[string]string, destinat
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: root,
 		Destination: destination, HarnessEnvironment: environment,
 		PublishSeal: func(string, *journal.SealState) error { return nil },
-		PublishAck:  func(string, retained.Acknowledgement) error { return nil },
 		OnChange:    func() {},
 		OnError: func(err error) {
 			if err != nil {

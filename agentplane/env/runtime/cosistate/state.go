@@ -2,12 +2,9 @@
 package cosistate
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
@@ -15,84 +12,49 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+	"github.com/cosi-project/runtime/pkg/state/impl/store"
 	"github.com/cosi-project/runtime/pkg/state/impl/store/bolt"
 	"go.etcd.io/bbolt"
 )
 
-type Codec struct {
-	Type      resource.Type
-	Marshal   func(resource.Resource) ([]byte, error)
-	Unmarshal func([]byte) (resource.Resource, error)
-}
-
-type (
-	marshaler struct{ codecs map[resource.Type]Codec }
-	envelope  struct {
-		Type resource.Type   `json:"type"`
-		Data json.RawMessage `json:"data"`
-	}
-)
-
-func (m marshaler) MarshalResource(value resource.Resource) ([]byte, error) {
-	codec, ok := m.codecs[value.Metadata().Type()]
-	if !ok {
-		return nil, fmt.Errorf("unsupported persistent resource %s", value.Metadata().Type())
-	}
-	data, err := codec.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(envelope{Type: codec.Type, Data: data})
-}
-
-func (m marshaler) UnmarshalResource(data []byte) (resource.Resource, error) {
-	var disk envelope
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&disk); err != nil {
-		return nil, err
-	}
-	var trailing json.RawMessage
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		return nil, errors.New("invalid trailing persisted resource")
-	}
-	codec, ok := m.codecs[disk.Type]
-	if !ok {
-		return nil, fmt.Errorf("unsupported persistent resource %s", disk.Type)
-	}
-	value, err := codec.Unmarshal(disk.Data)
-	if err != nil {
-		return nil, err
-	}
-	if value.Metadata().Type() != disk.Type {
-		return nil, errors.New("persisted resource type mismatch")
-	}
-	return value, nil
+// Registration names a durable type and checks its domain invariants on both
+// writes and reload. COSI's protobuf registry owns the wire representation.
+type Registration struct {
+	Type     resource.Type
+	Validate func(resource.Resource) error
 }
 
 type selectiveBacking struct {
 	inmem.BackingStore
-	codecs map[resource.Type]Codec
+	registered map[resource.Type]Registration
 }
 
 func (s selectiveBacking) Load(ctx context.Context, handler inmem.LoadHandler) error {
 	return s.BackingStore.Load(ctx, func(typ resource.Type, value resource.Resource) error {
-		if _, ok := s.codecs[typ]; !ok || value.Metadata().Type() != typ {
+		registration, ok := s.registered[typ]
+		if !ok || value.Metadata().Type() != typ {
 			return fmt.Errorf("unexpected persisted resource %s/%s", typ, value.Metadata().ID())
+		}
+		if err := registration.Validate(value); err != nil {
+			return fmt.Errorf("invalid persisted %s/%s: %w", typ, value.Metadata().ID(), err)
 		}
 		return handler(typ, value)
 	})
 }
 
 func (s selectiveBacking) Put(ctx context.Context, typ resource.Type, value resource.Resource) error {
-	if _, ok := s.codecs[typ]; !ok {
+	registration, ok := s.registered[typ]
+	if !ok {
 		return nil
+	}
+	if err := registration.Validate(value); err != nil {
+		return err
 	}
 	return s.BackingStore.Put(ctx, typ, value)
 }
 
 func (s selectiveBacking) Destroy(ctx context.Context, typ resource.Type, ptr resource.Pointer) error {
-	if _, ok := s.codecs[typ]; !ok {
+	if _, ok := s.registered[typ]; !ok {
 		return nil
 	}
 	return s.BackingStore.Destroy(ctx, typ, ptr)
@@ -100,20 +62,20 @@ func (s selectiveBacking) Destroy(ctx context.Context, typ resource.Type, ptr re
 
 // Open persists only the registered resource types in namespace. Process and
 // admission state remains in memory and is never restored on startup.
-func Open(stateDir string, namespace resource.Namespace, registered ...Codec) (state.State, *bolt.BackingStore, error) {
-	codecs := make(map[resource.Type]Codec, len(registered))
-	for _, codec := range registered {
-		if codec.Type == "" || codec.Marshal == nil || codec.Unmarshal == nil {
-			return nil, nil, errors.New("invalid persistent resource codec")
+func Open(stateDir string, namespace resource.Namespace, registered ...Registration) (state.State, *bolt.BackingStore, error) {
+	selectedTypes := make(map[resource.Type]Registration, len(registered))
+	for _, registration := range registered {
+		if registration.Type == "" || registration.Validate == nil {
+			return nil, nil, errors.New("invalid persistent resource registration")
 		}
-		if _, ok := codecs[codec.Type]; ok {
-			return nil, nil, fmt.Errorf("duplicate persistent resource type %s", codec.Type)
+		if _, ok := selectedTypes[registration.Type]; ok {
+			return nil, nil, fmt.Errorf("duplicate persistent resource type %s", registration.Type)
 		}
-		codecs[codec.Type] = codec
+		selectedTypes[registration.Type] = registration
 	}
 	backing, err := bolt.NewBackingStore(func() (*bbolt.DB, error) {
 		return bbolt.Open(filepath.Join(stateDir, "runtime-resources.db"), 0o600, nil)
-	}, marshaler{codecs: codecs})
+	}, store.ProtobufMarshaler{})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -125,7 +87,7 @@ func Open(stateDir string, namespace resource.Namespace, registered ...Codec) (s
 	if err != nil {
 		return nil, nil, errors.Join(err, backing.Close())
 	}
-	selected := selectiveBacking{BackingStore: backing.WithNamespace(namespace), codecs: codecs}
+	selected := selectiveBacking{BackingStore: backing.WithNamespace(namespace), registered: selectedTypes}
 	build := func(ns resource.Namespace) state.CoreState {
 		if ns == namespace {
 			return inmem.NewStateWithOptions(inmem.WithBackingStore(selected))(ns)
