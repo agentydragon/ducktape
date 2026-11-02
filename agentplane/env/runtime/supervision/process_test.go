@@ -20,11 +20,14 @@ import (
 )
 
 const (
-	processTestFixtureEnv = "AGENTPLANE_PROCESS_TEST_FIXTURE"
-	processTestLockEnv    = "AGENTPLANE_PROCESS_TEST_LOCK"
-	processTestPIDEnv     = "AGENTPLANE_PROCESS_TEST_PID"
-	processTestDetached   = "--agentplane-process-test-detached"
-	processTestLeader     = "--agentplane-process-test-leader"
+	processTestFixtureEnv  = "AGENTPLANE_PROCESS_TEST_FIXTURE"
+	processTestLockEnv     = "AGENTPLANE_PROCESS_TEST_LOCK"
+	processTestPIDEnv      = "AGENTPLANE_PROCESS_TEST_PID"
+	processTestDetached    = "--agentplane-process-test-detached"
+	processTestLeader      = "--agentplane-process-test-leader"
+	processTestSubreaper   = "--agentplane-process-test-subreaper"
+	processTestGroupNative = "--agentplane-process-test-group-native"
+	processTestGroupChild  = "--agentplane-process-test-group-child"
 )
 
 func TestMain(m *testing.M) {
@@ -38,9 +41,166 @@ func TestMain(m *testing.M) {
 			os.Exit(0)
 		case processTestLeader:
 			os.Exit(processTestLeaderMain(os.Args[2:]))
+		case processTestSubreaper:
+			os.Exit(processTestSubreaperMain(os.Args[2:]))
+		case processTestGroupNative:
+			os.Exit(processTestGroupNativeMain(os.Args[2:]))
+		case processTestGroupChild:
+			os.Exit(processTestGroupChildMain(os.Args[2:]))
 		}
 	}
 	os.Exit(m.Run())
+}
+
+func processTestSubreaperMain(args []string) int {
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, "subreaper helper requires a descendant PID file")
+		return 1
+	}
+	if err := becomeChildSubreaper(); err != nil {
+		fmt.Fprintln(os.Stderr, "set child subreaper:", err)
+		return 1
+	}
+	input, output, err := os.Pipe()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "create native stdin:", err)
+		return 1
+	}
+	defer input.Close()
+	native := exec.Command(os.Args[0], processTestGroupNative, args[0])
+	native.Stdin = input
+	native.Stdout, native.Stderr = os.Stdout, os.Stderr
+	native.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := native.Start(); err != nil {
+		_ = input.Close()
+		_ = output.Close()
+		fmt.Fprintln(os.Stderr, "start native fixture:", err)
+		return 1
+	}
+	_ = input.Close()
+	reaped := false
+	defer func() {
+		if !reaped {
+			_ = signalProcessGroup(native.Process.Pid, syscall.SIGKILL)
+			_ = native.Wait()
+			_ = waitNativeGroupGone(native.Process.Pid)
+		}
+		_ = output.Close()
+	}()
+	descendant, err := processTestWaitPIDFile(args[0])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	parent, err := processTestParentPID(descendant)
+	if err != nil || parent != native.Process.Pid {
+		fmt.Fprintf(os.Stderr, "descendant %d initial PPid=%d, err=%v; want native leader %d\n", descendant, parent, err, native.Process.Pid)
+		return 1
+	}
+	if _, err := output.WriteString("exit\n"); err != nil {
+		fmt.Fprintln(os.Stderr, "release native fixture:", err)
+		return 1
+	}
+	if err := observeNativeExit(native.Process.Pid); err != nil {
+		fmt.Fprintln(os.Stderr, "observe native fixture exit:", err)
+		return 1
+	}
+	parent, err = processTestParentPID(descendant)
+	if err != nil || parent != os.Getpid() {
+		fmt.Fprintf(os.Stderr, "descendant %d adopted PPid=%d, err=%v; want subreaper %d\n", descendant, parent, err, os.Getpid())
+		return 1
+	}
+	if err := signalProcessGroup(native.Process.Pid, syscall.SIGKILL); err != nil {
+		fmt.Fprintln(os.Stderr, "kill native process group:", err)
+		return 1
+	}
+	waitErr := native.Wait()
+	reaped = true
+	var exitError *exec.ExitError
+	if !errors.As(waitErr, &exitError) || exitError.ExitCode() != 23 {
+		fmt.Fprintf(os.Stderr, "native fixture exit = %v, want status 23\n", waitErr)
+		return 1
+	}
+	if err := waitNativeGroupGone(native.Process.Pid); err != nil {
+		fmt.Fprintln(os.Stderr, "reap native process group:", err)
+		return 1
+	}
+	if err := unix.Kill(descendant, 0); !errors.Is(err, unix.ESRCH) {
+		fmt.Fprintf(os.Stderr, "descendant %d still exists after group reap: %v\n", descendant, err)
+		return 1
+	}
+	fmt.Fprintf(os.Stdout, "descendant %d reparented from native %d to subreaper %d and was reaped\n", descendant, native.Process.Pid, os.Getpid())
+	return 0
+}
+
+func processTestGroupNativeMain(args []string) int {
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, "native fixture requires a descendant PID file")
+		return 1
+	}
+	descendant := exec.Command(os.Args[0], processTestGroupChild, args[0])
+	descendant.Stdout, descendant.Stderr = os.Stdout, os.Stderr
+	if err := descendant.Start(); err != nil {
+		fmt.Fprintln(os.Stderr, "start group descendant:", err)
+		return 1
+	}
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil || line != "exit\n" {
+		fmt.Fprintf(os.Stderr, "read native release = (%q, %v)\n", line, err)
+		return 1
+	}
+	return 23
+}
+
+func processTestGroupChildMain(args []string) int {
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, "group descendant requires a PID file")
+		return 1
+	}
+	signal.Ignore(syscall.SIGTERM)
+	wake := make(chan os.Signal, 1)
+	signal.Notify(wake, syscall.SIGUSR1)
+	if err := os.WriteFile(args[0], []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+		fmt.Fprintln(os.Stderr, "write descendant PID:", err)
+		return 1
+	}
+	<-wake
+	return 0
+}
+
+func processTestWaitPIDFile(path string) (int, error) {
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(path)
+		if err == nil {
+			pid, parseErr := strconv.Atoi(strings.TrimSpace(string(data)))
+			if parseErr == nil && pid > 1 {
+				return pid, nil
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return 0, err
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return 0, fmt.Errorf("timed out waiting for process ID in %s", path)
+}
+
+func processTestParentPID(pid int) (int, error) {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+	if err != nil {
+		return 0, err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if !strings.HasPrefix(line, "PPid:") {
+			continue
+		}
+		parent, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "PPid:")))
+		if err != nil {
+			return 0, fmt.Errorf("parse PPid for %d: %w", pid, err)
+		}
+		return parent, nil
+	}
+	return 0, fmt.Errorf("process %d status has no PPid", pid)
 }
 
 func TestProcessParentDeathFencesNativeAndRetainsOwner(t *testing.T) {
@@ -196,6 +356,35 @@ func TestSubprocessNativeStartFailureRollsBack(t *testing.T) {
 	defer cancel()
 	if code, err := process.Wait(ctx); code != 125 || err != nil {
 		t.Fatalf("Wait after native start rollback = (%d, %v), want (125, nil)", code, err)
+	}
+	if description := process.ExitDescription(); !strings.Contains(description, "/run/agentplane-missing-native-command") {
+		t.Fatalf("failed native start lost its stderr diagnostic: %s", description)
+	}
+}
+
+func TestFailedStartStderrDrainIsBoundedWithInheritedWriter(t *testing.T) {
+	process, err := NewSubprocessSupervisor(nil).NewProcess(ProcessConfig{Command: []string{"/bin/true"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	defer writer.Close()
+	process.attachStreams(nil, nil, reader)
+	if _, err := writer.Write([]byte("partial startup diagnostic")); err != nil {
+		t.Fatal(err)
+	}
+
+	started := time.Now()
+	process.drainFailedStartStderr()
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("failed-start stderr drain blocked for %s with a live inherited writer", elapsed)
+	}
+	if tail := string(process.stderr.Tail()); !strings.Contains(tail, "partial startup diagnostic") {
+		t.Fatalf("failed-start stderr tail = %q", tail)
 	}
 }
 

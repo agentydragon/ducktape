@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	ReadBatchBytes  = 64 * 1024
-	stderrTailBytes = 4096
+	ReadBatchBytes                = 64 * 1024
+	stderrTailBytes               = 4096
+	failedStartStderrDrainTimeout = 250 * time.Millisecond
 )
 
 var (
@@ -287,6 +288,15 @@ func (p *Process) cleanupFailedStart(cause error) {
 	p.completeWith(125, cause)
 }
 
+func (p *Process) drainFailedStartStderr() {
+	p.mu.Lock()
+	stderr := p.stderr
+	p.mu.Unlock()
+	if stderr != nil {
+		_ = stderr.drain(failedStartStderrDrainTimeout)
+	}
+}
+
 func (p *Process) completeWith(code int, err error) {
 	p.complete.Do(func() {
 		p.mu.Lock()
@@ -365,4 +375,20 @@ func (r *tailReader) Tail() []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]byte(nil), r.tail...)
+}
+
+func (r *tailReader) drain(timeout time.Duration) error {
+	file, ok := r.reader.(*os.File)
+	if !ok {
+		return errors.New("failed-start stderr reader does not support deadlines")
+	}
+	if err := file.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		return err
+	}
+	defer file.SetReadDeadline(time.Time{})
+	_, err := io.Copy(io.Discard, r)
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		return nil
+	}
+	return err
 }

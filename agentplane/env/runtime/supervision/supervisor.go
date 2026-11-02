@@ -84,6 +84,14 @@ func SupervisorMain(args []string) int {
 	if parentAlreadyGone(liveness) {
 		return 128 + int(syscall.SIGUSR1)
 	}
+	if err := becomeChildSubreaper(); err != nil {
+		fmt.Fprintf(os.Stderr, "harness supervisor: become child subreaper: %v\n", err)
+		if fenceErr := writeFenceConfirmation(fenceConfirmation); fenceErr != nil {
+			fmt.Fprintf(os.Stderr, "harness supervisor: report empty process-group fence: %v\n", fenceErr)
+			return 125
+		}
+		return 125
+	}
 	parentGone := make(chan struct{}, 1)
 	go watchParentPipe(liveness, parentGone)
 	signals := make(chan os.Signal, 2)
@@ -256,6 +264,10 @@ func fenceAndReapNative(child *exec.Cmd) (int, error) {
 	return processExitCode(child.ProcessState), expectedWaitError(waitErr)
 }
 
+func becomeChildSubreaper() error {
+	return unix.Prctl(unix.PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0)
+}
+
 func waitNativeGroupGone(leader int) error {
 	if leader <= 1 {
 		return fmt.Errorf("invalid native process-group ID %d", leader)
@@ -266,6 +278,22 @@ func waitNativeGroupGone(leader int) error {
 	defer timer.Stop()
 	lastProbe := "process group still exists"
 	for {
+		// As a child subreaper, this supervisor adopts descendants orphaned by
+		// the native leader. Reap only children still in this process group; the
+		// group leader has already been reaped, after all group signals were sent.
+		for {
+			var status unix.WaitStatus
+			pid, err := unix.Wait4(-leader, &status, unix.WNOHANG, nil)
+			if errors.Is(err, unix.EINTR) {
+				continue
+			}
+			if err != nil && !errors.Is(err, unix.ECHILD) {
+				return fmt.Errorf("reap native process-group child: %w", err)
+			}
+			if pid <= 0 {
+				break
+			}
+		}
 		err := unix.Kill(-leader, 0)
 		if errors.Is(err, unix.ESRCH) {
 			return nil

@@ -158,6 +158,18 @@ func TestWaitNativeGroupGoneWaitsForLeaderExit(t *testing.T) {
 	}
 }
 
+func TestChildSubreaperAdoptsAndReapsSameGroupDescendant(t *testing.T) {
+	cmd := exec.Command(os.Args[0], processTestSubreaper, filepath.Join(t.TempDir(), "descendant.pid"))
+	var output strings.Builder
+	cmd.Stdout, cmd.Stderr = &output, &output
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("subreaper process failed: %v\n%s", err, output.String())
+	}
+	if !strings.Contains(output.String(), "reparented from native") || !strings.Contains(output.String(), "and was reaped") {
+		t.Fatalf("subreaper process did not prove adoption and reaping: %s", output.String())
+	}
+}
+
 func TestSubprocessStopUsesLaunchGrace(t *testing.T) {
 	grace := 250 * time.Millisecond
 	process, err := NewSubprocessSupervisor(nil).NewProcess(ProcessConfig{

@@ -135,7 +135,7 @@ PID1 launches each child in its own process group without an environment owner d
 Runtime's open COSI database excludes a concurrent Runtime; the private PID namespace and its
 outer runtime fence contain descendants after PID1 death. The subprocess supervisor retains a
 trusted owner-descriptor copy and a parent-liveness pipe. Owners keep their database and any extra
-lock through ordinary process cleanup and journal closure. `Stop` closes stdin and sends TERM, then KILL after its grace budget;
+lock through ordinary process cleanup and journal closure.
 `Stop` closes stdin and sends TERM, then KILL after its grace budget; a canceled stop asks the
 subprocess supervisor to escalate and returns the caller's context error. After observing leader
 exit, PID1 signals the remaining group and reaps adopted children. The subprocess supervisor is a

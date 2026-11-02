@@ -118,6 +118,9 @@ func (b *subprocessBackend) start(ctx context.Context, p *Process) error {
 		if cleanupErr == nil {
 			_, cleanupErr = p.Wait(context.Background())
 		}
+		// Preserve the supervisor's startup diagnostic without waiting forever
+		// for an inherited stderr writer that survived a failed PID report.
+		p.drainFailedStartStderr()
 		return errors.Join(fmt.Errorf("harness supervisor did not report a native PID: %w", err), cleanupErr)
 	}
 	p.setNativePID(pid)

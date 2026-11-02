@@ -6,8 +6,9 @@ The [RBE reproduction](https://app.buildbuddy.io/invocation/717b6862-8bcf-4ea8-9
 killed a trusted supervisor after the native PID was reported, after the child closed its inherited
 owner descriptor. The backend now reports this as a failed fence, so COSI retains the finalizer instead
 of treating exit 137 as cleanup success. Normal subprocess cleanup signals the same process group
-while its leader is unreaped, then waits up to five seconds for group disappearance; a group held by
-orphaned zombies returns a failed fence rather than a false success or an unbounded wait.
+while its leader is unreaped, then reaps adopted same-group descendants and waits up to five seconds
+for group disappearance. An unowned process or external reaper that keeps the group visible still
+causes a failed fence rather than a false success or an unbounded wait.
 
 The startup boundary remains unresolved. If the supervisor dies before reporting the native PID,
 `Process.Start` returns an error and `Host.Launch` returns no instance; the host currently treats that
