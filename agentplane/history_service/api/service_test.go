@@ -195,7 +195,7 @@ func (s testServer) recordFor(t *testing.T, principal storage.ExecutionPrincipal
 func delegated(t *testing.T, token string, caller auth.Account, uid string) context.Context {
 	t.Helper()
 	envelope := &delegationpb.Delegation{
-		Caller: &delegationpb.ServiceAccountIdentity{
+		Caller: &identitypb.ServiceAccountIdentity{
 			Account: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, Uid: uid,
 		},
 		ActionRequestId: uuid.NewString(), ActionExecutionId: uuid.NewString(),

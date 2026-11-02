@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"go.opentelemetry.io/otel/attribute"
@@ -46,7 +46,7 @@ type WakeRequester interface {
 
 type DeliveryRunner interface {
 	RunnerCommands
-	OpenSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *delegationpb.ServiceAccountIdentity) error
+	OpenSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *identitypb.ServiceAccountIdentity) error
 }
 
 type LeaseOwner interface {

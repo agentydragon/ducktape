@@ -15,9 +15,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/session_instructions"
 	"github.com/google/uuid"
@@ -387,7 +387,7 @@ func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionR
 				// Older retrying Dispatchers may omit the additive field. Compare as if it were present,
 				// while leaving the already retained configuration untouched.
 				incoming = proto.Clone(request).(*samplerpb.OpenSessionRequest)
-				incoming.ExecutionPrincipal = proto.Clone(previous.GetExecutionPrincipal()).(*delegationpb.ServiceAccountIdentity)
+				incoming.ExecutionPrincipal = proto.Clone(previous.GetExecutionPrincipal()).(*identitypb.ServiceAccountIdentity)
 			}
 			if !proto.Equal(previous, incoming) {
 				return ErrConflict
@@ -949,11 +949,11 @@ func Describe(session *Session) (*samplerpb.GetSessionResponse, error) {
 	}, nil
 }
 
-func cloneExecutionPrincipal(identity *delegationpb.ServiceAccountIdentity) *delegationpb.ServiceAccountIdentity {
+func cloneExecutionPrincipal(identity *identitypb.ServiceAccountIdentity) *identitypb.ServiceAccountIdentity {
 	if identity == nil {
 		return nil
 	}
-	return proto.Clone(identity).(*delegationpb.ServiceAccountIdentity)
+	return proto.Clone(identity).(*identitypb.ServiceAccountIdentity)
 }
 
 func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerUID string, validate func(*Session) error) (*eventlogpb.EventEntry, error) {

@@ -76,7 +76,7 @@ func serveAdmissionHealth(t *testing.T, methods auth.Methods) (healthpb.HealthCl
 func delegationContext(t *testing.T, token string, caller auth.Account, uid string) context.Context {
 	t.Helper()
 	envelope := &delegationpb.Delegation{
-		Caller: &delegationpb.ServiceAccountIdentity{
+		Caller: &identitypb.ServiceAccountIdentity{
 			Account: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, Uid: uid,
 		},
 		ActionRequestId: uuid.NewString(), ActionExecutionId: uuid.NewString(),

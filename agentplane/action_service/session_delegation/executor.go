@@ -104,7 +104,7 @@ func (e *Executor) delegatedContext(ctx context.Context, request store.Execution
 		return nil, errors.New("the admitted caller or Action correlation identity is incomplete")
 	}
 	envelope := &delegationpb.Delegation{
-		Caller: &delegationpb.ServiceAccountIdentity{
+		Caller: &identitypb.ServiceAccountIdentity{
 			Account: &identitypb.ServiceAccount{Namespace: request.Caller.Namespace, Name: request.Caller.Name},
 			Uid:     *request.CallerUID,
 		},

@@ -222,7 +222,7 @@ func bearing(t *testing.T, token string) context.Context {
 func delegatedBearing(t *testing.T, token string, account auth.Account, uid string) context.Context {
 	t.Helper()
 	envelope := &delegationpb.Delegation{
-		Caller: &delegationpb.ServiceAccountIdentity{
+		Caller: &identitypb.ServiceAccountIdentity{
 			Account: &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name}, Uid: uid,
 		},
 		ActionRequestId: actionRequestID, ActionExecutionId: actionExecutionID,

@@ -246,7 +246,7 @@ func directContext(t *testing.T, token string) context.Context {
 func delegatedContext(t *testing.T, effectiveUID string) context.Context {
 	t.Helper()
 	envelope := &delegationpb.Delegation{
-		Caller: &delegationpb.ServiceAccountIdentity{
+		Caller: &identitypb.ServiceAccountIdentity{
 			Account: &identitypb.ServiceAccount{Namespace: executionAccount.Namespace, Name: executionAccount.Name}, Uid: effectiveUID,
 		},
 		ActionRequestId: uuid.NewString(), ActionExecutionId: uuid.NewString(),

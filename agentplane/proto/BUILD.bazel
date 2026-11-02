@@ -197,7 +197,10 @@ ts_proto_library(
     node_modules = "//:node_modules",
     proto = ":session_proto",
     visibility = ["//visibility:public"],
-    deps = [":delegation_pb"],
+    deps = [
+        ":delegation_pb",
+        ":identity_pb",
+    ],
 )
 
 proto_library(

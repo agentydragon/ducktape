@@ -201,7 +201,10 @@ go_proto_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb",
     proto = ":egress_admin_proto",
-    deps = ["//agentplane/proto:sandboxes_go_proto"],
+    deps = [
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
+    ],
 )
 
 go_proto_library(
@@ -214,6 +217,7 @@ go_proto_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb",
     proto = ":egress_rules_proto",
     deps = [
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
     ],
