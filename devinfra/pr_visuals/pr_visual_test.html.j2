@@ -1,3 +1,4 @@
+{% macro issue_list(items) %}<ul>{% for issue in items %}<li>{{ issue.message }}{% if issue.url %} ({{ issue.details }}) · <a href="{{ issue.url }}">BuildBuddy</a>{% endif %}</li>{% endfor %}</ul>{% endmacro %}
 <!doctype html>
 <html lang="en">
   <head>
@@ -14,8 +15,8 @@
       <div><code>{{ target_label }}</code> · {{ repository }} · <code>{{ commit_sha }}</code>{% if base_sha %} · base <code>{{ base_sha[:8] }}</code>{% endif %}</div>
     </header>
     <main>
-      {% if issues_html %}<div role="alert"><strong>Incomplete visual results</strong><ul>{% for issue in issues_html %}<li>{{ issue | safe }}</li>{% endfor %}</ul></div>{% endif %}
-      {% if notices_html %}<details><summary>Retries and execution notices</summary><ul>{% for notice in notices_html %}<li>{{ notice | safe }}</li>{% endfor %}</ul></details>{% endif %}
+      {% if issues %}<div role="alert"><strong>Incomplete visual results</strong>{{ issue_list(issues) }}</div>{% endif %}
+      {% if notices %}<details><summary>Retries and execution notices</summary>{{ issue_list(notices) }}</details>{% endif %}
       {% for asset in assets if asset.classification == "unstable" %}
       <figure id="{{ asset.path }}">
         <figcaption>{{ asset.label }}<span class="badge modified">unstable across runs</span></figcaption>

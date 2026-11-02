@@ -38,8 +38,9 @@ from devinfra.pr_visuals.metadata import (
     ClassificationCounts,
     ReviewAsset,
     ReviewBundleMetadata,
+    ReviewIssue,
+    ReviewIssueSource,
     ReviewResult,
-    ReviewResultIssue,
     ReviewTest,
     ReviewVariant,
 )
@@ -89,11 +90,11 @@ class DownloadedVisualTest:
     title: str
     assets: list[DownloadedAsset]
     configuration: str | None
-    issues: list[str | ReviewResultIssue]
-    notices: list[str | ReviewResultIssue] = field(default_factory=list)
+    issues: list[ReviewIssue]
+    notices: list[ReviewIssue] = field(default_factory=list)
 
 
-def _result_issues(results: list[ResultCoverage], *, notices: bool = False) -> list[ReviewResultIssue]:
+def _result_issues(results: list[ResultCoverage], *, notices: bool = False) -> list[ReviewIssue]:
     groups: dict[tuple[str, str | None, int | None, int | None, str], set[int | None]] = defaultdict(set)
     for entry in results:
         result = entry.result
@@ -102,13 +103,15 @@ def _result_issues(results: list[ResultCoverage], *, notices: bool = False) -> l
                 continue
             groups[result.invocation, result.configuration, result.run, result.attempt, message].add(result.shard)
     return [
-        ReviewResultIssue(
+        ReviewIssue(
             message=message,
-            invocation=invocation,
-            configuration=configuration,
-            run=run,
-            attempt=attempt,
-            shards=sorted(shards, key=lambda shard: (shard is None, shard or 0)),
+            source=ReviewIssueSource(
+                invocation=invocation,
+                configuration=configuration,
+                run=run,
+                attempt=attempt,
+                shards=sorted(shards, key=lambda shard: (shard is None, shard or 0)),
+            ),
         )
         for (invocation, configuration, run, attempt, message), shards in groups.items()
     ]
@@ -130,15 +133,31 @@ def _shard_ranges(shards: list[int | None]) -> str:
     return ", ".join(ranges)
 
 
-def _issue_html(issue: str | ReviewResultIssue) -> str:
-    if isinstance(issue, str):
-        return html.escape(issue)
-    shard_label = "shard" if len(issue.shards) == 1 else "shards"
-    details = f"{shard_label} {_shard_ranges(issue.shards)} · run {issue.run or 'unknown'} · attempt {issue.attempt or 'unknown'}"
-    if issue.configuration:
-        details += f" · config {issue.configuration[:8]}"
-    url = f"https://app.buildbuddy.io/invocation/{urllib.parse.quote(issue.invocation, safe='')}"
-    return f'{html.escape(issue.message)} ({html.escape(details)}) · <a href="{html.escape(url, quote=True)}">BuildBuddy</a>'
+@dataclass(frozen=True)
+class _IssueDisplay:
+    message: str
+    details: str | None = None
+    url: str | None = None
+
+
+def _issue_display(issue: ReviewIssue) -> _IssueDisplay:
+    source = issue.source
+    if source is None:
+        return _IssueDisplay(message=issue.message)
+    shard_label = "shard" if len(source.shards) == 1 else "shards"
+    details = f"{shard_label} {_shard_ranges(source.shards)} · run {source.run or 'unknown'} · attempt {source.attempt or 'unknown'}"
+    if source.configuration:
+        details += f" · config {source.configuration[:8]}"
+    url = f"https://app.buildbuddy.io/invocation/{urllib.parse.quote(source.invocation, safe='')}"
+    return _IssueDisplay(message=issue.message, details=details, url=url)
+
+
+def _issue_comment_html(issue: ReviewIssue) -> str:
+    display = _issue_display(issue)
+    message = html.escape(display.message)
+    if display.url is None:
+        return message
+    return f'{message} ({html.escape(display.details or "")}) · <a href="{html.escape(display.url, quote=True)}">BuildBuddy</a>'
 
 
 class BaselineSource(Protocol):
@@ -433,14 +452,16 @@ def download_visual_tests(
     downloads: list[_Download] = []
     for target, selected in sorted(by_target.items()):
         target_results = [entry for entry in collected.results if entry.result.target == target]
-        issues: list[str | ReviewResultIssue] = list(_result_issues(target_results))
+        issues = _result_issues(target_results)
         if any(entry.overall_status not in ("PASSED", "FLAKY") for entry in target_results):
-            issues.append("The overall test result did not complete successfully.")
-        notices: list[str | ReviewResultIssue] = list(_result_issues(target_results, notices=True))
+            issues.append(ReviewIssue(message="The overall test result did not complete successfully."))
+        notices = _result_issues(target_results, notices=True)
         configurations = {entry.result.configuration for entry in target_results}
         configuration = next(iter(configurations)) if len(configurations) == 1 else None
         if len(configurations) != 1 or None in configurations:
-            issues.append("Multiple or unknown Bazel configurations prevent a coherent comparison.")
+            issues.append(
+                ReviewIssue(message="Multiple or unknown Bazel configurations prevent a coherent comparison.")
+            )
         run_rosters: dict[tuple[str, str | None, int | None], set[tuple[str, str | None, str]]] = {}
         for result in target_results:
             if result.selected:
@@ -454,21 +475,21 @@ def download_visual_tests(
                 identity
             )
         if len({frozenset(roster) for roster in run_rosters.values()}) > 1:
-            issues.append("Successful runs or invocations published different screenshot rosters.")
+            issues.append(ReviewIssue(message="Successful runs or invocations published different screenshot rosters."))
         titles = {item.title for item in selected if item.title}
         if len(titles) > 1:
-            issues.append("Screenshot records disagree on the target title.")
+            issues.append(ReviewIssue(message="Screenshot records disagree on the target title."))
         title = min(titles) if titles else target
         assets: list[DownloadedAsset] = []
         for (case_id, checkpoint, role), observations in sorted(grouped.items(), key=lambda pair: repr(pair[0])):
             labels = {item.label for item in observations if item.label}
             if len(labels) > 1:
-                issues.append(f"{case_id}: screenshot records disagree on the display label.")
+                issues.append(ReviewIssue(message=f"{case_id}: screenshot records disagree on the display label."))
             label = min(labels) if labels else case_id + (f" — {checkpoint}" if checkpoint else "")
             variants_by_digest: dict[str, list[OutputObservation]] = defaultdict(list)
             for item in observations:
                 if item.digest is None:
-                    issues.append(f"{case_id}: the screenshot has no verified CAS digest.")
+                    issues.append(ReviewIssue(message=f"{case_id}: the screenshot has no verified CAS digest."))
                     continue
                 variants_by_digest[item.digest].append(item)
             variants: list[DownloadedVariant] = []
@@ -578,8 +599,8 @@ def _review_test_page_data(
     test: ReviewTest, *, asset_base: str, page_url: str, shared_asset_base: str
 ) -> dict[str, Any]:
     page = test.model_dump(exclude_none=True)
-    page["issues_html"] = [_issue_html(issue) for issue in test.issues]
-    page["notices_html"] = [_issue_html(notice) for notice in test.notices]
+    page["issues"] = [_issue_display(issue) for issue in test.issues]
+    page["notices"] = [_issue_display(notice) for notice in test.notices]
     page["assets"] = [
         _asset_page_data(asset, asset_base=asset_base, page_url=page_url, shared_asset_base=shared_asset_base)
         for asset in _ordered_assets(test.assets)
@@ -741,7 +762,11 @@ def build_bundle(
         target_dir.mkdir(parents=True, exist_ok=True)
         issues = list(test.issues)
         if not test.configuration:
-            issues.append("The Bazel configuration is unknown; comparison and baseline publication are unavailable.")
+            issues.append(
+                ReviewIssue(
+                    message="The Bazel configuration is unknown; comparison and baseline publication are unavailable."
+                )
+            )
         baseline: ResolvedBaseline | None = None
         comparable = bool(test.configuration)
         if base_sha and baseline_source is not None:
@@ -752,7 +777,9 @@ def build_bundle(
                 or baseline.metadata.configuration != test.configuration
             ):
                 issues.append(
-                    "The baseline and candidate configurations cannot be compared under bazel-configuration-exact-v1."
+                    ReviewIssue(
+                        message="The baseline and candidate configurations cannot be compared under bazel-configuration-exact-v1."
+                    )
                 )
                 comparable = False
                 assets = [
@@ -1026,7 +1053,7 @@ def _target_section(test: ReviewTest, *, url: str, open_section: bool, ci_detail
         f"{html.escape(test.title)} · {gallery_link}{rerun_link}</summary>",
         "",
     ]
-    lines.extend(f"- ⚠️ {_issue_html(issue)}" for issue in test.issues)
+    lines.extend(f"- ⚠️ {_issue_comment_html(issue)}" for issue in test.issues)
     for index, asset in enumerate(assets):
         if len(assets) <= INLINE_ASSET_LIMIT:
             content = _asset_comment_lines(asset, asset_base=asset_base, gallery_url=gallery_url, test=test)

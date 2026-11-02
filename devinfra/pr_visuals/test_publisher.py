@@ -23,8 +23,8 @@ from devinfra.pr_visuals.metadata import (
     ClassificationCounts,
     ReviewAsset,
     ReviewBundleMetadata,
+    ReviewIssue,
     ReviewResult,
-    ReviewResultIssue,
     ReviewTest,
 )
 from devinfra.pr_visuals.publisher import (
@@ -352,7 +352,7 @@ def test_download_marks_variant_and_target_status_issues(monkeypatch: pytest.Mon
     assert len(tests[0].assets) == 1
     assert len(tests[0].assets[0].variants) == 2
     assert tests[0].assets[0].checkpoint == "expanded"
-    assert any(isinstance(issue, str) and "successfully" in issue for issue in tests[0].issues)
+    assert any("successfully" in issue.message for issue in tests[0].issues)
 
 
 def test_failed_shards_are_grouped_and_linked_in_comment_and_gallery(
@@ -367,7 +367,7 @@ def test_failed_shards_are_grouped_and_linked_in_comment_and_gallery(
             "FAILED",
             1,
             False,
-            (message,),
+            (message, "bad <script>"),
         )
         for shard in (1, 2, 3, 5, 10, 11)
     )
@@ -387,6 +387,8 @@ def test_failed_shards_are_grouped_and_linked_in_comment_and_gallery(
         assert rendered.count(message) == 1
         assert "shards 1-3, 5, 10-11" in rendered
         assert f'href="https://app.buildbuddy.io/invocation/{invocation}"' in rendered
+        assert "bad &lt;script&gt;" in rendered
+        assert "bad <script>" not in rendered
         assert "ResultKey(" not in rendered
         assert "abcdef0123456789" not in rendered
     assert not test.baseline_eligible
@@ -413,7 +415,7 @@ def test_download_rejects_ambiguous_configurations(monkeypatch: pytest.MonkeyPat
         run=_download_runner({Blob(body).uri: body for body in (b"one", b"two")}),
     )
     assert tests[0].configuration is None
-    assert any(isinstance(issue, str) and "configurations" in issue for issue in tests[0].issues)
+    assert any("configurations" in issue.message for issue in tests[0].issues)
 
 
 def test_produced_outputs_survive_collection_and_content_addressed_publication(tmp_path: Path) -> None:
@@ -1124,19 +1126,19 @@ def test_configuration_mismatch_and_incomplete_result_cannot_advance_baseline(tm
     review = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests[0]
     assert not review.baseline_eligible
     assert review.assets[0].classification is None
-    assert any(isinstance(issue, str) and "configurations cannot be compared" in issue for issue in review.issues)
+    assert any("configurations cannot be compared" in issue.message for issue in review.issues)
     incomplete = DownloadedVisualTest(
         candidate.target_label,
         candidate.slug,
         candidate.title,
         candidate.assets,
         candidate.configuration,
-        ["incomplete result coverage"],
+        [ReviewIssue(message="incomplete result coverage")],
     )
     bundle = build_bundle([incomplete], tmp_path / "site", commit_sha="b" * 40, repository="r")
     review = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests[0]
     assert not review.baseline_eligible
-    assert "incomplete result coverage" in review.issues
+    assert any(issue.message == "incomplete result coverage" for issue in review.issues)
 
 
 def test_unstable_variants_keep_all_images_and_disqualify_baseline(tmp_path: Path) -> None:
@@ -1306,7 +1308,7 @@ def _test_from_files(
     *,
     repository: str = "r",
     configuration: str | None = "cfg",
-    issues: list[str | ReviewResultIssue] | None = None,
+    issues: list[ReviewIssue] | None = None,
 ) -> DownloadedVisualTest:
     return DownloadedVisualTest(
         label,

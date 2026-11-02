@@ -30,13 +30,17 @@ class ReviewResult(BaseModel):
     record_uri: str | None = None
 
 
-class ReviewResultIssue(BaseModel):
-    message: str
+class ReviewIssueSource(BaseModel):
     invocation: str
     configuration: str | None
     run: int | None
     shards: list[int | None]
     attempt: int | None
+
+
+class ReviewIssue(BaseModel):
+    message: str
+    source: ReviewIssueSource | None = None
 
 
 class ReviewVariant(BaseModel):
@@ -89,8 +93,8 @@ class ReviewTest(BaseModel):
     title: str
     assets: list[ReviewAsset]
     baseline_eligible: bool = False
-    issues: list[str | ReviewResultIssue] = Field(default_factory=list)
-    notices: list[str | ReviewResultIssue] = Field(default_factory=list)
+    issues: list[ReviewIssue] = Field(default_factory=list)
+    notices: list[ReviewIssue] = Field(default_factory=list)
     comparison_profile: str = "bazel-configuration-exact-v1"
     configuration: str | None = None
     base_sha: str | None = None
