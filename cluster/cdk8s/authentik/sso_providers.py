@@ -67,6 +67,17 @@ def chart(app: App) -> Chart:
         read=[],
         write=["platform-sessions-oidc"],
     )
+    # CLEANUP(added 2026-11-02): Remove once sso-providers state no longer contains
+    # kubernetes_secret.openai_platform_oidc. OpenTofu refreshes removed resources
+    # before forgetting them, including with lifecycle.destroy = false.
+    opentofu.secret_access(
+        chart,
+        "openai-platform-secrets",
+        identity=identity,
+        namespace="openai-platform-session",
+        read=["openai-platform-oidc"],
+        write=[],
+    )
     opentofu.gitops_workspace(
         chart,
         "workspace",

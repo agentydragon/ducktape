@@ -388,6 +388,36 @@ subjects:
     name: opentofu-sso-providers
     namespace: crossplane-system
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-sso-providers
+  namespace: openai-platform-session
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - openai-platform-oidc
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc8666f97fbfa68c6cff3b5e8b380c38946a7b9c77a
+  namespace: openai-platform-session
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-sso-providers
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: opentofu-sso-providers
+    namespace: crossplane-system
+---
 apiVersion: opentofu.upbound.io/v1beta1
 kind: ProviderConfig
 metadata:
