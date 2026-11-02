@@ -141,8 +141,10 @@ func (r *Runtime) startIngress(host *harnesshost.Host, endpoint configuration.En
 		}
 		if err := run(ctx, host, endpoint); err != nil && ctx.Err() == nil {
 			failure := fmt.Errorf("History ingress stopped: %w", err)
-			host.ReportFailure(failure)
+			// Record the cause and revoke native admission before Host failure
+			// observation can retire the binding during Close.
 			r.fail(failure)
+			host.ReportFailure(failure)
 		}
 	}()
 }

@@ -447,6 +447,11 @@ func (r *Runtime) joinClose() error {
 		return lifecycleRunErr
 	}
 	sessionLossErr := r.lifecycleCoordinator.plan.sessionLossErr
+	if sessionLossErr != nil {
+		r.mu.Lock()
+		sessionLossErr = errors.Join(sessionLossErr, r.failureLocked())
+		r.mu.Unlock()
+	}
 	if r.sessions != nil {
 		<-r.sessionWorkerDone
 		// Recovery completion does not prove native cleanup. Retain Runtime's

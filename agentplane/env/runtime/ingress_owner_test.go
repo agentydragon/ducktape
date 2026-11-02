@@ -211,7 +211,7 @@ func TestRuntimeHistoryFailureFencesHostAdmissionAndCloses(t *testing.T) {
 	if host.RuntimeBindingMatches(bootID) {
 		t.Fatal("Host still admits Runtime calls after History delivery failure")
 	}
-	if err := r.Close(ctx); err == nil || !strings.Contains(err.Error(), "Harness Host lifecycle connection was lost") {
+	if err := r.Close(ctx); !errors.Is(err, ingressErr) {
 		t.Fatalf("Runtime Close after History failure = %v", err)
 	}
 }

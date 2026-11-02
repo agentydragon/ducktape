@@ -250,7 +250,10 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecyc
 		return nil
 	case lifecycle.RuntimeCloseHostFlushing:
 		if p.sealUID != "" && !p.active {
-			return errors.New("Harness Host failed before exact sealed History acknowledgement was proved")
+			c.r.mu.Lock()
+			failure := c.r.failureLocked()
+			c.r.mu.Unlock()
+			return errors.Join(errors.New("Harness Host failed before exact sealed History acknowledgement was proved"), failure)
 		}
 		if p.sealUID != "" {
 			return c.r.waitForHostQuiesced(p.fenceCtx, p.binding)
