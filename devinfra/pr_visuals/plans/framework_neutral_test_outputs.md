@@ -20,7 +20,7 @@ the invariant regardless.
 ## Identity and protocol
 
 Define a versioned, framework-neutral test-output record. Its logical identity is
-`(collection scope, case ID, checkpoint components, output role)`:
+`(collection scope, case ID, checkpoint, output role)`:
 
 - For Bazel, the collector supplies the repository and canonical test label as
   the collection scope. A producer does not need Bazel or pytest to construct its
@@ -31,11 +31,12 @@ Define a versioned, framework-neutral test-output record. Its logical identity i
   framework migration can retain an existing case ID. Duplicate claims in one
   collection are detectable; reuse by an unrelated case in a later revision
   cannot be inferred from an equal ID alone.
-- A checkpoint is a sequence of explicit components scoped to the case. The
-  default checkpoint has its own unambiguous representation. An output role
-  distinguishes a screenshot from its trace, diagnostics, or another artifact.
-- Display labels, media types, file paths, dimensions, and content digests are
-  metadata, not the identity. Distinct logical outputs remain distinct even if
+- A checkpoint is an optional opaque string scoped to the case. A `null`
+  checkpoint represents the default capture and is distinct from any named
+  checkpoint. An output role distinguishes a screenshot from its trace,
+  diagnostics, or another artifact.
+- Display labels, file paths, dimensions, and content digests are metadata,
+  not the identity. Distinct logical outputs remain distinct even if
   they have identical bytes or display labels. Identical logical identities with
   incompatible kinds or metadata are an error, not a new identity.
 
@@ -45,12 +46,14 @@ collision detection; they must not become the identity. Do not concatenate
 unescaped user strings into a path. Validate relative paths and references,
 including traversal, symlinks, and malformed or missing files. The visual review
 is an explicit role: collecting a diagnostic must not automatically publish it
-as a review image. Keep roles and media types open to other comparison consumers
-in the future; this plan implements diffing only for screenshots.
+as a review image. The screenshot role specifies PNG validation and the
+`image/png` publication content type. The generic collector treats payloads as
+bytes; future roles can define their own handling. This plan implements diffing
+only for screenshots.
 
 Bazel invocation, configuration, shard, run, attempt, result status, and CAS
 URI are execution provenance. Preserve them for every record and staged file,
-not as checkpoint components. Resharding must not rename a logical output.
+but keep them out of logical identity. Resharding must not rename an output.
 Configurations can be semantically different even when they produce the same
 case; define a named comparison profile for intended compatible executions and
 fail closed on ambiguous or unknown comparisons. Do not use an opaque Bazel
@@ -60,7 +63,7 @@ report provenance and the reason it accepts or rejects a comparison.
 ## Producers
 
 Provide a framework-independent output writer accepting an explicit case ID,
-checkpoint, role, media type, and bytes or file. Add a pytest fixture
+checkpoint, role, and bytes or file. Add a pytest fixture
 that binds the case ID automatically to the full node ID, normalized to a
 verified stable repository-relative root under Bazel. `VisualPage.capture()`
 uses the bound case and treats its optional name as a local checkpoint, not a
@@ -112,9 +115,8 @@ or interpret the slash. `path` is relative to `test-outputs/`.
 {
   "schema": "ducktape.test-output.v1",
   "case_id": "dialog/mobile",
-  "checkpoint": ["expanded"],
+  "checkpoint": "expanded",
   "role": "screenshot",
-  "media_type": "image/png",
   "path": "files/<mobile-expanded-screenshot-key>.png",
   "label": "Expanded dialog on mobile"
 }
@@ -127,19 +129,19 @@ and file, so it cannot be confused with the screenshot:
 {
   "schema": "ducktape.test-output.v1",
   "case_id": "dialog/mobile",
-  "checkpoint": ["expanded"],
+  "checkpoint": "expanded",
   "role": "diagnostics",
-  "media_type": "application/json",
   "path": "files/<mobile-expanded-diagnostics-key>.json"
 }
 ```
 
 The desktop screenshot would have `case_id` `dialog/desktop` and can reuse the
-`expanded` checkpoint. A pytest adapter would instead derive its case ID from the
-full node ID. A writer must create each payload completely before atomically
-publishing its record and fail a duplicate claim; the collector validates the
-full identity rather than trusting the placeholder key. This is a proposed
-layout and schema to validate, not the current `visual-review.json` format.
+`expanded` checkpoint. A default capture uses `"checkpoint": null`. A pytest
+adapter would instead derive its case ID from the full node ID. A writer must
+create each payload completely before atomically publishing its record and fail
+a duplicate claim; the collector validates the full identity rather than
+trusting the placeholder key. This is a proposed layout and schema to validate,
+not the current `visual-review.json` format.
 
 The collector attaches the target and result provenance from its source, not
 from producer-controlled fields. Its materialized observation could look like:
@@ -148,7 +150,7 @@ from producer-controlled fields. Its materialized observation could look like:
 {
   "scope": { "repository": "agentydragon/ducktape", "target": "//example:visual" },
   "case_id": "dialog/mobile",
-  "checkpoint": ["expanded"],
+  "checkpoint": "expanded",
   "role": "screenshot",
   "source": {
     "invocation": "<invocation-id>",
