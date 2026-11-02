@@ -13,7 +13,7 @@ import {
   SetEnvironmentWakeOnSendRequestSchema,
   TargetHandleSchema,
   type TargetHandle,
-} from "../../../sandboxes/environments/environment_service_pb";
+} from "../../../runner_gateway/environments/environment_service_pb";
 import { fetchWithLogin, HttpError } from "../client";
 import {
   EnvironmentRuntimeStatusSchema,

@@ -12,7 +12,7 @@ import (
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"

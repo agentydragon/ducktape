@@ -130,7 +130,7 @@ ts_library(
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:policy",
         "//agentplane/proto:sandboxes_pb",
-        "//agentplane/sandboxes/environments:environment_service_pb",
+        "//agentplane/runner_gateway/environments:environment_service_pb",
     ],
 )
 
@@ -261,7 +261,7 @@ ts_library(
         "//agentplane/app/frontend/threads:thread_status",
         "//agentplane/proto:session_pb",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
-        "//agentplane/sandboxes/environments:environment_service_pb",
+        "//agentplane/runner_gateway/environments:environment_service_pb",
     ],
 )
 
@@ -336,7 +336,7 @@ ts_library(
         "//agentplane/app/frontend:watch_stream",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/proto:sandboxes_pb",
-        "//agentplane/sandboxes/environments:environment_service_pb",
+        "//agentplane/runner_gateway/environments:environment_service_pb",
     ],
 )
 
@@ -352,7 +352,7 @@ ts_library(
         "//agentplane/proto:sandboxes_pb",
         "//agentplane/proto:session_pb",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
-        "//agentplane/sandboxes/environments:environment_service_pb",
+        "//agentplane/runner_gateway/environments:environment_service_pb",
     ],
 )
 

@@ -1,7 +1,7 @@
 import { CreateSandboxRequestSchema, type Sandbox } from "../../../proto/sandboxes_pb";
 import { create as createProto } from "@bufbuild/protobuf";
 import { DurationSchema } from "@bufbuild/protobuf/wkt";
-import type { TargetHandle } from "../../../sandboxes/environments/environment_service_pb";
+import type { TargetHandle } from "../../../runner_gateway/environments/environment_service_pb";
 import {
   ActionIcon,
   Button,

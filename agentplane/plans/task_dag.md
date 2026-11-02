@@ -106,8 +106,8 @@ Reliability contracts live in the
 [acceptance record](../central_sampler/docs/rollout_acceptance.md)
 retains the deployed exporter evidence and its limits.
 The shared explicit/automatic resume authority and uncertain-outcome contract live in the
-[lifecycle manager specification](../sandboxes/lifecycle/SPEC.md) and concise
-[lifecycle README](../sandboxes/lifecycle/README.md).
+[lifecycle manager specification](../runner_gateway/environments/lifecycle/SPEC.md) and concise
+[lifecycle README](../runner_gateway/environments/lifecycle/README.md).
 
 **Operator decision, 2026-10-31 UTC:** skip the dedicated continuation/disruption exercise,
 coverage audit and additional acceptance tests. The operator will evaluate reliability through

@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"

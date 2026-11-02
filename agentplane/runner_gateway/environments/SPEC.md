@@ -139,7 +139,7 @@ input. CLI and Action/MCP wait adapters over `WatchEnvironment` remain follow-up
 
 ## Resume and ownership
 
-`ResumeEnvironment` uses the shared [lifecycle contract](../lifecycle/SPEC.md), including exact
+`ResumeEnvironment` uses the shared [lifecycle contract](lifecycle/SPEC.md), including exact
 ServiceAccount UID checks, policy opt-in, generation-bound preconditions, shared budget and unknown
 outcome handling. List/get/watch remain read-only; resume permission is evaluated independently.
 `REQUESTED` means the desired running state was accepted, not that the environment is ready. The

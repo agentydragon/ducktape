@@ -34,7 +34,7 @@ List requires a limit from 1..100. Ordinary callers resolve their same-name cand
 continuation token; broad readers may page over the namespace using a Kubernetes continuation token.
 
 `ResumeEnvironment` separately checks the exact target and execution account, resume opt-in policy,
-and operator authority through the shared [lifecycle manager](../lifecycle/README.md). Listing or
+and operator authority through the shared [lifecycle manager](lifecycle/README.md). Listing or
 reading a target does not authorize changing it. The observed wake generation and opaque resume
 precondition bind an ordinary request to that Sandbox UID and generation; the backend rechecks
 current identity, policy and state when the token is used.

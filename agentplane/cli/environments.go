@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"

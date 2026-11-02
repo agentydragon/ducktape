@@ -21,7 +21,7 @@ import (
 	notificationpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"

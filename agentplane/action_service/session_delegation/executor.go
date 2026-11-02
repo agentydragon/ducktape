@@ -18,7 +18,7 @@ import (
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/sandboxes/environments/environmentpb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	sessionclient "github.com/agentydragon/ducktape/agentplane/session_client"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/workload_auth/grpc"
 	"github.com/google/uuid"

@@ -8,7 +8,7 @@ import (
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"

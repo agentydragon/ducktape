@@ -16,7 +16,7 @@ import (
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
