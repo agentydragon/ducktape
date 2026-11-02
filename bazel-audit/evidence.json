@@ -1,0 +1,129 @@
+{
+  "source_commit": "e964b0b3fb699a129e0b86a3beb93337f83ac144",
+  "inspected_utc": "2026-11-02",
+  "scope": "Selected repository-wide Bazel build and wiring audit, not exhaustive dead-code proof",
+  "findings": [
+    {
+      "id": "A",
+      "priority": "High",
+      "category": "Ownership",
+      "title": "Move Augur\u2019s deployed model contracts out of x/"
+    },
+    {
+      "id": "B",
+      "priority": "High",
+      "category": "Ownership",
+      "title": "Decouple Haku\u2019s schema build from an experimental service implementation"
+    },
+    {
+      "id": "C",
+      "priority": "Medium",
+      "category": "Dead target candidate",
+      "title": "Remove unused agent documentation filegroups"
+    },
+    {
+      "id": "D",
+      "priority": "Medium",
+      "category": "Dead target candidate",
+      "title": "Drop the unused Plaid migration wrapper, not the migrations"
+    },
+    {
+      "id": "E",
+      "priority": "Medium",
+      "category": "Dead target candidate",
+      "title": "Retire the unused JDK test fa\u00e7ade and archive together"
+    },
+    {
+      "id": "F",
+      "priority": "Medium",
+      "category": "Dead target candidate",
+      "title": "Remove orphaned manifest and schema group wrappers"
+    },
+    {
+      "id": "G",
+      "priority": "Medium",
+      "category": "Redundant indirection",
+      "title": "Collapse the calibration catalog\u2019s double filegroup"
+    },
+    {
+      "id": "H",
+      "priority": "Low",
+      "category": "Redundant indirection",
+      "title": "Use exported source labels for singleton manifest wrappers"
+    },
+    {
+      "id": "I",
+      "priority": "Medium",
+      "category": "Naming",
+      "title": "Make Bazel labels identify the module they build"
+    },
+    {
+      "id": "J",
+      "priority": "Medium",
+      "category": "Lint wiring",
+      "title": "Untangle checker-only provider dependencies from runtime libraries"
+    },
+    {
+      "id": "K",
+      "priority": "Medium",
+      "category": "Lint wiring",
+      "title": "Make whole-program ESLint inputs auditable across package boundaries"
+    },
+    {
+      "id": "L",
+      "priority": "Low",
+      "category": "Boundary",
+      "title": "Resolve the visual-helper module/package collision"
+    },
+    {
+      "id": "M",
+      "priority": "Low",
+      "category": "Dead target candidate",
+      "title": "Review the frozen benchmark filegroup as an entry point"
+    }
+  ],
+  "filegroup_query": {
+    "expression": "kind(\"filegroup\", //...)",
+    "invocation_id": "5cded8b9-3661-452b-9449-fbedd6e87118",
+    "status": "succeeded",
+    "returned_local_labels": 2272,
+    "note": "kind uses a regex substring: 2225 filegroup and 47 pkg_filegroup labels"
+  },
+  "reverse_dependency_query": {
+    "expression": "rdeps(//..., kind(\"filegroup\", //...), 1)",
+    "invocation_id": "ed6d371f-5335-4a19-abfa-d1f54113fd1b",
+    "status": "succeeded",
+    "result_nodes": 3209,
+    "no_incoming_rule_edges": [
+      "//agentplane/egress/docs:agents",
+      "//agentplane/notification_service/docs:agents",
+      "//finance/plaid/db:migrations",
+      "//cluster/schemas:schemas",
+      "//haku/runtime/x/managed_agent/self_hosted:deploy_manifests",
+      "//third_party/jdk:keytool",
+      "//third_party/jdk:cacerts",
+      "//cluster/docs/inference/runs/2026-10-13_rugged_coding:frozen_humaneval_plus_inputs"
+    ],
+    "visual_bundle_consumers_per_target": 10,
+    "notable_direct_consumers": {
+      "//finance/augur/api:public_fixture_calibration_catalog": [
+        "//finance/augur/api:server_test",
+        "//finance/augur/api:test_calibration_endpoint",
+        "//finance/augur:browser_shell_test",
+        "//finance/augur:dev",
+        "//finance/augur:visual_test"
+      ],
+      "//cluster/k8s/agentplane-staging:app_config_manifest": [
+        "//agentplane/app/go:staging_config_test"
+      ],
+      "//cluster/k8s/flux/flux-system:source_watcher_crd_bundle": [
+        "//cluster/cdk8s/providers/source_watcher:_artifactgenerator_crd"
+      ]
+    }
+  },
+  "limitations": [
+    "No automatic conclusion of dead code from no in-repo consumers",
+    "External consumers and dynamically constructed labels not exhaustively known",
+    "No refactor tested or applied"
+  ]
+}
