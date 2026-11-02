@@ -1,5 +1,22 @@
 # TODO — Agentplane environment
 
+## Repair the VM guest's Runtime paths
+
+`images/vm.nix` still mounts the executable disk at `/run/agentplane/runner`, the TLS
+virtiofs at `runner-private/runner-tls` and trust at `runner-trust`. Its autologin condition
+reads `config/runner.json`. The shared `images/systemd/agentplane-environment-runtime.service`
+executes from `/run/agentplane/environment`, requires `environment-runtime-private/environment-runtime-tls`
+and `environment-runtime-trust`, and uses `config/environment-runtime.json`; the VM template
+and Sandbox controller provide the new config and virtiofs names. The guest configuration therefore
+does not satisfy the unit or its credential paths; the console conditions also read a nonexistent
+config. This is a source-level finding, not a claim about a particular deployed image.
+
+Align the guest mounts, virtiofs device names, private TLS symlink, console condition and image docs
+with the unit and VM template; keep the `agentplane-runner` disk **serial** stable. Add a check that
+compares the actual guest mount/credential/config paths with the rendered VM and unit, plus a VM
+boot/readiness and console-autologin check. Existing `system_tests/k3s/test_render.py` checks the
+serial but does not establish that the guest mounts the disk where the unit executes it.
+
 ## Make Environment Runtime COSI names describe their owners and state
 
 Use consistent domain names for desired state, observed status, operation state and controllers.
@@ -48,6 +65,42 @@ COSI resource snapshots.
   every Session, app-server updates map to every Codex Session, and snapshot publication uses a
   manager-wide mutex. If significant, narrow subscriptions or locking without losing the separate
   inspection-settlement signal needed by the drain barrier.
+- Runtime Close and transition coordination each implement a private worker, completion channel and
+  cancellation/join path (`close_controller.go`, `transition_sequence.go`), while bootstrap,
+  Sessions and the app-server use `env/oneoff`. Compare the lifetimes before consolidating: Close
+  must preempt transitions, the event loop must stay responsive, and interrupted Execution starts
+  must settle their exact fence before another owner can start. `oneoff` publishes COSI completion
+  resources and joins a host worker barrier; those semantics are not automatically appropriate for
+  the Runtime's coordinator-owned workers.
+
+## Use COSI primitives where they fit the lifecycle
+
+COSI runtime is pinned in `third_party/go.mod`; evaluate its APIs against the actual ownership and
+teardown contracts rather than treating every controller as a simple resource transform.
+
+- `env/cosi/resources.go` pre-reads before `safe.WriterModify` to return a `changed` flag;
+  Session's `publishSession` also reads and compares both snapshots before `safe.StateModify`.
+  COSI's `Modify`/`UpdateWithConflicts` already suppress equal updates and retry update conflicts.
+  Audit the extra reads and comparisons, especially the hand-written component wrappers in
+  `bootstrap/resources.go`, `harnesshost/session/resources.go`,
+  `harnesshost/codexappserver/resources.go` and `supervision/process_resources.go`. Preserve the
+  `changed` notifications and aggregate's explicit `QueueReconcile`, the serialized demand
+  increment and coherent Session/drain snapshots. A separate pre-read is not an atomic change
+  detector; do not replace the locking or report a false change on a conflict retry.
+- Session's `MapInput` reads each `NativeOperationResults` spec to find its Session and controller;
+  the Process controller manually maps `ProcessInputs` to the same ID. COSI exposes labels on
+  `ReducedResourceMetadata` and provides `qtransform.MapExtractLabelValue` and `MapperSameID`.
+  Evaluate metadata labels for operation routing and the same-ID mapper where its namespace/type
+  assumptions fit. Preserve the completion gate, destruction behavior and one-shot ownership;
+  labels alone do not carry the operation result or make an uncertain effect replayable.
+- Compare each one-input/one-output controller with COSI's `qtransform` (mapped inputs,
+  concurrency, finalizers and output teardown are built in). In particular, bootstrap and
+  app-server use singleton primary inputs and mapped status/operation wakeups; the Process controller
+  has per-attempt desired/status resources. Prototype only where the generic teardown order matches:
+  Process status must remain observable until the owner destroys desired state, and a finalizer
+  cannot be released before native fencing. Session and Runtime also perform multi-step effects and
+  cannot be converted by assuming a pure transformation. COSI already supplies `NewRequeueError`
+  for deadlines, as the app-server controller uses; don't introduce a parallel timer queue.
 
 ## Connect central Codex to environment execution in Pods and VMs
 
@@ -63,16 +116,15 @@ Runners preserve the harness's default base prompt and add platform and Session 
 Consider an explicit Agentplane base prompt if a production workflow needs one; evaluate it across
 the supported harnesses and model routes before replacing their defaults.
 
-## Check whether an interrupted-turn test depends on when Claude flushes its transcript
+## Verify Claude interrupted-turn reconciliation across transcript flush timing
 
-`native/claude/test_turns.py::test_resume_after_an_interrupted_partial_turn_replays_only_completed_model_history`
-interrupts a partial turn, kills the harness right after the result, and sees neither the partial
-text nor the thinking replayed on resume. A probe found while fixing the Claude reasoning
-reconciliation (#9178), which let the transcript flush before the kill, saw the interrupted turn's
-thinking and partial text replayed on resume. Not investigated.
-
-Find out whether the test passes only because of that timing, and whether `claude.py`'s reconcile
-and `claude_history.py` must then handle the flushed case.
+The previously cited `test_resume_after_an_interrupted_partial_turn_replays_only_completed_model_history`
+no longer exists. The current native test
+[`test_resume_after_an_interrupted_partial_turn_replays_the_partial_turn_and_marker`](../native/claude/test_turns.py)
+waits for the interrupt marker to persist and verifies that the partial text is replayed on resume.
+It does not establish the no-flush case or the Harness Host's reconciliation result. Compare those
+boundaries against `runtime/harnesshost/claude/history.go` and `adapter.go` with real-binary tests;
+retain unknown results when the transcript does not prove what survived.
 
 ## Reconcile conversations that were compacted
 
