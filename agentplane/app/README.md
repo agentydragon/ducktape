@@ -146,16 +146,21 @@ observable active turns, setup, or a pending local launch; the server checks whe
 unfinished before accepting the archive request.
 The app's protobuf-defined `SessionOpeningService` serves the generated HTTP facade at
 `POST /sandboxes/{name}/sessions` and `GET /sandboxes/{name}/sessions/{id}/opening`.
-It applies browser preset defaults, validates the current Sandbox UID, expands the Session ID in
-`cwd`, and creates app-owned Thread metadata before submitting a complete spec to the Dispatcher.
+It is an interface for the app's human frontend, not an API for in-cluster services. Backend callers
+use the [Session Dispatcher](../runner_gateway/dispatcher/README.md) directly with a complete
+`SessionSpec` and do not depend on app orchestration. The app interface resolves the Sandbox's
+configured preset, applies the caller's overrides, validates the current Sandbox UID, expands the
+Session ID in `cwd`, and creates app-owned Thread metadata before submitting the resolved spec to
+the Dispatcher. Dispatcher owns durable admission, delivery and opening status; the app's opening
+lookup reads that same Dispatcher record and checks its Sandbox name.
 The partial `spec` is a `Struct` validated as strict `SessionSpec` ProtoJSON: absent keys retain
 preset defaults, while explicit empty, zero and null values clear them. An omitted `setup_script`
 uses the preset; null clears it; a string (including empty) replaces it. Request envelopes and
 response codecs are generated from the proto; the nested override map intentionally preserves JSON
 presence rather than duplicating the `SessionSpec` scalar schema.
 The generated unary gateway runs the app-owned service in process after cookie-or-reviewed-workload-token
-admission and cookie CSRF checks. The app calls the Dispatcher over gRPC; backend callers use the
-Dispatcher directly and never depend on app orchestration.
+admission and cookie CSRF checks. Token admission also supports explicitly authorized callers and
+integration tests; it does not make this a backend service API. The app calls the Dispatcher over gRPC.
 
 A `SessionOpening` reports queued, delivering, runner-admitted, or failed state. The browser retains
 only its caller-minted Session ID on an uncertain response and reconciles that opening without

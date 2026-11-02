@@ -6,8 +6,11 @@ import "google/api/annotations.proto";
 import "google/protobuf/struct.proto";
 import "agentplane/runner_gateway/dispatcher/session_dispatcher.proto";
 
-// Browser composition: applies app presets and creates Thread metadata before Dispatcher admission.
-// Native workloads call SessionDispatcher directly without depending on the integration app.
+// User-facing composition for the integration app's human frontend, not an API for in-cluster
+// services. Backend callers use SessionDispatcher directly with a complete SessionSpec and do not
+// depend on the app. Before calling Dispatcher, the app resolves its Sandbox preset, applies explicit
+// spec and setup-script overrides, expands the Session ID in cwd, and creates app-owned Thread
+// metadata. Dispatcher remains the authority for durable admission, delivery, and opening status.
 service SessionOpeningService {
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse) {
     option (google.api.http) = {
