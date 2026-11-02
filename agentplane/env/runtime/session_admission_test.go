@@ -345,7 +345,7 @@ func TestStartupFailureSettlesAdmissionAndReturnsToIdle(t *testing.T) {
 		case <-changed:
 		}
 	}
-	statusResponse, err := r.GetStatus(ctx, &sessionpb.GetStatusRequest{})
+	statusResponse, err := r.GetStatus(sessionCallContext(r, ctx), &sessionpb.GetStatusRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -466,11 +466,7 @@ func failedInitialOperationHost(t *testing.T, failTeardown bool) (*Runtime, *ini
 }
 
 func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
-<<<<<<< HEAD
-	r, _, marker := failedInitialOperationHost(t, false)
-=======
-	r, store, marker := failedInitialOperationRuntime(t, false)
->>>>>>> fdf81bca62 (Assert Runtime preserves failure while completing proved cleanup)
+	r, store, marker := failedInitialOperationHost(t, false)
 
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
@@ -478,7 +474,7 @@ func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
 	defer cancelClose()
 	select {
 	case err := <-closeDone:
-		if err == nil || !strings.Contains(err.Error(), store.initialFailure.Error()) {
+		if !errors.Is(err, store.initialFailure) {
 			t.Fatalf("Close after initial publication failure = %v, want original failure", err)
 		}
 	case <-closeCtx.Done():
