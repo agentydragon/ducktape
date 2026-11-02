@@ -90,7 +90,7 @@ func pointerIDs(pointers []resource.Pointer) []string {
 func TestPreFenceWaitsForNativeExitCallbackAndItsInspection(t *testing.T) {
 	// A native reader can enqueue reconciliation after the process has exited.
 	// stopProcess must join that reader before ProcessStopped can be published.
-	s := &Session{}
+	s := &Session{connection: &nativeConnection{}}
 	s.connection.readers.Add(1)
 	stopped := make(chan error, 1)
 	go func() { stopped <- s.stopProcess(t.Context()) }()
