@@ -4,9 +4,9 @@ import {
   EnvironmentRuntimeLifecycleBlockerKind,
   EnvironmentRuntimeLifecycleMode,
   EnvironmentRuntimeLifecycleStage,
+  type EnvironmentRuntimeLifecycleStatusSchema,
   EnvironmentRuntimeStatusSchema,
 } from "../../../proto/session_pb";
-import type { EnvironmentRuntimeLifecycleStatusSchema } from "../../../proto/session_pb";
 
 type AcknowledgedQuiescingLifecycle = {
   generation: bigint;
