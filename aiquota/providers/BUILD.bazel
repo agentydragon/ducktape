@@ -68,6 +68,23 @@ py_library(
 )
 
 py_library(
+    name = "openai_platform_lib",
+    srcs = ["openai_platform.py"],
+    imports = ["../.."],
+    visibility = [
+        "//aiquota:__subpackages__",
+        "//cluster/cdk8s:__pkg__",
+    ],
+    deps = [
+        ":base",
+        ":client",
+        "//aiquota:models",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "zai_lib",
     srcs = ["zai.py"],
     imports = ["../.."],
@@ -80,6 +97,20 @@ py_library(
         ":client",
         "//aiquota:models",
         "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_openai_platform",
+    srcs = ["test_openai_platform.py"],
+    imports = ["../.."],
+    deps = [
+        ":client",
+        ":openai_platform_lib",
+        "//:conftest",
+        "//aiquota:models",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
     ],
 )
 

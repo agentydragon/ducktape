@@ -85,6 +85,14 @@
     7d:  40%  ↻ 4d21h  Δ+10%  exhausts ~1d18h before reset
   '''
 # ---
+# name: test_renders_shared_fixture[openai_platform_credits]
+  '''
+  OpenAI API
+    OpenAI API balance · $125.75
+    Grant $100.00 / $100.00 · expires 2026-02-01 00:00 UTC
+    Grant $25.75 / $30.00 · expires 2026-12-01 00:00 UTC
+  '''
+# ---
 # name: test_renders_shared_fixture[paid_credits]
   '''
   codex · 0 banked resets  ⚡ using paid credits · 2,746 credits left

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -40,6 +41,21 @@ class PaidCredits(BaseModel):
     unlimited: bool = False
 
 
+class PlatformCreditGrant(BaseModel):
+    granted_usd: Decimal
+    used_usd: Decimal
+    effective_at: datetime
+    expires_at: datetime | None
+    is_scheduled: bool
+    is_held_for_prepaid_transition: bool
+
+
+class PlatformCredits(BaseModel):
+    total_available_usd: Decimal
+    total_paid_available_usd: Decimal
+    grants: list[PlatformCreditGrant]
+
+
 class PrepaidBalanceAvailable(BaseModel):
     """An exact provider-reported prepaid monetary balance."""
 
@@ -70,6 +86,7 @@ class FetchSuccess(BaseModel):
     windows: list[QuotaWindow] = Field(default_factory=list)
     extra_spend: ExtraSpend | None = None
     paid_credits: PaidCredits | None = None
+    platform_credits: PlatformCredits | None = None
     # Claude's prepaid monetary balance is a separate endpoint and denomination
     # from Codex paid credits. None means this provider does not report it.
     prepaid_balance: PrepaidBalance | None = None

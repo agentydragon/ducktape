@@ -43,6 +43,7 @@ py_library(
         "//aiquota/providers:cli_proxy_lib",
         "//aiquota/providers:client",
         "//aiquota/providers:codex_lib",
+        "//aiquota/providers:openai_platform_lib",
         "//aiquota/providers:zai_lib",
         "@pypi//platformdirs",
     ],
@@ -67,6 +68,7 @@ py_library(
     deps = [
         "//aiquota/providers:claude_lib",
         "//aiquota/providers:codex_lib",
+        "//aiquota/providers:openai_platform_lib",
         "//aiquota/providers:zai_lib",
         "@pypi//platformdirs",
         "@pypi//pydantic",

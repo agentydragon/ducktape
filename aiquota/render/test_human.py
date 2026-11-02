@@ -201,6 +201,21 @@ def test_cli_marks_last_successful_prepaid_balance_stale_after_refresh_error() -
     assert "Claude prepaid balance · $123.45 (stale 1h00m)" in rendered
 
 
+def test_openai_platform_grants_survive_a_failed_refresh_as_stale() -> None:
+    fixture = load_quota_fixture(get_required_path("_main/aiquota/testing/fixtures/openai_platform_credits.yaml"))
+    previous = fixture.providers[0].last_output
+    assert isinstance(previous.result, FetchSuccess)
+    quota = ProviderQuota(
+        provider="openai_platform",
+        last_output=ProviderFetch(fetched_at=_FETCHED_AT, result=FetchError(error="proxy unavailable")),
+        last_success=SuccessfulProviderFetch(fetched_at=_FETCHED_AT - timedelta(hours=1), result=previous.result),
+    )
+    rendered = human.render(_quotas(quota), now=_FETCHED_AT, tz=UTC)
+    assert "proxy unavailable" in rendered
+    assert "OpenAI API balance · $125.75 (stale)" in rendered
+    assert "expires 2026-02-01 00:00 UTC" in rendered
+
+
 def test_renders_banked_reset_count_from_live_usage() -> None:
     output = ProviderFetch(
         fetched_at=_FETCHED_AT,

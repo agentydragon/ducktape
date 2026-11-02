@@ -66,6 +66,7 @@ def _provider_view(pq: ProviderQuota, now: datetime) -> ProviderView:
         result.windows
         or result.available_reset_credits is not None
         or result.paid_credits is not None
+        or result.platform_credits is not None
         or result.prepaid_balance is not None
     ):
         source = result

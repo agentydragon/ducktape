@@ -69,6 +69,18 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
     credit_line = _format_paid_credits(paid_credits, pv.paid_credits_active)
     prepaid_balance, prepaid_stale_age = _effective_prepaid_balance(pv, now)
     prepaid_balance_line = _format_prepaid_balance(prepaid_balance, prepaid_stale_age)
+    credits_result = (
+        out_result if isinstance(out_result, FetchSuccess) else (pv.last_success.result if pv.last_success else None)
+    )
+    platform_credits = credits_result.platform_credits if credits_result else None
+    platform_lines = []
+    if platform_credits:
+        platform_lines.append(f"OpenAI API balance · ${platform_credits.total_available_usd:,.2f}")
+        for grant in platform_credits.grants:
+            expiry = grant.expires_at.astimezone(tz).strftime("%Y-%m-%d %H:%M %Z") if grant.expires_at else "unknown"
+            status = " · scheduled" if grant.is_scheduled else " · held" if grant.is_held_for_prepaid_transition else ""
+            remaining = grant.granted_usd - grant.used_usd
+            platform_lines.append(f"Grant ${remaining:,.2f} / ${grant.granted_usd:,.2f} · expires {expiry}{status}")
 
     if error and not windows:
         return Text(
@@ -85,6 +97,7 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
             )
             + (f"  {credit_line}" if credit_line else "")
             + (f"\n  {prepaid_balance_line}" if prepaid_balance_line else "")
+            + ("".join(f"\n  {line} (stale)" for line in platform_lines))
         )
 
     if pv.currently_over_plan or pv.paid_credits_active:
@@ -117,6 +130,7 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
         lines.append(f"  {credit_line}")
     if prepaid_balance_line:
         lines.append(f"  {prepaid_balance_line}")
+    lines.extend(f"  {line}" for line in platform_lines)
     lines.extend(_burn_lines(pv, now, tz))
     parts = [Text(line) for line in lines]
     colors = {"cool": "blue", "ok": "white", "warn": "yellow", "hot": "red", "unknown": "white", "stale": "yellow"}
@@ -132,7 +146,7 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
     )
     if extra_line is not None:
         parts.append(Text(extra_line))
-    if not windows and extra_line is None and prepaid_balance_line is None:
+    if not windows and extra_line is None and prepaid_balance_line is None and not platform_lines:
         # Gate on "nothing substantive was reported", not on line count — the
         # burn schedule adds lines without saying anything about quota.
         parts.append(Text("  no data"))
@@ -169,6 +183,7 @@ def _effective_windows(
         out_result.windows
         or out_result.available_reset_credits is not None
         or out_result.paid_credits is not None
+        or out_result.platform_credits is not None
         or out_result.prepaid_balance is not None
     ):
         return (
@@ -243,6 +258,8 @@ def _provider_label(
     tz: tzinfo | None,
     reset_credit_expiry_lookup_failed: bool,
 ) -> str:
+    if provider == "openai_platform":
+        provider = "OpenAI API"
     if reset_credits is None:
         return provider
     noun = "reset" if reset_credits == 1 else "resets"
