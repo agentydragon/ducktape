@@ -387,7 +387,20 @@ class K3s:
     def _import_layout(self, manifests: list[dict[str, Any]], blobs: dict[str, Path]) -> None:
         with tempfile.TemporaryFile() as output:
             with subprocess.Popen(
-                [str(self.binary), "ctr", "--address", CONTAINERD_SOCKET, "-n", "k8s.io", "images", "import", "-"],
+                [
+                    str(self.binary),
+                    "ctr",
+                    "--address",
+                    CONTAINERD_SOCKET,
+                    "-n",
+                    "k8s.io",
+                    "images",
+                    "import",
+                    # Sandboxes are created after stack setup, and the fixture's local tags have no
+                    # registry fallback. Keep kubelet image GC from deleting an unused future image.
+                    "--label=io.cri-containerd.pinned=pinned",
+                    "-",
+                ],
                 stdin=subprocess.PIPE,
                 stdout=output,
                 stderr=subprocess.STDOUT,
