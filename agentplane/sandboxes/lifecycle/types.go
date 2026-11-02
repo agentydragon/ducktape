@@ -9,8 +9,8 @@ import (
 	"time"
 )
 
-// Target identifies one Sandbox incarnation. Namespace, name and UID are all required: names can
-// be reused after deletion, and an operation for the old UID must never affect its replacement.
+// Target identifies one durable Sandbox. Namespace, name and UID are all required because names
+// can be reused after deletion; its Pod/VM incarnations are separate controller-managed details.
 type Target struct {
 	Namespace string
 	Name      string

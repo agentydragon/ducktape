@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 
@@ -29,6 +29,52 @@ go_proto_library(
 
 go_library(
     name = "lifecycle",
-    srcs = ["types.go"],
+    srcs = ["service.go", "types.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/sandboxes/lifecycle",
+    deps = [
+        ":environment_lifecycle_go_proto",
+        "//agentplane/proto:environment_lifecycle_go_proto",
+        "//agentplane/sandboxes/api",
+        "//agentplane/sandboxes/discovery:environment_discovery_go_proto",
+        "//agentplane/sandboxes/sandboxreader",
+        "//agentplane/workload_auth/auth",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+go_test(
+    name = "lifecycle_test",
+    srcs = ["service_test.go"],
+    embed = [":lifecycle"],
+    deps = [
+        ":environment_lifecycle_go_proto",
+        "//agentplane/proto:delegation_go_proto",
+        "//agentplane/proto:environment_lifecycle_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/sandboxes/api",
+        "//agentplane/testing/grpcmethods",
+        "//agentplane/workload_auth/auth",
+        "@com_github_google_uuid//:uuid",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@io_k8s_sigs_controller_runtime//pkg/client/fake",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
 )

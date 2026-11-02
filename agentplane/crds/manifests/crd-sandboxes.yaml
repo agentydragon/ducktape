@@ -91,6 +91,21 @@ spec:
                   type: string
                 type: array
                 x-kubernetes-list-type: set
+              resumePolicy:
+                description: 'ResumePolicy controls whether the exact live execution
+                  ServiceAccount may request resume.
+
+                  Omitted policy and fields default to deny.'
+                properties:
+                  allowOwnServiceAccount:
+                    default: false
+                    description: 'AllowOwnServiceAccount permits the Sandbox''s exact
+                      live execution ServiceAccount to request
+
+                      resume while the Sandbox is idle-suspended. It does not authorize
+                      overriding a requested stop.'
+                    type: boolean
+                type: object
               running:
                 default: false
                 type: boolean
@@ -110,10 +125,14 @@ spec:
                 type: integer
               wakeOnSend:
                 default: false
-                description: 'WakeOnSend allows authenticated user and notification
-                  sends to resume a stopped Sandbox.
+                description: 'WakeOnSend allows queued delivery to request an automatic
+                  resume when it needs a suspended
 
-                  Omitted is false so older Sandbox manifests keep wake-on-send disabled.'
+                  Sandbox. Caller lifecycle authority is checked separately, and a
+                  requested stop stays sticky.
+
+                  Omitted is false so older Sandbox manifests keep automatic wake
+                  disabled.'
                 type: boolean
             required:
             - template

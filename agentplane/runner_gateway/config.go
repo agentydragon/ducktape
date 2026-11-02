@@ -44,6 +44,7 @@ type config struct {
 	Delegation                  *delegationConfig                      `mapstructure:"delegation"`
 	GatewayCallers              []auth.Account                         `mapstructure:"gateway_callers"`
 	WakeCallers                 []auth.Account                         `mapstructure:"wake_callers"`
+	OperatorCallers             []auth.Account                         `mapstructure:"operator_callers"`
 	ControllerAccount           *auth.Account                          `mapstructure:"sandbox_controller_account"`
 	QueueCap                    int                                    `mapstructure:"max_queued_per_session"`
 	WatchLeaseSeconds           int                                    `mapstructure:"dispatcher_watch_lease_seconds"`
@@ -148,6 +149,11 @@ func (c *config) validate() error {
 	for _, account := range c.WakeCallers {
 		if !slices.Contains(c.DispatcherCallers, account) {
 			return fmt.Errorf("wake caller %s/%s is not a Dispatcher caller", account.Namespace, account.Name)
+		}
+	}
+	for _, account := range c.OperatorCallers {
+		if !slices.Contains(c.DispatcherCallers, account) {
+			return fmt.Errorf("operator caller %s/%s is not a Dispatcher caller", account.Namespace, account.Name)
 		}
 	}
 	if target := c.CentralSampler; target != nil && (target.Target == "" || target.TokenFile == "") {

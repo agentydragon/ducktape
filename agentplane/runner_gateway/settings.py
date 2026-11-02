@@ -9,7 +9,7 @@ from collections.abc import Set
 from pathlib import Path
 from typing import Annotated, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.environment_runtime_transport.config import Security
@@ -95,6 +95,13 @@ class Settings(YamlFileSettings):
             "like omission, grants no wake eligibility."
         ),
     )
+    operator_callers: Set[ServiceAccountName] | None = Field(
+        default=None,
+        description=(
+            "Direct, Pod-bound ServiceAccounts authorized to explicitly resume a Sandbox, including a requested stop; "
+            "this does not grant delegation or automatic wake authority."
+        ),
+    )
     sandbox_controller_account: ServiceAccountName | None = Field(
         default=None, description="ServiceAccount admitted to Quiesce through the Gateway, as namespace/name."
     )
@@ -112,6 +119,12 @@ class Settings(YamlFileSettings):
         default=None,
         description="Deployment-published runtime offers and template-scoped workspace guidance for discovery.",
     )
+
+    @model_validator(mode="after")
+    def validate_operator_callers(self) -> Settings:
+        if self.operator_callers and not self.operator_callers <= self.dispatcher_callers:
+            raise ValueError("operator_callers must be a subset of dispatcher_callers")
+        return self
 
     @field_validator("kubernetes_client_qps")
     @classmethod
