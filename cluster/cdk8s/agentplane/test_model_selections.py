@@ -34,6 +34,11 @@ def test_codex_overrides_are_catalog_entries_not_ingress_model_configs() -> None
     assert model_configs(HarnessRoutes(claude=(), codex=(route,))) == []
 
 
+def test_central_sampler_selection_is_opt_in() -> None:
+    catalog = model_catalog(STAGING_APP_MODELS)
+    assert Harness.CENTRAL_SAMPLER not in catalog.harnesses
+
+
 def test_direct_anthropic_api_models_are_only_selected_for_the_central_sampler() -> None:
     routes = set(ANTHROPIC_API_LATEST_ROUTES)
     assert routes.issubset(STAGING_APP_MODELS.central_sampler)
