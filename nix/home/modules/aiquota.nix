@@ -28,7 +28,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = [ ducktapePackages.aiquota ];
+    home.packages = lib.mkIf (!config.programs.gnome-shell.enable) [ ducktapePackages.aiquota ];
 
     programs.gnome-shell.extensions = [
       { package = ducktapePackages.aiquota; }
