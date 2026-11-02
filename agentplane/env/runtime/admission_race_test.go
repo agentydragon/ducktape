@@ -1,0 +1,175 @@
+package runtime
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/env/cosi"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+)
+
+type desiredPublicationState struct {
+	state.State
+	committed chan struct{}
+	release   chan struct{}
+	failure   error
+	commit    bool
+	once      sync.Once
+}
+
+func (s *desiredPublicationState) Update(ctx context.Context, value resource.Resource, opts ...state.UpdateOption) error {
+	if value.Metadata().Type() != lifecycle.EnvironmentDesiredStateType {
+		return s.State.Update(ctx, value, opts...)
+	}
+	if s.commit {
+		if err := s.State.Update(ctx, value, opts...); err != nil {
+			return err
+		}
+	}
+	s.once.Do(func() { close(s.committed) })
+	if s.release != nil {
+		select {
+		case <-s.release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	if s.failure != nil {
+		return s.failure
+	}
+	if !s.commit {
+		return s.State.Update(ctx, value, opts...)
+	}
+	return nil
+}
+
+func admissionTestRuntime(t *testing.T, store state.State) *Runtime {
+	t.Helper()
+	desired := lifecycle.EnvironmentDesired{Mode: lifecycle.Running, IncarnationUID: "test-incarnation", Generation: 1}
+	if err := lifecycle.PublishEnvironmentDesired(t.Context(), store, desired); err != nil {
+		t.Fatal(err)
+	}
+	count := environmentAdmissionCountSpec{}
+	if err := cosi.Publish(t.Context(), store, lifecycleResourceFor(lifecycle.ResourceID, count), count, lifecycle.EnvironmentOwner); err != nil {
+		t.Fatal(err)
+	}
+	return &Runtime{lifecycleContext: t.Context(), lifecycleState: store, desired: desired, admissionOpen: true, startupComplete: true, changes: make(chan struct{}), fatal: make(chan error, 1)}
+}
+
+func TestDesiredPublicationFailureRevokesNativeAdmission(t *testing.T) {
+	for _, committed := range []bool{false, true} {
+		name := "before-commit"
+		if committed {
+			name = "committed-then-error"
+		}
+		t.Run(name, func(t *testing.T) {
+			cause := errors.New("desired publication failed")
+			store := &desiredPublicationState{State: state.WrapCore(namespaced.NewState(inmem.Build)), committed: make(chan struct{}), failure: cause, commit: committed}
+			r := admissionTestRuntime(t, store)
+			old := r.desired
+			if _, err := r.publishDesired(t.Context(), lifecycle.Quiescing, old.IncarnationUID, ""); !errors.Is(err, cause) {
+				t.Fatalf("publish = %v", err)
+			}
+			called := false
+			if err := r.admitLifecycleEffect(t.Context(), old, func(context.Context) error { called = true; return nil }); err != nil {
+				t.Fatal(err)
+			}
+			if called {
+				t.Fatal("old revision admitted native work after uncertain desired publication")
+			}
+			r.mu.Lock()
+			open, failed := r.admissionOpen, r.failed
+			r.mu.Unlock()
+			if open || !failed {
+				t.Fatalf("publication failure: open=%t failed=%t", open, failed)
+			}
+		})
+	}
+}
+
+func TestPublishedDesiredCannotAdmitPriorRevision(t *testing.T) {
+	store := &desiredPublicationState{State: state.WrapCore(namespaced.NewState(inmem.Build)), committed: make(chan struct{}), release: make(chan struct{}), commit: true}
+	r := admissionTestRuntime(t, store)
+	old := r.desired
+	published := make(chan error, 1)
+	go func() {
+		_, err := r.publishDesired(t.Context(), lifecycle.Quiescing, old.IncarnationUID, "")
+		published <- err
+	}()
+	select {
+	case <-store.committed:
+	case <-t.Context().Done():
+		t.Fatal(t.Context().Err())
+	}
+	current, found, err := lifecycle.ReadEnvironmentDesired(t.Context(), store)
+	if err != nil || !found || current.Generation != old.Generation+1 {
+		t.Fatalf("published desired = %+v, found=%t err=%v", current, found, err)
+	}
+	entered, finished := make(chan struct{}), make(chan error, 1)
+	called := make(chan struct{}, 1)
+	go func() {
+		close(entered)
+		finished <- r.admitLifecycleEffect(t.Context(), old, func(context.Context) error { called <- struct{}{}; return nil })
+	}()
+	<-entered
+	select {
+	case <-called:
+		t.Fatal("old effect ran during desired publication")
+	default:
+	}
+	close(store.release)
+	if err := <-published; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-finished; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-called:
+		t.Fatal("old effect ran after desired publication")
+	default:
+	}
+}
+
+func TestAcceptedNativeRegistrationRemainsInDrainAccounting(t *testing.T) {
+	store := state.WrapCore(namespaced.NewState(inmem.Build))
+	r := admissionTestRuntime(t, store)
+	expected := r.desired
+	registered, release, finished := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	go func() {
+		finished <- r.admitLifecycleEffect(t.Context(), expected, func(context.Context) error {
+			close(registered)
+			<-release
+			// Failure callbacks synchronously take Runtime.mu. Registration runs outside
+			// that lock while its accounting still prevents drain completion.
+			r.fail(errors.New("test component publication failed"))
+			return nil
+		})
+	}()
+	<-registered
+	count, err := r.admissionCount(t.Context())
+	if err != nil || count != 1 {
+		t.Fatalf("accepted registration count=%d err=%v", count, err)
+	}
+	if _, err := r.publishDesired(t.Context(), lifecycle.Quiescing, expected.IncarnationUID, ""); err != nil {
+		t.Fatal(err)
+	}
+	count, err = r.admissionCount(t.Context())
+	if err != nil || count != 1 {
+		t.Fatalf("draining registration count=%d err=%v", count, err)
+	}
+	close(release)
+	if err := <-finished; err != nil {
+		t.Fatal(err)
+	}
+	count, err = r.admissionCount(t.Context())
+	if err != nil || count != 0 {
+		t.Fatalf("settled registration count=%d err=%v", count, err)
+	}
+}
