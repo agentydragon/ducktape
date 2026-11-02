@@ -45,7 +45,7 @@ func (r *Runtime) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) 
 	if err := r.authorizeSessionRead(ctx); err != nil {
 		return nil, err
 	}
-	result := &sessionpb.EnvironmentRuntimeStatus{}
+	result := &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: r.bootID}
 	for _, s := range r.sessions.Inventory() {
 		row, process := s.Status()
 		result.Sessions = append(result.Sessions, row)
