@@ -20,7 +20,6 @@ const (
 	LifecycleStatusType   = "SessionLifecycleStatuses.agentplane"
 	OperationStateType    = "SessionOperationStates.agentplane"
 	ControllerName        = "session-lifecycle"
-	HostOwner             = lifecycle.EnvironmentOwner
 )
 
 type Phase uint8
@@ -97,7 +96,7 @@ func componentWrite[T componentSpec[T]](ctx context.Context, writer controller.R
 }
 
 func publish[T componentSpec[T]](ctx context.Context, writer state.State, id string, value T) error {
-	return cosi.Publish(ctx, writer, componentResource(id, value), value, HostOwner)
+	return cosi.Publish(ctx, writer, componentResource(id, value), value, lifecycle.EnvironmentOwner)
 }
 
 func ReadReconcileSnapshot(ctx context.Context, reader controller.Reader, id string) (ReconcileSnapshot, bool, error) {

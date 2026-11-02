@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
@@ -124,7 +125,7 @@ func TestSessionDemandPublicationRetriesFromCurrentDemand(t *testing.T) {
 func TestSessionDemandPublicationStartsFromZeroWhenInputIsMissing(t *testing.T) {
 	ctx, root, resources, store, manager := newSessionTestManager(t, nil, func(string) string { return "destination" })
 	s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
-	if err := resources.Destroy(ctx, componentResource(s.id, ReconcileSnapshot{}).Metadata(), state.WithDestroyOwner(HostOwner)); err != nil {
+	if err := resources.Destroy(ctx, componentResource(s.id, ReconcileSnapshot{}).Metadata(), state.WithDestroyOwner(lifecycle.EnvironmentOwner)); err != nil {
 		t.Fatal(err)
 	}
 

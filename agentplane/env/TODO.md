@@ -95,19 +95,17 @@ COSI runtime is pinned in `third_party/go.mod`; evaluate its APIs against the ac
 teardown contracts rather than treating every controller as a simple resource transform.
 
 - `env/cosi.Write` also serves Bootstrap, Session, Codex app-server and Execution status writes,
-  where `changed` wakes Runtime or app-server waiters. The Session aggregate has a
-  separate `WriteStatus` with the same pre-read; it queues another reconcile on change because it
-  does not watch its own output. A pre-read is not an atomic change detector: a competing writer
+  where `changed` wakes Runtime or app-server waiters. The Session aggregate's `WriteStatus`
+  delegates to `cosi.Write` and queues another reconcile on change because it does
+  not watch its own output. A pre-read is not an atomic change detector: a competing writer
   could change the resource between that read and Modify. These controllers declare exclusive
   outputs and serialize the relevant key; no competing production writer was found. Any replacement
   must handle creation and conflict retries and preserve those notifications without a wakeup loop.
   A pre-read that returns early also bypasses COSI output tracking; no environment controller
   currently enables `StartTrackingOutputs`.
-- The aggregate `lifecycle.WriteStatus` duplicates `cosi.Write`'s pre-read, equality check and
-  `WriterModify`; it can delegate to that helper while retaining its changed result and reconcile
-  queueing. `cosi.Write` uses Go `==`, so its comparable constraint does not give protobuf values
-  structural equality: pointer-backed COSI protobuf specs need their own equality-aware path.
-  No current `cosi.Write` caller uses those persisted protobuf specs.
+- `cosi.Write` uses Go `==`, so its comparable constraint does not give protobuf values structural
+  equality. Pointer-backed COSI protobuf specs need their own equality-aware path; no current
+  `cosi.Write` caller uses those persisted protobuf specs.
 - Keep the retryable _mutations_ and their outer barriers: Session input publication increments
   demand inside `StateModify` while `publishMu` serializes snapshots; Runtime admission accounting
   updates a delta under the admission lock; retained Session field updates patch an existing record

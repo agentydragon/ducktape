@@ -26,7 +26,7 @@ func (m *Manager) forgetOperation(op *oneoff.Operation) {
 	if op == nil {
 		return
 	}
-	err := m.state.Destroy(m.ctx, resource.NewMetadata(lifecycle.Namespace, OperationStateType, op.ID(), resource.VersionUndefined), state.WithDestroyOwner(HostOwner))
+	err := m.state.Destroy(m.ctx, resource.NewMetadata(lifecycle.Namespace, OperationStateType, op.ID(), resource.VersionUndefined), state.WithDestroyOwner(lifecycle.EnvironmentOwner))
 	if !state.IsNotFoundError(err) {
 		m.fail(err)
 	}
