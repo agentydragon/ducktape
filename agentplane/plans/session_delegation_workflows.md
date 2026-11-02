@@ -184,7 +184,7 @@ using an optional role preset combines its concrete role text and child briefing
 that client uses a preset or the integration app.
 A child does not implicitly inherit the parent's role, private instructions or transcript.
 
-The [native Harness Host](../env/runtime/harnesshost/admission.go) and configured
+The [Runtime admission path](../env/runtime/session_admission.go) and configured
 [Central Sampler](../central_sampler/store.go) use the shared
 [Session instructions composer](../session_instructions/README.md) for platform guidance, the
 child's destination and additive instructions. The native
