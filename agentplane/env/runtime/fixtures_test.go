@@ -180,6 +180,8 @@ type localHostLifetime struct {
 	err    error
 }
 
+func (p *localHostLifetime) Done() <-chan struct{} { return p.done }
+
 func (p *localHostLifetime) Wait(ctx context.Context) (int, error) {
 	select {
 	case <-p.done:
