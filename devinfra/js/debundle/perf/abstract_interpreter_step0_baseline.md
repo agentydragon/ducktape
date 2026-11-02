@@ -1,7 +1,7 @@
 # Abstract-interpreter step 0 baseline
 
-Measurement-only baseline for <../plans/abstract_interpreter.md> § 5 step 0 and
-§ 6.1. No engine, spec or fixture changes. Measured public revision: ducktape
+Historical measurement-only baseline for the abstract-interpreter migration.
+No engine, spec or fixture changes. Measured public revision: ducktape
 `origin/devel` head `4377a57bae156d0fd2d3ac363a0ad0d71ff6de10` (2026-10-29).
 The `-c opt` `//devinfra/js/debundle:debundle` executable and the five scale
 test binaries were built in invocation

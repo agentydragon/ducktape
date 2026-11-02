@@ -63,9 +63,9 @@ itself (A1–A11 and the shared native census are implicit everywhere).
 
 | #   | Family                            | Files                                                                                                 | Proves                                                                                                                                                          | Premises                                                              | Contract tests                                                                                                                                | Docs                                                                             |
 | --- | --------------------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| 23  | Whitelists (landed, step 4a)      | `facts/abstract_domain/builtins.rs` rows and `DATA_PROPERTIES`; `purity/native_rows.rs` projects them | Rows with `assumed_intact`; purity admits a row when its listed steps are silent for the syntactic operands                                                     | ECMA-262 citation per row; receiver unshadowed; A11                   | `purity`, `object_plain_data_calls`, `proxy_constructor_purity`; unit `purity/classifier_tests.rs`                                            | purity_soundness § Admission rule: builtin summary rows                          |
+| 23  | Builtin summary rows              | `facts/abstract_domain/builtins.rs` rows and `DATA_PROPERTIES`; `purity/native_rows.rs` projects them | Rows with `assumed_intact`; purity admits a row when its listed steps are silent for the syntactic operands                                                     | ECMA-262 citation per row; receiver unshadowed; A11                   | `purity`, `object_plain_data_calls`, `proxy_constructor_purity`; unit `purity/classifier_tests.rs`                                            | purity_soundness § Admission rule: builtin summary rows                          |
 | 24  | Expression classifier             | `purity/classifier.rs`, `purity_type.rs`                                                              | `Purity` with `PurityRule` reasons: coercing operators, `ToPropertyKey`, iteration, destructuring, spreads, tagged templates, `new` shapes, member reads        | Syntactic; result-primitive gate for coercion                         | `purity`, `initializer_purity`, `export_default_purity`, `dependency_graph_purity_reason`, `impure_call_reason_growth`, `repeated_var_purity` | purity_soundness § Declared purity — spec trust contracts                        |
-| 25  | Code graph and PlainData          | `purity/code_graph.rs`, `facts/abstract_domain/heap.rs` (step 4b), `ts_enum_iife.rs`                  | `ChunkBinding` kinds; PlainData as heap `escape`/`taint` projection; TS enum IIFE admission shape                                                               | Name-based write scan plus value-flow alias check                     | `object_plain_data_calls`, `plain_data_escape_scale`, `soundness_plain_data_escape`                                                           | purity_soundness § `ChunkBinding::PlainData`; SPEC § Synchronous analysis limits |
+| 25  | Code graph and PlainData          | `purity/code_graph.rs`, `facts/abstract_domain/heap.rs`, `ts_enum_iife.rs`                            | `ChunkBinding` kinds; PlainData as heap `escape`/`taint` projection; TS enum IIFE admission shape                                                               | Name-based write scan plus value-flow alias check                     | `object_plain_data_calls`, `plain_data_escape_scale`, `soundness_plain_data_escape`                                                           | purity_soundness § `ChunkBinding::PlainData`; SPEC § Synchronous analysis limits |
 | 26  | Value classes                     | `facts/abstract_domain/primitive.rs` (`collect_binding_prims`), `heap.rs`, `purity/fluent.rs`         | Primitive types of chunk-top `const` and stable Number `var` bindings (projected to result-primitive and Symbol classes); fluent and plain-array alias closures | Whole-chunk write/escape gates in #25; written or shadowed intrinsics | `purity`, `captured_value_input`                                                                                                              | purity_soundness § Immutable Symbol computed keys                                |
 | 27  | Recursive and cross-module purity | `purity/effect_inference.rs`, `cross_module_purity.rs`                                                | Bottom-up function effects to closure across modules; pinned exports as axioms                                                                                  | Resolved import graph; absent export stays `unknown_call`             | `cross_module_purity_scale`, `pure_members`, `purity`                                                                                         | inference § Scheduling                                                           |
 | 28  | Cross-module primitive values     | `program_analysis.rs`, `cross_module_purity.rs::resolve_export_values`                                | Exported `Value` sets projected onto importers through the import resolver                                                                                      | Provider ESM without CJS surface, `eval`, `with`                      | `imported_primitive`                                                                                                                          | purity_soundness § Imported primitive coercion timing                            |
@@ -109,7 +109,7 @@ the literal needed by current rules: string/number/boolean/null/bigint
 literals, `Symbol.for` keys, enum member values. Two distinct constants join to
 `Any` of the same kind; distinct primitive kinds join to their union.
 
-Landed with step 3: `Value ::= Alloc(kind, site) | Prim(kinds) | Unavailable |
+Current value representation: `Value ::= Alloc(kind, site) | Prim(kinds) | Unavailable |
 Top`. `Prim` holds the set of primitive types a value can have, so primitives
 join by union rather than to `Top`, keeping a stable `var`'s Number-or-
 `undefined` type and a `Number | BigInt` operator result. A local function body
@@ -143,14 +143,14 @@ allocation (today's `callback_source_units`, `exported_runtime_values`,
 `global_escaped_callbacks`). `Many` multiplicity means one site stands for
 several runtime objects; property maps then join across instances.
 
-Landed with step 4b: `facts/abstract_domain/heap.rs` holds `escape ::=
+Current pre-execution heap: `facts/abstract_domain/heap.rs` holds `escape ::=
 Private | Published` and `taint ::= Clean | Tainted` for chunk-top literal
 initializers (and TS enum IIFE and derived-array initializers), solved
 flow-insensitively before purity from value flow and one whole-chunk scan;
 `PlainData` is its projection. `props`, `dense`, `proto`, `integrity` and
-`Published(owners)`/`Global` arrive with the interpreter-derived heap (5a, 6).
+`Published(owners)`/`Global` arrive with the interpreter-derived per-prefix heap (step 5).
 Purity's "no later write" premise stays this whole-chunk state; per-prefix
-values feed only `Coerce` resolution (4c).
+values feed only `Coerce` resolution.
 
 ### 2.3 Effects
 
@@ -176,7 +176,7 @@ own data. This single resolution rule replaces #24's `CoercingOperator`,
 reads as an opaque barrier (#13 `CellOrderBarrier::AllPriorEvents`) and what
 purity reads as `UnknownCall`.
 
-Landed with 4c layer 2: purity's effects are `facts/abstract_domain/effect.rs`
+Current purity representation: purity's effects are `facts/abstract_domain/effect.rs`
 `Effect ::= Write | Delete | Coerce(site) | Invoke(site) | Throws |
 Havoc(cause)`; the classifier returns them in evaluation order with calls of
 projected functions (`purity/purity_type.rs::Effects`), and `Purity` with its
@@ -217,7 +217,7 @@ operands arrive with the steps that first read them.
 | #7 Set from primitive array, #8 array spread                                 | Every alias reference enumerated; interval co-location    | Derived from `escape = Private` and `Iterate` resolution on a `Clean` dense array. Interval co-location stays a graph edge (#13).                                                                                                                                                                                 |
 | #9 local class, #10 fresh record                                             | Exact body shapes                                         | Derived: interpreting the constructor/factory body yields `Alloc(One)` with known props and `escape = Private`                                                                                                                                                                                                    |
 | #11 callback factory / returned record / namespace wrapper / descriptor copy | Exact body shapes plus native slots                       | Derived for local bodies; imported providers keep `Foreign(summary)` tokens whose summary rows are axioms (§ 4)                                                                                                                                                                                                   |
-| #12 native integrity, call identity                                          | Family-level census; unshadowed binding                   | Landed in step 2 as slot flags (`facts/abstract_domain/integrity.rs`). Identity is `Env(binding) = Intrinsic(path)` plus `IntrinsicSlot(path)` integrity                                                                                                                                                          |
+| #12 native integrity, call identity                                          | Family-level census; unshadowed binding                   | Slot flags (`facts/abstract_domain/integrity.rs`). Identity is `Env(binding) = Intrinsic(path)` plus `IntrinsicSlot(path)` integrity                                                                                                                                                                              |
 | #16 key domains                                                              | Finite-string / Symbol key refinement of native writes    | Derived: `Write(Prop(intrinsic, key))` with `key` from the value lattice                                                                                                                                                                                                                                          |
 | #17 local receiver identity                                                  | Reaching definitions with kills                           | **Dropped**: the domain joins paths. A receiver with both a fresh and a global-alias definition is `Top` → `Havoc`. Replacement: `captured_value_inputs` axiom on the binding (§ 4), or a `Private` initializer that dominates syntactically (straight-line prefix, which the joined state already distinguishes) |
 | #18 namespace privacy                                                        | Whole-chunk flow of one namespace value                   | Derived: `escape` of the namespace allocation; listed members read as `Prop(ns, member)`                                                                                                                                                                                                                          |
@@ -255,13 +255,12 @@ Row {
 ArgSel ::= This | Arg(i) | Rest(i) | Elements(Arg(i)) | Entries(Arg(i))
 ```
 
-Landed with steps 1 and 4a: `Row { op, invocation, cite, arity, coerces,
+Current builtin row schema: `Row { op, invocation, cite, arity, coerces,
 invokes, allocates: Option<Kind>, mutates: &[Mutation], returns, throws,
-assumed_intact, requires: &[IntrinsicSlot] }` (slot-level `requires` from
-step 2; empty outside the census) with `Invocation ::= Call | Construct |
+assumed_intact, requires: &[IntrinsicSlot] }` (slot-level `requires`, empty outside the census) with `Invocation ::= Call | Construct |
 Tag`, `ArgSel ::= Arg(i) | Rest(i)`, `Mutation ::= Integrity |
 DefineProperties | FreshOwnDescriptorsOf | FreshOwnKeysOf | FreshRetains`,
-`Return ::= Unknown | Prim(kinds) | Arg(i) | Fresh` (`Prim` from step 3), `Throws ::= Never |
+`Return ::= Unknown | Prim(kinds) | Arg(i) | Fresh`, `Throws ::= Never |
 UnlessObjects | UnlessCallable | OnValue`, plus `DATA_PROPERTIES` for static
 reads. Per-element iteration steps are `CoerceOp::{EntryGet,
 EntryKeyToPropertyKey}` rather than `Elements`/`Entries` selectors.
@@ -275,10 +274,9 @@ A11 identity premise; it goes once purity reads integrity flags.
 `coerces` is where user code can hide: a row with `coerces = []` and
 `invokes = []` fires no user code for any inputs; a row that coerces `Arg(0)`
 fires no user code only when the interpreter proves `Arg(0)` is `Prim` or a
-`Clean` ordinary object with intact prototype (§ 2.3). Since step 4a purity
-evaluates this column against syntactic operand shapes
-(`purity/native_rows.rs`); 4c replaces the shapes with the argument
-lattice (4b only made the `PlainData` operand a heap-state projection).
+`Clean` ordinary object with intact prototype (§ 2.3). Purity currently evaluates this column against syntactic operand shapes
+(`purity/native_rows.rs`); step 4 replaces the shapes with the argument
+lattice. The current `PlainData` operand is a heap-state projection.
 
 ### 3.2 Worked rows
 
@@ -315,8 +313,8 @@ array's dense shape because `mutates` names `Contents`.
 
 ### 3.3 Integrity flags from the census
 
-Landed in step 2: `facts/abstract_domain/integrity.rs`, SPEC § Native
-integrity inputs and inference § Shared inference. `%Object.prototype%[key]`
+The current slot flags live in `facts/abstract_domain/integrity.rs`; see SPEC
+§ Native integrity inputs and inference § Shared inference. `%Object.prototype%[key]`
 keeps its property-specific census rather than inheriting the `Object` family
 (the deviation is stated at `IntegrityFlags::object_prototype_property`).
 
@@ -332,7 +330,7 @@ where it would otherwise read a census flag, a value, or a callable summary.
 | `ValueIs(binding, Value)`        | Seeds `Env(binding)` with an abstract value the source cannot prove                          | `captured_value_inputs` (`Alloc(site, Object)` with `proto = Unknown`, `escape = Published`, not an intrinsic)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `CallableSummary(callable, Row)` | A § 3.1 row for a non-native callable; the interpreter uses it instead of expanding the body | `declared_pure`, `declared_pure_new`, `declared_pure_members`, `fluent_bindings`, imported `pure_exports`; `no_reentry_exports`, `no_reentry_members`, `no_reentry_record_members`, `no_reentry_callback_exports`, `no_reentry_statement_calls`; `inline_callback_factories`, `callback_factory_members`, `retained_callback_factories`, `retained_callback_factory_members`, `retained_callback_constructors`; `descriptor_copy_factory` providers; `namespace_independent_members`; `known_effects` (decorate helpers); `no_sync_callback_members`; `argument_inputs` (one parameter's `mutates`/escape column) |
 | `CellUnobserved(cell, until)`    | A write to `cell` is not read by any init-time reader before `until`                         | `deferred_global_publications`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `EffectsDisjoint(unitA, unitB)`  | The two source units' effect sets commute; the gate drops the `Sequenced` edge between them  | `commuting_statements` (sibling PR; not yet landed)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `EffectsDisjoint(unitA, unitB)`  | The two source units' effect sets commute; the gate drops the `Sequenced` edge between them  | `commuting_statements`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `SummaryTrusted(unit)`           | The syntactic summary stands in for the interpreter's for this unit                          | `declared_pure_initializers`, `trusted_dataflow_summaries` (chunk-wide)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 The row form for author summaries is the same struct as a builtin row with
@@ -348,14 +346,12 @@ consuming an axiom records its `ProofDependencies` reference exactly as
 
 ## 5. Migration order
 
-Each step is one PR or a short native GitHub stack. A step lands only when
-the rule's contract tests pass unchanged on the interpreter path and the
-bespoke rule is deleted in the same change. Every step reruns the § 6
-measurements.
-
-Canonical replays (hours at `-c opt`, both corpora) are required only for the
-steps that change what the gates can prove: 2, 5a–5d and 6. Steps 4, 7
-and 8 are covered by the public controls and the e2e suite.
+Each remaining step is one PR or a short native GitHub stack. A replacement
+lands with the replaced rule deleted and its contract preserved. Validate
+changed semantics with the public controls and canonical inputs from
+gaffer-private; migrating the certificate families in step 5 requires
+canonical comparisons before landing. Performance work follows
+<analysis_performance.md> and § 6 below.
 
 Pipeline order (<../docs/design.md> § Purity and synchronous execution share
 one context): source facts, function effects (`ChunkCodeGraph`) and the
@@ -373,111 +369,65 @@ execution. A step that derives from the interpreter a fact that per-body
 heap-content cells or function effects consume owns that reorder and measures
 its cost.
 
-### Step 0 — baseline
-
-Done 2026-10-29: <../perf/abstract_interpreter_step0_baseline.md> (public
-controls, both canonical inputs on the pinned and the `devel` engine). The
-canonical inputs carried one `native_receiver_certificates` site in total (a
-Tana vendor write; none on Claude). Step 2 deleted #17's path-sensitive
-receiver rule with no replacement axiom: other census writes already mutate
-the global object on both inputs, so the site's discharge changed no edge,
-atomic group or loss there.
-
 ### Step 4 — purity as empty effect set
 
-- `Purity::Pure ⇔` the statement's effect set has no `Write` to an observable
-  cell, no `Invoke`, no `Havoc`. `PurityRule` reasons become projections of
-  the offending effect (`Coerce` → `CoercingOperator`, `Havoc` → `UnknownCall`,
-  …) so `dependency_graph.json.gz` wire shape is unchanged. PlainData (#25) is
-  `escape = Private ∧ taint = Clean ∧ props ⊆ Prim`; `native_rows.rs`'s
-  syntactic operand resolution becomes the `Coerce` resolution rule. Delete
-  `plain_data.rs`, `ts_enum_iife.rs` (the IIFE is interpreted), most of
-  `classifier.rs` (including the namespace-facade shape and the
-  result-primitive / safe-key predicates it took over from the deleted
-  `builtin_calls.rs`); keep `purity_type.rs` as the projection and
-  `effect_inference.rs` as the cross-module worklist over summaries.
-  Step 3's `collect_binding_prims` (now in `primitive.rs`) becomes the
-  interpreter's `Prim` binding values, and `heap.rs`'s name-based plain-array
-  closure becomes `Alloc(Array)` with `Prim` elements.
-- Stack: 4a whitelists → rows (landed); 4b PlainData → heap state (landed:
-  `plain_data.rs` deleted, scan moved to `heap.rs` with per-allocation
-  state, still before purity); 4c classifier → projection, as a stack of
-  layers. Landed: statement purity is a runtime-store fact at its program
-  point; the classifier returns effects that `purity_type.rs` projects; the
-  checked local record factory discharge is part of the settled projection,
-  reading its certificate from the runtime store. Also landed: a `Coerce`
-  event names its operands (a top-level binding, or a named member of a
-  `PlainData` binding) and resolves against the values settled at its
-  statement's program point; a binding resolves only `ToPropertyKey`, and
-  only when no other statement writes it (prefix values do not model every
-  write). Enum members are execution state: a parameter-mutation initializer
-  records the primitive fields it stores, and member reads and coercions read
-  them (`ts_enum_iife.rs`'s named-field and stable-member facts and
-  `fresh_receiver.rs` are deleted). The interpreter's literal values carry
-  their primitive types. The heap's "no later write" premise stays
-  whole-chunk (design.md § Purity and synchronous execution share one
-  context). Operator and template coercions resolve when the operands'
-  settled types make the operator non-throwing (`primitive::binary_throws`;
-  purity_soundness § Imported primitive coercion timing). Remaining:
-  purity from execution: statement _n_'s purity is projected from executing
-  it, after an audit of what each `statement_is_pure` reader in
-  `interpreter.rs` assumes. `ts_enum_iife.rs` stays until then as the
-  pre-purity admission shape for the heap scan and the initializer's own
-  purity, both of which run before execution evaluates the IIFE; it is deleted
-  in that layer. Known precision loss to recover there: a coercion inside a
-  function body no longer resolves an enum member, since a body runs at no
-  fixed program point.
-- TODO: revisit one least fixpoint over growing prefix states (the
-  alternative that design section rejects) if per-prefix heap state would
-  make enough statements pure on the canonical inputs to matter for
-  acceptance. On the public e2e suite, settled-prefix resolution changes 4
-  statements' effects and makes 3 pure, all enum-member reads the deleted
-  stable-member fact proved before; the canonical inputs are not measured
-  yet.
-- Tests: `purity`, `object_plain_data_calls`, `proxy_constructor_purity`,
-  `initializer_purity`, `export_default_purity`, `pure_members`,
-  `cross_module_purity_scale`, `dependency_graph_purity_reason`,
+- Project statement _n_'s purity from executing it. First audit every
+  `prepared_statement_is_pure` reader in `interpreter.rs` so replacing the
+  pre-execution admission facts does not introduce a dependency cycle.
+  `Purity::Pure` requires no observable write, invocation, unresolved coercion,
+  possible throw or havoc;
+  `PurityRule` reasons project the offending effects.
+- Replace `purity/native_rows.rs`'s syntactic operands and
+  `primitive.rs`'s pre-execution binding facts with abstract argument values.
+  Preserve the non-throwing coercion conditions and the whole-chunk
+  "no later write" premise until per-prefix heap state proves an equivalent
+  fact. Replace the heap's name-based plain-array closure with array
+  allocations carrying primitive elements.
+- Remove `ts_enum_iife.rs`'s pre-purity admission shape and the remaining
+  bespoke cases in `classifier.rs` as execution supplies their proofs. Keep
+  `purity_type.rs` as the projection and `effect_inference.rs` as the
+  cross-module worklist. The vendor-prune path must retain equivalent proofs
+  even though it currently finalizes the classifier without execution.
+- Recover enum-member coercion precision inside function bodies: a body has
+  no single fixed program point. Decide whether growing prefix states need a
+  least fixpoint only after demonstrating an acceptance payoff; preserve the
+  forward-only dependency rule above unless that decision changes it.
+- Contract controls: `purity`, `object_plain_data_calls`,
+  `proxy_constructor_purity`, `initializer_purity`, `export_default_purity`,
+  `pure_members`, `cross_module_purity_scale`, `dependency_graph_purity_reason`,
   `impure_call_reason_growth`, `plain_data_escape_scale`,
   `soundness_plain_data_escape`, `repeated_var_purity`,
-  `purity_hint_diagnostics`; unit `purity/classifier_tests.rs` and
-  `graph_purity_tests.rs` are rewritten against effect sets or deleted where
-  they pin table membership.
-- SPEC/docs: purity_soundness.md shrinks to § Admission rule (now "how to add a
-  row"), § Declared purity and the redundant-hint section; per-operation
-  sections delete with their rules.
-- Soundness: the whitelist contract "fires no user code on any argument type"
-  is `coerces = [] ∧ invokes = []`; the primitive-arg and plain-data gates are
-  the `Coerce` resolution rule. A row admitting more than its old table entry
-  is the only way to weaken, so review is row-by-row.
-- Risk: high in volume, low in semantics. The classifier is 1,194 lines of
-  cases; the e2e suite, not the unit tests, is the contract.
+  `purity_hint_diagnostics`. Rewrite or remove table-membership unit tests as
+  their rules disappear; preserve external behavior controls.
+- Shrink `purity_soundness.md` with each removed rule, retaining row authoring,
+  declared purity and redundant-hint contracts. Review admission changes
+  row by row: `coerces = [] ∧ invokes = []` must still mean no user code on any
+  argument type. Primitive and plain-data admission become coercion resolution.
 
 ### Step 5 — native-operation and callable certificates
 
 - 5a collections: `set_iterables.rs`, `array_spreads.rs` → derived from
   `Iterate` resolution on `Clean` dense arrays; the interval co-location check
   stays in `graph/build.rs`. Tests `set_iterable_reentry`,
-  `stable_array_spread`, `native_operation_input`. Depends on 4b, 4c and 6:
+  `stable_array_spread`, `native_operation_input`. Requires execution-derived purity and per-prefix heap state:
   purity and heap-content effects consume these certificates before the
-  interpreter runs (§ 5 pipeline order); 4b's `escape`/`taint` state is
+  interpreter runs (§ 5 pipeline order); the current `escape`/`taint` state is
   whole-chunk and has no `dense`; and a flow-insensitive
   derivation from `ChunkValueFlow` loses per-prefix precision, since
   `array_spreads.rs` accepts producers mutated or escaping after the spread.
-- 5b local construction: `local_class_construction.rs`, `fresh_receiver.rs`,
-  `fresh_record.rs` → interpreting the constructor/factory body. Tests
+- 5b local construction: `local_class_construction.rs`, `fresh_record.rs` → interpreting the constructor/factory body. Tests
   `local_class_construction`, `local_record_factory_contract`,
-  `fresh_returned_record_destructuring`. Depends on 4b, 4c and 6, like 5a:
+  `fresh_returned_record_destructuring`. Requires the same execution-derived state as 5a:
   purity reads `LocalClassConstructionProof` (`new` admission in
   `classifier.rs`, `cross_module_purity.rs`), the `FreshRecordProof` that
   `ChunkCodeGraph` builds, and value flow's `fresh_returned_record_keys`
   (destructuring admission); heap-content effects read `LocalClassHeapProof`.
   All run before the interpreter, and on the vendor-prune path without it.
-  The derived fact, `Alloc(One)` with known props and `escape = Private`, is
-  heap state 4b only has for chunk-top initializers, without `props`; the
-  interpreter's per-allocation state arrives with 4c and 6. `fresh_receiver.rs` is read only by the
-  interpreter but needs the same state: an enum IIFE adds new keys to its
-  `{}` receiver, so setter freedom rests on the receiver's escape and taint,
-  not on fields it already owns.
+  Derive `Alloc(One)` with known props and `escape = Private`. The current
+  pre-execution heap tracks only chunk-top initializers and lacks `props`.
+  Execution-derived per-allocation state must preserve setter freedom when
+  constructor or enum initialization adds keys. That depends on escape and
+  taint, not only on fields the receiver already owns.
 - 5c callable summaries: `callable_inference.rs`, `namespace_wrapper.rs`,
   `SemanticKey::{StableFunction, StableProvider, NamespaceWrapper,
 ArgumentNoEscape, DescriptorCopy*}` → the
@@ -485,15 +435,10 @@ ArgumentNoEscape, DescriptorCopy*}` → the
   summary as `Foreign(summary)` through `imported_callables`. Tests
   `imported_callback_timing`, `retained_callback_factory`,
   `retained_constructor_callback`, `namespace_wrapper`,
-  `descriptor_copy_factory`, `argument_input`. Landed:
-  `facts/abstract_domain/foreign_call.rs` evaluates exported bodies whose
-  whole effect set is allocation and publishes `foreign_call` through
-  `imported_callables` (`foreign_call_summary`); a parameterless body
-  returning a fresh method/getter literal is the returned-record projection
-  (`ReturnedRecord` folded), and one that directly returns a closure over its
-  first parameter is the inferred callback factory (`CallbackFactory` folded). The other certificates above fill in where it
-  does not apply; folding them, and summarizing returned objects' methods,
-  remain.
+  `descriptor_copy_factory`, `argument_input`. Fold the remaining certificates
+  into the body summary and summarize returned objects' methods. Preserve the
+  existing allocation-only `foreign_call` summaries and their returned-record
+  and callback-factory projections (`facts/abstract_domain/foreign_call.rs`).
 - 5d own-property projections: `property_inference.rs` → `props` of a `Clean`
   `Alloc(One)` in ECMAScript own-key order. Tests `own_property_names`,
   `own_descriptor_inspection`.
@@ -503,37 +448,25 @@ ArgumentNoEscape, DescriptorCopy*}` → the
   namespace-wrapper timing, Ordinary own-property inspection, and the
   source-derived half of § Audited callback factories become one § Derived
   callable summaries stating the summary schema and the budgets.
-- Soundness: a derived summary is the interpreter's effect set over `Top`
-  arguments; it is weaker than or equal to each hand-written certificate
-  because the certificates were sufficient conditions for the same effect set
-  being empty.
+- Soundness: derive summaries over conservative argument values and prove
+  that every folded certificate's admission conditions still imply its effect
+  guarantees. Keep uncovered effects unknown; matching a certificate shape
+  alone is not a summary-completeness proof.
 - Risk: high. These rules carry the private corpus' current acceptance; a
   precision regression shows up as a red canonical gate. Mitigation: 5a–5d
-  land only after the private corpus replays accept the same assignments
-  (debug/runtime_transfers.md's paired-measurement protocol).
+  land only after canonical comparisons explain the effects and acceptance
+  differences under the same audited premises.
 
 ### Step 7 — statement cell summaries and taint
 
-- Landed: a statement's bail shapes are one `havoc` set beside its cells;
-  `dataflow_summarizable` and `cell_writes_summarizable` are its projections,
-  and `trusted_dataflow_summaries` clears every havoc but `DynamicCellWrites`.
-- Landed: `global_object.rs`'s taint is a candidate set. Execution settles
-  which bindings a tainted statement reads may hold the global object, and a
-  statement using them only as bases of static-key member reads gets those
-  `GlobalProp` read cells instead of the havoc.
-- Landed: `initialization_effects.rs` folds callee
-  `evaluation_effects.global_accesses` into `GlobalProp` read/write cells with
-  `IndexedMayAccess` evidence. This ledger composes possible accesses; it does
-  not certify execution or complete effect-domain coverage.
-- Remaining: the cells become projections of the interpreter's effect set
-  (`Binding`/`GlobalProp` cells), including writes through aliases and semantic
-  coverage of callee effects. Migrate the existing syntactic/indexed sources
-  and completeness proofs together. `collector.rs` keeps only
-  syntax collection (declarations, lazy boundaries, TLA). Needs canonical
-  replays: it changes precision both ways, and `needed` grows to every
-  eagerly read binding. Callee `GlobalProp` writes are ordered today by the
-  `OpaqueAtInitCall` havoc (an impure callee makes the call opaque), so
-  folding them adds edges only where that havoc goes.
+- Derive statement cells (`Binding`, `GlobalProp`, heap cells) from the
+  interpreter's effect set, including alias writes and semantic coverage of
+  callee effects. Migrate syntactic/indexed sources and completeness proofs
+  together; indexed possible accesses alone do not prove complete coverage.
+- Reduce `collector.rs` to syntax collection (declarations, lazy boundaries,
+  TLA). Compare canonical results: this changes precision in both directions,
+  and `needed` grows to every eagerly read binding. Preserve conservative
+  opacity until the replacement covers every current bail shape.
 - Tests: `s_chain_dataflow_soundness`, `soundness_at_init_value_flow`,
   `at_init_s_chain_dataflow`, `repeated_var_loop`, `hoisted_var_declaration`.
 - Soundness: every current bail shape produces `Havoc` under the domain
@@ -546,38 +479,26 @@ ArgumentNoEscape, DescriptorCopy*}` → the
 
 ### Step 8 — promotion and fallback
 
-- Landed: `safe_plain_array_at_init_fallback_sources` reads each plain
-  array's element state settled at the statement (`SettledElements`): object
-  elements admit static reads of keys every element holds a primitive under
-  (purity_soundness § Plain-array at-init fallback). Its soundness is the
-  settled heap-taint invariant (purity_soundness § Settled heap taint).
-  Skipped code invalidates element settlement through `unsettled_objects`.
-  Remaining soundness work: reads of unsettled objects can still trust stale
-  prefix properties, including descriptors skipped code may have replaced.
-  On the Tana replay `lV.forEach` (`index-DI2GynTv.js` line 69846) loses 372
-  promoted edges. `pee` (line 69850) stays: its elements reach
-  `_Me(jWe, uee)`, an unknown call, the statement before. `eet` (line 109391)
-  is an array literal of command constructors iterated in a lazy method, not
-  an at-init plain-array chain, so this rule never applied to it.
-- `promote_at_init_calls` already consumes complete synchronous summaries and
-  takes the syntactic reach (`at_init_unresolved_sources`, closed by
-  `source_unit_read_closure.rs`) only for incomplete ones. An incomplete
-  summary has no `Havoc(reach)` to hand over: the interpreter did not evaluate
-  the unsupported operation, so the syntactic reach stays its reach.
-- Tests: the #5 set. Removing the rule outright grew Tana's `eager_use` edges
-  by 1,353 (Claude unchanged).
+- Replace the syntactic closure used by `UnresolvedCallFallback` for incomplete
+  execution with interpreter-derived `Havoc(reach)`. Bounded reach is
+  report-only until a retained effect-domain closure proves it covers every
+  relevant binding, property, global and host effect; see
+  <synchronous_execution_fallback.md> for the remaining proof boundary.
+- Preserve conservative reads after skipped code, including getters and
+  replaced descriptors. The stale-property fix is a contract control, not an
+  open migration task (`synchronous_precision_report_test.rs`).
+- Preserve `at_init_s_chain_dataflow`, `soundness_at_init_value_flow`,
+  `set_iterable_reentry`, `stable_array_spread` and the fallback-report controls
+  while replacing promotion's bespoke reach rules.
 
 ### Step 9 — `EffectsDisjoint` and gate consumption
 
-- Gate consumption of `commuting_statements` lands before this plan's steps,
-  against the current edge reasons: it removes a `Sequenced` edge only when at
-  least one endpoint's reason is opaque, and rejects an entry contradicting a
-  derived conflict. This step ports that check onto effect sets: the axiom
-  removes the `Sequenced` edge when the summarized effect sets are disjoint and
-  the author asserts the unsummarized remainder is. The gate reads effect sets,
-  not purity bits, for this decision.
-- Tests: new controls — two units with a shared `Contents` cell must keep
-  their edge despite the assertion.
+- Port the existing `commuting_statements` edge check onto effect sets.
+  Summarized conflicts remain contradictions; the author can assert only
+  that the unsummarized remainder commutes. Apply this check to swapped pairs
+  as specified in <translation_validation_gate.md>.
+- Add controls where two units share a `Contents` cell: the assertion must
+  retain the conflict. The gate must consume effects rather than purity bits.
 
 ### Step 10 — graduation
 
@@ -588,67 +509,38 @@ ArgumentNoEscape, DescriptorCopy*}` → the
 
 ## 6. Scale and performance
 
-Sizing premise (step 0, `devel` engine 4377a57bae, RBE executor): Tana
-3,146,382 edges, 1,121 s wall, 5.13 GiB peak; Claude 7,366,298 edges over 76
-graphs, 87 s, 9.62 GiB. The pinned engine ecb4a734 does the same inputs in
-2,163,669 edges / 255 s / 3.67 GiB (Tana, accepted) and 6,123,098 edges /
-43.5 s / 4.40 GiB (Claude). The older 106 s / 3.75 GiB figure in
-<../perf/large_web_corpus_baseline.md> is a different engine and spec and is
-not comparable.
+The historical sizing evidence is in
+<../perf/abstract_interpreter_step0_baseline.md>. It is not a current gate or
+performance result. Use the same source/spec/engine identities when comparing
+runs; canonical fixtures live in gaffer-private.
 
-### 6.1 Measure before and after every step
+### 6.1 Validation and performance constraints
 
-Per <../AGENTS.md> § Profiling: `-c opt` binary, pre-staged inputs,
-`perf_wrapper.sh`; keep `perf_record_stderr.txt`, `perf_report_flat_symbols.txt`
-and the children report. Record:
+- Preserve external contract controls and compare gate outcomes, atomic groups,
+  effect coverage and precision losses when changing what analysis proves.
+  Explain differences from source/effect witnesses; an unchanged verdict alone
+  does not establish correctness or precision.
+- Keep memory and runtime reasonable as the domain grows. Use representative
+  scale controls and the workflow in <analysis_performance.md> for changes
+  affecting cost. Profiling uses the real tools and artifacts described in
+  <../AGENTS.md>; do not require a new profiling campaign for every migration.
 
-- Wall, user CPU, peak RSS: three alternating pairs per control. The budget is
-  cumulative against the step 0 baseline, not per step: at step 10 neither wall
-  nor peak RSS may exceed the baseline on any control or canonical input. A
-  single step may regress by at most 10%, and its PR names the later step that
-  recovers it.
-- Public controls: `opaque_callback_scale`, `value_flow_sharing_scale`,
-  `cross_module_purity_scale`, `plain_data_escape_scale`,
-  `conflict_diagnostics_scale`, `perf/gen_synth_corpus.py` (10k statements).
-- Private canonical inputs: gate verdict, atomic-group count, per-reason edge
-  counts in `dependency_graph.json.gz`, `precision_losses` count by reason. On
-  `devel` both gates reject today (the pinned engine accepts Tana), so "verdict
-  unchanged" is vacuous; the invariant is that edge counts, atomic-group counts
-  and losses never grow at any step, and the public e2e suite passes unchanged.
-- Flat profiles on the public controls (step 0) are dominated by `memcmp`,
-  `Atom::cmp`, `malloc`/`free` and `statement_for_source_unit_ordinal`; the
-  `BTreeSet<Id>` / `BTreeSet<RuntimeKey>` clones seen in earlier replay
-  prototypes are not in either top 20. Re-profile before optimizing either.
+### 6.2 Constraints on the remaining domain migration
 
-### 6.2 What keeps the interpreter per-statement
+- Preserve forward-only settled prefixes and dependency-tracked invocation
+  memoization; no parent replay or retrospective refinement of earlier purity.
+- Keep persistent snapshots shared, fallback reach summarized through shared
+  SCCs, and heap barriers linear in the live frontier.
+- Importers consume cross-module summaries rather than executing provider
+  bodies repeatedly. Keep captured contexts and callback sets shared.
+- Retain invocation-depth, invocation-count and callback-pool budgets with
+  conservative havoc and recorded losses.
+- Make the enlarged domain finite-height: constants widen to `Any`, repeated
+  births to `Many`, distinct argument shapes to `Top`, and unknown keys absorb
+  property maps. Budgets bound cost; they must not hide missing effects.
 
-The current code already summarizes at these points; the interpreter keeps
-every one of them:
-
-- One settled `ExecutionState` per prefix; statement _n+1_ consumes statement
-  _n_'s state and never rewrites it (`runtime_inference.rs`; inference
-  § Dependency regions).
-- Invocation memo per `InvocationSignature` with `read_final` dependencies, no
-  parent replay (`interpreter.rs::invocation_memos`; runtime_transfers.md
-  § Terminal transfers).
-- Budgets `MAX_SYNCHRONOUS_INVOCATION_DEPTH`, `MAX_SYNCHRONOUS_INVOCATIONS`,
-  `MAX_SYNCHRONOUS_CALLBACK_POOL` widening to `Havoc` with recorded losses.
-- Interned `Captured` contexts and callback sets (`value_model.rs`), batch
-  discovery of exports and arguments, bulk sorted effect-set merges
-  (debug/2026_10_24_callback_analysis_performance.md).
-- Persistent `OrdMap` state so per-prefix snapshots share structure.
-- Heap frontier reset at `CellOrderBarrier::HeapFrontier` so barriers stay
-  linear in the live frontier (`array_heap_frontier_tests::repeated_opaque_heap_barriers_keep_edges_linear_in_the_live_frontier`).
-- `SourceUnitReadClosure` shared SCC summaries for fallback reach.
-- Cross-module summaries: one worklist over `(body, abstract args)` facts
-  (`effect_inference.rs`, `cross_module_purity.rs`); importers consume
-  summaries, never provider bodies.
-
-New widening the domain adds: constants to `Any` after one distinct join;
-`One → Many` on repeated birth; argument shapes to `Top` after one distinct
-re-summary per body; `UnknownKey` absorbing a property map. Each is a
-finite-height guarantee, not a heuristic, so the worklist terminates without
-budgets; budgets remain for cost.
+See <../docs/inference.md> and <../debug/runtime_transfers.md> for the current
+execution and memoization contracts.
 
 ### 6.3 Risks
 
@@ -664,7 +556,7 @@ budgets; budgets remain for cost.
    a receiver it would discharge now keeps its census roots. Once the census no
    longer mutates the global object for other reasons, such a site needs an
    axiom, and `captured_value_inputs` cannot express it yet: it admits only a
-   top-level binding initialized by a member read, while the one Tana site is a
+   top-level binding initialized by a member read, while the audited private site is a
    function-local `var` with a fresh initializer and a later global-slot
    reassignment.
 
@@ -676,17 +568,10 @@ budgets; budgets remain for cost.
   conclusions are gated the same way (design § Why a static gate, not a runtime
   check).
 - No weakening of the soundness contract (AGENTS § Soundness over
-  completeness): every step is accepted only when its conclusions are a subset
-  of the replaced rule's on the contract tests and the corpus replays. New
-  precision is not a goal and is not added.
-- No change to the gate algorithm, quotient, emission or selector resolution.
+  completeness). New precision needs a source-grounded proof under the same
+  contract; acceptance or parity with the old rule alone is insufficient.
+- Gate authority and order search migrate under
+  <translation_validation_gate.md>; emission and selector changes are separate
+  work.
 - A11 stays an external author obligation; the census and the table narrow
   what A11 must cover, they do not discharge it.
-
-## 8. Doc drift found while inventorying
-
-Fix during the step that touches the area; listed so they are not rediscovered.
-
-- `docs/inference.md` opens with "`inference.rs` provides a dependency
-  worklist"; the worklist is `inference/iterative.rs`, `inference.rs` only
-  defines `Judgment` and re-exports.
