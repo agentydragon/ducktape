@@ -13,7 +13,7 @@ target-invocation time. Aggregate worker process time fell 29.8%, about eight
 worker-minutes per run. These are small-sample, same-input experiment results,
 not fleet percentiles or whole-CI feedback savings.
 
-The spike changes only this test's `test.runner-recycling-key`. Postgres servers,
+The optimization changes only this test's `test.runner-recycling-key`. Postgres servers,
 databases, Electric state, Kubernetes API server, application services, ingress,
 and browser contexts retain their existing fresh fixture lifetimes.
 
@@ -135,19 +135,33 @@ Remote sharing therefore works across hosts, but the first prepared configuratio
 does not cover every host CPU/VM configuration. The 98.2 s C2 observation does
 not establish that remote sharing is intrinsically faster or slower than local
 reuse: the host populations differ and there is only one fully warm remote run.
-The retained spike uses the simpler local recycling key; remote sharing remains
-a measured alternative for a production decision.
+The retained implementation uses the simpler local recycling key; remote sharing
+remains a measured alternative for a later decision.
+
+## Adoption
+
+`test_thread_browser` uses the stable `thread-browser-images-v1` recycling key.
+Its first full run prepares the shard placements; there is no seed job. The dated
+keys above identify the measured experiment, not the retained configuration.
+
+Advance the key's version when the `postgres_18`, `electric_1_8_1`, `ryuk`, or
+`nginx_unprivileged` pins in `MODULE.bazel` change, so the replacement baseline
+captures the new infrastructure images. The existing `util.oci.load_oci_image`
+checks the runfiles layout digest and actual daemon image ID before skipping a
+load. A missing or changed image therefore loads normally, including on a cold
+executor or if the recycling-key bump was missed. Frequently changing frontend
+images use this same guard without advancing the infrastructure key.
 
 ## Scope and follow-up
 
-- This is an experiment on `test_thread_browser`; the window-browser companion
+- This change applies to `test_thread_browser`; the window-browser companion
   and other PostgreSQL tests are not changed. Its test result-cache key changes;
   compiler/linter execution platforms and the global RBE image stay unchanged.
 - Use a shared image-family key for compatible browser targets when expanding.
   Every possible first action must load the family's required stable images.
-  Advance the family version with infrastructure image-pin changes; preserve
-  the existing digest/daemon-ID guard and cold fallback. A production pin/version
-  integration is not implemented by this dated experiment key.
+  Preserve the existing digest/daemon-ID guard and cold fallback. Key-version
+  advancement with infrastructure pin changes is manual, documented beside
+  the target's execution property; automatic pin-derived versioning is not added.
 - Frequently changing frontend images should continue through the existing
   digest guard rather than forcing all stable infrastructure images cold on
   every source commit.

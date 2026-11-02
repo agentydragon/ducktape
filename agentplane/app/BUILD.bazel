@@ -325,7 +325,9 @@ py_test(
     size = "medium",
     srcs = ["test_thread_browser.py"],
     exec_properties = {
-        "test.runner-recycling-key": "thread-browser-images-20261101-v1",
+        # Keep snapshots seeded by this suite. Bump the version when MODULE.bazel pins
+        # for postgres_18, electric_1_8_1, ryuk, or nginx_unprivileged change.
+        "test.runner-recycling-key": "thread-browser-images-v1",
     },
     requires_docker = True,
     shard_count = 16,
