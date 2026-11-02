@@ -37,5 +37,5 @@ Flux cannot tag a Sandbox the app created, because it would then own the whole o
 Sandbox has only the tags its manifest or launch gives it.
 
 `testing/kubernetes.py` seeds a running Sandbox and its Pod (`SandboxCluster`) on an envtest API
-server for integration tests. The Python reader in `testing/reader.py` and its projection in
-`testing/kubernetes_views.py` are test support for those API-server tests.
+server for integration tests. `testing/sandbox_namespace.py` provides the shared Kubernetes fixture
+operations.
