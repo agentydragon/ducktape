@@ -593,7 +593,7 @@ func TestThreadSandboxReadinessRequiresRunningReadyPod(t *testing.T) {
 	if !threadSandboxReady(ready) {
 		t.Fatal("running Sandbox with Ready=True was rejected")
 	}
-	if threadSandboxReady(&environmentpb.EnvironmentDescriptor{ObservedState: ready.GetObservedState()}) {
+	if threadSandboxReady(&environmentpb.EnvironmentDescriptor{ObservedState: &environmentpb.EnvironmentObservedState{Readiness: ready.GetObservedState().GetReadiness()}}) {
 		t.Fatal("Ready condition without a reported mode was accepted")
 	}
 	if threadSandboxReady(&environmentpb.EnvironmentDescriptor{
