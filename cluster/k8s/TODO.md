@@ -349,24 +349,20 @@ The fence in `cluster/cdk8s/egress_fences.py` (`haku_cloud_api`, the only one le
 set the Haku proxy pods may reach on the public internet, and nothing else. Known wrong or
 unverified around it as of 2026-11-02 (operator-facing summary: `haku/docs/security.md`):
 
-- [ ] Decide the Haku proxy's remit. `haku-egress-proxy` (mitmproxy) now serves `haku-ci` (CI
-      builds: the real traffic) and `haku-sandbox`, where only `haku-anki` needs it (AnkiWeb sync).
-      The Kyverno injection (`kyverno/proxy_injection.py`) exists so any pod Haku creates ad hoc
-      works behind the fence; no such pods remain. Options: keep it for `haku-ci` only, move
-      Anki onto an Agentplane egress sidecar, delete the injection, and leave `haku-sandbox` on
-      the default-deny CCNP. Several allowlist entries were justified by pods that are gone
-      (`alloy-otlp`, `haku-mailbox`, `api.coinbase.com`, PyPI/npm); per-host flow data (Hubble)
-      is needed to know which can go.
+- [ ] Finish retiring the `haku-sandbox` half of the Haku proxy. `haku-egress-proxy` (mitmproxy) now
+      really serves `haku-ci` (CI builds: the real traffic). In `haku-sandbox` only `haku-anki` needs
+      it (AnkiWeb sync), and it is moving behind an Agentplane egress sidecar, running as the shared `haku-ui` account
+      (`ankiweb-sync` in `actions_staging_policies.py`);
+      the Kyverno injection (`kyverno/proxy_injection.py`) now leaves a container that sets its own
+      proxy alone. Once Anki is verified syncing through the sidecar: delete the injection policy, drop
+      `*.ankiweb.net` from the fence, and leave `haku-sandbox` on its default-deny CCNP. Several other
+      allowlist entries were justified by pods that are gone (`alloy-otlp`, `haku-mailbox`,
+      `api.coinbase.com`, PyPI/npm); per-host flow data (Hubble) is needed to know which can go.
 - [ ] Converge on one proxy. mitmproxy has no credential placeholders, so its clients send real
       unredacted tokens upstream where Agentplane egress substitutes a placeholder in a trusted
       pod (Iron, the earlier candidate, was retired 2026-10-21). Blocked on an Agentplane
       equivalent of `--set stream_large_bodies=1m` (dind image layers were buffered whole into
       memory and OOM-killed the pod).
-- [ ] The injection overrides a container's own proxy config. It appends
-      `HTTP(S)_PROXY`/`NO_PROXY`/`SSL_CERT_FILE` and the last duplicate env entry wins, so a pod
-      with its own egress path (haku-ui's Agentplane sidecar) silently loses it: its calls skipped
-      the sidecar and Home Assistant answered 401 (2026-11-01). haku-ui works around it in code
-      (`Egress`). Make the injection skip a container that already sets a proxy, or retire it.
 - [ ] The proxy env block exists twice, in `proxy_injection.py` and `haku_ci/runner.py`
       (`_PROXY_ENV`), with different `NO_PROXY` lists. Share one definition.
 - [ ] Enforce at two layers. The mitmproxy fence confines only via Cilium `toFQDNs` —

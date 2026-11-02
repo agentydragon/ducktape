@@ -10,7 +10,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   annotations:
-    description: "The principal haku-ui reaches agentplane-staging as: Home Assistant and Grocy reads through the egress proxy, and <tool-call> Action requests that wait for the operator. Its grants stay a subset of claude-ai's (haku/ui_egress.py)."
+    description: "The principal haku-ui reaches agentplane-staging as: Home Assistant and Grocy reads through the egress proxy, and <tool-call> Action requests that wait for the operator. haku-anki runs as this account too, for AnkiWeb sync (agentplane/actions_staging_policies.py). Its grants stay within claude-ai's (haku/ui_egress.py) except AnkiWeb."
   labels:
     agentplane.allegedly.works/use-action-service: "true"
   name: haku-ui

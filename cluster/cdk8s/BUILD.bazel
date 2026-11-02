@@ -2034,6 +2034,7 @@ py_test(
     deps = [
         ":conftest",
         "//agentplane/action_service/policies:resources",
+        "//cluster/cdk8s/agentplane:actions_staging_policies",
         "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/haku:rbac",
         "//cluster/cdk8s/haku:ui_egress",
@@ -2042,5 +2043,23 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_haku_anki_egress",
+    size = "medium",
+    srcs = ["test_haku_anki_egress.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        "//cluster/cdk8s/agentplane:actions_staging_policies",
+        "//cluster/cdk8s/agentplane:staging",
+        "//cluster/cdk8s/haku:ui_egress",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

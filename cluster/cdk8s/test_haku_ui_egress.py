@@ -13,6 +13,7 @@ from more_itertools import one
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from cluster.cdk8s.agentplane import staging
+from cluster.cdk8s.agentplane.actions_staging_policies import ANKIWEB_SYNC_POLICY
 from cluster.cdk8s.haku import rbac as haku_rbac, ui_egress
 
 
@@ -49,7 +50,9 @@ def test_haku_ui_grants_are_a_subset_of_claude_ais(resources: list[dict[str, Any
     claude_ai = _binding(resources, "claude-ai")
 
     assert haku_ui["spec"]["subject"] == {"namespace": ui_egress.NAMESPACE, "name": ui_egress.SERVICE_ACCOUNT}
-    own = set(haku_ui["spec"]["policySets"]) - {ui_egress.POLICY}
+    # haku-ui's own egress policy is new; AnkiWeb is the one deliberate grant claude-ai lacks (haku-anki runs as
+    # this account, and Haku already reaches *.ankiweb.net through haku-egress-proxy; see actions_staging_policies.py).
+    own = set(haku_ui["spec"]["policySets"]) - {ui_egress.POLICY, ANKIWEB_SYNC_POLICY}
     assert own <= set(claude_ai["spec"]["policySets"])
 
 

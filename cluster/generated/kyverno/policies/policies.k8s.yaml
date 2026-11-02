@@ -265,6 +265,12 @@ spec:
                 - key: "{{ (element.volumeMounts || `[]`)[?name=='haku-egress-proxy-ca-cert'] | length(@) }}"
                   operator: Equals
                   value: 0
+                - key: "{{ (element.env || `[]`)[?name=='HTTP_PROXY'] | length(@) }}"
+                  operator: Equals
+                  value: 0
+                - key: "{{ (element.env || `[]`)[?name=='HTTPS_PROXY'] | length(@) }}"
+                  operator: Equals
+                  value: 0
       name: add-proxy-env-and-mount-containers
     - match:
         any:
@@ -323,6 +329,12 @@ spec:
             preconditions:
               all:
                 - key: "{{ (element.volumeMounts || `[]`)[?name=='haku-egress-proxy-ca-cert'] | length(@) }}"
+                  operator: Equals
+                  value: 0
+                - key: "{{ (element.env || `[]`)[?name=='HTTP_PROXY'] | length(@) }}"
+                  operator: Equals
+                  value: 0
+                - key: "{{ (element.env || `[]`)[?name=='HTTPS_PROXY'] | length(@) }}"
                   operator: Equals
                   value: 0
       name: add-proxy-env-and-mount-init-containers
