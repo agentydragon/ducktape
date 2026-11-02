@@ -74,7 +74,16 @@ pub(crate) fn annotate_heap_contents(
             may_skip_await_depth: 0,
         };
         item.as_module_item().visit_with(&mut collector);
-        if fact.kind == StatementKind::Export {
+        // A local export list wires live bindings without evaluating their
+        // values or executing a heap operation. Export reentry and callback
+        // visibility are tracked independently by synchronous execution.
+        if fact.kind == StatementKind::Export
+            && !matches!(item.as_module_item(),
+                ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export))
+                    if export.src.is_none()
+                        && export.specifiers.iter().all(|specifier|
+                            matches!(specifier, ExportSpecifier::Named(_))))
+        {
             collector.eager.opaque = true;
         }
         fact.heap_one_shot_allocation =

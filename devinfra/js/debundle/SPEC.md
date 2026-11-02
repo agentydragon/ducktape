@@ -1232,6 +1232,13 @@ Ordinary eager reads and synchronous callback reads stay between the known
 preceding and following writes of the binding, including `var` initializers
 and later assignments, even when the eager reader's source unit is pure.
 
+A local named export list, `export { local as publicName }`, evaluates no
+expression and contributes no heap-content barrier of its own. This sufficient
+condition requires no source module and only named specifiers. Exported live
+bindings and callbacks retain their ordinary visibility and reentry policy.
+Other export forms retain their existing syntax effects and conservative
+handling, including default expressions and re-exports.
+
 For ordinary synchronous functions and block-bodied arrows with simple
 parameters, the canonical index can retain a complete straight-line local
 body: simple declarations, local assignments and sequences, unconditional

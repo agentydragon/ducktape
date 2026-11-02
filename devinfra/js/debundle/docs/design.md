@@ -763,6 +763,11 @@ globalThis`) marks the bindings it flows into (transitively,
   execution invoked; an execution the interpreter cannot complete is a
   barrier, as are array member writes, method calls such as `push`, escaped
   arrays, key enumeration (`for-in`), optional calls and tagged templates.
+  A plain local named export list evaluates no expression, so it adds no
+  opaque heap event merely for being an export. The collector checks the
+  `ExportNamed` shape, absent source module and named-only specifiers; other
+  export forms retain conservative handling. This source proof does not alter
+  the interpreter's exported capability roots or export-reentry policy.
   Allocation seeds a separate pending frontier, so a later barrier remains
   connected even if unsupported syntax hides every read or mutation;
   allocation alone does not depend on preceding barriers or reset content
