@@ -552,7 +552,7 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
         (
             "const value = 1, sibling = 2;",
             vec![Member::new("value"), Member::new("sibling")],
-            3,
+            1,
         ),
         ("export const value = 1;", vec![Member::new("value")], 2),
     ] {
@@ -854,4 +854,135 @@ fn export_chunk_filter_requires_export_and_rejects_unknown_chunks() {
             "{result:?}"
         );
     }
+}
+
+#[test]
+fn split_simple_middle_and_later_declarators_receive_owner_coverage() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const first = 1, middle = 2, later = 3;\nconsole.log(first, middle, later);\n",
+        vec![
+            logical_module("first", &[Member::new("first")]),
+            logical_module("middle", &[Member::new("middle")]),
+            logical_module("later", &[Member::new("later")]),
+        ],
+    ));
+    assert_entry_output(&fixture, "1 2 3\n");
+
+    let report = fixture.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 1,
+            "only console.log remains uncovered: {report:#}"
+        );
+    }
+    assert_eq!(
+        report["coverage"]["statement_count"], 4,
+        "the split declarators and trailing call remain separate source owners: {report:#}"
+    );
+    assert_eq!(
+        report["coverage"]["owner_coverage_refusals"]["split_declaration"]
+            .as_u64()
+            .unwrap_or_default(),
+        0,
+        "eligible split owners must not be refused as a whole declaration: {report:#}"
+    );
+}
+
+#[test]
+fn split_declarator_coverage_stays_local_and_requires_completed_initialization() {
+    let effectful_sibling = run_fixture(FixtureOpts::new(
+        "const first = (globalThis.marker = 1, 1), middle = 2, later = 3;\nconsole.log(first, middle, later, globalThis.marker);\n",
+        vec![logical_module(
+            "values",
+            &[
+                Member::new("first"),
+                Member::new("middle"),
+                Member::new("later"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&effectful_sibling, "1 2 3 1\n");
+    let report = effectful_sibling.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 2,
+            "the effectful first initializer and console.log remain uncovered: {report:#}"
+        );
+    }
+    assert_eq!(
+        report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 1,
+        "the effectful sibling remains an unsupported source initializer: {report:#}"
+    );
+
+    let getter = run_fixture(FixtureOpts::new(
+        "const source = { get value() { globalThis.touched = 1; return 4; } }, middle = source.value, later = 5;\nconsole.log(middle, later, globalThis.touched);\n",
+        vec![logical_module(
+            "values",
+            &[
+                Member::new("source"),
+                Member::new("middle"),
+                Member::new("later"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&getter, "4 5 1\n");
+    let report = getter.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 3,
+            "getter-bearing source, member-read initializer, and console.log remain uncovered: {report:#}"
+        );
+    }
+    assert_eq!(
+        report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 2,
+        "the accessor-bearing source and member read each retain their own refusal: {report:#}"
+    );
+
+    let callback = run_fixture(FixtureOpts::new(
+        "function invoke(callback) { callback(); return 4; }\nconst callback = () => { globalThis.touched = 7; };\nconst middle = invoke(callback), later = 5;\nconsole.log(middle, later, globalThis.touched);\n",
+        vec![logical_module(
+            "values",
+            &[
+                Member::new("callback"),
+                Member::new("middle"),
+                Member::new("later"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&callback, "4 5 7\n");
+    let report = callback.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 2,
+            "the invoking initializer and console.log remain uncovered: {report:#}"
+        );
+    }
+    assert_eq!(
+        report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 1,
+        "the call initializer remains outside the literal proof: {report:#}"
+    );
+
+    let tdz = run_fixture(FixtureOpts::new(
+        "const first = later, middle = 2, later = 3;\nconsole.log(first, middle, later);\n",
+        vec![logical_module(
+            "values",
+            &[
+                Member::new("first"),
+                Member::new("middle"),
+                Member::new("later"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_error(&tdz, "ReferenceError");
+    let report = tdz.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 2,
+            "the TDZ read and console.log remain uncovered: {report:#}"
+        );
+    }
+    assert_eq!(
+        report["coverage"]["owner_coverage_refusals"]["initializer_result_unproved"], 1,
+        "the first declarator's forward read cannot prove its initializer value: {report:#}"
+    );
 }

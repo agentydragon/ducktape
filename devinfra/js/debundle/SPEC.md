@@ -336,9 +336,9 @@ Default examples retain twenty source operations per cell access, with exact
 counts and explicit truncation; full JSONL borrows and streams all retained
 operation provenance.
 
-An original, standalone, non-exported variable declaration with one simple,
-unannotated binding may close global-property, general-heap and host-effect
-coverage when its initializer is a primitive literal, checked ordinary
+An original, non-exported simple variable declarator with an unannotated
+binding may close global-property, general-heap and host-effect coverage when
+its initializer is a primitive literal, checked ordinary
 function/arrow creation, a read of an initialized module-local binding, or a
 static ordinary record literal. Record values may be primitive literals,
 initialized module-local binding reads, or nested records in the same subset.
@@ -354,15 +354,18 @@ host globals, and the interpreter must check its initialization before the
 read. A normally completed read retains its binding effect regardless of the
 value's kind or number of abstract alternatives; it establishes no heap
 privacy, value immutability or absence of getters on that value.
-The canonical source collector checks the whole original unit before
-expression erasure. A dedicated interpreter request must produce its expected
+For a comma-split ordinary, non-exported variable declaration, the canonical
+item view retains the original parent and selected declarator index. The
+source collector checks that exact original child against its split analysis
+view before expression erasure; every declarator remains its own effect owner
+in source order. A dedicated interpreter request must produce its expected
 value without an unavailable alternative, and owner finalization must complete
 the binding initialization without fallback or precision loss before
 sealing the coverage certificate. Bodies remain lazy; this certifies no call.
-Sequences, assignments, templates, split comma declarations, exports, classes,
-arrays, imported/global/uninitialized binding reads,
-decorated/type-annotated functions and unsupported parameters remain uncovered.
-Parentheses alone preserve admissibility.
+Sequences, assignments, templates, exports, destructuring, classes, arrays,
+imported/global/uninitialized binding reads, decorated/type-annotated
+functions and unsupported parameters remain uncovered. Parentheses alone
+preserve admissibility.
 The owner certificate survives staged analysis; generic child results and
 invocation memos never propagate it. Binding/allocation cells, other opacity
 flags, purity and the authoritative legacy gates retain their existing rules.

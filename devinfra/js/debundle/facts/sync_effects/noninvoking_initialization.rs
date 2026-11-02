@@ -1,9 +1,9 @@
-//! Whole-original-unit coverage for a small, non-invoking initializer subset.
+//! Whole-source-unit coverage for a small, non-invoking initializer subset.
 
 use super::value_model::{AbstractValue, ValueExpr, Values};
 use crate::facts::OwnerInitializationCoverageRefusalReason;
 use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
-use crate::facts::item_views::TopLevelItemView;
+use crate::facts::item_views::{SplitDeclaratorProvenance, TopLevelItemView};
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
@@ -47,6 +47,88 @@ impl CompletedInitialization {
     pub(crate) fn covers(&self, owner: SourceUnitOrdinal) -> bool {
         self.owner == owner
     }
+}
+
+fn refusal_for_non_variable_owner(item: &ModuleItem) -> OwnerInitializationCoverageRefusalReason {
+    if matches!(
+        item,
+        ModuleItem::ModuleDecl(
+            ModuleDecl::ExportDecl(_)
+                | ModuleDecl::ExportNamed(_)
+                | ModuleDecl::ExportDefaultDecl(_)
+                | ModuleDecl::ExportDefaultExpr(_)
+                | ModuleDecl::ExportAll(_)
+                | ModuleDecl::TsExportAssignment(_)
+                | ModuleDecl::TsNamespaceExport(_)
+        )
+    ) {
+        OwnerInitializationCoverageRefusalReason::ExportedOwner
+    } else {
+        OwnerInitializationCoverageRefusalReason::UnsupportedOwnerKind
+    }
+}
+
+fn same_simple_binding(left: &Pat, right: &Pat) -> bool {
+    let (Pat::Ident(left), Pat::Ident(right)) = (left, right) else {
+        return false;
+    };
+    left.id.to_id() == right.id.to_id()
+        && left.id.span == right.id.span
+        && left.id.optional == right.id.optional
+        && left.type_ann.as_ref().map(|annotation| annotation.span())
+            == right.type_ann.as_ref().map(|annotation| annotation.span())
+}
+
+fn original_declarator<'source>(
+    item: &TopLevelItemView<'source>,
+) -> Result<(&'source VarDecl, &'source VarDeclarator), OwnerInitializationCoverageRefusalReason> {
+    match item {
+        TopLevelItemView::Borrowed(item) => {
+            let ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration))) = item else {
+                return Err(refusal_for_non_variable_owner(item));
+            };
+            let [declarator] = declaration.decls.as_slice() else {
+                return Err(OwnerInitializationCoverageRefusalReason::SplitDeclaration);
+            };
+            Ok((declaration, declarator))
+        }
+        TopLevelItemView::Owned { item, provenance } => original_split_declarator(item, provenance),
+    }
+}
+
+fn original_split_declarator<'source>(
+    view: &ModuleItem,
+    provenance: &SplitDeclaratorProvenance<'source>,
+) -> Result<(&'source VarDecl, &'source VarDeclarator), OwnerInitializationCoverageRefusalReason> {
+    use OwnerInitializationCoverageRefusalReason::SplitDeclaration;
+
+    let ModuleItem::Stmt(Stmt::Decl(Decl::Var(original))) = provenance.parent_item else {
+        return Err(SplitDeclaration);
+    };
+    if original.decls.len() <= 1 {
+        return Err(SplitDeclaration);
+    }
+    let Some(declarator) = original.decls.get(provenance.declarator_index) else {
+        return Err(SplitDeclaration);
+    };
+    let ModuleItem::Stmt(Stmt::Decl(Decl::Var(single))) = view else {
+        return Err(SplitDeclaration);
+    };
+    let [single_declarator] = single.decls.as_slice() else {
+        return Err(SplitDeclaration);
+    };
+    let same_initializer_span = single_declarator.init.as_ref().map(|init| init.span())
+        == declarator.init.as_ref().map(|init| init.span());
+    if single.kind != original.kind
+        || single.ctxt != original.ctxt
+        || single.declare != original.declare
+        || single_declarator.span != declarator.span
+        || !same_simple_binding(&single_declarator.name, &declarator.name)
+        || !same_initializer_span
+    {
+        return Err(SplitDeclaration);
+    }
+    Ok((original, declarator))
 }
 
 fn ordinary_parameter(parameter: &Pat) -> bool {
@@ -99,35 +181,11 @@ impl OriginalInitializer {
         item: &TopLevelItemView<'_>,
         owner: SourceUnitOrdinal,
     ) -> Result<Self, OwnerInitializationCoverageRefusalReason> {
-        // Owned views are the canonical split of a comma declaration. They
-        // cannot prove the original statement's complete eager evaluation
-        // envelope.
-        let TopLevelItemView::Borrowed(item) = item else {
-            return Err(OwnerInitializationCoverageRefusalReason::SplitDeclaration);
-        };
-        let ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration))) = item else {
-            return Err(
-                if matches!(
-                    item,
-                    ModuleItem::ModuleDecl(
-                        ModuleDecl::ExportDecl(_)
-                            | ModuleDecl::ExportNamed(_)
-                            | ModuleDecl::ExportDefaultDecl(_)
-                            | ModuleDecl::ExportDefaultExpr(_)
-                            | ModuleDecl::ExportAll(_)
-                            | ModuleDecl::TsExportAssignment(_)
-                            | ModuleDecl::TsNamespaceExport(_)
-                    )
-                ) {
-                    OwnerInitializationCoverageRefusalReason::ExportedOwner
-                } else {
-                    OwnerInitializationCoverageRefusalReason::UnsupportedOwnerKind
-                },
-            );
-        };
-        let [declarator] = declaration.decls.as_slice() else {
-            return Err(OwnerInitializationCoverageRefusalReason::SplitDeclaration);
-        };
+        // For split views, recover only the exact original child named by the
+        // canonical view's parent/index provenance. The child's own evaluation
+        // remains one source-unit owner; sibling initializers are separate
+        // owners and keep separate effect records.
+        let (declaration, declarator) = original_declarator(item)?;
         let Pat::Ident(binding) = &declarator.name else {
             return Err(OwnerInitializationCoverageRefusalReason::UnsupportedBindingShape);
         };
