@@ -10,6 +10,7 @@ import subprocess
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
+from google.protobuf.json_format import MessageToDict
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
@@ -236,7 +237,6 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
     account_meta = service_account["metadata"]
     assert account_meta["namespace"] == account.namespace
     assert account_meta["uid"] == account.uid
-    account_uid = account_meta["uid"]
     token = await cluster.kubectl(
         "create", "token", account.name, "-n", account.namespace, f"--audience={TOKEN_AUDIENCE}", "--duration=600s"
     )
@@ -249,11 +249,7 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
         eligibility = descriptor["resume_eligibility"]
         assert isinstance(eligibility, dict), descriptor
         assert eligibility["state"] == "RESUME_ELIGIBILITY_STATE_AVAILABLE", descriptor
-        assert descriptor["execution_account"] == {
-            "namespace": account.namespace,
-            "name": account.name,
-            "uid": account_uid,
-        }, descriptor
+        assert descriptor["execution_account"] == MessageToDict(account, preserving_proto_field_name=True), descriptor
         resume_token = descriptor["resume_token"]
         assert isinstance(resume_token, str)
         assert resume_token
@@ -305,8 +301,8 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
     (undeclared_outputs_dir() / "explicit-resume-idle-pod.json").write_text(
         json.dumps(
             {
-                "sandbox": {"namespace": target.namespace, "name": target.name, "uid": target.uid},
-                "execution_account": {"namespace": account.namespace, "name": account.name, "uid": account_uid},
+                "sandbox": MessageToDict(target, preserving_proto_field_name=True),
+                "execution_account": MessageToDict(account, preserving_proto_field_name=True),
                 "old_pod_uid": old_pod.uid,
                 "new_pod_uid": resumed.pod.uid,
                 "resume_outcome": response["outcome"],

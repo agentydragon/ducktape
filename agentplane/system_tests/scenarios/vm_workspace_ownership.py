@@ -6,6 +6,8 @@ import json
 import shlex
 from uuid import uuid4
 
+from google.protobuf.json_format import MessageToDict
+
 from agentplane.app.testing.client import Client
 from agentplane.env.runtime.harness import Harness
 from agentplane.proto import session_pb2
@@ -86,9 +88,7 @@ async def fresh_vm_session_workspace_is_created_for_harness_identity(client: Cli
     assert f"git_owner={AGENT_UID}:{AGENT_GID} git_top={workspace}" in output, stderr
 
     evidence = {
-        "namespace": view.target.namespace,
-        "sandbox": view.target.name,
-        "sandbox_uid": str(view.target.uid),
+        "target": MessageToDict(view.target, preserving_proto_field_name=True),
         "template": VM_TEMPLATE,
         "harness": "codex",
         "harness_uid": AGENT_UID,
@@ -107,6 +107,3 @@ async def fresh_vm_session_workspace_is_created_for_harness_identity(client: Cli
     }
     output_path = undeclared_outputs_dir() / "vm-workspace-ownership.json"
     output_path.write_text(json.dumps(evidence, indent=2) + "\n")
-
-
-# gazelle:include_dep @pypi//protobuf
