@@ -45,8 +45,10 @@
       "priority": "Low",
       "category": "Boundary",
       "title": "Resolve the visual-helper module/package collision",
-      "status": "merged_visual_differences_under_review",
-      "pull_request": 13652
+      "status": "merged_visual_differences_investigated",
+      "pull_request": 13652,
+      "visual_capture_fix_pull_request": 13689,
+      "visual_identity_guard_pull_request": 13692
     },
     {
       "id": "M",
