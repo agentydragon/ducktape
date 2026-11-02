@@ -368,7 +368,7 @@ func frameTestSessionWithControllerGate(t *testing.T, command []string, withCont
 			t.Fatal(err)
 		}
 	}
-	if err := harnesshostlifecycle.PublishEnvironmentDesired(ctx, resources, harnesshostlifecycle.EnvironmentDesired{Mode: lifecycle.Running}); err != nil {
+	if err := harnesshostlifecycle.PublishEnvironmentDesired(ctx, resources, harnesshostlifecycle.EnvironmentDesired{Mode: harnesshostlifecycle.Running}); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan struct{})

@@ -102,7 +102,7 @@ func newSessionTestManager(t *testing.T, environment map[string]string, destinat
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := harnesshostlifecycle.PublishEnvironmentDesired(ctx, resources, harnesshostlifecycle.EnvironmentDesired{Mode: lifecycle.Running}); err != nil {
+	if err := harnesshostlifecycle.PublishEnvironmentDesired(ctx, resources, harnesshostlifecycle.EnvironmentDesired{Mode: harnesshostlifecycle.Running}); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
