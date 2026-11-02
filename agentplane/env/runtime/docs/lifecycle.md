@@ -50,7 +50,7 @@ the embedded adapter is called directly by Runtime.
 | Incarnation seal                          | Runtime | `EnvironmentSeals` COSI resource in `runtime-resources.db` |
 | Bootstrap selection                       | Runtime | `<state_dir>/runtime-resources.db`                         |
 | Bootstrap event log                       | Runtime | `<state_dir>/initialization/events.jsonl`                  |
-| Session records and History ACKs           | Host    | `<state_dir>/runtime-resources.db`                         |
+| Session records and History ACKs          | Host    | `<state_dir>/runtime-resources.db`                         |
 | Session journals and native continuations | Host    | `<state_dir>/sessions/`                                    |
 | Shared Codex native home                  | Host    | `<state_dir>/codex/`                                       |
 
