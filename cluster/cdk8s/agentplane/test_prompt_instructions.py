@@ -94,5 +94,19 @@ def test_quest_read_is_granted_to_haku_and_claude_ai(staging_manifests: list[dic
     assert all("quest-read" not in preset["policy_sets"] for name, preset in presets.items() if name != "haku")
 
 
+def test_haku_and_claude_account_policy_order(staging_manifests: list[dict[str, Any]]) -> None:
+    bindings = {
+        doc["metadata"]["name"]: doc["spec"]["policySets"]
+        for doc in staging_manifests
+        if doc["kind"] == "PolicyBinding" and doc["metadata"]["name"] in {"haku-agent", "claude-ai"}
+    }
+    claude_only = {"buildbuddy", "mimir-reads", "orchestration-presets"}
+    haku, claude = bindings["haku-agent"], bindings["claude-ai"]
+    assert len(haku) == len(set(haku))
+    assert len(claude) == len(set(claude))
+    assert set(claude) - set(haku) == claude_only
+    assert [policy for policy in claude if policy not in claude_only] == haku
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

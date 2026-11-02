@@ -106,6 +106,24 @@ _ACCOUNT_READ_SETS = (
     KUBERNETES_INSPECTION_READS_SET,
 )
 
+_HAKU_CLAUDE_BASE_POLICIES = (
+    BASIC_POLICY,
+    INFERENCE_EXPERIMENTS_POLICY,
+    FORGEJO_HAKU_POLICY,
+    PACKAGES_POLICY,
+    GOOGLE_READONLY_POLICY,
+    ACTIVITYWATCH_READ_POLICY,
+    AIQUOTA_READ_POLICY,
+    QUEST_READ_POLICY,
+    HAKU_MAILBOX_POLICY,
+    access.COINBASE_POLICY,
+    access.PLAID_DIAGNOSTICS_POLICY,
+    _GITHUB_DOWNLOADS_POLICY,
+    GITHUB_CLONE_POLICY,
+    GITHUB_AGENTYDRAGON_AGENT_POLICY,
+    GITHUB_ACTIONS_LOGS_POLICY,
+)
+
 
 def _policy_set(scope: Construct, id: str, *, metadata: ApiObjectMetadata, rules: Sequence[PolicySetSpecRules]) -> None:
     # The Action Service parses a rule more strictly than the CRD schema (an unknown policy
@@ -698,21 +716,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         claude_ai,
         policies=[
-            BASIC_POLICY,
-            INFERENCE_EXPERIMENTS_POLICY,
-            FORGEJO_HAKU_POLICY,
-            PACKAGES_POLICY,
-            GOOGLE_READONLY_POLICY,
-            ACTIVITYWATCH_READ_POLICY,
-            AIQUOTA_READ_POLICY,
-            QUEST_READ_POLICY,
-            HAKU_MAILBOX_POLICY,
-            access.COINBASE_POLICY,
-            access.PLAID_DIAGNOSTICS_POLICY,
-            _GITHUB_DOWNLOADS_POLICY,
-            GITHUB_CLONE_POLICY,
-            GITHUB_AGENTYDRAGON_AGENT_POLICY,
-            GITHUB_ACTIONS_LOGS_POLICY,
+            *_HAKU_CLAUDE_BASE_POLICIES,
             BUILDBUDDY_POLICY,
             MIMIR_READS_POLICY,
             # claude-ai is the account that launches orchestration_v1 workers.
@@ -755,28 +759,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     )
 
     # Haku-like sandboxes get Coinbase only through this explicit combined PolicySet selection.
-    _account_binding(
-        scope,
-        haku_agent,
-        policies=[
-            BASIC_POLICY,
-            INFERENCE_EXPERIMENTS_POLICY,
-            FORGEJO_HAKU_POLICY,
-            PACKAGES_POLICY,
-            GOOGLE_READONLY_POLICY,
-            ACTIVITYWATCH_READ_POLICY,
-            AIQUOTA_READ_POLICY,
-            QUEST_READ_POLICY,
-            HAKU_MAILBOX_POLICY,
-            access.COINBASE_POLICY,
-            access.PLAID_DIAGNOSTICS_POLICY,
-            _GITHUB_DOWNLOADS_POLICY,
-            GITHUB_CLONE_POLICY,
-            GITHUB_AGENTYDRAGON_AGENT_POLICY,
-            GITHUB_ACTIONS_LOGS_POLICY,
-            *_ACCOUNT_READ_SETS,
-        ],
-    )
+    _account_binding(scope, haku_agent, policies=[*_HAKU_CLAUDE_BASE_POLICIES, *_ACCOUNT_READ_SETS])
 
     # Every sandbox Action, auto-approved. Approving each one individually would not be a
     # boundary: a sandbox runs as the account that asked for it, so the whole group can do
