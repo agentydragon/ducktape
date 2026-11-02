@@ -77,12 +77,26 @@ in COSI merely to expose observations controllers already need.
 
 ## Reconsider the Session state model
 
-Runtime owns Session management, retained Session records and History journal delivery. Evaluate
-modeling Sessions and their lifecycle directly as COSI resources with a disk-backed state
-implementation such as SQLite or bbolt. Define ownership and transaction boundaries with Session
-journals and command outcomes before changing storage, including recovery of uncertain native effects.
-Measure resident memory and indexed access at realistic Session counts; controller caches and list
-operations may load additional resources even with an on-disk backend.
+Runtime owns Session management, retained Session records and History journal delivery.
+`SessionRecords` are already protobuf-backed COSI resources, persisted in bbolt and held in COSI's
+in-memory state. Session journals remain separate SQLite databases. Evaluate whether a different
+disk-backed state implementation improves memory and indexed access at realistic Session counts;
+controller caches and list operations may still load additional resources. Define ownership and
+transaction boundaries with journals and command outcomes before changing storage, including
+recovery of uncertain native effects.
+
+Make Session lifecycle ownership react directly to `SessionRecords`. Today startup enumerates
+retained records and calls `Manager.Load`, while the environment Session lifecycle controller
+repeats that enumeration and load during shutdown reconciliation. `Load` constructs or recovers a
+live Session and its journal and publishes the `SessionReconcileSnapshot` watched by the Session
+controller; an existing record alone does not drive that controller. An already-loaded Session is
+returned from memory, but shutdown still repeats the inventory and load calls.
+
+Evaluate a single COSI-driven owner that constructs and recovers each live Session from its record
+and publishes observable readiness or failure. Let shutdown observe the resulting lifecycle state,
+then remove the separate startup and shutdown loading loops if that owner replaces them. Preserve
+the initial inventory and admission barriers, failed recovery and publication behavior, journal
+ownership and no-replay recovery; a resource update alone does not prove native effects settled.
 
 The broader [Session/runtime model decision](../plans/task_dag.md#session_runtime_model_design--sessions-harness-placement-and-execution-attachments)
 also covers Sessions independent of environments and harnesses inside them. Use `OpenSession` as a
