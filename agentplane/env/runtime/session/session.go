@@ -60,21 +60,9 @@ type Session struct {
 	dispatched                                             map[string]bool
 	interrupts                                             map[string]string
 
-	// finalAdmissionClosed is guarded by admitMu. Once set, this Session owner
-	// never admits a new command ID, even if settling or sealing fails.
-	finalAdmissionClosed bool
-	// finalAdmissionGeneration is the environment revision that first enforced
-	// the cutoff. A successor must have a newer Running revision.
-	finalAdmissionGeneration uint64
-	// finalAdmissionSettled records completion of undispatched command settlement
-	// after the cutoff. The aggregate fence has already settled dispatched work.
-	finalAdmissionSettled bool
-	// finalAdmissionReopenedUID records a durable successor journal reopen whose
-	// remaining acknowledgement/publication work may still need retry.
-	finalAdmissionReopenedUID string
-	// A live owner cutoff requires an exact Running revision before reopening;
-	// recovery of a previously sealed journal has its own startup boundary.
-	finalAdmissionRequireRevision bool
+	// cutoff is guarded by admitMu. A non-nil cutoff forbids new command IDs;
+	// only a completed successor reopen clears it.
+	cutoff *admissionCutoff
 
 	// codexAppServer is the shared app-server incarnation hosting this Codex Session's thread.
 	codexAppServer  *codexappserver.Process
@@ -352,11 +340,13 @@ func (s *Session) sealJournal(ctx context.Context) error {
 	// or be durably settled before the journal is sealed.
 	s.admitMu.Lock()
 	defer s.admitMu.Unlock()
-	s.finalAdmissionClosed = true
+	if s.cutoff == nil {
+		s.cutoff = &admissionCutoff{live: true}
+	}
 	if err := s.settleUndispatched(ctx, "the Sandbox was quiesced before this command was dispatched"); err != nil {
 		return err
 	}
-	s.finalAdmissionSettled = true
+	s.cutoff.settled = true
 	uid := s.deps.environmentState().IncarnationUID
 	if uid == "" {
 		return errors.New("environment incarnation is not bound")

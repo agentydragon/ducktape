@@ -36,7 +36,7 @@ func TestFinalAdmissionCutoffPreservesReceiptsAndSettlesEarlierInterrupt(t *test
 		t.Fatalf("interrupt admitted before cutoff was not settled: record=%+v err=%v", stored, err)
 	}
 	s.closeAdmission(1)
-	if !s.finalAdmissionClosed || s.admissionClosed() || s.journal.SealState() != nil {
+	if s.cutoff == nil || s.admissionClosed() || s.journal.SealState() != nil {
 		t.Fatal("final admission gate did not close before settlement and journal sealing")
 	}
 	if _, err := s.Admit(ctx, cutoffInterrupt("after-cutoff"), true); status.Code(err) != codes.Aborted {
@@ -93,20 +93,20 @@ func TestSuccessorReopenClearsCutoffOnlyAfterCurrentRevisionAndPublication(t *te
 		t.Fatal(err)
 	}
 	sealed := s.journal.SealState()
-	if err := m.Reopen(ctx, s); err == nil || s.journal.SealState() == nil || !s.finalAdmissionClosed {
+	if err := m.Reopen(ctx, s); err == nil || s.journal.SealState() == nil || s.cutoff == nil {
 		t.Fatalf("same incarnation reopened a closed Session: err=%v seal=%+v", err, s.journal.SealState())
 	}
 	env = Environment{IncarnationUID: "successor"}
 	if err := lifecycle.PublishEnvironmentDesired(ctx, m.state, lifecycle.EnvironmentDesired{Mode: lifecycle.Running, IncarnationUID: "successor", Generation: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Reopen(ctx, s); err == nil || s.journal.SealState() == nil || !s.finalAdmissionClosed {
+	if err := m.Reopen(ctx, s); err == nil || s.journal.SealState() == nil || s.cutoff == nil {
 		t.Fatalf("stale generation reopened a closed Session: err=%v seal=%+v", err, s.journal.SealState())
 	}
 	if err := lifecycle.PublishEnvironmentDesired(ctx, m.state, lifecycle.EnvironmentDesired{Mode: lifecycle.Running, IncarnationUID: "stale", Generation: 2}); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Reopen(ctx, s); err == nil || s.journal.SealState() == nil || !s.finalAdmissionClosed {
+	if err := m.Reopen(ctx, s); err == nil || s.journal.SealState() == nil || s.cutoff == nil {
 		t.Fatalf("stale revision reopened a closed Session: err=%v seal=%+v", err, s.journal.SealState())
 	}
 	if err := lifecycle.PublishEnvironmentDesired(ctx, m.state, lifecycle.EnvironmentDesired{Mode: lifecycle.Running, IncarnationUID: "successor", Generation: 3}); err != nil {
@@ -123,17 +123,32 @@ func TestSuccessorReopenClearsCutoffOnlyAfterCurrentRevisionAndPublication(t *te
 		t.Fatal(err)
 	}
 	m.store = store
-	if err := m.Reopen(ctx, s); !errors.Is(err, failure) || s.journal.SealState() != nil || !s.finalAdmissionClosed {
+	if err := m.Reopen(ctx, s); !errors.Is(err, failure) || s.journal.SealState() != nil || s.cutoff == nil {
 		t.Fatalf("failed successor acknowledgement publication opened gate: err=%v seal=%+v", err, s.journal.SealState())
 	}
 	if _, err := s.Admit(ctx, &commandpb.Command{CommandId: "during-failure", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "blocked"}}}, false); status.Code(err) != codes.Aborted {
 		t.Fatalf("failed successor acknowledgement publication admitted command: %v", err)
 	}
+	if err := lifecycle.PublishEnvironmentDesired(ctx, m.state, lifecycle.EnvironmentDesired{Mode: lifecycle.Running, IncarnationUID: "other-successor", Generation: 4}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Reopen(ctx, s); err == nil || s.cutoff == nil || s.journal.SealState() != nil {
+		t.Fatalf("changed successor revision completed interrupted reopen: err=%v cutoff=%+v", err, s.cutoff)
+	}
+	if err := lifecycle.PublishEnvironmentDesired(ctx, m.state, lifecycle.EnvironmentDesired{Mode: lifecycle.Running, IncarnationUID: "successor", Generation: 5}); err != nil {
+		t.Fatal(err)
+	}
+	signalOperation := s.deps.signalOperation
+	s.deps.signalOperation = func(string) error { return failure }
+	if err := m.Reopen(ctx, s); !errors.Is(err, failure) || s.cutoff == nil || s.journal.SealState() != nil {
+		t.Fatalf("failed reconcile signal completed successor reopen: err=%v cutoff=%+v", err, s.cutoff)
+	}
+	s.deps.signalOperation = signalOperation
 	if err := m.Reopen(ctx, s); err != nil {
 		t.Fatalf("retry completed successor reopen: %v", err)
 	}
-	if s.finalAdmissionClosed || s.admissionClosed() || s.journal.SealState() != nil {
-		t.Fatalf("successful successor did not reopen admission: gate=%v seal=%+v", s.finalAdmissionClosed, s.journal.SealState())
+	if s.cutoff != nil || s.admissionClosed() || s.journal.SealState() != nil {
+		t.Fatalf("successful successor did not reopen admission: gate=%v seal=%+v", s.cutoff != nil, s.journal.SealState())
 	}
 	if _, err := s.Admit(ctx, &commandpb.Command{CommandId: "successor-command", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "new"}}}, false); err != nil {
 		t.Fatalf("successor command admission: %v", err)
