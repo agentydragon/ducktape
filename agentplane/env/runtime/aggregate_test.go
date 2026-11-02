@@ -792,6 +792,10 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 		t.Fatalf("Close returned during accepted setup: %v", err)
 	default:
 	}
+	if owner, err := openEnvironmentOwner(root); err == nil {
+		_ = owner.Close()
+		t.Fatal("Close released environment ownership while accepted Host setup remained")
+	}
 	if err := os.WriteFile(setupRelease, nil, 0600); err != nil {
 		t.Fatal(err)
 	}

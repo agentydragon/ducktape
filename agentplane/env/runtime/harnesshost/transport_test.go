@@ -176,7 +176,6 @@ func newBareRunner(t *testing.T) *Host {
 		t.Fatal(err)
 	}
 	if err := bindHost(runner, "test-incarnation"); err != nil {
-		_ = runner.owner.Close()
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {

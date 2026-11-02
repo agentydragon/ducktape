@@ -175,9 +175,6 @@ func forceStopTestRunner(t *testing.T, r *Host) {
 		<-r.lifecycle.done.Done()
 	}
 	r.lifecycle.workers.Wait()
-	if err := r.owner.Close(); err != nil {
-		t.Errorf("close test Host state owner: %v", err)
-	}
 }
 
 func codexAppServerStatus(t *testing.T, r *Host) codexappserver.Status {

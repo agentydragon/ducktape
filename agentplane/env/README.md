@@ -26,8 +26,8 @@ Host owns workspace containment and helpers in `env/runtime/harnesshost/workspac
 Runtime constructs Host from the same `--config` and `--launch-file` and coordinates its lifecycle
 and Session calls directly in the process. Production Pod Runtime is PID1 and Host shares its reaper.
 In VMs, native harnesses and executors use separate systemd service cgroups in the workload and
-executor slices, bound to the Runtime service lifetime. Runtime retains the environment owner inode; Host locks
-`<state_dir>/harness-host/.agentplane-harness-host-owner`. Session state stays under `<state_dir>/sessions`
+executor slices, bound to the Runtime service lifetime. Runtime retains one environment owner fence for itself and embedded Host; Pod and subprocess
+native harnesses inherit its descriptor. Session state stays under `<state_dir>/sessions`
 and the shared Codex home stays under `<state_dir>/codex`.
 
 The lifecycle coordinator binds every intent/report to the same process boots and generation.

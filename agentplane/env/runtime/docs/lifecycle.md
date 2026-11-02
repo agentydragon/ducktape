@@ -4,7 +4,7 @@ The environment has three component owners in one management process. Environmen
 control and coordinated drain. Harness Host owns native Sessions, setup, app-server, journals and
 History ingress. Execution Service owns typed execution and the native exec-server. Each component
 has distinct typed lifecycle resources in one Runtime-owned COSI engine. Runtime owns the engine
-and joins it after Host controllers reach Closed and before either component releases its state owner.
+and joins it after Host controllers reach Closed and before releasing its environment state owner.
 The Host still owns its Session, journal and native process resources; Runtime owns bootstrap and
 environment process resources. One process controller and registry own attempt finalizers in the shared namespace;
 process domains retain separate lifecycle and worker barriers.
@@ -44,19 +44,17 @@ the embedded adapter is called directly by Runtime.
 
 ## Durable owners
 
-| State                              | Owner   | Existing path                                             |
-| ---------------------------------- | ------- | --------------------------------------------------------- |
-| Environment lifetime lock          | Runtime | `<state_dir>/.agentplane-environment-runtime-owner`       |
-| Incarnation seal marker            | Runtime | `<state_dir>/sessions/sealed`                             |
-| Bootstrap request and log          | Runtime | `<state_dir>/initialization/`                             |
-| Native Session lifetime lock       | Host    | `<state_dir>/harness-host/.agentplane-harness-host-owner` |
-| Session records, journals and ACKs | Host    | `<state_dir>/sessions/`                                   |
-| Shared Codex native home           | Host    | `<state_dir>/codex/`                                      |
+| State                              | Owner   | Existing path                                       |
+| ---------------------------------- | ------- | --------------------------------------------------- |
+| Environment lifetime lock          | Runtime | `<state_dir>/.agentplane-environment-runtime-owner` |
+| Incarnation seal marker            | Runtime | `<state_dir>/sessions/sealed`                       |
+| Bootstrap request and log          | Runtime | `<state_dir>/initialization/`                       |
+| Session records, journals and ACKs | Host    | `<state_dir>/sessions/`                             |
+| Shared Codex native home           | Host    | `<state_dir>/codex/`                                |
 
-The old `.agentplane-runner-owner` files are not adopted or cleared. Runtime and Host use their new
-owner-lock paths after all pre-rename workloads stop; Session IDs, native continuation state,
-journal cursors and authored workspace files do not move. Lock acquisition does not establish a
-prior container/node fence.
+Runtime's environment lock covers the embedded Host's retained state as well. Pod and subprocess
+native processes inherit the Runtime owner descriptor; VM native processes are fenced by their
+systemd scopes. Lock acquisition alone does not establish a prior container/node fence.
 
 ## Lifecycle coordination and admission
 
@@ -140,7 +138,7 @@ performs native cleanup without ending the incarnation's history.
 Host lifetime loss closes admission and starts local cleanup without inventing a seal. Local
 Close callers share one cleanup; cancellation ends only the caller's wait. Engine exit and teardown
 errors remain failures, and incomplete cleanup retains ownership. Controllers stop before worker joins;
-journals close after workers, and the Host owner releases last. Runtime retains the environment owner
+journals close after workers. Runtime retains the environment owner
 until its Host and Execution domains are fenced.
 
 Runtime's own COSI engine also runs its Close aggregate alongside bootstrap and process controllers.

@@ -216,8 +216,8 @@ Session setup scripts. COSI persists their complete metadata alongside the spec.
 resource in `runtime-resources.db` fails reload; legacy Session and acknowledgement files are
 never imported.
 `IngressAcks` persists the Harness Host's last History cursor and seal bit; the SQLite journal
-remains the event authority. Owner locks have process lifetimes even
-though their lock files remain on disk; see [lifecycle ownership](lifecycle.md#durable-owners). A
+remains the event authority. The environment owner lock has a process lifetime even
+though its file remains on disk; see [lifecycle ownership](lifecycle.md#durable-owners). A
 process exit observation alone does not prove that its native process domain was fenced.
 
 ## Host roles and identity scopes
@@ -366,5 +366,5 @@ One process registry supplies the single process controller. Runtime and Harness
 separate scoped views: they share attempt identities and reconciliation, but each attempt retains
 its owner's context, error callback and worker wait group. The explicit `ProcessDesiredStates`
 domain identifies which attempts belong to the Host drain barrier. Neither the shared COSI
-namespace nor the shared controller merges native process domains, VM systemd slices, owner locks,
+namespace nor the shared controller merges native process domains, VM systemd slices,
 or the cleanup proof for any individual attempt.

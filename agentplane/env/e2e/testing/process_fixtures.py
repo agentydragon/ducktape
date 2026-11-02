@@ -53,26 +53,21 @@ class RunnerProcess:
 
 
 async def wait_for_owner_release(state_dir: Path) -> None:
-    # Runtime and Host have separate retained owner descriptors. A native leader
-    # can exit before its supervisor finishes fencing descendants; wait for both
-    # barriers before a successor makes its one attempt to acquire ownership.
+    # A native leader can exit before its supervisor finishes fencing descendants.
+    # Wait for their inherited Runtime fence before a successor acquires ownership.
     try:
         async with asyncio.timeout(10):
-            for owner, lock_name in (
-                (state_dir, ".agentplane-environment-runtime-owner"),
-                (state_dir / "harness-host", ".agentplane-harness-host-owner"),
-            ):
-                with (owner / lock_name).open("rb") as probe:
-                    while True:
-                        try:
-                            fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                        except BlockingIOError:
-                            await asyncio.sleep(0.02)
-                            continue
-                        fcntl.flock(probe, fcntl.LOCK_UN)
-                        break
+            with (state_dir / ".agentplane-environment-runtime-owner").open("rb") as probe:
+                while True:
+                    try:
+                        fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        await asyncio.sleep(0.02)
+                        continue
+                    fcntl.flock(probe, fcntl.LOCK_UN)
+                    break
     except TimeoutError:
-        raise TimeoutError("supervised descendants retained an environment or Host owner lock after crash") from None
+        raise TimeoutError("supervised descendants retained the environment owner lock after crash") from None
 
 
 # Bazel's Python is built without os.pidfd_open; the syscall itself is on every kernel this runs on.

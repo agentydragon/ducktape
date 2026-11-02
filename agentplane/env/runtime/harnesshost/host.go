@@ -29,7 +29,6 @@ type Host struct {
 	config              Config
 	ctx                 context.Context
 	cancel              context.CancelFunc
-	owner               *retained.Owner
 	supervisor          *supervision.Supervisor
 	scripts             *scripts.Runner
 	workspaceSupervisor *supervision.Supervisor
@@ -68,59 +67,47 @@ func NewEmbedded(config Config, lifecycleState state.State, engine *cosiruntime.
 	if _, present := config.HarnessEnvironment["CODEX_EXEC_SERVER_URL"]; present {
 		return nil, errors.New("CODEX_EXEC_SERVER_URL is owned by execution configuration")
 	}
-	// The runtime retains the legacy environment lock. This private lock fences only
-	// native state ownership; retained Session paths and journal identities stay put.
-	owner, err := retained.OpenOwner(filepath.Join(config.StateDir, "harness-host"))
-	if err != nil {
-		return nil, err
-	}
 	supervisor := config.ProcessSupervisor
 	if supervisor == nil && config.VMProcessLauncher == nil {
-		supervisor = supervision.NewSubprocessSupervisor(owner.File())
+		return nil, errors.New("embedded Host requires a Runtime-owned process supervisor")
 	}
 	var workspaceSupervisor *supervision.Supervisor
 	if config.VMProcessLauncher != nil {
 		if config.ProcessSupervisor != nil {
-			_ = owner.Close()
 			return nil, errors.New("VM Host cannot combine a supplied process supervisor with its systemd launcher")
 		}
+		var err error
 		supervisor, err = config.VMProcessLauncher.PrepareForOwner(config.StateDir, config.Launch.Sandbox.UID, config.VMProcessOwner)
 		if err != nil {
-			_ = owner.Close()
 			return nil, err
 		}
 		workspaceSupervisor = supervisor
 	}
 	store, err := retained.NewStore(filepath.Join(config.StateDir, "sessions"), lifecycleState)
 	if err != nil {
-		_ = owner.Close()
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &Host{config: config, owner: owner, supervisor: supervisor, workspaceSupervisor: workspaceSupervisor, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, changes: make(chan struct{}), fatal: make(chan error, 1)}
+	r := &Host{config: config, supervisor: supervisor, workspaceSupervisor: workspaceSupervisor, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, changes: make(chan struct{}), fatal: make(chan error, 1)}
 	r.scripts, err = scripts.New(scripts.Config{HarnessEnvironment: config.HarnessEnvironment, LaunchProcess: func(ctx context.Context, owner string, cfg supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
 		return r.launchProcess(ctx, owner, r.supervisor, cfg)
 	}})
 	if err != nil {
 		cancel()
-		_ = owner.Close()
 		return nil, err
 	}
 	l, err := newLifecycle(r, lifecycleState, engine, engineDone, processes)
 	if err != nil {
 		cancel()
-		_ = owner.Close()
 		return nil, err
 	}
 	r.lifecycle = l
 	if err := r.configureSessions(); err != nil {
 		cancel()
-		_ = owner.Close()
 		return nil, err
 	}
 	if err := l.registerControllers(); err != nil {
 		cancel()
-		_ = owner.Close()
 		return nil, err
 	}
 	go l.observeSharedEngine()
@@ -243,19 +230,14 @@ func (r *Host) finishClose() error {
 	// Controllers stop before joining workers, so no new operation can race Wait.
 	r.cancel()
 	// Runtime stops the shared engine only after every Host controller has
-	// published Closed. Join it before releasing Host-owned native state.
+	// published Closed. Join it before closing Host journals.
 	<-r.lifecycle.done.Done()
 	r.lifecycle.workers.Wait()
-	errs := []error{r.sessions.Close()}
-
-	if err := errors.Join(errs...); err != nil {
-		return err
-	}
-	return r.owner.Close()
+	return r.sessions.Close()
 }
 
 // WaitClosed observes the Host controller's native cleanup barrier without
-// waiting for its final owner release, which follows the shared engine join.
+// waiting for journal closure, which follows the shared engine join.
 func (r *Host) WaitClosed(ctx context.Context) error {
 	closed := func() (bool, error) {
 		status, found, err := harnesshostlifecycle.ReadStatus(context.Background(), r.lifecycle.state)

@@ -26,6 +26,12 @@ const lifecycleTestTimeout = 10 * time.Second
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case ownershipFixtureMode:
+			if err := runOwnershipFixture(os.Args[2:]); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			os.Exit(0)
 		case supervision.SupervisorMode:
 			os.Exit(supervision.SupervisorMain(os.Args[2:]))
 		case workspace.HelperMode:
@@ -68,6 +74,7 @@ func newLifecycleRunnerWithState(t *testing.T, config runtimeTestConfig, store s
 	}
 	historyTarget := startAcknowledgingHistory(t)
 	config.host.StateDir = config.StateDir
+	config.host.ProcessSupervisor = r.supervisor
 	host, err := harnesshost.NewEmbedded(config.host, r.lifecycleState, r.lifecycleEngine, r.lifecycleDone, r.processes)
 	if err != nil {
 		t.Fatal(err)
