@@ -18,9 +18,15 @@ common expression families.
 
 ### Redundant-Hint Guardrail
 
-The redundant-hint side output can support a CI or pre-commit check that fails
-on new redundant `purity: pure` hints except for an allowlist of intentional
-overrides. This is prevention, not analysis.
+The `modules.json` redundant-hint report identifies when a `purity: pure` hint
+appears redundant. Add a CI or pre-commit check for new redundant hints, with a
+narrow allowlist for intentional overrides. This is prevention, not analysis.
+
+### RegExp literal admission
+
+Keep literal `RegExp` construction conservative until static ECMA-262 pattern
+validation proves the constructor cannot throw. The deferred classifier case
+and its current boundary are recorded in <../TODO.md#purity-classifier>.
 
 ## Design Principle
 
