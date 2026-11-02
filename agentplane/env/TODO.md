@@ -35,8 +35,8 @@ disabled and a root shell when it is enabled.
 COSI runtime is pinned in `third_party/go.mod`; evaluate its APIs against the actual ownership and
 teardown contracts rather than treating every controller as a simple resource transform.
 
-- The Runtime Close and transition status writers in `lifecycle/contracts.go` and the Process
-  controller's `writeResource` calls discard any change result. Consider calling `safe.WriterModify` directly:
+- The Runtime Close and transition status writers in `lifecycle/contracts.go` discard any change
+  result. Consider calling `safe.WriterModify` directly:
   COSI suppresses equal updates and retries update conflicts. Its phase check still runs for a
   no-op, unlike the current early return. On an existing resource the direct path reads twice, so
   it saves a read on changed writes but loses the current one-read no-op fast path; measure before
