@@ -42,7 +42,7 @@ func (c *hostReportObserver) Run(ctx context.Context, engine controller.Runtime,
 		}
 		var failure error
 		if report != nil && report.Error != "" {
-			failure = status.Errorf(codes.FailedPrecondition, "Harness Host rejected lifecycle generation %d: %s", report.Binding.Generation, report.Error)
+			failure = status.Errorf(codes.FailedPrecondition, "Harness Host rejected lifecycle generation %d: %s", r.intent.Binding.Generation, report.Error)
 		}
 		r.mu.Unlock()
 		if failure != nil {
@@ -76,8 +76,7 @@ func (r *Runtime) hostReportLocked() *runtimepb.HostReport {
 		}
 		return nil
 	}
-	if !found || !proto.Equal(current.Intent, r.intent) || current.Report == nil ||
-		!proto.Equal(current.Report.Binding, r.intent.Binding) {
+	if !found || !proto.Equal(current.Intent, r.intent) || current.Report == nil {
 		return nil
 	}
 	applied, _, err := cosi.Read(context.Background(), r.lifecycleState, lifecycle.HostIntentStatusResource(lifecycle.HostIntentStatus{}))

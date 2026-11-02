@@ -45,7 +45,7 @@ func TestUncertainExecutionFenceIsNotRetriedForBinding(t *testing.T) {
 	r.host = &hostLink{connected: true}
 	r.intent = &runtimepb.LifecycleIntent{Binding: binding, Mode: runtimepb.LifecycleIntent_QUIESCING}
 	publishAppliedHostIntent(t, r)
-	report := &runtimepb.HostReport{Binding: binding, Ready: true, NativeStopped: true}
+	report := &runtimepb.HostReport{Ready: true, NativeStopped: true}
 	value := lifecycle.HostReport{Intent: proto.Clone(r.intent).(*runtimepb.LifecycleIntent), Report: report}
 	if err := cosi.Publish(t.Context(), r.lifecycleState, lifecycle.HostReportResource(value), value, "harness-host-report"); err != nil {
 		t.Fatal(err)
@@ -84,8 +84,7 @@ func TestWaitForHostQuiescedWakesForFinalReportPublishedAfterSnapshot(t *testing
 	binding := &runtimepb.Binding{RuntimeBootId: "runtime", HostBootId: "host", Generation: 1}
 	host := &hostLink{connected: true}
 	report := &runtimepb.HostReport{
-		Binding: binding,
-		Ready:   true,
+		Ready: true,
 		Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{
 			QuiesceStage: environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_FLUSHING,
 		},
@@ -129,8 +128,7 @@ func TestWaitForHostQuiescedWakesForFinalReportPublishedAfterSnapshot(t *testing
 	}
 
 	finalReport := &runtimepb.HostReport{
-		Binding: binding,
-		Ready:   true,
+		Ready: true,
 		Facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{
 			QuiesceStage: environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED,
 		},

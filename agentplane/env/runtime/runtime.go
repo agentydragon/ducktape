@@ -536,7 +536,7 @@ func (r *Runtime) waitForHostNativeStopped(ctx context.Context, binding *runtime
 			return errors.New("Harness Host lifecycle connection was lost before native-stop acknowledgement")
 		}
 		report := r.hostReportLocked()
-		if report != nil && report.Ready && report.NativeStopped && proto.Equal(report.Binding, binding) {
+		if report != nil && report.Ready && report.NativeStopped && r.intent != nil && proto.Equal(r.intent.Binding, binding) {
 			r.mu.Unlock()
 			return nil
 		}
@@ -620,7 +620,7 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 	var facts *environmentruntimestatepb.EnvironmentRuntimeFacts
 	hostReady := false
 	report := r.hostReportLocked()
-	intentPresent := r.host != nil && r.intent != nil && report != nil && proto.Equal(report.Binding, r.intent.Binding)
+	intentPresent := r.host != nil && report != nil
 	if intentPresent {
 		hostReady = report.Ready
 	}

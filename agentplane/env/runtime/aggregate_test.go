@@ -688,7 +688,8 @@ func TestRepeatedQuiesceKeepsCurrentLifecycleGeneration(t *testing.T) {
 	waitRuntime(t, r, func() bool {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		return r.host != nil && r.intent != nil && r.hostReportLocked() != nil && r.hostReportLocked().Ready && proto.Equal(r.hostReportLocked().Binding, r.intent.Binding)
+		report := r.hostReportLocked()
+		return r.host != nil && r.intent != nil && report != nil && report.Ready
 	}, "current quiesce lifecycle report")
 	r.mu.Lock()
 	desired := r.desired

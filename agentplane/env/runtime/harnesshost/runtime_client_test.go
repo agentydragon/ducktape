@@ -283,7 +283,7 @@ func TestHostPublishesExactIntentAndIdleFacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	second := read(true)
-	if !second.Intent.ExecutionFenced || !proto.Equal(second.Report.Binding, running.Binding) {
+	if !second.Intent.ExecutionFenced || !proto.Equal(second.Intent.Binding, running.Binding) {
 		t.Fatalf("Host report did not bind the same-generation fence: %v", second)
 	}
 }

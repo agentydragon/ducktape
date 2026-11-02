@@ -70,7 +70,7 @@ func (r *Runtime) maybeFenceExecution(binding *runtimepb.Binding) {
 	report := r.hostReportLocked()
 	if r.host == nil || !r.host.connected || r.intent == nil || !proto.Equal(r.intent.Binding, binding) ||
 		r.intent.ExecutionFenced || report == nil || !report.Ready || !report.NativeStopped ||
-		!proto.Equal(report.Binding, binding) || (r.intent.Mode != runtimepb.LifecycleIntent_QUIESCING && r.intent.Mode != runtimepb.LifecycleIntent_CLOSING) {
+		(r.intent.Mode != runtimepb.LifecycleIntent_QUIESCING && r.intent.Mode != runtimepb.LifecycleIntent_CLOSING) {
 		r.mu.Unlock()
 		return
 	}
@@ -273,7 +273,7 @@ func (r *Runtime) waitForHostReady(ctx context.Context, binding *runtimepb.Bindi
 			return nil, status.Error(codes.Unavailable, "Harness Host lifecycle connection is unavailable")
 		}
 		report := r.hostReportLocked()
-		if report != nil && report.Ready && proto.Equal(report.Binding, binding) {
+		if report != nil && report.Ready && r.intent != nil && proto.Equal(r.intent.Binding, binding) {
 			snapshot := proto.Clone(report).(*runtimepb.HostReport)
 			r.mu.Unlock()
 			return snapshot, nil
@@ -310,7 +310,7 @@ func (r *Runtime) hostQuiescenceWaitSnapshot(binding *runtimepb.Binding) (bool, 
 	defer r.mu.Unlock()
 	report := r.hostReportLocked()
 	if r.host != nil && r.host.connected && report != nil && report.Ready &&
-		proto.Equal(report.Binding, binding) &&
+		r.intent != nil && proto.Equal(r.intent.Binding, binding) &&
 		report.Facts.GetQuiesceStage() == environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED {
 		return true, nil, nil
 	}

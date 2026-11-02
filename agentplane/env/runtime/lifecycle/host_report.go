@@ -11,7 +11,7 @@ import (
 const HostReportType = "HostReports.agentplane"
 
 // HostReport is the Host-owned observation for one exact intent, including the
-// same-generation Execution fence. The report's binding alone does not carry it.
+// same-generation Execution fence. Intent is the report's only binding.
 type HostReport struct {
 	Intent *runtimepb.LifecycleIntent
 	Report *runtimepb.HostReport

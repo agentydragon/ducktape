@@ -10,7 +10,6 @@ import (
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"google.golang.org/grpc"
-	"google.golang.org/protobuf/proto"
 )
 
 const hostStartupTimeout = 90 * time.Second
@@ -155,8 +154,7 @@ func (r *Runtime) waitForInitialHost(ctx context.Context) error {
 		}
 		report := r.hostReportLocked()
 		ready := r.host != nil && r.host.connected && r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_INACTIVE &&
-			report != nil && report.Ready && report.NativeStopped &&
-			protoEqualBindings(report.Binding, r.intent.Binding)
+			report != nil && report.Ready && report.NativeStopped
 		changed := r.changes
 		host := r.hostLifetime
 		r.mu.Unlock()
@@ -179,15 +177,10 @@ func (r *Runtime) waitForInitialHost(ctx context.Context) error {
 		}
 	}
 }
-
 func initialHostExit(host hostLifetime) error {
 	code, err := host.Wait(context.Background())
 	if err != nil {
 		return fmt.Errorf("Harness Host exited before initial lifecycle acknowledgement (status=%d): %w", code, err)
 	}
 	return fmt.Errorf("Harness Host exited before initial lifecycle acknowledgement (status=%d)", code)
-}
-
-func protoEqualBindings(left, right *runtimepb.Binding) bool {
-	return proto.Equal(left, right)
 }
