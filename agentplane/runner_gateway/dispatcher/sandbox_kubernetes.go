@@ -93,7 +93,13 @@ func (k *KubernetesSandboxes) GetExecutionAccount(ctx context.Context, sandbox S
 	if err != nil || !found {
 		return ServiceAccountIdentity{}, found, err
 	}
-	return ServiceAccountIdentity{Account: Account{Namespace: account.Namespace, Name: account.Name}, UID: account.UID}, true, nil
+	if account == nil || account.GetAccount() == nil || account.GetAccount().GetNamespace() == "" || account.GetAccount().GetName() == "" || account.GetUid() == "" {
+		return ServiceAccountIdentity{}, false, errors.New("Sandbox execution ServiceAccount identity is incomplete")
+	}
+	return ServiceAccountIdentity{
+		Account: Account{Namespace: account.GetAccount().GetNamespace(), Name: account.GetAccount().GetName()},
+		UID:     account.GetUid(),
+	}, true, nil
 }
 
 func (k *KubernetesSandboxes) ListSandboxes(ctx context.Context) ([]SandboxSnapshot, error) {

@@ -1588,7 +1588,7 @@ func TestWorkerRetriesAuthorizedWakeAfterDenialUsingEffectiveCaller(t *testing.T
 	if len(wake.callers) != 2 || !proto.Equal(wake.callers[0], fixture.caller) || !proto.Equal(wake.callers[1], fixture.caller) {
 		t.Fatalf("wake used caller identities %v, want retained effective caller %+v", wake.callers, fixture.caller)
 	}
-	if wake.targets[0].UID != fixture.sandbox.UID || wake.targets[0].Namespace != fixture.sandbox.Namespace || wake.targets[0].Name != fixture.sandbox.Name {
+	if wake.targets[0].Uid != fixture.sandbox.UID || wake.targets[0].Namespace != fixture.sandbox.Namespace || wake.targets[0].Name != fixture.sandbox.Name {
 		t.Fatalf("wake target was not UID-fenced: %+v", wake.targets[0])
 	}
 	prepare()

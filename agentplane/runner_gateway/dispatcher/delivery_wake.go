@@ -6,6 +6,7 @@ import (
 	"time"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
@@ -183,7 +184,7 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 	}
 	effectiveCaller := work.attribution.EffectiveCaller
 	assessment, err := w.Wake.RequestWake(ctx, &lifecycle.Target{
-		Namespace: sandbox.Namespace, Name: sandbox.Name, UID: sandbox.UID,
+		Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: sandbox.UID,
 	}, &lifecycle.ServiceAccountIdentity{
 		Account: &identitypb.ServiceAccount{Namespace: effectiveCaller.Namespace, Name: effectiveCaller.Name}, Uid: effectiveCaller.UID,
 	})

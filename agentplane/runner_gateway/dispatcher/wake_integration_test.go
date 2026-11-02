@@ -30,7 +30,7 @@ func (w *callbackWake) RequestWake(
 	w.callers = append(w.callers, caller)
 	wait, err := w.store.ReserveWakeAttempt(ctx, ServiceAccountIdentity{
 		Account: Account{Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName()}, UID: caller.GetUid(),
-	}, target.UID, 41)
+	}, target.GetUid(), 41)
 	if err != nil {
 		return nil, err
 	}

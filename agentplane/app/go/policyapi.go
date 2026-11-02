@@ -75,10 +75,12 @@ func RegisterPolicyRoutes(server *HTTPServer, config Config, environments *sandb
 			return nil, sandboxHTTPError(err)
 		}
 		account := sandbox.GetExecutionAccount()
-		if account == nil {
+		if account == nil || account.GetAccount() == nil || account.GetAccount().GetNamespace() == "" || account.GetAccount().GetName() == "" {
 			return nil, policyHTTPError(errors.New("Environment has no execution account"))
 		}
-		bindings, err := policies.BindingsFor(ctx, &identitypb.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()})
+		bindings, err := policies.BindingsFor(ctx, &identitypb.ServiceAccount{
+			Namespace: account.GetAccount().GetNamespace(), Name: account.GetAccount().GetName(),
+		})
 		if err != nil {
 			return nil, policyHTTPError(err)
 		}
