@@ -128,8 +128,8 @@ class RunnerGateway(Construct):
         *,
         database_url: EnvValue,
         dispatcher_callers: Mapping[ServiceAccountRef, Pods],
+        environment_launchers: Mapping[ServiceAccountRef, Pods],
         operator_callers: Mapping[ServiceAccountRef, Pods] | None = None,
-        environment_launchers: Mapping[ServiceAccountRef, Pods] | None = None,
         delegation_actor: ServiceAccountRef | None,
         extra_delegated_methods: tuple[str, ...] = (),
         gateway_callers: Mapping[ServiceAccountRef, Pods],
@@ -195,7 +195,7 @@ class RunnerGateway(Construct):
             "dispatcher_callers": dispatcher_accounts,
             "environment_readers": [_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))],
             "environment_managers": [_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))],
-            "environment_launchers": sorted(map(_account, environment_launchers or {})),
+            "environment_launchers": sorted(map(_account, environment_launchers)),
             "environment_default_policy_sets": sorted(env.default_policy_sets),
             "gateway_callers": gateway_accounts,
             "runner_security": MTLS(
