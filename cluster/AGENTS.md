@@ -94,6 +94,8 @@ App PVCs default to `seaweedfs-ovh` (not node-pinned). Use `local-path-*` only f
 
 Before operating on SeaweedFS `Bucket`/`S3Identity`/`S3Credentials` objects, read
 <skills/seaweed_operator/SKILL.md>.
+For retirement, follow <docs/runbooks/seaweedfs_s3_retirement.md>; delete the
+identity only after credential and other IAM writers have finalized.
 
 ## Flux Kustomizations
 
