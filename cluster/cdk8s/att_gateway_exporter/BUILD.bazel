@@ -1,3 +1,4 @@
+load("//cluster/skills/grafana:visual_test.bzl", "grafana_dashboard_visual_test")
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
@@ -38,4 +39,9 @@ py_library(
         "@pypi//cdk8s_plus_34",
         "@pypi//pydantic_settings",
     ],
+)
+
+grafana_dashboard_visual_test(
+    name = "dashboard_visual_test",
+    dashboard = ":dashboard.json",
 )

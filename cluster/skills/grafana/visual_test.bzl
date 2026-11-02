@@ -2,23 +2,26 @@
 
 load("//devinfra/python:defs.bzl", "py_test")
 
-def grafana_dashboard_visual_test(name, src, dashboard, fixture, deps = []):
+def grafana_dashboard_visual_test(name, dashboard, src = "//cluster/skills/grafana:dashboard_visual_test.py", fixture = None, fixture_data = None, deps = []):
     """Declare a dashboard-specific screenshot scenario and Prometheus fixture.
 
-    The scenario in src owns its interactions and screenshot names. The fixture
-    is a Python library supplying synthetic metrics. The scenario imports it and
-    uses //cluster/skills/grafana:visual_harness to start the isolated services.
+    The default scenario uses shared synthetic rendering data. An optional custom
+    scenario can import its fixture and exercise real datasource queries instead.
     """
+    env = {"GRAFANA_DASHBOARD_RLOCATION": "$(rlocationpath %s)" % dashboard}
+    if fixture_data:
+        env["GRAFANA_FIXTURE_RLOCATION"] = "$(rlocationpath %s)" % fixture_data
+
     py_test(
         name = name,
         srcs = [src],
         main = src,
-        data = [dashboard],
-        env = {"GRAFANA_DASHBOARD_RLOCATION": "$(rlocationpath %s)" % dashboard},
+        data = [dashboard] + ([fixture_data] if fixture_data else []),
+        env = env,
         requires_docker = True,
         tags = ["visual"],
-        deps = [
-            fixture,
+        deps = ([fixture] if fixture else []) + [
+            "//cluster/skills/grafana:visual_browser",
             "//cluster/skills/grafana:visual_harness",
             "//util/bazel:runfiles",
             "//util/testing:frontend_visual",

@@ -6,7 +6,7 @@ import json
 import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 import docker
@@ -39,31 +39,34 @@ def _wait_ready(url: str) -> None:
 
 
 @contextmanager
-def grafana_dashboard(tmp_path: Path, dashboard_path: Path, samples: str) -> Iterator[str]:
-    record_stage("loading Grafana, Prometheus and cleanup images")
+def grafana_dashboard(
+    tmp_path: Path, dashboard_path: Path, samples: str, *, render_fixture: bool = False
+) -> Iterator[str]:
+    record_stage("loading isolated service images")
     with ThreadPoolExecutor(max_workers=3) as executor:
         grafana_image = executor.submit(load_oci_image, grafana_visual.IMAGE)
-        prometheus_image = executor.submit(load_oci_image, prometheus_visual.IMAGE)
         ryuk_image = executor.submit(load_oci_image, ryuk.IMAGE)
+        prometheus_image = None if render_fixture else executor.submit(load_oci_image, prometheus_visual.IMAGE)
         grafana_image.result()
-        prometheus_image.result()
         ryuk_image.result()
-    record_stage("creating synthetic TSDB")
+        if prometheus_image:
+            prometheus_image.result()
     client = docker.from_env()
     data = tmp_path / "data"
-    data.mkdir()
-    (data / "fixture.om").write_text(samples)
-    mount = {str(data): {"bind": "/fixture", "mode": "rw"}}
-    # Create a fixed-time TSDB rather than replaying scrape traffic during a screenshot.
-    client.containers.run(
-        prometheus_visual.IMAGE.tag,
-        ["tsdb", "create-blocks-from", "openmetrics", "/fixture/fixture.om", "/fixture/tsdb"],
-        entrypoint="/bin/promtool",
-        volumes=mount,
-        user="0",
-        remove=True,
-    )
-    record_stage("starting Prometheus and Grafana")
+    if not render_fixture:
+        record_stage("creating synthetic TSDB")
+        data.mkdir()
+        (data / "fixture.om").write_text(samples)
+        mount = {str(data): {"bind": "/fixture", "mode": "rw"}}
+        client.containers.run(
+            prometheus_visual.IMAGE.tag,
+            ["tsdb", "create-blocks-from", "openmetrics", "/fixture/fixture.om", "/fixture/tsdb"],
+            entrypoint="/bin/promtool",
+            volumes=mount,
+            user="0",
+            remove=True,
+        )
+    record_stage("starting Grafana" if render_fixture else "starting Prometheus and Grafana")
     try:
         with Network(docker_network_kw={"internal": True}) as network:
             prometheus = (
@@ -92,7 +95,10 @@ def grafana_dashboard(tmp_path: Path, dashboard_path: Path, samples: str) -> Ite
                     GF_USERS_DEFAULT_THEME="dark",
                 )
             )
-            with prometheus, grafana:
+            with ExitStack() as services:
+                if not render_fixture:
+                    services.enter_context(prometheus)
+                services.enter_context(grafana)
                 wrapped = grafana.get_wrapped_container()
                 deadline = time.monotonic() + 20
                 address = None
@@ -128,7 +134,14 @@ def grafana_dashboard(tmp_path: Path, dashboard_path: Path, samples: str) -> Ite
                     dashboard = json.loads(dashboard_path.read_text())
                     dashboard["id"] = None
                     dashboard["version"] = 0
-                    dashboard = json.loads(json.dumps(dashboard).replace("${DS_MIMIR}", "Mimir"))
+                    dashboard = json.loads(
+                        json.dumps(dashboard)
+                        .replace("${DS_MIMIR}", "Mimir")
+                        .replace("${DS_PROMETHEUS}", "Mimir")
+                        .replace("${DS_LOKI}", "Mimir" if render_fixture else "Loki")
+                    )
+                    if render_fixture:
+                        _prepare_render_fixture(dashboard)
                     response = http.post("/api/dashboards/db", json={"dashboard": dashboard, "overwrite": False})
                     response.raise_for_status()
                 record_stage("dashboard ready")
@@ -136,3 +149,38 @@ def grafana_dashboard(tmp_path: Path, dashboard_path: Path, samples: str) -> Ite
     finally:
         record_stage("stopping Grafana and Prometheus")
         client.close()
+
+
+def _prepare_render_fixture(dashboard: dict) -> None:
+    """Use the built-in Prometheus frontend for intercepted synthetic query results.
+
+    ClickHouse is an external plugin, not present in the pinned Grafana image. This
+    conversion affects the isolated candidate only and never changes source JSON.
+    """
+
+    def walk(value: object) -> None:
+        if isinstance(value, list):
+            for item in value:
+                walk(item)
+        elif isinstance(value, dict):
+            source = value.get("datasource")
+            if isinstance(source, dict) and source.get("type") in {"loki", "grafana-clickhouse-datasource"}:
+                value["datasource"] = {"type": "prometheus", "uid": "mimir"}
+            if "rawSql" in value:
+                value["expr"] = "vector(1)"
+            for item in value.values():
+                walk(item)
+
+    walk(dashboard)
+    for variable in dashboard.get("templating", {}).get("list", []):
+        if variable.get("type") != "query":
+            continue
+        values = {
+            "namespace": "monitoring,seaweedfs",
+            "node": "storage-a,storage-b",
+            "instance": "storage-a,storage-b",
+            "device": "eth0,eth1",
+            "bucket": "uploads,backups",
+            "pool_node": "storage-a,storage-b",
+        }.get(variable.get("name"), "example,other")
+        variable.update(type="custom", query=values, options=[], current={})

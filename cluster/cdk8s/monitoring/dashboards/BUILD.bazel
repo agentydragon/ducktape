@@ -30,3 +30,53 @@ grafana_dashboard_visual_test(
     dashboard = ":piraeus-storage.json",
     fixture = ":piraeus_metrics",
 )
+
+grafana_dashboard_visual_test(
+    name = "cluster_disk_usage_dashboard_visual_test",
+    dashboard = ":cluster-disk-usage.json",
+)
+
+grafana_dashboard_visual_test(
+    name = "cluster_storage_io_dashboard_visual_test",
+    dashboard = ":cluster-storage-io.json",
+)
+
+grafana_dashboard_visual_test(
+    name = "flux_cluster_dashboard_visual_test",
+    dashboard = ":flux-cluster.json",
+)
+
+grafana_dashboard_visual_test(
+    name = "home_network_overview_dashboard_visual_test",
+    dashboard = ":home-network-overview.json",
+)
+
+grafana_dashboard_visual_test(
+    name = "interface_flap_frequency_dashboard_visual_test",
+    dashboard = ":interface-flap-frequency.json",
+)
+
+grafana_dashboard_visual_test(
+    name = "io_pressure_dashboard_visual_test",
+    dashboard = ":io-pressure.json",
+)
+
+grafana_dashboard_visual_test(
+    name = "node_memory_dashboard_visual_test",
+    dashboard = ":node-memory.json",
+)
+
+grafana_dashboard_visual_test(
+    name = "rugged_power_dashboard_visual_test",
+    dashboard = ":rugged-power.json",
+)
+
+grafana_dashboard_visual_test(
+    name = "s3_operations_dashboard_visual_test",
+    dashboard = ":s3-operations.json",
+)
+
+grafana_dashboard_visual_test(
+    name = "storage_service_details_dashboard_visual_test",
+    dashboard = ":storage-service-details.json",
+)

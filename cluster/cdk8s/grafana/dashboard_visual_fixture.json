@@ -1,0 +1,27 @@
+{
+  "1": {
+    "table": [
+      { "name": "provider", "type": "string", "values": ["claude", "openai"] },
+      { "name": "window", "type": "string", "values": ["5h", "weekly"] },
+      { "name": "duration", "type": "string", "values": ["5 hours", "7 days"] },
+      { "name": "remaining_percent", "type": "number", "values": [74.2, 55.1] },
+      { "name": "used_percent", "type": "number", "values": [25.8, 44.9] },
+      { "name": "resets_in", "type": "string", "values": ["2 hours", "3 days"] },
+      { "name": "last_observed_at", "type": "string", "values": ["2025-02-01 11:55:00", "2025-02-01 11:55:00"] }
+    ]
+  },
+  "2": { "series": ["claude / 5h", "openai / weekly"] },
+  "3": {
+    "table": [
+      { "name": "observed_at", "type": "string", "values": ["2025-02-01 11:55:00", "2025-02-01 11:50:00"] },
+      { "name": "source", "type": "string", "values": ["claude", "openai"] },
+      { "name": "status_code", "type": "number", "values": [200, 200] },
+      { "name": "content_type", "type": "string", "values": ["application/json", "application/json"] },
+      { "name": "raw_body_size_bytes", "type": "number", "values": [1024, 512] },
+      { "name": "raw_body_truncated", "type": "boolean", "values": [false, false] },
+      { "name": "error", "type": "string", "values": ["", ""] },
+      { "name": "raw_body_sha256", "type": "string", "values": ["synthetic-a", "synthetic-b"] }
+    ]
+  },
+  "4": { "series": ["used_usd", "monthly_limit_usd"] }
+}

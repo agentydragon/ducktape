@@ -1,3 +1,4 @@
+load("//cluster/skills/grafana:visual_test.bzl", "grafana_dashboard_visual_test")
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
@@ -16,4 +17,10 @@ py_library(
         "//cluster/cdk8s/providers/grafana_operator:grafanadatasource",
         "@pypi//cdk8s",
     ],
+)
+
+grafana_dashboard_visual_test(
+    name = "dashboard_visual_test",
+    dashboard = ":dashboard.json",
+    fixture_data = ":dashboard_visual_fixture.json",
 )

@@ -5,6 +5,8 @@ load("//skills:defs.bzl", "skill_package")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["dashboard_visual_test.py"])
+
 py_binary(
     name = "verify_dashboard",
     srcs = ["verify_dashboard.py"],
@@ -36,6 +38,16 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "visual_browser",
+    testonly = True,
+    srcs = ["visual_browser.py"],
+    deps = [
+        "//util/testing:visual_capture",
+        "@pypi//playwright",
     ],
 )
 
