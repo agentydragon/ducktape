@@ -2,10 +2,10 @@
 # name: test_renders_shared_fixture[anthropic_platform_credits]
   '''
   Anthropic API
-    Main org balance · $123.45
-    Grant $85.00 / $100.00 · expires 2026-07-01 00:00 UTC
-    Promo grant $25.00 / $30.00 · expires 2026-05-01 00:00 UTC · scope: claude_api (sonnet), claude_code
-    Secondary org balance · $50.00
+    Main org · Anthropic API credit balance · $123.45 available
+    API credit grant $85.00 / $100.00 · expires 2026-07-01 00:00 UTC
+    API promo credit grant $25.00 / $30.00 · expires 2026-05-01 00:00 UTC · scope: claude_api (sonnet), claude_code
+    Secondary org · Anthropic API credit balance · $50.00 available
   '''
 # ---
 # name: test_renders_shared_fixture[binding_summary]
@@ -97,9 +97,9 @@
 # name: test_renders_shared_fixture[openai_platform_credits]
   '''
   OpenAI API
-    OpenAI API balance · $125.75
-    Grant $100.00 / $100.00 · expires 2026-02-01 00:00 UTC
-    Grant $25.75 / $30.00 · expires 2026-12-01 00:00 UTC
+    OpenAI API credit balance · $125.75 available
+    API credit grant $100.00 / $100.00 · expires 2026-02-01 00:00 UTC
+    API credit grant $25.75 / $30.00 · expires 2026-12-01 00:00 UTC
   '''
 # ---
 # name: test_renders_shared_fixture[paid_credits]

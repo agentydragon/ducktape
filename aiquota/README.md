@@ -170,14 +170,19 @@ usage request succeeds, quota data stays successful and the Claude prepaid row
 shows `unavailable`. The prepaid response is retained under its own raw-capture
 key and is available at `/v1/providers/claude/prepaid-balance/raw`.
 
+OpenAI Platform credit grants are a separate API billing pool from Codex paid
+credits. The CLI, browser board, and GNOME popup label the total as an OpenAI
+API credit balance and label its rows as API credit grants.
+
 Anthropic Platform credits use the private platform-session proxy and the
 separate `/api/organizations` and per-organization
 `/api/organizations/{uuid}/prepaid/credits` endpoints. AIQuota lists only
 organizations with the `api` capability and reports each organization's
-balance and active grant tranches separately. Tranche scope is retained so
-product- or model-restricted promotional credits are not presented as generally
-available funds. This Platform balance is distinct from Claude's OAuth
-subscription/prepaid balance.
+Anthropic API credit balance and active grant tranches separately in the CLI,
+browser board, and GNOME popup. Tranche scope is retained so product- or
+model-restricted promotional credits are not presented as generally available
+funds. This Platform balance is distinct from Claude's OAuth subscription/prepaid
+balance.
 
 Raw response rows retain one year; typed quota observations retain five years.
 ClickHouse inserts use `JSONEachRow` over its internal HTTP endpoint with

@@ -155,8 +155,8 @@ function formatAnthropicPlatformCredits(credits) {
     const balance = organization.balance?.credits;
     const lines = [
       balance
-        ? `${organization.name} balance · ${sharedFormatPrepaidBalance(balance.amount_minor, balance.exponent, organization.currency ?? "USD")}`
-        : `${organization.name} · ${organization.error ? `billing lookup failed: ${organization.error}` : "balance unavailable"}`,
+        ? `${organization.name} · Anthropic API credit balance · ${sharedFormatPrepaidBalance(balance.amount_minor, balance.exponent, organization.currency ?? "USD")} available`
+        : `${organization.name} · Anthropic API credit balance ${organization.error ? `lookup failed: ${organization.error}` : "unavailable"}`,
     ];
     const appendTranches = (tranches, label) => {
       for (const tranche of tranches) {
@@ -181,8 +181,8 @@ function formatAnthropicPlatformCredits(credits) {
         );
       }
     };
-    appendTranches(organization.tranches, "Grant");
-    appendTranches(organization.promo_tranches, "Promo grant");
+    appendTranches(organization.tranches, "API credit grant");
+    appendTranches(organization.promo_tranches, "API promo credit grant");
     return lines;
   });
 }
@@ -974,10 +974,10 @@ const QuotaIndicator = GObject.registerClass(
         new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(Number(value));
       const lines = openaiPlatformCredits
         ? [
-            `OpenAI API balance · ${money(openaiPlatformCredits.total_available_usd)}`,
+            `OpenAI API credit balance · ${money(openaiPlatformCredits.total_available_usd)} available`,
             ...openaiPlatformCredits.grants.map(
               (grant) =>
-                `Grant ${money(Number(grant.granted_usd) - Number(grant.used_usd))} / ${money(grant.granted_usd)} · expires ${grant.expires_at ? new Date(grant.expires_at).toLocaleString() : "unknown"}${grant.is_scheduled ? " · scheduled" : grant.is_held_for_prepaid_transition ? " · held" : ""}`
+                `API credit grant ${money(Number(grant.granted_usd) - Number(grant.used_usd))} / ${money(grant.granted_usd)} · expires ${grant.expires_at ? new Date(grant.expires_at).toLocaleString() : "unknown"}${grant.is_scheduled ? " · scheduled" : grant.is_held_for_prepaid_transition ? " · held" : ""}`
             ),
           ]
         : [];

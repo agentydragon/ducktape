@@ -87,10 +87,12 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
       )}
       {quota.openaiPlatformCredits && (
         <div className="aiquota-aside">
-          <p>OpenAI API balance · {formatUsd(Number(quota.openaiPlatformCredits.total_available_usd))}</p>
+          <p>
+            OpenAI API credit balance · {formatUsd(Number(quota.openaiPlatformCredits.total_available_usd))} available
+          </p>
           {quota.openaiPlatformCredits.grants.map((grant, index) => (
             <p key={index}>
-              Grant {formatUsd(Number(grant.granted_usd) - Number(grant.used_usd))} /{" "}
+              API credit grant {formatUsd(Number(grant.granted_usd) - Number(grant.used_usd))} /{" "}
               {formatUsd(Number(grant.granted_usd))} · expires{" "}
               {grant.expires_at ? new Date(grant.expires_at).toLocaleString() : "unknown"}
               {grant.is_scheduled ? " · scheduled" : grant.is_held_for_prepaid_transition ? " · held" : ""}
@@ -298,15 +300,15 @@ function AnthropicPlatformCreditsStrip({
         return (
           <section key={organization.uuid}>
             <p>
-              {organization.name} balance ·{" "}
+              {organization.name} · Anthropic API credit balance ·{" "}
               {balance
-                ? formatPrepaidBalance(balance.amount_minor, balance.exponent, organization.currency ?? "USD")
+                ? `${formatPrepaidBalance(balance.amount_minor, balance.exponent, organization.currency ?? "USD")} available`
                 : organization.error
                   ? `lookup failed: ${organization.error}`
                   : "unavailable"}
             </p>
-            {anthropicTrancheLines(organization.tranches, "Grant")}
-            {anthropicTrancheLines(organization.promo_tranches, "Promo grant")}
+            {anthropicTrancheLines(organization.tranches, "API credit grant")}
+            {anthropicTrancheLines(organization.promo_tranches, "API promo credit grant")}
           </section>
         );
       })}

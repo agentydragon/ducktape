@@ -78,13 +78,15 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
     openai_platform_credits = pv.display_openai_platform_credits
     openai_platform_lines = []
     if openai_platform_credits:
-        openai_platform_lines.append(f"OpenAI API balance · ${openai_platform_credits.total_available_usd:,.2f}")
+        openai_platform_lines.append(
+            f"OpenAI API credit balance · ${openai_platform_credits.total_available_usd:,.2f} available"
+        )
         for grant in openai_platform_credits.grants:
             expiry = grant.expires_at.astimezone(tz).strftime("%Y-%m-%d %H:%M %Z") if grant.expires_at else "unknown"
             status = " · scheduled" if grant.is_scheduled else " · held" if grant.is_held_for_prepaid_transition else ""
             remaining = grant.granted_usd - grant.used_usd
             openai_platform_lines.append(
-                f"Grant ${remaining:,.2f} / ${grant.granted_usd:,.2f} · expires {expiry}{status}"
+                f"API credit grant ${remaining:,.2f} / ${grant.granted_usd:,.2f} · expires {expiry}{status}"
             )
     anthropic_lines = _format_anthropic_platform_credits(pv.display_anthropic_platform_credits, tz)
 
@@ -271,12 +273,15 @@ def _format_anthropic_platform_credits(credits: AnthropicPlatformCredits | None,
             continue
         balance = organization.balance.credits if organization.balance is not None else None
         if balance is None:
-            lines.append(f"{organization.name} · balance unavailable")
+            lines.append(f"{organization.name} · Anthropic API credit balance unavailable")
         else:
             currency = organization.currency or "USD"
             amount = format_minor_currency(balance.amount_minor, balance.exponent, currency)
-            lines.append(f"{organization.name} balance · {amount}")
-        for label, tranches in (("Grant", organization.tranches), ("Promo grant", organization.promo_tranches)):
+            lines.append(f"{organization.name} · Anthropic API credit balance · {amount} available")
+        for label, tranches in (
+            ("API credit grant", organization.tranches),
+            ("API promo credit grant", organization.promo_tranches),
+        ):
             for tranche in tranches:
                 granted = tranche.granted.credits
                 remaining = tranche.remaining.credits
