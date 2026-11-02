@@ -99,7 +99,7 @@ both are set.
 | `--graph <path>`                | `DEBUNDLE_GRAPH`             | `dependency_graph.json.gz` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation.                                        |
 | `--modules <dir>`               | `DEBUNDLE_MODULES`           | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                                                                           |
 | `--source-root <dir>`           | `DEBUNDLE_SOURCE_ROOT`       | Selector lookup root. It must contain the graph's verified physical input; an existing logical-path candidate must resolve to that same file. Missing alias paths use the captured chunk-to-input mapping. |
-| `--tree-config <file>`          | `DEBUNDLE_TREE_CONFIG`       | For graph-backed `modules` edits and queries, scope an app-level modules tree to the chunk named by `--graph`.                                                                                             |
+| `--tree-config <file>`          | `DEBUNDLE_TREE_CONFIG`       | For graph-backed `modules` edits and queries, including `describe`, scope an app-level modules tree to the chunk named by `--graph`.                                                                       |
 | `--spec-root <dir>`             | `DEBUNDLE_SPEC_ROOT`         | Current common root of the tree config, vendor marks and modules after relocation. Global flag; the flag wins over the env var.                                                                            |
 | `--graph-source-root <dir>`     | `DEBUNDLE_GRAPH_SOURCE_ROOT` | Current root of the analyzed input files after relocation. Distinct from `--source-root`, which resolves selector source paths. Global flag; the flag wins.                                                |
 | `--graph-package-root NAME=DIR` | —                            | Current root for a package input in the saved graph after relocation. Repeat for each relocated package. Global flag.                                                                                      |
@@ -120,7 +120,10 @@ selector root, when supplied too, must contain the relocated input.
 
 `--modules` must name the graph chunk's exact configured
 subtree. Commands accepting `--tree-config` may name the full modules tree
-when that flag names the config captured by the graph. A changed source,
+when that flag names the config captured by the graph. `describe` resolves
+module paths and binding homes using only all YAML roots assigned to that
+chunk; those roots' claims resolve together through the shared selector
+resolver. A changed source,
 YAML, config, dependency assumption, wrong chunk tree, or old graph without
 provenance exits nonzero. JSON and NDJSON commands emit a typed
 `graph_compatibility` rejection with `mismatch.reason`, expected/actual
@@ -222,7 +225,9 @@ the report side files are local: `--remote_download_outputs=all`.
 ## Describe related IDs together
 
 `describe --batch <file>` reads a nonempty JSON array of identifiers using the
-same dispatch rules as `describe <id>`. For example, a file containing
+same dispatch rules as `describe <id>`. With `--tree-config`, `--modules` may
+name the full app-level modules tree, and every ID is interpreted against all
+configured roots for the graph's chunk. For example, a file containing
 `["factory", "unit:12", "runtime/setup"]` describes those three selections in
 that order. Duplicate identifiers are retained. `--batch` and a positional ID
 are mutually exclusive; the graph, modules tree, source root, bounds and edge

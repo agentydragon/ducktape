@@ -31,6 +31,7 @@ use spec_modules::{
     collect_module_files, default_binding_patches_path, load_binding_patch_members,
     module_path_from_file, read_module_claims, read_module_file,
 };
+use spec_tree::ModuleTreeScope;
 
 #[derive(Debug, Clone, ClapArgs)]
 pub struct CommonArgs {
@@ -713,6 +714,9 @@ pub struct ExplainSession {
     graph: DependencyGraphReport,
     program_graph: ProgramGraphReport,
     common: CommonArgs,
+    tree_config: Option<PathBuf>,
+    module_files: Vec<PathBuf>,
+    includes_binding_patches: bool,
     source_root: Option<PathBuf>,
     source_context: Option<VerifiedGraphSourceContext>,
     size_cap_lines: usize,
@@ -728,16 +732,45 @@ struct SourceLookup<'a> {
 
 impl ExplainSession {
     pub fn load(
-        common: CommonArgs,
+        mut common: CommonArgs,
+        tree_config: Option<PathBuf>,
         source_root: Option<PathBuf>,
         size_cap_lines: usize,
         source_context: Option<VerifiedGraphSourceContext>,
     ) -> Result<Self> {
+        // `--modules` may name the exact sole chunk subtree, which graph
+        // compatibility accepts as a legacy scope. The configured resolver
+        // expects the full tree root, so continue from the provenance-verified
+        // root when one is available.
+        if tree_config.is_some()
+            && let Some(modules_root) = source_context
+                .as_ref()
+                .and_then(VerifiedGraphSourceContext::modules_root)
+        {
+            common.modules_root = modules_root.to_path_buf();
+        }
         let graph = load_graph(&common.dependency_graph_path)?;
+        let (module_files, includes_binding_patches) = if let Some(config) = &tree_config {
+            let scope = ModuleTreeScope::from_config(config, &graph.chunk_id)?;
+            let mut module_files = Vec::new();
+            for root in scope.roots() {
+                let root = common.modules_root.join(root);
+                if root.exists() {
+                    module_files.extend(collect_module_files(&root)?);
+                }
+            }
+            module_files.sort();
+            (module_files, scope.includes_binding_patches())
+        } else {
+            (collect_module_files(&common.modules_root)?, true)
+        };
         Ok(Self {
             program_graph: load_program_graph(&common.dependency_graph_path, &graph)?,
             graph,
             common,
+            tree_config,
+            module_files,
+            includes_binding_patches,
             source_root,
             source_context,
             size_cap_lines,
@@ -750,9 +783,20 @@ impl ExplainSession {
         &self.graph
     }
 
+    pub fn module_paths(&self) -> Vec<String> {
+        self.module_files
+            .iter()
+            .map(|path| module_path_from_file(path, &self.common.modules_root))
+            .collect()
+    }
+
     pub fn explain(&mut self, args: &ExplainArgs) -> Result<ExplainReport> {
         if self.binding_homes.is_none() {
-            self.binding_homes = Some(binding_homes(&self.common.modules_root)?);
+            self.binding_homes = Some(binding_homes(
+                &self.common.modules_root,
+                &self.module_files,
+                self.includes_binding_patches,
+            )?);
         }
         let needs_proposals = args.include_proposals
             || matches!(
@@ -765,7 +809,7 @@ impl ExplainSession {
                 &ProposalOptions {
                     dependency_graph_path: self.common.dependency_graph_path.clone(),
                     modules_root: self.common.modules_root.clone(),
-                    tree_config: None,
+                    tree_config: self.tree_config.clone(),
                     source_root: self.source_root.clone(),
                     source_context: self.source_context.clone(),
                     size_cap_lines: self.size_cap_lines,
@@ -816,11 +860,15 @@ fn explain_from_graph(
     } = resolve_source_unit_ids(
         selection,
         graph,
-        common,
-        size_cap_lines,
-        source_lookup.root,
-        source_lookup.verified,
-        propose,
+        &ResolveSourceUnitContext {
+            common,
+            size_cap_lines,
+            source_root: source_lookup.root,
+            source_context: source_lookup.verified,
+            propose,
+            tree_config: session.tree_config.as_deref(),
+            module_files: &session.module_files,
+        },
     )?;
     let source_unit_set: BTreeSet<String> = source_unit_ids.iter().cloned().collect();
     let mut source_units = source_units_for_ids(graph, &source_unit_set);
@@ -1172,6 +1220,7 @@ pub fn run_source_selection_report(
     source_context: Option<&VerifiedGraphSourceContext>,
 ) -> Result<SourceSelectionReport> {
     let graph = load_graph(&args.common.dependency_graph_path)?;
+    let module_files = collect_module_files(&args.common.modules_root)?;
     let selection = &args.selection;
     let query = query_report(selection);
     let ResolvedSelection {
@@ -1180,11 +1229,15 @@ pub fn run_source_selection_report(
     } = resolve_source_unit_ids(
         selection,
         &graph,
-        &args.common,
-        args.size_cap_lines,
-        args.source_root.as_deref(),
-        source_context,
-        None,
+        &ResolveSourceUnitContext {
+            common: &args.common,
+            size_cap_lines: args.size_cap_lines,
+            source_root: args.source_root.as_deref(),
+            source_context,
+            propose: None,
+            tree_config: None,
+            module_files: &module_files,
+        },
     )?;
     let source_unit_set: BTreeSet<String> = source_unit_ids.iter().cloned().collect();
     let source_units = source_units_for_ids(&graph, &source_unit_set);
@@ -1677,14 +1730,20 @@ impl Display for SourceUnitNotFound {
 
 impl Error for SourceUnitNotFound {}
 
+struct ResolveSourceUnitContext<'a> {
+    common: &'a CommonArgs,
+    size_cap_lines: usize,
+    source_root: Option<&'a Path>,
+    source_context: Option<&'a VerifiedGraphSourceContext>,
+    propose: Option<&'a ProposalsReport>,
+    tree_config: Option<&'a Path>,
+    module_files: &'a [PathBuf],
+}
+
 fn resolve_source_unit_ids(
     selection: &SelectionKind,
     graph: &DependencyGraphReport,
-    common: &CommonArgs,
-    size_cap_lines: usize,
-    source_root: Option<&Path>,
-    source_context: Option<&VerifiedGraphSourceContext>,
-    propose: Option<&ProposalsReport>,
+    context: &ResolveSourceUnitContext<'_>,
 ) -> Result<ResolvedSelection> {
     let mut unknown_binding_ids: Vec<String> = Vec::new();
     let mut source_unit_ids: Vec<String> = match selection {
@@ -1701,10 +1760,11 @@ fn resolve_source_unit_ids(
         SelectionKind::ModulePath(module_path) => {
             let (resolved, unknown) = resolve_module_path_source_unit_ids(
                 graph,
-                common,
-                source_root,
-                source_context,
+                context.common,
+                context.source_root,
+                context.source_context,
                 module_path,
+                context.module_files,
             )?;
             unknown_binding_ids = unknown;
             resolved
@@ -1732,18 +1792,18 @@ fn resolve_source_unit_ids(
             .map(|node| node.id.clone())
             .collect(),
         SelectionKind::Proposal(proposal_id) => {
-            let proposal_source_unit_ids = if let Some(propose) = propose {
+            let proposal_source_unit_ids = if let Some(propose) = context.propose {
                 source_unit_ids_for_proposal(propose, proposal_id)
             } else {
                 let propose = propose_from_graph(
                     graph,
                     &ProposalOptions {
-                        dependency_graph_path: common.dependency_graph_path.clone(),
-                        modules_root: common.modules_root.clone(),
-                        tree_config: None,
-                        source_root: source_root.map(Path::to_path_buf),
-                        source_context: source_context.cloned(),
-                        size_cap_lines,
+                        dependency_graph_path: context.common.dependency_graph_path.clone(),
+                        modules_root: context.common.modules_root.clone(),
+                        tree_config: context.tree_config.map(Path::to_path_buf),
+                        source_root: context.source_root.map(Path::to_path_buf),
+                        source_context: context.source_context.cloned(),
+                        size_cap_lines: context.size_cap_lines,
                     },
                 )?;
                 source_unit_ids_for_proposal(&propose, proposal_id)
@@ -1764,18 +1824,18 @@ fn resolve_source_unit_ids(
             .map(|atomic_group| atomic_group.source_unit_ids.clone())
             .unwrap_or_default(),
         SelectionKind::Diagnostic(diagnostic_id) => {
-            let diagnostic_source_unit_ids = if let Some(propose) = propose {
+            let diagnostic_source_unit_ids = if let Some(propose) = context.propose {
                 source_unit_ids_for_diagnostic(propose, diagnostic_id)
             } else {
                 let propose = propose_from_graph(
                     graph,
                     &ProposalOptions {
-                        dependency_graph_path: common.dependency_graph_path.clone(),
-                        modules_root: common.modules_root.clone(),
+                        dependency_graph_path: context.common.dependency_graph_path.clone(),
+                        modules_root: context.common.modules_root.clone(),
                         tree_config: None,
-                        source_root: source_root.map(Path::to_path_buf),
-                        source_context: source_context.cloned(),
-                        size_cap_lines,
+                        source_root: context.source_root.map(Path::to_path_buf),
+                        source_context: context.source_context.cloned(),
+                        size_cap_lines: context.size_cap_lines,
                     },
                 )?;
                 source_unit_ids_for_diagnostic(&propose, diagnostic_id)
@@ -1810,6 +1870,7 @@ fn resolve_module_path_source_unit_ids(
     source_root: Option<&Path>,
     source_context: Option<&VerifiedGraphSourceContext>,
     module_path: &str,
+    module_files: &[PathBuf],
 ) -> Result<(Vec<String>, Vec<String>)> {
     let yaml_path = common.modules_root.join(format!("{module_path}.yaml"));
     let claims = read_module_claims(&yaml_path)
@@ -1830,7 +1891,6 @@ fn resolve_module_path_source_unit_ids(
     }
     // The module's claims resolve jointly with every other module's, as in
     // `run`.
-    let module_files = collect_module_files(&common.modules_root)?;
     let all_claims = module_files
         .iter()
         .map(|file| read_module_claims(file))
@@ -1901,11 +1961,15 @@ fn source_unit_ids_for_diagnostic(
         .map(|diagnostic| diagnostic.source_unit_ids.clone())
 }
 
-fn binding_homes(modules_root: &Path) -> Result<Vec<BindingHomeReport>> {
+fn binding_homes(
+    modules_root: &Path,
+    module_files: &[PathBuf],
+    includes_binding_patches: bool,
+) -> Result<Vec<BindingHomeReport>> {
     let mut homes = BTreeSet::new();
-    for path in collect_module_files(modules_root)? {
-        let module_path = module_path_from_file(&path, modules_root);
-        for member in read_module_file(&path)?.members {
+    for path in module_files {
+        let module_path = module_path_from_file(path, modules_root);
+        for member in read_module_file(path)?.members {
             let Some(binding_selector) = member.selector.binding else {
                 continue;
             };
@@ -1918,18 +1982,20 @@ fn binding_homes(modules_root: &Path) -> Result<Vec<BindingHomeReport>> {
             });
         }
     }
-    let patches_path = default_binding_patches_path(modules_root);
-    for member in load_binding_patch_members(modules_root)? {
-        let Some(binding_selector) = member.selector.binding else {
-            continue;
-        };
-        let binding = binding_selector.name;
-        homes.insert(BindingHomeReport {
-            binding,
-            name: member.name.unwrap_or_default(),
-            source_kind: BindingHomeSourceKind::BindingPatch,
-            path: patches_path.display().to_string(),
-        });
+    if includes_binding_patches {
+        let patches_path = default_binding_patches_path(modules_root);
+        for member in load_binding_patch_members(modules_root)? {
+            let Some(binding_selector) = member.selector.binding else {
+                continue;
+            };
+            let binding = binding_selector.name;
+            homes.insert(BindingHomeReport {
+                binding,
+                name: member.name.unwrap_or_default(),
+                source_kind: BindingHomeSourceKind::BindingPatch,
+                path: patches_path.display().to_string(),
+            });
+        }
     }
     Ok(homes.into_iter().collect())
 }
