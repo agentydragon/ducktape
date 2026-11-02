@@ -14,8 +14,40 @@ from finance.plaid.spend.allowance import (
     daily_reference,
     round_minor_units,
 )
+from finance.plaid.spend.models import StatementReason
 from finance.plaid.spend.sustainability import SustainabilityView
-from finance.plaid.spend.ui.testing import sustainability, transactions
+from finance.plaid.spend.ui.testing import dashboard, sustainability, transactions
+
+
+def test_card_responses_describe_the_same_accounts_and_statement_spend() -> None:
+    view = dashboard.spend_view()
+    config = dashboard.configuration()
+    transaction_view = transactions.view(PeriodId.ROLLING_30D)
+    configured_cards = {card.label: card for card in config.cards if card.enabled}
+
+    assert {card.label for card in view.cards} == configured_cards.keys()
+    assert config.allowance is not None
+    assert config.allowance.spending_account_count == len(
+        {row.account_label for row in transaction_view.rows if row.allowance_in_scope}
+    )
+    assert {row.account_label for row in transaction_view.rows if not row.allowance_in_scope} == {"New example card"}
+
+    for card in view.cards:
+        assert card.statement_period.kind in {"statement", "provisional"}
+        assert card.limit_minor_units == configured_cards[card.label].limit_minor_units
+        statement_rows = [
+            row
+            for row in transaction_view.rows
+            if row.account_label == card.label
+            and card.statement_period.start <= row.date <= card.statement_period.through
+            and row.statement_reason == StatementReason.COUNTED
+        ]
+        assert statement_rows
+        assert card.pending_minor_units == sum(row.statement_minor_units or 0 for row in statement_rows if row.pending)
+        assert card.posted_minor_units == sum(
+            row.statement_minor_units or 0 for row in statement_rows if not row.pending
+        )
+        assert card.spend_minor_units == card.pending_minor_units + card.posted_minor_units
 
 
 @pytest.mark.parametrize("period", [PeriodId.CREDIT_CYCLE, PeriodId.ROLLING_7D, PeriodId.ROLLING_30D])

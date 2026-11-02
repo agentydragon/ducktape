@@ -166,8 +166,8 @@ def spend_view(warmup: bool = False, estimate_period_id: EstimatePeriodId | None
                 spend_minor_units=22000,
                 limit_minor_units=100000,
                 spend_percent=Decimal(22),
-                pending_minor_units=1000,
-                posted_minor_units=21000,
+                pending_minor_units=1500,
+                posted_minor_units=20500,
                 last_synced_at=synced,
             ),
             CardView(
@@ -196,14 +196,17 @@ def configuration() -> SpendConfigurationView:
         time_zone="UTC",
         cards=[
             CardConfigurationView(
-                label="Example card", enabled=True, limit_minor_units=None, alert_threshold_percent=None
-            )
+                label="Example card", enabled=True, limit_minor_units=100000, alert_threshold_percent=None
+            ),
+            CardConfigurationView(
+                label="New example card", enabled=True, limit_minor_units=100000, alert_threshold_percent=None
+            ),
         ],
         allowance=AllowanceConfigurationView(
             monthly_minor_units=70000,
             activation_at=date(2026, 9, 25),
             currency="USD",
-            spending_account_count=1,
+            spending_account_count=2,
             max_sync_age_hours=72,
             forecast_basis_period_id=PeriodId.ROLLING_7D,
             rules=[
