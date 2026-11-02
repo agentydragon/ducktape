@@ -66,12 +66,22 @@ CONTAINERD_DEBUG_SOCKET = "/run/k3s/containerd/debug.sock"
 HOSTS_MARKER = "# k3s-env"
 
 
-def run(*command: str, check: bool = True, input_text: str | None = None, timeout: float | None = None) -> str:
+def run(
+    *command: str,
+    check: bool = True,
+    input_text: str | None = None,
+    timeout: float | None = None,
+    stdout_only: bool = False,
+) -> str:
     result = subprocess.run(command, capture_output=True, text=True, input=input_text, check=False, timeout=timeout)
     if check and result.returncode:
         raise RuntimeError(
             f"{command[:3]} exited {result.returncode}\nstderr:\n{result.stderr}\nstdout:\n{result.stdout}"
         )
+    if stdout_only:
+        if result.stderr:
+            logger.warning("%s stderr: %s", command[:3], result.stderr.rstrip())
+        return result.stdout
     return result.stdout + result.stderr
 
 
@@ -152,7 +162,12 @@ class K3s:
         self.node_ip = node_ip()
 
     def kubectl(
-        self, *args: str, check: bool = True, input_text: str | None = None, timeout: float | None = None
+        self,
+        *args: str,
+        check: bool = True,
+        input_text: str | None = None,
+        timeout: float | None = None,
+        stdout_only: bool = False,
     ) -> str:
         return run(
             str(self.binary),
@@ -163,6 +178,7 @@ class K3s:
             check=check,
             input_text=input_text,
             timeout=timeout,
+            stdout_only=stdout_only,
         )
 
     @tracer.start_as_current_span("system_test.k3s.start")
@@ -755,8 +771,13 @@ def _spike_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None:
     ]
     cluster_yaml = yaml.safe_dump_all(cluster_objects)
     k3s.kubectl("delete", "-f", "-", "--ignore-not-found=true", "--wait=true", input_text=cluster_yaml)
-    if k3s.kubectl("get", "-f", "-", "--ignore-not-found=true", "-o", "name", input_text=cluster_yaml):
-        raise RuntimeError("fixture-owned cluster resources survived cleanup")
+    # Deprecated API reads (Kyverno ClusterPolicy) emit warnings even for absent objects. Resource
+    # verification must inspect stdout, while preserving stderr warnings in the test diagnostics.
+    remaining = k3s.kubectl(
+        "get", "-f", "-", "--ignore-not-found=true", "-o", "name", input_text=cluster_yaml, stdout_only=True
+    )
+    if remaining:
+        raise RuntimeError(f"fixture-owned cluster resources survived cleanup: {remaining}")
     dynamic_selector = (
         "app.kubernetes.io/managed-by=agentplane-policy-controller,"
         "policy.agentplane.allegedly.works/policy-namespace=systest"
