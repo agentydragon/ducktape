@@ -348,12 +348,18 @@ py_library(
     deps = ["@pypi//pydantic"],
 )
 
+filegroup(
+    name = "issue_provenance",
+    srcs = ["issue_provenance.j2"],
+)
+
 py_library(
     name = "gallery",
     srcs = ["gallery.py"],
     data = [
         "pr_visual_test.html.j2",
         "pr_visuals.html.j2",
+        ":issue_provenance",
     ],
     deps = [
         ":metadata",
@@ -365,7 +371,10 @@ py_library(
 py_library(
     name = "github_comment",
     srcs = ["github_comment.py"],
-    data = ["github_comment.md.j2"],
+    data = [
+        "github_comment.md.j2",
+        ":issue_provenance",
+    ],
     deps = [
         ":metadata",
         ":render_common",
