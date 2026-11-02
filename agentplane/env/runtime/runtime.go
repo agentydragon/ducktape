@@ -290,7 +290,7 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	if err := engine.RegisterController(r.closeCoordinator); err != nil {
 		return err
 	}
-	if err := engine.RegisterController(&hostReportController{runtime: r}); err != nil {
+	if err := engine.RegisterController(&hostReportObserver{runtime: r}); err != nil {
 		return err
 	}
 	if err := engine.RegisterController(&hostIntentController{runtime: r}); err != nil {
