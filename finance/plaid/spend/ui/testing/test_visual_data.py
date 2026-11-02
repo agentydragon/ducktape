@@ -1,6 +1,7 @@
 """The visual fixtures remain valid and describe the rows they display."""
 
 from collections import defaultdict
+from datetime import date
 from decimal import Decimal
 from typing import cast
 
@@ -214,6 +215,27 @@ def test_sustainability_copies_validate() -> None:
     ]
     for view in views:
         assert SustainabilityView.model_validate_json(view.model_dump_json()) == view
+
+
+def test_thirty_day_sustainability_uses_production_rounding() -> None:
+    view = sustainability.window(30)
+
+    assert view.status == "ready"
+    assert view.period_start == date(2026, 9, 15)
+    assert view.period_end == date(2026, 10, 14)
+    assert view.covered_days == 30
+    assert (view.mandatory_minor_units, view.flexible_minor_units, view.provisional_minor_units) == (
+        200_000,
+        100_000,
+        10_000,
+    )
+    assert view.spending_minor_units == 310_000
+    # 310,000 * 365.2425 / 30 is 3,774,172.5; production uses ROUND_HALF_UP.
+    assert view.annualized_spending_minor_units == 3_774_173
+    assert view.estimated_annual_draw_minor_units == 4_288_833
+    assert len(view.history) == 5
+    assert view.history[-1].date == date(2026, 10, 14)
+    assert view.history[-1].annualized_spending_minor_units == 3_774_173
 
 
 def test_unknown_sustainability_cases_fail() -> None:

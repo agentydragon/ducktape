@@ -5,17 +5,36 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
+from zoneinfo import ZoneInfo
 
-from finance.plaid.spend.portfolio_models import PortfolioView, SourceValuation
+from finance.plaid.spend.allowance import AllowancePolicy, AnalysisCategory, Kind, NamePrefix, Rule, Transaction
+from finance.plaid.spend.portfolio_models import (
+    PlaidSourcePolicy,
+    PortfolioPolicy,
+    PortfolioSources,
+    PortfolioView,
+    SourceValuation,
+)
 from finance.plaid.spend.reconciliation import ReportStatus
+from finance.plaid.spend.reconciliation_views import sustainability_view
 from finance.plaid.spend.sustainability import (
+    AccountHistory,
     AccountOpening,
     DocumentedHistory,
     SpendingAccountCoverage,
     SustainabilityDashboard,
+    SustainabilityDisplay,
     SustainabilityHistoryPoint,
+    SustainabilityPolicy,
     SustainabilityView,
+    WithdrawalTax,
+    calculate_sustainability,
 )
+
+_THIRTY_DAY_START = date(2026, 9, 15)
+_THIRTY_DAY_END = date(2026, 10, 14)
+_THIRTY_DAY_HISTORY_START = _THIRTY_DAY_START - timedelta(days=4)
+_SYNTHETIC_SPENDING_ACCOUNT = "synthetic-spending"
 
 type Variant = Literal["ready", "stale", "unavailable", "provisional", "tax_unmodeled", "low_draw"]
 
@@ -156,21 +175,130 @@ def dashboard(*windows: SustainabilityView) -> SustainabilityDashboard:
     return SustainabilityDashboard(default_window_days=90, windows=list(windows))
 
 
+def _calculated_thirty_day_view() -> SustainabilityView:
+    """Build the 30-day visual series from policy inputs and a repeating ledger."""
+    time_zone = ZoneInfo("UTC")
+    now = datetime(2026, 10, 15, 12, tzinfo=UTC)
+    totals_by_kind = {Kind.FIXED: 200_000, Kind.FLEXIBLE: 100_000, Kind.REVIEW: 10_000}
+    names = {
+        Kind.FIXED: "SYNTHETIC FIXED PURCHASE",
+        Kind.FLEXIBLE: "SYNTHETIC FLEXIBLE PURCHASE",
+        Kind.REVIEW: "SYNTHETIC REVIEW PURCHASE",
+    }
+    transactions: list[Transaction] = []
+    for offset in range((_THIRTY_DAY_END - _THIRTY_DAY_HISTORY_START).days + 1):
+        day = _THIRTY_DAY_HISTORY_START + timedelta(days=offset)
+        repeated_day = offset % 30
+        for kind, total in totals_by_kind.items():
+            quotient, remainder = divmod(total, 30)
+            amount_minor_units = quotient + int(repeated_day < remainder)
+            transactions.append(
+                Transaction(
+                    account_id=_SYNTHETIC_SPENDING_ACCOUNT,
+                    transaction_id=f"{kind.value}-{day.isoformat()}",
+                    pending_transaction_id=None,
+                    date=day,
+                    amount=Decimal(amount_minor_units) / 100,
+                    pending=False,
+                    name=names[kind],
+                    merchant_name=None,
+                    pfc_primary=None,
+                    pfc_detailed=None,
+                    currency="USD",
+                )
+            )
+
+    allowance = AllowancePolicy(
+        monthly_minor_units=70_000,
+        activation_at=_THIRTY_DAY_HISTORY_START,
+        spending_account_ids={_SYNTHETIC_SPENDING_ACCOUNT},
+        rules=[
+            Rule(condition=NamePrefix(field="name", prefix="SYNTHETIC FIXED"), kind=Kind.FIXED),
+            Rule(condition=NamePrefix(field="name", prefix="SYNTHETIC FLEXIBLE"), kind=Kind.FLEXIBLE),
+            Rule(condition=NamePrefix(field="name", prefix="SYNTHETIC REVIEW"), kind=Kind.REVIEW),
+        ],
+        analysis_categories={"unclassified": AnalysisCategory(label="Unclassified", color="#777777")},
+    )
+    policy = SustainabilityPolicy(
+        display=SustainabilityDisplay(
+            windows_days=[30, 90, 365],
+            default_window_days=90,
+            reference_draw_rates=[Decimal("0.03"), Decimal("0.035"), Decimal("0.04"), Decimal("0.045")],
+        ),
+        portfolio=PortfolioPolicy(
+            sources=PortfolioSources(
+                plaid=PlaidSourcePolicy(asset_account_ids=["synthetic-investments", "synthetic-cash"])
+            )
+        ),
+        withdrawal_tax=WithdrawalTax(
+            rate=Decimal("0.12"),
+            assumption_note="Synthetic fixture tax assumption; actual tax treatment depends on account and income details.",
+            as_of=date(2026, 1, 1),
+        ),
+        account_history={
+            _SYNTHETIC_SPENDING_ACCOUNT: AccountHistory(
+                coverage=DocumentedHistory(
+                    complete_from=_THIRTY_DAY_HISTORY_START,
+                    source="Synthetic sustainability ledger",
+                    as_of=_THIRTY_DAY_END,
+                )
+            )
+        },
+        known_issues=[
+            "Synthetic fixture: investment values are illustrative and can lag market changes.",
+            "No income outside observed spending and portfolio sources is represented.",
+        ],
+    )
+    portfolio = PortfolioView(
+        status="ready",
+        net_minor_units=125_000_000,
+        assets_minor_units=145_000_000,
+        liabilities_minor_units=15_000_000,
+        excluded_minor_units=5_000_000,
+        sources=[
+            SourceValuation(
+                name="Synthetic investment source",
+                status="ready",
+                amount_minor_units=125_000_000,
+                as_of=datetime(2026, 10, 14, 12, tzinfo=UTC),
+            ),
+            SourceValuation(
+                name="Synthetic cash source",
+                status="ready",
+                amount_minor_units=20_000_000,
+                as_of=datetime(2026, 10, 14, 12, tzinfo=UTC),
+            ),
+        ],
+    )
+    return sustainability_view(
+        calculate_sustainability(
+            policy,
+            allowance,
+            transactions,
+            portfolio,
+            time_zone=time_zone,
+            now=now,
+            window_days=30,
+            source_issues=[],
+            account_labels={_SYNTHETIC_SPENDING_ACCOUNT: "Example checking"},
+        )
+    )
+
+
 def window(days: int, *, history: list[SustainabilityHistoryPoint] | None = None) -> SustainabilityView:
     if days not in {30, 90, 365}:
         raise ValueError(f"Unsupported sustainability window: {days}")
+    if days == 30:
+        result = _calculated_thirty_day_view()
+        return result if history is None else with_history(result, history)
     result = view()
     if days == 90:
         return result if history is None else with_history(result, history)
-    mandatory, flexible, provisional = (200_000, 100_000, 10_000) if days == 30 else (3_000_000, 2_000_000, 300_000)
+    mandatory, flexible, provisional = 3_000_000, 2_000_000, 300_000
     total = mandatory + flexible + provisional
     annual = int((Decimal(total) * Decimal("365.2425") / days).quantize(Decimal(1)))
     funding = int((Decimal(annual) / Decimal("0.88")).quantize(Decimal(1)))
-    dates = (
-        ("2026-10-10", "2026-10-11", "2026-10-12", "2026-10-13", "2026-10-14")
-        if days == 30
-        else ("2026-10-13", "2026-10-14")
-    )
+    dates = ("2026-10-13", "2026-10-14")
     history_points = (
         history
         if history is not None
