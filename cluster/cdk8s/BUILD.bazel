@@ -1678,7 +1678,6 @@ py_library(
         "//cluster/cdk8s/cli_proxy_api",
         "//cluster/cdk8s/clickhouse:installation",
         "//cluster/cdk8s/clickhouse:operator",
-        "//cluster/cdk8s/clickhouse:orphan_views_cleanup",
         "//cluster/cdk8s/clickhouse:schema",
         "//cluster/cdk8s/cpap_sync:app",
         "//cluster/cdk8s/dcgm_exporter:exporter",
