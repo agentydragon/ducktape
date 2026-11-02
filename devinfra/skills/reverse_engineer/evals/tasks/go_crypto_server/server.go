@@ -26,6 +26,7 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("/v1/note/get", s.handleGet)
 	mux.HandleFunc("/v1/note/list", s.handleList)
 	mux.HandleFunc("/v1/export", s.handleExport)
+	mux.HandleFunc("/v1/export/verify", s.handleExportVerify)
 	return mux
 }
 
@@ -173,6 +174,33 @@ func (s *server) handleExport(w http.ResponseWriter, r *http.Request) {
 	signed := append([]byte{}, payload...)
 	signed = append(signed, tag[:]...)
 	writeOK(w, op, exportResponse{Blob: encodeBase32Custom(signed)})
+}
+
+func (s *server) handleExportVerify(w http.ResponseWriter, r *http.Request) {
+	const op = "export.verify"
+	var req exportVerifyRequest
+	if err := decodeRequest(r, &req); err != nil {
+		writeError(w, op, codeBadRequest)
+		return
+	}
+	key, err := s.store.key(req.Token)
+	if err != nil {
+		writeError(w, op, codeUnknownToken)
+		return
+	}
+	signed, err := decodeBase32Custom(req.Blob)
+	if err != nil || len(signed) < macTagSize {
+		writeError(w, op, codeBadRequest)
+		return
+	}
+	payloadLen := len(signed) - macTagSize
+	var tag [macTagSize]byte
+	copy(tag[:], signed[payloadLen:])
+	if !macVerify(key, signed[:payloadLen], tag) {
+		writeError(w, op, codeBadMAC)
+		return
+	}
+	writeOK(w, op, exportVerifyResponse{Valid: true})
 }
 
 func buildSnapshotBytes(notes []storedNote) []byte {
