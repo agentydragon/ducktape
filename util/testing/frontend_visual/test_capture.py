@@ -1,5 +1,6 @@
 """The capture API preserves health gates without owning the test's interactions."""
 
+import asyncio
 import json
 import zipfile
 from dataclasses import replace
@@ -8,11 +9,12 @@ from typing import cast
 
 import pytest
 import pytest_bazel
-from playwright.async_api import Playwright, expect
+from playwright.async_api import BrowserContext, Playwright, expect
 
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
-from util.testing.frontend_visual.capture import HarnessConfig, InlinePage, VisualHarness
+from util.testing.frontend_visual.capture import HarnessConfig, InlinePage, VisualHarness, playwright_trace
 from util.testing.frontend_visual.viewports import Viewport
+from util.testing.output_records import output_key
 from util.testing.output_writer import BoundTestOutputs
 
 # gazelle:include_dep //util:playwright
@@ -132,6 +134,103 @@ async def test_trace_default_opt_out_selection_and_failure_retention(
     with pytest.raises(ValueError, match="VISUAL_TRACE must be 0 or 1"):
         async with harness.open("plain"):
             pass
+
+
+async def test_duplicate_trace_keeps_first_record(harness: VisualHarness, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VISUAL_TRACE", "1")
+    async with harness.open(trace_checkpoint="repeated"):
+        pass
+    first_trace = _payload(harness.output_dir, role="trace", checkpoint="repeated")
+    original = first_trace.read_bytes()
+
+    with pytest.raises(FileExistsError, match="identity already claimed"):
+        async with harness.open(trace_checkpoint="repeated"):
+            pass
+
+    assert first_trace.read_bytes() == original
+    assert zipfile.is_zipfile(first_trace)
+    assert len(_records(harness.output_dir)) == 1
+    assert not list(harness.output_dir.glob(".trace-stage-*"))
+
+
+async def test_failed_case_retains_raw_trace_if_identity_is_claimed(
+    harness: VisualHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("VISUAL_TRACE", "1")
+    async with harness.open(trace_checkpoint="repeated"):
+        pass
+    first_trace = _payload(harness.output_dir, role="trace", checkpoint="repeated")
+    original = first_trace.read_bytes()
+
+    with pytest.raises(RuntimeError, match="original failure") as caught:
+        async with harness.open(trace_checkpoint="repeated"):
+            raise RuntimeError("original failure")
+
+    assert first_trace.read_bytes() == original
+    assert len(_records(harness.output_dir)) == 1
+    notes = getattr(caught.value, "__notes__", [])
+    assert len(notes) == 1
+    assert "FileExistsError" in notes[0]
+    raw_trace = Path(notes[0].split("raw trace retained at ", maxsplit=1)[1])
+    assert zipfile.is_zipfile(raw_trace)
+    assert raw_trace.parent.parent == harness.output_dir
+
+
+async def test_concurrent_traces_claim_identity_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VISUAL_TRACE", "1")
+    monkeypatch.delenv("VISUAL_TRACE_CAPTURE_NAME", raising=False)
+    outputs = BoundTestOutputs(tmp_path / "out", "visual/test.py::test_same_case")
+    both_stopped = asyncio.Event()
+    staging_paths: list[Path] = []
+
+    class FakeTracing:
+        def __init__(self, payload: bytes) -> None:
+            self.payload = payload
+
+        async def start(self, **options: object) -> None:
+            assert options == {
+                "name": f"visual capture: {outputs.case_id}",
+                "screenshots": True,
+                "snapshots": True,
+                "sources": False,
+            }
+
+        async def stop(self, *, path: Path) -> None:
+            staging_paths.append(path)
+            if len(staging_paths) == 2:
+                both_stopped.set()
+            await both_stopped.wait()
+            await asyncio.to_thread(path.write_bytes, self.payload)
+
+    class FakeContext:
+        def __init__(self, payload: bytes) -> None:
+            self.tracing = FakeTracing(payload)
+
+    async def write_trace(payload: bytes) -> None:
+        async with playwright_trace(cast(BrowserContext, FakeContext(payload)), outputs, "shared"):
+            pass
+
+    results = await asyncio.gather(write_trace(b"first trace"), write_trace(b"second trace"), return_exceptions=True)
+    failures = [result for result in results if isinstance(result, BaseException)]
+    assert len(failures) == 1
+    assert isinstance(failures[0], FileExistsError)
+    assert len(staging_paths) == 2
+    assert staging_paths[0] != staging_paths[1]
+    assert all(not path.exists() for path in staging_paths)
+    assert not list(outputs.output_dir.glob(".trace-stage-*"))
+    assert _records(outputs.output_dir) == [
+        {
+            "schema": "ducktape.test-output.v1",
+            "case_id": outputs.case_id,
+            "checkpoint": "shared",
+            "role": "trace",
+            "path": f"files/{output_key(outputs.case_id, 'shared', 'trace')}.zip",
+        }
+    ]
+    assert _payload(outputs.output_dir, role="trace", checkpoint="shared").read_bytes() in {
+        b"first trace",
+        b"second trace",
+    }
 
 
 async def test_capture_diagnostics_cover_viewport_and_crop_without_page_text(

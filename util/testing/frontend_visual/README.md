@@ -99,10 +99,13 @@ retain the nearest-pixel rounding convention. `devtools_viewport` retains device
 compatibility for existing galleries. Duplicate case/checkpoint/role claims fail.
 
 `VisualHarness.open()` retains a standard Playwright trace for its bound case by default.
-Custom deterministic-context fixtures can use `playwright_trace(context, output_dir,
-case_id)`. Set `VISUAL_TRACE=0` to disable tracing. Set
+Custom deterministic-context fixtures can use `playwright_trace(context, outputs,
+checkpoint)` with a `BoundTestOutputs` writer. Set `VISUAL_TRACE=0` to disable tracing. Set
 `VISUAL_TRACE_CAPTURE_NAME` to the exact full `case_id` to retain only that case.
-When a test opens multiple pages, give each a distinct `trace_checkpoint`.
+When a test opens multiple pages, give each a distinct `trace_checkpoint`. Trace files
+are staged separately for every opening, and a duplicate case/checkpoint trace fails
+without replacing the first record. If a failing test also cannot publish its trace,
+the exception note names the retained raw trace.
 
 To trace one case, set `VISUAL_TRACE_CAPTURE_NAME` and filter the Bazel target:
 

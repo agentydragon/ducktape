@@ -6,10 +6,11 @@ never clicks, scrolls, or parks the pointer. The session owns health checks and 
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
+import shutil
 import sys
+import tempfile
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -33,7 +34,7 @@ from util.testing.frontend_visual.page_capture import (
     wait_for_stable,
 )
 from util.testing.frontend_visual.viewports import Viewport
-from util.testing.output_writer import BoundTestOutputs, publish_output
+from util.testing.output_writer import BoundTestOutputs
 
 # `document.fonts.check` is true for a family no `@font-face` declares, so on its own it passes when the
 # stylesheet declaring the font never arrived (or the name is misspelled) and the page renders in a fallback.
@@ -47,7 +48,7 @@ _FONT_STATUS_JS = """async family => {
 }"""
 
 
-def _trace_path_for_capture(output_dir: Path, case_id: str, checkpoint: str | None) -> Path | None:
+def _trace_enabled(case_id: str) -> bool:
     trace_setting = os.environ.get("VISUAL_TRACE", "1")
     if trace_setting not in {"0", "1"}:
         raise ValueError("VISUAL_TRACE must be 0 or 1")
@@ -55,44 +56,48 @@ def _trace_path_for_capture(output_dir: Path, case_id: str, checkpoint: str | No
     trace_enabled = trace_setting == "1"
     if trace_capture_name is not None:
         trace_enabled = trace_enabled and trace_capture_name == case_id
-    if not trace_enabled:
-        return None
-    output_dir.mkdir(parents=True, exist_ok=True)
-    trace_key = json.dumps([case_id, checkpoint], separators=(",", ":"))
-    trace_path = output_dir / f"{hashlib.sha256(trace_key.encode()).hexdigest()}.trace.zip"
-    if trace_path.exists():
-        raise FileExistsError(trace_path)
-    return trace_path
+    return trace_enabled
 
 
 @asynccontextmanager
 async def playwright_trace(
-    context: BrowserContext, output_dir: Path, case_id: str, checkpoint: str | None = None
+    context: BrowserContext, outputs: BoundTestOutputs, checkpoint: str | None = None
 ) -> AsyncIterator[None]:
     """Trace a named visual case under the shared environment and output policy."""
-    trace_path = _trace_path_for_capture(output_dir, case_id, checkpoint)
-    if trace_path is None:
+    if not _trace_enabled(outputs.case_id):
         yield
         return
-    await context.tracing.start(name=f"visual capture: {case_id}", screenshots=True, snapshots=True, sources=False)
+    outputs.output_dir.mkdir(parents=True, exist_ok=True)
+    # Playwright writes its trace to a path. Give every opening its own staging directory,
+    # then let the output writer atomically claim the shared case/checkpoint/role identity.
+    staging_dir = Path(tempfile.mkdtemp(prefix=".trace-stage-", dir=outputs.output_dir))
+    trace_path = staging_dir / "trace.zip"
+    retain_raw_trace = False
     try:
-        yield
-    finally:
-        active_error = sys.exception()
+        await context.tracing.start(
+            name=f"visual capture: {outputs.case_id}", screenshots=True, snapshots=True, sources=False
+        )
         try:
-            await context.tracing.stop(path=trace_path)
-            publish_output(
-                output_dir,
-                case_id=case_id,
-                checkpoint=checkpoint,
-                role="trace",
-                data=trace_path.read_bytes(),
-                suffix="zip",
-            )
-        except Exception as trace_error:
-            if active_error is None:
-                raise
-            active_error.add_note(f"Could not save Playwright trace to {trace_path}: {trace_error!r}")
+            yield
+        finally:
+            active_error = sys.exception()
+            try:
+                await context.tracing.stop(path=trace_path)
+                outputs.publish_file(source=trace_path, checkpoint=checkpoint, role="trace")
+            except Exception as trace_error:
+                if active_error is None:
+                    raise
+                retain_raw_trace = trace_path.is_file()
+                note = (
+                    f"Could not save Playwright trace for {outputs.case_id!r}, checkpoint {checkpoint!r}: "
+                    f"{trace_error!r}"
+                )
+                if retain_raw_trace:
+                    note += f"; raw trace retained at {trace_path}"
+                active_error.add_note(note)
+    finally:
+        if not retain_raw_trace:
+            shutil.rmtree(staging_dir)
 
 
 # Keep the browser-side snapshot in a linted JS file. It records geometry and selection positions,
@@ -324,7 +329,7 @@ class VisualHarness:
                 has_touch=viewport.has_touch,
                 extra_args=["--allow-file-access-from-files"] if config.inline_page is None else [],
             ) as context,
-            playwright_trace(context, self.output_dir, self.case_id, trace_checkpoint),
+            playwright_trace(context, BoundTestOutputs(self.output_dir, self.case_id), trace_checkpoint),
         ):
             page = await context.new_page()
             page.set_default_timeout(WAIT_TIMEOUT_MS)

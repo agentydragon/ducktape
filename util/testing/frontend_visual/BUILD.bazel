@@ -114,6 +114,7 @@ py_test(
         "//:conftest",
         "//util:playwright",
         "//util/bazel:runfiles",
+        "//util/testing:output_records",
         "//util/testing:output_writer",
         "//util/testing/frontend_visual:fixtures",
         "@pypi//playwright",
