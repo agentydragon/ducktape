@@ -1,7 +1,6 @@
 # gazelle:resolve py _pytest.fixtures @pypi//pytest
 """Testing utility libraries."""
 
-load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_testonly = True)
@@ -135,52 +134,6 @@ py_library(
     ],
 )
 
-# Chromium launch flags, frozen-clock init script and animation-pinning CSS. They live at this level
-# (not in frontend_visual/) because a data file there would turn the directory into a namespace
-# package shadowing frontend_visual.py for mypy.
-filegroup(
-    name = "browser_launcher_assets",
-    srcs = [
-        "chromium-flags.json",
-        "chromium-font-preferences.json",
-        "disable-animations.css",
-        "frozen-clock.js",
-        "@chrome_headless_shell//:executable",
-    ],
-    visibility = ["//util/testing/frontend_visual:__pkg__"],
-)
-
-py_library(
-    name = "frontend_visual",
-    testonly = True,
-    srcs = ["frontend_visual.py"],
-    # chromium-flags.json is read at import time — it must ride along with
-    # every consumer, not be re-declared per test.
-    data = [":browser_launcher_assets"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//playwright",
-    ],
-)
-
-py_test(
-    name = "test_frontend_visual",
-    srcs = ["test_frontend_visual.py"],
-    data = [
-        "//util:playwright",
-    ],
-    tags = ["visual"],
-    deps = [
-        ":frontend_visual",
-        "//:conftest",
-        "//util:playwright",
-        "@pypi//playwright",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_test(
     name = "test_container_logs",
     srcs = ["test_container_logs.py"],
@@ -258,100 +211,6 @@ py_test(
         "@pypi//starlette",
         "@pypi//uvicorn",
     ],
-)
-
-py_library(
-    name = "page_capture",
-    srcs = ["page_capture.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//playwright"],
-)
-
-py_test(
-    name = "test_page_capture",
-    srcs = ["test_page_capture.py"],
-    deps = [
-        ":page_capture",
-        "//:conftest",
-        "//util:playwright",
-        "@pypi//pillow",
-        "@pypi//playwright",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "visual_capture",
-    srcs = ["visual_capture.py"],
-    data = [
-        "capture-diagnostics.js",
-        ":capture_diagnostics_js",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":frontend_visual",
-        ":page_capture",
-        ":viewports",
-        ":visual_review",
-        "//util/bazel:runfiles",
-        "@pypi//more_itertools",
-        "@pypi//playwright",
-        "@pypi//pydantic",
-    ],
-)
-
-js_library(
-    name = "capture_diagnostics_js",
-    testonly = True,
-    srcs = ["capture-diagnostics.js"],
-)
-
-js_library(
-    name = "capture_diagnostics_fixture_js",
-    testonly = True,
-    srcs = ["capture-diagnostics-fixture.js"],
-)
-
-py_library(
-    name = "visual_fixtures",
-    srcs = ["visual_fixtures.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":page_capture",
-        ":undeclared_outputs",
-        ":viewports",
-        ":visual_capture",
-        "@pypi//playwright",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-    ],
-)
-
-py_test(
-    name = "test_visual_capture",
-    srcs = ["test_visual_capture.py"],
-    data = [
-        "capture-diagnostics-fixture.js",
-        ":capture_diagnostics_fixture_js",
-    ],
-    deps = [
-        ":viewports",
-        ":visual_capture",
-        "//:conftest",
-        "//util:playwright",
-        "//util/bazel:runfiles",
-        "@pypi//playwright",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "viewports",
-    srcs = ["viewports.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//playwright"],
 )
 
 py_library(

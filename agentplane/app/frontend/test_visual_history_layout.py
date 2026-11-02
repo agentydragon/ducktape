@@ -12,10 +12,10 @@ from playwright.async_api import Locator, expect
 
 from agentplane.app.frontend.testing.app import IDLE_THREAD, AgentplaneFixture, Scene
 from agentplane.app.frontend.testing.history_interactions import frames, holding_still, read_at, tool_call_in, wheel
-from util.testing.viewports import DESKTOP, MOBILE, Viewport
-from util.testing.visual_capture import VisualPage
+from util.testing.frontend_visual.capture import VisualPage
+from util.testing.frontend_visual.viewports import DESKTOP, MOBILE, Viewport
 
-pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
+pytest_plugins = ("util.testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 

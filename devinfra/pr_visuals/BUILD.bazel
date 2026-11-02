@@ -195,8 +195,8 @@ py_visual_test(
     test_deps = [
         ":publisher",
         "//util:playwright",
-        "//util/testing:viewports",
-        "//util/testing:visual_capture",
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:viewports",
         "@pypi//pillow",
         "@pypi//playwright",
         "@pypi//pytest",

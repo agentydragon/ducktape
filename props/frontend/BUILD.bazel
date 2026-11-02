@@ -287,8 +287,8 @@ py_visual_test(
     harness = ":harness_js",
     shard_count = 4,
     test_deps = [
-        "//util/testing:viewports",
-        "//util/testing:visual_capture",
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -307,7 +307,7 @@ py_visual_test(
     page_url = "http://props.test/",
     stylesheets = ["tests/harness/dist/harness.css"],
     test_deps = [
-        "//util/testing:visual_capture",
+        "//util/testing/frontend_visual:capture",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -9,7 +9,7 @@ import pytest_bazel
 from PIL import Image
 from playwright.async_api import Browser, Page
 
-from util.testing.page_capture import (
+from util.testing.frontend_visual.page_capture import (
     DevtoolsViewport,
     PageErrors,
     RequestFence,

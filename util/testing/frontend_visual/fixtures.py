@@ -7,10 +7,10 @@ import pytest
 import pytest_asyncio
 from playwright.async_api import Playwright, async_playwright, expect
 
-from util.testing.page_capture import WAIT_TIMEOUT_MS
+from util.testing.frontend_visual.capture import HarnessConfig, VisualHarness, VisualPage
+from util.testing.frontend_visual.page_capture import WAIT_TIMEOUT_MS
+from util.testing.frontend_visual.viewports import Viewport
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.viewports import Viewport
-from util.testing.visual_capture import HarnessConfig, VisualHarness, VisualPage
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")

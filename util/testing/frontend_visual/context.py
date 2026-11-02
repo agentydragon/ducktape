@@ -1,11 +1,4 @@
-"""Shared helpers for Python Playwright visual render-health tests.
-
-The Chromium flag set, the frozen-clock init script and the animation-pinning CSS are read from
-`util/testing/chromium-flags.json`, `util/testing/frozen-clock.js` and
-`util/testing/disable-animations.css` (kept at this level — a data file under `frontend_visual/`
-would shadow this module as a namespace package). The browser is the hermetic `@chrome_headless_shell`,
-found in the runfiles, where `browser_launcher_assets` puts it.
-"""
+"""Deterministic Playwright contexts for visual tests."""
 
 from __future__ import annotations
 
@@ -18,21 +11,17 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from util.bazel.runfiles import find_path, get_required_path, own_repo_rlocation
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from util.testing.browser.launcher import DETERMINISTIC_BROWSER_ARGS, chromium_executable
 
 if TYPE_CHECKING:
     from playwright.async_api import BrowserContext, Playwright, ViewportSize
 
 
-_FLAGS = json.loads(get_required_path(own_repo_rlocation("util/testing/chromium-flags.json")).read_text())
 # Chromium reads generic-family choices from the profile, not from page CSS.
 _FONT_PREFERENCES = json.loads(
-    get_required_path(own_repo_rlocation("util/testing/chromium-font-preferences.json")).read_text()
+    get_required_path(own_repo_rlocation("util/testing/frontend_visual/chromium-font-preferences.json")).read_text()
 )
-# Makes headless Chromium run in containerized/RBE environments.
-CONTAINER_BASE_BROWSER_ARGS: list[str] = _FLAGS["containerBase"]
-# Container base plus font/raster/compositing/animation pinning for stable renders.
-DETERMINISTIC_BROWSER_ARGS: list[str] = CONTAINER_BASE_BROWSER_ARGS + _FLAGS["deterministicExtra"]
 # Hard-pins every animation and transition to its first frame, for a page that inlines its own
 # `<style>`. `reduced_motion="reduce"` is not enough: it only helps component CSS that checks that
 # media feature, and some does not (Mantine's `Indicator processing` ping is an unconditional
@@ -41,18 +30,14 @@ DETERMINISTIC_BROWSER_ARGS: list[str] = CONTAINER_BASE_BROWSER_ARGS + _FLAGS["de
 # the page before the animated element mounts: `animation-play-state: paused` pins an animation to its
 # start frame only when it is in effect at creation; applied later it freezes whatever frame the
 # animation had reached by then.
-DISABLE_ANIMATIONS_CSS = get_required_path(own_repo_rlocation("util/testing/disable-animations.css")).read_text()
+DISABLE_ANIMATIONS_CSS = get_required_path(
+    own_repo_rlocation("util/testing/frontend_visual/disable-animations.css")
+).read_text()
 
 
 # The instant visual harnesses freeze page clocks to, so date-relative text renders the same on
 # every run. 2025-02-01T12:00:00Z.
 FROZEN_NOW_MS = 1_738_411_200_000
-
-
-def chromium_executable() -> str | None:
-    """The hermetic headless-shell executable in this target's runfiles, or None
-    to fall back to Playwright's own browser resolution."""
-    return str(path) if (path := find_path("chrome_headless_shell/chrome-headless-shell")) else None
 
 
 def _font_pinned_profile() -> tempfile.TemporaryDirectory[str]:
@@ -123,5 +108,5 @@ def disable_animations_script() -> str:
 
 
 def frozen_clock_script(now_ms: int) -> str:
-    source = get_required_path(own_repo_rlocation("util/testing/frozen-clock.js")).read_text()
+    source = get_required_path(own_repo_rlocation("util/testing/frontend_visual/frozen-clock.js")).read_text()
     return f"(() => {{ {source} frozenClock({now_ms}); }})();"

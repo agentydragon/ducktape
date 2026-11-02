@@ -10,9 +10,9 @@ py_library(
     name = "visual_assertions",
     srcs = ["visual_assertions.py"],
     deps = [
-        "//util/testing:page_capture",
         "//util/testing:undeclared_outputs",
-        "//util/testing:visual_capture",
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:page_capture",
         "@pypi//playwright",
     ],
 )
@@ -22,8 +22,8 @@ py_library(
     srcs = ["visual_fixtures.py"],
     deps = [
         ":app",
-        "//util/testing:viewports",
-        "//util/testing:visual_capture",
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:viewports",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
     ],

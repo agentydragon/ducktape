@@ -19,7 +19,7 @@ py_library(
     name = "visual_browser",
     srcs = ["visual_browser.py"],
     deps = [
-        "//util/testing:visual_capture",
+        "//util/testing/frontend_visual:capture",
         "@pypi//playwright",
     ],
 )

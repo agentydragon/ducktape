@@ -187,7 +187,7 @@ ts_library(
 
 ### Waiting
 
-**Never sleep a fixed duration; wait for the condition** (Playwright `wait_for_selector`/`wait_for_function`/`wait_for_load_state("networkidle")`; `wait_for_stable` from <util/testing/page_capture.py> for finished rendering). If an app-internal condition has nothing to wait on, expose a flag/attribute/event. In tests, assert ordering, not elapsed time.
+**Never sleep a fixed duration; wait for the condition** (Playwright `wait_for_selector`/`wait_for_function`/`wait_for_load_state("networkidle")`; `wait_for_stable` from <util/testing/frontend_visual/page_capture.py> for finished rendering). If an app-internal condition has nothing to wait on, expose a flag/attribute/event. In tests, assert ordering, not elapsed time.
 
 **Gotcha:** never await `document.getAnimations()` in visual tests — `DISABLE_ANIMATIONS_CSS` pauses animations, so `finished` never settles.
 

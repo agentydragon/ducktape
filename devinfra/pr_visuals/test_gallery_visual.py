@@ -12,11 +12,11 @@ from PIL import Image, ImageDraw
 from playwright.async_api import expect
 
 from devinfra.pr_visuals.publisher import DownloadedVisualTest, build_bundle, target_slug
-from util.testing.viewports import Viewport
-from util.testing.visual_capture import VisualHarness, VisualPage
+from util.testing.frontend_visual.capture import VisualHarness, VisualPage
+from util.testing.frontend_visual.viewports import Viewport
 from util.visual_review import VisualReviewAsset, VisualReviewManifest
 
-pytest_plugins = ("util.testing.visual_fixtures",)
+pytest_plugins = ("util.testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 HEAD_SHA = "0123456789abcdef0123456789abcdef01234567"

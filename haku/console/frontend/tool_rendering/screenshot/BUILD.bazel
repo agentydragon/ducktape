@@ -79,9 +79,9 @@ py_library(
     srcs = ["preview_visual.py"],
     deps = [
         "//util/bazel:runfiles",
-        "//util/testing:viewports",
-        "//util/testing:visual_capture",
-        "//util/testing:visual_fixtures",
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:fixtures",
+        "//util/testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pydantic",
         "@pypi//pytest",

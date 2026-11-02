@@ -80,9 +80,9 @@ from finance.plaid.spend.sustainability import (
 )
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
-from util.testing.frontend_visual import deterministic_browser_context
+from util.testing.frontend_visual.capture import VisualPage, playwright_trace
+from util.testing.frontend_visual.context import deterministic_browser_context
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_capture import VisualPage, playwright_trace
 
 # pytest_plugins loads util.playwright by name; Gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright

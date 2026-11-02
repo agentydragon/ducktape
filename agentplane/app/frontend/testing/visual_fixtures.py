@@ -4,8 +4,8 @@ import pytest
 import pytest_asyncio
 
 from agentplane.app.frontend.testing.app import IDLE_THREAD, AgentplaneFixture, Scene
-from util.testing.viewports import DESKTOP, MOBILE, Viewport
-from util.testing.visual_capture import VisualPage
+from util.testing.frontend_visual.capture import VisualPage
+from util.testing.frontend_visual.viewports import DESKTOP, MOBILE, Viewport
 
 # Case ids name the published screenshots, so these keep the ids every test has used.
 DESKTOP_AND_MOBILE = pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])

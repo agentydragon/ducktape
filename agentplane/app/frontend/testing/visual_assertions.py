@@ -6,9 +6,9 @@ from textwrap import dedent
 
 from playwright.async_api import FloatRect, Locator, Page, expect
 
-from util.testing.page_capture import wait_for_stable
+from util.testing.frontend_visual.capture import VisualPage
+from util.testing.frontend_visual.page_capture import wait_for_stable
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_capture import VisualPage
 
 _SCROLL = "[data-disclosure-demo-scroll]"
 
