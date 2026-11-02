@@ -120,6 +120,7 @@ grafana_dashboard_visual_test(
     env = {
         "GRAFANA_DASHBOARD_RLOCATION": "$(rlocationpath %s)" % dashboard,
         "GRAFANA_FIXTURE_RLOCATION": "$(rlocationpath %s)" % fixture,
+        "INJECT_QUERY_ERROR": "1" if name == "piraeus_error" else "0",
     },
     main = "//grafana/visual_tests:test_image_renderer_spike.py",
     requires_docker = True,
@@ -139,4 +140,37 @@ grafana_dashboard_visual_test(
 ) for name, dashboard, fixture in [
     ("piraeus", ":piraeus-storage.json", ":visual_fixtures/piraeus-storage.json"),
     ("node_memory", ":node-memory.json", ":visual_fixtures/node-memory.json"),
+    ("piraeus_error", ":piraeus-storage.json", ":visual_fixtures/piraeus-storage.json"),
+]]
+
+# Test real PromQL and an injected panel error in the renderer's own browser.
+[py_test(
+    name = "renderer_spike_query_backed_" + scenario,
+    srcs = ["//grafana/visual_tests:test_query_backed_renderer_spike.py"],
+    data = [":piraeus-storage.json"],
+    env = {
+        "GRAFANA_DASHBOARD_RLOCATION": "$(rlocationpath :piraeus-storage.json)",
+        "RENDER_SCENARIO": scenario,
+    },
+    main = "//grafana/visual_tests:test_query_backed_renderer_spike.py",
+    requires_docker = True,
+    tags = ["manual"],
+    deps = [
+        ":piraeus_metrics",
+        "//grafana/visual_tests:visual_harness",
+        "//third_party/containers:grafana_image_renderer_spike",
+        "//third_party/containers:grafana_visual",
+        "//third_party/containers:prometheus_visual",
+        "//third_party/containers:ryuk",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//docker",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+) for scenario in [
+    "valid",
+    "invalid-query",
+    "filtered",
 ]]

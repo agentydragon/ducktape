@@ -10,6 +10,7 @@ package(
 exports_files([
     "dashboard_visual_test.py",
     "test_image_renderer_spike.py",
+    "test_query_backed_renderer_spike.py",
 ])
 
 py_library(

@@ -28,9 +28,14 @@ def test_image_renderer(tmp_path: Path) -> None:
     dashboard = json.loads(dashboard_path.read_text())
     fixture = json.loads(get_required_path(os.environ["GRAFANA_FIXTURE_RLOCATION"]).read_text())
     validate_fixture(dashboard, fixture)
+    if os.environ.get("INJECT_QUERY_ERROR") == "1":
+        dashboard["panels"] = [panel for panel in dashboard["panels"] if panel.get("id") == 26]
+        dashboard_path = tmp_path / "broken-panel-dashboard.json"
+        dashboard_path.write_text(json.dumps(dashboard))
     load_oci_image(grafana_image_renderer_spike.IMAGE)
     seen: list[str] = []
     missing: list[str] = []
+    injected: list[str] = []
 
     with grafana_dashboard(
         tmp_path, dashboard_path, "", render_fixture=True, variables=fixture.get("variables", {})
@@ -43,6 +48,12 @@ def test_image_renderer(tmp_path: Path) -> None:
             def do_POST(self) -> None:
                 if self.path.startswith("/api/ds/query"):
                     body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                    if os.environ.get("INJECT_QUERY_ERROR") == "1" and any(
+                        q.get("requestId") == "26A" for q in body["queries"]
+                    ):
+                        injected.append("26A")
+                        self.reply(400, b'{"message":"injected query failure"}', "application/json")
+                        return
                     try:
                         results = {}
                         for query in body["queries"]:
@@ -127,14 +138,21 @@ def test_image_renderer(tmp_path: Path) -> None:
             response = httpx.get(
                 base + "/render?" + urlencode(params), headers={"X-Auth-Token": "spike"}, timeout=45, trust_env=False
             )
+            if os.environ.get("INJECT_QUERY_ERROR") == "1":
+                assert injected, "the deliberately failing panel was not queried"
+                (undeclared_outputs_dir() / "error-response.txt").write_text(f"HTTP {response.status_code}\n")
+                if response.status_code != 200:
+                    return
             if response.status_code != 200:
                 raise AssertionError(f"renderer returned {response.status_code}: {response.text[:500]}")
             png = response.content
             assert png[:8] == b"\x89PNG\r\n\x1a\n"
             width, height = struct.unpack(">II", png[16:24])
             assert width == 1440, width
-            assert height > 1200, height
-            assert seen, "renderer did not request any recorded dashboard queries"
+            assert height > 200, height
+            if os.environ.get("INJECT_QUERY_ERROR") != "1":
+                assert height > 1200, height
+                assert seen, "renderer did not request any recorded dashboard queries"
             assert not missing, missing
             output = undeclared_outputs_dir()
             (output / "renderer-dashboard.png").write_bytes(png)
