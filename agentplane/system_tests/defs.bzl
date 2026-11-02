@@ -26,8 +26,8 @@ _STACKS = {
     "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = [_HARNESSES_LAYOUT]),
 }
 
-def _k3s_suite(name, srcs, deps, stack, tags, profile_guest, boot_evidence, persistent):
-    """Run a Python suite entrypoint against one session-scoped k3s stack."""
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False):
+    """Run one suite with retained infrastructure and fresh per-action application state."""
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
     if profile_guest and stack != "vm":
@@ -62,16 +62,14 @@ def _k3s_suite(name, srcs, deps, stack, tags, profile_guest, boot_evidence, pers
             "K3S_PROFILE_GUEST_ROOT": "1" if profile_guest else "0",
         }
 
-        # VM layers stay on disk; Pod runners use a different tmpfs image store.
-        properties["test.runner-recycling-key"] = "k3s-vm"
     if config.real_model:
         properties["test.env-secrets"] = "OPENAI_API_KEY"
         suite_tags.append("live_openai_api")
-    if persistent:
-        env["K3S_PERSISTENCE"] = "1"
-        properties |= K3S_PERSISTENCE_PROPERTIES | {
-            "test.runner-recycling-key": "k3s-persistence-v7-" + ("vm" if config.vm else "pod"),
-        }
+
+    # VM layers stay on disk; Pod/MCP/real-model suites use a separate tmpfs baseline.
+    properties |= K3S_PERSISTENCE_PROPERTIES | {
+        "test.runner-recycling-key": "k3s-persistence-v7-" + ("vm" if config.vm else "pod"),
+    }
     py_test(
         name = name,
         size = "enormous",
@@ -85,17 +83,3 @@ def _k3s_suite(name, srcs, deps, stack, tags, profile_guest, boot_evidence, pers
             "//agentplane/system_tests/k3s:system_test_target",
         ],
     )
-
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False):
-    """Declare the ordinary suite and a manual retained-infrastructure comparison."""
-    for persistent in [False, True]:
-        _k3s_suite(
-            name = name + "_persistent" if persistent else name,
-            srcs = srcs,
-            deps = deps,
-            stack = stack,
-            tags = tags + (["manual"] if persistent and "manual" not in tags else []),
-            profile_guest = profile_guest,
-            boot_evidence = boot_evidence,
-            persistent = persistent,
-        )

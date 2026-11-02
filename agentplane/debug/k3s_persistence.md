@@ -2,10 +2,10 @@
 
 ## Expansion to every k3s application suite
 
-The v7 persistence baseline generates a manual `_persistent` variant for every `k3s_suite` declaration,
-covering Pod, Dispatcher, MCP Actions, MCP Services, normal VM, manual VM, profile VM and real-model.
-The original targets and their CI selection are unchanged. Variant generation shares each declaration's
-sources, dependencies, fixture and profile/boot flags, so scenarios cannot drift between comparisons.
+Persistence is the default for every `k3s_suite` declaration: Pod, Dispatcher, MCP Actions,
+MCP Services, normal VM, manual VM, profile VM and real-model. Their standard targets use retained
+infrastructure directly; the separate manual comparison targets have been removed. Existing manual
+and live-model tags continue to control suite selection. Application fixtures remain fresh per action.
 
 The retained baseline is k3s plus cert-manager/trust-manager, with KubeVirt and Kyverno added for VM
 suites. VM snapshots have a separate recycling key, disk-backed image layers and the existing 8-unit
@@ -20,10 +20,9 @@ provisioner's StorageClass, and detaches every owned loop device before certifyi
 Failures leave the marker dirty for a cold rebuild. The existing lifecycle and bare-cluster probes
 retain their diagnostic semantics.
 
-Current target names use `_persistent`, and the runtime opt-in is `K3S_PERSISTENCE=1`.
-The naming change also starts fresh `k3s-persistence-v7-{pod,vm}` snapshot families; their first
-runs rebuild the baseline. Historical commands and commit-pinned links below retain their original
-names so the evidence remains reproducible.
+The current snapshot families are `k3s-persistence-v7-{pod,vm}`. Every application stack uses
+persistence without an environment opt-in. Historical commands and commit-pinned links below retain
+the comparison-target names used when those measurements were collected.
 
 ### Non-VM cold and warm results
 
@@ -134,30 +133,30 @@ The successful final run does not erase these earlier failures:
   execution produced the logical test result in each case; logical run/attempt counts alone hide
   this physical work. No snapshot-save failure or causal link to persistence is established.
 
-Ordinary required CI checks passed at the tested runtime source. These findings keep the feature a
-manual opt-in: setup savings are demonstrated, but reliable fleet warm availability and an end-to-end
-2x CI improvement are not established.
+Ordinary required CI checks passed at the measured runtime source. Persistence is now enabled in the
+standard suite targets. The recorded reliability issues remain unresolved; setup savings do not
+establish reliable fleet warm availability or an end-to-end 2x CI improvement.
 
 ### Reproduction and limits
 
 Each command uses `bbr test --config=ci --test_tag_filters= --nocache_test_results` with the explicit
-variant labels. The final all-suite command additionally passes `--test_arg=--log-cli-level=WARNING`
+standard suite labels. The final all-suite command additionally passes `--test_arg=--log-cli-level=WARNING`
 so successful cleanup's API warnings remain visible. The eight labels are:
 
-- `//agentplane/system_tests/suites:test_pod_persistent`
-- `//agentplane/system_tests/suites:test_dispatcher_persistent`
-- `//agentplane/system_tests/suites:test_vm_persistent`
-- `//agentplane/system_tests/suites:test_vm_manual_persistent`
-- `//agentplane/system_tests/suites:test_vm_profile_persistent`
-- `//agentplane/system_tests/suites:test_real_model_persistent`
-- `//agentplane/system_tests/suites/mcp:test_actions_persistent`
-- `//agentplane/system_tests/suites/mcp:test_services_persistent`
+- `//agentplane/system_tests/suites:test_pod`
+- `//agentplane/system_tests/suites:test_dispatcher`
+- `//agentplane/system_tests/suites:test_vm`
+- `//agentplane/system_tests/suites:test_vm_manual`
+- `//agentplane/system_tests/suites:test_vm_profile`
+- `//agentplane/system_tests/suites:test_real_model`
+- `//agentplane/system_tests/suites/mcp:test_actions`
+- `//agentplane/system_tests/suites/mcp:test_services`
 
 The real-model target still requests the existing `OPENAI_API_KEY` secret. Changed Python libraries
 were also named directly for lint/type aspects; repository hooks passed. Raw invocation, native action,
 JUnit, span and persistence identity artifacts remain under the task scratch directory's `all-k3s/`.
-Snapshot-save cost, eviction behavior, hardware partitions and fleet warm availability remain limits
-on a production decision. Ordinary targets do not opt in; no production rollout is claimed.
+The samples do not quantify snapshot-save cost, eviction rates or fleet warm availability across
+hardware partitions. Every standard suite now uses persistence.
 
 ## PostgreSQL reuse: no measured benefit, removed
 
@@ -179,7 +178,7 @@ and clean/dirty ownership marker, and adds `allow-remote-snapshots=true`,
 `remote-snapshot-save-policy=always`, and `snapshot-read-policy=newest` only to manual persistence actions.
 This lets a changed baseline rebuild cold and replace the prepared snapshot without a manual key
 bump. Concurrent revisions can replace each other's latest snapshot and cause cold rebuilds; the
-fingerprint prevents reuse of incompatible state. No ordinary target or workflow opts in.
+fingerprint prevents reuse of incompatible state. At that revision, ordinary targets did not opt in; the current default is described above.
 
 BuildBuddy's public implementation rejects updates to a restored local-only test snapshot before
 applying its save policy, so `always` alone is insufficient. Remote snapshots are required for this

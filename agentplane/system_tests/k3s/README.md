@@ -9,26 +9,23 @@ Scripted targets take the `harnesses/environment_tools_layout` image, which carr
 containerd keeps unpacked image layers (its overlayfs snapshotter's root) on a tmpfs, except on a stack
 with VM Sandboxes ([measurements](debug/stack_timings.md#image-layers-in-memory-2026-10-21)).
 
-The RBE platform recycles a runner after a passing action, on the same executor. A stack removes its
-Pods when it ends; the next stack on that runner keeps containerd's image store, resets the rest of the
-node, and streams only the blobs containerd lacks ([measurements](debug/stack_timings.md#recycled-runners-2026-10-23)).
-VM system tests use a separate `test.runner-recycling-key` so their disk-backed layers and pod tests'
-tmpfs layers keep separate image stores.
+Every `k3s_suite` retains live k3s and cert-manager/trust-manager in hosted RBE snapshots. VM suites
+also retain KubeVirt and Kyverno. This is the default for Pod, Dispatcher, both MCP suites,
+normal/manual/profile VM suites and real-model tests; there are no separate persistence variants.
+The existing manual/live tags still determine which suites run in CI, and real-model tests require
+`OPENAI_API_KEY`.
 
-Every `k3s_suite` also declares a manual `<name>_persistent` target from the same sources,
-fixture, dependencies and scenario flags. These retain live k3s and PKI controllers; VM variants also
-retain KubeVirt and Kyverno. The eight variants cover Pod, Dispatcher, both MCP suites, normal/manual/profile
-VM suites and real-model tests. The real-model variant still requires `OPENAI_API_KEY` and keeps its
-`live_openai_api` tag. Explicit runs must override CI's manual/live tag filters.
-
-Pod/MCP/real-model variants share one tmpfs snapshot family; VM variants share a separate disk-backed
-family with the ordinary VM resource estimate. Baseline fingerprints include the layer mode,
+Pod/MCP/real-model suites share one tmpfs snapshot family; VM suites share a separate disk-backed
+family with the VM resource estimate. Baseline fingerprints include the layer mode,
 installation/cleanup helpers, k3s, CRDs, PKI releases/images, and VM releases/images/configuration when
-applicable. Changed inputs rebuild cold. Remote snapshots save the refreshed baseline for later actions.
+applicable. A missing, unhealthy, dirty or incompatible baseline rebuilds cold. Remote snapshots save
+the refreshed baseline for later actions.
+
 Applications, PostgreSQL, model endpoints, MCP fixtures, certificates/trust and collectors are recreated.
 VM workspace claims, PVs, StorageClass and loop devices are removed before marking the baseline clean;
-guest shutdown checks and the selected boot/profile settings are preserved. Ordinary targets still stop k3s.
-The bare persistence and lifecycle probes remain separate diagnostics, rather than application variants.
+guest shutdown checks and the selected boot/profile settings are preserved. k3s and the retained
+controllers remain running after successful teardown. The bare persistence and lifecycle probes cover
+cross-action reuse and cold-rebuild/ownership behavior separately.
 See the [persistence evidence](../../debug/k3s_persistence.md).
 
 Setup, each image import and teardown use the same OpenTelemetry tracer as the scenarios,
