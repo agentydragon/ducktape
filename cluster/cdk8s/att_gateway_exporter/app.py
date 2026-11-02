@@ -11,7 +11,10 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from grafana_grafanadashboard_crds.org.integreatly.grafana import GrafanaDashboardSpecInstanceSelector
+from grafana_grafanadashboard_crds.org.integreatly.grafana import (
+    GrafanaDashboardSpecDatasources,
+    GrafanaDashboardSpecInstanceSelector,
+)
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsScheme,
@@ -204,6 +207,7 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name=NAME, namespace=_NAMESPACE),
         instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels={"dashboards": "grafana"}),
         folder="Network",
+        datasources=[GrafanaDashboardSpecDatasources(input_name="DS_LOKI", datasource_name="Loki")],
         config_map_ref=DASHBOARD.config_map_ref(),
     )
     return chart
