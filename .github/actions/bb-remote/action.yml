@@ -47,11 +47,12 @@ inputs:
   env_overrides:
     description: >
       Newline-separated KEY=VALUE pairs forwarded to the runner via
-      x-buildbuddy-platform.env-overrides. Only still used by the
-      props-agents job in .github/workflows/push-images.yml, which pushes
-      to the private props registry from inside the BB runner VM. The GHCR
-      push path (the matrix in the same workflow) downloads OCI layouts to
-      the runner and calls `crane push` directly, so it doesn't need this.
+      x-buildbuddy-platform.env-overrides. Active bazel-ci.yml forwards PR
+      identity and BuildBuddy invocation IDs this way because the remote VM
+      does not inherit the GitHub Actions environment. The disabled
+      props-agents job in push-images.yml also uses it for registry access.
+      The GHCR image matrix downloads OCI layouts to the GitHub runner and
+      calls `crane push` there.
     required: false
     default: ""
   runner_container_image:

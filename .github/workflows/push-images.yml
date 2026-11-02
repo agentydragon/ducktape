@@ -20,8 +20,8 @@
 # Credentials live exactly where they should: registry auth happens on the GitHub
 # runner, not through the BB runner VM.
 #
-# Also pushes the props *agent* images to the props registry (not GHCR) via the
-# `props-agents` job below — folded in from the former props-images.yml.
+# The `props-agents` job below retains the former Props image-push path, but is
+# disabled while Props is down. The decision to revive or remove it is open.
 name: Push Images
 
 on:
@@ -232,8 +232,9 @@ jobs:
           python3 -m devinfra.ci.push_image \
             --name "$IMAGE_NAME" --registry "$REGISTRY" --oci-dir "$OCI_DIR"
 
-  # Props agent images go to the props registry (not GHCR): the props backend's
-  # registry proxy fronts Forgejo, and the orchestrator + critic-dev flow pull
+  # If re-enabled, Props agent images go to the props registry (not GHCR).
+  # The props backend's registry proxy fronts Forgejo, and the orchestrator
+  # + critic-dev flow pull
   # and push agent / critic-variant images there at runtime. They're pushed by
   # the bespoke //props/agents:push_images_bin binary (which handles the critic
   # variants and the digest+tag scheme), not the GHCR matrix above. Gated on

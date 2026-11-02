@@ -12,7 +12,8 @@ Blocks PR creation while allowing normal dev flows (push, branch, comment, revie
 
 1. Place nginx config, adjust `server_name` and upstream
 2. Install pre-receive hook globally (`/var/lib/gitea/custom/hooks/pre-receive.d/deny-refs-for`) or per-repo
-3. Start policy server: `uvicorn gitea_pr_gate.policy_server_fastapi:app --host 127.0.0.1 --port 9099`
+3. From the repository root, with the Python dependencies installed, start the policy server:
+   `uvicorn x.gitea.pr_gate.policy_server_fastapi:app --host 127.0.0.1 --port 9099`
 
 ## Policy Server Config
 
