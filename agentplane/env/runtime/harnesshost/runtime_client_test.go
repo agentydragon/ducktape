@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/retained"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
+	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -285,6 +286,57 @@ func TestHostPublishesExactIntentAndIdleFacts(t *testing.T) {
 	second := read(true)
 	if !second.Intent.ExecutionFenced || !proto.Equal(second.Intent.Binding, running.Binding) {
 		t.Fatalf("Host report did not bind the same-generation fence: %v", second)
+	}
+}
+
+func TestAggregateStatusWakesHostReportAndStatusWait(t *testing.T) {
+	r, ctx := boundaryHost(t)
+	if err := r.ApplyIntent(ctx, intentFor(r, 1, runtimepb.LifecycleIntent_RUNNING)); err != nil {
+		t.Fatal(err)
+	}
+	statusDone := make(chan error, 1)
+	go func() { statusDone <- r.lifecycle.wait(ctx, harnesshostlifecycle.Quiesced) }()
+	draining := intentFor(r, 2, runtimepb.LifecycleIntent_QUIESCING)
+	if err := r.ApplyIntent(ctx, draining); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.lifecycle.waitFor(ctx, func() (bool, error) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.nativeStopped, nil
+	}); err != nil {
+		t.Fatalf("wait for native stop: %v", err)
+	}
+	draining.ExecutionFenced = true
+	if err := r.ApplyIntent(ctx, draining); err != nil {
+		t.Fatal(err)
+	}
+	if err := publishHostIntentStatus(ctx, r, draining, true); err != nil {
+		t.Fatal(err)
+	}
+	result, err := r.lifecycle.state.WatchFor(ctx, harnesshostlifecycle.HostReportResource(harnesshostlifecycle.HostReport{}).Metadata(),
+		state.WithEventTypes(state.Created, state.Updated),
+		state.WithCondition(func(value resource.Resource) (bool, error) {
+			report := value.(interface {
+				TypedSpec() *harnesshostlifecycle.HostReport
+			}).TypedSpec()
+			return report.Intent != nil && report.Intent.Mode == runtimepb.LifecycleIntent_QUIESCING &&
+				report.Intent.ExecutionFenced && report.Report != nil && report.Report.Ready &&
+				report.Report.Facts.GetQuiesceStage() == environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED, nil
+		}))
+	if err != nil {
+		t.Fatalf("status-only aggregate progress did not reach Host report: %v", err)
+	}
+	if result == nil {
+		t.Fatal("quiesced Host report was absent")
+	}
+	select {
+	case err := <-statusDone:
+		if err != nil {
+			t.Fatalf("aggregate status wait: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("aggregate status did not wake its waiter")
 	}
 }
 

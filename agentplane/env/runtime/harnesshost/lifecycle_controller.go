@@ -65,8 +65,9 @@ func (c *harnessHostLifecycleController) reconcile(ctx context.Context, r contro
 	write := func() error {
 		changed, err := harnesshostlifecycle.WriteStatus(ctx, r, current)
 		if changed {
-			c.l.host.changed()
-			// This controller does not subscribe to its output, so queue the next aggregate step explicitly.
+			// The report controller observes this status through COSI. This
+			// controller does not subscribe to its own output, so queue the
+			// next aggregate step explicitly.
 			r.QueueReconcile()
 		}
 		return err
@@ -314,7 +315,6 @@ func (c *harnessHostLifecycleController) reconcile(ctx context.Context, r contro
 		changed, err := harnesshostlifecycle.WriteStatus(ctx, r, current)
 		c.l.host.mu.Unlock()
 		if changed {
-			c.l.host.changed()
 			r.QueueReconcile()
 		}
 		return err
