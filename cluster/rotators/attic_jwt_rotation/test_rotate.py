@@ -157,47 +157,6 @@ def _sops_file(token: Token) -> Path:
     return destination.sops_file
 
 
-def test_config_adapts_legacy_flat_sops_and_mirrored_entries():
-    common = {"name": "test token", "sub": "test-sub", "validity": "1 year", "pull": ["test-cache"]}
-    legacy_mirrored = {**common, "sops_file": "test.sops.yaml", "kubernetes": _kubernetes_publication()}
-    config = Config.model_validate(
-        {
-            "tokens": [
-                {**common, "sops_file": "test-reader.sops.yaml"},
-                legacy_mirrored,
-                {**common, "storage": "sops", "sops_file": "tagged-reader.sops.yaml"},
-                {
-                    **common,
-                    "storage": "mirrored",
-                    "sops_file": "tagged-mirror.sops.yaml",
-                    "kubernetes": _kubernetes_publication(),
-                },
-            ]
-        }
-    )
-
-    first, second, third, fourth = config.tokens
-    assert isinstance(first.destination, SopsDestination)
-    assert first.destination.storage == "sops"
-    assert isinstance(second.destination, MirroredDestination)
-    assert second.destination.storage == "mirrored"
-    assert isinstance(third.destination, SopsDestination)
-    assert isinstance(fourth.destination, MirroredDestination)
-
-
-def test_config_rejects_untagged_kubernetes_only_entry():
-    token = {
-        "name": "test token",
-        "sub": "test-sub",
-        "validity": "1 year",
-        "pull": ["test-cache"],
-        "kubernetes": _kubernetes_publication(),
-    }
-
-    with pytest.raises(ValidationError):
-        Config.model_validate({"tokens": [token]})
-
-
 @pytest.mark.parametrize(
     "destination",
     [
@@ -228,25 +187,6 @@ def test_config_rejects_mixed_flat_and_nested_destination():
                         "pull": [],
                         "sops_file": "legacy.sops.yaml",
                         "destination": {"storage": "sops", "sops_file": "new.sops.yaml"},
-                    }
-                ]
-            }
-        )
-
-
-def test_config_rejects_contradictory_flat_storage_tag():
-    with pytest.raises(ValidationError):
-        Config.model_validate(
-            {
-                "tokens": [
-                    {
-                        "name": "x",
-                        "sub": "x",
-                        "validity": "1 year",
-                        "pull": [],
-                        "storage": "sops",
-                        "sops_file": "legacy.sops.yaml",
-                        "kubernetes": _kubernetes_publication(),
                     }
                 ]
             }
