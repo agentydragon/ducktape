@@ -71,6 +71,32 @@ def test_ready_postgres_pod_ignores_terminating_candidate() -> None:
         stack._ready_fixture_postgres_pod(pods, [_postgres_replica_set("replicaset-1")], "deployment-1")
 
 
+@pytest.mark.parametrize("link", ["pod", "replica_set"])
+@pytest.mark.parametrize("owner", [None, {"controller": False}, {"kind": "StatefulSet"}, {"uid": "unrelated-owner"}])
+def test_ready_postgres_pod_ignores_unrelated_ready_pod(link: str, owner: dict[str, Any] | None) -> None:
+    ready = _postgres_pod("ready", phase="Running", ready=True)
+    unrelated = _postgres_pod("unrelated", phase="Running", ready=True, replica_set_uid="unrelated-replicaset")
+    unrelated_replica_set = _postgres_replica_set("unrelated-replicaset")
+    metadata = unrelated["metadata"] if link == "pod" else unrelated_replica_set["metadata"]
+    if owner is None:
+        metadata.pop("ownerReferences")
+    else:
+        metadata["ownerReferences"][0].update(owner)
+
+    selected = stack._ready_fixture_postgres_pod(
+        [unrelated, ready], [_postgres_replica_set("replicaset-1"), unrelated_replica_set], "deployment-1"
+    )
+
+    assert selected["metadata"]["uid"] == "ready"
+
+
+def test_ready_postgres_pod_ignores_running_unready_candidate() -> None:
+    pods = [_postgres_pod("unready", phase="Running", ready=False)]
+
+    with pytest.raises(RuntimeError, match=r"expected one Ready, non-terminating fixture PostgreSQL Pod.*found 0"):
+        stack._ready_fixture_postgres_pod(pods, [_postgres_replica_set("replicaset-1")], "deployment-1")
+
+
 @pytest.mark.parametrize("permission", [None, "", "0", "true"])
 def test_no_retention_without_executor_permission(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, permission: str | None
