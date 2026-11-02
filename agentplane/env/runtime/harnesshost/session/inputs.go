@@ -15,15 +15,7 @@ import (
 func (m *Manager) publishSession(s *Session, demand bool) {
 	m.publishMu.Lock()
 	defer m.publishMu.Unlock()
-	input, found, err := componentRead[Input](m.ctx, m.state, s.id)
-	if err != nil {
-		m.fail(err)
-		return
-	}
-	previous := input
-	if demand {
-		input.Demand++
-	}
+	var input Input
 	s.mu.Lock()
 	input.Harness = s.record.Harness
 	input.SetupRequested = s.record.SetupScript != ""
@@ -35,18 +27,18 @@ func (m *Manager) publishSession(s *Session, demand bool) {
 	adapter := s.adapter
 	s.mu.Unlock()
 	input.DispatchBlocked = adapter == nil || adapter.BlocksCommandDispatch()
-	if !found || previous != input {
-		m.fail(publish(m.ctx, m.state, s.id, input))
-	}
+	// COSI retries this updater on conflict, so each demand increment starts from the current spec.
+	m.fail(safe.StateModify(m.ctx, m.state, componentResource(s.id, Input{}), func(current *typed.Resource[Input, componentExtension[Input]]) error {
+		next := input
+		next.Demand = current.TypedSpec().Demand
+		if demand {
+			next.Demand++
+		}
+		*current.TypedSpec() = next
+		return nil
+	}, state.WithUpdateOwner(HostOwner)))
 	drain := DrainInput{Inspecting: input.Inspections != 0 || input.InspectionRunning}
-	previousDrain, found, err := componentRead[DrainInput](m.ctx, m.state, s.id)
-	if err != nil {
-		m.fail(err)
-		return
-	}
-	if !found || previousDrain != drain {
-		m.fail(publish(m.ctx, m.state, s.id, drain))
-	}
+	m.fail(publish(m.ctx, m.state, s.id, drain))
 }
 
 func (s *Session) wake() {
