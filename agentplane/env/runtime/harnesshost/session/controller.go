@@ -27,7 +27,7 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 			{Namespace: harnesshostlifecycle.Namespace, Type: InputType, Kind: controller.InputQPrimary},
 			{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.DesiredStateType, Kind: controller.InputQMapped},
 			{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.AggregateStatusType, Kind: controller.InputQMapped},
-			{Namespace: harnesshostlifecycle.Namespace, Type: codexappserver.RuntimeType, Kind: controller.InputQMapped},
+			{Namespace: harnesshostlifecycle.Namespace, Type: codexappserver.StatusType, Kind: controller.InputQMapped},
 			{Namespace: harnesshostlifecycle.Namespace, Type: OperationType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: LifecycleStatusType, Kind: controller.OutputExclusive}},
@@ -49,7 +49,7 @@ func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger
 	}
 	result := make([]resource.Pointer, 0, rows.Len())
 	rows.ForEach(func(row *typed.Resource[Input, componentExtension[Input]]) {
-		if ptr.Type() == codexappserver.RuntimeType && row.TypedSpec().Harness != sessionpb.Harness_HARNESS_CODEX {
+		if ptr.Type() == codexappserver.StatusType && row.TypedSpec().Harness != sessionpb.Harness_HARNESS_CODEX {
 			return
 		}
 		result = append(result, row.Metadata())
@@ -255,7 +255,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			shared := s.deps.codexAppServer != nil && s.record.Harness == sessionpb.Harness_HARNESS_CODEX
 			s.mu.Unlock()
 			if shared {
-				status, found, err := codexappserver.ReadRuntime(ctx, r)
+				status, found, err := codexappserver.ReadStatus(ctx, r)
 				if err != nil {
 					return err
 				}
