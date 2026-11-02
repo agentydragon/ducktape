@@ -30,6 +30,65 @@ disabled and a root shell when it is enabled.
   resources and joins a host worker barrier; those semantics are not automatically appropriate for
   the Runtime's coordinator-owned workers.
 
+## Persist the environment seal in COSI
+
+Replace `sessions/sealed` and the file-backed portion of `EnvironmentState` with one persistent
+COSI resource owned by the environment lifecycle. Record the sealed incarnation UID, and preserve
+the quiesce and adoption ordering: a restart must not reopen the same sealed incarnation, and the
+old incarnation's exact flush must complete before a successor is adopted. Exercise restarts,
+concurrent seal/adoption, persistence failures and successor adoption. Make a hard cutover; do not
+read or import the old marker.
+
+## Store bootstrap events in COSI
+
+Replace `initialization/events.jsonl` with persistent protobuf COSI resources for the bootstrap
+output and terminal result, alongside the existing persistent script selection. Consider one
+resource per ordered event rather than repeatedly rewriting the whole log. Preserve ordered replay,
+durable publication, and the rule that a selected attempt without a terminal result is interrupted
+on restart and never automatically rerun. Give the event sequence and terminal outcome one clear
+authority; test crashes at selection, output and completion boundaries. Make a hard cutover; do not
+read or import the old JSONL file.
+
+Script output is not bounded by the 64 KiB script-input limit. The current log already loads all
+events into memory, but COSI's in-memory backend adds resource metadata and copies. Measure expected
+and noisy output, startup time and memory, and decide retention and replay behavior before choosing
+the event representation; do not silently truncate output or substitute transient COSI watch history
+for durable replay.
+
+## Simplify ownership and process fencing with COSI lifecycle primitives
+
+Revisit the Runtime, Harness Host and Execution owner flocks now that their management services
+share a process. Map each lock's protected state and lifetime across Pod PID 1, subprocess and VM
+systemd supervision, including inherited owner descriptors and the execution companion. Determine
+whether one ownership fence, the COSI backing database's process lock, or another mechanism can
+replace redundant locks while still covering children that outlive their parent.
+
+Use COSI's [exclusive controller outputs, strong inputs and finalizers](https://github.com/cosi-project/runtime/blob/v1.16.2/README.md#controllers)
+and teardown phases to express ownership and cleanup barriers where they can replace private
+coordination. The [Process controller](runtime/supervision/controller.go) already holds a finalizer
+through its native fence; build on that model and consider whether persisted lifecycle resources or
+another COSI backend can improve recovery across Runtime death.
+COSI controller ownership and finalizers describe reconciliation, but the current engine and its
+in-memory state cannot themselves stop a stale external process after the engine dies. Identify
+what enforces each external effect and how a successor proves cleanup before accepting work.
+
+Also evaluate replacing the invocation-specific systemd lifetime marker with a simpler
+systemd-native or COSI-coordinated fence. Preserve the `ConditionPathExists` guarantee that a
+queued launch from a dead invocation cannot execute after its replacement's inventory scan.
+Validate crash and restart, overlapping owners, late starts, uncertain fence outcomes and detached
+descendants for each affected backend. Remove redundant mechanisms only after their guarantees have
+an identified replacement; do not assume the existing set of locks and markers is minimal.
+
+## Reconsider COSI persistence for the Session journal
+
+Keep the SQLite journal as the authority for now, and revisit COSI if a disk-backed implementation
+or a different resource model makes it a good fit. Compare transaction and replay semantics,
+indexed and paged reads, startup and memory use, and write throughput at realistic journal sizes.
+Any replacement must retain atomic command admission, dispatch and event/checkpoint updates,
+commit-before-publication, ordered replay and reconciliation of uncertain native effects. A COSI
+watch is a change notification, not by itself a durable journal. Avoid duplicating journal authority
+in COSI merely to expose observations controllers already need.
+
 ## Use COSI primitives where they fit the lifecycle
 
 COSI runtime is pinned in `third_party/go.mod`; evaluate its APIs against the actual ownership and
