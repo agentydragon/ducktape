@@ -428,8 +428,8 @@ async def test_transaction_explanations_render(
     await expect(rows.get_by_text("Other currency", exact=True)).to_have_count(1)
     await expect(page.get_by_text("can still be real cash flows", exact=False)).to_be_visible()
     if width >= 992:
-        await expect(rows.locator("tbody tr")).to_have_count(13)
-    await page.get_by_text("Showing 13 of 13", exact=True).wait_for()
+        await expect(rows.locator("tbody tr")).to_have_count(14)
+    await page.get_by_text("Showing 14 of 14", exact=True).wait_for()
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     image = f"transactions-{width}.png"
