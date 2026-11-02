@@ -455,8 +455,8 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
     assert deployment["status"].get("readyReplicas") == 1, "the Dispatcher is not Ready"
     assert deployment["spec"]["replicas"] == 1
     image = deployment["spec"]["template"]["spec"]["containers"][0]["image"]
-    app_config = json.loads(await cluster.kubectl("get", "configmap", "app-config", "-o", "json"))
-    policies = yaml.safe_load(app_config["data"]["config.yaml"])["default_policy_sets"]
+    gateway_config = json.loads(await cluster.kubectl("get", "configmap", f"{WORKLOAD}-settings", "-o", "json"))
+    policies = yaml.safe_load(gateway_config["data"]["settings.yaml"])["environment_default_policy_sets"]
     assert isinstance(policies, list)
     assert policies
     assert all(isinstance(name, str) and name for name in policies)
@@ -724,8 +724,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
     assert set(gateway_settings["dispatcher_callers"]) == accounts
     assert set(gateway_settings["wake_callers"]) == accounts
 
-    service_config = json.loads(await cluster.kubectl("get", "configmap", "app-config", "-o", "json"))
-    policies = yaml.safe_load(service_config["data"]["config.yaml"])["default_policy_sets"]
+    policies = gateway_settings["environment_default_policy_sets"]
     assert isinstance(policies, list)
     assert policies
     suffix = uuid4().hex[:8]
