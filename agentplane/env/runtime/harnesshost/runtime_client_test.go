@@ -312,9 +312,7 @@ func TestHostUsesCosiExecutionFenceFact(t *testing.T) {
 	if err := r.ApplyIntent(ctx, drain); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.lifecycle.waitFor(ctx, func() (bool, error) {
-		return r.lifecycle.status().Stage == harnesshostlifecycle.Fencing, nil
-	}); err != nil {
+	if err := r.lifecycle.wait(ctx, harnesshostlifecycle.Fencing); err != nil {
 		t.Fatal(err)
 	}
 	drain.ExecutionFenced = true
