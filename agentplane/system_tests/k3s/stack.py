@@ -13,11 +13,13 @@ their plain HTTP URLs satisfy the OAuth endpoint contract.
 
 import contextlib
 import contextvars
+import hashlib
 import io
 import json
 import logging
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -37,14 +39,14 @@ from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_f
 from agentplane.system_tests.cluster import AGENT_SERVICE_ACCOUNT, AUDIENCE, Cluster
 from agentplane.system_tests.k3s import (
     block_storage,
+    bootstrap,
     certificates,
     guest_logs,
+    iptables_rule,
     process_traces,
     rendered_fixture,
     vm_sandboxes,
 )
-from agentplane.system_tests.k3s.bootstrap import Bootstrap
-from agentplane.system_tests.k3s.iptables_rule import ensure_rule
 from agentplane.system_tests.port_forward import PortForward
 from agentplane.system_tests.tracing import tracer
 from agentplane.testing import tls
@@ -64,12 +66,22 @@ CONTAINERD_DEBUG_SOCKET = "/run/k3s/containerd/debug.sock"
 HOSTS_MARKER = "# k3s-env"
 
 
-def run(*command: str, check: bool = True, input_text: str | None = None) -> str:
-    result = subprocess.run(command, capture_output=True, text=True, input=input_text, check=False)
+def run(
+    *command: str,
+    check: bool = True,
+    input_text: str | None = None,
+    timeout: float | None = None,
+    stdout_only: bool = False,
+) -> str:
+    result = subprocess.run(command, capture_output=True, text=True, input=input_text, check=False, timeout=timeout)
     if check and result.returncode:
         raise RuntimeError(
             f"{command[:3]} exited {result.returncode}\nstderr:\n{result.stderr}\nstdout:\n{result.stdout}"
         )
+    if stdout_only:
+        if result.stderr:
+            logger.warning("%s stderr: %s", command[:3], result.stderr.rstrip())
+        return result.stdout
     return result.stdout + result.stderr
 
 
@@ -149,13 +161,28 @@ class K3s:
         self.data_dir = Path("/var/lib/k3s-env")
         self.node_ip = node_ip()
 
-    def kubectl(self, *args: str, check: bool = True, input_text: str | None = None) -> str:
+    def kubectl(
+        self,
+        *args: str,
+        check: bool = True,
+        input_text: str | None = None,
+        timeout: float | None = None,
+        stdout_only: bool = False,
+    ) -> str:
         return run(
-            str(self.binary), "kubectl", "--kubeconfig", str(self.kubeconfig), *args, check=check, input_text=input_text
+            str(self.binary),
+            "kubectl",
+            "--kubeconfig",
+            str(self.kubeconfig),
+            *args,
+            check=check,
+            input_text=input_text,
+            timeout=timeout,
+            stdout_only=stdout_only,
         )
 
     @tracer.start_as_current_span("system_test.k3s.start")
-    def start(self, *, layers_in_memory: bool) -> subprocess.Popen[bytes]:
+    def start(self, *, layers_in_memory: bool, detached: bool = False) -> subprocess.Popen[bytes]:
         _reset_previous_stack(self.data_dir)
         _shadow_kernel_sysctls()
         # Unpacking image layers is bound by writes to the executor's disk. The tmpfs default cap, half of
@@ -205,8 +232,9 @@ class K3s:
             ],
             stdout=log,
             stderr=subprocess.STDOUT,
+            start_new_session=detached,
         )
-        bootstrap = Bootstrap(
+        readiness = bootstrap.Bootstrap(
             process=process,
             binary=self.binary,
             kubeconfig=self.kubeconfig,
@@ -214,14 +242,14 @@ class K3s:
             deadline=time.monotonic() + BOOTSTRAP_TIMEOUT_SECONDS,
         )
         try:
-            bootstrap.wait_for(
+            readiness.wait_for(
                 "get", "node/env", "-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}", expected="True"
             )
             # host-gw routes Pod traffic but does not translate it: without this, Pods cannot reach the internet.
             # A recycled runner already has the rule.
             iptables = self.data_dir / "data/current/bin/aux/iptables"  # the copy k3s ships; the host has none
             masquerade = ("POSTROUTING", "-s", POD_CIDR, "!", "-d", POD_CIDR, "-j", "MASQUERADE")
-            ensure_rule(iptables, table="nat", chain=masquerade[0], rule=masquerade[1:])
+            iptables_rule.ensure_rule(iptables, table="nat", chain=masquerade[0], rule=masquerade[1:])
         except BaseException:
             process.terminate()
             try:
@@ -286,6 +314,10 @@ class K3s:
         k3s instead would block containerd. Preserve its separate log before the cleanup process starts."""
         process.terminate()
         process.wait(timeout=STOP_TIMEOUT_SECONDS)
+        self.cleanup_stopped()
+
+    def cleanup_stopped(self) -> None:
+        """Remove Pods after an owned detached server has exited between test actions."""
         self._preserve_containerd_log()
         binaries = self.data_dir / "data/current/bin"
         crictl_config = self.work / "crictl.yaml"
@@ -506,13 +538,297 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
     }
 
 
+_BASELINE_ROOT = Path("/var/lib/k3s-persistence-v7")
+_BASELINE_MARKER = _BASELINE_ROOT / "server.json"
+
+
+def _baseline_process_start(pid: int) -> str | None:
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text().rsplit(") ", 1)[1].split()
+    except FileNotFoundError:
+        return None
+    return None if stat[0] == "Z" else stat[19]
+
+
+def _baseline_identity(k3s: K3s, pid: int) -> dict[str, str | int]:
+    ticks = _baseline_process_start(pid)
+    if ticks is None:
+        raise RuntimeError(f"k3s process {pid} exited")
+    # A retained process can be alive with a wedged API. Bound the subprocess as well as kubectl's
+    # HTTP request so the warm-cache check cannot wedge the entire test action.
+    resources = json.loads(k3s.kubectl(
+        "get", "node/env", "namespace/kube-system", "-o", "json", "--request-timeout=5s", timeout=10,
+    ))["items"]  # fmt: skip
+    node = next(resource for resource in resources if resource["kind"] == "Node")
+    namespace = next(resource for resource in resources if resource["kind"] == "Namespace")
+    internal_ip = next(address["address"] for address in node["status"]["addresses"] if address["type"] == "InternalIP")
+    if internal_ip != k3s.node_ip:
+        raise RuntimeError(f"retained node InternalIP {internal_ip} differs from current {k3s.node_ip}")
+    return {
+        "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
+        "pid": pid,
+        "process_start_ticks": ticks,
+        "namespace_uid": namespace["metadata"]["uid"],
+        "node_uid": node["metadata"]["uid"],
+        "node_internal_ip": internal_ip,
+    }
+
+
+def _baseline_fingerprint(
+    binary: Path, crds: list[Path], baseline: list[dict[str, Any]], images: dict[str, Path], *, layers_in_memory: bool
+) -> str:
+    digest = hashlib.sha256(b"k3s-persistence-v7\0")
+    digest.update(b"tmpfs\0" if layers_in_memory else b"disk\0")
+    for name, path in [
+        ("k3s", binary),
+        ("stack.py", Path(__file__)),
+        ("bootstrap.py", Path(bootstrap.__file__)),
+        ("certificates.py", Path(certificates.__file__)),
+        ("iptables_rule.py", Path(iptables_rule.__file__)),
+        ("vm_sandboxes.py", Path(vm_sandboxes.__file__)),
+        ("block_storage.py", Path(block_storage.__file__)),
+        *((f"crds/{path.name}", path) for path in crds),
+    ]:
+        # Names and fixed-size digests frame the inputs, including helper changes that affect the
+        # retained baseline. Stream the k3s executable instead of holding another copy in memory.
+        digest.update(name.encode() + b"\0")
+        with path.open("rb") as source:
+            digest.update(hashlib.file_digest(source, "sha256").digest())
+    digest.update(json.dumps(baseline, sort_keys=True).encode())
+    for reference, rloc in sorted(images.items()):
+        digest.update(reference.encode())
+        layout = get_required_path(rloc.read_text().strip())
+        # OCI index manifests bind the config and layer digests without hashing every layer tarball.
+        digest.update((layout / "index.json").read_bytes())
+    return digest.hexdigest()
+
+
+def _baseline_write_marker(marker: dict[str, Any]) -> None:
+    temporary = _BASELINE_MARKER.with_suffix(".tmp")
+    temporary.write_text(json.dumps(marker))
+    temporary.replace(_BASELINE_MARKER)
+
+
+def _baseline_stop_owned(k3s: K3s, previous: dict[str, Any]) -> None:
+    identity = previous["identity"]
+    current_boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+    if current_boot != identity["boot_id"]:
+        return
+    pid = int(identity["pid"])
+    ticks = _baseline_process_start(pid)
+    if ticks is not None and ticks != identity["process_start_ticks"]:
+        raise RuntimeError("persistence marker PID was reused; refusing to reset an unowned process")
+    if ticks is not None:
+        os.kill(pid, signal.SIGTERM)
+        for attempt in Retrying(
+            stop=stop_after_delay(STOP_TIMEOUT_SECONDS),
+            wait=wait_fixed(1),
+            retry=retry_if_exception_type(RuntimeError),
+            reraise=True,
+        ):
+            with attempt:
+                if _baseline_process_start(pid) is not None:
+                    raise RuntimeError(f"owned k3s process {pid} is still alive")
+    k3s.log_path = _BASELINE_ROOT / "k3s.log"
+    k3s.cleanup_stopped()
+
+
+def _baseline_stop_previous() -> None:
+    """Leave retention mode by stopping only the server recorded in the ownership marker."""
+    if _BASELINE_MARKER.exists():
+        retained = K3s(_BASELINE_ROOT, _BASELINE_ROOT / "k3s")
+        _baseline_stop_owned(retained, json.loads(_BASELINE_MARKER.read_text()))
+        _BASELINE_MARKER.unlink()
+
+
+def _baseline_open(source: Path, fingerprint: str, *, layers_in_memory: bool) -> tuple[K3s, dict[str, Any], bool]:
+    # Protect diagnostic callers too: only BuildBuddy's remote exec property grants this lifecycle.
+    if os.environ.get("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE") != "1":
+        raise RuntimeError("retaining k3s requires BuildBuddy's executor persistence permission")
+    _BASELINE_ROOT.mkdir(exist_ok=True)
+    binary = _BASELINE_ROOT / "k3s"
+    k3s = K3s(_BASELINE_ROOT, binary)
+    previous = json.loads(_BASELINE_MARKER.read_text()) if _BASELINE_MARKER.exists() else None
+    if previous is not None:
+        if previous.get("state") not in {"clean", "dirty"}:
+            raise RuntimeError("invalid persistence state marker")
+        if previous["fingerprint"] == fingerprint and previous["state"] == "clean":
+            try:
+                current = _baseline_identity(k3s, int(previous["identity"]["pid"]))
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                logger.warning("retained k3s is unhealthy; rebuilding the owned baseline: %s", exc)
+            else:
+                if current == previous["identity"]:
+                    previous["state"] = "dirty"
+                    _baseline_write_marker(previous)
+                    return k3s, previous, True
+                logger.warning("retained k3s identity changed; rebuilding the owned baseline")
+        else:
+            logger.info(
+                "rebuilding k3s baseline: state=%s, inputs_match=%s",
+                previous["state"],
+                previous["fingerprint"] == fingerprint,
+            )
+        _baseline_stop_owned(k3s, previous)
+        _BASELINE_MARKER.unlink()
+    shutil.copy2(source, binary)
+    previous_outputs = os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR")
+    os.environ["TEST_UNDECLARED_OUTPUTS_DIR"] = str(_BASELINE_ROOT)
+    try:
+        process = k3s.start(layers_in_memory=layers_in_memory, detached=True)
+    finally:
+        if previous_outputs is None:
+            os.environ.pop("TEST_UNDECLARED_OUTPUTS_DIR", None)
+        else:
+            os.environ["TEST_UNDECLARED_OUTPUTS_DIR"] = previous_outputs
+    # Until the marker is durable, this action still owns the process directly. A failed identity
+    # probe or marker write must not leave an unmarked detached server for the next action to reset.
+    with contextlib.ExitStack() as starting:
+        starting.callback(k3s.stop, process)
+        marker = {"state": "dirty", "fingerprint": fingerprint, "identity": _baseline_identity(k3s, process.pid)}
+        _baseline_write_marker(marker)
+        starting.pop_all()
+    return k3s, marker, False
+
+
+def _baseline_evidence(
+    k3s: K3s,
+    fixture: rendered_fixture.RenderedFixture,
+    models: rendered_fixture.Models,
+    pki: list[dict[str, Any]],
+    marker: dict[str, Any],
+    warm: bool,
+) -> dict[str, Any]:
+    pods = json.loads(k3s.kubectl("get", "pods", "-n", fixture.namespace, "-o", "json"))["items"]
+    postgres = [pod for pod in pods if pod["metadata"]["name"].startswith("postgres-")]
+    if len(postgres) != 1:
+        raise RuntimeError(f"expected one fixture PostgreSQL Pod, found {len(postgres)}")
+    controllers = {
+        doc["metadata"]["name"]: k3s.kubectl(
+            "get", "deployment", doc["metadata"]["name"], "-n", "cert-manager", "-o", "jsonpath={.metadata.uid}"
+        )
+        for doc in pki
+        if doc["kind"] == "Deployment"
+    }
+    vm_controllers = vm_sandboxes.baseline_identity(k3s.kubectl) if fixture.vm_sandboxes else {}
+    if warm and vm_controllers != marker.get("vm_controller_uids", {}):
+        raise RuntimeError("retained virtualization identities changed; refusing to mark this baseline clean")
+    marker["vm_controller_uids"] = vm_controllers
+    if warm and controllers != marker["pki_controller_uids"]:
+        raise RuntimeError("retained PKI controller identities changed; refusing to mark this baseline clean")
+    marker["pki_controller_uids"] = controllers
+    return {
+        "outcome": "warm" if warm else "cold",
+        "fingerprint": marker["fingerprint"],
+        "k3s": marker["identity"],
+        "namespace_uid": k3s.kubectl("get", "namespace", fixture.namespace, "-o", "jsonpath={.metadata.uid}"),
+        "postgres_pod_uid": postgres[0]["metadata"]["uid"],
+        "root_certificate_uid": k3s.kubectl(
+            "get", "certificate", "test-runner-root", "-n", "cert-manager", "-o", "jsonpath={.metadata.uid}"
+        ),
+        "root_secret_uid": k3s.kubectl(
+            "get", "secret", "test-runner-root", "-n", "cert-manager", "-o", "jsonpath={.metadata.uid}"
+        ),
+        "collector_namespace_uid": k3s.kubectl("get", "namespace", "monitoring", "-o", "jsonpath={.metadata.uid}"),
+        "pki_controller_uids": controllers,
+        "vm_controller_uids": vm_controllers,
+        "workspace_storage_class_uid": (
+            k3s.kubectl("get", "storageclass", block_storage.STORAGE_CLASS, "-o", "jsonpath={.metadata.uid}")
+            if fixture.vm_sandboxes
+            else None
+        ),
+        "layers_in_memory": not fixture.vm_sandboxes,
+        "model_endpoint": models.url if isinstance(models, rendered_fixture.LocalModel) else None,
+    }
+
+
+def _baseline_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None:
+    """Wait for fixture-owned resources to vanish, leaving only the infrastructure baseline."""
+    namespaces = [doc["metadata"]["name"] for doc in fixture.objects if doc["kind"] == "Namespace"]
+    if set(namespaces) != {fixture.namespace, "systest-egress-credentials"}:
+        raise RuntimeError(f"unexpected fixture namespaces: {namespaces}")
+    sandboxes = json.loads(k3s.kubectl("get", "sandboxes", "-n", fixture.namespace, "-o", "json"))["items"]
+    if sandboxes:
+        raise RuntimeError(f"fixture left {len(sandboxes)} Sandboxes; refusing to recycle it")
+    owned_pvs = [
+        item["metadata"]["name"]
+        for item in json.loads(k3s.kubectl("get", "pv", "-o", "json"))["items"]
+        if item.get("spec", {}).get("claimRef", {}).get("namespace") in namespaces
+    ]
+    for namespace in namespaces:
+        k3s.kubectl("delete", "namespace", namespace, "--wait=true", "--timeout=60s")
+    for name in owned_pvs:
+        k3s.kubectl("delete", "pv", name, "--ignore-not-found=true", "--wait=true", "--timeout=60s")
+    k3s.kubectl("delete", "namespace", "monitoring", "--ignore-not-found=true", "--wait=true", "--timeout=60s")
+    root_certificate = json.loads(
+        k3s.kubectl("get", "certificate", "test-runner-root", "-n", "cert-manager", "-o", "json")
+    )
+    certificate_uid = root_certificate["metadata"]["uid"]
+    requests = json.loads(k3s.kubectl("get", "certificaterequests", "-n", "cert-manager", "-o", "json"))["items"]
+    owned_requests = [
+        item["metadata"]["name"]
+        for item in requests
+        if any(owner["uid"] == certificate_uid for owner in item["metadata"].get("ownerReferences", []))
+    ]
+    k3s.kubectl("delete", "certificate", "test-runner-root", "-n", "cert-manager", "--wait=true")
+    if owned_requests:
+        k3s.kubectl(
+            "delete", "certificaterequest", *owned_requests, "-n", "cert-manager",
+            "--ignore-not-found=true", "--wait=true",
+        )  # fmt: skip
+    k3s.kubectl("delete", "secret", "test-runner-root", "-n", "cert-manager", "--wait=true")
+    cluster_objects = [
+        doc for doc in fixture.objects if doc["kind"] != "Namespace" and not doc["metadata"].get("namespace")
+    ]
+    cluster_yaml = yaml.safe_dump_all(cluster_objects)
+    k3s.kubectl("delete", "-f", "-", "--ignore-not-found=true", "--wait=true", input_text=cluster_yaml)
+    # Deprecated API reads (Kyverno ClusterPolicy) emit warnings even for absent objects. Resource
+    # verification must inspect stdout, while preserving stderr warnings in the test diagnostics.
+    remaining = k3s.kubectl(
+        "get", "-f", "-", "--ignore-not-found=true", "-o", "name", input_text=cluster_yaml, stdout_only=True
+    )
+    if remaining:
+        raise RuntimeError(f"fixture-owned cluster resources survived cleanup: {remaining}")
+    dynamic_selector = (
+        "app.kubernetes.io/managed-by=agentplane-policy-controller,"
+        "policy.agentplane.allegedly.works/policy-namespace=systest"
+    )
+    k3s.kubectl("delete", "clusterrolebindings", "-l", dynamic_selector, "--ignore-not-found=true", "--wait=true")
+    if k3s.kubectl("get", "clusterrolebindings", "-l", dynamic_selector, "-o", "name"):
+        raise RuntimeError("policy-controller ClusterRoleBindings survived cleanup")
+    for namespace in [*namespaces, "monitoring"]:
+        if k3s.kubectl("get", "namespace", namespace, "--ignore-not-found=true", "-o", "name"):
+            raise RuntimeError(f"namespace {namespace} still exists after cleanup")
+    for kind in ("certificate", "secret"):
+        if k3s.kubectl("get", kind, "test-runner-root", "-n", "cert-manager", "--ignore-not-found=true", "-o", "name"):
+            raise RuntimeError(f"fixture-owned root {kind} survived cleanup")
+    remaining_pvs = json.loads(k3s.kubectl("get", "pv", "-o", "json"))["items"]
+    if any(item.get("spec", {}).get("claimRef", {}).get("namespace") in namespaces for item in remaining_pvs):
+        raise RuntimeError("fixture-owned PersistentVolume survived cleanup")
+    if fixture.vm_sandboxes:
+        if json.loads(k3s.kubectl("get", "vm,vmi", "-A", "-o", "json"))["items"]:
+            raise RuntimeError("fixture-owned virtual machines survived namespace deletion")
+        # The demand-driven provisioner owns this cluster-scoped object outside the rendered fixture.
+        k3s.kubectl("delete", "storageclass", block_storage.STORAGE_CLASS, "--wait=true")
+        if k3s.kubectl("get", "storageclass", block_storage.STORAGE_CLASS, "--ignore-not-found=true", "-o", "name"):
+            raise RuntimeError("fixture-owned StorageClass survived cleanup")
+
+
 @contextlib.contextmanager
 def running_stack(
-    inputs: StackInputs, *, models: rendered_fixture.Models, validate_vm_shutdown: Callable[[], bool]
+    inputs: StackInputs,
+    *,
+    models: rendered_fixture.Models,
+    validate_vm_shutdown: Callable[[], bool],
+    persist_infrastructure: bool,
 ) -> Iterator[Stack]:
-    """The stack with every Deployment Available and LLM ingress forwarding to `models`."""
+    """Create fresh fixtures; retain infrastructure only with the executor's lifecycle permission."""
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = inputs.fixture
+    cert_manager, trust_manager = certificates.releases()
+    pki_images = certificates.images(cert_manager + trust_manager)
+    releases = vm_sandboxes.releases() if fixture.vm_sandboxes else []
+    infrastructure_images = vm_sandboxes.images(releases) if releases else {}
     fixture_images = {_ci_image(rloc): rloc for rloc in inputs.image_layouts}
     guest_images = {_ci_image(rloc): rloc for rloc in inputs.guest_image_layouts}
     if fixture.vm_sandboxes != bool(guest_images):
@@ -530,8 +846,28 @@ def running_stack(
                 process_traces.ProcessTraces(k3s.node_ip, undeclared_outputs_dir() / "process-spans.jsonl")
             )
             # A VM stack's layers would leave too little memory for its guests (README § Image layers in memory).
-            process = k3s.start(layers_in_memory=not fixture.vm_sandboxes)
-            cleanup.callback(k3s.stop, process)
+            baseline_warm = False
+            if persist_infrastructure:
+                k3s, baseline_marker, baseline_warm = _baseline_open(
+                    inputs.binary,
+                    _baseline_fingerprint(
+                        inputs.binary,
+                        crds,
+                        cert_manager
+                        + trust_manager
+                        + releases
+                        + (vm_sandboxes.baseline_objects() if fixture.vm_sandboxes else []),
+                        pki_images | infrastructure_images,
+                        layers_in_memory=not fixture.vm_sandboxes,
+                    ),
+                    layers_in_memory=not fixture.vm_sandboxes,
+                )
+            else:
+                # An executor can restore a retained snapshot even when this action opts out.
+                # Stop its exact owned server before resetting the ordinary stack's state.
+                _baseline_stop_previous()
+                process = k3s.start(layers_in_memory=not fixture.vm_sandboxes)
+                cleanup.callback(k3s.stop, process)
             setup.add_event("node Ready")
             cluster = Cluster(
                 kubeconfig=k3s.kubeconfig, namespace=fixture.namespace, kubectl_command=(str(k3s.binary), "kubectl")
@@ -581,25 +917,34 @@ def running_stack(
                 raise ValueError(f"Guest images are used by Deployments: {sorted(used)}")
             if missing := deployment_images - fixture_images.keys():
                 raise ValueError(f"Fixture workloads lack OCI layouts for: {sorted(missing)}")
-            if fixture.vm_sandboxes:
-                releases = vm_sandboxes.releases()
-                infrastructure_images = vm_sandboxes.images(releases)
+            install_baseline = not baseline_warm
+            if fixture.vm_sandboxes and install_baseline:
                 k3s.import_images(infrastructure_images)
-            cert_manager, trust_manager = certificates.releases()
             cleanup.callback(certificates.report, k3s.kubectl, cert_manager + trust_manager)
             # Import the next group's images during apply/readiness work for the preceding group. A single
             # worker preserves blob deduplication and joins before k3s teardown, including on setup failure.
             with ThreadPoolExecutor(max_workers=1, thread_name_prefix="image-import") as importing:
-                pki_import = importing.submit(
-                    contextvars.copy_context().run, k3s.import_images, certificates.images(cert_manager + trust_manager)
+                pki_import = (
+                    importing.submit(contextvars.copy_context().run, k3s.import_images, pki_images)
+                    if install_baseline
+                    else None
                 )
-                if fixture.vm_sandboxes:
+                if fixture.vm_sandboxes and install_baseline:
                     vm_sandboxes.install(k3s.kubectl, releases)
                     setup.add_event("KubeVirt and Kyverno applied")
                 # Applying a workload before its image is imported would pull it from the registry.
-                pki_import.result()
+                if pki_import is not None:
+                    pki_import.result()
                 fixture_import = importing.submit(contextvars.copy_context().run, k3s.import_images, fixture_images)
-                certificates.install(k3s.kubectl, cert_manager, trust_manager)
+                if install_baseline:
+                    certificates.install(k3s.kubectl, cert_manager, trust_manager)
+                else:
+                    for doc in cert_manager + trust_manager:
+                        if doc["kind"] == "Deployment":
+                            k3s.kubectl(
+                                "-n", "cert-manager", "rollout", "status", f"deployment/{doc['metadata']['name']}",
+                                f"--timeout={certificates.READY_SECONDS}s",
+                            )  # fmt: skip
                 setup.add_event("cert-manager and trust-manager ready")
                 fixture_import.result()
                 setup.add_event("fixture images imported" if guest_images else "images imported")
@@ -701,6 +1046,12 @@ def running_stack(
                         require_boot_evidence=os.environ.get("AGENTPLANE_VM_BOOT_EVIDENCE") == "1",
                     )
                 )
+        persistence_output = undeclared_outputs_dir() / "persistence-suite.json"
+        if persist_infrastructure:
+            persistence_evidence = _baseline_evidence(
+                k3s, fixture, models, cert_manager + trust_manager, baseline_marker, baseline_warm
+            )
+            persistence_output.write_text(json.dumps(persistence_evidence))
         yield Stack(k3s=k3s, cluster=cluster, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
         with tracer.start_as_current_span("system_test.stack.diagnostics"):
             print(k3s.report(fixture.namespace))
@@ -708,3 +1059,16 @@ def running_stack(
                 (undeclared_outputs_dir() / "vm-sandboxes.txt").write_text(
                     vm_sandboxes.report(k3s.kubectl, fixture.namespace)
                 )
+        if persist_infrastructure:
+            # Stop the provisioner, forwards, profilers and guest log capture first. Their checks
+            # must pass before we can certify the baseline, while the API and retained node stay live.
+            cleanup.close()
+            _baseline_clean(k3s, fixture)
+            # Namespace deletion releases all VM users of the loop devices. Certify clean only
+            # after their owned mappings detach and the per-action backing files are removed.
+            block_cleanup.close()
+            baseline_marker["state"] = "clean"
+            _baseline_write_marker(baseline_marker)
+            persistence_evidence["workspace_loop_devices_released"] = len(raw_block.devices)
+            persistence_evidence["cleanup"] = "complete"
+            persistence_output.write_text(json.dumps(persistence_evidence))

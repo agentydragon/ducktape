@@ -4,11 +4,65 @@
 
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIES", "K3S_SERVICE_IMAGES", "K3S_TAGS", "K3S_VM_IMAGES")
+load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_PROPERTIES", "K3S_SERVICE_IMAGES", "K3S_TAGS", "K3S_VM_IMAGES")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_testonly = True)
+
+py_test(
+    name = "test_executor_persistence",
+    srcs = ["test_executor_persistence.py"],
+    deps = [
+        ":stack",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_persistence_across_actions",
+    srcs = ["test_persistence_across_actions.py"],
+    data = [K3S_BINARY],
+    env = {"K3S_BINARY_RLOCATION": "$(rlocationpath " + K3S_BINARY + ")"},
+    exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
+        "test.runner-recycling-key": "k3s-persistence-probe-v4",
+    },
+    tags = K3S_TAGS + ["manual"],
+    deps = [
+        ":stack",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_persistence_lifecycle",
+    size = "large",
+    srcs = ["test_persistence_lifecycle.py"],
+    data = [K3S_BINARY],
+    env = {"K3S_BINARY_RLOCATION": "$(rlocationpath " + K3S_BINARY + ")"},
+    exec_properties = K3S_EXEC_PROPERTIES | {
+        "test.env-overrides": "AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1",
+        "test.runner-recycling-key": "k3s-persistence-lifecycle-v1",
+    },
+    tags = K3S_TAGS + ["manual"],
+    deps = [
+        ":stack",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
 
 # The runner Pod's tools image. It keeps Debian's shell utilities for bootstrap and process-lifecycle
 # fixtures, plus curl and git (the `trixie_e2e` package set) for scripted commands; the Nix-built

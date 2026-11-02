@@ -1,6 +1,6 @@
 """Executable suites: explicit scenario modules sharing one configured k3s stack."""
 
-load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_SERVICE_LAYOUTS", "K3S_TAGS", "K3S_VM_DATA", "K3S_VM_ENV")
+load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_PROPERTIES", "K3S_SERVICE_LAYOUTS", "K3S_TAGS", "K3S_VM_DATA", "K3S_VM_ENV")
 load("//devinfra/python:defs.bzl", "py_test")
 
 _HARNESSES_LAYOUT = "//agentplane/system_tests/k3s:harnesses/environment_tools_layout"
@@ -27,7 +27,7 @@ _STACKS = {
 }
 
 def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False):
-    """Run a Python suite entrypoint against one session-scoped k3s stack."""
+    """Run one suite with retained infrastructure and fresh per-action application state."""
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
     if profile_guest and stack != "vm":
@@ -62,11 +62,14 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
             "K3S_PROFILE_GUEST_ROOT": "1" if profile_guest else "0",
         }
 
-        # VM layers stay on disk; Pod runners use a different tmpfs image store.
-        properties["test.runner-recycling-key"] = "k3s-vm"
     if config.real_model:
         properties["test.env-secrets"] = "OPENAI_API_KEY"
         suite_tags.append("live_openai_api")
+
+    # VM layers stay on disk; Pod/MCP/real-model suites use a separate tmpfs baseline.
+    properties |= K3S_PERSISTENCE_PROPERTIES | {
+        "test.runner-recycling-key": "k3s-persistence-v7-" + ("vm" if config.vm else "pod"),
+    }
     py_test(
         name = name,
         size = "enormous",

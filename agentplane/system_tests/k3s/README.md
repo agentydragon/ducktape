@@ -9,11 +9,33 @@ Scripted targets take the `harnesses/environment_tools_layout` image, which carr
 containerd keeps unpacked image layers (its overlayfs snapshotter's root) on a tmpfs, except on a stack
 with VM Sandboxes ([measurements](debug/stack_timings.md#image-layers-in-memory-2026-10-21)).
 
-The RBE platform recycles a runner after a passing action, on the same executor. A stack removes its
-Pods when it ends; the next stack on that runner keeps containerd's image store, resets the rest of the
-node, and streams only the blobs containerd lacks ([measurements](debug/stack_timings.md#recycled-runners-2026-10-23)).
-VM system tests use a separate `test.runner-recycling-key` so their disk-backed layers and pod tests'
-tmpfs layers keep separate image stores.
+Every `k3s_suite` retains live k3s and cert-manager/trust-manager in hosted BuildBuddy RBE snapshots. VM suites
+also retain KubeVirt and Kyverno. This is the default for Pod, Dispatcher, all MCP suites,
+normal/manual/profile VM suites and real-model tests; there are no separate persistence variants.
+The existing manual/live tags still determine which suites run in CI, and real-model tests require
+`OPENAI_API_KEY`.
+
+Retention requires `AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1`, injected by BuildBuddy's
+`test.env-overrides` exec property, rather than the test's ordinary environment. Without that
+executor permission, the stack starts fresh infrastructure and stops k3s during teardown, including
+when setup or a scenario fails. Local BuildBuddy credentials and `CI` do not enable retention.
+If an action without permission restores a previously retained snapshot, it first stops the server
+identified by the ownership marker, then starts and tears down its own fresh node.
+The cross-action diagnostic probe requires the same permission and fails before starting a server
+when it is absent. The lifecycle probe always cleans up the processes it starts.
+
+Pod/MCP/real-model suites share one tmpfs snapshot family; VM suites share a separate disk-backed
+family with the VM resource estimate. Baseline fingerprints include the layer mode,
+installation/cleanup helpers, k3s, CRDs, PKI releases/images, and VM releases/images/configuration when
+applicable. A missing, unhealthy, dirty or incompatible baseline rebuilds cold. Remote snapshots save
+the refreshed baseline for later actions.
+
+Applications, PostgreSQL, model endpoints, MCP fixtures, certificates/trust and collectors are recreated.
+VM workspace claims, PVs, StorageClass and loop devices are removed before marking the baseline clean;
+guest shutdown checks and the selected boot/profile settings are preserved. k3s and the retained
+controllers remain running after successful teardown. The bare persistence and lifecycle probes cover
+cross-action reuse and cold-rebuild/ownership behavior separately.
+See the [persistence evidence](../../debug/k3s_persistence.md).
 
 Setup, each image import and teardown use the same OpenTelemetry tracer as the scenarios,
 writing completed spans immediately to `test-spans.jsonl` in undeclared outputs. The test log prints
