@@ -26,9 +26,9 @@ const (
 	EnvironmentDesiredStateType  = "EnvironmentRuntimeDesiredStates.agentplane"
 	// ExecutionStatusType is observed by the app-server controller to
 	// wake its live Execution readiness check.
-	ExecutionStatusType = "ExecutionStatuses.agentplane"
-	EnvironmentResourceID        = "environment-runtime"
-	EnvironmentOwner             = "environment-runtime"
+	ExecutionStatusType   = "ExecutionStatuses.agentplane"
+	EnvironmentResourceID = "environment-runtime"
+	EnvironmentOwner      = "environment-runtime"
 )
 
 type Mode uint8
