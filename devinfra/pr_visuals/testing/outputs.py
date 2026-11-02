@@ -5,7 +5,14 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
-from devinfra.pr_visuals.artifacts import BuildBuddyArtifact
+from devinfra.pr_visuals.artifacts import (
+    BESArtifactId,
+    BESConfiguration,
+    BESFile,
+    BESLabelId,
+    BESTestSummary,
+    BuildBuddyArtifact,
+)
 from devinfra.pr_visuals.collection import OutputKey, OutputObservation, ResultKey, SourceSummary
 from util.testing.output_records import SCHEMA, OutputRecord
 
@@ -26,27 +33,25 @@ class Blob:
 def result_artifact(
     name: str, uri: str, *, result: ResultKey, summary: SourceSummary, status: str | None = "PASSED"
 ) -> BuildBuddyArtifact:
-    return BuildBuddyArtifact.model_validate(
-        {
-            "id": {
-                "testResult": {
-                    "label": result.target,
-                    "configuration": {"id": result.configuration},
-                    "run": result.run,
-                    "shard": result.shard,
-                    "attempt": result.attempt,
-                }
-            },
-            "file": {"name": name, "uri": uri},
-            "status": status,
-            "testSummary": {
-                "overallStatus": summary.overall_status,
-                "runCount": summary.run_count,
-                "shardCount": summary.shard_count,
-                "attemptCount": summary.attempt_count,
-                "totalRunCount": summary.total_run_count,
-            },
-        }
+    return BuildBuddyArtifact(
+        id=BESArtifactId(
+            testResult=BESLabelId(
+                label=result.target,
+                configuration=BESConfiguration(id=result.configuration) if result.configuration is not None else None,
+                run=result.run,
+                shard=result.shard,
+                attempt=result.attempt,
+            )
+        ),
+        file=BESFile(name=name, uri=uri),
+        status=status,
+        testSummary=BESTestSummary(
+            overallStatus=summary.overall_status,
+            runCount=summary.run_count,
+            shardCount=summary.shard_count,
+            attemptCount=summary.attempt_count,
+            totalRunCount=summary.total_run_count,
+        ),
     )
 
 
