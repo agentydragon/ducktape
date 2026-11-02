@@ -646,6 +646,181 @@ fn assert_observed_pair_rejected(source: &str, helpers: &[&'static str]) {
     );
 }
 
+const GLOBAL_OBJECT_CALLBACK_SOURCE: &str = r#"let state = 0;
+function bump() { state = 1; return 3; }
+function peek() { return state; }
+const serialize = JSON.stringify;
+const escaped = serialize([bump, peek]);
+const first = typeof window < "u" && window.addEventListener("probe", () => {});
+const second = bump();
+const third = String(second).length;
+console.log(String(first).length, third, state);
+export { state, bump, peek, serialize, escaped, first, second, third };
+"#;
+
+const KNOWN_CALLBACK_CONTROL_SOURCE: &str = r#"let state = 0;
+function peek() { return state; }
+const directRead = peek();
+const getterSource = { get value() { return state; } };
+const getterRead = getterSource.value;
+const api = { read: () => state };
+const methodRead = api.read();
+const mixed = globalThis.__probe_flag ? globalThis.unknown : peek;
+const mixedRead = mixed();
+state = 1;
+console.log(directRead, getterRead, methodRead, mixedRead, state);
+export { state, directRead, getterRead, methodRead, mixedRead };
+"#;
+
+fn global_object_callback_split(pairs: Vec<CommutingStatementsContract>) -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        GLOBAL_OBJECT_CALLBACK_SOURCE,
+        vec![
+            logical_module(
+                "cells/state",
+                &[
+                    Member::new("state"),
+                    Member::new("bump"),
+                    Member::new("peek"),
+                    Member::new("serialize"),
+                    Member::new("escaped"),
+                ],
+            ),
+            logical_module(
+                "probes/outer",
+                &[Member::new("first"), Member::new("third")],
+            ),
+            logical_module("probes/inner", &[Member::new("second")]),
+        ],
+    )
+    .with_unassigned_mode(unassigned_mode_inline())
+    .with_commuting_statements("static/app", pairs)
+}
+
+fn propose_global_object_pair(rejected: &RejectedFixture) -> serde_json::Value {
+    let graph = rejected.report_path("dependency_graph.json.gz");
+    let output = run_debundle(&[
+        "spec",
+        "propose-commutations",
+        "--graph",
+        graph.to_str().unwrap(),
+        "--source-root",
+        rejected.source_root.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    assert!(
+        output.status.success(),
+        "propose-commutations failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).expect("commutation proposal JSON")
+}
+
+fn effect_provenance_for_binding(
+    graph: &DependencyGraphReport,
+    source_unit: &str,
+    binding: &str,
+) -> Vec<serde_json::Value> {
+    graph
+        .edges
+        .iter()
+        .filter_map(|edge| {
+            let cause = edge.sequenced_cause.as_ref()?;
+            let cause = serde_json::to_value(cause).expect("cause serializes");
+            if cause["rule"] != "binding_timeline" || cause["binding"] != binding {
+                return None;
+            }
+            if edge.source == source_unit {
+                Some(cause["source"].clone())
+            } else if edge.target == source_unit {
+                Some(cause["target"].clone())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn global_object_callback_candidates_are_assumed_and_known_calls_stay_observed() {
+    let rejected = run_rejection_fixture(global_object_callback_split(vec![]));
+    let proposal = propose_global_object_pair(&rejected);
+    let pair_is_proposed = proposal["proposals"].as_array().is_some_and(|proposals| {
+        proposals.iter().any(|proposal| {
+            let mut bindings: Vec<_> = ["a", "b"]
+                .iter()
+                .filter_map(|end| proposal[*end]["binding"].as_str())
+                .collect();
+            bindings.sort_unstable();
+            bindings == ["first", "second"]
+        })
+    });
+    assert!(
+        pair_is_proposed,
+        "the possible global callback conflict should be inertable; proposal report: {proposal:#}"
+    );
+
+    let fixture = run_fixture(global_object_callback_split(vec![first_second_pair()]));
+    assert_preserved_entry_output(&fixture, "5 1 1\n");
+    let graph = fixture.dependency_graph();
+    let timelines = inerted_state_timelines(&fixture);
+    assert!(
+        !timelines.is_empty(),
+        "the pair inerted no `state` timeline"
+    );
+    for cause in &timelines {
+        assert_eq!(cause["source"]["kind"], "observed", "{cause:#}");
+        assert_eq!(cause["target"]["kind"], "fallback", "{cause:#}");
+    }
+
+    let first = source_unit_for_binding(&graph, "first");
+    let first_effects = effect_provenance_for_binding(&graph, first, "state");
+    assert!(
+        first_effects.iter().any(|effect| {
+            effect["kind"] == "fallback" && effect["reason"]["path"] == "opaque_callback_invocation"
+        }),
+        "global lookup callbacks must keep their possible-call provenance: {first_effects:#?}"
+    );
+    let second = source_unit_for_binding(&graph, "second");
+    let second_effects = effect_provenance_for_binding(&graph, second, "state");
+    assert!(
+        !second_effects.is_empty()
+            && second_effects
+                .iter()
+                .all(|effect| effect["kind"] == "observed"),
+        "the direct `bump()` effect must remain observed: {second_effects:#?}"
+    );
+}
+
+#[test]
+fn known_callback_control_provenance_baseline() {
+    let controls = run_fixture(FixtureOpts::new(KNOWN_CALLBACK_CONTROL_SOURCE, vec![]));
+    assert_preserved_entry_output(&controls, "0 0 0 0 1\n");
+    let graph = controls.dependency_graph();
+    for binding in ["directRead", "getterRead", "methodRead", "mixedRead"] {
+        let source_unit = source_unit_for_binding(&graph, binding);
+        let provenance = effect_provenance_for_binding(&graph, source_unit, "state");
+        assert!(
+            !provenance.is_empty(),
+            "{binding} has no `state` timeline effect"
+        );
+        let matches_baseline = if binding == "getterRead" {
+            provenance.iter().all(|effect| {
+                effect["kind"] == "fallback"
+                    && effect["reason"]["path"] == "escaped_callback_closure"
+            })
+        } else {
+            provenance.iter().all(|effect| effect["kind"] == "observed")
+        };
+        assert!(
+            matches_baseline,
+            "{binding} provenance changed from the established baseline: {provenance:#?}"
+        );
+    }
+}
+
 /// `bump`/`peek` escaped to `JSON.stringify`.
 const ESCAPE_PRELUDE: &str = "const escape = JSON.stringify([bump, peek]);";
 

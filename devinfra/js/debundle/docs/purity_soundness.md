@@ -926,6 +926,26 @@ row constrains its operands, stays unknown on arbitrary arguments.
 function-valued entry, so a read entry is never mistaken for a call
 admission.
 
+## Global-object member call targets
+
+A member read whose abstract receiver is the global object records a
+global-property read but does not establish that the slot contains any
+particular function from `global_escaped_callbacks`. Returning each escaped
+function as an exact lookup candidate would turn a possible callback identity
+into an observed call and can make an unrelated binding timeline look like a
+known conflict. The member result stays `Top`; an opaque call through it still
+uses the existing possible-callback pool and tags those callback effects with
+`opaque_callback_invocation`. `callback_values(Top)` also keeps escaped callback
+reach available to existing call, construction, member and publication paths.
+
+An exact function candidate supplied by another value-flow branch remains an
+exact call candidate when a callee union also contains `Top`. Its source-backed
+effects stay observed; only the opaque alternative contributes possible-call
+fallback. The focused commuting-statements regression checks that mixed case,
+along with direct calls and known own-data methods. The known getter control
+retains its pre-existing `escaped_callback_closure` provenance; this lookup
+change neither adds nor removes getter modeling.
+
 ## Declared purity — spec trust contracts
 
 The spec format admits optional per-member `purity:` annotations. With

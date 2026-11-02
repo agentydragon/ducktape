@@ -7824,7 +7824,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                     property,
                                 );
                             }
-                            values.extend(self.state.global_escaped_callbacks.iter().cloned());
+                            // A global slot can hold an escaped callback, but
+                            // this lookup does not establish that identity.
+                            // Keep it opaque so call dispatch promotes the
+                            // escaped pool under its possible-call assumption.
                             values.insert(AbstractValue::Value(Value::Top));
                         }
                         AbstractValue::Value(Value::Unavailable) => {
