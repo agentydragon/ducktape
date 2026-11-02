@@ -7,6 +7,22 @@ These are not promises to perform every former acceptance test. Waived or redund
 are removed, not stored here as obligations. Security/data-loss bugs with concrete evidence belong
 in active work. See [maintenance conventions](../docs/task_dag_maintenance.md).
 
+## Agent-facing platform information
+
+### `AGENT_PLATFORM_INFORMATION_DESIGN` — consolidate documentation and system-configuration access
+
+**Deferred at the operator's request; revisit when prioritizing a consistent agent-facing discovery
+and access design.** Access is currently spread across injected guidance, service `/llms.txt` indexes,
+CLI help and schemas, MCP `get_guide`, live discovery APIs and deployment/runtime configuration.
+Inventory those paths and propose coherent ownership and progressive disclosure for documentation
+and current system configuration, with realistic shell and MCP-only workflows, including agents with
+no attached environment. Distinguish static documentation from live configuration and caller-effective
+capabilities; define freshness, version and failure semantics before consolidating the surfaces.
+Coordinate with the [platform-guidance ownership design](task_dag.md#platform_guidance_ownership_design--decide-platform-guidance-ownership-and-composition)
+and [service naming design](task_dag.md#platform_service_names_design--stable-sidecar-names-for-platform-services).
+This records a later design and consolidation TODO; it selects no new service or transport and does
+not block the current documentation or delegation work.
+
 ## Legacy leftovers
 
 Deferred by the operator on 2026-10-10. Revisit when the operator asks.
