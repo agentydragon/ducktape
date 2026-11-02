@@ -66,6 +66,15 @@ Validate crash and restart, overlapping owners, late starts, uncertain fence out
 descendants for each affected backend. Remove redundant mechanisms only after their guarantees have
 an identified replacement; do not assume the existing set of locks and markers is minimal.
 
+## Reconsider bootstrap event storage
+
+The [bootstrap COSI probe](runtime/debug/2026_11_02_bootstrap_cosi_storage_probe.md) measured high
+memory amplification, per-event writes, and full-history scans for suffix reads on synthetic output.
+Collect actual output and chunk distributions, then compare the current design with an indexed
+disk-backed log and suitable COSI-backed alternatives. Measure writes, restart, tail reads and memory;
+retain ordered replay, terminal/interrupted recovery and fail-closed handling of uncertain writes.
+The repeated empty suffix reads in the probe are synthetic, not a demonstrated production watcher.
+
 ## Reconsider COSI persistence for the Session journal
 
 Keep the SQLite journal as the authority for now, and revisit COSI if a disk-backed implementation
