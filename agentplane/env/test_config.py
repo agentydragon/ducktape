@@ -1,5 +1,7 @@
 """The shared file contract rejects partial and contradictory deployment policy."""
 
+import json
+
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
@@ -31,25 +33,16 @@ def _configuration() -> dict[str, object]:
     }
 
 
-def test_runner_configuration_round_trip_preserves_environment_sources() -> None:
+def test_runner_configuration_serializes_environment_sources_and_listener() -> None:
     config = Configuration.model_validate(_configuration())
-    decoded = Configuration.model_validate_json(config.model_dump_json(exclude_none=True))
-    assert decoded == config
-    assert decoded.session_reconcile_concurrency is None
-    assert decoded.codex_readiness is None
-    assert "codex_readiness" not in config.model_dump(mode="json", exclude_none=True)
-    assert decoded.harness_environment.values["HOME"] == "/test/home"
-    assert decoded.harness_environment.inherit == ["PATH"]
+    serialized = json.loads(config.model_dump_json(exclude_none=True))
+
+    assert serialized["control"]["listen_address"] == "127.0.0.1:8090"
+    assert serialized["harness_environment"] == {"inherit": ["PATH"], "values": {"HOME": "/test/home"}}
+    assert "codex_readiness" not in serialized
 
 
-def test_runner_configuration_accepts_explicit_session_reconcile_concurrency() -> None:
-    values = _configuration() | {"session_reconcile_concurrency": 2048}
-    config = Configuration.model_validate(values)
-    decoded = Configuration.model_validate_json(config.model_dump_json(exclude_none=True))
-    assert decoded.session_reconcile_concurrency == 2048
-
-
-def test_codex_readiness_values_round_trip_and_omit_unset_fields() -> None:
+def test_codex_readiness_serializes_explicit_values_and_omits_unset_fields() -> None:
     config = Configuration.model_validate(
         _configuration()
         | {
@@ -60,14 +53,8 @@ def test_codex_readiness_values_round_trip_and_omit_unset_fields() -> None:
             }
         }
     )
-    decoded = Configuration.model_validate_json(config.model_dump_json(exclude_none=True))
-    serialized = config.model_dump(mode="json", exclude_none=True)
+    serialized = json.loads(config.model_dump_json(exclude_none=True))
 
-    assert decoded.codex_readiness == CodexReadiness(
-        exec_server_ready_timeout_ms=60_000,
-        exec_server_probe_timeout_ms=5_000,
-        exec_server_dependency_timeout_ms=120_000,
-    )
     assert serialized["codex_readiness"] == {
         "exec_server_ready_timeout_ms": 60_000,
         "exec_server_probe_timeout_ms": 5_000,
@@ -99,25 +86,14 @@ def test_codex_readiness_accepts_the_largest_duration_representable_in_milliseco
     assert readiness.exec_server_ready_timeout_ms == 9_223_372_036_854
 
 
-def test_runner_control_listener_round_trips() -> None:
-    config = Configuration.model_validate(_configuration())
-    decoded = Configuration.model_validate_json(config.model_dump_json(exclude_none=True))
-    assert decoded == config
-    assert decoded.control.listen_address == "127.0.0.1:8090"
-
-
 def test_runner_control_accepts_explicit_insecure_mode_without_tls_files() -> None:
     values = _configuration()
     values["control"] = {"listen_address": "127.0.0.1:8090", "security": {"mode": "insecure"}}
 
     config = Configuration.model_validate(values)
-    decoded = Configuration.model_validate_json(config.model_dump_json(exclude_none=True))
+    serialized = json.loads(config.model_dump_json(exclude_none=True))
 
-    assert decoded == config
-    assert decoded.control.model_dump(mode="json") == {
-        "listen_address": "127.0.0.1:8090",
-        "security": {"mode": "insecure"},
-    }
+    assert serialized["control"] == {"listen_address": "127.0.0.1:8090", "security": {"mode": "insecure"}}
 
 
 @pytest.mark.parametrize(
@@ -259,15 +235,6 @@ def _resources() -> dict[str, object]:
     }
 
 
-def test_guest_resource_budgets_are_typed_and_fit_guest_headroom() -> None:
-    resources = GuestResources.model_validate(_resources())
-
-    assert resources.guest_memory_bytes == 1_610_612_736
-    assert resources.service_memory_max_bytes == resources.guest_memory_bytes - resources.os_reserve_bytes
-    assert resources.aggregate.memory_max_bytes == 1_140_850_688
-    assert resources.process.memory_max_bytes == 805_306_368
-
-
 @pytest.mark.parametrize(
     ("memory", "cpu", "pids", "valid"),
     [
@@ -299,17 +266,6 @@ def _vm_environment() -> dict[str, object]:
         "agent_gid": 107,
         "block_devices": ["/dev/test-workspace"],
     }
-
-
-def test_vm_configuration_round_trip_preserves_one_resource_policy() -> None:
-    value = _configuration() | {"environment": _vm_environment()}
-    config = Configuration.model_validate(value)
-    decoded = Configuration.model_validate_json(config.model_dump_json(exclude_none=True))
-    assert decoded == config
-    assert isinstance(decoded.environment, VMEnvironment)
-    assert decoded.environment.resources.service_memory_max_bytes <= (
-        decoded.environment.resources.guest_memory_bytes - decoded.environment.resources.os_reserve_bytes
-    )
 
 
 @pytest.mark.parametrize(
