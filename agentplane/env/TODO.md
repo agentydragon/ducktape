@@ -13,10 +13,11 @@ disabled and a root shell when it is enabled.
   components now share one process and engine; identify which connection and notification state can
   be removed while preserving synchronous admission revocation, exact binding and applied-intent
   checks, and fail-closed handling of uncertain effects.
-- Consider publishing process start, exit, stop and systemd observations as typed facts instead of
-  publishing a revision only to wake the controller to read the process registry. Prototype one
-  observation first. Live handles and one-shot slots remain process-owned; preserve completion
-  ordering, teardown finalizers, fencing and no replay.
+- Systemd observations are typed; process start, exit and stop still use a revision wakeup and
+  process-owned result slots. A start-fact prototype retained the live worker slot and required
+  additional reads to reconcile COSI observations with completion and teardown. Revisit when a
+  typed fact can replace coordination or serve another consumer. Preserve completion ordering,
+  teardown finalizers, fencing and no replay.
 - Measure Session reconcile fan-out and contention before optimizing: Host lifecycle updates map to
   every Session, app-server updates map to every Codex Session, and snapshot publication uses a
   manager-wide mutex. If significant, narrow subscriptions or locking without losing the separate
