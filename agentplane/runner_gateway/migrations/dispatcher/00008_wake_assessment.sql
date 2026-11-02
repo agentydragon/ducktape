@@ -1,17 +1,13 @@
 -- +goose Up
+-- WAKE_STATE_NOT_EVALUATED is encoded as field 1, enum value 1. Keep the
+-- default so older Gateway replicas can omit wake_assessment during rollout.
 ALTER TABLE dispatch
     ADD COLUMN delivery_blocker BYTEA,
-    ADD COLUMN wake_assessment BYTEA;
+    ADD COLUMN wake_assessment BYTEA NOT NULL DEFAULT decode('0801', 'hex');
 
 ALTER TABLE session_opening
     ADD COLUMN delivery_blocker BYTEA,
-    ADD COLUMN wake_assessment BYTEA;
-
--- WAKE_STATE_NOT_EVALUATED = 1 is the protobuf encoding for field 1, enum value 1.
-UPDATE dispatch SET wake_assessment = decode('0801', 'hex') WHERE wake_assessment IS NULL;
-UPDATE session_opening SET wake_assessment = decode('0801', 'hex') WHERE wake_assessment IS NULL;
-ALTER TABLE dispatch ALTER COLUMN wake_assessment SET NOT NULL;
-ALTER TABLE session_opening ALTER COLUMN wake_assessment SET NOT NULL;
+    ADD COLUMN wake_assessment BYTEA NOT NULL DEFAULT decode('0801', 'hex');
 
 -- +goose Down
 ALTER TABLE session_opening

@@ -19,7 +19,7 @@ func (s *Store) ReserveWakeAttempt(ctx context.Context, caller lifecycle.Service
 	var retryAfter time.Duration
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,
-			"dispatcher-wake:"+caller.Namespace+":"+caller.Name+":"+caller.UID)
+			"dispatcher-wake:"+caller.Namespace+":"+caller.Name)
 		if err != nil {
 			return err
 		}
@@ -33,7 +33,8 @@ func (s *Store) ReserveWakeAttempt(ctx context.Context, caller lifecycle.Service
 		}
 		var exists bool
 		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM wake_attempt
-			WHERE caller_namespace=$1 AND caller_name=$2 AND caller_uid=$3 AND sandbox_uid=$4 AND wake_generation=$5)`,
+			WHERE caller_namespace=$1 AND caller_name=$2 AND (caller_uid=$3 OR caller_uid='')
+			AND sandbox_uid=$4 AND wake_generation=$5)`,
 			caller.Namespace, caller.Name, caller.UID, sandboxUID, generation).Scan(&exists); err != nil {
 			return err
 		}
@@ -43,7 +44,7 @@ func (s *Store) ReserveWakeAttempt(ctx context.Context, caller lifecycle.Service
 		var count int
 		var oldest sql.NullTime
 		if err := tx.QueryRowContext(ctx, `SELECT count(*),min(attempted_at) FROM wake_attempt
-			WHERE caller_namespace=$1 AND caller_name=$2 AND caller_uid=$3 AND attempted_at>$4`,
+			WHERE caller_namespace=$1 AND caller_name=$2 AND (caller_uid=$3 OR caller_uid='') AND attempted_at>$4`,
 			caller.Namespace, caller.Name, caller.UID, windowStart).Scan(&count, &oldest); err != nil {
 			return err
 		}

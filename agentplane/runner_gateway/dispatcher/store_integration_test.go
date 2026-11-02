@@ -418,6 +418,205 @@ func TestConcurrentSessionCapAndWakeBudget(t *testing.T) {
 	}
 }
 
+func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t, 3)
+
+	legacyFirst := lifecycle.ServiceAccount{Namespace: "mixed-writer", Name: "legacy-first"}
+	currentFirst := legacyFirst
+	currentFirst.UID = "current-first-uid"
+	legacySandboxUID := uuid.NewString()
+	if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, legacyFirst, legacySandboxUID, 1); err != nil || wait != 0 {
+		t.Fatalf("legacy first reservation: %v %v", wait, err)
+	}
+	if wait, err := store.ReserveWakeAttempt(ctx, currentFirst, legacySandboxUID, 1); err != nil || wait != 0 {
+		t.Fatalf("current reader did not recognize legacy same-generation reservation: %v %v", wait, err)
+	}
+	assertWakeAttemptCount(t, store, legacyFirst, legacySandboxUID, 1)
+
+	currentThenLegacy := lifecycle.ServiceAccount{Namespace: "mixed-writer", Name: "current-first", UID: "current-first-uid"}
+	currentSandboxUID := uuid.NewString()
+	if wait, err := store.ReserveWakeAttempt(ctx, currentThenLegacy, currentSandboxUID, 1); err != nil || wait != 0 {
+		t.Fatalf("current first reservation: %v %v", wait, err)
+	}
+	if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, currentThenLegacy, currentSandboxUID, 1); err != nil || wait != 0 {
+		t.Fatalf("legacy reader did not recognize current same-generation reservation: %v %v", wait, err)
+	}
+	assertWakeAttemptCount(t, store, currentThenLegacy, currentSandboxUID, 1)
+
+	// Hold the old advisory key so this check proves new writers serialize with
+	// previous replicas before reading or inserting their budget row.
+	lockCaller := lifecycle.ServiceAccount{Namespace: "mixed-writer", Name: "shared-lock", UID: "shared-lock-uid"}
+	lockSandboxUID := uuid.NewString()
+	lockKey := "dispatcher-wake:" + lockCaller.Namespace + ":" + lockCaller.Name
+	lockTx, err := store.DB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal("begin old-writer lock fixture:", err)
+	}
+	if _, err := lockTx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", lockKey); err != nil {
+		_ = lockTx.Rollback()
+		t.Fatal("take old-writer advisory lock:", err)
+	}
+	newWriterDone := make(chan error, 1)
+	newWriterStarted := make(chan struct{})
+	go func() {
+		close(newWriterStarted)
+		_, err := store.ReserveWakeAttempt(ctx, lockCaller, lockSandboxUID, 1)
+		newWriterDone <- err
+	}()
+	<-newWriterStarted
+	select {
+	case err := <-newWriterDone:
+		_ = lockTx.Rollback()
+		t.Fatalf("new writer passed an old-version lock before release: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if err := lockTx.Commit(); err != nil {
+		t.Fatal("release old-writer advisory lock:", err)
+	}
+	select {
+	case err := <-newWriterDone:
+		if err != nil {
+			t.Fatal("new writer after old lock release:", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("new writer stayed blocked after old lock release")
+	}
+
+	// An interleaved old/new burst consumes one shared ten-wake budget even
+	// though old writes use the empty UID and current writes use the live UID.
+	mixedCaller := lifecycle.ServiceAccount{Namespace: "mixed-writer", Name: "shared-cap", UID: "shared-cap-uid"}
+	mixedSandboxUID := uuid.NewString()
+	type reservationResult struct {
+		limited bool
+		err     error
+	}
+	const reservations = WakeLimit + 4
+	results := make(chan reservationResult, reservations)
+	var wg sync.WaitGroup
+	for i := 0; i < reservations; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			var wait time.Duration
+			var err error
+			if i%2 == 0 {
+				wait, err = reserveWakeAttemptAsPreviousWriter(ctx, store, mixedCaller, mixedSandboxUID, int64(i+1))
+			} else {
+				wait, err = store.ReserveWakeAttempt(ctx, mixedCaller, mixedSandboxUID, int64(i+1))
+			}
+			results <- reservationResult{limited: wait > 0, err: err}
+		}(i)
+	}
+	wg.Wait()
+	close(results)
+	accepted, limited := 0, 0
+	for result := range results {
+		if result.err != nil {
+			t.Fatal("mixed writer reservation:", result.err)
+		}
+		if result.limited {
+			limited++
+		} else {
+			accepted++
+		}
+	}
+	if accepted != WakeLimit || limited != reservations-WakeLimit {
+		t.Fatalf("mixed-writer shared cap: accepted=%d limited=%d, want accepted=%d limited=%d",
+			accepted, limited, WakeLimit, reservations-WakeLimit)
+	}
+	assertWakeAttemptCount(t, store, mixedCaller, mixedSandboxUID, WakeLimit)
+
+	// Old code sees every UID for the named caller, while the new caller must
+	// not inherit another nonempty UID's reservations after ServiceAccount replacement.
+	replaced := lifecycle.ServiceAccount{Namespace: "mixed-writer", Name: "uid-replacement", UID: "old-uid"}
+	replacementSandboxUID := uuid.NewString()
+	for generation := int64(1); generation <= WakeLimit; generation++ {
+		if wait, err := store.ReserveWakeAttempt(ctx, replaced, replacementSandboxUID, generation); err != nil || wait != 0 {
+			t.Fatalf("old UID reservation %d: %v %v", generation, wait, err)
+		}
+	}
+	if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, replaced, replacementSandboxUID, WakeLimit+1); err != nil || wait == 0 {
+		t.Fatalf("previous writer did not count all nonempty UIDs: %v %v", wait, err)
+	}
+	replaced.UID = "replacement-uid"
+	if wait, err := store.ReserveWakeAttempt(ctx, replaced, replacementSandboxUID, WakeLimit+1); err != nil || wait != 0 {
+		t.Fatalf("replacement UID inherited another nonempty UID's budget: %v %v", wait, err)
+	}
+}
+
+// reserveWakeAttemptAsPreviousWriter reproduces the SQL shape deployed before
+// caller_uid existed: namespace/name locking, all-UID reads, and an INSERT that
+// relies on the migration's empty-UID default.
+func reserveWakeAttemptAsPreviousWriter(
+	ctx context.Context,
+	store *Store,
+	caller lifecycle.ServiceAccount,
+	sandboxUID string,
+	generation int64,
+) (time.Duration, error) {
+	var retryAfter time.Duration
+	err := transaction(ctx, store.DB, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,
+			"dispatcher-wake:"+caller.Namespace+":"+caller.Name)
+		if err != nil {
+			return err
+		}
+		var now time.Time
+		if err := tx.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&now); err != nil {
+			return err
+		}
+		windowStart := now.Add(-WakeWindow)
+		if _, err := tx.ExecContext(ctx, "DELETE FROM wake_attempt WHERE attempted_at <= $1", windowStart); err != nil {
+			return err
+		}
+		var exists bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM wake_attempt
+			WHERE caller_namespace=$1 AND caller_name=$2 AND sandbox_uid=$3 AND wake_generation=$4)`,
+			caller.Namespace, caller.Name, sandboxUID, generation).Scan(&exists); err != nil {
+			return err
+		}
+		if exists {
+			return nil
+		}
+		var count int
+		var oldest sql.NullTime
+		if err := tx.QueryRowContext(ctx, `SELECT count(*),min(attempted_at) FROM wake_attempt
+			WHERE caller_namespace=$1 AND caller_name=$2 AND attempted_at>$3`,
+			caller.Namespace, caller.Name, windowStart).Scan(&count, &oldest); err != nil {
+			return err
+		}
+		if count >= WakeLimit {
+			if !oldest.Valid {
+				return errors.New("wake budget full without attempt")
+			}
+			retryAfter = oldest.Time.Add(WakeWindow).Sub(now)
+			if retryAfter < time.Millisecond {
+				retryAfter = time.Millisecond
+			}
+			return nil
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO wake_attempt
+			(caller_namespace,caller_name,sandbox_uid,wake_generation,attempted_at)
+			VALUES ($1,$2,$3,$4,$5)`, caller.Namespace, caller.Name, sandboxUID, generation, now)
+		return err
+	})
+	return retryAfter, err
+}
+
+func assertWakeAttemptCount(t *testing.T, store *Store, caller lifecycle.ServiceAccount, sandboxUID string, want int) {
+	t.Helper()
+	var count int
+	if err := store.DB.QueryRow(`SELECT count(*) FROM wake_attempt
+		WHERE caller_namespace=$1 AND caller_name=$2 AND sandbox_uid=$3`,
+		caller.Namespace, caller.Name, sandboxUID).Scan(&count); err != nil {
+		t.Fatal("count wake attempts:", err)
+	}
+	if count != want {
+		t.Fatalf("wake attempt count for %s/%s sandbox %s = %d, want %d", caller.Namespace, caller.Name, sandboxUID, count, want)
+	}
+}
+
 func TestOnlyRunnerAdmissionRecordsAdmission(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t, 3)
