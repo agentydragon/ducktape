@@ -40,13 +40,15 @@ corrections, using [`finance.yaml_decimal`](../../yaml_decimal.py).
   which cannot reliably identify a purchase instant. Date-only values are used
   unchanged. This purchase day controls allowance activation, spend/pace windows,
   and transaction-list dates. Statement totals and classification `date_range`
-  selectors still use the original Plaid `date`, exposed as `plaid_date` in the
+  selectors still use the original Plaid `date`, exposed as `transaction.plaid_date` in the
   transaction row and its expandable details. A change to an existing policy
   shifts its next monthly credit instant; review that effect before rollout.
 - `GET /api/v1/view` returns the card and allowance view. Optional `estimate_period_id=rolling_7d|rolling_30d`
   selects the allowance forecast and spending signal; omission uses the policy default.
 - `GET /api/v1/transactions?period=rolling_30d` returns transaction explanations and a period summary. If a requested
-  credit cycle is unavailable, the response identifies the actual `rolling_30d` period.
+  credit cycle is unavailable, the response identifies the actual `rolling_30d` period. Each row groups displayed
+  transaction data under `transaction`, allowance classification and effects under `allowance`, and card statement
+  effects under `statement`. Both effect objects are present even when their fields are unavailable or do not apply.
 - `GET /api/v1/configuration` returns the loaded policy for the read-only Configuration tab without Plaid account IDs.
 - Allowance views mark relevant unresolved full reversal pairs as `Provisional:` in their existing note field;
   transaction rows identify both matched legs. The active/unavailable lifecycle and wire shape stay compatible

@@ -91,18 +91,19 @@ export function SpendingHistoryChart({
     const amounts = new Map<string, Map<string, number>>();
     const categories = new Map<string, { label: string; color: string; total: number }>();
     for (const row of transactions.rows) {
-      const amount = row.pace_effects.find((effect) => effect.period_id === periodId)?.amount_minor_units ?? 0;
-      if (amount <= 0 || !row.category) continue;
-      const category = categories.get(row.category.id) ?? {
-        label: row.category.label,
-        color: row.category.color,
+      const amount =
+        row.allowance.pace_effects.find((effect) => effect.period_id === periodId)?.amount_minor_units ?? 0;
+      if (amount <= 0 || !row.allowance.category) continue;
+      const category = categories.get(row.allowance.category.id) ?? {
+        label: row.allowance.category.label,
+        color: row.allowance.category.color,
         total: 0,
       };
       category.total += amount;
-      categories.set(row.category.id, category);
-      const day = amounts.get(row.date) ?? new Map<string, number>();
-      day.set(row.category.id, (day.get(row.category.id) ?? 0) + amount);
-      amounts.set(row.date, day);
+      categories.set(row.allowance.category.id, category);
+      const day = amounts.get(row.transaction.date) ?? new Map<string, number>();
+      day.set(row.allowance.category.id, (day.get(row.allowance.category.id) ?? 0) + amount);
+      amounts.set(row.transaction.date, day);
     }
 
     const dayLabels = dates.map((date) =>

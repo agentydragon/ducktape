@@ -35,7 +35,15 @@ from finance.plaid.spend.allowance import (
 )
 from finance.plaid.spend.app import _event_stream
 from finance.plaid.spend.configuration import CardConfig, SpendConfiguration
-from finance.plaid.spend.models import AlertState, AnalysisCategoryView, SpendTransactionRow
+from finance.plaid.spend.models import (
+    AlertState,
+    AllowanceTransactionEffect,
+    AnalysisCategoryView,
+    CardStatementEffect,
+    SpendTransaction,
+    SpendTransactionRow,
+    StatementReason,
+)
 from finance.plaid.spend.portfolio_models import (
     HoldingValueCorrection,
     PlaidSourcePolicy,
@@ -57,23 +65,26 @@ def excluded_row(
     category: str | None = "transfer",
 ) -> SpendTransactionRow:
     return SpendTransactionRow(
-        date=date(2026, 1, 1),
-        account_label="Example account",
-        name="Synthetic flow",
-        merchant_name=None,
-        amount_minor_units=amount,
-        currency=currency,
-        pending=pending,
-        allowance_in_scope=True,
-        disposition=disposition,
-        allowance_minor_units=0,
-        pace_effects=[],
-        statement_minor_units=None,
-        statement_reason=None,
-        pfc_primary=None,
-        pfc_detailed=None,
-        merchant_category_code=None,
-        category=AnalysisCategoryView(id=category, label=category.title(), color="#64748B") if category else None,
+        transaction=SpendTransaction(
+            date=date(2026, 1, 1),
+            account_label="Example account",
+            name="Synthetic flow",
+            merchant_name=None,
+            amount_minor_units=amount,
+            currency=currency,
+            pending=pending,
+            pfc_primary=None,
+            pfc_detailed=None,
+            merchant_category_code=None,
+        ),
+        allowance=AllowanceTransactionEffect(
+            in_scope=True,
+            disposition=disposition,
+            amount_minor_units=0,
+            pace_effects=[],
+            category=AnalysisCategoryView(id=category, label=category.title(), color="#64748B") if category else None,
+        ),
+        statement=CardStatementEffect(amount_minor_units=None, reason=None),
     )
 
 
@@ -250,12 +261,43 @@ async def test_purchase_days_match_allowance_and_list_without_changing_statement
     assert view.cards[0].posted_minor_units == 2_600  # original posting dates: 11 + 9 + 6
     assert view.cards[0].pending_minor_units == 0  # posted replacement supersedes pending
     assert transactions.summary.net_allowance_spend_minor_units == 2_200
-    assert all(row.date == today for row in transactions.rows)
-    late_post = next(row for row in transactions.rows if row.amount_minor_units == 700)
-    assert late_post.plaid_date == today + timedelta(days=2)
+    assert all(row.transaction.date == today for row in transactions.rows)
+    late_post = next(row for row in transactions.rows if row.transaction.amount_minor_units == 700)
+    assert late_post.transaction.plaid_date == today + timedelta(days=2)
+    late_post_json = late_post.model_dump(mode="json")
+    assert set(late_post_json) == {"transaction", "allowance", "statement"}
+    assert set(late_post_json["transaction"]) == {
+        "date",
+        "plaid_date",
+        "account_label",
+        "name",
+        "merchant_name",
+        "amount_minor_units",
+        "currency",
+        "pending",
+        "pfc_primary",
+        "pfc_detailed",
+        "merchant_category_code",
+        "counterparties",
+        "details",
+    }
+    assert set(late_post_json["allowance"]) == {
+        "in_scope",
+        "disposition",
+        "rule_number",
+        "rule",
+        "reversal_pair",
+        "effective_kind",
+        "amount_minor_units",
+        "pace_effects",
+        "category",
+    }
+    assert set(late_post_json["statement"]) == {"amount_minor_units", "reason"}
+    assert late_post_json["allowance"]["in_scope"] is True
+    assert late_post_json["statement"] == {"amount_minor_units": 0, "reason": StatementReason.OUTSIDE_CYCLE}
     assert rolling.summary.net_allowance_spend_minor_units == 2_200
     assert len(rolling.rows) == 5
-    assert min(row.date for row in rolling.rows) == activation - timedelta(days=1)
+    assert min(row.transaction.date for row in rolling.rows) == activation - timedelta(days=1)
 
 
 async def test_read_view_uses_statement_cycle_and_normalizes_transactions(
@@ -351,6 +393,7 @@ async def test_card_without_statement_reports_observed_spend_not_a_statement_cyc
     )
     async with service.lifespan():
         view = await service.read_view()
+        transactions = await service.read_transactions(period=PeriodId.ROLLING_30D)
     cards = {card.account_id: card for card in view.cards}
     first, empty = cards["card-first"], cards["card-empty"]
     assert first.statement_period.kind == "provisional"
@@ -362,6 +405,13 @@ async def test_card_without_statement_reports_observed_spend_not_a_statement_cyc
     assert first.alert_state == AlertState.UNAVAILABLE
     assert empty.statement_period.kind == "unavailable"
     assert empty.spend_minor_units is None
+    new_transaction = next(row for row in transactions.rows if row.transaction.amount_minor_units == 1_200).model_dump(
+        mode="json"
+    )
+    assert set(new_transaction) == {"transaction", "allowance", "statement"}
+    assert new_transaction["allowance"]["in_scope"] is False
+    assert new_transaction["allowance"]["disposition"] is None
+    assert new_transaction["statement"] == {"amount_minor_units": 1_200, "reason": StatementReason.COUNTED}
 
 
 def test_report_day_uses_configured_zone_for_card_and_allowance_dates() -> None:
@@ -502,7 +552,10 @@ async def test_prior_purchases_are_queried_for_pace_but_not_balance(
     service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
     async with service.lifespan():
         allowance = (await service.read_view()).allowance
+        transactions = await service.read_transactions(period=PeriodId.ROLLING_30D)
     assert allowance is not None
+    assert transactions.rows
+    assert all(row.statement.amount_minor_units is None and row.statement.reason is None for row in transactions.rows)
     assert allowance.available_minor_units == 10_000
     observed = {report.period.id: report.observed_daily_minor_units for report in allowance.recorded_pace_periods}
     assert observed[PeriodId.ROLLING_7D] == 1_000
@@ -555,14 +608,14 @@ async def test_reversal_uses_old_retained_original_and_preserves_card_statement(
     assert view.allowance.note is None
     assert view.cards[0].posted_minor_units == 1_000  # Statement still sees the actual -80 credit and +90 debit.
     assert len(transactions.rows) == 2  # Original is outside the displayed period, but still reconciled.
-    credit = next(row for row in transactions.rows if row.amount_minor_units < 0)
-    assert credit.disposition == Disposition.REVERSED
-    assert credit.reversal_pair == pair
-    assert credit.effective_kind == Kind.EXCLUDED
-    assert credit.rule is not None
-    assert credit.rule.kind == Kind.FLEXIBLE
-    assert credit.statement_minor_units == -8_000
-    assert credit.allowance_minor_units == 0
+    credit = next(row for row in transactions.rows if row.transaction.amount_minor_units < 0)
+    assert credit.allowance.disposition == Disposition.REVERSED
+    assert credit.allowance.reversal_pair == pair
+    assert credit.allowance.effective_kind == Kind.EXCLUDED
+    assert credit.allowance.rule is not None
+    assert credit.allowance.rule.kind == Kind.FLEXIBLE
+    assert credit.statement.amount_minor_units == -8_000
+    assert credit.allowance.amount_minor_units == 0
     configuration = spend_service.read_configuration()
     assert configuration.allowance is not None
     assert configuration.allowance.reversal_pairs == [pair]
