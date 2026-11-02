@@ -9,7 +9,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -19,7 +20,7 @@ type runnerStatusFake struct {
 	err    error
 }
 
-func (f runnerStatusFake) EnvironmentRuntimeStatus(context.Context, string) (*sessionpb.EnvironmentRuntimeStatus, error) {
+func (f runnerStatusFake) EnvironmentRuntimeStatus(context.Context, string, string) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	return f.status, f.err
 }
 
@@ -58,7 +59,7 @@ func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testi
 	}}}); err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodGet, "/sandboxes/fixture/runner-status", nil)
+	request := httptest.NewRequest(http.MethodGet, "/sandboxes/fixture/runner-status?sandbox_uid=uid", nil)
 	request.Header.Set("Authorization", "Bearer fixture-token")
 	response := httptest.NewRecorder()
 	server.Handler(authentication).ServeHTTP(response, request)
@@ -113,18 +114,18 @@ func TestRunnerStatusRoutePreservesSandboxErrorsAndCallerAuthentication(t *testi
 		t.Fatal(err)
 	}
 	server := NewHTTPServer(authentication)
-	if err := RegisterRunnerRoutes(server, &appService{runnerStatus: runnerStatusFake{err: &sandboxinventory.SandboxNotFoundError{Name: "fixture"}}}); err != nil {
+	if err := RegisterRunnerRoutes(server, &appService{runnerStatus: runnerStatusFake{err: status.Error(codes.NotFound, "fixture")}}); err != nil {
 		t.Fatal(err)
 	}
 
-	request := httptest.NewRequest(http.MethodGet, "/sandboxes/fixture/runner-status", nil)
+	request := httptest.NewRequest(http.MethodGet, "/sandboxes/fixture/runner-status?sandbox_uid=uid", nil)
 	response := httptest.NewRecorder()
 	server.Handler(authentication).ServeHTTP(response, request)
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated runner status = %d: %s", response.Code, response.Body.String())
 	}
 
-	request = httptest.NewRequest(http.MethodGet, "/sandboxes/fixture/runner-status", nil)
+	request = httptest.NewRequest(http.MethodGet, "/sandboxes/fixture/runner-status?sandbox_uid=uid", nil)
 	request.Header.Set("Authorization", "Bearer fixture-token")
 	response = httptest.NewRecorder()
 	server.Handler(authentication).ServeHTTP(response, request)
@@ -138,7 +139,7 @@ func TestRunnerStatusRoutePreservesSandboxErrorsAndCallerAuthentication(t *testi
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Detail != "no Agentplane sandbox name='fixture'" || body.Code == 0 {
+	if body.Detail != "fixture" || body.Code == 0 {
 		t.Fatalf("missing Sandbox error = %+v", body)
 	}
 }

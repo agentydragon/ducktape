@@ -3,7 +3,7 @@ syntax = "proto3";
 
 package agentplane.proto;
 
-import "agentplane/proto/sandboxes.proto";
+import "agentplane/proto/environment_lifecycle.proto";
 import "google/protobuf/timestamp.proto";
 
 // What Environment Runtime publishes for the Runner Gateway to record on the Sandbox's connection

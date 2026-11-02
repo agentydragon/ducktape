@@ -14,10 +14,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/policy"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
-	sandboxview "github.com/agentydragon/ducktape/agentplane/sandboxes/view"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -39,7 +39,6 @@ type Access struct {
 	namespace        string
 	objects          client.Client
 	reader           *sandboxreader.Reader
-	views            *inventory.Access
 	defaultPolicySet map[string]struct{}
 	caller           *sandboxespb.ServiceAccount
 }
@@ -58,16 +57,12 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	views, err := inventory.New(namespace, objects)
-	if err != nil {
-		return nil, err
-	}
 	defaults := make(map[string]struct{}, len(defaultPolicySets))
 	for _, name := range defaultPolicySets {
 		defaults[name] = struct{}{}
 	}
 	return &Access{
-		namespace: namespace, objects: objects, reader: reader, views: views,
+		namespace: namespace, objects: objects, reader: reader,
 		defaultPolicySet: defaults, caller: &sandboxespb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name},
 	}, nil
 }
@@ -88,7 +83,7 @@ func (a *Access) ListTemplates(ctx context.Context) ([]string, error) {
 
 // Create validates and creates a running Sandbox, applying the process defaults and recording an
 // immutable caller/request intent so an identical retry is idempotent.
-func (a *Access) Create(ctx context.Context, request *sandboxespb.CreateSandboxRequest) (*sandboxespb.Sandbox, error) {
+func (a *Access) Create(ctx context.Context, request *sandboxespb.CreateSandboxRequest) (*environmentpb.TargetHandle, error) {
 	if err := validateCreate(request); err != nil {
 		return nil, err
 	}
@@ -99,7 +94,7 @@ func (a *Access) Create(ctx context.Context, request *sandboxespb.CreateSandboxR
 	if existing, err := a.retry(ctx, request.GetName(), intent); err != nil {
 		return nil, err
 	} else if existing != nil {
-		return a.views.Get(ctx, request.GetName())
+		return &environmentpb.TargetHandle{Namespace: existing.Namespace, Name: existing.Name, Uid: string(existing.UID)}, nil
 	}
 
 	policySets := make(map[string]struct{}, len(a.defaultPolicySet)+len(request.GetPolicySets()))
@@ -123,8 +118,9 @@ func (a *Access) Create(ctx context.Context, request *sandboxespb.CreateSandboxR
 		if existing == nil {
 			return nil, err
 		}
+		resource = existing
 	}
-	return a.views.Get(ctx, request.GetName())
+	return &environmentpb.TargetHandle{Namespace: resource.Namespace, Name: resource.Name, Uid: string(resource.UID)}, nil
 }
 
 // Suspend requests that the exact current Sandbox stop. It does not wait for controller status.
@@ -213,7 +209,7 @@ func (a *Access) setStopped(ctx context.Context, name, uid string) error {
 
 func (a *Access) beginTeardown(ctx context.Context, resource *sandboxapi.Sandbox, name, uid string) error {
 	if resource.UID != types.UID(uid) {
-		return &inventory.SandboxNotFoundError{Name: name}
+		return &SandboxNotFoundError{Name: name}
 	}
 	if resource.DeletionTimestamp != nil {
 		return nil
@@ -281,7 +277,7 @@ func (a *Access) requirePolicySets(ctx context.Context, names []string) error {
 func (a *Access) retry(ctx context.Context, name, intent string) (*sandboxapi.Sandbox, error) {
 	resource, err := a.read(ctx, name)
 	if err != nil {
-		var missing *inventory.SandboxNotFoundError
+		var missing *SandboxNotFoundError
 		if errors.As(err, &missing) {
 			return nil, nil
 		}
@@ -299,7 +295,7 @@ func (a *Access) incarnation(ctx context.Context, name, uid string) (*sandboxapi
 		return nil, err
 	}
 	if string(resource.UID) != uid {
-		return nil, &inventory.SandboxNotFoundError{Name: name}
+		return nil, &SandboxNotFoundError{Name: name}
 	}
 	return resource, nil
 }
@@ -308,7 +304,7 @@ func (a *Access) read(ctx context.Context, name string) (*sandboxapi.Sandbox, er
 	view, err := a.reader.Get(ctx, name)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
-			return nil, &inventory.SandboxNotFoundError{Name: name}
+			return nil, &SandboxNotFoundError{Name: name}
 		}
 		return nil, err
 	}
@@ -335,7 +331,7 @@ func sandboxForCreate(
 	annotations := map[string]string{sandboxapi.CreateIntentAnnotation: intent}
 	labels := map[string]string{}
 	if request.Preset != nil {
-		labels[sandboxview.PresetLabel] = request.GetPreset()
+		labels[view.PresetLabel] = request.GetPreset()
 	}
 	inboxTags := uniqueSorted(request.GetInboxTags())
 	resource := &sandboxapi.Sandbox{

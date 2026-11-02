@@ -9,16 +9,55 @@ import {
   SessionSpecSchema,
 } from "../../../proto/session_pb";
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import { TargetHandleSchema } from "../../../runner_gateway/environments/environment_service_pb";
 import {
   getEnvironmentRuntimeStatus,
   openSession,
   getSessionOpening,
   sessionOpeningRejected,
   sessionOpeningNotVisible,
+  resumeSandbox,
+  suspendEnvironment,
+  deleteEnvironment,
+  setEnvironmentIdleSuspend,
 } from "./client";
 
 const id = "b351b316-fdc4-4f50-a642-758992ae3323";
+const target = create(TargetHandleSchema, { namespace: "team", name: "test", uid: "uid" });
 afterEach(() => vi.unstubAllGlobals());
+
+it("sends the generated exact target through the EnvironmentService facade", async () => {
+  const target = create(TargetHandleSchema, { namespace: "team", name: "box", uid: "opaque-uid" });
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(Response.json({}))
+    .mockResolvedValueOnce(
+      Response.json({
+        target: { namespace: "team", name: "box", uid: "opaque-uid" },
+        outcome: "RESUME_OUTCOME_REQUESTED",
+      })
+    )
+    .mockResolvedValueOnce(Response.json({}))
+    .mockResolvedValueOnce(Response.json({}));
+  vi.stubGlobal("fetch", fetchMock);
+  await suspendEnvironment(target);
+  await resumeSandbox(target);
+  await setEnvironmentIdleSuspend(target, 90);
+  await deleteEnvironment(target);
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+    "/upstream/environments/v1/environments/team/box:suspend",
+    "/upstream/environments/v1/environments/team/box:resume",
+    "/upstream/environments/v1/environments/team/box:idle-suspend",
+    "/upstream/environments/v1/environments/team/box?target.uid=opaque-uid",
+  ]);
+  expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual({
+    target: { namespace: "team", name: "box", uid: "opaque-uid" },
+  });
+  expect(JSON.parse(fetchMock.mock.calls[2]![1].body)).toEqual({
+    target: { namespace: "team", name: "box", uid: "opaque-uid" },
+    idleSuspendAfter: "90s",
+  });
+});
 
 it.each([undefined, null, "", "setup"])(
   "keeps the existing HTTP request and projected response for setup %s",
@@ -33,8 +72,7 @@ it.each([undefined, null, "", "setup"])(
       );
     vi.stubGlobal("fetch", fetchMock);
     const opening = await openSession(
-      "test",
-      "uid",
+      target,
       id,
       create(SessionSpecSchema, { harness: Harness.CODEX, model: "test-model" }),
       setup
@@ -59,7 +97,7 @@ it("looks up the same Session identity without repeating an uncertain Open", asy
     .mockResolvedValueOnce(Response.json({ code: 4, message: "uncertain", detail: "uncertain" }, { status: 504 }))
     .mockResolvedValueOnce(Response.json({ sessionId: id, sandbox: "test", state: "DELIVERY_STATE_RUNNER_ADMITTED" }));
   vi.stubGlobal("fetch", fetchMock);
-  await expect(openSession("test", "uid", id, create(SessionSpecSchema))).rejects.toMatchObject({ code: 4 });
+  await expect(openSession(target, id, create(SessionSpecSchema))).rejects.toMatchObject({ code: 4 });
   const opening = await getSessionOpening("test", id);
   expect(opening.state).toBe(DeliveryState.RUNNER_ADMITTED);
   expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
@@ -89,11 +127,12 @@ it("reads the AppService runner status as the existing generated EnvironmentRunt
   );
   vi.stubGlobal("fetch", fetchMock);
 
-  const status = await getEnvironmentRuntimeStatus("test");
+  const statusTarget = create(TargetHandleSchema, { namespace: "team", name: "test", uid: "sandbox-uid" });
+  const status = await getEnvironmentRuntimeStatus(statusTarget);
 
   expect(fetchMock).toHaveBeenCalledTimes(1);
   const [url, init] = fetchMock.mock.calls[0]!;
-  expect(url).toBe("/sandboxes/test/runner-status");
+  expect(url).toBe("/sandboxes/test/runner-status?sandbox_uid=sandbox-uid");
   expect(new Headers(init.headers).get("Accept")).toBe("application/json");
   expect(status.environmentRuntimeBootId).toBe("fixture-boot");
   expect(status.lifecycle?.desiredMode).toBe(EnvironmentRuntimeLifecycleMode.QUIESCING);
@@ -110,8 +149,9 @@ it("keeps runner status errors readable across old and generated AppService resp
     .mockResolvedValueOnce(Response.json({ code: 14, message: "Runner is unavailable" }, { status: 503 }));
   vi.stubGlobal("fetch", fetchMock);
 
-  await expect(getEnvironmentRuntimeStatus("test")).rejects.toMatchObject({ status: 503 });
-  await expect(getEnvironmentRuntimeStatus("test")).rejects.toMatchObject({ status: 503, code: 14 });
+  const statusTarget = create(TargetHandleSchema, { namespace: "team", name: "test", uid: "sandbox-uid" });
+  await expect(getEnvironmentRuntimeStatus(statusTarget)).rejects.toMatchObject({ status: 503 });
+  await expect(getEnvironmentRuntimeStatus(statusTarget)).rejects.toMatchObject({ status: 503, code: 14 });
 });
 
 it.each([1, 2, 4, 8, 13, 14, 15])("keeps gRPC outcome %s uncertain", (code) => {

@@ -6,7 +6,7 @@ import asyncio
 import json
 import re
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -16,10 +16,10 @@ from google.protobuf.json_format import ParseDict
 from more_itertools import one
 
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.models import NewSandbox, SandboxView
 from agentplane.mcp_edge import connection_service_pb2
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL
-from agentplane.proto import session_pb2
+from agentplane.proto import sandboxes_pb2, session_pb2
+from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.k3s.stack import Stack
 from agentplane.system_tests.mcp_connection import ExternalMCPSession, connected_session
@@ -77,9 +77,11 @@ async def _wait_app(cluster: Cluster, *, replicas: int) -> None:
             await asyncio.sleep(0.5)
 
 
-async def _wait_basic_policy(cluster: Cluster, view: SandboxView, policy_objects: mcp.PolicyObjects) -> None:
+async def _wait_basic_policy(
+    cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor, policy_objects: mcp.PolicyObjects
+) -> None:
     inventory = json.loads(await cluster.kubectl("get", POLICY_BINDINGS_PLURAL, "-o", "json"))
-    subject = view.service_account
+    subject = view.execution_account
     bindings = [
         binding
         for binding in inventory["items"]
@@ -88,14 +90,16 @@ async def _wait_basic_policy(cluster: Cluster, view: SandboxView, policy_objects
         and "basic" in binding.get("spec", {}).get("policySets", [])
     ]
     if not bindings:
-        name = await policy_objects.create_binding(f"{view.name}-delegation-basic", sandbox=view, policy_sets=["basic"])
+        name = await policy_objects.create_binding(
+            f"{view.target.name}-delegation-basic", sandbox=view, policy_sets=["basic"]
+        )
         await policy_objects.wait_actions_ready(name)
         return
     for binding in bindings:
         await policy_objects.wait_actions_ready(binding["metadata"]["name"])
 
 
-async def _cleanup_sandbox(cluster: Cluster, token: str, name: str, uid: UUID) -> None:
+async def _cleanup_sandbox(cluster: Cluster, token: str, name: str, uid: str) -> None:
     service = json.loads(await cluster.kubectl("get", "service", "app", "-o", "json"))
     remote_port = service["spec"]["ports"][0]["port"]
     forward = PortForward(
@@ -247,8 +251,8 @@ async def _capture_submit_boundary(
     return evidence
 
 
-async def _capture_egress_decisions(cluster: Cluster, token: str, name: str) -> list[dict[str, Any]]:
-    """Read the proxy's name-only decision snapshot once the integration app is restored."""
+async def _capture_egress_decisions(cluster: Cluster, token: str, name: str, uid: str) -> list[dict[str, Any]]:
+    """Read the proxy's exact Sandbox decision snapshot once the integration app is restored."""
     service = json.loads(await cluster.kubectl("get", "service", "app", "-o", "json", timeout_s=15))
     remote_port = service["spec"]["ports"][0]["port"]
     forward = PortForward(
@@ -263,7 +267,7 @@ async def _capture_egress_decisions(cluster: Cluster, token: str, name: str) -> 
         Client(base_url=f"http://{endpoint}", token=token) as diagnostics_client,
     ):
         async with asyncio.timeout(20):
-            decisions = await diagnostics_client.decisions(name)
+            decisions = await diagnostics_client.decisions(name, uid)
     return [decision.model_dump(mode="json") for decision in decisions]
 
 
@@ -284,12 +288,12 @@ async def test_external_connection_delegates_without_the_integration_app(
 
     cluster = deployment.cluster
     name = "systest-delegation-caller"
-    created = await client.create_sandbox(NewSandbox(name=name, template=POD_TEMPLATE))
+    created = await client.create_sandbox(sandboxes_pb2.CreateSandboxRequest(name=name, template=POD_TEMPLATE))
     app_needs_restore = False
     boundary_evidence: dict[str, Any] | None = None
     try:
-        view = await wait_until_running(client, created.name, expected_uid=created.uid)
-        assert view.pod is not None
+        view = await wait_until_running(client, created)
+        assert view.HasField("pod")
         await _wait_basic_policy(cluster, view, policy_objects)
 
         response = await operator_bff.get("/upstream/connections/v1/operator/caller-service-accounts")
@@ -298,8 +302,8 @@ async def test_external_connection_delegates_without_the_integration_app(
         account = one(
             service_account
             for service_account in inventory.service_accounts
-            if service_account.namespace == view.service_account.namespace
-            and service_account.name == view.service_account.name
+            if service_account.namespace == view.execution_account.namespace
+            and service_account.name == view.execution_account.name
         )
 
         async with connected_session(
@@ -325,8 +329,8 @@ async def test_external_connection_delegates_without_the_integration_app(
                     item
                     for item in environments
                     if isinstance(item, dict)
-                    and item.get("target", {}).get("name") == view.name
-                    and item.get("target", {}).get("uid") == str(view.uid)
+                    and item.get("target", {}).get("name") == view.target.name
+                    and item.get("target", {}).get("uid") == str(view.target.uid)
                 )
                 target = descriptor["target"]
                 assert isinstance(target, dict)
@@ -496,7 +500,7 @@ async def test_external_connection_delegates_without_the_integration_app(
                 if boundary_evidence is not None:
                     try:
                         boundary_evidence["egress_decisions_after_app_restore"] = await _capture_egress_decisions(
-                            cluster, deployment.token, name
+                            cluster, deployment.token, name, created.uid
                         )
                     except Exception as error:
                         boundary_evidence["egress_decision_capture_error"] = type(error).__name__

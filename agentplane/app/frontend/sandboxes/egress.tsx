@@ -1,6 +1,7 @@
 import { Badge, Button, SegmentedControl, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
+import type { TargetHandle } from "../../../runner_gateway/environments/environment_service_pb";
 
 import type { Decision } from "./client";
 import { liveEgressDecisionsUrl, type DecisionsSnapshot } from "./live";
@@ -197,12 +198,14 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
 }
 
 /** The sandbox's decisions as the proxy reports them: a snapshot per change, none while it is quiet. */
-function useEgressDecisions(name: string): { snapshot: DecisionsSnapshot | null } {
+function useEgressDecisions(target: TargetHandle): { snapshot: DecisionsSnapshot | null } {
+  const { namespace, name } = target;
+  const url = liveEgressDecisionsUrl(target);
   const [snapshot, setSnapshot] = useState<DecisionsSnapshot | null>(null);
   const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
   useEffect(() => {
     setSnapshot(null);
-    return followStream(liveEgressDecisionsUrl(name), {
+    return followStream(url, {
       events: {
         snapshot: (message) => setSnapshot(JSON.parse(message.data) as DecisionsSnapshot),
         health: (message) =>
@@ -210,14 +213,14 @@ function useEgressDecisions(name: string): { snapshot: DecisionsSnapshot | null 
       },
       onConnection: setConnection,
     });
-  }, [name]);
+  }, [namespace, url]);
   useStreamStatus(`Egress decisions of ${name}`, connection);
   return { snapshot };
 }
 
 /** What recently left the sandbox, or was refused, as the egress proxy reports it. */
-export function EgressLog({ name }: { name: string }): JSX.Element {
-  const decisions = useEgressDecisions(name);
+export function EgressLog({ target }: { target: TargetHandle }): JSX.Element {
+  const decisions = useEgressDecisions(target);
   return (
     <Stack gap="xs">
       <Title order={5}>Recent decisions</Title>

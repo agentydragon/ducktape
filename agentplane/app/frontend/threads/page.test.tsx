@@ -1,7 +1,14 @@
+// @vitest-environment happy-dom
+import { AutosuspendBlockerSchema } from "../../../proto/environment_lifecycle_pb";
 import { DurationSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { readySandbox, suspendedSandbox } from "../testing/sandbox";
-import { AutosuspendBlockerSchema, SandboxPhase, SandboxSchema, type Sandbox } from "../../../proto/sandboxes_pb";
-// @vitest-environment happy-dom
+import {
+  SandboxPhase,
+  ReadinessSchema,
+  ReadinessState,
+  EnvironmentDescriptorSchema,
+  type EnvironmentDescriptor,
+} from "../../../runner_gateway/environments/environment_service_pb";
 
 import { clone, create, toJson } from "@bufbuild/protobuf";
 import type { LangfuseSearchSettings, ThreadView, TraceSearchSettings } from "../schema";
@@ -81,8 +88,8 @@ let favicon: HTMLLinkElement;
 // What the sandbox inventory stream reports -- nothing at all while `sandboxes` is null -- and
 // whether it then drops. By default the thread's sandbox is running on a current inventory, so its
 // controls are live.
-type Inventory = Sandbox[] | null;
-function inventorySandbox(scenario: "ready" | "suspended" = "ready", wakeOnSend = false): Sandbox {
+type Inventory = EnvironmentDescriptor[] | null;
+function inventorySandbox(scenario: "ready" | "suspended" = "ready", wakeOnSend = false): EnvironmentDescriptor {
   const uid = "20000000-0000-4000-8000-000000000001";
   const sandbox = scenario === "ready" ? readySandbox(THREAD.sandbox, uid) : suspendedSandbox(THREAD.sandbox, uid);
   if (sandbox.pod) sandbox.pod.uid = "test-pod-1";
@@ -90,11 +97,11 @@ function inventorySandbox(scenario: "ready" | "suspended" = "ready", wakeOnSend 
   return sandbox;
 }
 
-function updatedSandbox(base: Sandbox, changes: Partial<Sandbox>): Sandbox {
-  return Object.assign(clone(SandboxSchema, base), changes);
+function updatedSandbox(base: EnvironmentDescriptor, changes: Partial<EnvironmentDescriptor>): EnvironmentDescriptor {
+  return Object.assign(clone(EnvironmentDescriptorSchema, base), changes);
 }
 
-function autosuspendSandbox(idle_suspend_at: string | null): Sandbox {
+function autosuspendSandbox(idle_suspend_at: string | null): EnvironmentDescriptor {
   return updatedSandbox(inventorySandbox(), {
     idleSuspendAfter: create(DurationSchema, { seconds: 900n }),
     idleSuspendAt: idle_suspend_at === null ? undefined : timestampFromDate(new Date(idle_suspend_at)),
@@ -159,7 +166,9 @@ beforeEach(() => {
         return;
       }
       if (sandboxes === null || reconnected(served, stream)) return;
-      stream.send({ snapshot: { sandboxes: sandboxes.map((sandbox) => toJson(SandboxSchema, sandbox)) } });
+      stream.send({
+        snapshot: { environments: sandboxes.map((sandbox) => toJson(EnvironmentDescriptorSchema, sandbox)) },
+      });
       stream.send({ snapshotComplete: {} });
       if (!inventoryFresh) stream.drop();
       if (inventoryDrops) stream.drop();
@@ -592,6 +601,7 @@ it.each([
 it("explains bootstrap work before the Sandbox becomes ready", async () => {
   sandboxes = [
     updatedSandbox(autosuspendSandbox(null), {
+      readiness: create(ReadinessSchema, { state: ReadinessState.NOT_READY }),
       status: { conditions: [{ type: "Ready", status: "False" }] },
       autosuspendBlockers: [create(AutosuspendBlockerSchema, { reason: "Bootstrap", sessionId: undefined })],
     }),
@@ -707,11 +717,7 @@ it("disables the composer and offers resume for a fresh suspended Sandbox withou
   expect(resume).toBeDefined();
   await act(async () => resume?.click());
   expect(resumeSandbox).toHaveBeenCalledExactlyOnceWith(
-    expect.objectContaining({
-      namespace: "agentplane-test",
-      name: THREAD.sandbox,
-      uid: "20000000-0000-4000-8000-000000000001",
-    })
+    expect.objectContaining({ name: THREAD.sandbox, uid: "20000000-0000-4000-8000-000000000001" })
   );
 });
 
@@ -968,11 +974,7 @@ it("offers to resume a suspended Sandbox, and only from a current inventory", as
   const button = buttonIn(container, "Resume Sandbox");
   await act(async () => button?.click());
   expect(resumeSandbox).toHaveBeenCalledExactlyOnceWith(
-    expect.objectContaining({
-      namespace: "agentplane-test",
-      name: THREAD.sandbox,
-      uid: "20000000-0000-4000-8000-000000000001",
-    })
+    expect.objectContaining({ name: THREAD.sandbox, uid: "20000000-0000-4000-8000-000000000001" })
   );
 });
 
@@ -995,9 +997,10 @@ it("shows why a refused resume of a suspended Sandbox failed", async () => {
 
 // A send to a suspended Sandbox wakes it: it is Running again with no Pod and no Ready condition until
 // the controller has started the incarnation.
-const waking: Sandbox = updatedSandbox(autosuspendSandbox(null), {
+const waking: EnvironmentDescriptor = updatedSandbox(autosuspendSandbox(null), {
   phase: SandboxPhase.CREATING,
   pod: undefined,
+  readiness: create(ReadinessSchema, { state: ReadinessState.NOT_READY }),
   status: {},
 });
 
@@ -1025,6 +1028,7 @@ it.each([null, "2026-01-01T12:12:00Z"])(
     const starting = autosuspendSandbox(deadline);
     sandboxes = [
       updatedSandbox(starting, {
+        readiness: create(ReadinessSchema, { state: ReadinessState.NOT_READY }),
         status: {
           conditions: [{ type: "Ready", status: "False", reason: "AwaitingEnvironmentRuntime" }],
         },
@@ -1040,6 +1044,7 @@ it("does not call a failed Pod a Sandbox that is starting", async () => {
   const running = autosuspendSandbox(null);
   sandboxes = [
     updatedSandbox(running, {
+      readiness: create(ReadinessSchema, { state: ReadinessState.NOT_READY }),
       status: {},
       pod: running.pod && { ...running.pod, status: { phase: "Failed" } },
     }),

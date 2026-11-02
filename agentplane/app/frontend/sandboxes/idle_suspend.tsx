@@ -1,9 +1,10 @@
+import type { EnvironmentDescriptor } from "../../../runner_gateway/environments/environment_service_pb";
 import { NumberInput } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import { sandboxIdleSuspendAfterSeconds, type SandboxStatusSource } from "../sandbox_status";
+import { sandboxIdleSuspendAfterSeconds } from "../sandbox_status";
 import { displayableError } from "../client";
-import { sandboxTarget, setEnvironmentIdleSuspend } from "./client";
+import { setEnvironmentIdleSuspend } from "./client";
 
 const SECONDS_PER_MINUTE = 60;
 
@@ -44,7 +45,7 @@ export function IdleSuspendInput({
   disabled,
   onError,
 }: {
-  sandbox: SandboxStatusSource;
+  sandbox: EnvironmentDescriptor;
   disabled: boolean;
   onError: (message: string | null) => void;
 }): JSX.Element {
@@ -57,7 +58,7 @@ export function IdleSuspendInput({
     if (draft === idleMinutes(stored)) return;
     setSaving(true);
     const idleSuspendAfterSeconds = idleSeconds(draft);
-    const failure = await setEnvironmentIdleSuspend(sandboxTarget(sandbox), idleSuspendAfterSeconds).then(
+    const failure = await setEnvironmentIdleSuspend(sandbox.target!, idleSuspendAfterSeconds).then(
       () => null,
       (reason: unknown) => reason
     );
@@ -68,7 +69,7 @@ export function IdleSuspendInput({
 
   return (
     <NumberInput
-      aria-label={"Idle suspend minutes for " + sandbox.name}
+      aria-label={"Idle suspend minutes for " + sandbox.target!.name}
       placeholder="Never"
       min={1}
       allowNegative={false}

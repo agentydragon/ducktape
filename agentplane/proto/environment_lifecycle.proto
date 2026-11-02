@@ -85,3 +85,9 @@ message WakeAssessment {
   // Preserves structured gRPC status details when the wake attempt failed.
   google.rpc.Status error = 6;
 }
+
+// One live fact keeping the Sandbox from being considered idle for autosuspend.
+message AutosuspendBlocker {
+  string reason = 1;
+  optional string session_id = 2;
+}

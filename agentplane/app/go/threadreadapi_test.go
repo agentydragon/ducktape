@@ -13,21 +13,54 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
+
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/structpb"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+func TestListThreadMetadataScopesPagesToExactEnvironmentUID(t *testing.T) {
+	first, replacement, last := uuid.New(), uuid.New(), uuid.New()
+	now := time.Now()
+	store := &threadReadStoreFake{rows: []threads.Thread{
+		{ID: first, CreatedAt: now},
+		{ID: replacement, CreatedAt: now.Add(-time.Second)},
+		{ID: last, CreatedAt: now.Add(-2 * time.Second), Archived: true},
+	}}
+	history := &threadReadHistoryFake{
+		summaries: map[uuid.UUID]historydata.FoldSummary{
+			first:       {Present: true, Sandbox: "worker", SandboxUID: "old"},
+			replacement: {Present: true, Sandbox: "worker", SandboxUID: "new"},
+			last:        {Present: true, Sandbox: "worker", SandboxUID: "old"},
+		},
+		sandboxUIDs: map[uuid.UUID]string{first: "old", replacement: "new", last: "old"},
+		sandboxes:   map[uuid.UUID]string{first: "worker", replacement: "worker", last: "worker"},
+	}
+	service := &appService{threadReader: store, threadHistory: history}
+	page, err := service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: "old", Limit: 1, IncludeArchived: true})
+	if err != nil || len(page.GetThreads()) != 1 || page.GetThreads()[0].GetThreadId() != first.String() || page.GetNextPageToken() == "" || page.GetArchivedCount() != 1 {
+		t.Fatalf("first page = %v, %v", page, err)
+	}
+	next, err := service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: "old", Limit: 1, IncludeArchived: true, PageToken: page.GetNextPageToken()})
+	if err != nil || len(next.GetThreads()) != 1 || next.GetThreads()[0].GetThreadId() != last.String() || next.GetNextPageToken() != "" {
+		t.Fatalf("next page = %v, %v", next, err)
+	}
+	_, err = service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: "new", Limit: 1, IncludeArchived: true, PageToken: page.GetNextPageToken()})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("continuation for another UID = %v, want InvalidArgument", err)
+	}
+}
 
 type threadReadStoreFake struct {
 	rows []threads.Thread
@@ -264,20 +297,37 @@ func TestThreadMetadataWatchStreamsUpdatesAndCloses(t *testing.T) {
 }
 
 type threadReadInventoryFake struct {
-	sandbox *sandboxespb.Sandbox
-	err     error
+	sandbox   *environmentpb.EnvironmentDescriptor
+	err       error
+	exactName string
+	exactUID  string
 }
 
-func (f *threadReadInventoryFake) Get(context.Context, string) (*sandboxespb.Sandbox, error) {
+func (f *threadReadInventoryFake) Get(context.Context, string) (*environmentpb.EnvironmentDescriptor, error) {
 	return f.sandbox, f.err
+}
+
+func (f *threadReadInventoryFake) GetEnvironment(_ context.Context, request *environmentpb.GetEnvironmentRequest, _ ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error) {
+	target := request.GetTarget()
+	name, uid := target.GetName(), target.GetUid()
+	f.exactName, f.exactUID = name, uid
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.sandbox.GetTarget().GetName() != name || f.sandbox.GetTarget().GetUid() != uid {
+		return nil, errors.New("exact target UID mismatch")
+	}
+	return f.sandbox, nil
 }
 
 type threadReadEnvironmentRuntimeFake struct {
 	status *sessionpb.EnvironmentRuntimeStatus
 	err    error
+	target *environmentpb.TargetHandle
 }
 
-func (f *threadReadEnvironmentRuntimeFake) EnvironmentRuntimeStatus(context.Context, string) (*sessionpb.EnvironmentRuntimeStatus, error) {
+func (f *threadReadEnvironmentRuntimeFake) EnvironmentRuntimeStatus(_ context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error) {
+	f.target = sandbox.GetTarget()
 	return f.status, f.err
 }
 
@@ -413,14 +463,14 @@ func TestListThreadViewsFiltersBySandboxIncarnationAndBindsPageToken(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(first.Threads) != 1 || first.Threads[0].ID != ids[0] || first.Threads[0].SandboxUID == nil || first.Threads[0].SandboxUID.String() != uid || first.NextPageToken == nil {
+	if len(first.Threads) != 1 || first.Threads[0].ID != ids[0] || first.Threads[0].SandboxUID == nil || *first.Threads[0].SandboxUID != uid || first.NextPageToken == nil {
 		t.Fatalf("first page = %+v, want archived Thread %s with UID %s and a continuation", first, ids[0], uid)
 	}
 	second, err := listThreadViews(context.Background(), store, history, listing, 1, first.NextPageToken)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(second.Threads) != 1 || second.Threads[0].ID != ids[2] || second.Threads[0].SandboxUID == nil || second.Threads[0].SandboxUID.String() != uid || second.NextPageToken != nil {
+	if len(second.Threads) != 1 || second.Threads[0].ID != ids[2] || second.Threads[0].SandboxUID == nil || *second.Threads[0].SandboxUID != uid || second.NextPageToken != nil {
 		t.Fatalf("second page = %+v, want older Thread %s with UID %s and no continuation", second, ids[2], uid)
 	}
 	otherListing := threadListing{SandboxUID: stringPointer(replacementUID), IncludeArchived: true}
@@ -463,14 +513,14 @@ func TestMakeThreadViewPreservesFeedStatusEnum(t *testing.T) {
 }
 
 func TestMakeThreadViewReturnsSandboxUID(t *testing.T) {
-	uid := "11111111-1111-4111-8111-111111111111"
+	uid := "opaque-sandbox-uid"
 	view, err := makeThreadView(threads.Thread{ID: uuid.New()}, historydata.FoldSummary{
 		Present: true, Sandbox: "sandbox", SandboxUID: uid,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.SandboxUID == nil || view.SandboxUID.String() != uid {
+	if view.SandboxUID == nil || *view.SandboxUID != uid {
 		t.Fatalf("sandbox_uid = %v, want %s", view.SandboxUID, uid)
 	}
 	body, err := json.Marshal(view)
@@ -513,7 +563,7 @@ func TestThreadRenameBodyRequiresOneKnownField(t *testing.T) {
 
 func TestThreadReadRouteRegistrationPublishesOpenAPIPaths(t *testing.T) {
 	server := NewHTTPServer(nil)
-	if err := RegisterThreadReadRoutes(server, nil, nil, nil, nil); err != nil {
+	if err := RegisterThreadReadRoutes(server, "tools", nil, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	recorder := httptest.NewRecorder()
@@ -534,47 +584,49 @@ func TestThreadReadRouteRegistrationPublishesOpenAPIPaths(t *testing.T) {
 }
 
 func TestThreadSandboxReadinessRequiresRunningReadyPod(t *testing.T) {
-	status, err := structpb.NewStruct(map[string]any{"conditions": []any{
-		map[string]any{"type": "Ready", "status": "True"},
-	}})
-	if err != nil {
-		t.Fatal(err)
+	ready := &environmentpb.EnvironmentDescriptor{
+		OperatingMode: environmentpb.OperatingMode_OPERATING_MODE_RUNNING,
+		Readiness:     &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_READY},
 	}
-	if !threadSandboxReady(&sandboxespb.Sandbox{OperatingMode: stringPointer("Running"), Status: status}) {
+	if !threadSandboxReady(ready) {
 		t.Fatal("running Sandbox with Ready=True was rejected")
 	}
-	if threadSandboxReady(&sandboxespb.Sandbox{Status: status}) {
+	if threadSandboxReady(&environmentpb.EnvironmentDescriptor{Readiness: ready.GetReadiness()}) {
 		t.Fatal("Ready condition without a reported mode was accepted")
 	}
-	if threadSandboxReady(&sandboxespb.Sandbox{OperatingMode: stringPointer("Suspended"), Status: status}) {
+	if threadSandboxReady(&environmentpb.EnvironmentDescriptor{
+		OperatingMode: environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED, Readiness: ready.GetReadiness(),
+	}) {
 		t.Fatal("suspended Sandbox was accepted")
 	}
 }
 
 func TestEnsureThreadArchivableRejectsBusyEnvironmentRuntime(t *testing.T) {
-	status, err := structpb.NewStruct(map[string]any{"conditions": []any{
-		map[string]any{"type": "Ready", "status": "True"},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
 	id := uuid.New()
 	thread := threads.Thread{ID: id}
-	sandbox := &sandboxespb.Sandbox{
-		OperatingMode: stringPointer("Running"), Status: status,
-		Pod: &sandboxespb.SandboxPod{Name: "environment-runtime-pod"},
+	sandbox := &environmentpb.EnvironmentDescriptor{
+		Target:        &environmentpb.TargetHandle{Namespace: "team", Name: "sandbox", Uid: "sandbox-uid"},
+		OperatingMode: environmentpb.OperatingMode_OPERATING_MODE_RUNNING,
+		Readiness:     &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_READY},
+		Pod:           &environmentpb.SandboxPod{Name: "environment-runtime-pod"},
 	}
 	inventory := &threadReadInventoryFake{sandbox: sandbox}
 	environmentRuntime := &threadReadEnvironmentRuntimeFake{status: &sessionpb.EnvironmentRuntimeStatus{Sessions: []*sessionpb.SessionStatus{{SessionId: id.String(), Busy: true}}}}
-	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox"}, inventory, environmentRuntime); !errors.Is(err, errThreadBusy) {
+	if err := ensureThreadArchivable(context.Background(), "tools", thread, historydata.FoldSummary{Sandbox: "sandbox", SandboxUID: "sandbox-uid"}, inventory, environmentRuntime); !errors.Is(err, errThreadBusy) {
 		t.Fatalf("busy Environment Runtime archive check = %v, want errThreadBusy", err)
 	}
+	if inventory.exactName != "sandbox" || inventory.exactUID != "sandbox-uid" {
+		t.Fatalf("archive lookup identity = %q/%q, want exact Sandbox UID", inventory.exactName, inventory.exactUID)
+	}
+	if environmentRuntime.target.GetUid() != "sandbox-uid" {
+		t.Fatalf("runtime status target = %v, want exact Sandbox UID", environmentRuntime.target)
+	}
 	environmentRuntime.status.Sessions[0].Busy = false
-	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox"}, inventory, environmentRuntime); err != nil {
+	if err := ensureThreadArchivable(context.Background(), "tools", thread, historydata.FoldSummary{Sandbox: "sandbox", SandboxUID: "sandbox-uid"}, inventory, environmentRuntime); err != nil {
 		t.Fatalf("idle Environment Runtime archive check = %v, want nil", err)
 	}
-	sandbox.OperatingMode = stringPointer("Suspended")
-	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox"}, inventory, environmentRuntime); !errors.Is(err, errThreadEnvironmentRuntimeUnready) {
+	sandbox.OperatingMode = environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED
+	if err := ensureThreadArchivable(context.Background(), "tools", thread, historydata.FoldSummary{Sandbox: "sandbox", SandboxUID: "sandbox-uid"}, inventory, environmentRuntime); !errors.Is(err, errThreadEnvironmentRuntimeUnready) {
 		t.Fatalf("unready Environment Runtime archive check = %v, want errThreadEnvironmentRuntimeUnready", err)
 	}
 }
@@ -635,7 +687,7 @@ func TestRenameThreadReturnsNotFoundWhenHistorySessionIsMissing(t *testing.T) {
 	t.Cleanup(server.Close)
 	id := uuid.New()
 	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id}}}
-	if err := RegisterThreadReadRoutes(server, store, &threadReadHistoryFake{}, nil, nil); err != nil {
+	if err := RegisterThreadReadRoutes(server, "tools", store, &threadReadHistoryFake{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodPatch, "/threads/"+id.String(), strings.NewReader(`{"name":"renamed"}`))

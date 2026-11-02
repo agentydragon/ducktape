@@ -27,7 +27,7 @@ Fix: identify Sandbox lifecycle ownership independently of the controller flag, 
 
 `agentplane/action_service/sandbox/inventory.go:318` checks caller labels, then deletes by name with no UID precondition. `agentplane/app/go/policyaccess/policyaccess.go:215` likewise checks provenance and deletes without UID/resourceVersion guards. A same-name replacement between check and delete is not covered by the ownership decision. A same-UID provenance change also matters for operator revocation.
 
-Fix: UID-bound deletes; use resourceVersion where the authorization depends on mutable labels/provenance. Tests replace or relabel the object between read and delete and require refusal. `agentplane/sandboxes/inventory/inventory.go:315` demonstrates UID+resourceVersion deletion.
+Fix: UID-bound deletes; use resourceVersion where the authorization depends on mutable labels/provenance. Tests replace or relabel the object between read and delete and require refusal. `agentplane/runner_gateway/environments/internal/management/access.go` demonstrates UID+resourceVersion deletion.
 
 ### C — Controller reads connection Leases without checking Sandbox ownership
 

@@ -6,8 +6,8 @@ import (
 
 	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
+	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
-	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -177,7 +177,7 @@ func (r *Runtime) sessionFacts(ctx context.Context) (*environmentruntimestatepb.
 		return &environmentruntimestatepb.EnvironmentRuntimeFacts{}, nil
 	}
 	sessions := manager.Inventory()
-	var blockers []*sandboxpb.AutosuspendBlocker
+	var blockers []*environmentlifecyclepb.AutosuspendBlocker
 	setup := false
 	for _, s := range sessions {
 		sessionBlockers := s.AutosuspendBlockers()
@@ -194,7 +194,7 @@ func (r *Runtime) sessionFacts(ctx context.Context) (*environmentruntimestatepb.
 		return nil, err
 	}
 	if admissions > 0 {
-		blockers = append(blockers, &sandboxpb.AutosuspendBlocker{Reason: autosuspendAdmission})
+		blockers = append(blockers, &environmentlifecyclepb.AutosuspendBlocker{Reason: autosuspendAdmission})
 	}
 
 	busy := len(blockers) > 0

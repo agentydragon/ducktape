@@ -11,15 +11,16 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/grpc"
+
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/bridge"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
-	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
@@ -38,7 +39,8 @@ import (
 
 func TestSessionDefaultsMergeExplicitFieldsAndHonorSetupPresence(t *testing.T) {
 	config := Config{
-		SandboxPresets: map[string]SandboxPreset{"work": {ThreadPreset: "default"}},
+		SandboxNamespace: "test-sandboxes",
+		SandboxPresets:   map[string]SandboxPreset{"work": {ThreadPreset: "default"}},
 		ThreadPresets: map[string]ThreadPreset{
 			"default": {
 				Harness: "HARNESS_CODEX", Model: "model-a", CWD: "/state/workspaces/{session_id}",
@@ -46,7 +48,7 @@ func TestSessionDefaultsMergeExplicitFieldsAndHonorSetupPresence(t *testing.T) {
 			},
 		},
 	}
-	sandbox := &sandboxespb.Sandbox{Preset: proto.String("work")}
+	sandbox := &environmentpb.EnvironmentDescriptor{Preset: proto.String("work")}
 	defaults, setup, err := sessionDefaults(config, sandbox, false, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +71,7 @@ func TestSessionDefaultsMergeExplicitFieldsAndHonorSetupPresence(t *testing.T) {
 	if _, setup, err = sessionDefaults(config, sandbox, true, &requested); err != nil || setup == nil || *setup != requested {
 		t.Fatalf("explicit setup_script should replace preset value; setup=%v err=%v", setup, err)
 	}
-	if _, _, err = sessionDefaults(config, &sandboxespb.Sandbox{Preset: proto.String("missing")}, false, nil); err == nil {
+	if _, _, err = sessionDefaults(config, &environmentpb.EnvironmentDescriptor{Preset: proto.String("missing")}, false, nil); err == nil {
 		t.Fatal("unknown Sandbox preset was accepted")
 	}
 }
@@ -108,7 +110,7 @@ var (
 )
 
 type sessionTestPeer struct {
-	sandbox      *sandboxespb.Sandbox
+	sandbox      *environmentpb.EnvironmentDescriptor
 	spec         *sessionpb.SessionSpec
 	setup        *string
 	id           uuid.UUID
@@ -118,7 +120,12 @@ type sessionTestPeer struct {
 	dispatchSpan trace.SpanContext
 }
 
-func (p *sessionTestPeer) Get(context.Context, string) (*sandboxespb.Sandbox, error) {
+func (p *sessionTestPeer) GetEnvironment(_ context.Context, request *environmentpb.GetEnvironmentRequest, _ ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error) {
+	target := request.GetTarget()
+	identity := p.sandbox.GetTarget()
+	if identity == nil || target.GetName() != identity.GetName() || target.GetNamespace() != identity.GetNamespace() || target.GetUid() != identity.GetUid() {
+		return nil, status.Error(codes.NotFound, "requested Environment target was replaced or removed")
+	}
 	return p.sandbox, nil
 }
 
@@ -146,7 +153,7 @@ func (p *sessionTestPeer) OpenSession(ctx context.Context, name, uid string, id 
 
 func (p *sessionTestPeer) SessionOpening(_ context.Context, name string, id uuid.UUID) (*dispatcherpb.SessionOpening, error) {
 	p.calls = append(p.calls, "lookup")
-	return &dispatcherpb.SessionOpening{SessionId: id.String(), Sandbox: name, SandboxUid: p.sandbox.GetUid()}, nil
+	return &dispatcherpb.SessionOpening{SessionId: id.String(), Sandbox: name, SandboxUid: p.sandbox.GetTarget().GetUid()}, nil
 }
 
 type sessionTokenReviewer struct{}
@@ -165,11 +172,12 @@ func sessionTestGateway(t *testing.T, peer *sessionTestPeer) http.Handler {
 		t.Fatal(err)
 	}
 	config := Config{
-		SandboxPresets: map[string]SandboxPreset{"work": {ThreadPreset: "default"}},
-		ThreadPresets:  map[string]ThreadPreset{"default": {Harness: "HARNESS_CODEX", Model: "preset-model", CWD: "/work/{session_id}", ReasoningEffort: sessionTestStringPtr("high"), Instructions: "preset", SetupScript: "setup"}},
+		SandboxNamespace: "test-sandboxes",
+		SandboxPresets:   map[string]SandboxPreset{"work": {ThreadPreset: "default"}},
+		ThreadPresets:    map[string]ThreadPreset{"default": {Harness: "HARNESS_CODEX", Model: "preset-model", CWD: "/work/{session_id}", ReasoningEffort: sessionTestStringPtr("high"), Instructions: "preset", SetupScript: "setup"}},
 	}
 	server := NewHTTPServer(authentication)
-	if err := RegisterSessionRoutes(server, &appService{config: config, inventory: peer, bridge: peer, threadWriter: peer}); err != nil {
+	if err := RegisterSessionRoutes(server, &appService{config: config, environments: peer, bridge: peer, threadWriter: peer}); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(server.Close)
@@ -194,7 +202,7 @@ func TestSessionOpeningPreservesHTTPTraceToDispatcher(t *testing.T) {
 		otel.SetTracerProvider(previous)
 		_ = provider.Shutdown(context.Background())
 	})
-	peer := &sessionTestPeer{sandbox: &sandboxespb.Sandbox{Uid: "uid"}}
+	peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &environmentpb.TargetHandle{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}}}
 	handler := appHTTPHandler(sessionTestGateway(t, peer))
 	request := httptest.NewRequest(http.MethodPost, "/sandboxes/demo/sessions", strings.NewReader(`{"spec":{},"session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"uid"}`))
 	request.Header.Set("Authorization", "Bearer accepted")
@@ -237,7 +245,7 @@ func TestSessionOpeningGatewayPreservesPresetPresenceAndWireContract(t *testing.
 		{"zero", `{"harness":0}`, `,"setup_script":"override"`, sessionTestStringPtr("override"), sessionpb.Harness_HARNESS_UNSPECIFIED, "preset-model", "preset", "high"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			peer := &sessionTestPeer{sandbox: &sandboxespb.Sandbox{Uid: "uid", Preset: proto.String("work")}}
+			peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &environmentpb.TargetHandle{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}, Preset: proto.String("work")}}
 			handler := sessionTestGateway(t, peer)
 			body := `{"session_id":"` + id + `","sandbox_uid":"uid","spec":` + test.spec + test.setup + `}`
 			response := sessionTestRequest(handler, http.MethodPost, "/sandboxes/demo/sessions", body)
@@ -281,7 +289,7 @@ func TestSessionOpeningGatewayRejectsBeforeEffects(t *testing.T) {
 		`{"spec":{},"setup_script":false,"session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"uid"}`,
 		`{"spec":{},"setup_script":"` + strings.Repeat("x", bridge.MaxSetupScriptCharacters+1) + `","session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"uid"}`,
 	} {
-		peer := &sessionTestPeer{sandbox: &sandboxespb.Sandbox{Uid: "uid"}}
+		peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &environmentpb.TargetHandle{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}}}
 		response := sessionTestRequest(sessionTestGateway(t, peer), http.MethodPost, "/sandboxes/demo/sessions", body)
 		if response.Code != http.StatusUnprocessableEntity || len(peer.calls) != 0 {
 			t.Fatalf("status %d effects %v: %s", response.Code, peer.calls, response.Body.String())
@@ -298,7 +306,7 @@ func TestSessionOpeningGatewayPreservesConflictAndUncertainOutcomes(t *testing.T
 		wantCode   codes.Code
 		wantCalls  []string
 	}{
-		{"old-uid", false, nil, 409, codes.Aborted, nil},
+		{"old-uid", false, nil, 404, codes.NotFound, nil},
 		{"uid", true, nil, 503, codes.Unavailable, []string{"thread"}},
 		{"uid", false, &bridge.DispatcherRequestTimeoutError{SessionID: uuid.New()}, 504, codes.DeadlineExceeded, []string{"thread", "dispatch"}},
 		{"uid", false, &bridge.SessionOpeningNotFoundError{SessionID: uuid.New(), Sandbox: "demo"}, 500, codes.Unknown, []string{"thread", "dispatch"}},
@@ -306,7 +314,7 @@ func TestSessionOpeningGatewayPreservesConflictAndUncertainOutcomes(t *testing.T
 		{"uid", false, &bridge.ServiceError{Code: codes.Internal, Details: "private-upstream-diagnostic"}, 500, codes.Internal, []string{"thread", "dispatch"}},
 		{"uid", false, &bridge.ServiceError{Code: codes.AlreadyExists, Details: "conflict"}, 409, codes.AlreadyExists, []string{"thread", "dispatch"}},
 	} {
-		peer := &sessionTestPeer{sandbox: &sandboxespb.Sandbox{Uid: "uid"}, failThread: test.failThread, failOpen: test.failOpen}
+		peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &environmentpb.TargetHandle{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}}, failThread: test.failThread, failOpen: test.failOpen}
 		response := sessionTestRequest(sessionTestGateway(t, peer), http.MethodPost, "/sandboxes/demo/sessions", `{"spec":{},"session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"`+test.uid+`"}`)
 		var body struct {
 			Code   int32
@@ -332,7 +340,7 @@ func TestSessionRPCErrorClassifiesWithoutHTTP(t *testing.T) {
 		wantCode   codes.Code
 		wantDetail string
 	}{
-		{"sandbox missing", &sandboxinventory.SandboxNotFoundError{Name: "demo"}, codes.NotFound, "demo"},
+		{"sandbox missing", status.Error(codes.NotFound, "demo"), codes.NotFound, "demo"},
 		{"kubernetes missing", apierrors.NewNotFound(resource, "demo"), codes.NotFound, "demo"},
 		{"kubernetes conflict", apierrors.NewConflict(resource, "demo", errors.New("conflict")), codes.FailedPrecondition, "demo"},
 		{"quiescing", &sandboxes.SandboxQuiescingError{Name: "demo"}, codes.Unavailable, "quiescing"},
@@ -390,7 +398,7 @@ func TestGeneratedSessionOpeningRequestAcceptedByLegacyHuma(t *testing.T) {
 }
 
 func TestSessionOpeningCanonicalizesAcceptedUUIDSpelling(t *testing.T) {
-	peer := &sessionTestPeer{sandbox: &sandboxespb.Sandbox{Uid: "uid"}}
+	peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &environmentpb.TargetHandle{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}}}
 	handler := sessionTestGateway(t, peer)
 	response := sessionTestRequest(handler, http.MethodPost, "/sandboxes/demo/sessions", `{"session_id":"B351B316-FDC4-4F50-A642-758992AE3323","sandbox_uid":"uid","spec":{}}`)
 	if response.Code != http.StatusCreated {

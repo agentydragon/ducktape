@@ -1,9 +1,9 @@
+import type { EnvironmentDescriptor } from "../../../runner_gateway/environments/environment_service_pb";
 import { Checkbox } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import { sandboxWakeOnSend, type SandboxStatusSource } from "../sandbox_status";
 import { displayableError } from "../client";
-import { sandboxTarget, setEnvironmentWakeOnSend } from "./client";
+import { setEnvironmentWakeOnSend } from "./client";
 
 /**
  * Whether a message to a suspended Sandbox resumes it, saved on each change to the incarnation shown. What
@@ -15,13 +15,13 @@ export function WakeOnSendCheckbox({
   label,
   onError,
 }: {
-  sandbox: SandboxStatusSource;
+  sandbox: EnvironmentDescriptor;
   disabled: boolean;
   /** Shown beside the box; the box is named for assistive technology either way. */
   label?: string;
   onError: (message: string | null) => void;
 }): JSX.Element {
-  const stored = sandboxWakeOnSend(sandbox);
+  const stored = sandbox.wakeOnSend;
   const [requested, setRequested] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
   useEffect(() => {
@@ -31,7 +31,7 @@ export function WakeOnSendCheckbox({
   async function save(wakeOnSend: boolean): Promise<void> {
     setRequested(wakeOnSend);
     setSaving(true);
-    const failure = await setEnvironmentWakeOnSend(sandboxTarget(sandbox), wakeOnSend).then(
+    const failure = await setEnvironmentWakeOnSend(sandbox.target!, wakeOnSend).then(
       () => null,
       (reason: unknown) => reason
     );
@@ -43,7 +43,7 @@ export function WakeOnSendCheckbox({
   return (
     <Checkbox
       label={label}
-      aria-label={"Wake on message for " + sandbox.name}
+      aria-label={"Wake on message for " + sandbox.target!.name}
       checked={requested ?? stored}
       disabled={disabled || saving}
       onChange={(event) => void save(event.currentTarget.checked)}

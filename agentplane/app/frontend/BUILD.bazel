@@ -558,7 +558,7 @@ ts_library(
         ":schema",
         ":status_mark",
         "//agentplane/app/frontend/sandboxes:client",
-        "//agentplane/proto:sandboxes_pb",
+        "//agentplane/runner_gateway/environments:environment_service_pb",
     ],
 )
 
@@ -573,7 +573,7 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/testing:sandbox",
-        "//agentplane/proto:sandboxes_pb",
+        "//agentplane/runner_gateway/environments:environment_service_pb",
     ],
 )
 
@@ -672,7 +672,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/threads:thread_groups",
         "//agentplane/app/frontend/threads:thread_status",
         "//agentplane/app/frontend/threads:thread_view_recorder",
-        "//agentplane/proto:sandboxes_pb",
+        "//agentplane/runner_gateway/environments:environment_service_pb",
     ],
 )
 
@@ -733,6 +733,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/runner_gateway/environments:environment_service_pb",
     ],
 )
 
@@ -917,8 +918,9 @@ ts_library(
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:local_commands",
-        "//agentplane/proto:sandboxes_pb",
+        "//agentplane/proto:environment_lifecycle_pb",
         "//agentplane/proto:session_pb",
+        "//agentplane/runner_gateway/environments:environment_service_pb",
         "//util/frontend:clamped_block",
         "//util/frontend:disclosure",
         "//util/frontend/transcript:history_sizes",

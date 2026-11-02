@@ -17,8 +17,8 @@ from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, Trace
 
 from agentplane.app.testing import client as client_module
 from agentplane.app.testing.client import Client, SessionStreamError
-from agentplane.app.testing.models import NewSandbox
-from agentplane.proto import event_log_pb2, session_pb2
+from agentplane.proto import event_log_pb2, sandboxes_pb2, session_pb2
+from agentplane.runner_gateway.environments import environment_service_pb2
 
 # A server answers one connection per call: `(after, writer)`. Raw sockets, because what is under
 # test is how the client reads a connection that dies, which an ASGI transport cannot produce.
@@ -118,7 +118,7 @@ async def test_open_session_preserves_override_presence(
     overrides: dict[str, object] | None, setup_script: str | None
 ) -> None:
     observed: list[str] = []
-    session_id, sandbox_uid = uuid4(), uuid4()
+    session_id, sandbox_uid = uuid4(), str(uuid4())
 
     async def opened(_after: int, writer: asyncio.StreamWriter) -> None:
         await _respond(
@@ -195,88 +195,6 @@ async def test_app_config_client_decodes_generated_proto_json() -> None:
     assert not preset.session_defaults.HasField("reasoning_effort")
 
 
-def _sandbox_view(name: str, uid: str, namespace: str = "sandboxes-test") -> dict[str, object]:
-    return {
-        "namespace": namespace,
-        "name": name,
-        "uid": uid,
-        "created_at": "2026-01-01T00:00:00Z",
-        "service_account": {"namespace": namespace, "name": name},
-        "phase": "Creating",
-    }
-
-
-@pytest.mark.parametrize("replaced", [False, True])
-async def test_create_sandbox_checks_exact_read_back_identity(replaced: bool) -> None:
-    created_uid = str(uuid4())
-    read_uid = str(uuid4()) if replaced else created_uid
-
-    async def created(_after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(
-            writer,
-            "200 OK",
-            json.dumps({"namespace": "sandboxes-test", "name": "demo", "uid": created_uid}).encode(),
-            "application/json",
-        )
-
-    async def read_back(_after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(writer, "200 OK", json.dumps(_sandbox_view("demo", read_uid)).encode(), "application/json")
-
-    async with _app(created, read_back) as (client, _):
-        spec = NewSandbox(name="demo", template="linux")
-        if replaced:
-            with pytest.raises(RuntimeError, match="created target changed before read-back"):
-                await client.create_sandbox(spec)
-        else:
-            assert str((await client.create_sandbox(spec)).uid) == read_uid
-
-
-@pytest.mark.parametrize(
-    ("outcome", "target_kind", "error"),
-    [
-        ("RESUME_OUTCOME_REQUESTED", "same", None),
-        ("RESUME_OUTCOME_ALREADY_RUNNING", "same", None),
-        ("RESUME_OUTCOME_STATE_CHANGED", "same", "Environment state changed"),
-        ("RESUME_OUTCOME_UNSPECIFIED", "same", "no resume outcome"),
-        ("RESUME_OUTCOME_REQUESTED", "missing", "different target"),
-        ("RESUME_OUTCOME_REQUESTED", "other_uid", "different target"),
-        ("RESUME_OUTCOME_REQUESTED", "other_namespace", "different target"),
-        ("RESUME_OUTCOME_REQUESTED", "other_name", "different target"),
-    ],
-)
-async def test_resume_sandbox_checks_outcome_and_exact_target(
-    outcome: str, target_kind: str, error: str | None
-) -> None:
-    uid = str(uuid4())
-    target = {"namespace": "sandboxes-test", "name": "demo", "uid": uid}
-    returned = dict(target)
-    if target_kind == "other_uid":
-        returned["uid"] = str(uuid4())
-    elif target_kind == "other_namespace":
-        returned["namespace"] = "another-namespace"
-    elif target_kind == "other_name":
-        returned["name"] = "another-name"
-    body: dict[str, object] = {"outcome": outcome}
-    if target_kind != "missing":
-        body["target"] = returned
-
-    async def read_target(_after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(writer, "200 OK", json.dumps(_sandbox_view("demo", uid)).encode(), "application/json")
-
-    async def resumed(_after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(writer, "200 OK", json.dumps(body).encode(), "application/json")
-
-    observed: list[str] = []
-    async with _app(read_target, resumed, requests=observed) as (client, _):
-        if error is None:
-            await client.resume_sandbox("demo")
-        else:
-            with pytest.raises(RuntimeError, match=error):
-                await client.resume_sandbox("demo")
-    assert len(observed) == 2
-    assert json.loads(observed[1].split("\r\n\r\n", 1)[1]) == {"target": target}
-
-
 async def test_resumes_after_the_last_entry_when_the_stream_closes_without_an_end_frame() -> None:
     async with _app(_first_two_then_close, _rest_then_end) as (client, _):
         assert await _cursors(client) == [1, 2, 3]
@@ -322,8 +240,9 @@ async def test_runner_status_decodes_proto_json_and_preserves_optional_and_64_bi
 
     observed: list[str] = []
     async with _app(status, requests=observed) as (client, _):
-        result = await client.runner_status("test-sandbox")
+        result = await client.runner_status("test-sandbox", "sandbox-uid")
 
+    assert "GET /sandboxes/test-sandbox/runner-status?sandbox_uid=sandbox-uid HTTP/1.1" in observed[0]
     (process,) = result.processes
     (session,) = result.sessions
     assert process.pid == 9223372036854775807
@@ -346,7 +265,7 @@ async def test_runner_status_rejects_unknown_proto_json_fields() -> None:
 
     async with _app(status) as (client, _):
         with pytest.raises(ParseError, match="new_field"):
-            await client.runner_status("test-sandbox")
+            await client.runner_status("test-sandbox", "sandbox-uid")
 
 
 async def _proxy_denied(after: int, writer: asyncio.StreamWriter) -> None:
@@ -421,8 +340,8 @@ async def test_sandbox_subscription_assembles_proto_snapshot_chunks() -> None:
     async def snapshots(after: int, writer: asyncio.StreamWriter) -> None:
         del after
         body = (
-            b'{"result":{"snapshot":{"sandboxes":[{"name":"one","uid":"u1"}]}}}\n'
-            b'{"result":{"snapshot":{"sandboxes":[{"name":"two","uid":"u2"}]}}}\n'
+            b'{"result":{"snapshot":{"environments":[{"target":{"namespace":"ns","name":"one","uid":"u1"}}]}}}\n'
+            b'{"result":{"snapshot":{"environments":[{"target":{"namespace":"ns","name":"two","uid":"u2"}}]}}}\n'
             b'{"result":{"snapshotComplete":{}}}\n'
         )
         await _respond(writer, "200 OK", body, "application/x-ndjson")
@@ -430,7 +349,7 @@ async def test_sandbox_subscription_assembles_proto_snapshot_chunks() -> None:
     async with _app(snapshots) as (client, _):
         updates = client.sandbox_snapshots()
         snapshot = await anext(updates)
-        assert [(row.name, row.uid) for row in snapshot] == [("one", "u1"), ("two", "u2")]
+        assert [(row.target.name, row.target.uid) for row in snapshot] == [("one", "u1"), ("two", "u2")]
         with pytest.raises(RuntimeError, match="inventory stream ended"):
             await anext(updates)
 
@@ -440,27 +359,70 @@ async def test_sandbox_subscription_applies_upserts_and_uid_fenced_removals() ->
         await _respond(
             writer,
             "200 OK",
-            b'{"result":{"snapshot":{"sandboxes":[{"namespace":"ns","name":"box","uid":"old"}]}}}\n'
+            b'{"result":{"snapshot":{"environments":[{"target":{"namespace":"ns","name":"box","uid":"old"}}]}}}\n'
             b'{"result":{"snapshotComplete":{}}}\n'
-            b'{"result":{"upsert":{"namespace":"ns","name":"box","uid":"new"}}}\n'
+            b'{"result":{"upsert":{"target":{"namespace":"ns","name":"box","uid":"new"}}}}\n'
             b'{"result":{"removed":{"namespace":"ns","name":"box","uid":"old"}}}\n'
-            b'{"result":{"upsert":{"namespace":"ns","name":"other","uid":"u2"}}}\n'
+            b'{"result":{"upsert":{"target":{"namespace":"ns","name":"other","uid":"u2"}}}}\n'
             b'{"result":{"removed":{"namespace":"ns","name":"box","uid":"new"}}}\n',
             "application/x-ndjson",
         )
 
     async with _app(updates) as (client, _):
         stream = client.sandbox_snapshots()
-        assert [(row.name, row.uid) for row in await anext(stream)] == [("box", "old")]
-        assert [(row.name, row.uid) for row in await anext(stream)] == [("box", "new")]
-        assert [(row.name, row.uid) for row in await anext(stream)] == [("box", "new"), ("other", "u2")]
-        assert [(row.name, row.uid) for row in await anext(stream)] == [("other", "u2")]
+        assert [(row.target.name, row.target.uid) for row in await anext(stream)] == [("box", "old")]
+        assert [(row.target.name, row.target.uid) for row in await anext(stream)] == [("box", "new")]
+        assert [(row.target.name, row.target.uid) for row in await anext(stream)] == [("box", "new"), ("other", "u2")]
+        assert [(row.target.name, row.target.uid) for row in await anext(stream)] == [("other", "u2")]
         await stream.aclose()
+
+
+async def test_sandbox_subscription_reconnects_with_a_fresh_complete_snapshot() -> None:
+    async def interrupted(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "200 OK",
+            b'{"result":{"snapshot":{"environments":[{"target":{"namespace":"ns","name":"box","uid":"old"}}]}}}\n'
+            b'{"result":{"snapshotComplete":{}}}\n'
+            b'{"error":{"code":14,"message":"reconnect for a current snapshot"}}\n',
+            "application/x-ndjson",
+        )
+
+    async def restarted(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "200 OK",
+            b'{"result":{"snapshot":{"environments":[{"target":{"namespace":"ns","name":"box","uid":"new"}}]}}}\n'
+            b'{"result":{"snapshotComplete":{}}}\n',
+            "application/x-ndjson",
+        )
+
+    async with _app(interrupted, restarted) as (client, _):
+        stream = client.sandbox_snapshots()
+        assert [(row.target.name, row.target.uid) for row in await anext(stream)] == [("box", "old")]
+        assert [(row.target.name, row.target.uid) for row in await anext(stream)] == [("box", "new")]
+        await stream.aclose()
+
+
+async def test_sandbox_subscription_does_not_reconnect_after_grpc_denial() -> None:
+    async def refused(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer, "200 OK", b'{"error":{"code":7,"message":"permission denied"}}\n', "application/x-ndjson"
+        )
+
+    async with _app(refused) as (client, _):
+        with pytest.raises(RuntimeError, match="permission denied"):
+            await anext(client.sandbox_snapshots())
 
 
 async def test_sandbox_subscription_rejects_an_update_before_initial_snapshot() -> None:
     async def early(_after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(writer, "200 OK", b'{"result":{"upsert":{"name":"too-early"}}}\n', "application/x-ndjson")
+        await _respond(
+            writer,
+            "200 OK",
+            b'{"result":{"upsert":{"target":{"namespace":"ns","name":"too-early","uid":"u"}}}}\n',
+            "application/x-ndjson",
+        )
 
     async with _app(early) as (client, _):
         with pytest.raises(RuntimeError, match="before snapshot completion"):
@@ -481,6 +443,89 @@ async def test_sandbox_subscription_does_not_retry_any_authorization_refusal(sta
         with pytest.raises(httpx.HTTPStatusError):
             await anext(client.sandbox_snapshots())
     assert requests == 1
+
+
+async def test_get_environment_uses_the_exact_generated_route_and_uid_query() -> None:
+    observed: list[str] = []
+
+    async def descriptor(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "200 OK",
+            b'{"target":{"namespace":"test-ns","name":"box","uid":"target-uid"},'
+            b'"operatingMode":"OPERATING_MODE_RUNNING",'
+            b'"readiness":{"state":"READINESS_STATE_READY"}}',
+            "application/json",
+        )
+
+    async with _app(descriptor, requests=observed) as (client, _):
+        target = environment_service_pb2.TargetHandle(namespace="test-ns", name="box", uid="target-uid")
+        environment = await client.get_environment(target)
+
+    assert environment.target == target
+    assert environment.operating_mode == environment_service_pb2.OPERATING_MODE_RUNNING
+    assert environment.readiness.state == environment_service_pb2.READINESS_STATE_READY
+    assert "GET /upstream/environments/v1/environments/test-ns/box?target.uid=target-uid HTTP/1.1" in observed[0]
+
+
+async def test_create_sandbox_captures_the_exact_complete_ack_without_retrying() -> None:
+    observed: list[str] = []
+    uid = "opaque-sandbox-uid"
+
+    async def created(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "201 Created",
+            json.dumps({"namespace": "test-ns", "name": "box", "uid": str(uid)}).encode(),
+            "application/json",
+        )
+
+    async with _app(created, requests=observed) as (client, _):
+        target = await client.create_sandbox(sandboxes_pb2.CreateSandboxRequest(name="box", template="test-template"))
+
+    assert target == environment_service_pb2.TargetHandle(namespace="test-ns", name="box", uid=str(uid))
+    assert client.opened_sandbox_uids == {uid}
+    assert len(observed) == 1
+    assert "POST /upstream/environments/v1/environments HTTP/1.1" in observed[0]
+
+
+async def test_open_session_rejects_a_different_sandbox_uid() -> None:
+    async def opened(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(writer, "201 Created", b'{"sandboxUid":"different-uid"}', "application/json")
+
+    async with _app(opened) as (client, _):
+        with pytest.raises(RuntimeError, match="different Sandbox UID"):
+            await client.open_session("box", uuid4(), sandbox_uid="expected-uid")
+        assert not client.opened_sandbox_uids
+
+
+async def test_sandbox_mutations_carry_the_expected_uid() -> None:
+    observed: list[str] = []
+    uid = str(uuid4())
+
+    target = environment_service_pb2.TargetHandle(namespace="test-ns", name="box", uid=uid)
+
+    async def accepted(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(writer, "200 OK", b"{}", "application/json")
+
+    async def resumed(_after: int, writer: asyncio.StreamWriter) -> None:
+        body = {"target": {"namespace": "test-ns", "name": "box", "uid": uid}, "outcome": "RESUME_OUTCOME_REQUESTED"}
+        await _respond(writer, "200 OK", json.dumps(body).encode(), "application/json")
+
+    async with _app(accepted, resumed, accepted, requests=observed) as (client, _):
+        await client.suspend_sandbox(target)
+        await client.resume_sandbox(target)
+        await client.delete_sandbox(target)
+
+    paths_and_methods = [request.split("\r\n", 1)[0] for request in observed]
+    assert paths_and_methods == [
+        "POST /upstream/environments/v1/environments/test-ns/box:suspend HTTP/1.1",
+        "POST /upstream/environments/v1/environments/test-ns/box:resume HTTP/1.1",
+        f"DELETE /upstream/environments/v1/environments/test-ns/box?target.uid={uid} HTTP/1.1",
+    ]
+    assert [json.loads(request.split("\r\n\r\n", 1)[1]) for request in observed[:2]] == [
+        {"target": {"namespace": "test-ns", "name": "box", "uid": uid}}
+    ] * 2
 
 
 if __name__ == "__main__":

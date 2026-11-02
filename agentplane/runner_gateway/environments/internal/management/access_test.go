@@ -9,8 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/policy"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
-	sandboxview "github.com/agentydragon/ducktape/agentplane/sandboxes/view"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
@@ -95,12 +94,12 @@ func TestCreateAppliesDefaultsAndCallerIntentAndIsIdempotent(t *testing.T) {
 		PolicySets: []string{"extra-policy"}, Preset: &preset, WakeOnSend: true,
 		IdleSuspendAfter: durationpb.New(time.Minute), InboxTags: []string{"team-b", "team-a", "team-b"},
 	}
-	view, err := access.Create(context.Background(), request)
+	created, err := access.Create(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.Name != request.Name || view.Uid != "created-1" || view.GetPreset() != preset || !view.GetWakeOnSend() {
-		t.Fatalf("created view = %#v", view)
+	if created.Name != request.Name || created.Uid != "created-1" || created.Namespace != namespace {
+		t.Fatalf("created target = %#v", created)
 	}
 	stored := &sandboxapi.Sandbox{}
 	if err := objects.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: request.Name}, stored); err != nil {
@@ -111,7 +110,7 @@ func TestCreateAppliesDefaultsAndCallerIntentAndIsIdempotent(t *testing.T) {
 		fmt.Sprint(stored.Spec.InboxTags) != "[team-a team-b]" || stored.Spec.IdleSuspendAfter.Duration != time.Minute {
 		t.Fatalf("stored create spec = %#v", stored.Spec)
 	}
-	if stored.Labels[sandboxview.PresetLabel] != preset || stored.Annotations[sandboxapi.CreateIntentAnnotation] == "" {
+	if stored.Labels[view.PresetLabel] != preset || stored.Annotations[sandboxapi.CreateIntentAnnotation] == "" {
 		t.Fatalf("stored metadata = %#v", stored.ObjectMeta)
 	}
 	wantIntent := `{"caller":{"name":"app","namespace":"test-sandboxes"},"request":{"bootstrap":"echo < start","idle_suspend_after":"60s","inbox_tags":["team-b","team-a","team-b"],"name":"created-sandbox","policy_sets":["extra-policy"],"preset":"selected-preset","template":"pod-template","wake_on_send":true}}`
@@ -119,7 +118,7 @@ func TestCreateAppliesDefaultsAndCallerIntentAndIsIdempotent(t *testing.T) {
 		t.Fatalf("create intent = %s, want %s", got, wantIntent)
 	}
 	retry, err := access.Create(context.Background(), request)
-	if err != nil || retry.GetUid() != view.GetUid() {
+	if err != nil || retry.GetUid() != created.GetUid() {
 		t.Fatalf("same Create retry = %#v, %v", retry, err)
 	}
 	otherCaller, err := New(namespace, objects, nil, &sandboxespb.ServiceAccount{Namespace: namespace, Name: "other"})
@@ -303,7 +302,7 @@ func readSandbox(t *testing.T, objects client.Client, name string) *sandboxapi.S
 }
 
 func isNotFound(err error) bool {
-	var target *inventory.SandboxNotFoundError
+	var target *SandboxNotFoundError
 	return errors.As(err, &target)
 }
 
@@ -343,5 +342,96 @@ func TestListTemplates(t *testing.T) {
 	}
 	if fmt.Sprint(names) != "[a-template z-template]" {
 		t.Fatalf("templates = %v", names)
+	}
+}
+
+type createOutcomeClient struct {
+	client.Client
+	outcome func(context.Context, client.Object) error
+}
+
+func (c *createOutcomeClient) Create(ctx context.Context, object client.Object, options ...client.CreateOption) error {
+	if err := c.Client.Create(ctx, object, options...); err != nil {
+		return err
+	}
+	return c.outcome(ctx, object)
+}
+
+func TestCreateReturnsPersistedIdentityAcrossUncertainWritesAndReplacement(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		uncertain bool
+		replace   bool
+	}{
+		{name: "acknowledged write"},
+		{name: "persisted write with lost acknowledgement", uncertain: true},
+		{name: "same-name replacement after acknowledged write", replace: true},
+		{name: "same-name replacement after uncertain write", uncertain: true, replace: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			underlying := clientfake.NewClientBuilder().WithScheme(testScheme(t)).Build()
+			assigning := &assigningClient{Client: underlying}
+			objects := &createOutcomeClient{Client: assigning}
+			objects.outcome = func(ctx context.Context, object client.Object) error {
+				if test.replace {
+					if err := underlying.Delete(ctx, object); err != nil {
+						return err
+					}
+					replacement := object.DeepCopyObject().(*sandboxapi.Sandbox)
+					replacement.ResourceVersion = ""
+					replacement.UID = "replacement-uid"
+					replacement.Annotations = nil
+					if err := underlying.Create(ctx, replacement); err != nil {
+						return err
+					}
+				}
+				if test.uncertain {
+					return context.DeadlineExceeded
+				}
+				return nil
+			}
+			access, err := New(namespace, objects, nil, &sandboxespb.ServiceAccount{Namespace: namespace, Name: "app"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			target, err := access.Create(t.Context(), &sandboxespb.CreateSandboxRequest{Name: "created", Template: "pod"})
+			if test.uncertain && test.replace {
+				if target != nil || !isConflict(err) {
+					t.Fatalf("uncertain write with foreign replacement = %v, %v", target, err)
+				}
+				return
+			}
+			if err != nil || target.GetUid() != "created-1" || target.GetNamespace() != namespace || target.GetName() != "created" {
+				t.Fatalf("created target = %v, %v", target, err)
+			}
+			if test.replace {
+				stored := &sandboxapi.Sandbox{}
+				if err := underlying.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: "created"}, stored); err != nil {
+					t.Fatal(err)
+				}
+				if string(stored.UID) == target.GetUid() {
+					t.Fatal("same-name replacement was returned as the created target")
+				}
+			}
+		})
+	}
+}
+
+func TestCreateDoesNotInferPersistenceFromAnUncertainWrite(t *testing.T) {
+	underlying := clientfake.NewClientBuilder().WithScheme(testScheme(t)).Build()
+	objects := &createOutcomeClient{Client: &assigningClient{Client: underlying}}
+	objects.outcome = func(ctx context.Context, object client.Object) error {
+		if err := underlying.Delete(ctx, object); err != nil {
+			return err
+		}
+		return context.DeadlineExceeded
+	}
+	access, err := New(namespace, objects, nil, &sandboxespb.ServiceAccount{Namespace: namespace, Name: "app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := access.Create(t.Context(), &sandboxespb.CreateSandboxRequest{Name: "created", Template: "pod"})
+	if target != nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("unreconciled uncertain write = %v, %v", target, err)
 	}
 }

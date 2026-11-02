@@ -6,7 +6,6 @@ import (
 	"io"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
-	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
 )
 
 // exportOpenAPI registers the application's typed routes and writes the OpenAPI document
@@ -19,9 +18,8 @@ func exportOpenAPI(writer io.Writer) error {
 	if err := RegisterCoreRoutes(server, config); err != nil {
 		return fmt.Errorf("register core routes: %w", err)
 	}
-	RegisterSandboxRoutes(server, (*sandboxinventory.Access)(nil))
-	RegisterPolicyRoutes(server, config, (*sandboxinventory.Access)(nil), (*policyaccess.Access)(nil))
-	if err := RegisterThreadReadRoutes(server, nil, nil, nil, nil); err != nil {
+	RegisterPolicyRoutes(server, config, nil, (*policyaccess.Access)(nil))
+	if err := RegisterThreadReadRoutes(server, "", nil, nil, nil, nil); err != nil {
 		return fmt.Errorf("register Thread routes: %w", err)
 	}
 	RegisterOperatorRoutes(server, nil, nil, nil, nil, "")

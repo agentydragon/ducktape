@@ -1,6 +1,7 @@
 /** Read-only operator projection: curated entry summaries, no raw provider payloads or acknowledgement controls. */
 import { Accordion, Divider, Drawer, Group, Paper, ScrollArea, Select, Stack, Text } from "@mantine/core";
 import { useEffect, useState, type JSX } from "react";
+import type { TargetHandle } from "../../runner_gateway/environments/environment_service_pb";
 
 import { clockTime, isoTime, timeAgo } from "./format_time";
 import { followStream } from "./live_stream";
@@ -77,11 +78,13 @@ function timestamp(value: string): string {
 
 export function NotificationStatus({
   sandbox,
+  target,
   sessionId,
   opened,
   onClose,
 }: {
   sandbox: string;
+  target: TargetHandle | null;
   sessionId?: string;
   opened: boolean;
   onClose: () => void;
@@ -90,24 +93,35 @@ export function NotificationStatus({
   const [subscriptionFilter, setSubscriptionFilter] = useState<SubscriptionFilter>("not-cancelled");
   const [error, setError] = useState<string | null>(null);
   const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
+  const namespace = target?.namespace;
+  const name = target?.name;
+  const uid = target?.uid;
   useEffect(() => {
     if (!opened) return;
+    if (!namespace || !name || !uid) {
+      setData(null);
+      setError("The Sandbox identity is unavailable.");
+      return;
+    }
     setData(null);
     setError(null);
-    return followStream(`/sandboxes/${encodeURIComponent(sandbox)}/notifications/stream`, {
-      events: {
-        snapshot: (message) => {
-          try {
-            setData(JSON.parse(message.data) as SandboxNotificationStatus);
-            setError(null);
-          } catch {
-            setError("Invalid notification status snapshot");
-          }
+    return followStream(
+      `/sandboxes/${encodeURIComponent(name)}/notifications/stream?sandbox_uid=${encodeURIComponent(uid)}`,
+      {
+        events: {
+          snapshot: (message) => {
+            try {
+              setData(JSON.parse(message.data) as SandboxNotificationStatus);
+              setError(null);
+            } catch {
+              setError("Invalid notification status snapshot");
+            }
+          },
         },
-      },
-      onConnection: setConnection,
-    });
-  }, [opened, sandbox]);
+        onConnection: setConnection,
+      }
+    );
+  }, [opened, namespace, name, uid]);
   const observedAt = data?.observedAt;
   const inboxes =
     data?.inboxes

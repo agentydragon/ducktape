@@ -1,8 +1,8 @@
-# Existing environment discovery
+# EnvironmentService
 
-`EnvironmentService` provides read-only discovery of existing managed Sandboxes and a separately
-authorized explicit-resume operation. It is a separate gRPC service from the Session Dispatcher,
-co-hosted by the Runner Gateway on its existing listener. Its method paths are:
+`EnvironmentService` owns managed Sandbox creation, template listing, discovery, watches, and
+separately authorized lifecycle and policy mutations. It is a separate gRPC service from the Session Dispatcher,
+co-hosted by the Runner Gateway on its existing listener. Its discovery and resume method paths are:
 
 - `/agentplane.sandboxes.environments.EnvironmentService/ListEnvironments`
 - `/agentplane.sandboxes.environments.EnvironmentService/GetEnvironment`
@@ -10,8 +10,9 @@ co-hosted by the Runner Gateway on its existing listener. Its method paths are:
 - `/agentplane.sandboxes.environments.EnvironmentService/WatchEnvironment`
 - `/agentplane.sandboxes.environments.EnvironmentService/ResumeEnvironment`
 
-All methods accept direct TokenReview-verified ServiceAccount credentials and the explicitly
-configured Actions delegation. Delegated calls use the existing Dispatcher audience and are opted
+All methods accept direct TokenReview-verified ServiceAccount credentials. Discovery and resume
+also accept explicitly configured Actions delegation. Management requires its own direct Pod-bound
+manager or launcher grant. Delegated calls use the existing Dispatcher audience and are opted
 into by exact full RPC method name. The handler checks the admitted effective caller's namespace,
 name, and immutable ServiceAccount UID. Ordinary callers see only Sandboxes whose live, controller-owned
 execution ServiceAccount has that exact identity; explicitly configured direct readers see the namespace. A Sandbox's namespace/name or labels alone do
@@ -20,7 +21,8 @@ not establish access. A target handle is the Sandbox namespace, name, and UID; g
 
 `GetEnvironment` returns the current descriptor immediately. `WatchEnvironment` accepts the same
 exact target and sends a current descriptor followed by changed snapshots. It observes Kubernetes
-state even while the target is suspended, with no connection to its Runtime. Each snapshot repeats
+state, including current incarnation Pod diagnostics, even while the target is suspended, with
+no connection to its Runtime. Each snapshot repeats
 the live target and execution-account checks. Metadata changes and observation timestamps alone
 do not emit duplicate snapshots.
 
@@ -73,7 +75,9 @@ remain authoritative. The target's workspace volume is shared by its Sessions; a
 workflow organization, not isolation.
 
 `WatchEnvironments` sends an initial caller-visible inventory in bounded chunks and a completion
-marker, followed by per-Sandbox upserts and UID-fenced removals. Reconnection starts a new snapshot;
+marker, followed by per-environment upserts and UID-fenced removals. List, get, and both watches
+use `EnvironmentDescriptor`, including lifecycle, idle suspension, bootstrap, and current Pod
+diagnostics. Reconnection starts a new snapshot;
 intermediate changes may be coalesced. Direct ServiceAccounts named by the Gateway's
 `environment_readers` setting can read all Sandboxes; the grant does not authorize writes and is
 not inherited by delegated callers. Ordinary callers remain restricted to their exact owned Sandbox.

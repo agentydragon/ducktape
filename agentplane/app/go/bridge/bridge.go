@@ -10,20 +10,21 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"google.golang.org/grpc"
+
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-// SandboxGetter returns the caller-visible Sandbox record. Implementations must
-// read the current Kubernetes object, including its current UID and namespace.
+// SandboxGetter returns the caller-authorized descriptor for an exact Sandbox incarnation.
 type SandboxGetter interface {
-	Get(context.Context, string) (*sandboxespb.Sandbox, error)
+	GetEnvironment(context.Context, *environmentpb.GetEnvironmentRequest, ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error)
 }
 
 // Dispatcher is the narrow unary surface used by the RunnerBridge.
@@ -36,23 +37,24 @@ type Dispatcher interface {
 // Service. The concrete GatewayRunnerProxy binds all four identity values on
 // every call.
 type RunnerProxy interface {
-	ListSessions(context.Context, *sandboxespb.Sandbox) (*sessionpb.ListSessionsResponse, error)
-	EnvironmentRuntimeStatus(context.Context, *sandboxespb.Sandbox) (*sessionpb.EnvironmentRuntimeStatus, error)
+	ListSessions(context.Context, *environmentpb.EnvironmentDescriptor) (*sessionpb.ListSessionsResponse, error)
+	EnvironmentRuntimeStatus(context.Context, *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error)
 }
 
 // RunnerBridge joins the app's Sandbox identity, Dispatcher and Runner services.
 type RunnerBridge struct {
+	namespace  string
 	sandboxes  SandboxGetter
 	runner     RunnerProxy
 	dispatcher Dispatcher
 }
 
 // New constructs the bridge. Runner may be nil for callers using only Session openings.
-func New(sandboxes SandboxGetter, runner RunnerProxy, dispatcher Dispatcher) (*RunnerBridge, error) {
-	if sandboxes == nil || dispatcher == nil {
+func New(namespace string, sandboxes SandboxGetter, runner RunnerProxy, dispatcher Dispatcher) (*RunnerBridge, error) {
+	if namespace == "" || sandboxes == nil || dispatcher == nil {
 		return nil, errors.New("Sandbox getter and Session Dispatcher are required")
 	}
-	return &RunnerBridge{sandboxes: sandboxes, runner: runner, dispatcher: dispatcher}, nil
+	return &RunnerBridge{namespace: namespace, sandboxes: sandboxes, runner: runner, dispatcher: dispatcher}, nil
 }
 
 // OpenSession queues one immutable Session specification. The caller-minted
@@ -109,13 +111,12 @@ func (b *RunnerBridge) SessionOpening(ctx context.Context, sandbox string, sessi
 	return opening, nil
 }
 
-// ListSessions proxies the live runner's durable Session inventory through its
-// current Sandbox incarnation.
-func (b *RunnerBridge) ListSessions(ctx context.Context, sandboxName string) ([]*sessionpb.SessionSummary, error) {
+// ListSessions proxies the live runner's durable Session inventory through the requested Sandbox incarnation.
+func (b *RunnerBridge) ListSessions(ctx context.Context, sandboxName, sandboxUID string) ([]*sessionpb.SessionSummary, error) {
 	if b.runner == nil {
 		return nil, errors.New("Runner proxy is not configured")
 	}
-	sandbox, err := b.currentSandbox(ctx, sandboxName)
+	sandbox, err := b.currentSandbox(ctx, sandboxName, sandboxUID)
 	if err != nil {
 		return nil, err
 	}
@@ -126,28 +127,29 @@ func (b *RunnerBridge) ListSessions(ctx context.Context, sandboxName string) ([]
 	return response.GetSessions(), nil
 }
 
-// EnvironmentRuntimeStatus returns the live status snapshot for the current Sandbox
+// EnvironmentRuntimeStatus returns the live status snapshot for the requested Sandbox
 // incarnation. The snapshot is informational and does not wake the Sandbox.
-func (b *RunnerBridge) EnvironmentRuntimeStatus(ctx context.Context, sandboxName string) (*sessionpb.EnvironmentRuntimeStatus, error) {
+func (b *RunnerBridge) EnvironmentRuntimeStatus(ctx context.Context, sandboxName, sandboxUID string) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	if b.runner == nil {
 		return nil, errors.New("Runner proxy is not configured")
 	}
-	sandbox, err := b.currentSandbox(ctx, sandboxName)
+	sandbox, err := b.currentSandbox(ctx, sandboxName, sandboxUID)
 	if err != nil {
 		return nil, err
 	}
 	return b.runner.EnvironmentRuntimeStatus(ctx, sandbox)
 }
 
-func (b *RunnerBridge) currentSandbox(ctx context.Context, name string) (*sandboxespb.Sandbox, error) {
-	if name == "" {
-		return nil, errors.New("Sandbox name is required")
+func (b *RunnerBridge) currentSandbox(ctx context.Context, name, uid string) (*environmentpb.EnvironmentDescriptor, error) {
+	if name == "" || uid == "" {
+		return nil, errors.New("Sandbox name and UID are required")
 	}
-	sandbox, err := b.sandboxes.Get(ctx, name)
+	sandbox, err := b.sandboxes.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &environmentpb.TargetHandle{Namespace: b.namespace, Name: name, Uid: uid}})
 	if err != nil {
 		return nil, err
 	}
-	if sandbox == nil || sandbox.GetName() != name || sandbox.GetUid() == "" || sandbox.GetNamespace() == "" {
+	if sandbox == nil || sandbox.GetTarget() == nil || sandbox.GetTarget().GetName() != name ||
+		sandbox.GetTarget().GetUid() != uid || sandbox.GetTarget().GetNamespace() != b.namespace {
 		return nil, fmt.Errorf("Sandbox %q has incomplete or mismatched identity", name)
 	}
 	return sandbox, nil

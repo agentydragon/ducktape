@@ -1,5 +1,7 @@
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
-import type { SandboxView, ThreadView } from "../schema";
+import { clone, create } from "@bufbuild/protobuf";
+import { TargetHandleSchema, type TargetHandle } from "../../../runner_gateway/environments/environment_service_pb";
+import type { ThreadView } from "../schema";
 import { NotificationStatus } from "../notification_status";
 import {
   ActionIcon,
@@ -26,15 +28,19 @@ import {
   getSessionOpening,
   openSession,
   resumeSandbox,
-  sandboxTarget,
   sessionOpeningRejected,
   sessionOpeningNotVisible,
   suspendEnvironment,
 } from "./client";
-import type { TargetHandle } from "../../../runner_gateway/environments/environment_service_pb";
 import { ActionPolicySection } from "../actions/policy";
 import { EgressLog } from "./egress";
-import { liveSandboxUrl, sandboxInventoryFresh, useRequiredSandboxesLive, type SandboxSnapshot } from "./live";
+import {
+  liveSandboxUrl,
+  useEnvironmentWatch,
+  sandboxInventoryFresh,
+  useRequiredSandboxesLive,
+  type SandboxPolicySnapshot,
+} from "./live";
 import { MarkGlyph } from "../mark_glyph";
 import { ConfirmDelete, deletable, DELETE_NEEDS_SUSPENDED, SuspendResume } from "./lifecycle";
 import { useLive } from "../live";
@@ -124,33 +130,44 @@ export function SandboxPage({
   const [threadLimit, setThreadLimit] = useState(200);
 
   const inventory = useRequiredSandboxesLive();
-  const candidate = inventory.snapshot?.sandboxes.find((item) => item.name === name);
-  const currentUID = sandboxInventoryFresh(inventory) ? candidate?.uid : undefined;
-  const live = useLive<SandboxSnapshot>(currentUID ? liveSandboxUrl(name, currentUID) : null, `Sandbox ${name}`);
+  const candidate = inventory.snapshot?.environments.find((item) => item.target?.name === name);
+  const selected = sandboxInventoryFresh(inventory) ? candidate?.target : undefined;
+  const target = selected?.namespace && selected.name && selected.uid ? selected : undefined;
+  const sandboxNamespace = target?.namespace;
+  const sandboxUID = target?.uid;
+  const [lastTarget, setLastTarget] = useState<TargetHandle | null>(null);
+  useEffect(() => {
+    if (sandboxNamespace && sandboxUID)
+      setLastTarget(create(TargetHandleSchema, { namespace: sandboxNamespace, name, uid: sandboxUID }));
+  }, [name, sandboxNamespace, sandboxUID]);
+  // History remains available after the resource disappears; do not use a prior route's UID.
+  const threadUID = sandboxUID ?? (lastTarget?.name === name ? lastTarget.uid : undefined);
+  const live = useLive<SandboxPolicySnapshot>(target ? liveSandboxUrl(target) : null, `Sandbox ${name}`);
   const threadRequest = useMemo(
-    () => (currentUID ? { sandboxUID: currentUID, limit: threadLimit, search: null, includeArchived } : null),
-    [currentUID, threadLimit, includeArchived]
+    () => (threadUID ? { sandboxUID: threadUID, limit: threadLimit, search: null, includeArchived } : null),
+    [threadUID, threadLimit, includeArchived]
   );
   const threadLive = useThreadsLive(threadRequest, null);
-  const sandbox: SandboxView | null =
-    currentUID && live.snapshot?.sandbox?.uid === currentUID && live.snapshot.sandbox.name === name
-      ? live.snapshot.sandbox
-      : null;
-  const detail = sandbox ? live.snapshot : null;
+  // Never combine policy or thread data from an old incarnation with its same-name replacement.
+  const matches = !!target && target.uid === live.snapshot?.sandbox_uid;
+  const observation = useEnvironmentWatch(target);
+  const sandbox = observation.stream.standing === "current" ? observation.environment : null;
+  const deleted = sandboxInventoryFresh(inventory) && !candidate;
+  const detail = matches ? live.snapshot : null;
   const vmConsoleAvailable = hasVmConsole(sandbox);
   const tab: Tab =
     isTab(requestedTab) && (requestedTab !== "console" || vmConsoleAvailable) ? requestedTab : DEFAULT_TAB;
-  const currentThreads = currentUID && threadLive.snapshot?.sandbox_uid === currentUID ? threadLive.snapshot : null;
+  const currentThreads = threadUID && threadLive.snapshot?.sandbox_uid === threadUID ? threadLive.snapshot : null;
   const threadsUnavailable = threadLive.stream.stalled;
   const threads = currentThreads?.threads ?? [];
   const ready = sandboxReady(sandbox);
-  const canWakeForThread = sandboxSuspended(sandbox) && sandbox?.wake_on_send === true;
+  const canWakeForThread = sandboxSuspended(sandbox) && sandbox?.wakeOnSend === true;
   const threadUnavailableReason = pendingOpen
     ? "An earlier thread open attempt is unconfirmed. Check opening status before creating another thread."
     : !sandbox
-      ? !sandboxInventoryFresh(inventory) || !inventory.snapshot
-        ? "Waiting for Sandbox status to load."
-        : "This Sandbox no longer exists."
+      ? deleted
+        ? "This Sandbox no longer exists."
+        : "Waiting for Sandbox status to load."
       : !ready && !canWakeForThread
         ? sandboxSuspended(sandbox)
           ? "The Sandbox is suspended. Resume it or enable wake on send before creating a thread."
@@ -183,9 +200,10 @@ export function SandboxPage({
   // No re-read after an action: the change reaches the API server, and the watch behind the
   // stream brings the sandbox's new state back on its own.
   async function act(action: "suspend" | "resume"): Promise<void> {
-    if (!sandbox) return;
-    const target = sandboxTarget(sandbox);
-    const failure = await (action === "resume" ? resumeSandbox(target) : suspendEnvironment(target)).then(
+    if (!sandbox?.target) return;
+    const failure = await (
+      action === "resume" ? resumeSandbox(sandbox.target) : suspendEnvironment(sandbox.target)
+    ).then(
       () => null,
       (reason: unknown) => reason
     );
@@ -225,7 +243,7 @@ export function SandboxPage({
     let openingAccepted = false;
     try {
       const opening = await withinSessionCreate(threadId, () =>
-        openSession(name, sandbox.uid, threadId, spec, setupScript)
+        openSession(sandbox.target!, threadId, spec, setupScript)
       );
       if (!opening.sessionId) throw new Error("Open returned without a Session ID");
       openingAccepted = true;
@@ -350,7 +368,12 @@ export function SandboxPage({
           <Button size="xs" variant="subtle" visibleFrom="sm" onClick={() => setNotificationsOpen(true)}>
             Notifications
           </Button>
-          <NotificationStatus sandbox={name} opened={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
+          <NotificationStatus
+            sandbox={name}
+            target={target ?? null}
+            opened={notificationsOpen}
+            onClose={() => setNotificationsOpen(false)}
+          />
           <SuspendResume sandbox={sandbox} onAct={(action) => void act(action)} />
           <Menu position="bottom-end">
             <Menu.Target>
@@ -376,8 +399,8 @@ export function SandboxPage({
                 <Menu.Item
                   component="a"
                   href={langfuseSandboxTraceUrl(langfuseSearch, {
-                    namespace: sandbox.service_account.namespace,
-                    serviceAccount: sandbox.service_account.name,
+                    namespace: sandbox.executionAccount?.namespace ?? sandbox.target!.namespace,
+                    serviceAccount: sandbox.executionAccount?.name ?? sandbox.target!.name,
                   })}
                   target="_blank"
                   rel="noreferrer"
@@ -385,12 +408,11 @@ export function SandboxPage({
                   Find Sandbox LLM traces in Langfuse
                 </Menu.Item>
               )}
-              {/* The API refuses a running sandbox (agentplane/runner_gateway/environments/internal/management/access.go); the reason is shown beside the item. */}
               <Menu.Item
                 color="red"
                 leftSection={<IconTrash size={15} />}
                 disabled={!deletable(sandbox)}
-                onClick={() => sandbox && setConfirmingDelete(sandboxTarget(sandbox))}
+                onClick={() => setConfirmingDelete(clone(TargetHandleSchema, sandbox.target!))}
               >
                 Delete
                 {!deletable(sandbox) && (
@@ -403,14 +425,13 @@ export function SandboxPage({
           </Menu>
         </TopbarActions>
       )}
-      {confirmingDelete !== null && (
+      {confirmingDelete && (
         <ConfirmDelete
           name={name}
           onCancel={() => setConfirmingDelete(null)}
           onConfirm={() => {
-            const target = confirmingDelete;
+            void remove(confirmingDelete);
             setConfirmingDelete(null);
-            void remove(target);
           }}
         />
       )}
@@ -419,7 +440,7 @@ export function SandboxPage({
           {error}
         </Alert>
       )}
-      {sandboxInventoryFresh(inventory) && !candidate && (
+      {deleted && (
         <Alert color="red" role="alert">
           There is no sandbox {name} any more.
         </Alert>
@@ -474,11 +495,17 @@ export function SandboxPage({
           {vmConsoleAvailable && <Tabs.Tab value="console">Console</Tabs.Tab>}
         </Tabs.List>
         <Tabs.Panel value="egress_log" pt="sm">
-          <EgressLog name={name} />
+          {target && <EgressLog key={`${target.namespace}/${target.name}/${target.uid}`} target={target} />}
         </Tabs.Panel>
         <Tabs.Panel value="policy" pt="sm">
           <Stack gap="md">
-            <PolicyBindingsSection sandbox={name} bindings={detail?.bindings ?? null} />
+            {target && (
+              <PolicyBindingsSection
+                key={`${target.namespace}/${target.name}/${target.uid}`}
+                target={target}
+                bindings={detail?.bindings ?? null}
+              />
+            )}
             <ActionPolicySection policy={detail?.action_policy ?? null} />
           </Stack>
         </Tabs.Panel>
@@ -487,7 +514,7 @@ export function SandboxPage({
         </Tabs.Panel>
         {vmConsoleAvailable && (
           <Tabs.Panel value="console" pt="sm">
-            {tab === "console" && <SandboxConsole sandbox={name} />}
+            {tab === "console" && target && <SandboxConsole target={target} />}
           </Tabs.Panel>
         )}
         <Tabs.Panel value="threads" pt="sm">
@@ -531,7 +558,7 @@ export function SandboxPage({
                 threads={visibleThreads}
                 sandbox={sandbox}
                 traceSearch={traceSearch}
-                fresh={snapshotFresh(threadLive) && sandboxInventoryFresh(inventory) && !!sandbox}
+                fresh={snapshotFresh(threadLive)}
                 onOpen={(threadId) => void openThread(threadId)}
                 onArchive={(threadId, action) => void threadAct(threadId, action)}
               />

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
-	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -108,7 +108,7 @@ func TestProtoFactsRejectUnknownStage(t *testing.T) {
 
 func TestAutosuspendBlockersRoundTripClearAndRejectInvalidFacts(t *testing.T) {
 	sessionID := "session-a"
-	protoFacts := &environmentruntimestatepb.EnvironmentRuntimeFacts{AutosuspendBlockers: []*sandboxpb.AutosuspendBlocker{
+	protoFacts := &environmentruntimestatepb.EnvironmentRuntimeFacts{AutosuspendBlockers: []*environmentlifecyclepb.AutosuspendBlocker{
 		{Reason: "ActiveTurn", SessionId: &sessionID},
 		{Reason: "Bootstrap"},
 	}}
@@ -138,9 +138,9 @@ func TestAutosuspendBlockersRoundTripClearAndRejectInvalidFacts(t *testing.T) {
 	}
 
 	for name, invalid := range map[string]*environmentruntimestatepb.EnvironmentRuntimeFacts{
-		"unknown reason":            {AutosuspendBlockers: []*sandboxpb.AutosuspendBlocker{{Reason: "FutureReason"}}},
-		"session reason without ID": {AutosuspendBlockers: []*sandboxpb.AutosuspendBlocker{{Reason: "ActiveTurn"}}},
-		"global reason with ID":     {AutosuspendBlockers: []*sandboxpb.AutosuspendBlocker{{Reason: "Bootstrap", SessionId: &sessionID}}},
+		"unknown reason":            {AutosuspendBlockers: []*environmentlifecyclepb.AutosuspendBlocker{{Reason: "FutureReason"}}},
+		"session reason without ID": {AutosuspendBlockers: []*environmentlifecyclepb.AutosuspendBlocker{{Reason: "ActiveTurn"}}},
+		"global reason with ID":     {AutosuspendBlockers: []*environmentlifecyclepb.AutosuspendBlocker{{Reason: "Bootstrap", SessionId: &sessionID}}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := FromProto(invalid); err == nil {

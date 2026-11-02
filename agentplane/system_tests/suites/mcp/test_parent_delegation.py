@@ -16,10 +16,10 @@ from more_itertools import one
 
 from agentplane.action_service import action_service_pb2
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.models import SandboxView
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.offered_models import models_offered_for
@@ -138,9 +138,11 @@ async def _submit(
     return json_format.MessageToDict(receipt.execution.result)
 
 
-async def _wait_basic_policy(cluster: Cluster, view: SandboxView, policy_objects: mcp.PolicyObjects) -> None:
+async def _wait_basic_policy(
+    cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor, policy_objects: mcp.PolicyObjects
+) -> None:
     inventory = json.loads(await cluster.kubectl("get", POLICY_BINDINGS_PLURAL, "-o", "json"))
-    subject = view.service_account
+    subject = view.execution_account
     bindings = [
         binding
         for binding in inventory["items"]
@@ -149,7 +151,9 @@ async def _wait_basic_policy(cluster: Cluster, view: SandboxView, policy_objects
         and "basic" in binding.get("spec", {}).get("policySets", [])
     ]
     if not bindings:
-        name = await policy_objects.create_binding(f"{view.name}-delegation-basic", sandbox=view, policy_sets=["basic"])
+        name = await policy_objects.create_binding(
+            f"{view.target.name}-delegation-basic", sandbox=view, policy_sets=["basic"]
+        )
         await policy_objects.wait_actions_ready(name)
         return
     for binding in bindings:
@@ -168,20 +172,20 @@ async def test_parent_session_delegates_through_the_action_cli(
 ) -> None:
     offered = await models_offered_for(client, [session_pb2.HARNESS_CODEX])
     parent_view = await sandbox("systest-parent-delegation")
-    assert parent_view.pod is not None
+    assert parent_view.HasField("pod")
     await _wait_basic_policy(cluster, parent_view, policy_objects)
     service_account = json.loads(
-        await cluster.kubectl("get", "serviceaccount", parent_view.service_account.name, "-o", "json")
+        await cluster.kubectl("get", "serviceaccount", parent_view.execution_account.name, "-o", "json")
     )
     caller_uid = service_account["metadata"]["uid"]
-    caller_namespace = parent_view.service_account.namespace
-    caller_name = parent_view.service_account.name
+    caller_namespace = parent_view.execution_account.namespace
+    caller_name = parent_view.execution_account.name
 
     parent = await Agent.open(
         client,
         dispatcher,
-        sandbox=parent_view.name,
-        sandbox_uid=parent_view.uid,
+        sandbox=parent_view.target.name,
+        sandbox_uid=parent_view.target.uid,
         harness=session_pb2.HARNESS_CODEX,
         model=offered[session_pb2.HARNESS_CODEX],
     )
@@ -224,9 +228,9 @@ async def test_parent_session_delegates_through_the_action_cli(
     descriptor = one(
         item
         for item in items
-        if item["target"]["namespace"] == parent_view.namespace
-        and item["target"]["name"] == parent_view.name
-        and item["target"]["uid"] == str(parent_view.uid)
+        if item["target"]["namespace"] == parent_view.target.namespace
+        and item["target"]["name"] == parent_view.target.name
+        and item["target"]["uid"] == str(parent_view.target.uid)
     )
     target = descriptor["target"]
 

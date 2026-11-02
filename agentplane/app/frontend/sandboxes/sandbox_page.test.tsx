@@ -1,6 +1,13 @@
 // @vitest-environment happy-dom
+import {
+  SandboxPhase,
+  OperatingMode,
+  ReadinessState,
+} from "../../../runner_gateway/environments/environment_service_pb";
+
+import { readySandbox as makeReadySandbox } from "../testing/sandbox";
 import { MantineProvider } from "@mantine/core";
-import type { LangfuseSearchSettings, SandboxView, ThreadView, TraceSearchSettings } from "../schema";
+import type { LangfuseSearchSettings, ThreadView, TraceSearchSettings } from "../schema";
 import {
   TEST_REASONING_EFFORTS,
   testModelCatalog,
@@ -14,6 +21,7 @@ import { createRoot } from "react-dom/client";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
+import * as sandboxClient from "./client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import type * as LiveModule from "../live";
@@ -21,9 +29,8 @@ import type { Live } from "../live";
 import { SandboxRoute } from "../app";
 import { SandboxPage } from "./sandbox_page";
 import { TopbarContext } from "../topbar";
-import type { SandboxSnapshot } from "./live";
+import type { SandboxPolicySnapshot } from "./live";
 import type * as SandboxLiveModule from "./live";
-import type { ThreadsSnapshot } from "../threads/live";
 import {
   EnvironmentRuntimeLifecycleMode,
   EnvironmentRuntimeLifecycleStage,
@@ -42,42 +49,12 @@ const live = vi.hoisted(
   () =>
     ({
       snapshot: {
-        sandbox: {
-          name: "startup-test",
-          uid: "00000000-0000-4000-8000-000000000001",
-          namespace: "agentplane-test",
-          created_at: "2026-01-01T00:00:00Z",
-          operating_mode: "Running",
-          wake_on_send: false,
-          service_account: { namespace: "agentplane-test", name: "startup-test" },
-          binding: null,
-          preset: "test-preset",
-          idle_suspend_after_seconds: null,
-          idle_suspend_at: null,
-          suspended_by: null,
-          autosuspend_blockers: [],
-          status: { conditions: [{ type: "Ready", status: "True" }] },
-          phase: "Running",
-          pod: {
-            name: "startup-test",
-            namespace: "agentplane-test",
-            uid: "test-pod-1",
-            deleting: false,
-            node_name: "test-node",
-            owner_references: [
-              {
-                api_version: "agentplane.allegedly.works/v1alpha1",
-                kind: "Sandbox",
-                name: "startup-test",
-                uid: "00000000-0000-4000-8000-000000000001",
-                controller: true,
-              },
-            ],
-            status: { phase: "Running", podIP: "10.0.0.1", conditions: [{ type: "Ready", status: "True" }] },
-          },
-        },
+        sandbox_uid: "00000000-0000-4000-8000-000000000001" as string | null,
+        thread_snapshot_uid: null as string | null,
+        threads: [] as ThreadView[] | { kind: "unavailable"; code: string },
         bindings: [],
         action_policy: null,
+        updates_connected: true as boolean,
         watch: { healthy: true, failing: {} },
       },
       health: { healthy: true, failing: {} },
@@ -87,47 +64,56 @@ const live = vi.hoisted(
         stalled: null,
         standing: "current",
       },
-    }) satisfies Live<SandboxSnapshot>
-);
-const threadLive = vi.hoisted(
-  () =>
-    ({
-      snapshot: {
-        sandbox_uid: "00000000-0000-4000-8000-000000000001",
-        threads: [] as ThreadView[],
-        more: false,
-        archived_count: 0,
-        updates_connected: true as boolean,
-        watch: { healthy: true, failing: {} },
-      },
-      health: { healthy: true, failing: {} },
-      stream: {
-        name: "Threads",
-        connection: { phase: "live", since: 0 },
-        stalled: null as string | null,
-        standing: "current",
-      },
-    }) satisfies Live<ThreadsSnapshot>
+    }) satisfies Live<
+      SandboxPolicySnapshot & {
+        thread_snapshot_uid: string | null;
+        threads: ThreadView[] | { kind: "unavailable"; code: string };
+        updates_connected: boolean;
+      }
+    >
 );
 vi.mock("../live", async (importOriginal) => ({
   ...(await importOriginal<typeof LiveModule>()),
-  useLive: () => live,
+  useLive: (url: string | null) =>
+    url?.includes("/other-test")
+      ? { ...live, snapshot: { ...live.snapshot, sandbox_uid: "00000000-0000-4000-8000-000000000002" } }
+      : live,
 }));
-vi.mock("../threads/live", () => ({ useThreadsLive: () => threadLive }));
-vi.mock("./live", async (importOriginal) => ({
-  ...(await importOriginal<typeof SandboxLiveModule>()),
-  useRequiredSandboxesLive: () => ({
-    snapshot: {
-      sandboxes: live.snapshot.sandbox ? [{ name: live.snapshot.sandbox.name, uid: live.snapshot.sandbox.uid }] : [],
-      watch: { healthy: true, failing: {} },
+
+vi.mock("../threads/live", () => ({
+  useThreadsLive: (listing: { sandboxUID: string } | null) => ({
+    snapshot: Array.isArray(live.snapshot.threads)
+      ? {
+          threads: live.snapshot.threads,
+          sandbox_uid: live.snapshot.thread_snapshot_uid ?? listing?.sandboxUID,
+          more: false,
+          updates_connected: live.snapshot.updates_connected,
+        }
+      : null,
+    stream: {
+      stalled: Array.isArray(live.snapshot.threads) ? null : live.snapshot.threads.code,
+      standing: "current",
     },
-    health: { healthy: true, failing: {} },
-    stream: { ...live.stream, standing: "current" },
+    health: live.health,
   }),
 }));
 
-const readySandbox = live.snapshot.sandbox as SandboxView;
-const mutableSnapshot = live.snapshot as SandboxSnapshot;
+const readySandbox = makeReadySandbox("startup-test", "00000000-0000-4000-8000-000000000001");
+readySandbox.preset = "test-preset";
+const inventory = {
+  snapshot: { environments: [readySandbox] },
+  health: { healthy: true, failing: {} },
+  stream: { standing: "current" },
+};
+vi.mock("./live", async (importOriginal) => ({
+  ...(await importOriginal<typeof SandboxLiveModule>()),
+  useRequiredSandboxesLive: () => inventory,
+  useEnvironmentWatch: (target: { uid: string } | undefined) => ({
+    environment: inventory.snapshot.environments.find((item) => item.target?.uid === target?.uid) ?? null,
+    stream: inventory.stream,
+  }),
+}));
+const mutableSnapshot = live.snapshot;
 const readyPod = readySandbox.pod;
 const readyStatus = readySandbox.status;
 
@@ -154,19 +140,20 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.useRealTimers();
-  threadLive.snapshot.threads = [];
-  threadLive.snapshot.sandbox_uid = readySandbox.uid;
-  threadLive.snapshot.updates_connected = true;
-  threadLive.stream.stalled = null;
-  readySandbox.operating_mode = "Running";
-  readySandbox.uid = "00000000-0000-4000-8000-000000000001";
-  readySandbox.phase = "Running";
+  vi.restoreAllMocks();
+  live.snapshot.threads = [];
+  live.snapshot.thread_snapshot_uid = null;
+  readySandbox.operatingMode = OperatingMode.RUNNING;
+  readySandbox.phase = SandboxPhase.RUNNING;
   readySandbox.pod = readyPod;
   readySandbox.status = readyStatus;
-  mutableSnapshot.sandbox = readySandbox;
+  readySandbox.readiness!.state = ReadinessState.READY;
+  readySandbox.target!.uid = "00000000-0000-4000-8000-000000000001";
+  mutableSnapshot.sandbox_uid = readySandbox.target!.uid;
+  inventory.snapshot.environments = [readySandbox];
   sessionStorage.clear();
   rerender = async () => {};
-  (live.snapshot.sandbox as SandboxView).binding = null;
+  readySandbox.binding = undefined;
   presetDefaults = { ...DEFAULT_PRESET_DEFAULTS };
   modelCatalogResponse = null;
   centralSamplerEnabled = false;
@@ -247,6 +234,8 @@ async function render(
       })
     )
 ): Promise<ReturnType<typeof vi.fn>> {
+  if (routeNavigation)
+    inventory.snapshot.environments.push(makeReadySandbox("other-test", "00000000-0000-4000-8000-000000000002"));
   // The Egress log panel stays mounted behind its tab and follows a stream that these tests never feed.
   serveEventStreams(() => undefined);
   fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
@@ -303,16 +292,11 @@ async function render(
     }
     const threadPath = /^\/threads\/([^/]+)$/.exec(path);
     if (threadPath && request.method === "GET") {
-      const threads = Array.isArray(threadLive.snapshot.threads) ? threadLive.snapshot.threads : [];
+      const threads = Array.isArray(live.snapshot.threads) ? live.snapshot.threads : [];
       const found = threads.find((thread) => thread.id === threadPath[1]);
       return Promise.resolve(found ? Response.json(found) : Response.json({ detail: "not found" }, { status: 404 }));
     }
     if (/^\/sandboxes\/(startup-test|other-test)\/sessions/.test(path)) return sessions(request);
-    if (
-      path === "/upstream/environments/v1/environments/agentplane-test/startup-test:wake-policy" &&
-      request.method === "PATCH"
-    )
-      return Promise.resolve(Response.json({}));
     if (/^\/threads\/[^/]+\/(un)?archive$/.test(path)) return threadActions(request);
     throw new Error(`Unexpected request: ${request.method} ${path}`);
   });
@@ -400,6 +384,31 @@ async function choose(label: string, value: string): Promise<void> {
   await act(async () => option.click());
 }
 
+it("does not join an old detail frame to a same-name replacement", async () => {
+  mutableSnapshot.sandbox_uid = "00000000-0000-4000-8000-000000000099";
+  live.snapshot.thread_snapshot_uid = mutableSnapshot.sandbox_uid;
+  live.snapshot.threads = [thread({ id: "old-thread", name: "Old incarnation thread" })];
+  await render(async () => Response.json([]));
+  expect(container.textContent).not.toContain("Old incarnation thread");
+  expect(container.textContent).not.toContain("There is no sandbox startup-test any more.");
+  expect(container.querySelector('[aria-label="Sandbox status: Ready"]')).not.toBeNull();
+  if (newThread().getAttribute("aria-expanded") !== "true") await act(async () => newThread().click());
+  expect(createThreadButton().disabled).toBe(false);
+});
+
+it("does not use an incomplete target as an environment identity", async () => {
+  const namespace = readySandbox.target!.namespace;
+  readySandbox.target!.namespace = "";
+  live.snapshot.threads = [thread({ id: "old-thread", name: "Old incarnation thread" })];
+  try {
+    await render(async () => Response.json([]));
+    expect(container.textContent).not.toContain("Old incarnation thread");
+    expect(createThreadButton().disabled).toBe(true);
+  } finally {
+    readySandbox.target!.namespace = namespace;
+  }
+});
+
 it("resets the creation form when navigating directly between sandbox routes", async () => {
   await render(async () => Response.json([]), undefined, false, true);
   await act(async () => newThread().click());
@@ -416,7 +425,6 @@ it("resets the creation form when navigating directly between sandbox routes", a
   await choose("Reasoning effort", "medium");
   expect(instructions.value).toBe("Only for startup-test");
 
-  mutableSnapshot.sandbox = { ...readySandbox, name: "other-test" };
   await act(async () => container.querySelector<HTMLAnchorElement>('a[href="/sandboxes/other-test"]')!.click());
 
   expect(labeledInput("Harness").value).toBe("Claude");
@@ -447,22 +455,16 @@ it("shows runner process and Session diagnostics, including a dormant Session", 
 it("saves the wake policy from the Status tab", async () => {
   await render(async () => Response.json([]));
   await act(async () => tab("Status").click());
-  const wake = container.querySelector<HTMLInputElement>('input[aria-label="Wake on message for startup-test"]');
-  if (!wake) throw new Error("Missing Wake on message checkbox");
-  await act(async () => wake.click());
-  const request = fetchMock.mock.calls
-    .map(([input, init]) => requestFromFetchInput(input, init))
-    .find(
-      (candidate) =>
-        candidate.method === "PATCH" &&
-        new URL(candidate.url).pathname ===
-          "/upstream/environments/v1/environments/agentplane-test/startup-test:wake-policy"
-    );
-  expect(request).toBeDefined();
-  expect(await request?.json()).toMatchObject({
-    target: { namespace: "agentplane-test", name: "startup-test", uid: readySandbox.uid },
-    wakeOnSend: true,
-  });
+  const patch = vi.spyOn(sandboxClient, "setEnvironmentWakeOnSend").mockResolvedValue(undefined);
+  try {
+    const wake = container.querySelector<HTMLInputElement>('input[aria-label="Wake on message for startup-test"]');
+    if (!wake) throw new Error("Missing Wake on message checkbox");
+    await act(async () => wake.click());
+
+    expect(patch).toHaveBeenCalledWith(readySandbox.target, true);
+  } finally {
+    patch.mockRestore();
+  }
 });
 
 /** The Status tab's Kubernetes item with this title, which is open when its button says so. */
@@ -476,6 +478,7 @@ function kubernetesItem(title: string): HTMLButtonElement {
 
 it("opens the Kubernetes status items that have an unmet condition and no others", async () => {
   readySandbox.status = { conditions: [{ type: "Ready", status: "False", reason: "TestNotReady" }] };
+  readySandbox.readiness!.state = ReadinessState.NOT_READY;
   readySandbox.pod = {
     ...readyPod!,
     status: { phase: "Running", conditions: [{ type: "Ready", status: "True", reason: "TestAllMet" }] },
@@ -575,9 +578,9 @@ it("refreshes the runner snapshot and replaces old process and Session details",
 });
 
 it("reports suspended Runtime diagnostics without a read or wake request", async () => {
-  readySandbox.operating_mode = "Suspended";
-  readySandbox.phase = "Suspended";
-  readySandbox.pod = null;
+  readySandbox.operatingMode = OperatingMode.SUSPENDED;
+  readySandbox.phase = SandboxPhase.SUSPENDED;
+  readySandbox.pod = undefined;
   await render(async () => Response.json([]));
   await act(async () => tab("Status").click());
   await vi.waitFor(() =>
@@ -642,7 +645,7 @@ it("uses the configured preset working directory template and setup script for l
 });
 
 it("notes a Thread's setup only until it completes", async () => {
-  threadLive.snapshot.threads = [
+  live.snapshot.threads = [
     thread({ id: "legacy", harness_state: "HARNESS_STATE_STOPPED", setup_state: null }),
     thread({ id: "prepared", harness_state: "HARNESS_STATE_RUNNING", setup_state: "SETUP_STATE_SUCCEEDED" }),
     thread({ id: "preparing", harness_state: "HARNESS_STATE_STOPPED", setup_state: "SETUP_STATE_RUNNING" }),
@@ -697,7 +700,7 @@ it("keeps retained History Threads visible through ready to suspended with no ru
     setup_state: "SETUP_STATE_SUCCEEDED",
     last_cursor: 12,
   });
-  threadLive.snapshot.threads = [retained];
+  live.snapshot.threads = [retained];
   const sessions = vi.fn<(request: Request) => Promise<Response>>(() =>
     Promise.resolve(Response.json({ detail: "runner inventory must not be requested" }, { status: 503 }))
   );
@@ -706,9 +709,9 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   expect(createThreadButton().disabled).toBe(false);
   expect(sessionStatus("Previously active thread")).toBe("Turn running · Runner feed active · harness running");
 
-  readySandbox.operating_mode = "Suspended";
-  readySandbox.phase = "Suspended";
-  readySandbox.pod = null;
+  readySandbox.operatingMode = OperatingMode.SUSPENDED;
+  readySandbox.phase = SandboxPhase.SUSPENDED;
+  readySandbox.pod = undefined;
   await rerender();
 
   const retainedRow = () =>
@@ -726,13 +729,13 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   expect((await createThreadTooltip())?.textContent).toContain("Resume it or enable wake on send");
   expect(sessions).not.toHaveBeenCalled();
 
-  readySandbox.wake_on_send = true;
+  readySandbox.wakeOnSend = true;
   await rerender();
   expect(container.textContent).toContain("Creating a thread will wake the Sandbox.");
   expect(createThreadButton().disabled).toBe(false);
   expect(sessions).not.toHaveBeenCalled();
 
-  readySandbox.wake_on_send = false;
+  readySandbox.wakeOnSend = false;
   await rerender();
   expect(createThreadButton().disabled).toBe(true);
 
@@ -742,10 +745,23 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   expect((menuItem("Wait for the active turn to finish before archiving") as HTMLButtonElement).disabled).toBe(true);
   await act(async () => menuButton.click());
 
-  // The Sandbox page clears its old incarnation when the Sandbox disappears.
-  mutableSnapshot.sandbox = null;
+  // History outlives the Sandbox row itself. Removing the Sandbox must not hide authored Threads.
+  mutableSnapshot.sandbox_uid = null;
+  inventory.snapshot.environments = [];
+  await rerender();
+  expect(retainedRow()).toBeDefined();
+
+  live.snapshot.threads = [{ ...retained, harness_state: "HARNESS_STATE_STOPPED", active_turn_id: null }];
+  await rerender();
+  const stoppedMenuButton = actionButton();
+  if (!stoppedMenuButton) throw new Error("Missing retained Thread actions menu after Sandbox deletion");
+  await act(async () => stoppedMenuButton.click());
+  await act(async () => menuItem("Archive").click());
+  live.snapshot.threads = [{ ...retained, archived: true, harness_state: "HARNESS_STATE_STOPPED" }];
   await rerender();
   expect(retainedRow()).toBeUndefined();
+  await act(async () => labeledInput("Show archived").click());
+  expect(retainedRow()).toBeDefined();
 });
 
 it("shows creation progress, prevents duplicate clicks, and does not retry failed Opens", async () => {
@@ -824,7 +840,7 @@ it("recovers a lost Open from its Thread without sending a second Open", async (
   const onOpenThread = await render(sessions);
   await submitNewThread();
   const first = await postedBody(sessions);
-  threadLive.snapshot.threads = [thread({ id: first.session_id })];
+  live.snapshot.threads = [thread({ id: first.session_id })];
   await act(async () => button("Check opening status").click());
   expect(onOpenThread).toHaveBeenCalledWith(first.session_id);
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
@@ -848,7 +864,7 @@ it("resolves a queued Open from the live matching Thread projection exactly once
   expect(container.textContent).toContain("Queued in Dispatcher");
   expect(onOpenThread).not.toHaveBeenCalled();
 
-  threadLive.snapshot.threads = [thread({ id: sessionId })];
+  live.snapshot.threads = [thread({ id: sessionId })];
   await rerender();
   expect(onOpenThread).toHaveBeenCalledTimes(1);
   expect(onOpenThread).toHaveBeenCalledWith(sessionId);
@@ -862,7 +878,7 @@ it("resolves a queued Open from the live matching Thread projection exactly once
 it("resumes a persisted pending Open when its matching Thread is already projected after remount", async () => {
   const sessionId = "recovered-open-session";
   sessionStorage.setItem("agentplane:pending-open:startup-test", sessionId);
-  threadLive.snapshot.threads = [thread({ id: sessionId })];
+  live.snapshot.threads = [thread({ id: sessionId })];
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(
       request.method === "GET" ? Response.json([]) : Response.json({ detail: "unexpected POST" }, { status: 500 })
@@ -880,7 +896,7 @@ it("does not resolve a pending Open from an unrelated Thread or clear it on manu
   const sessionId = "pending-session";
   const otherSessionId = "other-session";
   sessionStorage.setItem("agentplane:pending-open:startup-test", sessionId);
-  threadLive.snapshot.threads = [thread({ id: otherSessionId })];
+  live.snapshot.threads = [thread({ id: otherSessionId })];
   const onOpenThread = await render(async (request) =>
     Response.json(request.method === "GET" ? [{ sessionId: otherSessionId }] : { detail: "unexpected POST" })
   );
@@ -921,7 +937,7 @@ it("opens the client-minted Session ID returned by the opening", async () => {
   const sessions = vi.fn<(request: Request) => Promise<Response>>(async (request) => {
     if (request.method === "GET") return Response.json([]);
     publicId = (await request.clone().json()).session_id;
-    threadLive.snapshot.threads = [thread({ id: publicId })];
+    live.snapshot.threads = [thread({ id: publicId })];
     return Response.json({
       sessionId: publicId,
       sandbox: "startup-test",
@@ -936,7 +952,7 @@ it("opens the client-minted Session ID returned by the opening", async () => {
 });
 
 it("hides an archived Thread by default, reveals it via Show archived, and unarchives it", async () => {
-  threadLive.snapshot.threads = [thread({ id: "existing-session", archived: true })];
+  live.snapshot.threads = [thread({ id: "existing-session", archived: true })];
   const archiveRequests: Request[] = [];
   await render(
     async () => Response.json([{ sessionId: "existing-session" }]),
@@ -963,7 +979,7 @@ it("hides an archived Thread by default, reveals it via Show archived, and unarc
 });
 
 it("allows archiving an idle Thread while its harness is running", async () => {
-  threadLive.snapshot.threads = [thread({ id: "existing-session", harness_state: "HARNESS_STATE_RUNNING" })];
+  live.snapshot.threads = [thread({ id: "existing-session", harness_state: "HARNESS_STATE_RUNNING" })];
   const archiveRequests: Request[] = [];
   await render(
     async () => Response.json({ detail: "History owns the Sandbox inventory" }, { status: 500 }),
@@ -990,9 +1006,7 @@ it.each([
   [{ active_turn_id: "turn-1" }, "Wait for the active turn to finish before archiving"],
   [{ setup_state: "SETUP_STATE_RUNNING" }, "Wait for setup to finish before archiving"],
 ] as const)("blocks archiving when Thread work is visible: %o", async (overrides, reason) => {
-  threadLive.snapshot.threads = [
-    thread({ id: "existing-session", harness_state: "HARNESS_STATE_RUNNING", ...overrides }),
-  ];
+  live.snapshot.threads = [thread({ id: "existing-session", harness_state: "HARNESS_STATE_RUNNING", ...overrides })];
   await render(async () => Response.json({ detail: "History owns the Sandbox inventory" }, { status: 500 }));
   const menuButton = [...container.querySelectorAll("button")].find(
     (node) => node.getAttribute("aria-label") === "More actions for existing-session"
@@ -1003,7 +1017,7 @@ it.each([
 });
 
 it("defaults new threads to an offered harness while retaining existing Claude threads", async () => {
-  threadLive.snapshot.threads = [thread({ id: "old-session", name: "Existing Claude" })];
+  live.snapshot.threads = [thread({ id: "old-session", name: "Existing Claude" })];
   presetDefaults = { harness: "HARNESS_CODEX", model: "test-model" };
   const sessions = vi.fn<(request: Request) => Promise<Response>>(async (request) =>
     request.method === "GET"
@@ -1027,7 +1041,7 @@ it("defaults new threads to an offered harness while retaining existing Claude t
 });
 
 it("keeps lifecycle controls when History Thread summaries are unavailable", async () => {
-  threadLive.stream.stalled = "UNAUTHENTICATED";
+  live.snapshot.threads = { kind: "unavailable", code: "UNAUTHENTICATED" };
   await render(async () => Response.json([]));
   expect(container.querySelector('[aria-label="Suspend"]')).not.toBeNull();
   expect(container.querySelector('[aria-label="More Sandbox actions"]')).not.toBeNull();
@@ -1063,18 +1077,34 @@ it("offers Delete in the actions menu only for a suspended Sandbox", async () =>
   expect(deleteItem().textContent).toContain("Suspend the sandbox before deleting it");
   await act(async () => menuButton.click());
 
-  readySandbox.operating_mode = "Suspended";
-  readySandbox.phase = "Suspended";
-  readySandbox.pod = null;
+  readySandbox.operatingMode = OperatingMode.SUSPENDED;
+  readySandbox.phase = SandboxPhase.SUSPENDED;
+  readySandbox.pod = undefined;
   await rerender();
   await act(async () => menuButton.click());
   expect(deleteItem().disabled).toBe(false);
   await act(async () => deleteItem().click());
   expect(document.body.textContent).toContain("Delete startup-test?");
+  const deleted = vi.spyOn(sandboxClient, "deleteEnvironment").mockResolvedValue(undefined);
+  // The confirmation belongs to the incarnation originally selected, even if its name is reused.
+  readySandbox.target!.uid = "00000000-0000-4000-8000-000000000099";
+  mutableSnapshot.sandbox_uid = readySandbox.target!.uid;
+  await rerender();
+  const confirm = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+    (button) => button.textContent === "Delete"
+  );
+  if (!confirm) throw new Error("Missing delete confirmation");
+  await act(async () => confirm.click());
+  expect(deleted).toHaveBeenCalledWith(
+    expect.objectContaining({
+      name: "startup-test",
+      uid: "00000000-0000-4000-8000-000000000001",
+    })
+  );
 });
 
 it("links the Sandbox and its Threads to their scoped Grafana trace searches", async () => {
-  threadLive.snapshot.threads = [thread({ id: "existing-session" })];
+  live.snapshot.threads = [thread({ id: "existing-session" })];
   await render(async () => Response.json([]));
   await act(async () => Promise.resolve());
 
@@ -1105,7 +1135,7 @@ it("links the Sandbox and its Threads to their scoped Grafana trace searches", a
 
 it("hides trace links when the app leaves trace search unconfigured", async () => {
   traceSearchSettings = null;
-  threadLive.snapshot.threads = [thread({ id: "existing-session" })];
+  live.snapshot.threads = [thread({ id: "existing-session" })];
   await render(async () => Response.json([]));
   await act(async () => Promise.resolve());
 
@@ -1133,7 +1163,7 @@ it("hides trace links when the app leaves trace search unconfigured", async () =
 
 it("hides Langfuse links independently when Langfuse search is unconfigured", async () => {
   langfuseSearchSettings = null;
-  threadLive.snapshot.threads = [thread({ id: "existing-session" })];
+  live.snapshot.threads = [thread({ id: "existing-session" })];
   await render(async () => Response.json([]));
   await act(async () => Promise.resolve());
 
@@ -1149,24 +1179,25 @@ it("hides Langfuse links independently when Langfuse search is unconfigured", as
 });
 
 it("does not state a Session's status while Thread updates are not being heard", async () => {
-  threadLive.snapshot.threads = [
+  live.snapshot.threads = [
     thread({ id: "quiet", name: "Quiet thread", harness_state: "HARNESS_STATE_RUNNING", feed_status: "active" }),
   ];
-  threadLive.snapshot.updates_connected = false;
+  mutableSnapshot.updates_connected = false;
   try {
     await render(async () => Response.json([]));
     expect(sessionStatus("Quiet thread")).toBe("No live harness confirmed");
   } finally {
-    threadLive.snapshot.updates_connected = true;
+    mutableSnapshot.updates_connected = true;
   }
 });
 
 it("does not show a previous incarnation's Threads after same-name Sandbox replacement", async () => {
-  threadLive.snapshot.threads = [thread({ id: "old-session", name: "Old Thread" })];
+  live.snapshot.thread_snapshot_uid = readySandbox.target!.uid;
+  live.snapshot.threads = [thread({ id: "old-session", name: "Old Thread" })];
   await render(async () => Response.json([]));
   expect(container.textContent).toContain("Old Thread");
   await act(async () => {
-    readySandbox.uid = "00000000-0000-4000-8000-000000000099";
+    readySandbox.target!.uid = "00000000-0000-4000-8000-000000000099";
     await rerender();
   });
   expect(container.textContent).not.toContain("Old Thread");

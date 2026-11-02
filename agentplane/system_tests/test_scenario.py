@@ -1,19 +1,18 @@
 """Scenario ownership overlaps teardown and drains resources on failure or cancellation."""
 
 import asyncio
-from datetime import UTC, datetime
 from types import TracebackType
 from typing import cast
 from unittest.mock import create_autospec
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 import pytest_bazel
 from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.models import NewSandbox, SandboxPhase, SandboxView
-from agentplane.subjects import ServiceAccountRef
+from agentplane.proto import sandboxes_pb2
+from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests import native_artifacts, sandbox, scenario
 from agentplane.system_tests.cluster import Cluster
 
@@ -21,45 +20,45 @@ from agentplane.system_tests.cluster import Cluster
 @pytest.fixture
 def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
     events: list[tuple[str, str]] = []
-    views: dict[str, SandboxView] = {}
+    views: dict[str, environment_service_pb2.EnvironmentDescriptor] = {}
 
     def new_client(*, base_url: str, token: str) -> Client:
         client = create_autospec(Client, instance=True)
         client.__aenter__.return_value = client
         client.opened_sandbox_uids = set()
 
-        async def create(spec: NewSandbox) -> SandboxView:
-            view = views[spec.name] = SandboxView(
-                name=spec.name,
-                uid=uuid4(),
-                namespace="test",
-                created_at=datetime.now(UTC),
-                service_account=ServiceAccountRef(namespace="test", name="runner"),
-                phase=SandboxPhase.CREATING,
+        async def create(spec: sandboxes_pb2.CreateSandboxRequest) -> environment_service_pb2.TargetHandle:
+            view = views[spec.name] = environment_service_pb2.EnvironmentDescriptor(
+                target=environment_service_pb2.TargetHandle(namespace="test", name=spec.name, uid=str(uuid4())),
+                execution_account=environment_service_pb2.AccountHandle(namespace="test", name="runner"),
             )
-            client.opened_sandbox_uids.add(view.uid)
-            return view
+            client.opened_sandbox_uids.add(view.target.uid)
+            return view.target
 
         async def close(
             opened: Client, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
         ) -> None:
             events.extend(
-                ("client-close", view.name) for view in views.values() if view.uid in opened.opened_sandbox_uids
+                ("client-close", view.target.name)
+                for view in views.values()
+                if view.target.uid in opened.opened_sandbox_uids
             )
 
         client.create_sandbox.side_effect = create
         client.__aexit__.side_effect = close
         return cast(Client, client)
 
-    async def ready(client: Client, name: str, *, expected_uid: UUID) -> SandboxView:
-        assert expected_uid == views[name].uid
-        return views[name]
+    async def ready(
+        client: Client, target: environment_service_pb2.TargetHandle
+    ) -> environment_service_pb2.EnvironmentDescriptor:
+        assert target == views[target.name].target
+        return views[target.name]
 
-    async def capture(client: Client, *, sandbox_uid: UUID) -> None:
-        (view,) = [view for view in views.values() if view.uid == sandbox_uid]
-        events.append(("diagnostics", view.name))
+    async def capture(client: Client, *, sandbox_uid: str) -> None:
+        (view,) = [view for view in views.values() if view.target.uid == sandbox_uid]
+        events.append(("diagnostics", view.target.name))
 
-    async def delete(cluster: Cluster, client: Client, name: str, uid: UUID) -> None:
+    async def delete(cluster: Cluster, client: Client, name: str, uid: str) -> None:
         events.append(("delete", name))
 
     monkeypatch.setattr(scenario, "Client", new_client)
@@ -115,22 +114,24 @@ async def test_failure_still_releases_every_created_guest_and_closes_client(
     if failure == "readiness":
         original_ready = sandbox.wait_until_running
 
-        async def ready(client: Client, name: str, *, expected_uid: UUID) -> SandboxView:
-            if name == "second":
+        async def ready(
+            client: Client, target: environment_service_pb2.TargetHandle
+        ) -> environment_service_pb2.EnvironmentDescriptor:
+            if target.name == "second":
                 raise RuntimeError("readiness")
-            return await original_ready(client, name, expected_uid=expected_uid)
+            return await original_ready(client, target)
 
         monkeypatch.setattr(sandbox, "wait_until_running", ready)
     elif failure == "diagnostics":
 
-        async def capture(client: Client, *, sandbox_uid: UUID) -> None:
+        async def capture(client: Client, *, sandbox_uid: str) -> None:
             raise RuntimeError("diagnostics")
 
         monkeypatch.setattr(native_artifacts, "capture", capture)
     elif failure == "deletion":
         original_delete = sandbox.suspend_and_delete
 
-        async def delete(cluster: Cluster, client: Client, name: str, uid: UUID) -> None:
+        async def delete(cluster: Cluster, client: Client, name: str, uid: str) -> None:
             await original_delete(cluster, client, name, uid)
             if name == "second":
                 raise RuntimeError("deletion")
@@ -159,7 +160,7 @@ async def test_cancellation_during_teardown_waits_for_deletion_before_closing_cl
     release = asyncio.Event()
     original_delete = sandbox.suspend_and_delete
 
-    async def delete(cluster: Cluster, client: Client, name: str, uid: UUID) -> None:
+    async def delete(cluster: Cluster, client: Client, name: str, uid: str) -> None:
         deleting.set()
         await release.wait()
         await original_delete(cluster, client, name, uid)

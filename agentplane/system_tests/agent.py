@@ -140,7 +140,7 @@ class Agent:
         dispatcher: SessionDispatcherClient,
         *,
         sandbox: str,
-        sandbox_uid: UUID,
+        sandbox_uid: str,
         harness: session_pb2.Harness,
         model: str,
         instructions: str = "",
@@ -170,7 +170,7 @@ class Agent:
                     )
                     thread = await client.wait_for_thread_projection(session_id, timeout_s=RUNNER_ANSWERS_SECONDS)
                     return cls(
-                        client, dispatcher, thread_id=thread.id, cursor=0, sandbox=sandbox, sandbox_uid=str(sandbox_uid)
+                        client, dispatcher, thread_id=thread.id, cursor=0, sandbox=sandbox, sandbox_uid=sandbox_uid
                     )
             raise AssertionError("unreachable: reraise=True either returns an agent or raises")
 

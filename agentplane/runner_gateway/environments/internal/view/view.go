@@ -4,27 +4,41 @@ import (
 	"encoding/json"
 	"fmt"
 
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const PresetLabel = "agentplane.allegedly.works/preset"
 
-func sandboxView(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*sandboxespb.Sandbox, error) {
-	view := &sandboxespb.Sandbox{
-		Name: resource.Name, Uid: string(resource.UID), Namespace: resource.Namespace,
-		ServiceAccount:      &sandboxespb.ServiceAccount{Namespace: resource.Namespace, Name: resource.Name},
+func sandboxView(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*environmentpb.EnvironmentDescriptor, error) {
+	view := &environmentpb.EnvironmentDescriptor{
+		Target:   &environmentpb.TargetHandle{Namespace: resource.Namespace, Name: resource.Name, Uid: string(resource.UID)},
+		Template: resource.Spec.Template, StopStage: string(resource.Status.StopStage),
 		WakeOnSend:          resource.Spec.WakeOnSend,
 		Phase:               sandboxPhase(resource),
-		AutosuspendBlockers: make([]*sandboxespb.AutosuspendBlocker, 0, len(resource.Status.IdleSuspendBlockers)),
+		AutosuspendBlockers: make([]*environmentlifecyclepb.AutosuspendBlocker, 0, len(resource.Status.IdleSuspendBlockers)),
+	}
+	view.Readiness = &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_NOT_READY}
+	if condition := meta.FindStatusCondition(resource.Status.Conditions, sandboxapi.ConditionReady); condition != nil {
+		view.Readiness.Reason, view.Readiness.Detail = condition.Reason, condition.Message
+		if condition.Status == metav1.ConditionTrue {
+			view.Readiness.State = environmentpb.ReadinessState_READINESS_STATE_READY
+		}
+	} else {
+		view.Readiness.Reason = "ReadyConditionUnavailable"
+	}
+	if resource.Status.Incarnation != nil {
+		view.RuntimeIncarnationUid = resource.Status.Incarnation.UID
 	}
 	for _, blocker := range resource.Status.IdleSuspendBlockers {
-		view.AutosuspendBlockers = append(view.AutosuspendBlockers, &sandboxespb.AutosuspendBlocker{
+		view.AutosuspendBlockers = append(view.AutosuspendBlockers, &environmentlifecyclepb.AutosuspendBlocker{
 			Reason: string(blocker.Reason), SessionId: blocker.SessionID,
 		})
 	}
@@ -32,14 +46,18 @@ func sandboxView(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*sandboxespb.Sa
 		view.CreatedAt = timestamppb.New(resource.CreationTimestamp.Time)
 	}
 	if resource.Spec.Bootstrap != "" {
-		view.Binding = &sandboxespb.SandboxBinding{Bootstrap: resource.Spec.Bootstrap}
+		view.Binding = &environmentpb.SandboxBinding{Bootstrap: resource.Spec.Bootstrap}
 	}
 	if preset, ok := resource.Labels[PresetLabel]; ok {
 		view.Preset = &preset
 	}
 	if resource.Status.OperatingMode != "" {
-		mode := string(resource.Status.OperatingMode)
-		view.OperatingMode = &mode
+		switch resource.Status.OperatingMode {
+		case sandboxapi.OperatingModeRunning:
+			view.OperatingMode = environmentpb.OperatingMode_OPERATING_MODE_RUNNING
+		case sandboxapi.OperatingModeSuspended:
+			view.OperatingMode = environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED
+		}
 	}
 	if resource.Status.SuspendedBy != nil {
 		suspendedBy := string(*resource.Status.SuspendedBy)
@@ -72,8 +90,8 @@ func sandboxView(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*sandboxespb.Sa
 }
 
 // View projects one Sandbox and its Pod only when the Pod is the Sandbox's currently reported
-// incarnation. It is shared by direct inventory reads and cached live snapshots.
-func View(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*sandboxespb.Sandbox, error) {
+// incarnation.
+func View(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*environmentpb.EnvironmentDescriptor, error) {
 	if resource == nil {
 		return nil, fmt.Errorf("Sandbox is required")
 	}
@@ -85,8 +103,8 @@ func View(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*sandboxespb.Sandbox, 
 	return sandboxView(resource, pod)
 }
 
-func sandboxPodView(pod *corev1.Pod) (*sandboxespb.SandboxPod, error) {
-	view := &sandboxespb.SandboxPod{
+func sandboxPodView(pod *corev1.Pod) (*environmentpb.SandboxPod, error) {
+	view := &environmentpb.SandboxPod{
 		Name: pod.Name, Namespace: pod.Namespace, Uid: string(pod.UID),
 		Deleting: pod.DeletionTimestamp != nil,
 	}
@@ -95,7 +113,7 @@ func sandboxPodView(pod *corev1.Pod) (*sandboxespb.SandboxPod, error) {
 		view.NodeName = &nodeName
 	}
 	for _, owner := range pod.OwnerReferences {
-		view.OwnerReferences = append(view.OwnerReferences, &sandboxespb.OwnerReference{
+		view.OwnerReferences = append(view.OwnerReferences, &environmentpb.OwnerReference{
 			ApiVersion: owner.APIVersion, Kind: owner.Kind, Name: owner.Name,
 			Uid: string(owner.UID), Controller: owner.Controller != nil && *owner.Controller,
 		})
@@ -111,7 +129,7 @@ func sandboxPodView(pod *corev1.Pod) (*sandboxespb.SandboxPod, error) {
 	return view, nil
 }
 
-func sandboxPhase(resource *sandboxapi.Sandbox) sandboxespb.SandboxPhase {
+func sandboxPhase(resource *sandboxapi.Sandbox) environmentpb.SandboxPhase {
 	if resource.DeletionTimestamp != nil {
 		sealed := resource.Status.StopStage == sandboxapi.StopStageDeleting
 		for _, condition := range resource.Status.Conditions {
@@ -120,27 +138,27 @@ func sandboxPhase(resource *sandboxapi.Sandbox) sandboxespb.SandboxPhase {
 			}
 		}
 		if sealed {
-			return sandboxespb.SandboxPhase_SANDBOX_PHASE_TEARING_DOWN
+			return environmentpb.SandboxPhase_SANDBOX_PHASE_TEARING_DOWN
 		}
-		return sandboxespb.SandboxPhase_SANDBOX_PHASE_QUIESCING
+		return environmentpb.SandboxPhase_SANDBOX_PHASE_QUIESCING
 	}
 	incarnated := resource.Status.Incarnation != nil
 	switch resource.Status.OperatingMode {
 	case sandboxapi.OperatingModeRunning:
 		if incarnated {
-			return sandboxespb.SandboxPhase_SANDBOX_PHASE_RUNNING
+			return environmentpb.SandboxPhase_SANDBOX_PHASE_RUNNING
 		}
-		return sandboxespb.SandboxPhase_SANDBOX_PHASE_CREATING
+		return environmentpb.SandboxPhase_SANDBOX_PHASE_CREATING
 	case sandboxapi.OperatingModeSuspended:
 		if !incarnated {
-			return sandboxespb.SandboxPhase_SANDBOX_PHASE_SUSPENDED
+			return environmentpb.SandboxPhase_SANDBOX_PHASE_SUSPENDED
 		}
 		if resource.Status.StopStage == sandboxapi.StopStageQuiescing {
-			return sandboxespb.SandboxPhase_SANDBOX_PHASE_QUIESCING
+			return environmentpb.SandboxPhase_SANDBOX_PHASE_QUIESCING
 		}
-		return sandboxespb.SandboxPhase_SANDBOX_PHASE_SUSPENDING
+		return environmentpb.SandboxPhase_SANDBOX_PHASE_SUSPENDING
 	default:
-		return sandboxespb.SandboxPhase_SANDBOX_PHASE_UNSPECIFIED
+		return environmentpb.SandboxPhase_SANDBOX_PHASE_UNSPECIFIED
 	}
 }
 

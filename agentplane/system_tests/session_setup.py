@@ -16,7 +16,7 @@ async def run_setup(
     client: Client,
     *,
     sandbox_name: str,
-    sandbox_uid: UUID,
+    sandbox_uid: str,
     session_id: UUID,
     harness: session_pb2.Harness,
     model: str,

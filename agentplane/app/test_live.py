@@ -10,6 +10,7 @@ import grpc
 import httpx
 import pytest
 import pytest_bazel
+from kubernetes_asyncio import client as k8s_client
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -17,22 +18,40 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.models import DecisionsSnapshot, DecisionsUnavailable
-from agentplane.app.testing.replication_process import AppProcess, SandboxesAccess, app_process
+from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
+from agentplane.app.testing.runner_gateway import APP, DISPATCHER_AUDIENCE, GATEWAY, GATEWAY_AUDIENCE
 from agentplane.app.testing.thread_test_support import ThreadHTTP
 from agentplane.egress import egress_admin_pb2_grpc
 from agentplane.egress.decisions import Outcome
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
+from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
+from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-
-# gazelle:include_dep @pypi//protobuf
 
 
 @pytest.fixture
 async def seeded(namespace: SandboxNamespace) -> None:
-    await namespace.runner("runner-1")
+    runner, _ = await namespace.runner("runner-1")
+    await namespace.core_v1.create_namespaced_service_account(
+        namespace.name,
+        k8s_client.V1ServiceAccount(
+            metadata=k8s_client.V1ObjectMeta(
+                name="runner-1",
+                owner_references=[
+                    k8s_client.V1OwnerReference(
+                        api_version=SANDBOX_API_VERSION,
+                        kind=SANDBOX_KIND,
+                        name="runner-1",
+                        uid=runner["metadata"]["uid"],
+                        controller=True,
+                    )
+                ],
+            )
+        ),
+    )
     await namespace.sandbox("shelved", running=False)
     await namespace.egress_policy_set("github", [{"hosts": ["api.github.com"], "methods": ["GET"]}])
     await namespace.policy_binding("runner-1-picked", subject=namespace.account("runner-1"), policy_sets=["github"])
@@ -70,6 +89,31 @@ async def app_config(
         }
 
 
+@pytest.fixture
+async def gateway_service(
+    namespace: SandboxNamespace, api_server: KubernetesApiServer, dispatcher_database_url: str, tmp_path: Path
+) -> AsyncIterator[GatewayProcess]:
+    gateway_token_file = tmp_path / "runner-gateway-token"
+    gateway_token_file.write_text(await api_server.workload_token(GATEWAY, [GATEWAY_AUDIENCE]))
+    async with run_gateway(
+        api_server.kubeconfig,
+        database_url=dispatcher_database_url,
+        namespace=namespace.name,
+        dispatcher_callers=(APP,),
+        gateway_callers=(APP, GATEWAY),
+        environment_readers=(APP,),
+        dispatcher_audience=DISPATCHER_AUDIENCE,
+        gateway_audience=GATEWAY_AUDIENCE,
+        runner_proxy_token_file=gateway_token_file,
+    ) as service:
+        yield service
+
+
+@pytest.fixture
+def namespace_gateway(gateway_service: GatewayProcess, app_token_file: Path) -> GatewayAccess:
+    return GatewayAccess(gateway_service.target, app_token_file)
+
+
 async def _snapshots(response: httpx.Response) -> AsyncIterator[str]:
     response.raise_for_status()
     event = ""
@@ -95,6 +139,14 @@ async def _next_decisions(stream: AsyncIterator[str]) -> DecisionsSnapshot:
     return DecisionsSnapshot.model_validate_json(await anext(stream))
 
 
+async def _environment_uid(http: httpx.AsyncClient, name: str) -> str:
+    response = await http.get("/upstream/environments/v1/environments", params={"limit": 100})
+    response.raise_for_status()
+    uid = next(item["target"]["uid"] for item in response.json()["items"] if item["target"]["name"] == name)
+    assert isinstance(uid, str)
+    return uid
+
+
 async def test_the_streams_need_a_caller(app: AppProcess) -> None:
     async with httpx.AsyncClient(base_url=app.url) as unauthenticated:
         for route in (
@@ -108,33 +160,33 @@ async def test_the_streams_need_a_caller(app: AppProcess) -> None:
             assert (await unauthenticated.get(route)).status_code == 401
 
 
-async def test_sandbox_detail_stays_available_when_thread_history_is_unavailable(
+async def test_environment_thread_rpc_reports_history_unavailable(
     db_url: str,
     history_client: HistoryServiceClient,
     namespace: SandboxNamespace,
     api_server: KubernetesApiServer,
     app_config: dict[str, object],
     refused_address: str,
+    namespace_gateway: GatewayAccess,
 ) -> None:
     async with (
         app_process(
             db_url,
             history_client,
             sandboxes=SandboxesAccess(api_server.kubeconfig, namespace.name),
-            gateway=None,
+            gateway=namespace_gateway,
             config=app_config | {"history_service_target": refused_address, "history_service_request_timeout_s": 0.5},
         ) as app,
         httpx.AsyncClient(base_url=app.url, cookies=app.cookies, headers={"Origin": app.url}) as http,
         asyncio.timeout(10),
     ):
-        sandbox = (await http.get("/sandboxes/runner-1")).json()
-        uid = sandbox["uid"]
-        async with http.stream("GET", "/live/sandboxes/runner-1", params={"sandbox_uid": uid}) as response:
-            snapshot = json.loads(await anext(_snapshots(response)))
-            assert snapshot["sandbox"]["name"] == "runner-1"
-            assert "threads" not in snapshot
-        listing = await http.get("/upstream/app/v1/threads", params={"sandbox_uid": uid})
-        assert listing.status_code == 503
+        environments = await http.get("/upstream/environments/v1/environments", params={"limit": 100})
+        assert environments.status_code == 200, environments.text
+        uid = next(
+            item["target"]["uid"] for item in environments.json()["items"] if item["target"]["name"] == "runner-1"
+        )
+        response = await http.get("/upstream/app/v1/threads", params={"sandbox_uid": uid})
+        assert response.status_code == 503, response.text
 
 
 async def test_thread_metadata_watch_follows_replica_commits(
@@ -145,13 +197,14 @@ async def test_thread_metadata_watch_follows_replica_commits(
     history_client: HistoryServiceClient,
     api_server: KubernetesApiServer,
     app_config: dict[str, object],
+    namespace_gateway: GatewayAccess,
 ) -> None:
     async with (
         app_process(
             db_url,
             history_client,
             sandboxes=SandboxesAccess(api_server.kubeconfig, namespace.name),
-            gateway=None,
+            gateway=namespace_gateway,
             config=app_config,
         ) as replica,
         httpx.AsyncClient(base_url=replica.url, cookies=replica.cookies, headers={"Origin": replica.url}) as other,
@@ -206,6 +259,7 @@ async def test_thread_metadata_watch_reports_listener_loss_and_reconnect(
     history_client: HistoryServiceClient,
     namespace: SandboxNamespace,
     app_config: dict[str, object],
+    namespace_gateway: GatewayAccess,
 ) -> None:
     database_url, reconnect = database_reconnect_gate
     async with (
@@ -213,7 +267,7 @@ async def test_thread_metadata_watch_reports_listener_loss_and_reconnect(
             database_url,
             history_client,
             sandboxes=SandboxesAccess(namespace.kubeconfig, namespace.name),
-            gateway=None,
+            gateway=namespace_gateway,
             config=app_config,
         ) as app,
         httpx.AsyncClient(base_url=app.url, cookies=app.cookies, headers={"Origin": app.url}) as http,
@@ -299,11 +353,15 @@ async def database_reconnect_gate(db_url: str) -> AsyncIterator[tuple[str, async
 
 
 async def test_egress_decision_stream_receives_snapshots_and_recovers(
-    http: httpx.AsyncClient, namespace: SandboxNamespace, egress_admin: FakeEgressAdmin
+    http: httpx.AsyncClient, namespace: SandboxNamespace, seeded: None, egress_admin: FakeEgressAdmin
 ) -> None:
     subject = (namespace.name, "runner-1")
     egress_admin.decisions[subject] = [decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "allow")]
-    async with asyncio.timeout(10), http.stream("GET", "/live/sandboxes/runner-1/egress/decisions") as response:
+    uid = await _environment_uid(http, "runner-1")
+    async with (
+        asyncio.timeout(10),
+        http.stream("GET", "/live/sandboxes/runner-1/egress/decisions", params={"sandbox_uid": uid}) as response,
+    ):
         stream = _snapshots(response)
         first = await _next_decisions(stream)
         assert isinstance(first.decisions, list)
@@ -337,11 +395,19 @@ async def test_egress_decision_stream_receives_snapshots_and_recovers(
 
 
 async def test_egress_decision_stream_reconnects_after_lease_with_rotated_token(
-    http: httpx.AsyncClient, namespace: SandboxNamespace, egress_admin: FakeEgressAdmin, egress_token_file: Path
+    http: httpx.AsyncClient,
+    namespace: SandboxNamespace,
+    seeded: None,
+    egress_admin: FakeEgressAdmin,
+    egress_token_file: Path,
 ) -> None:
     subject = (namespace.name, "runner-1")
     egress_admin.decisions[subject] = [decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "allow")]
-    async with asyncio.timeout(10), http.stream("GET", "/live/sandboxes/runner-1/egress/decisions") as response:
+    uid = await _environment_uid(http, "runner-1")
+    async with (
+        asyncio.timeout(10),
+        http.stream("GET", "/live/sandboxes/runner-1/egress/decisions", params={"sandbox_uid": uid}) as response,
+    ):
         stream = _snapshots(response)
         assert (await _next_decisions(stream)).watching
         assert egress_admin.tokens == ["Bearer fake-token"]
@@ -352,7 +418,10 @@ async def test_egress_decision_stream_reconnects_after_lease_with_rotated_token(
 
 
 async def test_egress_decision_stream_says_a_sandbox_is_missing(http: httpx.AsyncClient) -> None:
-    async with asyncio.timeout(10), http.stream("GET", "/live/sandboxes/nope/egress/decisions") as response:
+    async with (
+        asyncio.timeout(10),
+        http.stream("GET", "/live/sandboxes/nope/egress/decisions", params={"sandbox_uid": "missing"}) as response,
+    ):
         missing = await _next_decisions(_snapshots(response))
         assert not missing.watching
         assert isinstance(missing.decisions, DecisionsUnavailable)

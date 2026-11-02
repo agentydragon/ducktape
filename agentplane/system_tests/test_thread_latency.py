@@ -229,7 +229,9 @@ async def test_a_one_word_turn_answers_and_its_thread_opens_in_time(
     model: str,
 ) -> None:
     view = await sandbox(f"systest-latency-{harness}")
-    agent = await Agent.open(client, dispatcher, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model)
+    agent = await Agent.open(
+        client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=model
+    )
     turn = await agent.run(PING)
     turn_seconds = time.monotonic() - turn.accepted
     assert "PING" in turn.answer, turn.transcript

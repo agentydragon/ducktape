@@ -3,200 +3,29 @@ package main
 import (
 	"context"
 	"errors"
-	"net/http"
 	"strings"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/httperror"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
+	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/danielgtaylor/huma/v2"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
-// SandboxView is the browser contract for the Kubernetes Sandbox and its current Pod incarnation.
-type SandboxView struct {
-	Name                    string                   `json:"name"`
-	UID                     string                   `json:"uid"`
-	Namespace               string                   `json:"namespace"`
-	CreatedAt               time.Time                `json:"created_at"`
-	OperatingMode           *string                  `json:"operating_mode"`
-	Status                  map[string]any           `json:"status"`
-	ServiceAccount          SandboxServiceAccount    `json:"service_account"`
-	Binding                 *SandboxBinding          `json:"binding"`
-	Preset                  *string                  `json:"preset"`
-	WakeOnSend              bool                     `json:"wake_on_send"`
-	IdleSuspendAfterSeconds *int64                   `json:"idle_suspend_after_seconds"`
-	IdleSuspendAt           *time.Time               `json:"idle_suspend_at"`
-	SuspendedBy             *string                  `json:"suspended_by"`
-	AutosuspendBlockers     []AutosuspendBlockerView `json:"autosuspend_blockers" nullable:"false"`
-	Phase                   string                   `json:"phase"`
-	Pod                     *SandboxPodView          `json:"pod"`
-}
-
-type AutosuspendBlockerView struct {
-	Reason    string  `json:"reason" enum:"ActiveTurn,PendingCommand,Setup,Activation,Bootstrap,Admission,ExecutorRelay"`
-	SessionID *string `json:"session_id" nullable:"true"`
-}
-
-type SandboxServiceAccount struct {
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-}
-
-type SandboxBinding struct {
-	_         struct{} `nullable:"true"`
-	Bootstrap string   `json:"bootstrap"`
-}
-
-type SandboxPodView struct {
-	_               struct{}                `nullable:"true"`
-	Name            string                  `json:"name"`
-	Namespace       string                  `json:"namespace"`
-	UID             string                  `json:"uid"`
-	Deleting        bool                    `json:"deleting"`
-	OwnerReferences []SandboxOwnerReference `json:"owner_references" nullable:"false"`
-	NodeName        *string                 `json:"node_name"`
-	Status          map[string]any          `json:"status"`
-}
-
-type SandboxOwnerReference struct {
-	APIVersion string `json:"api_version"`
-	Kind       string `json:"kind"`
-	Name       string `json:"name"`
-	UID        string `json:"uid"`
-	Controller bool   `json:"controller"`
-}
-
-type (
-	sandboxListOutput struct {
-		Body []SandboxView `nullable:"false"`
-	}
-	sandboxOutput struct{ Body SandboxView }
-)
-
-type sandboxNameInput struct {
-	Name string `path:"name" minLength:"1" maxLength:"57" pattern:"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"`
-}
-
-// RegisterSandboxRoutes installs the existing Sandbox read routes. Management uses the generated EnvironmentService facade.
-func RegisterSandboxRoutes(server *HTTPServer, inventory *sandboxinventory.Access) {
-	api := server.ProtectedAPI()
-	huma.Register[struct{}, sandboxListOutput](api, huma.Operation{
-		OperationID: "listSandboxes", Method: http.MethodGet, Path: "/sandboxes", Tags: []string{"sandboxes"},
-		Summary: "List Sandboxes in the configured namespace",
-	}, func(ctx context.Context, _ *struct{}) (*sandboxListOutput, error) {
-		values, err := inventory.ListSandboxes(ctx)
-		if err != nil {
-			return nil, sandboxHTTPError(err)
-		}
-		views := make([]SandboxView, 0, len(values))
-		for _, value := range values {
-			views = append(views, sandboxView(value))
-		}
-		return &sandboxListOutput{Body: views}, nil
-	})
-	huma.Register[sandboxNameInput, sandboxOutput](api, huma.Operation{
-		OperationID: "getSandbox", Method: http.MethodGet, Path: "/sandboxes/{name}", Tags: []string{"sandboxes"},
-		Summary: "Get one Sandbox and its current Pod incarnation",
-	}, func(ctx context.Context, input *sandboxNameInput) (*sandboxOutput, error) {
-		value, err := inventory.Get(ctx, input.Name)
-		if err != nil {
-			return nil, sandboxHTTPError(err)
-		}
-		return &sandboxOutput{Body: sandboxView(value)}, nil
-	})
-}
-
-func sandboxView(value *sandboxespb.Sandbox) SandboxView {
-	view := SandboxView{
-		Name: value.GetName(), UID: value.GetUid(), Namespace: value.GetNamespace(),
-		ServiceAccount: SandboxServiceAccount{}, WakeOnSend: value.GetWakeOnSend(),
-		Phase: sandboxPhaseView(value.GetPhase()), Status: map[string]any{},
-		AutosuspendBlockers: make([]AutosuspendBlockerView, 0, len(value.GetAutosuspendBlockers())),
-	}
-	for _, blocker := range value.GetAutosuspendBlockers() {
-		view.AutosuspendBlockers = append(view.AutosuspendBlockers, AutosuspendBlockerView{
-			Reason: blocker.GetReason(), SessionID: blocker.SessionId,
-		})
-	}
-	if value.CreatedAt != nil && value.CreatedAt.IsValid() {
-		view.CreatedAt = value.CreatedAt.AsTime()
-	}
-	if value.IdleSuspendAt != nil && value.IdleSuspendAt.IsValid() {
-		at := value.IdleSuspendAt.AsTime()
-		view.IdleSuspendAt = &at
-	}
-	if account := value.GetServiceAccount(); account != nil {
-		view.ServiceAccount = SandboxServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}
-	}
-	if binding := value.GetBinding(); binding != nil {
-		view.Binding = &SandboxBinding{Bootstrap: binding.GetBootstrap()}
-	}
-	if value.Preset != nil {
-		preset := value.GetPreset()
-		view.Preset = &preset
-	}
-	if value.OperatingMode != nil {
-		mode := value.GetOperatingMode()
-		view.OperatingMode = &mode
-	}
-	if value.SuspendedBy != nil {
-		suspendedBy := value.GetSuspendedBy()
-		view.SuspendedBy = &suspendedBy
-	}
-	if duration := value.GetIdleSuspendAfter(); duration != nil {
-		seconds := int64(duration.AsDuration().Seconds())
-		view.IdleSuspendAfterSeconds = &seconds
-	}
-	if status := value.GetStatus(); status != nil {
-		view.Status = status.AsMap()
-		if _, ok := view.Status["conditions"]; !ok {
-			view.Status["conditions"] = []any{}
-		}
-	}
-	if pod := value.GetPod(); pod != nil {
-		podView := &SandboxPodView{
-			Name: pod.GetName(), Namespace: pod.GetNamespace(), UID: pod.GetUid(), Deleting: pod.GetDeleting(),
-			NodeName: pod.NodeName, Status: map[string]any{}, OwnerReferences: make([]SandboxOwnerReference, 0, len(pod.GetOwnerReferences())),
-		}
-		if pod.GetStatus() != nil {
-			podView.Status = pod.GetStatus().AsMap()
-		}
-		for _, owner := range pod.GetOwnerReferences() {
-			podView.OwnerReferences = append(podView.OwnerReferences, SandboxOwnerReference{
-				APIVersion: owner.GetApiVersion(), Kind: owner.GetKind(), Name: owner.GetName(), UID: owner.GetUid(), Controller: owner.GetController(),
-			})
-		}
-		view.Pod = podView
-	}
-	return view
-}
-
-func sandboxPhaseView(phase sandboxespb.SandboxPhase) string {
-	return map[sandboxespb.SandboxPhase]string{
-		sandboxespb.SandboxPhase_SANDBOX_PHASE_UNSPECIFIED:  "Unspecified",
-		sandboxespb.SandboxPhase_SANDBOX_PHASE_CREATING:     "Creating",
-		sandboxespb.SandboxPhase_SANDBOX_PHASE_RUNNING:      "Running",
-		sandboxespb.SandboxPhase_SANDBOX_PHASE_SUSPENDING:   "Suspending",
-		sandboxespb.SandboxPhase_SANDBOX_PHASE_SUSPENDED:    "Suspended",
-		sandboxespb.SandboxPhase_SANDBOX_PHASE_QUIESCING:    "Quiescing",
-		sandboxespb.SandboxPhase_SANDBOX_PHASE_TEARING_DOWN: "Tearing down",
-	}[phase]
-}
-
 func sandboxHTTPError(err error) error {
 	return httperror.LogServerError(classifySandboxError(err), err)
 }
 
 func classifySandboxError(err error) error {
-	var notFound *sandboxinventory.SandboxNotFoundError
+	var quiescing *sandboxes.SandboxQuiescingError
 	switch {
-	case errors.As(err, &notFound), apierrors.IsNotFound(err):
+	case apierrors.IsNotFound(err):
 		return huma.Error404NotFound(err.Error())
 	default:
+		if errors.As(err, &quiescing) {
+			return huma.Error503ServiceUnavailable(err.Error())
+		}
 		switch grpcstatus.Code(err) {
 		case codes.NotFound:
 			return huma.Error404NotFound(err.Error())

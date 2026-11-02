@@ -25,9 +25,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
-	sandboxview "github.com/agentydragon/ducktape/agentplane/sandboxes/view"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -35,7 +33,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -63,7 +60,8 @@ type streamLiveInventory interface {
 }
 
 type streamSandboxInventory interface {
-	Get(context.Context, string) (*sandboxespb.Sandbox, error)
+	GetEnvironment(context.Context, *environmentpb.GetEnvironmentRequest, ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error)
+	Watch(context.Context, *environmentpb.TargetHandle) <-chan sandboxes.EnvironmentObservation
 }
 
 type streamHistoryStore interface {
@@ -77,6 +75,7 @@ type StreamingDependencies struct {
 	Auth             *auth.Auth
 	Updates          auth.ChangeSource
 	UpdatesConnected func() bool
+	SandboxNamespace string
 	Live             streamLiveInventory
 	Sandboxes        streamSandboxInventory
 	Threads          threadReadStore
@@ -153,7 +152,7 @@ type kindFailureView struct {
 }
 
 type liveSandboxFrame struct {
-	Sandbox      *SandboxView               `json:"sandbox"`
+	SandboxUID   *string                    `json:"sandbox_uid"`
 	Bindings     []policyaccess.BindingView `json:"bindings"`
 	ActionPolicy any                        `json:"action_policy"`
 	Watch        watchHealthView            `json:"watch"`
@@ -198,7 +197,7 @@ type sandboxDetailKey struct {
 
 // sandboxDetail is the viewer-independent part of a /live/sandboxes/{name} frame.
 type sandboxDetail struct {
-	sandbox          *SandboxView
+	sandboxUID       *string
 	subject          *sandboxespb.ServiceAccount
 	bindings         []policyaccess.BindingView
 	policyGeneration uint64
@@ -206,14 +205,13 @@ type sandboxDetail struct {
 }
 
 func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Request) {
-	if r.deps.Live == nil {
+	if r.deps.Live == nil || r.deps.Sandboxes == nil {
 		writeDetailError(w, http.StatusServiceUnavailable, "live sandbox view is unavailable")
 		return
 	}
 	uid := request.URL.Query().Get("sandbox_uid")
-	parsedUID, err := uuid.Parse(uid)
-	if err != nil || parsedUID.String() != uid {
-		writeDetailError(w, http.StatusBadRequest, "sandbox_uid must be a canonical UUID")
+	if uid == "" {
+		writeDetailError(w, http.StatusBadRequest, "sandbox_uid is required")
 		return
 	}
 	ctx, cancel := r.requestLifetime(request)
@@ -229,7 +227,7 @@ func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Reque
 	hasCachedPolicy := false
 	streamLiveFrames(r, w, ctx, frames, func(detail sandboxDetail) ([]byte, error) {
 		var actionPolicy any
-		if detail.sandbox != nil {
+		if detail.subject != nil {
 			if hasCachedPolicy && cachedGeneration == detail.policyGeneration && proto.Equal(cachedSubject, detail.subject) {
 				actionPolicy = cachedPolicy
 			} else {
@@ -245,48 +243,69 @@ func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Reque
 			}
 		}
 		return json.Marshal(liveSandboxFrame{
-			Sandbox: detail.sandbox, Bindings: nonNilBindingViews(detail.bindings), ActionPolicy: actionPolicy,
+			SandboxUID: detail.sandboxUID, Bindings: nonNilBindingViews(detail.bindings), ActionPolicy: actionPolicy,
 			Watch: detail.watch,
 		})
 	})
 }
 
-// produceSandboxDetail observes only the requested Sandbox incarnation.
+// produceSandboxDetail observes policy data for the requested Environment incarnation.
 func (r *streamingRoutes) produceSandboxDetail(ctx context.Context, key sandboxDetailKey, publish func(sandboxDetail)) error {
 	liveChanges, stopLive := r.deps.Live.Subscribe()
 	defer stopLive()
+	target := &environmentpb.TargetHandle{Namespace: r.deps.SandboxNamespace, Name: key.name, Uid: key.uid}
+	observations := r.deps.Sandboxes.Watch(ctx, target)
+	var descriptor *environmentpb.EnvironmentDescriptor
 	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case observation, ok := <-observations:
+			if !ok {
+				return nil
+			}
+			if observation.Err != nil {
+				if status.Code(observation.Err) == codes.NotFound {
+					publish(sandboxDetail{watch: healthView(r.deps.Live.Health())})
+					return nil
+				}
+				return observation.Err
+			}
+			descriptor = observation.Descriptor
+			if descriptor == nil || !proto.Equal(descriptor.GetTarget(), target) {
+				return fmt.Errorf("Environment %q has incomplete or mismatched identity", key.name)
+			}
+		case <-liveChanges:
+			if descriptor == nil {
+				continue
+			}
+		}
 		snapshot, err := r.deps.Live.Snapshot(ctx)
 		if err != nil {
 			return err
 		}
 		detail := sandboxDetail{policyGeneration: snapshot.PolicyGeneration, watch: healthView(snapshot.Watch)}
-		resource, pod := snapshotSandbox(snapshot, key.name)
-		if resource != nil && string(resource.UID) == key.uid {
-			projected, err := sandboxview.View(resource, pod)
-			if err != nil {
-				return err
-			}
-			row := sandboxView(projected)
-			detail.sandbox = &row
-			detail.subject = projected.GetServiceAccount()
+		uid := descriptor.GetTarget().GetUid()
+		detail.sandboxUID = &uid
+		if account := descriptor.GetExecutionAccount(); account != nil {
+			detail.subject = &sandboxespb.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}
 			detail.bindings, err = policyaccess.BindingsFromSnapshot(snapshot.PolicyBindings, snapshot.PolicySets, snapshot.EgressCredentials, detail.subject)
 			if err != nil {
 				return err
 			}
 		}
 		publish(detail)
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-liveChanges:
-		}
 	}
 }
 
 func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Request) {
-	if r.deps.Live == nil || r.deps.Egress == nil {
+	if r.deps.Live == nil || r.deps.Sandboxes == nil || r.deps.Egress == nil {
 		writeDetailError(w, http.StatusServiceUnavailable, "egress decision stream is unavailable")
+		return
+	}
+	uid := request.URL.Query().Get("sandbox_uid")
+	if uid == "" {
+		writeDetailError(w, http.StatusBadRequest, "sandbox_uid is required")
 		return
 	}
 	ctx, cancel := r.requestLifetime(request)
@@ -294,16 +313,48 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 	changes, unsubscribe := r.deps.Live.Subscribe()
 	defer unsubscribe()
 	name := request.PathValue("name")
+	target := &environmentpb.TargetHandle{Namespace: r.deps.SandboxNamespace, Name: name, Uid: uid}
+	observations := r.deps.Sandboxes.Watch(ctx, target)
+	var descriptor *environmentpb.EnvironmentDescriptor
 	if err := startSSE(w); err != nil {
 		return
 	}
+	applyObservation := func(observation sandboxes.EnvironmentObservation, ok bool) bool {
+		if !ok {
+			return false
+		}
+		if observation.Err != nil {
+			_ = writeSSE(w, "snapshot", liveDecisionsFrame{Watching: false, Decisions: decisionsUnavailable{Detail: grpcFailure(observation.Err)}}, nil)
+			return false
+		}
+		descriptor = observation.Descriptor
+		return descriptor != nil && proto.Equal(descriptor.GetTarget(), target)
+	}
 	for {
-		snapshot, err := r.deps.Live.Snapshot(ctx)
+		// A disconnected or replaced Environment must be observed before reopening Egress.
+		select {
+		case observation, ok := <-observations:
+			if !applyObservation(observation, ok) {
+				return
+			}
+		default:
+		}
+		_, err := r.deps.Live.Snapshot(ctx)
 		if err != nil {
 			return
 		}
-		resource, pod := snapshotSandbox(snapshot, name)
-		if resource == nil {
+		if descriptor == nil {
+			select {
+			case <-ctx.Done():
+				return
+			case observation, ok := <-observations:
+				if !applyObservation(observation, ok) {
+					return
+				}
+			}
+		}
+		account := descriptor.GetExecutionAccount()
+		if account == nil {
 			if writeSSE(w, "snapshot", liveDecisionsFrame{Watching: false, Decisions: decisionsUnavailable{Detail: "no sandbox " + name}}, nil) != nil {
 				return
 			}
@@ -312,21 +363,28 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 				return
 			case <-changes:
 				continue
+			case observation, ok := <-observations:
+				if !applyObservation(observation, ok) {
+					return
+				}
+				continue
 			}
 		}
-		projected, err := sandboxview.View(resource, pod)
-		if err != nil {
-			return
-		}
 		watchCtx, stopWatch := context.WithCancel(ctx)
-		stream, err := r.deps.Egress.WatchDecisions(watchCtx, decisionsRequest(projected.GetServiceAccount()))
+		stream, err := r.deps.Egress.WatchDecisions(watchCtx, decisionsRequest(&sandboxespb.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}))
 		if err != nil {
 			stopWatch()
 			if writeSSE(w, "snapshot", liveDecisionsFrame{Watching: false, Decisions: decisionsUnavailable{Detail: grpcFailure(err)}}, nil) != nil {
 				return
 			}
-			if !waitContext(ctx, time.Second) {
+			select {
+			case <-ctx.Done():
 				return
+			case observation, ok := <-observations:
+				if !applyObservation(observation, ok) {
+					return
+				}
+			case <-time.After(time.Second):
 			}
 			continue
 		}
@@ -362,6 +420,18 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 				timer.Stop()
 				stopWatch()
 				return
+			case <-changes:
+				// Policy changes restart the Egress stream using the observed account.
+				streamEnded = true
+				break
+			case observation, ok := <-observations:
+				if !applyObservation(observation, ok) {
+					timer.Stop()
+					stopWatch()
+					return
+				}
+				streamEnded = true
+				break
 			case <-timer.C:
 				if first {
 					_ = writeSSE(w, "snapshot", liveDecisionsFrame{Watching: false, Decisions: decisionsUnavailable{Detail: fmt.Sprintf("no initial snapshot within %s", compactDuration(wait))}}, nil)
@@ -420,34 +490,16 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 			return
 		}
 		_ = watching
-		if !waitContext(ctx, time.Second) {
+		select {
+		case <-ctx.Done():
 			return
+		case observation, ok := <-observations:
+			if !applyObservation(observation, ok) {
+				return
+			}
+		case <-time.After(time.Second):
 		}
 	}
-}
-
-func snapshotSandbox(snapshot liveinventory.Snapshot, name string) (*sandboxapi.Sandbox, *corev1.Pod) {
-	var resource *sandboxapi.Sandbox
-	for i := range snapshot.Sandboxes {
-		if snapshot.Sandboxes[i].Name == name {
-			resource = &snapshot.Sandboxes[i]
-			break
-		}
-	}
-	if resource == nil {
-		return nil, nil
-	}
-	incarnation := resource.Status.Incarnation
-	if incarnation == nil {
-		return resource, nil
-	}
-	for i := range snapshot.Pods {
-		pod := &snapshot.Pods[i]
-		if pod.Namespace == resource.Namespace && pod.Name == incarnation.Name && string(pod.UID) == incarnation.UID {
-			return resource, pod
-		}
-	}
-	return resource, nil
 }
 
 func healthView(health watchhealth.Status) watchHealthView {
@@ -676,18 +728,28 @@ func (r *streamingRoutes) sandboxNotifications(w http.ResponseWriter, request *h
 		writeDetailError(w, http.StatusServiceUnavailable, "Notification Service is not configured")
 		return
 	}
+	uid := request.URL.Query().Get("sandbox_uid")
+	if uid == "" {
+		writeDetailError(w, http.StatusBadRequest, "sandbox_uid is required")
+		return
+	}
 	ctx, cancel, err := r.operatorLifetime(request)
 	if err != nil {
 		writeDetailError(w, http.StatusForbidden, "operator login required")
 		return
 	}
 	defer cancel()
-	sandbox, err := r.deps.Sandboxes.Get(ctx, request.PathValue("name"))
+	target := &environmentpb.TargetHandle{Namespace: r.deps.SandboxNamespace, Name: request.PathValue("name"), Uid: uid}
+	sandbox, err := r.deps.Sandboxes.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: target})
 	if err != nil {
 		_ = sandboxHTTPErrorToRaw(w, err)
 		return
 	}
-	stream, err := r.deps.Notifications.WatchSandboxNotifications(ctx, &notifications_operatorpb.WatchSandboxNotificationsRequest{Namespace: sandbox.GetNamespace(), Name: sandbox.GetName(), Uid: sandbox.GetUid()})
+	if sandbox == nil || !proto.Equal(sandbox.GetTarget(), target) {
+		writeDetailError(w, http.StatusServiceUnavailable, "Environment identity is incomplete or mismatched")
+		return
+	}
+	stream, err := r.deps.Notifications.WatchSandboxNotifications(ctx, &notifications_operatorpb.WatchSandboxNotificationsRequest{Namespace: target.GetNamespace(), Name: target.GetName(), Uid: target.GetUid()})
 	if err != nil {
 		writeGRPCOpenError(w, err)
 		return
@@ -803,21 +865,31 @@ func (r *streamingRoutes) console(w http.ResponseWriter, request *http.Request) 
 		writeDetailError(w, http.StatusServiceUnavailable, "Sandbox console is unavailable")
 		return
 	}
+	uid := request.URL.Query().Get("sandbox_uid")
+	if uid == "" {
+		writeDetailError(w, http.StatusBadRequest, "sandbox_uid is required")
+		return
+	}
 	ctx, cancel, err := r.operatorLifetime(request)
 	if err != nil {
 		writeDetailError(w, http.StatusForbidden, "operator login required")
 		return
 	}
 	defer cancel()
-	sandbox, err := r.deps.Sandboxes.Get(ctx, request.PathValue("name"))
+	target := &environmentpb.TargetHandle{Namespace: r.deps.SandboxNamespace, Name: request.PathValue("name"), Uid: uid}
+	sandbox, err := r.deps.Sandboxes.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: target})
 	if err != nil {
 		_ = sandboxHTTPErrorToRaw(w, err)
+		return
+	}
+	if sandbox == nil || !proto.Equal(sandbox.GetTarget(), target) {
+		writeDetailError(w, http.StatusServiceUnavailable, "Environment identity is incomplete or mismatched")
 		return
 	}
 	if err := startSSE(w); err != nil {
 		return
 	}
-	console, err := r.deps.Console.Open(ctx, sandbox.GetNamespace(), sandbox.GetName())
+	console, err := r.deps.Console.Open(ctx, target.GetNamespace(), target.GetName())
 	if err != nil {
 		var unavailable *sandboxes.ConsoleUnavailableError
 		if errors.As(err, &unavailable) {
@@ -1179,25 +1251,13 @@ func writeGRPCOpenError(w http.ResponseWriter, err error) {
 }
 
 func sandboxHTTPErrorToRaw(w http.ResponseWriter, err error) error {
-	var notFound *sandboxinventory.SandboxNotFoundError
 	switch {
-	case errors.As(err, &notFound):
+	case status.Code(err) == codes.NotFound:
 		writeDetailError(w, http.StatusNotFound, err.Error())
 	default:
 		writeDetailError(w, http.StatusServiceUnavailable, "Sandbox inventory is unavailable")
 	}
 	return err
-}
-
-func parseOptionalBool(values url.Values, name string, fallback bool) (bool, error) {
-	raw, ok := values[name]
-	if !ok {
-		return fallback, nil
-	}
-	if len(raw) != 1 {
-		return false, errors.New("expected one boolean value")
-	}
-	return strconv.ParseBool(raw[0])
 }
 
 func startSSE(w http.ResponseWriter) error {

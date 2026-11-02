@@ -1,7 +1,7 @@
 """Check native systemd supervision through ordinary Session setup and History."""
 
 import shlex
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
@@ -45,7 +45,7 @@ async def session_setup_is_supervised(
     client: Client,
     dispatcher: SessionDispatcherClient,
     sandbox_name: str,
-    sandbox_uid: UUID,
+    sandbox_uid: str,
     harness: session_pb2.Harness,
     model: str,
 ) -> Agent:
@@ -127,7 +127,7 @@ async def session_setup_is_supervised(
     )
     assert checked == "SETUP_DOMAIN_EMPTY\n", (checked, errors)
     assert not errors, errors
-    return Agent(client, dispatcher, thread_id=session_id, cursor=0, sandbox=sandbox_name, sandbox_uid=str(sandbox_uid))
+    return Agent(client, dispatcher, thread_id=session_id, cursor=0, sandbox=sandbox_name, sandbox_uid=sandbox_uid)
 
 
 # gazelle:include_dep @pypi//protobuf

@@ -1,7 +1,16 @@
 import { Accordion, Badge, Button, Group, Paper, Stack, Table, Text, Title } from "@mantine/core";
-import { type JSX, type ReactNode, useEffect, useState } from "react";
+import { create, toJson } from "@bufbuild/protobuf";
+import { type JSX, type ReactNode, useEffect, useMemo, useState } from "react";
 
-import type { SandboxView, ThreadView } from "../schema";
+import type { ThreadView } from "../schema";
+import {
+  EnvironmentDescriptorSchema,
+  OperatingMode,
+  TargetHandleSchema,
+  type EnvironmentDescriptor,
+  SandboxPhase,
+} from "../../../runner_gateway/environments/environment_service_pb";
+
 import { displayableError } from "../client";
 import { getEnvironmentRuntimeStatus } from "./client";
 import { harnessLabel } from "../model_catalog";
@@ -174,7 +183,7 @@ function StatusItem({
  * What Kubernetes says about the Sandbox: its own status conditions, then its Pod's conditions and
  * containers. An item starts open when something in it is not as it should be.
  */
-function KubernetesStatus({ sandbox }: { sandbox: SandboxView }): JSX.Element {
+function KubernetesStatus({ sandbox }: { sandbox: EnvironmentDescriptor }): JSX.Element {
   const sandboxConditions = rawConditions(sandbox.status);
   const podConditions = rawConditions(sandbox.pod?.status ?? null);
   const containers = containerStatuses(sandbox.pod?.status ?? null);
@@ -236,7 +245,7 @@ function SandboxDetails({
   sandbox,
   onError,
 }: {
-  sandbox: SandboxView;
+  sandbox: EnvironmentDescriptor;
   onError: (message: string | null) => void;
 }): JSX.Element {
   const pod = sandbox.pod;
@@ -246,14 +255,19 @@ function SandboxDetails({
       <Table.Tbody>
         <Detail label="State">{sandboxSummary(sandbox).label}</Detail>
         <Detail label="Created">
-          <TimeAgo value={sandbox.created_at} />
+          {sandbox.createdAt ? (
+            <TimeAgo value={new Date(Number(sandbox.createdAt.seconds) * 1000 + sandbox.createdAt.nanos / 1e6)} />
+          ) : (
+            "—"
+          )}
         </Detail>
         {sandbox.preset && <Detail label="Preset">{sandbox.preset}</Detail>}
         <Detail
           label="ServiceAccount"
           help="The subject its policy bindings name. Two sandboxes sharing an account share what they may do."
         >
-          {sandbox.service_account.namespace}/{sandbox.service_account.name}
+          {sandbox.executionAccount?.namespace ?? sandbox.target!.namespace}/
+          {sandbox.executionAccount?.name ?? sandbox.target!.name}
         </Detail>
         <Detail label="Wake on message" help="A message to one of its Sessions resumes it while suspended.">
           <WakeOnSendCheckbox sandbox={sandbox} disabled={deleting(sandbox)} onError={onError} />
@@ -269,7 +283,7 @@ function SandboxDetails({
             <>
               {podPhase(sandbox) ?? "phase unknown"}
               {podIp(sandbox) ? ` at ${podIp(sandbox)}` : ""}
-              {pod.node_name ? ` on ${pod.node_name}` : ", not placed"}
+              {pod.nodeName ? ` on ${pod.nodeName}` : ", not placed"}
               {pod.deleting ? " · deleting" : ""}
               {rawString(pod.status?.reason) ? `: ${rawString(pod.status?.reason)}` : ""}
               {rawString(pod.status?.message) ? ` (${rawString(pod.status?.message)})` : ""}
@@ -504,21 +518,26 @@ function EnvironmentRuntimeDiagnostics({
   threads,
   active,
 }: {
-  sandbox: SandboxView;
+  sandbox: EnvironmentDescriptor;
   threads: ThreadView[];
   active: boolean;
 }): JSX.Element {
   const [state, setState] = useState<EnvironmentRuntimeDiagnosticsState>({ kind: "loading" });
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const { namespace: sandboxNamespace, name: sandboxName, uid: sandboxUID } = sandbox.target!;
+  const target = useMemo(
+    () => create(TargetHandleSchema, { namespace: sandboxNamespace, name: sandboxName, uid: sandboxUID }),
+    [sandboxNamespace, sandboxName, sandboxUID]
+  );
   useEffect(() => {
     if (!active) return;
-    if (sandbox.phase === "Suspended" || sandbox.operating_mode === "Suspended") {
+    if (sandbox.phase === SandboxPhase.SUSPENDED || sandbox.operatingMode === OperatingMode.SUSPENDED) {
       setState({ kind: "suspended" });
       return;
     }
     let current = true;
     setState({ kind: "loading" });
-    void getEnvironmentRuntimeStatus(sandbox.name).then(
+    void getEnvironmentRuntimeStatus(target).then(
       (value) => {
         if (current) setState({ kind: "available", value, observedAt: new Date().toISOString() });
       },
@@ -529,7 +548,7 @@ function EnvironmentRuntimeDiagnostics({
     return () => {
       current = false;
     };
-  }, [active, refreshVersion, sandbox.name, sandbox.operating_mode, sandbox.phase]);
+  }, [active, refreshVersion, target, sandbox.operatingMode, sandbox.phase]);
   const threadsById = new Map(threads.map((thread) => [thread.id, thread]));
 
   return (
@@ -660,7 +679,7 @@ export function StatusView({
   active,
   onError,
 }: {
-  sandbox: SandboxView;
+  sandbox: EnvironmentDescriptor;
   threads: ThreadView[];
   active: boolean;
   onError: (message: string | null) => void;
@@ -672,7 +691,7 @@ export function StatusView({
         <RawSwitch raw={raw} onChange={setRaw} />
       </Group>
       {raw ? (
-        <JsonView value={sandbox} />
+        <JsonView value={toJson(EnvironmentDescriptorSchema, sandbox)} />
       ) : (
         <>
           <SandboxDetails sandbox={sandbox} onError={onError} />
