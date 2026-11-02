@@ -71,7 +71,7 @@ func (c *runtimeTransitionSequence) runQuiesceBarrier(ctx context.Context, kind 
 			return runtimeTransitionOutcome{}, status.Error(codes.Aborted, "the Sandbox is busy or its idle_since differs")
 		}
 		if r.host == nil || !r.host.active {
-			return runtimeTransitionOutcome{}, status.Error(codes.Unavailable, "Harness Host lifecycle connection is unavailable")
+			return runtimeTransitionOutcome{}, status.Error(codes.Unavailable, "Session component is unavailable")
 		}
 		if err := r.state.EnterLameduck(); err != nil {
 			return runtimeTransitionOutcome{}, status.Errorf(codes.Unavailable, "persist environment seal: %v", err)

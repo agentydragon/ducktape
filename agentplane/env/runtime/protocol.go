@@ -254,7 +254,7 @@ func (r *Runtime) waitForExecutionFenced(ctx context.Context, binding *runtimepb
 
 func (r *Runtime) waitForHostReady(ctx context.Context, binding *runtimepb.Binding) (*runtimepb.HostReport, error) {
 	return r.waitForAppliedHostReport(ctx, binding, nil,
-		status.Error(codes.Unavailable, "Harness Host lifecycle connection is unavailable"))
+		status.Error(codes.Unavailable, "Session component is unavailable"))
 }
 
 // Keep the report read and change subscription under Runtime.mu so a report
@@ -320,7 +320,7 @@ func (r *Runtime) hostQuiescenceWaitSnapshot(binding *runtimepb.Binding) (bool, 
 		return false, nil, failure
 	}
 	if r.host == nil || !r.host.active {
-		return false, nil, status.Error(codes.Unavailable, "Harness Host lifecycle connection is unavailable")
+		return false, nil, status.Error(codes.Unavailable, "Session component is unavailable")
 	}
 	return false, r.changes, nil
 }

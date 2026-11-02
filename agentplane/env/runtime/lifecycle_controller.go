@@ -14,7 +14,7 @@ import (
 
 const runtimeLifecycleControllerName = "environment-runtime-lifecycle"
 
-var errSessionComponentLost = errors.New("Session component lifecycle connection was lost")
+var errSessionComponentLost = errors.New("Session component became unavailable before shutdown")
 
 // The controller owns Runtime's Close and epoch transition sequences. Each
 // blocking boundary runs in a worker; its single event loop stays free to
@@ -228,13 +228,13 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecyc
 		}
 		if p.sessionsStarted {
 			if err := c.stopSessions(p.fenceCtx); err != nil {
-				return fmt.Errorf("Runtime lost its Host lifecycle connection and native cleanup is unproved: %w", err)
+				return fmt.Errorf("Session component became unavailable and native cleanup is unproved: %w", err)
 			}
 			p.sessionLossErr = errSessionComponentLost
 			return nil
 		}
 		if p.executionMayExist {
-			return errors.New("Runtime lost its Host lifecycle connection before proving native cleanup")
+			return errors.New("Session component did not start before native cleanup could be proved")
 		}
 		return nil
 	case lifecycle.RuntimeCloseExecutionFencing:
@@ -244,7 +244,7 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage lifecyc
 		}
 		if p.sessionsStarted {
 			if err := c.r.stopExecution(p.fenceCtx); err != nil {
-				return fmt.Errorf("fence Execution after Host lifecycle loss: %w", err)
+				return fmt.Errorf("fence Execution after Session component became unavailable: %w", err)
 			}
 		}
 		return nil

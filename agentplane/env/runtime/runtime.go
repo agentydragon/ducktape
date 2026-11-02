@@ -448,8 +448,8 @@ func (r *Runtime) joinClose() error {
 	sessionLossErr := r.lifecycleCoordinator.plan.sessionLossErr
 	if r.sessions != nil {
 		<-r.sessionWorkerDone
-		// Host.Run also reports bridge loss. Native cleanup is a separate proof:
-		// retain Runtime's owner if Host.Close could not finish its joined work.
+		// Worker completion does not prove native cleanup. Retain Runtime's
+		// owner if the Session component cannot finish its joined work.
 		if cleanupErr := r.closeSessions(context.Background()); cleanupErr != nil {
 			return errors.Join(sessionLossErr, r.sessionWorkerErr, fmt.Errorf("Session cleanup unproved: %w", cleanupErr))
 		}
@@ -503,7 +503,7 @@ func (r *Runtime) changed() {
 func (r *Runtime) waitForHostNativeStopped(ctx context.Context, binding *runtimepb.Binding) error {
 	_, err := r.waitForAppliedHostReport(ctx, binding, func(report *runtimepb.HostReport) bool {
 		return report.NativeStopped
-	}, errors.New("Harness Host lifecycle connection was lost before native-stop acknowledgement"))
+	}, errors.New("Session component became unavailable before native-stop acknowledgement"))
 	return err
 }
 
