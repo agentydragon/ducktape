@@ -1,8 +1,9 @@
-import { sandboxProto } from "../testing/sandbox_proto";
+import { DurationSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { AutosuspendBlockerSchema, SandboxPhase, SandboxSchema, type Sandbox } from "../../../proto/sandboxes_pb";
 // @vitest-environment happy-dom
 
-import { create, toJson } from "@bufbuild/protobuf";
-import type { LangfuseSearchSettings, SandboxView, ThreadView, TraceSearchSettings } from "../schema";
+import { clone, create, toJson } from "@bufbuild/protobuf";
+import type { LangfuseSearchSettings, ThreadView, TraceSearchSettings } from "../schema";
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
 import { MantineProvider } from "@mantine/core";
 import { act, type JSX } from "react";
@@ -79,50 +80,59 @@ let favicon: HTMLLinkElement;
 // What the sandbox inventory stream reports -- nothing at all while `sandboxes` is null -- and
 // whether it then drops. By default the thread's sandbox is running on a current inventory, so its
 // controls are live.
-type Inventory = SandboxView[] | null;
-function inventorySandbox(operating_mode: "Running" | "Suspended" = "Running", wake_on_send = false): SandboxView {
+type Inventory = Sandbox[] | null;
+function inventorySandbox(operating_mode: "Running" | "Suspended" = "Running", wake_on_send = false): Sandbox {
   const uid = "20000000-0000-4000-8000-000000000001";
-  return {
+  return create(SandboxSchema, {
     name: THREAD.sandbox,
     uid,
     namespace: "agentplane-test",
-    created_at: "2026-01-01T00:00:00Z",
-    binding: null,
-    preset: null,
-    operating_mode,
-    wake_on_send,
-    idle_suspend_after_seconds: null,
-    idle_suspend_at: null,
-    autosuspend_blockers: [],
-    suspended_by: null,
+    createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
+
+    operatingMode: operating_mode,
+    wakeOnSend: wake_on_send,
+
+    autosuspendBlockers: [],
+
     status: operating_mode === "Running" ? { conditions: [{ type: "Ready", status: "True" }] } : {},
-    service_account: { namespace: "agentplane-test", name: THREAD.sandbox },
-    phase: operating_mode,
+    serviceAccount: { namespace: "agentplane-test", name: THREAD.sandbox },
+    phase: operating_mode === "Running" ? SandboxPhase.RUNNING : SandboxPhase.SUSPENDED,
     pod:
       operating_mode === "Suspended"
-        ? null
+        ? undefined
         : {
             name: THREAD.sandbox,
             namespace: "agentplane-test",
             uid: "test-pod-1",
             deleting: false,
-            node_name: "test-node",
-            owner_references: [
+            nodeName: "test-node",
+            ownerReferences: [
               {
-                api_version: "agentplane.allegedly.works/v1alpha1",
+                apiVersion: "agentplane.allegedly.works/v1alpha1",
                 kind: "Sandbox",
                 name: THREAD.sandbox,
                 uid,
                 controller: true,
               },
             ],
-            status: { phase: "Running", podIP: "10.0.0.1", conditions: [{ type: "Ready", status: "True" }] },
+            status: {
+              phase: "Running",
+              podIP: "10.0.0.1",
+              conditions: [{ type: "Ready", status: "True" }],
+            },
           },
-  };
+  });
 }
 
-function autosuspendSandbox(idle_suspend_at: string | null): SandboxView {
-  return { ...inventorySandbox(), idle_suspend_after_seconds: 900, idle_suspend_at };
+function updatedSandbox(base: Sandbox, changes: Partial<Sandbox>): Sandbox {
+  return Object.assign(clone(SandboxSchema, base), changes);
+}
+
+function autosuspendSandbox(idle_suspend_at: string | null): Sandbox {
+  return updatedSandbox(inventorySandbox(), {
+    idleSuspendAfter: create(DurationSchema, { seconds: 900n }),
+    idleSuspendAt: idle_suspend_at === null ? undefined : timestampFromDate(new Date(idle_suspend_at)),
+  });
 }
 let sandboxes: Inventory = [];
 let inventoryFresh = true;
@@ -183,7 +193,7 @@ beforeEach(() => {
         return;
       }
       if (sandboxes === null || reconnected(served, stream)) return;
-      stream.send({ snapshot: { sandboxes: sandboxes.map(sandboxProto) } });
+      stream.send({ snapshot: { sandboxes: sandboxes.map((sandbox) => toJson(SandboxSchema, sandbox)) } });
       stream.send({ snapshotComplete: {} });
       if (!inventoryFresh) stream.drop();
       if (inventoryDrops) stream.drop();
@@ -525,17 +535,16 @@ it("reports the autosuspend policy while no idle deadline is active", async () =
 it("explains every runner blocker and links sessions outside the loaded thread listing", async () => {
   const unlistedSession = "00000000-0000-4000-8000-000000000099";
   sandboxes = [
-    {
-      ...autosuspendSandbox(null),
-      autosuspend_blockers: [
-        { reason: "ActiveTurn", session_id: THREAD.id },
-        { reason: "PendingCommand", session_id: unlistedSession },
-        { reason: "Setup", session_id: unlistedSession },
-        { reason: "Activation", session_id: unlistedSession },
-        { reason: "Bootstrap", session_id: null },
-        { reason: "Admission", session_id: null },
+    updatedSandbox(autosuspendSandbox(null), {
+      autosuspendBlockers: [
+        create(AutosuspendBlockerSchema, { reason: "ActiveTurn", sessionId: THREAD.id }),
+        create(AutosuspendBlockerSchema, { reason: "PendingCommand", sessionId: unlistedSession }),
+        create(AutosuspendBlockerSchema, { reason: "Setup", sessionId: unlistedSession }),
+        create(AutosuspendBlockerSchema, { reason: "Activation", sessionId: unlistedSession }),
+        create(AutosuspendBlockerSchema, { reason: "Bootstrap", sessionId: undefined }),
+        create(AutosuspendBlockerSchema, { reason: "Admission", sessionId: undefined }),
       ],
-    },
+    }),
   ];
   const container = await render();
   const streams = eventStreamUrls.length;
@@ -560,13 +569,12 @@ it.each([null, "2026-01-01T12:12:00Z"])(
     threadRows = [THREAD, sibling];
     sharedFeed = "ended";
     sandboxes = [
-      {
-        ...autosuspendSandbox(deadline),
-        autosuspend_blockers: [
-          { reason: "ActiveTurn", session_id: THREAD.id },
-          { reason: "ActiveTurn", session_id: sibling.id },
+      updatedSandbox(autosuspendSandbox(deadline), {
+        autosuspendBlockers: [
+          create(AutosuspendBlockerSchema, { reason: "ActiveTurn", sessionId: THREAD.id }),
+          create(AutosuspendBlockerSchema, { reason: "ActiveTurn", sessionId: sibling.id }),
         ],
-      },
+      }),
     ];
     const container = await render();
     const hint = container.querySelector(".agentplane-composer-autosuspend");
@@ -578,10 +586,9 @@ it.each([null, "2026-01-01T12:12:00Z"])(
 
 it("shows the current session's busy reason instead of a retained deadline", async () => {
   sandboxes = [
-    {
-      ...autosuspendSandbox("2026-01-01T12:12:00Z"),
-      autosuspend_blockers: [{ reason: "ActiveTurn", session_id: THREAD.id }],
-    },
+    updatedSandbox(autosuspendSandbox("2026-01-01T12:12:00Z"), {
+      autosuspendBlockers: [create(AutosuspendBlockerSchema, { reason: "ActiveTurn", sessionId: THREAD.id })],
+    }),
   ];
   const hint = (await render()).querySelector(".agentplane-composer-autosuspend");
   expect(hint?.textContent).toBe("Autosuspend waiting: Turn running");
@@ -594,11 +601,10 @@ it.each([
 ] as const)("does not present %s blockers as currently preventing autosuspend", async (_case, fresh, after, text) => {
   inventoryFresh = fresh;
   sandboxes = [
-    {
-      ...autosuspendSandbox(null),
-      idle_suspend_after_seconds: after,
-      autosuspend_blockers: [{ reason: "ActiveTurn", session_id: THREAD.id }],
-    },
+    updatedSandbox(autosuspendSandbox(null), {
+      idleSuspendAfter: after === null ? undefined : create(DurationSchema, { seconds: BigInt(after) }),
+      autosuspendBlockers: [create(AutosuspendBlockerSchema, { reason: "ActiveTurn", sessionId: THREAD.id })],
+    }),
   ];
   const hint = (await render()).querySelector(".agentplane-composer-autosuspend");
   expect(hint?.textContent).toBe(text);
@@ -607,11 +613,10 @@ it.each([
 
 it("explains bootstrap work before the Sandbox becomes ready", async () => {
   sandboxes = [
-    {
-      ...autosuspendSandbox(null),
+    updatedSandbox(autosuspendSandbox(null), {
       status: { conditions: [{ type: "Ready", status: "False" }] },
-      autosuspend_blockers: [{ reason: "Bootstrap", session_id: null }],
-    },
+      autosuspendBlockers: [create(AutosuspendBlockerSchema, { reason: "Bootstrap", sessionId: undefined })],
+    }),
   ];
   const hint = (await render()).querySelector(".agentplane-composer-autosuspend");
   expect(hint?.textContent).toBe("Autosuspend waiting: Sandbox bootstrap running");
@@ -674,7 +679,7 @@ it("sends the draft on Enter and clears it", async () => {
 });
 
 it("queues a message through the Dispatcher for a fresh suspended Sandbox with wake-on-message", async () => {
-  sandboxes = [{ ...inventorySandbox("Suspended", true), suspended_by: "Requested" }];
+  sandboxes = [updatedSandbox(inventorySandbox("Suspended", true), { suspendedBy: "Requested" })];
   sharedThread = {
     harness_state: "HARNESS_STATE_STOPPED",
     feed_status: "ended",
@@ -703,7 +708,7 @@ it("queues a message through the Dispatcher for a fresh suspended Sandbox with w
 
 it("disables the composer and offers resume for a fresh suspended Sandbox without wake-on-message", async () => {
   vi.mocked(resumeSandbox).mockResolvedValue(undefined);
-  sandboxes = [{ ...inventorySandbox("Suspended", false), suspended_by: "Requested" }];
+  sandboxes = [updatedSandbox(inventorySandbox("Suspended", false), { suspendedBy: "Requested" })];
   sharedThread = {
     harness_state: "HARNESS_STATE_STOPPED",
     feed_status: "ended",
@@ -879,7 +884,7 @@ it.each([
 });
 
 it("reads the Sandbox for the topbar and the composer from the one inventory stream", async () => {
-  sandboxes = [{ ...inventorySandbox("Suspended", true), suspended_by: "Requested" }];
+  sandboxes = [updatedSandbox(inventorySandbox("Suspended", true), { suspendedBy: "Requested" })];
   const container = await render();
   const indicator = mounted.at(-1)?.topbarTitle?.querySelector(".agentplane-thread-status-indicator");
   expect(indicator?.getAttribute("data-status")).toBe("suspended");
@@ -959,11 +964,11 @@ it("shows a suspended Sandbox as paused in the status indicator, favicon and thr
   expect(document.title).toBe(`${THREAD_STATUS_MARKS.suspended.glyph} Test thread · Suspended — Agentplane`);
 });
 
-it.each<[NonNullable<SandboxView["suspended_by"]>, string]>([
+it.each<["Idle" | "Requested", string]>([
   ["Idle", "idle"],
   ["Requested", "on request"],
 ])("says a Sandbox suspended by %s was suspended %s, in the indicator and composer", async (suspendedBy, reason) => {
-  sandboxes = [{ ...inventorySandbox("Suspended"), suspended_by: suspendedBy }];
+  sandboxes = [updatedSandbox(inventorySandbox("Suspended"), { suspendedBy: suspendedBy })];
   const container = await render();
   expect(container.querySelector(".agentplane-thread-status-indicator")?.getAttribute("aria-label")).toBe(
     `Sandbox suspended (${reason})`
@@ -1000,7 +1005,11 @@ it("shows why a refused resume of a suspended Sandbox failed", async () => {
 
 // A send to a suspended Sandbox wakes it: it is Running again with no Pod and no Ready condition until
 // the controller has started the incarnation.
-const waking: SandboxView = { ...autosuspendSandbox(null), phase: "Creating", pod: null, status: {} };
+const waking: Sandbox = updatedSandbox(autosuspendSandbox(null), {
+  phase: SandboxPhase.CREATING,
+  pod: undefined,
+  status: {},
+});
 
 it.each([
   ["a current", true, "Sandbox is starting. Submitted commands will queue until it is ready."],
@@ -1025,10 +1034,11 @@ it.each([null, "2026-01-01T12:12:00Z"])(
   async (deadline) => {
     const starting = autosuspendSandbox(deadline);
     sandboxes = [
-      {
-        ...starting,
-        status: { conditions: [{ type: "Ready", status: "False", reason: "AwaitingEnvironmentRuntime" }] },
-      },
+      updatedSandbox(starting, {
+        status: {
+          conditions: [{ type: "Ready", status: "False", reason: "AwaitingEnvironmentRuntime" }],
+        },
+      }),
     ];
     const hint = (await render()).querySelector(".agentplane-composer-autosuspend");
     expect(hint?.textContent).toBe("Autosuspend waiting: Sandbox starting");
@@ -1038,7 +1048,12 @@ it.each([null, "2026-01-01T12:12:00Z"])(
 
 it("does not call a failed Pod a Sandbox that is starting", async () => {
   const running = autosuspendSandbox(null);
-  sandboxes = [{ ...running, status: {}, pod: running.pod && { ...running.pod, status: { phase: "Failed" } } }];
+  sandboxes = [
+    updatedSandbox(running, {
+      status: {},
+      pod: running.pod && { ...running.pod, status: { phase: "Failed" } },
+    }),
+  ];
   const container = await render();
   expect(container.querySelector('[role="status"]')?.textContent).toBe(
     "Last observed Sandbox and Pod: Failed. Showing retained Thread history; controls are disabled."

@@ -1,4 +1,6 @@
-import { sandboxProto } from "./testing/sandbox_proto";
+import { create, toJson } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { SandboxPhase, SandboxSchema, type Sandbox } from "../../proto/sandboxes_pb";
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
 import { type JSX, act } from "react";
@@ -6,7 +8,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { SandboxView, ThreadView } from "./schema";
+import type { ThreadView } from "./schema";
 import type * as ThreadClientModule from "./threads/client";
 import { listThreadWindow } from "./threads/client";
 import { RoutedThreadsLiveProvider } from "./threads/live";
@@ -43,37 +45,35 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-function sandbox(name: string, overrides: Partial<SandboxView> = {}): SandboxView {
+function sandbox(name: string, overrides: Partial<Sandbox> = {}): Sandbox {
   const uid = `00000000-0000-4000-8000-${name.padStart(12, "0").slice(-12)}`;
-  return {
+  const result = create(SandboxSchema, {
     name,
     uid,
     namespace: "agentplane-test",
-    created_at: "2026-01-01T00:00:00Z",
-    binding: null,
-    preset: null,
-    operating_mode: "Running",
-    service_account: { namespace: "agentplane-test", name },
-    idle_suspend_after_seconds: null,
-    idle_suspend_at: null,
-    autosuspend_blockers: [],
-    suspended_by: null,
+    createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
+
+    operatingMode: "Running",
+    serviceAccount: { namespace: "agentplane-test", name },
+
+    autosuspendBlockers: [],
+
     status: { conditions: [{ type: "Ready", status: "True" }] },
-    phase: "Running",
+    phase: SandboxPhase.RUNNING,
     pod: {
       name,
       namespace: "agentplane-test",
       uid: `${uid}-pod`,
       deleting: false,
-      node_name: "test-node",
-      owner_references: [
-        { api_version: "agentplane.allegedly.works/v1alpha1", kind: "Sandbox", name, uid, controller: true },
+      nodeName: "test-node",
+      ownerReferences: [
+        { apiVersion: "agentplane.allegedly.works/v1alpha1", kind: "Sandbox", name, uid, controller: true },
       ],
       status: { phase: "Running", podIP: "10.0.0.1", conditions: [{ type: "Ready", status: "True" }] },
     },
-    ...overrides,
-    wake_on_send: overrides.wake_on_send ?? false,
-  };
+    wakeOnSend: false,
+  });
+  return Object.assign(result, overrides);
 }
 
 function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sandbox">): ThreadView {
@@ -119,19 +119,19 @@ async function pushThreadChange(stream: ThreadWatchEnd, connected = true): Promi
 
 async function pushSandboxChanges(
   stream: { served: ServedWatch[]; pathname: string },
-  upserts: SandboxView[],
-  removed: SandboxView[] = []
+  upserts: Sandbox[],
+  removed: Sandbox[] = []
 ): Promise<void> {
   await act(async () => {
     const watch = latestOn(stream.served, stream.pathname);
-    for (const row of upserts) watch.send({ upsert: sandboxProto(row) });
+    for (const row of upserts) watch.send({ upsert: toJson(SandboxSchema, row) });
     for (const row of removed) watch.send({ removed: { namespace: row.namespace, name: row.name, uid: row.uid } });
   });
 }
 
 async function render(
   threads: ThreadView[],
-  sandboxes: Record<string, SandboxView>,
+  sandboxes: Record<string, Sandbox>,
   options: {
     initialPath?: string;
     settingsOpen?: boolean;
@@ -176,7 +176,9 @@ async function render(
       }
       if (reconnected(served, stream)) return;
       if (pathname === "/upstream/environments/v1/environments:watch") {
-        stream.send({ snapshot: { sandboxes: Object.values(sandboxes).map(sandboxProto) } });
+        stream.send({
+          snapshot: { sandboxes: Object.values(sandboxes).map((sandbox) => toJson(SandboxSchema, sandbox)) },
+        });
         stream.send({ snapshotComplete: {} });
         return;
       }
@@ -307,12 +309,12 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   await pushThreadChange(stream);
   await pushSandboxChanges(sandboxStream, [
     sandbox("test-sandbox", {
-      operating_mode: "Suspended",
-      phase: "Suspended",
-      pod: null,
+      operatingMode: "Suspended",
+      phase: SandboxPhase.SUSPENDED,
+      pod: undefined,
       status: {},
     }),
-    sandbox("test-threadless", { pod: null }),
+    sandbox("test-threadless", { pod: undefined }),
   ]);
   expect(container.textContent).not.toContain("Before rename");
   expect(row(renamed.name).className).toContain("current");
@@ -393,7 +395,7 @@ it("groups threads by sandbox, showing each group's state, name and visible thre
     ],
     {
       "demo-a1b2": sandbox("demo-a1b2"),
-      "prod-x7f2": sandbox("prod-x7f2", { operating_mode: "Suspended", phase: "Suspended", pod: null }),
+      "prod-x7f2": sandbox("prod-x7f2", { operatingMode: "Suspended", phase: SandboxPhase.SUSPENDED, pod: undefined }),
     }
   );
 
@@ -428,9 +430,9 @@ it("opens retained Thread history even when its Sandbox is gone", async () => {
 
 it.each([
   ["a running Pod", {}, "ready"],
-  ["a suspended Sandbox", { operating_mode: "Suspended", phase: "Suspended", pod: null }, "suspended"],
-  ["a running Sandbox with no Pod yet", { phase: "Creating", pod: null }, "pending"],
-  ["a Sandbox being deleted", { phase: "Tearing down" }, "gone"],
+  ["a suspended Sandbox", { operatingMode: "Suspended", phase: SandboxPhase.SUSPENDED, pod: undefined }, "suspended"],
+  ["a running Sandbox with no Pod yet", { phase: SandboxPhase.CREATING, pod: undefined }, "pending"],
+  ["a Sandbox being deleted", { phase: SandboxPhase.TEARING_DOWN }, "gone"],
 ] as const)("marks a group's Sandbox by its status: %s", async (_name, overrides, status) => {
   const box = sandbox("test-marked", overrides);
   await render([], { [box.name]: box });
@@ -439,7 +441,11 @@ it.each([
 
 it("renders only a suspended Sandbox's name in its icon's gray, not the link blue", async () => {
   const running = sandbox("test-running");
-  const suspended = sandbox("test-suspended", { operating_mode: "Suspended", phase: "Suspended", pod: null });
+  const suspended = sandbox("test-suspended", {
+    operatingMode: "Suspended",
+    phase: SandboxPhase.SUSPENDED,
+    pod: undefined,
+  });
   await render([], { [running.name]: running, [suspended.name]: suspended });
   const link = (name: string): HTMLElement => {
     const node = container.querySelector<HTMLElement>(`a[href="/sandboxes/${name}"]`);
@@ -468,7 +474,7 @@ it("dims only the rows of threads whose harness is stopped", async () => {
 });
 
 it("opens the details of a provisioning Sandbox with no Threads", async () => {
-  const pending = sandbox("test-provisioning", { pod: null });
+  const pending = sandbox("test-provisioning", { pod: undefined });
   await render([], { [pending.name]: pending });
   expect(container.textContent).toContain("0 threads");
   expect(container.querySelector(".agentplane-thread-list-state-icon[data-status='pending']")).not.toBeNull();

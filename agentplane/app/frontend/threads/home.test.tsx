@@ -1,4 +1,6 @@
-import { sandboxProto } from "../testing/sandbox_proto";
+import { create, toJson } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { SandboxPhase, SandboxSchema } from "../../../proto/sandboxes_pb";
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
@@ -6,7 +8,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import type { SandboxView, ThreadView } from "../schema";
+import type { ThreadView } from "../schema";
 import type * as ThreadClientModule from "./client";
 import { listThreadWindow } from "./client";
 import { Home } from "./home";
@@ -31,24 +33,22 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-const SANDBOX: SandboxView = {
+const SANDBOX = create(SandboxSchema, {
   name: "test-sandbox",
   uid: "00000000-0000-4000-8000-000000000001",
   namespace: "agentplane-test",
-  created_at: "2026-01-01T00:00:00Z",
-  binding: null,
-  preset: null,
-  operating_mode: "Running",
-  service_account: { namespace: "agentplane-test", name: "test-sandbox" },
-  idle_suspend_after_seconds: null,
-  idle_suspend_at: null,
-  autosuspend_blockers: [],
-  suspended_by: null,
+  createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
+
+  operatingMode: "Running",
+  serviceAccount: { namespace: "agentplane-test", name: "test-sandbox" },
+
+  autosuspendBlockers: [],
+
   status: { conditions: [{ type: "Ready", status: "True" }] },
-  phase: "Running",
-  pod: null,
-  wake_on_send: false,
-};
+  phase: SandboxPhase.RUNNING,
+
+  wakeOnSend: false,
+});
 
 function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "name">): ThreadView {
   return {
@@ -92,7 +92,7 @@ async function render(): Promise<string[]> {
         return;
       }
       if (pathname === "/upstream/environments/v1/environments:watch") {
-        stream.send({ snapshot: { sandboxes: [sandboxProto(SANDBOX)] } });
+        stream.send({ snapshot: { sandboxes: [toJson(SandboxSchema, SANDBOX)] } });
         stream.send({ snapshotComplete: {} });
         return;
       }
