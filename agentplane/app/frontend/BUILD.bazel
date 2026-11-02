@@ -399,7 +399,6 @@ agentplane_vitest_test(
         ":stream_reader",
         "//:node_modules/@types/react",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend/testing:sandbox_proto",
         "//agentplane/app/frontend/testing:watch",
     ],
 )
@@ -462,7 +461,6 @@ agentplane_vitest_test(
     deps = [
         ":stream_reader",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend/testing:sandbox_proto",
         "//agentplane/app/frontend/testing:watch",
     ],
 )
@@ -486,7 +484,6 @@ agentplane_vitest_test(
         ":live_stream",
         ":stream_reader",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend/testing:sandbox_proto",
         "//agentplane/app/frontend/testing:watch",
     ],
 )
@@ -505,7 +502,6 @@ agentplane_vitest_test(
         ":stream_reader",
         ":watch_stream",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend/testing:sandbox_proto",
         "//agentplane/app/frontend/testing:watch",
     ],
 )
@@ -655,6 +651,7 @@ agentplane_vitest_test(
         ":schema",
         ":sidebar",
         ":stream_status",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -664,7 +661,6 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/sandboxes:live",
-        "//agentplane/app/frontend/testing:sandbox_proto",
         "//agentplane/app/frontend/testing:watch",
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:live",
@@ -912,7 +908,6 @@ ts_library(
         "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/app/frontend/testing:model_catalog",
         "//agentplane/app/frontend/testing:runner_status",
-        "//agentplane/app/frontend/testing:sandbox_proto",
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:local_commands",
@@ -1025,7 +1020,6 @@ agentplane_vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/actions/testing:harness",
-        "//agentplane/app/frontend/testing:sandbox_proto",
         "//agentplane/app/frontend/testing:watch",
     ],
 )

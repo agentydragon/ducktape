@@ -1,5 +1,6 @@
-import { sandboxProto, sandboxTimestamp, type SandboxFixture } from "./testing/sandbox_proto";
-import { SandboxPhase } from "../../proto/sandboxes_pb";
+import { create, toJson } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { SandboxPhase, SandboxSchema, type Sandbox } from "../../proto/sandboxes_pb";
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
 import { type JSX, act } from "react";
@@ -44,13 +45,13 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-function sandbox(name: string, overrides: Partial<SandboxFixture> = {}): SandboxFixture {
+function sandbox(name: string, overrides: Partial<Sandbox> = {}): Sandbox {
   const uid = `00000000-0000-4000-8000-${name.padStart(12, "0").slice(-12)}`;
-  return {
+  const result = create(SandboxSchema, {
     name,
     uid,
     namespace: "agentplane-test",
-    createdAt: sandboxTimestamp("2026-01-01T00:00:00Z"),
+    createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
 
     operatingMode: "Running",
     serviceAccount: { namespace: "agentplane-test", name },
@@ -70,9 +71,9 @@ function sandbox(name: string, overrides: Partial<SandboxFixture> = {}): Sandbox
       ],
       status: { phase: "Running", podIP: "10.0.0.1", conditions: [{ type: "Ready", status: "True" }] },
     },
-    ...overrides,
-    wakeOnSend: overrides.wakeOnSend ?? false,
-  };
+    wakeOnSend: false,
+  });
+  return Object.assign(result, overrides);
 }
 
 function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sandbox">): ThreadView {
@@ -118,19 +119,19 @@ async function pushThreadChange(stream: ThreadWatchEnd, connected = true): Promi
 
 async function pushSandboxChanges(
   stream: { served: ServedWatch[]; pathname: string },
-  upserts: SandboxFixture[],
-  removed: SandboxFixture[] = []
+  upserts: Sandbox[],
+  removed: Sandbox[] = []
 ): Promise<void> {
   await act(async () => {
     const watch = latestOn(stream.served, stream.pathname);
-    for (const row of upserts) watch.send({ upsert: sandboxProto(row) });
+    for (const row of upserts) watch.send({ upsert: toJson(SandboxSchema, row) });
     for (const row of removed) watch.send({ removed: { namespace: row.namespace, name: row.name, uid: row.uid } });
   });
 }
 
 async function render(
   threads: ThreadView[],
-  sandboxes: Record<string, SandboxFixture>,
+  sandboxes: Record<string, Sandbox>,
   options: {
     initialPath?: string;
     settingsOpen?: boolean;
@@ -175,7 +176,9 @@ async function render(
       }
       if (reconnected(served, stream)) return;
       if (pathname === "/upstream/environments/v1/environments:watch") {
-        stream.send({ snapshot: { sandboxes: Object.values(sandboxes).map(sandboxProto) } });
+        stream.send({
+          snapshot: { sandboxes: Object.values(sandboxes).map((sandbox) => toJson(SandboxSchema, sandbox)) },
+        });
         stream.send({ snapshotComplete: {} });
         return;
       }

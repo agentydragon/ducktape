@@ -1,5 +1,6 @@
-import { sandboxProto, sandboxTimestamp, type SandboxFixture } from "../testing/sandbox_proto";
-import { SandboxPhase } from "../../../proto/sandboxes_pb";
+import { create, toJson } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { SandboxPhase, SandboxSchema } from "../../../proto/sandboxes_pb";
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
@@ -32,11 +33,11 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-const SANDBOX: SandboxFixture = {
+const SANDBOX = create(SandboxSchema, {
   name: "test-sandbox",
   uid: "00000000-0000-4000-8000-000000000001",
   namespace: "agentplane-test",
-  createdAt: sandboxTimestamp("2026-01-01T00:00:00Z"),
+  createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
 
   operatingMode: "Running",
   serviceAccount: { namespace: "agentplane-test", name: "test-sandbox" },
@@ -47,7 +48,7 @@ const SANDBOX: SandboxFixture = {
   phase: SandboxPhase.RUNNING,
 
   wakeOnSend: false,
-};
+});
 
 function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "name">): ThreadView {
   return {
@@ -91,7 +92,7 @@ async function render(): Promise<string[]> {
         return;
       }
       if (pathname === "/upstream/environments/v1/environments:watch") {
-        stream.send({ snapshot: { sandboxes: [sandboxProto(SANDBOX)] } });
+        stream.send({ snapshot: { sandboxes: [toJson(SandboxSchema, SANDBOX)] } });
         stream.send({ snapshotComplete: {} });
         return;
       }
