@@ -65,7 +65,12 @@ uses the same lifecycle for explicit initialization; both modes read `AGENTPLANE
 ## Schema and data handoff
 
 The Action Service's legacy Connection/OAuth rows and tables are retained until a separately
-verified data handoff and retention decision. The operator command
+verified data handoff and retention decision. The
+[staging investigation](debug/staging_handoff_20261023.md) found a populated edge with distinct
+Connection/grant/enrollment IDs; the empty-destination command below is not applicable to that
+observed state. Preserve both datasets until historical ownership and recovery are verified.
+
+The operator command
 `//agentplane/mcp_edge/schema_transfer/cmd:mcp-edge-transfer` copies only:
 
 - `external_connection`, `external_connection_grant`, `connection_enrollment`
