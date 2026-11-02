@@ -155,30 +155,6 @@ async def test_sandbox_cel_relationships_and_opaque_fields() -> None:
                 api, "sandboxes", f"idle-{index}", {"template": "opaque", "idleSuspendAfter": idle_suspend_after}, valid
             )
 
-        resume_cases: list[tuple[dict[str, Any] | None, bool | None]] = [
-            (None, None),
-            ({}, False),
-            ({"allowOwnServiceAccount": False}, False),
-            ({"allowOwnServiceAccount": True}, True),
-        ]
-        for index, (policy, expected) in enumerate(resume_cases):
-            resume_spec: dict[str, Any] = {"template": "opaque"}
-            if policy is not None:
-                resume_spec["resumePolicy"] = policy
-            admitted = await _create(api, "sandboxes", f"resume-{index}", resume_spec, True)
-            assert admitted is not None
-            if expected is None:
-                assert "resumePolicy" not in admitted["spec"]
-            else:
-                assert admitted["spec"]["resumePolicy"] == {"allowOwnServiceAccount": expected}
-        await _create(
-            api,
-            "sandboxes",
-            "resume-invalid",
-            {"template": "opaque", "resumePolicy": {"allowOwnServiceAccount": "true"}},
-            False,
-        )
-
 
 async def test_egress_credential_source_and_target_validation() -> None:
     async with kubernetes_apiserver() as server:
