@@ -19,7 +19,7 @@ func TestSessionInputsIgnoreJournalOnlyChanges(t *testing.T) {
 	ctx, root, resources, store, manager := runnerTestManager(t, nil, func(string) string { return "destination" })
 	s := runnerTestReserve(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
 	inputPointer := componentResource(s.id, Input{}).Metadata()
-	drainPointer := componentResource(s.id, DrainInput{}).Metadata()
+	drainPointer := componentResource(s.id, InspectionStatus{}).Metadata()
 	before, err := resources.Get(ctx, inputPointer)
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func TestSessionInputsIgnoreJournalOnlyChanges(t *testing.T) {
 	s.reconciliations = append(s.reconciliations, &pendingReconciliation{})
 	s.mu.Unlock()
 	s.wake()
-	drain, _, err := ReadDrainInput(ctx, resources, s.id)
+	drain, _, err := ReadInspectionStatus(ctx, resources, s.id)
 	if err != nil || !drain.Inspecting {
 		t.Fatalf("inspection drain dependency absent: %v, %v", drain, err)
 	}
@@ -67,7 +67,7 @@ func TestSessionInputsIgnoreJournalOnlyChanges(t *testing.T) {
 	s.reconciliations = nil
 	s.mu.Unlock()
 	s.wake()
-	drain, _, err = ReadDrainInput(ctx, resources, s.id)
+	drain, _, err = ReadInspectionStatus(ctx, resources, s.id)
 	if err != nil || drain.Inspecting {
 		t.Fatalf("inspection drain did not settle: %v, %v", drain, err)
 	}

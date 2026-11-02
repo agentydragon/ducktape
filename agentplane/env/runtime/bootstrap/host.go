@@ -94,7 +94,7 @@ func (h *Host) Controller() controller.QController {
 func (h *Host) Configured() bool { return h != nil && h.config.Script != nil }
 
 func (h *Host) Initialize(ctx context.Context) error {
-	return publish(ctx, h.state, ResourceID, Input{})
+	return publish(ctx, h.state, ResourceID, Request{})
 }
 
 // Request records accepted bootstrap demand while Runtime's admission guard
@@ -109,12 +109,12 @@ func (h *Host) Request(ctx context.Context) error {
 	h.requestMu.Lock()
 	defer h.requestMu.Unlock()
 
-	input, found, err := ReadInput(ctx, h.state)
+	input, found, err := ReadRequest(ctx, h.state)
 	if err != nil {
 		return err
 	}
 	if !found {
-		return errors.New("bootstrap input is not initialized")
+		return errors.New("bootstrap request is not initialized")
 	}
 	if input.Requested {
 		return nil
@@ -134,12 +134,12 @@ func (h *Host) Request(ctx context.Context) error {
 	effectInvoked := false
 	err = h.admission(ctx, expected, func(effectCtx context.Context) error {
 		effectInvoked = true
-		current, found, err := ReadInput(effectCtx, h.state)
+		current, found, err := ReadRequest(effectCtx, h.state)
 		if err != nil {
 			return err
 		}
 		if !found {
-			return errors.New("bootstrap input is not initialized")
+			return errors.New("bootstrap request is not initialized")
 		}
 		if current.Requested {
 			return nil
@@ -229,7 +229,7 @@ func (h *Host) Settled(ctx context.Context) (bool, error) {
 	if h == nil || !h.Configured() {
 		return true, nil
 	}
-	input, found, err := ReadInput(ctx, h.state)
+	input, found, err := ReadRequest(ctx, h.state)
 	if err != nil {
 		return false, err
 	}

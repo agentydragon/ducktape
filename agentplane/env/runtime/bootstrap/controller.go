@@ -20,7 +20,7 @@ func (*LifecycleController) Name() string { return ControllerName }
 func (*LifecycleController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
-			{Namespace: lifecycle.Namespace, Type: InputType, Kind: controller.InputQPrimary},
+			{Namespace: lifecycle.Namespace, Type: RequestType, Kind: controller.InputQPrimary},
 			{Namespace: lifecycle.Namespace, Type: StatusType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: OperationStateType, Kind: controller.InputQMapped},
 		},
@@ -30,9 +30,9 @@ func (*LifecycleController) Settings() controller.QSettings {
 }
 
 func (*LifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
-	input := resource.NewMetadata(lifecycle.Namespace, InputType, ResourceID, resource.VersionUndefined)
+	input := resource.NewMetadata(lifecycle.Namespace, RequestType, ResourceID, resource.VersionUndefined)
 	switch ptr.Type() {
-	case InputType, StatusType:
+	case RequestType, StatusType:
 		return []resource.Pointer{input}, nil
 	case OperationStateType:
 		result, found, err := componentRead[operationState](ctx, r, ptr.ID())
@@ -50,7 +50,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	if h == nil {
 		return errors.New("bootstrap host is not configured")
 	}
-	input, found, err := componentRead[Input](ctx, r, ptr.ID())
+	input, found, err := componentRead[Request](ctx, r, ptr.ID())
 	if err != nil || !found {
 		return err
 	}

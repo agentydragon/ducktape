@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	InputType          = "BootstrapInputs.agentplane"
+	RequestType        = "BootstrapRequests.agentplane"
 	StatusType         = "BootstrapStatuses.agentplane"
 	OperationStateType = "BootstrapOperationStates.agentplane"
 	SelectionType      = "BootstrapSelections.agentplane"
@@ -23,9 +23,9 @@ const (
 	HostOwner          = "bootstrap-host"
 )
 
-// Input records that the Runner synchronously admitted the Sandbox bootstrap.
+// Request records accepted Sandbox bootstrap demand under the Runtime admission lock.
 // It is live-only and must never be restored after a restart.
-type Input struct {
+type Request struct {
 	Requested bool
 }
 
@@ -83,8 +83,8 @@ func publish[T componentSpec[T]](ctx context.Context, writer state.State, id str
 	return cosi.Publish(ctx, writer, componentResource(id, value), value, HostOwner)
 }
 
-func ReadInput(ctx context.Context, reader controller.Reader) (Input, bool, error) {
-	return componentRead[Input](ctx, reader, ResourceID)
+func ReadRequest(ctx context.Context, reader controller.Reader) (Request, bool, error) {
+	return componentRead[Request](ctx, reader, ResourceID)
 }
 
 func ReadStatus(ctx context.Context, reader controller.Reader) (Status, bool, error) {
@@ -99,8 +99,8 @@ func isTerminal(phase Phase) bool {
 	return phase == Succeeded || phase == Failed || phase == Interrupted
 }
 
-func (Input) resourceType() resource.Type             { return InputType }
-func (value Input) DeepCopy() Input                   { return value }
+func (Request) resourceType() resource.Type           { return RequestType }
+func (value Request) DeepCopy() Request               { return value }
 func (Status) resourceType() resource.Type            { return StatusType }
 func (value Status) DeepCopy() Status                 { return value }
 func (Selection) resourceType() resource.Type         { return SelectionType }

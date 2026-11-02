@@ -134,7 +134,7 @@ func TestControllerInitialOperationPublicationFailureBecomesTerminal(t *testing.
 	if err := host.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := publish(ctx, store, ResourceID, Input{Requested: true}); err != nil {
+	if err := publish(ctx, store, ResourceID, Request{Requested: true}); err != nil {
 		t.Fatal(err)
 	}
 	engine, err := runtime.NewRuntime(store, zap.NewNop())
@@ -502,7 +502,7 @@ func TestSelectionIsOnlyRestoredResource(t *testing.T) {
 	if err := publish(t.Context(), store, ResourceID, Selection{Script: script}); err != nil {
 		t.Fatal(err)
 	}
-	if err := publish(t.Context(), store, ResourceID, Input{Requested: true}); err != nil {
+	if err := publish(t.Context(), store, ResourceID, Request{Requested: true}); err != nil {
 		t.Fatal(err)
 	}
 	if err := publish(t.Context(), store, ResourceID, Status{Phase: Running}); err != nil {
@@ -520,7 +520,7 @@ func TestSelectionIsOnlyRestoredResource(t *testing.T) {
 	if err != nil || !found || selection.Script != script {
 		t.Fatalf("restored selection = (%+v, %t, %v)", selection, found, err)
 	}
-	if _, found, err := ReadInput(t.Context(), restored); err != nil || found {
+	if _, found, err := ReadRequest(t.Context(), restored); err != nil || found {
 		t.Fatalf("restored admission = (%t, %v), want absent", found, err)
 	}
 	if _, found, err := ReadStatus(t.Context(), restored); err != nil || found {
@@ -560,11 +560,11 @@ func TestRequestDetectsAdmissionGuardThatSkippedEffect(t *testing.T) {
 	} else if code := status.Code(err); code != codes.Aborted {
 		t.Fatalf("skipped admission error code = %s, want Aborted: %v", code, err)
 	}
-	input, found, err := ReadInput(r.ctx, r.state)
+	input, found, err := ReadRequest(r.ctx, r.state)
 	if err != nil || !found || input.Requested {
 		t.Fatalf("input after skipped admission = (%+v, found=%t, err=%v), want unrequested", input, found, err)
 	}
-	if err := publish(r.ctx, r.state, ResourceID, Input{Requested: true}); err != nil {
+	if err := publish(r.ctx, r.state, ResourceID, Request{Requested: true}); err != nil {
 		t.Fatal(err)
 	}
 	if err := lifecycle.PublishEnvironmentDesired(r.ctx, r.state, lifecycle.EnvironmentDesired{Mode: lifecycle.Closing, Generation: 2}); err != nil {

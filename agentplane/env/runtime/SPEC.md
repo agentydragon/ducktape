@@ -14,7 +14,7 @@ selection before launching the script and runs those selected bytes. Subsequent 
 match byte for byte. `StateDir/initialization/events.jsonl` remains the authority for output and
 terminal result. A selection without a terminal event is interrupted on restart, including when
 the crash happened before process launch; Runtime never retries that uncertain attempt.
-`BootstrapInputs` admission and all process observations are live-only COSI resources.
+`BootstrapRequests` admission and all process observations are live-only COSI resources.
 
 Runtime opens `StateDir/.agentplane-environment-runtime-owner` and holds it locked for its lifetime.
 Harness Host separately locks `StateDir/harness-host/.agentplane-harness-host-owner`. This is a
