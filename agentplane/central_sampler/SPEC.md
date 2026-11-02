@@ -153,10 +153,11 @@ it does not prevent processing newly admitted input. An idle Session with no pen
 selected, and blocked Sessions remain excluded. Admission and wakeups never clear a blocked Session
 or replay a rejected or uncertain effect.
 
-The listener subscribes before the initial ownership/work scan. Reconnection triggers a durable
-catch-up scan, and periodic reconciliation remains enabled, so missed or coalesced notifications do
-not strand work. `central_sampler_work` uses the existing database and adds no migration, durable
-notification row, deployment resource, or Session setting.
+Reconciliation is level-triggered: the runtime subscribes before its initial ownership/work scan,
+then work notifications and listener reconnects wake further scans of committed rows. Periodic
+scans also read those rows, so missed or coalesced notifications do not strand work.
+`central_sampler_work` uses the existing database and adds no migration, durable notification row,
+deployment resource, or Session setting.
 
 Pod CPU and memory limits are aggregate bounds for the Go service and the shared host, so container
 exhaustion can interrupt all live Sessions. `store()` / `load()` values and live JavaScript cells

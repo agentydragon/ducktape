@@ -84,15 +84,14 @@ idle turns. The host starts lazily when code-mode work first needs it and multip
 while executor delegates and process-handle namespaces remain per Session. Interrupting a Session
 does not stop the shared host.
 
-Any replica may authenticate and durably admit a command. The admission transaction emits a
-payloadless `central_sampler_work` PostgreSQL notification; the shared wakeups Hub also listens on
-the separate `central_sampler_outbox` channel for History export. These notifications carry no
-Session or Pod route. A resident owner responds by querying all pending work for its held lease
-token, including setup, accepted commands and live handles. Other replicas claim pending work only
-for Sessions with unowned or expired leases. The
-listener subscribes before its initial scan, catches up after reconnect, and periodic reconciliation
-remains enabled. The notification is only a wakeup; committed database rows remain authoritative,
-and the work channel adds no migration or deployment resource.
+Any replica may authenticate and durably admit a command. The transaction emits a payloadless
+PostgreSQL notification on `central_sampler_work`; the shared wakeups Hub also listens on
+`central_sampler_outbox` for History export. Work notifications carry no Session or Pod route:
+resident owners scan pending work for their held lease token, while other replicas claim only
+Sessions with unowned or expired leases. The runtime uses work notifications as wakeups for
+level-triggered reconciliation: committed database rows remain authoritative. It subscribes before
+its initial scan, then scans after listener reconnects and periodically, so missed or coalesced
+notifications do not strand work.
 
 During shutdown the service stops starting Session work and claiming unowned or expired Sessions,
 wakes idle residents to release their leases, then joins drivers and completes ownership release
