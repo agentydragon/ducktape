@@ -17,6 +17,13 @@ from PIL import Image
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.artifacts import BuildBuddyArtifact, list_ci_artifacts
 from devinfra.pr_visuals.collection import CollectedOutputs, OutputKey, ResultCoverage, ResultKey, SourceSummary
+from devinfra.pr_visuals.github_comment import (
+    COMMENT_BUDGET,
+    COMMENT_MARKER,
+    error_comment_body,
+    no_visual_comment_body,
+    success_comment_body,
+)
 from devinfra.pr_visuals.metadata import (
     BaselineMetadata,
     BaselinePointer,
@@ -28,8 +35,6 @@ from devinfra.pr_visuals.metadata import (
     ReviewTest,
 )
 from devinfra.pr_visuals.publisher import (
-    COMMENT_BUDGET,
-    COMMENT_MARKER,
     S3_IMAGE_UPLOAD_WORKERS,
     DownloadedAsset,
     DownloadedVariant,
@@ -37,13 +42,10 @@ from devinfra.pr_visuals.publisher import (
     build_bundle,
     diff_check,
     download_visual_tests,
-    error_comment_body,
     find_test_invocations,
     list_ci_failures,
     main,
-    no_visual_comment_body,
     refresh_stale_pull_request_comment,
-    success_comment_body,
     target_slug,
     upload_bundle,
     wait_for_test_invocations,
@@ -392,6 +394,25 @@ def test_failed_shards_are_grouped_and_linked_in_comment_and_gallery(
         assert "ResultKey(" not in rendered
         assert "abcdef0123456789" not in rendered
     assert not test.baseline_eligible
+
+
+def test_retry_notice_does_not_reclassify_an_issue_by_its_text(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    result = ResultCoverage(
+        ResultKey("invocation", "//ui:visual", "cfg", 1, 1, 1),
+        "FAILED",
+        "FLAKY",
+        1,
+        False,
+        ("superseded by retry",),
+        retried_by=2,
+    )
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.collect_outputs",
+        lambda *_a, **_k: CollectedOutputs((), (), (result,), (), False),
+    )
+    test = download_visual_tests(["invocation"], tmp_path / "downloads", repository="owner/repo")[0]
+    assert [issue.message for issue in test.issues] == ["superseded by retry"]
+    assert [notice.message for notice in test.notices] == ["superseded by attempt 2"]
 
 
 def test_download_rejects_ambiguous_configurations(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

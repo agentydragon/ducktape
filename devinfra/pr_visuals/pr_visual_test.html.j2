@@ -1,4 +1,4 @@
-{% macro issue_list(items) %}<ul>{% for issue in items %}<li>{{ issue.message }}{% if issue.url %} ({{ issue.details }}) · <a href="{{ issue.url }}">BuildBuddy</a>{% endif %}</li>{% endfor %}</ul>{% endmacro %}
+{% macro issue_list(items) %}<ul>{% for issue in items %}<li>{{ issue.message }}{% if issue.source %} ({{ "shard" if issue.source.shards | length == 1 else "shards" }} {{ issue.source.shards | shard_ranges }} · run {{ issue.source.run or "unknown" }} · attempt {{ issue.source.attempt or "unknown" }}{% if issue.source.configuration %} · config {{ issue.source.configuration[:8] }}{% endif %}) · <a href="{{ issue.source.invocation | buildbuddy_url }}">BuildBuddy</a>{% endif %}</li>{% endfor %}</ul>{% endmacro %}
 <!doctype html>
 <html lang="en">
   <head>
