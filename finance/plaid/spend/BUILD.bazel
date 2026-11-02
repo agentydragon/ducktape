@@ -46,6 +46,7 @@ py_library(
     srcs = ["service.py"],
     deps = [
         ":allowance",
+        ":card_projection",
         ":configuration",
         ":models",
         ":policy_queries",
@@ -439,5 +440,31 @@ py_library(
         ":configuration",
         ":models",
         "@pypi//babel",
+    ],
+)
+
+py_library(
+    name = "card_projection",
+    srcs = ["card_projection.py"],
+    visibility = ["//finance/plaid/spend/testing:__pkg__"],
+    deps = [
+        ":allowance",
+        ":configuration",
+        ":models",
+        "@pypi//babel",
+    ],
+)
+
+py_test(
+    name = "test_card_projection",
+    srcs = ["test_card_projection.py"],
+    deps = [
+        ":allowance",
+        ":card_projection",
+        ":configuration",
+        ":conftest",
+        ":models",
+        "//:conftest",
+        "@pypi//pytest_bazel",
     ],
 )

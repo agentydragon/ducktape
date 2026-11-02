@@ -21,9 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from finance.plaid.db.models import async_session_factory
 from finance.plaid.spend.allowance import (
-    AccountingPolicy,
     AllowanceView,
-    CreditTreatment,
     Disposition,
     EstimatePeriodId,
     ForecastView,
@@ -35,26 +33,20 @@ from finance.plaid.spend.allowance import (
     Transaction,
     TransactionDecision,
     TransactionPeriodId,
-    accounting_disposition,
     calculate,
     daily_reference,
-    prepare_accounting,
     round_minor_units,
 )
+from finance.plaid.spend.card_projection import CardAccount, project_card
 from finance.plaid.spend.configuration import SpendConfiguration
 from finance.plaid.spend.models import (
-    AlertState,
     AllowanceConfigurationView,
     CardConfigurationView,
-    CardView,
     PlaidTransactionDetails,
-    ProvisionalCardPeriod,
     SpendConfigurationView,
     SpendTransactionsView,
     SpendView,
-    StatementCycle,
     StatementReason,
-    UnavailableCardPeriod,
 )
 from finance.plaid.spend.policy_queries import select_policy_accounts, select_policy_transactions
 from finance.plaid.spend.portfolio import CoinbaseClient, read_portfolio
@@ -268,102 +260,25 @@ class SpendService:
         cards = []
         for account in account_rows:
             account_id = account["account_id"]
-            card_config = card_configs[account_id]
-            if (cycle_start := cycle_starts.get(account_id)) is None:
-                cards.append(
-                    CardView(
-                        account_id=account_id,
-                        label=card_config.label,
-                        account_name=account["account_name"],
-                        institution_name=account["institution_name"],
-                        mask=account["mask"],
-                        currency=account["currency"],
-                        statement_period=UnavailableCardPeriod(),
-                        spend_minor_units=None,
-                        posted_minor_units=None,
-                        pending_minor_units=None,
-                        limit_minor_units=card_config.limit_minor_units,
-                        alert_threshold_percent=card_config.alert_threshold_percent,
-                        spend_percent=None,
-                        alert_state=AlertState.UNAVAILABLE,
-                        last_synced_at=_as_utc(account["last_synced_at"]),
-                    )
-                )
-                continue
-
-            posted_minor_units = 0
-            pending_minor_units = 0
-            prepared = prepare_accounting(
-                transactions_by_account.get(account_id, []),
-                time_zone=self._configuration.time_zone,
-                today=today,
-                minor_unit_precision=get_currency_precision(account["currency"]),
-            )
-            accounting_policy = AccountingPolicy(
-                currency=account["currency"],
-                counted_kinds=frozenset(Kind),
-                credits=CreditTreatment.ALL,
-                honor_reversals=False,
-                exclude_card_payments=True,
-            )
-            for entry in prepared.entries:
-                transaction = entry.transaction
-                key = (account_id, transaction.transaction_id)
-                # Statements intentionally use posting dates, not purchase days.
-                if not cycle_start <= transaction.date <= today:
-                    if statement_decisions is not None:
-                        statement_decisions[key] = (StatementReason.OUTSIDE_CYCLE, 0)
-                    continue
-                disposition = accounting_disposition(entry, accounting_policy)
-                amount_minor_units = entry.amount_minor_units if disposition == Disposition.COUNTED else 0
-                if statement_decisions is not None:
-                    statement_decisions[key] = (StatementReason(disposition), amount_minor_units)
-                if transaction.pending:
-                    pending_minor_units += amount_minor_units
-                else:
-                    posted_minor_units += amount_minor_units
-
-            spend_minor_units = posted_minor_units + pending_minor_units
-            limit_minor_units = card_config.limit_minor_units
-            statement_available = account_id in statement_account_ids
-            spend_percent = (
-                Decimal(spend_minor_units) * Decimal(100) / Decimal(limit_minor_units)
-                if limit_minor_units is not None and statement_available
-                else None
-            )
-            if not statement_available:
-                alert_state = AlertState.UNAVAILABLE
-            elif spend_percent is not None and spend_percent >= 100:
-                alert_state = AlertState.EXCEEDED
-            elif (
-                spend_percent is not None
-                and card_config.alert_threshold_percent is not None
-                and spend_percent >= card_config.alert_threshold_percent
-            ):
-                alert_state = AlertState.WARNING
-            else:
-                alert_state = AlertState.NORMAL
-            cards.append(
-                CardView(
+            card, decisions = project_card(
+                CardAccount(
                     account_id=account_id,
-                    label=card_config.label,
                     account_name=account["account_name"],
                     institution_name=account["institution_name"],
                     mask=account["mask"],
                     currency=account["currency"],
-                    statement_period=StatementCycle(start=cycle_start, through=today)
-                    if statement_available
-                    else ProvisionalCardPeriod(start=cycle_start, through=today),
-                    spend_minor_units=spend_minor_units,
-                    posted_minor_units=posted_minor_units,
-                    pending_minor_units=pending_minor_units,
-                    limit_minor_units=limit_minor_units,
-                    alert_threshold_percent=card_config.alert_threshold_percent,
-                    spend_percent=spend_percent,
-                    alert_state=alert_state,
                     last_synced_at=_as_utc(account["last_synced_at"]),
-                )
+                ),
+                card_configs[account_id],
+                cycle_start=cycle_starts.get(account_id),
+                statement_available=account_id in statement_account_ids,
+                transactions=transactions_by_account.get(account_id, []),
+                time_zone=self._configuration.time_zone,
+                today=today,
             )
+            cards.append(card)
+            if statement_decisions is not None:
+                statement_decisions.update(decisions)
         return SpendView(
             generated_at=generated_at,
             cards=cards,
