@@ -26,7 +26,7 @@ use super::cross_module::CrossModulePurities;
 /// artifact whose header differs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AnalysisArtifactHeader {
-    pub engine_sha256: String,
+    pub analysis_engine_sha256: String,
     /// `AnalysisSpec::encode` of the analysed projection, kept whole so a
     /// mismatch can name what differs.
     pub projection: Vec<u8>,
@@ -241,7 +241,7 @@ mod tests {
 
     fn header() -> AnalysisArtifactHeader {
         AnalysisArtifactHeader {
-            engine_sha256: "engine-digest-fixture".to_string(),
+            analysis_engine_sha256: "engine-digest-fixture".to_string(),
             projection: b"projection-fixture".to_vec(),
             chunk_sources: CHUNKS
                 .iter()

@@ -42,6 +42,13 @@ def _pipeline_report_flags_test_impl(ctx):
             _normalize([file.path for file in actual.outputs.to_list()], target.label.name),
         )
     command = actions["DebundlePipeline"].argv[-1]
+    analysis_inputs = actions["DebundleAnalyze"].inputs.to_list()
+    asserts.true(env, any([file.basename == "debundle_analyze" for file in analysis_inputs]))
+    asserts.false(env, any([file.basename == "debundle" for file in analysis_inputs]))
+    for mnemonic in [name for name in expected_actions if name != "DebundleAnalyze"]:
+        files = actions[mnemonic].inputs.to_list()
+        asserts.true(env, any([file.basename == "debundle" for file in files]))
+        asserts.false(env, any([file.basename == "debundle_analyze" for file in files]))
     asserts.false(env, "--effect-conflicts" in baseline["DebundlePipeline"].argv[-1])
     asserts.false(env, "--full-report" in baseline["DebundlePipeline"].argv[-1])
     asserts.equals(env, ctx.attr.readable, '[ "$status" -eq 3 ] || exit "$status"' in command)
@@ -82,3 +89,15 @@ pipeline_report_flags_test = analysistest.make(
         "readable": attr.bool(),
     },
 )
+
+def _analysis_identity_inputs_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    actions = [action for action in analysistest.target_actions(env) if action.mnemonic == "DebundleAnalysisIdentity"]
+    asserts.equals(env, 1, len(actions))
+    files = actions[0].inputs.to_list()
+    for crate in ["pipeline", "lowering", "analysis_codec", "analysis"]:
+        asserts.true(env, any([file.basename.startswith("lib" + crate + "-") and file.extension == "rlib" for file in files]))
+    asserts.false(env, any([file.basename.startswith("libdebundle_cli-") for file in files]))
+    return analysistest.end(env)
+
+analysis_identity_inputs_test = analysistest.make(_analysis_identity_inputs_test_impl)

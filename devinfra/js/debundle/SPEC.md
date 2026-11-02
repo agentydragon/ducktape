@@ -127,6 +127,16 @@ That reports-only action enables typed gate-rejection emission so it can finish
 exporting every configured chunk; exit 3 is accepted only for a gate-only
 rejection. It writes no JavaScript. Other failures still fail the action.
 
+Staged `.analysis` headers carry `analysis_engine_sha256`, the generated
+configured compiled `pipeline` closure identity shared by the writer and reader.
+The identity covers codec/schema code before final executable dead stripping,
+build outputs, native link inputs/flags and toolchain inputs. CLI frontend code
+is outside this closure; saved graphs still require their full executable
+identity. An analysis reader rejects another engine identity before decoding
+facts, checks parser-input digests, and requires exact canonical projection
+equality before using the facts. Old `engine_sha256` analysis headers require
+regeneration. The standalone CLI remains one binary.
+
 ### Reading-only output on gate rejection
 
 `debundle run --emit-on-rejection` changes only what a realizability-gate

@@ -39,6 +39,29 @@ bazelisk build //path/to:debundle \
   --@ducktape//devinfra/js/debundle:debundler=@my_debundle_bin//file
 ```
 
+`DebundleAnalyze` uses the separate `:debundle_analyze` executable, selected by
+the `:analyzer` label flag or the rule's `analyzer` attribute. It accepts the
+`analyze` command's options directly. The other actions use the full CLI.
+Edits confined to `cli/*.rs` leave the Analyze tool and its compiled identity
+unchanged; projection bytes still determine whether its action is cached.
+The current shared `pipeline`/`lowering` libraries also contain emission code,
+so edits there conservatively invalidate analysis.
+
+Custom CLI/analyzer pairs must embed the same generated configured analysis
+identity; mismatches fail before decoding facts. Both tools use the execution
+configuration. Their native linking policy must match the shared identity rule;
+binary-specific linking overrides are outside this pairing contract. The
+identity includes Rust compiled outputs, build-script outputs and linker flags,
+selected native libraries, and Rust/C++ toolchain files and link configuration.
+It identifies this compiled closure, not runtime executable bytes or external
+system libraries. The standalone public CLI still analyzes in process and needs
+no companion, including after Nix rewrites its ELF interpreter. Saved graphs
+retain their exact full-CLI executable digest and source/spec checks.
+
+The analysis header uses `analysis_engine_sha256`; earlier artifacts with
+`engine_sha256` must be regenerated. Source digests and canonical projection
+checks remain mandatory.
+
 A reading-only target sets `emit_on_rejection = True`: it passes
 `--emit-on-rejection`, and the action succeeds on exit status 3 — the gate's
 rejection is the only failure — as well as 0. Every other failure still fails
@@ -71,7 +94,7 @@ nonexistent graph file.
 ## Integration boundary
 
 Corpus integrations use `pipeline.bzl`'s `debundle_pipeline`, the public
-`:debundler` label flag, or the public `:debundle` executable.
+`:debundler` and `:analyzer` label flags, or the public `:debundle` executable.
 `README.md`, `SPEC.md`, and `perf_wrapper.sh` are exported resources.
 
 The Rust libraries in the root BUILD are internal to this subtree (including

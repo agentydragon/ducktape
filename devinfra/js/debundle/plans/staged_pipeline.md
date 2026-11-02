@@ -179,6 +179,20 @@ closure-local ones; every Claude chunk had zero misses as well.
 
 ### Format
 
+Analysis identity is generated from the configured compiled `pipeline` closure
+and embedded in the public CLI and the separate `debundle_analyze` executable.
+`DebundleAnalyze` uses only the latter; ProjectAnalysis, Pipeline and ExportGraphs
+use the full CLI. CLI frontend edits therefore leave the Analyze tool unchanged.
+The shared closure still includes non-analysis lowering/emission code, so this
+does not promise isolation for edits outside `cli/`.
+
+The header field is `analysis_engine_sha256`; older artifacts must be regenerated.
+Writer, schema and decoder compiled outputs participate even if final linking
+discards a decoder path. Saved graph identity continues to hash the actual full
+executable. Native linkstamps and object-only native library providers are rejected
+by the focused collector until their identity semantics are implemented. Custom
+tool pairs must share the configured engine closure and native linking policy.
+
 Landed in PR 6: `analysis_codec.rs` (contexts as first-occurrence
 ordinals, named MessagePack, zstd-3) and `lowering/analysis_artifact.rs`
 (header with engine, projection and per-chunk source digests). Measured on

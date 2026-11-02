@@ -47,9 +47,8 @@ def _debundle_pipeline_impl(ctx):
         ctx,
         inputs = depset([projection], transitive = [plan.source_inputs]),
         outputs = [analysis],
-        command = plan.debundler + " " + " ".join(
+        command = "\"${{OLDPWD}}/{}\" ".format(ctx.executable.analyzer.path) + " ".join(
             [
-                "analyze",
                 "--projection",
                 shell.quote(projection.short_path),
                 "--tree-source-root",
@@ -58,6 +57,7 @@ def _debundle_pipeline_impl(ctx):
         ),
         mnemonic = "DebundleAnalyze",
         progress = "Analyzing debundle input for %{label}",
+        tool = ctx.executable.analyzer,
     )
 
     output_groups = {"analysis": depset([projection, analysis])}
@@ -105,10 +105,10 @@ def _pipeline_command(ctx, plan, analysis, extra_flags, allow_gate_rejection = F
         )
     return command
 
-def _run_debundler(ctx, inputs, outputs, command, mnemonic, progress):
+def _run_debundler(ctx, inputs, outputs, command, mnemonic, progress, tool = None):
     ctx.actions.run_shell(
         inputs = inputs,
-        tools = [ctx.executable.debundler],
+        tools = [tool if tool else ctx.executable.debundler],
         outputs = outputs,
         command = "cd \"${{BAZEL_BINDIR}}\" && {command}".format(command = command),
         env = {"BAZEL_BINDIR": ctx.bin_dir.path},
@@ -286,6 +286,12 @@ _DEBUNDLE_PIPELINE_ATTRS = {
         cfg = "exec",
         default = Label("//devinfra/js/debundle:debundler"),
         doc = "Debundler binary; must support `run` with flat transform spec or tree-shaped spec args.",
+    ),
+    "analyzer": attr.label(
+        executable = True,
+        cfg = "exec",
+        default = Label("//devinfra/js/debundle:analyzer"),
+        doc = "Analysis-only binary; custom analyzers must share the CLI's compiled analysis identity.",
     ),
     "input_data": attr.label_list(
         allow_files = True,

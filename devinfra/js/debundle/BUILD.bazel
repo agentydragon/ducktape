@@ -1,7 +1,8 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 load("@rules_rust_prost//:defs.bzl", "rust_prost_library")
-load("//devinfra/python:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load(":analysis_identity.bzl", "analysis_identity")
 load(":optimized_cc_library.bzl", "optimized_cc_library")
 
 # Rust libraries are implementation details shared with the e2e subpackage.
@@ -13,6 +14,29 @@ exports_files([
     "SPEC.md",
     "perf_wrapper.sh",
 ])
+
+py_binary(
+    name = "analysis_identity_hasher_bin",
+    main_module = "devinfra.js.debundle.analysis_identity_hasher",
+    deps = [":analysis_identity_hasher"],
+)
+
+py_library(
+    name = "analysis_identity_hasher",
+    srcs = ["analysis_identity_hasher.py"],
+)
+
+analysis_identity(
+    name = "analysis_identity_source",
+    engine = ":pipeline",
+)
+
+rust_library(
+    name = "analysis_identity",
+    srcs = [":analysis_identity_source"],
+    crate_root = ":analysis_identity_source",
+    edition = "2024",
+)
 
 rust_library(
     name = "report_io",
@@ -1161,6 +1185,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":analysis_identity",
         ":anonymous_resolution",
         ":artifact",
         ":gate",
@@ -1489,6 +1514,26 @@ label_flag(
     name = "debundler",
     build_setting_default = ":debundle",
     visibility = ["//visibility:public"],
+)
+
+label_flag(
+    name = "analyzer",
+    build_setting_default = ":debundle_analyze",
+    visibility = ["//visibility:public"],
+)
+
+rust_binary(
+    name = "debundle_analyze",
+    srcs = ["analyze_main.rs"],
+    crate_root = "analyze_main.rs",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":analysis_identity",
+        ":pipeline",
+        "@crates//:clap",
+        "@crates//:swc_common",
+    ],
 )
 
 rust_binary(
