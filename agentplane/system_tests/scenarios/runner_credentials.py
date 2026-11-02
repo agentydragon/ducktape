@@ -9,7 +9,7 @@ from uuid import uuid4
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
-from agentplane.proto import session_pb2
+from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests.agent import WORKING_DIRECTORY, Agent, scripted_turn_with_admission_and_history
@@ -60,7 +60,7 @@ async def _ready_certificate(
         assert base64.b64decode(issued[0]["status"]["certificate"]) == base64.b64decode(secret["data"]["tls.crt"])
 
 
-async def _wait_suspended(client: Client, target: environment_service_pb2.TargetHandle) -> None:
+async def _wait_suspended(client: Client, target: identity_pb2.EnvironmentTarget) -> None:
     with tracer.start_as_current_span("system_test.sandbox.suspend"):
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(REQUEST_SECONDS),

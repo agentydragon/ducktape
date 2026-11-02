@@ -7,7 +7,7 @@ syntax = "proto3";
 package agentplane.proto;
 
 import "google/protobuf/timestamp.proto";
-import "agentplane/proto/delegation.proto";
+import "agentplane/proto/identity.proto";
 
 enum InitializationStream {
   INITIALIZATION_STREAM_UNSPECIFIED = 0;

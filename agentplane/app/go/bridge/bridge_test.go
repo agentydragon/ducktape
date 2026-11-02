@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
@@ -195,7 +197,7 @@ func TestSessionOpeningHidesWrongSandboxAndSession(t *testing.T) {
 }
 
 func TestRunnerRoutesUseCurrentSandboxIdentityAndReturnProxiedValues(t *testing.T) {
-	sandbox := &environmentpb.EnvironmentDescriptor{Target: &environmentpb.TargetHandle{Name: "operator-sandbox", Uid: "sandbox-uid", Namespace: "operators"}}
+	sandbox := &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: "operator-sandbox", Uid: "sandbox-uid", Namespace: "operators"}}
 	list := &sessionpb.ListSessionsResponse{Sessions: []*sessionpb.SessionSummary{{SessionId: uuid.NewString()}}}
 	status := &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: "boot-1"}
 	runner := &fakeRunner{list: list, status: status}
@@ -218,11 +220,11 @@ func TestRunnerRoutesUseCurrentSandboxIdentityAndReturnProxiedValues(t *testing.
 	if getter.uid != "sandbox-uid" || runner.got.GetTarget().GetUid() != "sandbox-uid" {
 		t.Fatalf("runtime status lost UID: lookup=%q target=%v", getter.uid, runner.got.GetTarget())
 	}
-	getter.sandbox = &environmentpb.EnvironmentDescriptor{Target: &environmentpb.TargetHandle{Name: sandbox.GetTarget().GetName(), Uid: "replacement", Namespace: sandbox.GetTarget().GetNamespace()}}
+	getter.sandbox = &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: sandbox.GetTarget().GetName(), Uid: "replacement", Namespace: sandbox.GetTarget().GetNamespace()}}
 	if _, err := bridge.EnvironmentRuntimeStatus(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid()); err == nil {
 		t.Fatal("same-name replacement was proxied")
 	}
-	getter.sandbox = &environmentpb.EnvironmentDescriptor{Target: &environmentpb.TargetHandle{Name: sandbox.GetTarget().GetName(), Namespace: sandbox.GetTarget().GetNamespace()}}
+	getter.sandbox = &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: sandbox.GetTarget().GetName(), Namespace: sandbox.GetTarget().GetNamespace()}}
 	if _, err := bridge.ListSessions(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid()); err == nil {
 		t.Fatal("Sandbox without UID was proxied")
 	}
@@ -252,6 +254,7 @@ func (s *identityEnvironmentRuntimeServer) capture(ctx context.Context) {
 	}
 	for _, key := range []string{
 		"authorization", sandboxapi.RunnerProxySandboxMetadataKey,
+		sandboxapi.RunnerProxySandboxNamespaceMetadataKey,
 		sandboxapi.RunnerProxySandboxUIDMetadataKey, sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey,
 		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey,
 	} {
@@ -285,7 +288,7 @@ func TestGatewayRunnerProxyBindsCurrentSandboxMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sandbox := &environmentpb.EnvironmentDescriptor{Target: &environmentpb.TargetHandle{Name: "operator-sandbox", Uid: "sandbox-uid", Namespace: "operators"}}
+	sandbox := &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: "operator-sandbox", Uid: "sandbox-uid", Namespace: "operators"}}
 	listed, err := proxy.ListSessions(context.Background(), sandbox)
 	if err != nil || listed.GetSessions()[0].GetSessionId() != "durable-session" {
 		t.Fatalf("ListSessions = %v, %v", listed, err)
@@ -297,6 +300,7 @@ func TestGatewayRunnerProxyBindsCurrentSandboxMetadata(t *testing.T) {
 	want := map[string]string{
 		"authorization":                                        "Bearer rotated-runner-token",
 		sandboxapi.RunnerProxySandboxMetadataKey:               "operator-sandbox",
+		sandboxapi.RunnerProxySandboxNamespaceMetadataKey:      "operators",
 		sandboxapi.RunnerProxySandboxUIDMetadataKey:            "sandbox-uid",
 		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey: "operators",
 		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey:      "operator-sandbox",

@@ -36,6 +36,7 @@ proto_library(
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/proto:delegation_proto",
+        "//agentplane/proto:identity_proto",
         "//agentplane/proto:session_proto",
     ],
 )

@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
@@ -139,7 +141,7 @@ func exportFixtureSession(t *testing.T, store *Store) *Session {
 	t.Helper()
 	session, err := openStoreSession(t, store, &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "test-model"},
-		Executor: &sandboxpb.SandboxDestination{Owner: &sandboxpb.ServiceAccount{Namespace: "test", Name: "executor"}, Sandbox: "test-executor", SandboxUid: uuid.NewString()}, ExpectedIncarnationUid: uuid.NewString(),
+		Executor: &identitypb.SandboxDestination{Owner: &identitypb.ServiceAccount{Namespace: "test", Name: "executor"}, Target: &identitypb.EnvironmentTarget{Namespace: "test", Name: "test-executor", Uid: uuid.NewString()}}, ExpectedIncarnationUid: uuid.NewString(),
 	}, "test-account-uid", protocol.APIStyleResponses)
 	if err != nil {
 		t.Fatal(err)

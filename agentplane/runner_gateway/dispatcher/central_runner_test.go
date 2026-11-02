@@ -82,7 +82,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 	if err := runner.OpenSession(context.Background(), sandbox, "session", spec, &setup, nil); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.opened.GetExpectedIncarnationUid() != "pod-uid" || fixture.opened.GetExecutor().GetSandboxUid() != "sandbox-uid" || fixture.opened.GetSetupScript() != setup || fixture.token != "Bearer projected" {
+	if fixture.opened.GetExpectedIncarnationUid() != "pod-uid" || fixture.opened.GetExecutor().GetTarget().GetUid() != "sandbox-uid" || fixture.opened.GetSetupScript() != setup || fixture.token != "Bearer projected" {
 		t.Fatalf("unexpected opening: %v token %q", fixture.opened, fixture.token)
 	}
 	admission, err := runner.Deliver(context.Background(), sandbox, "session", &commandpb.Command{CommandId: "interrupt", Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "turn"}}})

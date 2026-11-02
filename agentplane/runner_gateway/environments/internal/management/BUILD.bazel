@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//agentplane/policy",
         "//agentplane/policy/api/v1alpha1",
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/runner_gateway/environments:environment_service_go_proto",
         "//agentplane/runner_gateway/environments/internal/view",
@@ -36,6 +37,7 @@ go_test(
     deps = [
         "//agentplane/policy",
         "//agentplane/policy/api/v1alpha1",
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/runner_gateway/environments:environment_service_go_proto",
         "//agentplane/runner_gateway/environments/internal/view",

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
@@ -70,8 +72,8 @@ func (a *actionActorAccount) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func ServiceAccountProto(a model.ServiceAccount) *sandboxespb.ServiceAccount {
-	return &sandboxespb.ServiceAccount{Namespace: a.Namespace, Name: a.Name}
+func ServiceAccountProto(a model.ServiceAccount) *identitypb.ServiceAccount {
+	return &identitypb.ServiceAccount{Namespace: a.Namespace, Name: a.Name}
 }
 
 // validateActionActor validates a recorded identity. It grants no read or decision authority.

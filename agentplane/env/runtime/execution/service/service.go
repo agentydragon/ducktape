@@ -191,8 +191,9 @@ func (c Config) admit(ctx context.Context, scope *executorpb.ExecutionScope, _ b
 		return status.Error(codes.InvalidArgument, "execution scope is incomplete")
 	}
 	destination := scope.Destination
-	if destination.Sandbox != c.SandboxName || destination.SandboxUid != c.SandboxUID ||
-		destination.Owner.Namespace != c.Namespace || destination.Owner.Name != c.SandboxName {
+	if destination.Target == nil || destination.Target.Namespace == "" || destination.Target.Name == "" || destination.Target.Uid == "" ||
+		destination.Target.Namespace != c.Namespace || destination.Target.Name != c.SandboxName || destination.Target.Uid != c.SandboxUID ||
+		destination.Owner == nil || destination.Owner.Namespace != destination.Target.Namespace || destination.Owner.Name != c.SandboxName {
 		return status.Error(codes.PermissionDenied, "execution destination names another Sandbox")
 	}
 	if scope.ExpectedIncarnationUid != c.IncarnationUID {

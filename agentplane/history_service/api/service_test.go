@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/projection"
 	"github.com/agentydragon/ducktape/agentplane/history_service/reads"
@@ -194,7 +196,7 @@ func delegated(t *testing.T, token string, caller auth.Account, uid string) cont
 	t.Helper()
 	envelope := &delegationpb.Delegation{
 		Caller: &delegationpb.ServiceAccountIdentity{
-			Account: &sandboxpb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, Uid: uid,
+			Account: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, Uid: uid,
 		},
 		ActionRequestId: uuid.NewString(), ActionExecutionId: uuid.NewString(),
 	}

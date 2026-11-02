@@ -88,7 +88,7 @@ func (k *KubernetesSandboxes) GetSandbox(ctx context.Context, name string) (Sand
 // old informer snapshot after the managed account has been replaced.
 func (k *KubernetesSandboxes) GetExecutionAccount(ctx context.Context, sandbox SandboxSnapshot) (ServiceAccountIdentity, bool, error) {
 	account, found, err := k.reader.ExecutionAccount(ctx, sandboxreader.Identity{
-		Namespace: sandbox.Namespace, Name: sandbox.Name, UID: sandbox.UID,
+		Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: sandbox.UID,
 	})
 	if err != nil || !found {
 		return ServiceAccountIdentity{}, found, err

@@ -16,6 +16,7 @@ import (
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
@@ -1091,7 +1092,7 @@ func (*growingCatalog) WaitSynced(context.Context) bool { return true }
 
 type testWake struct{}
 
-func (testWake) RequestWake(_ context.Context, _ lifecycle.Target, _ lifecycle.ServiceAccount) (*environmentpb.WakeAssessment, error) {
+func (testWake) RequestWake(_ context.Context, _ lifecycle.Target, _ lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
 	return &environmentpb.WakeAssessment{
 		State:      environmentpb.WakeState_WAKE_STATE_NOT_NEEDED,
 		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(0),
@@ -1102,7 +1103,7 @@ type rateLimitedWake struct {
 	calls int
 }
 
-func (w *rateLimitedWake) RequestWake(_ context.Context, _ lifecycle.Target, _ lifecycle.ServiceAccount) (*environmentpb.WakeAssessment, error) {
+func (w *rateLimitedWake) RequestWake(_ context.Context, _ lifecycle.Target, _ lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
 	w.calls++
 	return &environmentpb.WakeAssessment{
 		State:      environmentpb.WakeState_WAKE_STATE_RATE_LIMITED,
@@ -1114,11 +1115,11 @@ func (w *rateLimitedWake) RequestWake(_ context.Context, _ lifecycle.Target, _ l
 
 type scriptedWake struct {
 	assessments []*environmentpb.WakeAssessment
-	callers     []lifecycle.ServiceAccount
+	callers     []lifecycle.ServiceAccountIdentity
 	targets     []lifecycle.Target
 }
 
-func (w *scriptedWake) RequestWake(_ context.Context, target lifecycle.Target, caller lifecycle.ServiceAccount) (*environmentpb.WakeAssessment, error) {
+func (w *scriptedWake) RequestWake(_ context.Context, target lifecycle.Target, caller lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
 	w.callers = append(w.callers, caller)
 	w.targets = append(w.targets, target)
 	if len(w.assessments) == 0 {
@@ -1135,7 +1136,7 @@ type wakeWorkerFixture struct {
 	dispatch *Dispatch
 	owner    Owner
 	sandbox  SandboxSnapshot
-	caller   lifecycle.ServiceAccount
+	caller   lifecycle.ServiceAccountIdentity
 	worker   *DeliveryWorker
 }
 
@@ -1145,10 +1146,10 @@ func newWakeWorkerFixture(t *testing.T, spec *sessionpb.SessionSpec, wake WakeRe
 	store := testStore(t, 3)
 	sandboxName, sandboxUID := "sandbox-"+uuid.NewString()[:8], uuid.NewString()
 	sessionID, commandID := uuid.NewString(), uuid.NewString()
-	caller := lifecycle.ServiceAccount{Namespace: "agentplane", Name: sandboxName, UID: uuid.NewString()}
-	actor := lifecycle.ServiceAccount{Namespace: "agentplane", Name: "action-broker", UID: uuid.NewString()}
-	callerIdentity := ServiceAccountIdentity{Account: Account{Namespace: caller.Namespace, Name: caller.Name}, UID: caller.UID}
-	actorIdentity := ServiceAccountIdentity{Account: Account{Namespace: actor.Namespace, Name: actor.Name}, UID: actor.UID}
+	caller := lifecycle.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "agentplane", Name: sandboxName}, Uid: uuid.NewString()}
+	actor := lifecycle.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "agentplane", Name: "action-broker"}, Uid: uuid.NewString()}
+	callerIdentity := ServiceAccountIdentity{Account: Account{Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName()}, UID: caller.GetUid()}
+	actorIdentity := ServiceAccountIdentity{Account: Account{Namespace: actor.GetAccount().GetNamespace(), Name: actor.GetAccount().GetName()}, UID: actor.GetUid()}
 	attribution := &AdmissionAttribution{Actor: actorIdentity, EffectiveCaller: callerIdentity}
 	opening, err := store.OpenSessionWithIdentity(ctx, sessionID, sandboxName, sandboxUID, spec, nil, nil,
 		&callerIdentity, &actorIdentity, attribution)
@@ -1585,7 +1586,7 @@ func TestWorkerRetriesAuthorizedWakeAfterDenialUsingEffectiveCaller(t *testing.T
 	if second.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_REQUESTED || second.State != QueueState || second.WakeRequestedAt == nil {
 		t.Fatalf("later authorized wake was not recorded while queued: %+v", second)
 	}
-	if len(wake.callers) != 2 || wake.callers[0] != fixture.caller || wake.callers[1] != fixture.caller {
+	if len(wake.callers) != 2 || !proto.Equal(wake.callers[0], fixture.caller) || !proto.Equal(wake.callers[1], fixture.caller) {
 		t.Fatalf("wake used caller identities %v, want retained effective caller %+v", wake.callers, fixture.caller)
 	}
 	if wake.targets[0].UID != fixture.sandbox.UID || wake.targets[0].Namespace != fixture.sandbox.Namespace || wake.targets[0].Name != fixture.sandbox.Name {

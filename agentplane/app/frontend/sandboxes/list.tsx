@@ -1,8 +1,5 @@
-import {
-  TargetHandleSchema,
-  type EnvironmentDescriptor,
-  type TargetHandle,
-} from "../../../runner_gateway/environments/environment_service_pb";
+import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
+import { type EnvironmentDescriptor } from "../../../runner_gateway/environments/environment_service_pb";
 import { clone, create as createProto } from "@bufbuild/protobuf";
 import { DurationSchema } from "@bufbuild/protobuf/wkt";
 import { CreateSandboxRequestSchema } from "../../../proto/sandboxes_pb";
@@ -93,7 +90,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   // The PolicySets a new Sandbox may name; a preset pre-fills the pick and the operator edits it.
   const [policySets, setPolicySets] = useState<string[]>([]);
   // Keep the exact UID selected when opening the confirmation, even if its name is reused.
-  const [confirmingDelete, setConfirmingDelete] = useState<TargetHandle | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<EnvironmentTarget | null>(null);
   const live = useRequiredSandboxesLive();
   const rows = live.snapshot ?? [];
   const [searchParams, setSearchParams] = useSearchParams();
@@ -158,7 +155,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
 
   // No refresh after an action: the change reaches the API server, and the watch behind the
   // stream brings the new row back on its own.
-  async function act(target: TargetHandle, action: "suspend" | "resume"): Promise<void> {
+  async function act(target: EnvironmentTarget, action: "suspend" | "resume"): Promise<void> {
     const failure = await (action === "resume" ? resumeSandbox(target) : suspendEnvironment(target)).then(
       () => null,
       (reason: unknown) => reason
@@ -166,7 +163,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     setError(failure ? displayableError(failure) : null);
   }
 
-  async function remove(target: TargetHandle): Promise<void> {
+  async function remove(target: EnvironmentTarget): Promise<void> {
     const failure = await deleteEnvironment(target).then(
       () => null,
       (reason: unknown) => reason
@@ -357,7 +354,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                         <Menu.Item
                           color="red"
                           disabled={!deletable(row)}
-                          onClick={() => setConfirmingDelete(clone(TargetHandleSchema, row.target!))}
+                          onClick={() => setConfirmingDelete(clone(EnvironmentTargetSchema, row.target!))}
                         >
                           Delete
                         </Menu.Item>

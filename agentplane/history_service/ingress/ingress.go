@@ -101,14 +101,14 @@ func (c *pushCall) run(ctx context.Context, writer storage.Writer, account auth.
 		announce = sampler.GetSession()
 		executor := sampler.GetExecutor()
 		if announce == nil || announce.GetSpec().GetHarness() != sessionpb.Harness_HARNESS_CENTRAL_SAMPLER ||
-			executor.GetSandbox() == "" ||
-			executor.GetOwner().GetNamespace() == "" || executor.GetOwner().GetName() == "" {
+			executor.GetTarget().GetNamespace() == "" || executor.GetTarget().GetName() == "" ||
+			executor.GetOwner().GetNamespace() == "" || executor.GetOwner().GetName() == "" || executor.GetTarget().GetNamespace() != executor.GetOwner().GetNamespace() {
 			return status.Error(codes.InvalidArgument, "central sampler announcement is incomplete")
 		}
-		if _, err := uuid.Parse(executor.GetSandboxUid()); err != nil {
+		if _, err := uuid.Parse(executor.GetTarget().GetUid()); err != nil {
 			return status.Error(codes.InvalidArgument, "executor UID is not a UUID")
 		}
-		sandboxUID = executor.GetSandboxUid()
+		sandboxUID = executor.GetTarget().GetUid()
 	} else {
 		if announce == nil {
 			return status.Error(codes.InvalidArgument, "the first frame is not an announcement")
@@ -153,7 +153,7 @@ func (c *pushCall) run(ctx context.Context, writer storage.Writer, account auth.
 	if sampler != nil {
 		executor := sampler.GetExecutor()
 		checkpoint, err = c.history.BindSamplerWriter(ctx, sessionID, writer,
-			executor.GetOwner().GetNamespace(), executor.GetSandbox(), sandboxUID, executionPrincipal)
+			executor.GetTarget().GetNamespace(), executor.GetTarget().GetName(), sandboxUID, executionPrincipal)
 	} else {
 		checkpoint, err = c.history.BindWriter(ctx, sessionID, writer, sandboxUID, executionPrincipal)
 	}

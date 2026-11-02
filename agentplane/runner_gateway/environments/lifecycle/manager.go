@@ -6,6 +6,8 @@ import (
 	"math"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -95,7 +97,7 @@ func (s *Manager) Eligibility(ctx context.Context, target Target) (*environmentl
 // RequestWake evaluates automatic-wake authority for an already admitted effective caller and,
 // when allowed, performs one guarded desired-state mutation. Expected policy and operational
 // outcomes are returned as WakeAssessment values; Go errors indicate malformed invocation.
-func (s *Manager) RequestWake(ctx context.Context, target Target, caller ServiceAccount) (*environmentlifecyclepb.WakeAssessment, error) {
+func (s *Manager) RequestWake(ctx context.Context, target Target, caller ServiceAccountIdentity) (*environmentlifecyclepb.WakeAssessment, error) {
 	if !validTarget(target) {
 		return nil, errInvalidTarget
 	}
@@ -107,7 +109,7 @@ func (s *Manager) RequestWake(ctx context.Context, target Target, caller Service
 
 // AssessAutomaticWake reports current automatic-wake policy without reserving budget or changing
 // Sandbox state. Discovery uses it to describe whether a suspended target may wake on delivery.
-func (s *Manager) AssessAutomaticWake(ctx context.Context, target Target, caller ServiceAccount) (*environmentlifecyclepb.WakeAssessment, error) {
+func (s *Manager) AssessAutomaticWake(ctx context.Context, target Target, caller ServiceAccountIdentity) (*environmentlifecyclepb.WakeAssessment, error) {
 	if !validTarget(target) || target.Namespace != s.namespace {
 		return assessment(environmentlifecyclepb.WakeState_WAKE_STATE_FAILED, environmentlifecyclepb.WakeReason_WAKE_REASON_TARGET_CHANGED, nil), nil
 	}
@@ -199,7 +201,7 @@ func (s *Manager) ResumeEnvironment(
 	}
 }
 
-func (s *Manager) requestWake(ctx context.Context, target Target, caller ServiceAccount) (*environmentlifecyclepb.WakeAssessment, error) {
+func (s *Manager) requestWake(ctx context.Context, target Target, caller ServiceAccountIdentity) (*environmentlifecyclepb.WakeAssessment, error) {
 	if !validTarget(target) || target.Namespace != s.namespace {
 		return assessment(environmentlifecyclepb.WakeState_WAKE_STATE_FAILED, environmentlifecyclepb.WakeReason_WAKE_REASON_TARGET_CHANGED, nil), nil
 	}
@@ -210,7 +212,7 @@ func (s *Manager) requestWake(ctx context.Context, target Target, caller Service
 func (s *Manager) applyResume(
 	ctx context.Context,
 	target Target,
-	caller ServiceAccount,
+	caller ServiceAccountIdentity,
 	resumeToken string,
 	operator bool,
 	automatic bool,
@@ -263,7 +265,7 @@ func (s *Manager) applyResume(
 		}
 
 		nextGeneration := view.Spec.WakeGeneration + 1
-		delay, err := s.wakeBudget.ReserveWakeAttempt(ctx, caller, target.UID, nextGeneration)
+		delay, err := s.wakeBudget.ReserveWakeAttempt(ctx, caller, target.Uid, nextGeneration)
 		if err != nil {
 			return failureAssessment(codes.Unavailable, "shared wake budget is unavailable", environmentlifecyclepb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE, view.Spec.WakeGeneration), nil
 		}
@@ -289,7 +291,7 @@ func (s *Manager) applyResume(
 	return failureAssessment(codes.Aborted, "Sandbox changed during all guarded resume attempts", environmentlifecyclepb.WakeReason_WAKE_REASON_TARGET_CHANGED, -1), nil
 }
 
-func (s *Manager) automaticWakeAssessment(ctx context.Context, view *sandboxapi.Sandbox, caller ServiceAccount) (*environmentlifecyclepb.WakeAssessment, bool) {
+func (s *Manager) automaticWakeAssessment(ctx context.Context, view *sandboxapi.Sandbox, caller ServiceAccountIdentity) (*environmentlifecyclepb.WakeAssessment, bool) {
 	generation := view.Spec.WakeGeneration
 	if view.Status.StopStage == sandboxapi.StopStageDeleting || view.DeletionTimestamp != nil {
 		return failureAssessment(codes.NotFound, "Sandbox is deleting", environmentlifecyclepb.WakeReason_WAKE_REASON_DELETING, generation), false
@@ -323,7 +325,7 @@ func (s *Manager) automaticWakeAssessment(ctx context.Context, view *sandboxapi.
 	return assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_ELIGIBLE, environmentlifecyclepb.WakeReason_WAKE_REASON_UNSPECIFIED, generation), true
 }
 
-func (s *Manager) eligibilityFor(ctx context.Context, view *sandboxapi.Sandbox, caller ServiceAccount, operator bool) (*environmentlifecyclepb.ResumeEligibility, error) {
+func (s *Manager) eligibilityFor(ctx context.Context, view *sandboxapi.Sandbox, caller ServiceAccountIdentity, operator bool) (*environmentlifecyclepb.ResumeEligibility, error) {
 	live, err := s.callerAccountCurrent(ctx, caller)
 	if err != nil {
 		return nil, status.Error(codes.Unavailable, "caller ServiceAccount state is unavailable")
@@ -337,17 +339,17 @@ func (s *Manager) eligibilityFor(ctx context.Context, view *sandboxapi.Sandbox, 
 	if requestedStop(view) {
 		return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_OPERATOR_REQUESTED_STOP), nil
 	}
-	account := auth.Account{Namespace: caller.Namespace, Name: caller.Name}
+	account := auth.Account{Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName()}
 	if account.Namespace != view.Namespace || account.Name != view.Name {
 		return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_CALLER_NOT_EXECUTION_ACCOUNT), nil
 	}
 	execution, found, err := s.sandboxes.ExecutionAccount(ctx, sandboxreader.Identity{
-		Namespace: view.Namespace, Name: view.Name, UID: string(view.UID),
+		Namespace: view.Namespace, Name: view.Name, Uid: string(view.UID),
 	})
 	if err != nil {
 		return nil, status.Error(codes.Unavailable, "execution ServiceAccount state is unavailable")
 	}
-	if !found || execution.Namespace != caller.Namespace || execution.Name != caller.Name || execution.UID != caller.UID {
+	if !found || execution.GetAccount() == nil || execution.GetAccount().GetNamespace() != caller.GetAccount().GetNamespace() || execution.GetAccount().GetName() != caller.GetAccount().GetName() || execution.GetUid() != caller.GetUid() {
 		return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_EXECUTION_ACCOUNT_CHANGED), nil
 	}
 	if view.Spec.ResumePolicy == nil || !view.Spec.ResumePolicy.AllowOwnServiceAccount {
@@ -360,12 +362,16 @@ func requestedStop(view *sandboxapi.Sandbox) bool {
 	return !view.Spec.Running || (view.Status.SuspendedBy != nil && *view.Status.SuspendedBy == sandboxapi.SuspendedByRequested)
 }
 
-func (s *Manager) isWakeBroker(caller ServiceAccount) bool {
-	_, trustedBroker := s.wakeCallers[auth.Account{Namespace: caller.Namespace, Name: caller.Name}]
+func (s *Manager) isWakeBroker(caller ServiceAccountIdentity) bool {
+	account := caller.GetAccount()
+	if account == nil {
+		return false
+	}
+	_, trustedBroker := s.wakeCallers[auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()}]
 	return trustedBroker
 }
 
-func (s *Manager) directOperator(ctx context.Context, caller ServiceAccount) bool {
+func (s *Manager) directOperator(ctx context.Context, caller ServiceAccountIdentity) bool {
 	admission, err := auth.Admitted(ctx)
 	if err != nil {
 		return false
@@ -378,18 +384,18 @@ func (s *Manager) directOperator(ctx context.Context, caller ServiceAccount) boo
 	return configured
 }
 
-func (s *Manager) callerAccountCurrent(ctx context.Context, caller ServiceAccount) (bool, error) {
+func (s *Manager) callerAccountCurrent(ctx context.Context, caller ServiceAccountIdentity) (bool, error) {
 	if !validServiceAccount(caller) {
 		return false, nil
 	}
 	var account corev1.ServiceAccount
-	if err := s.objects.Get(ctx, types.NamespacedName{Namespace: caller.Namespace, Name: caller.Name}, &account); err != nil {
+	if err := s.objects.Get(ctx, types.NamespacedName{Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName()}, &account); err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, nil
 		}
 		return false, err
 	}
-	return account.UID != "" && string(account.UID) == caller.UID && account.DeletionTimestamp == nil, nil
+	return account.UID != "" && string(account.UID) == caller.GetUid() && account.DeletionTimestamp == nil, nil
 }
 
 func (s *Manager) readTarget(ctx context.Context, target Target) (*sandboxapi.Sandbox, error) {
@@ -402,46 +408,47 @@ func (s *Manager) readTarget(ctx context.Context, target Target) (*sandboxapi.Sa
 	} else if err != nil {
 		return nil, status.Error(codes.Unavailable, "Sandbox state is unavailable")
 	}
-	if string(object.UID) != target.UID || object.DeletionTimestamp != nil {
+	if string(object.UID) != target.Uid || object.DeletionTimestamp != nil {
 		return nil, status.Error(codes.NotFound, "Sandbox target not found")
 	}
 	return &object, nil
 }
 
-func effectiveCaller(ctx context.Context) (ServiceAccount, error) {
+func effectiveCaller(ctx context.Context) (ServiceAccountIdentity, error) {
 	caller, err := auth.EffectiveCaller(ctx)
 	if err != nil {
-		return ServiceAccount{}, err
+		return ServiceAccountIdentity{}, err
 	}
-	result := ServiceAccount{Namespace: caller.Account.Namespace, Name: caller.Account.Name, UID: caller.ServiceAccountUID}
+	result := ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: caller.Account.Namespace, Name: caller.Account.Name}, Uid: caller.ServiceAccountUID}
 	if !validServiceAccount(result) {
-		return ServiceAccount{}, status.Error(codes.Unauthenticated, errInvalidCaller.Error())
+		return ServiceAccountIdentity{}, status.Error(codes.Unauthenticated, errInvalidCaller.Error())
 	}
 	return result, nil
 }
 
-func identityMatches(principal auth.ServiceAccountPrincipal, identity ServiceAccount) bool {
-	return principal.Account.Namespace == identity.Namespace && principal.Account.Name == identity.Name &&
-		principal.ServiceAccountUID == identity.UID
+func identityMatches(principal auth.ServiceAccountPrincipal, identity ServiceAccountIdentity) bool {
+	account := identity.GetAccount()
+	return account != nil && principal.Account.Namespace == account.GetNamespace() && principal.Account.Name == account.GetName() &&
+		principal.ServiceAccountUID == identity.GetUid()
 }
 
 func validTarget(target Target) bool {
-	return target.Namespace != "" && target.Name != "" && target.UID != ""
+	return target.Namespace != "" && target.Name != "" && target.Uid != ""
 }
 
-func validServiceAccount(account ServiceAccount) bool {
-	return account.Namespace != "" && account.Name != "" && account.UID != ""
+func validServiceAccount(account ServiceAccountIdentity) bool {
+	return account.GetAccount() != nil && account.GetAccount().GetNamespace() != "" && account.GetAccount().GetName() != "" && account.GetUid() != ""
 }
 
-func targetFromProto(target *environmentpb.TargetHandle) Target {
+func targetFromProto(target *identitypb.EnvironmentTarget) Target {
 	if target == nil {
 		return Target{}
 	}
-	return Target{Namespace: target.GetNamespace(), Name: target.GetName(), UID: target.GetUid()}
+	return Target{Namespace: target.GetNamespace(), Name: target.GetName(), Uid: target.GetUid()}
 }
 
-func targetProto(target Target) *environmentpb.TargetHandle {
-	return &environmentpb.TargetHandle{Namespace: target.Namespace, Name: target.Name, Uid: target.UID}
+func targetProto(target Target) *identitypb.EnvironmentTarget {
+	return &identitypb.EnvironmentTarget{Namespace: target.Namespace, Name: target.Name, Uid: target.Uid}
 }
 
 func allowed(reason environmentlifecyclepb.ResumeEligibilityReason) *environmentlifecyclepb.ResumeEligibility {

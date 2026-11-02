@@ -30,7 +30,7 @@ from agentplane.env.runtime.execution.testing.codex_exec_server_container import
     CodexExecServerContainerStatus,
     inspect_codex_exec_server_container,
 )
-from agentplane.proto import event_pb2, sandboxes_pb2, session_pb2
+from agentplane.proto import event_pb2, identity_pb2, session_pb2
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 from third_party.containers import debian_slim
 from util.bazel.runfiles import get_required_path
@@ -353,12 +353,15 @@ async def test_executor_exit_does_not_join_escaped_output_readers(harness: sessi
 
 async def test_process_output_resume_files_and_incarnation_fence(runner: RunningRunner, tmp_path: Path) -> None:
     scope = executor_pb2.ExecutionScope(
-        destination=sandboxes_pb2.SandboxDestination(
-            owner=sandboxes_pb2.ServiceAccount(
+        destination=identity_pb2.SandboxDestination(
+            owner=identity_pb2.ServiceAccount(
                 namespace=runner.config.launch.sandbox.namespace, name=runner.config.launch.sandbox.name
             ),
-            sandbox=runner.config.launch.sandbox.name,
-            sandbox_uid=runner.config.launch.sandbox.uid,
+            target=identity_pb2.EnvironmentTarget(
+                namespace=runner.config.launch.sandbox.namespace,
+                name=runner.config.launch.sandbox.name,
+                uid=runner.config.launch.sandbox.uid,
+            ),
         ),
         expected_incarnation_uid=runner.gateway.control.incarnation_uid,
         session_id="test-execution-session",
@@ -369,7 +372,7 @@ async def test_process_output_resume_files_and_incarnation_fence(runner: Running
             await channel.channel_ready()
         control_status = await (await runner.control()).GetStatus(session_pb2.GetStatusRequest())
         metadata = (
-            ("agentplane-sandbox-uid", scope.destination.sandbox_uid),
+            ("agentplane-sandbox-uid", scope.destination.target.uid),
             ("agentplane-incarnation-uid", scope.expected_incarnation_uid),
             ("agentplane-environment-runtime-boot-id", control_status.environment_runtime_boot_id),
             ("agentplane-connection-epoch", str(runner.gateway.control.connection_epoch)),

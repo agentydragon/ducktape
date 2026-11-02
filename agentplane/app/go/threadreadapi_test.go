@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"google.golang.org/grpc"
 
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
@@ -323,7 +325,7 @@ func (f *threadReadInventoryFake) GetEnvironment(_ context.Context, request *env
 type threadReadEnvironmentRuntimeFake struct {
 	status *sessionpb.EnvironmentRuntimeStatus
 	err    error
-	target *environmentpb.TargetHandle
+	target *identitypb.EnvironmentTarget
 }
 
 func (f *threadReadEnvironmentRuntimeFake) EnvironmentRuntimeStatus(_ context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error) {
@@ -610,7 +612,7 @@ func TestEnsureThreadArchivableRejectsBusyEnvironmentRuntime(t *testing.T) {
 	id := uuid.New()
 	thread := threads.Thread{ID: id}
 	sandbox := &environmentpb.EnvironmentDescriptor{
-		Target: &environmentpb.TargetHandle{Namespace: "team", Name: "sandbox", Uid: "sandbox-uid"},
+		Target: &identitypb.EnvironmentTarget{Namespace: "team", Name: "sandbox", Uid: "sandbox-uid"},
 		ObservedState: &environmentpb.EnvironmentObservedState{
 			OperatingMode: environmentpb.OperatingMode_OPERATING_MODE_RUNNING,
 			Readiness:     &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_READY},

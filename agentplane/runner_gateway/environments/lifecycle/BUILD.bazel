@@ -11,6 +11,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle",
     deps = [
         "//agentplane/proto:environment_lifecycle_go_proto",
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/runner_gateway/environments:environment_service_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/sandboxreader",
@@ -33,6 +34,7 @@ go_test(
         ":lifecycle",
         "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:environment_lifecycle_go_proto",
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/runner_gateway/environments",
         "//agentplane/runner_gateway/environments:environment_service_go_proto",

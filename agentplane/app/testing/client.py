@@ -31,7 +31,7 @@ from agentplane.app.testing.models import (
     thread_view_from_proto_json,
 )
 from agentplane.egress.decisions import Decision
-from agentplane.proto import event_log_pb2, sandboxes_pb2, session_pb2
+from agentplane.proto import event_log_pb2, identity_pb2, sandboxes_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
@@ -122,11 +122,11 @@ class Client:
         response = await self._json("GET", "/upstream/app-config/v1/presets")
         return ParseDict(response, app_service_pb2.ListSandboxPresetsResponse())
 
-    async def create_sandbox(self, spec: sandboxes_pb2.CreateSandboxRequest) -> environment_service_pb2.TargetHandle:
+    async def create_sandbox(self, spec: sandboxes_pb2.CreateSandboxRequest) -> identity_pb2.EnvironmentTarget:
         """Create once and return the exact incarnation acknowledged by the app."""
         target = ParseDict(
             await self._json("POST", "/upstream/environments/v1/environments", json=MessageToDict(spec)),
-            environment_service_pb2.TargetHandle(),
+            identity_pb2.EnvironmentTarget(),
         )
         if not target.namespace or target.name != spec.name or not target.uid:
             raise RuntimeError("EnvironmentService returned an invalid created target")
@@ -134,7 +134,7 @@ class Client:
         return target
 
     async def get_environment(
-        self, target: environment_service_pb2.TargetHandle
+        self, target: identity_pb2.EnvironmentTarget
     ) -> environment_service_pb2.EnvironmentDescriptor:
         """Read one authorized Sandbox target, fenced by its UID."""
         response = await self._json("GET", self._environment_path(target), params={"target.uid": target.uid})
@@ -210,11 +210,11 @@ class Client:
                 raise RuntimeError("the Sandbox inventory stream ended")
             await asyncio.sleep(RECONNECT_PAUSE_SECONDS)
 
-    async def suspend_sandbox(self, target: environment_service_pb2.TargetHandle) -> None:
+    async def suspend_sandbox(self, target: identity_pb2.EnvironmentTarget) -> None:
         request = environment_service_pb2.EnvironmentMutationRequest(target=target)
         await self._json("POST", f"{self._environment_path(target)}:suspend", json=MessageToDict(request))
 
-    async def resume_sandbox(self, target: environment_service_pb2.TargetHandle) -> None:
+    async def resume_sandbox(self, target: identity_pb2.EnvironmentTarget) -> None:
         request = environment_service_pb2.ResumeEnvironmentRequest(target=target)
         data = await self._json("POST", f"{self._environment_path(target)}:resume", json=MessageToDict(request))
         response = ParseDict(data, environment_service_pb2.ResumeEnvironmentResponse())
@@ -224,11 +224,11 @@ class Client:
         ):
             raise RuntimeError(f"Environment resume was not accepted: {response}")
 
-    async def delete_sandbox(self, target: environment_service_pb2.TargetHandle) -> None:
+    async def delete_sandbox(self, target: identity_pb2.EnvironmentTarget) -> None:
         await self._json("DELETE", self._environment_path(target), params={"target.uid": target.uid})
 
     @staticmethod
-    def _environment_path(target: environment_service_pb2.TargetHandle) -> str:
+    def _environment_path(target: identity_pb2.EnvironmentTarget) -> str:
         if not target.namespace or not target.name or not target.uid:
             raise ValueError("complete EnvironmentService target handle is required")
         return (

@@ -10,6 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"google.golang.org/grpc"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
@@ -144,7 +146,7 @@ func (b *RunnerBridge) currentSandbox(ctx context.Context, name, uid string) (*e
 	if name == "" || uid == "" {
 		return nil, errors.New("Sandbox name and UID are required")
 	}
-	sandbox, err := b.sandboxes.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &environmentpb.TargetHandle{Namespace: b.namespace, Name: name, Uid: uid}})
+	sandbox, err := b.sandboxes.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &identitypb.EnvironmentTarget{Namespace: b.namespace, Name: name, Uid: uid}})
 	if err != nil {
 		return nil, err
 	}

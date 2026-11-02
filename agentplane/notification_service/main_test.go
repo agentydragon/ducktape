@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
@@ -85,7 +87,7 @@ type testActionService struct {
 
 func (testActionService) GetActionRequest(context.Context, *actionpb.GetActionRequestRequest) (*actionpb.GetActionRequestResponse, error) {
 	return &actionpb.GetActionRequestResponse{ActionRequest: &actionpb.ActionRequest{
-		Caller: &sandboxespb.ServiceAccount{Namespace: testNamespace, Name: sandboxName},
+		Caller: &identitypb.ServiceAccount{Namespace: testNamespace, Name: sandboxName},
 	}}, nil
 }
 

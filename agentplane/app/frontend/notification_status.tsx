@@ -1,11 +1,12 @@
 /** Read-only operator projection: curated entry summaries, no raw provider payloads or acknowledgement controls. */
 import { Accordion, Divider, Drawer, Group, Paper, ScrollArea, Select, Stack, Text } from "@mantine/core";
 import { useEffect, useState, type JSX } from "react";
-import type { TargetHandle } from "../../runner_gateway/environments/environment_service_pb";
 
 import { clockTime, isoTime, timeAgo } from "./format_time";
 import { followStream } from "./live_stream";
 import { type StreamConnection } from "./stream_reader";
+import type { EnvironmentTarget } from "../../proto/identity_pb";
+
 import type {
   GitHubSubject,
   SandboxNotificationStatus,
@@ -84,7 +85,7 @@ export function NotificationStatus({
   onClose,
 }: {
   sandbox: string;
-  target: TargetHandle | null;
+  target: EnvironmentTarget | null;
   sessionId?: string;
   opened: boolean;
   onClose: () => void;

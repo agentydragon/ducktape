@@ -36,6 +36,7 @@ proto_library(
     srcs = ["connection_service.proto"],
     deps = [
         "//agentplane/action_service:action_service_proto",
+        "//agentplane/proto:identity_proto",
         "//agentplane/proto:sandboxes_proto",
         "@googleapis//google/api:annotations_proto",
         "@protobuf//:empty_proto",

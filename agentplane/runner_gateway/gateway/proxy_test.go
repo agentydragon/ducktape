@@ -88,6 +88,7 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	staleContext := metadata.NewOutgoingContext(t.Context(), metadata.Pairs(
 		"authorization", "Bearer "+f.appToken,
 		sandboxapi.RunnerProxySandboxMetadataKey, testSandbox,
+		sandboxapi.RunnerProxySandboxNamespaceMetadataKey, f.namespace,
 		sandboxapi.RunnerProxySandboxUIDMetadataKey, "replaced-sandbox-uid",
 		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, f.namespace,
 		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, testSandbox,

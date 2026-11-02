@@ -13,6 +13,7 @@ go_library(
         "//agentplane/action_service/store",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/reader",
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
         "@io_k8s_apimachinery//pkg/api/meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",

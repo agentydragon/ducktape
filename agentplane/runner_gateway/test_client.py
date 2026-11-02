@@ -5,7 +5,7 @@ import pytest_bazel
 
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.grpc.calls import ServiceError
-from agentplane.proto.sandboxes_pb2 import SandboxDestination
+from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 
@@ -19,7 +19,7 @@ async def test_runner_client_routes_with_complete_sandbox_identity(
 
     stale = SandboxDestination()
     stale.CopyFrom(sandbox.destination)
-    stale.sandbox_uid = "stale-sandbox-incarnation"
+    stale.target.uid = "stale-sandbox-incarnation"
     with pytest.raises(ServiceError) as rejected:
         await sandbox_control.list_sessions(stale)
     assert rejected.value.code.name == "NOT_FOUND"

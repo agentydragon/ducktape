@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/session_delegation/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -74,13 +76,13 @@ type delegatedBackend struct {
 func (b *delegatedBackend) ListEnvironments(ctx context.Context, request *environmentpb.ListEnvironmentsRequest) (*environmentpb.ListEnvironmentsResponse, error) {
 	b.assertCaller(ctx, testRequestID, testExecutionID)
 	b.gotList = proto.Clone(request).(*environmentpb.ListEnvironmentsRequest)
-	return &environmentpb.ListEnvironmentsResponse{Items: []*environmentpb.EnvironmentDescriptor{{Target: &environmentpb.TargetHandle{Namespace: testCallerNamespace, Name: "sandbox-one", Uid: "sandbox-uid-1"}}}}, nil
+	return &environmentpb.ListEnvironmentsResponse{Items: []*environmentpb.EnvironmentDescriptor{{Target: &identitypb.EnvironmentTarget{Namespace: testCallerNamespace, Name: "sandbox-one", Uid: "sandbox-uid-1"}}}}, nil
 }
 
 func (b *delegatedBackend) GetEnvironment(ctx context.Context, request *environmentpb.GetEnvironmentRequest) (*environmentpb.EnvironmentDescriptor, error) {
 	b.assertCaller(ctx, testRequestID, testExecutionID)
 	b.gotGet = proto.Clone(request).(*environmentpb.GetEnvironmentRequest)
-	return &environmentpb.EnvironmentDescriptor{Target: proto.Clone(request.GetTarget()).(*environmentpb.TargetHandle)}, nil
+	return &environmentpb.EnvironmentDescriptor{Target: proto.Clone(request.GetTarget()).(*identitypb.EnvironmentTarget)}, nil
 }
 
 func (b *delegatedBackend) ResumeEnvironment(ctx context.Context, request *environmentpb.ResumeEnvironmentRequest) (*environmentpb.ResumeEnvironmentResponse, error) {
@@ -94,7 +96,7 @@ func (b *delegatedBackend) ResumeEnvironment(ctx context.Context, request *envir
 		return proto.Clone(b.resumeResponse).(*environmentpb.ResumeEnvironmentResponse), nil
 	}
 	return &environmentpb.ResumeEnvironmentResponse{
-		Target:  proto.Clone(request.GetTarget()).(*environmentpb.TargetHandle),
+		Target:  proto.Clone(request.GetTarget()).(*identitypb.EnvironmentTarget),
 		Outcome: environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED,
 	}, nil
 }
@@ -277,7 +279,7 @@ func TestEnvironmentReadsForwardRecordedCallerAndExactTarget(t *testing.T) {
 
 func TestResumeForwardsRecordedCallerExactTargetAndOpaquePrecondition(t *testing.T) {
 	backend := &delegatedBackend{testing: t, resumeResponse: &environmentpb.ResumeEnvironmentResponse{
-		Target:  &environmentpb.TargetHandle{Namespace: testCallerNamespace, Name: "sandbox-one", Uid: "sandbox-uid-1"},
+		Target:  &identitypb.EnvironmentTarget{Namespace: testCallerNamespace, Name: "sandbox-one", Uid: "sandbox-uid-1"},
 		Outcome: environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED,
 	}}
 	executor := newDelegatedExecutorForGroup(t, backend, contract.GroupEnvironments)

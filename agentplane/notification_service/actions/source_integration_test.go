@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
@@ -155,7 +157,7 @@ func newFixture(t *testing.T) fixture {
 		t.Fatal(err)
 	}
 	service := &fakeActionService{
-		request: &actionpb.ActionRequest{Caller: &sandboxespb.ServiceAccount{Namespace: testNamespace, Name: testSandbox}},
+		request: &actionpb.ActionRequest{Caller: &identitypb.ServiceAccount{Namespace: testNamespace, Name: testSandbox}},
 	}
 	server := grpc.NewServer()
 	actionpb.RegisterActionServiceServer(server, service)
@@ -339,7 +341,7 @@ func TestReconcileReadsALongLogAPageAtATime(t *testing.T) {
 }
 
 func TestReconcileDoesNotFollowARequestOfAnotherAccount(t *testing.T) {
-	for name, caller := range map[string]*sandboxespb.ServiceAccount{
+	for name, caller := range map[string]*identitypb.ServiceAccount{
 		"another account":                    {Namespace: testNamespace, Name: "another-sandbox"},
 		"the same name in another namespace": {Namespace: "another-namespace", Name: testSandbox},
 	} {
@@ -395,7 +397,7 @@ func TestEventsMapsTheActionEventActors(t *testing.T) {
 			{
 				Sequence: 1, State: actionpb.ActionState_ACTION_STATE_ALLOWED,
 				At: timestamppb.New(time.Date(2026, 10, 20, 3, 56, 3, 123456000, time.UTC)),
-				Actor: &actionpb.Principal{Principal: &actionpb.Principal_Caller{Caller: &sandboxespb.ServiceAccount{
+				Actor: &actionpb.Principal{Principal: &actionpb.Principal_Caller{Caller: &identitypb.ServiceAccount{
 					Namespace: testNamespace, Name: testSandbox,
 				}}},
 			},

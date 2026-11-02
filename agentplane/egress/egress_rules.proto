@@ -5,6 +5,7 @@ package agentplane.egress;
 
 import "agentplane/proto/sandboxes.proto";
 import "google/api/annotations.proto";
+import "agentplane/proto/identity.proto";
 
 service EgressRules {
   // The egress rules of the ServiceAccount the caller's bearer proves, redacted.

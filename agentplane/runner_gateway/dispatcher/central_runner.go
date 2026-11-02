@@ -5,6 +5,8 @@ import (
 	"errors"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
@@ -29,7 +31,7 @@ func openingExecutionPrincipal(identity *ServiceAccountIdentity) *delegationpb.S
 		return nil
 	}
 	return &delegationpb.ServiceAccountIdentity{
-		Account: &sandboxpb.ServiceAccount{Namespace: identity.Account.Namespace, Name: identity.Account.Name},
+		Account: &identitypb.ServiceAccount{Namespace: identity.Account.Namespace, Name: identity.Account.Name},
 		Uid:     identity.UID,
 	}
 }
@@ -109,7 +111,7 @@ func (r *RoutingRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot
 		_, err := client.OpenSession(ctx, &samplerpb.OpenSessionRequest{
 			SessionId: id, Spec: spec, ExpectedIncarnationUid: sandbox.Incarnation, SetupScript: setup,
 			ExecutionPrincipal: executionPrincipal,
-			Executor:           &sandboxpb.SandboxDestination{Owner: &sandboxpb.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}, Sandbox: sandbox.Name, SandboxUid: sandbox.UID},
+			Executor:           &identitypb.SandboxDestination{Owner: &identitypb.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}, Target: &identitypb.EnvironmentTarget{Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: sandbox.UID}},
 		})
 		return err
 	})

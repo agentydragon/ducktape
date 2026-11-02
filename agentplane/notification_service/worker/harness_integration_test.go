@@ -44,7 +44,7 @@ var testIncarnation = store.Owner{Account: testOwner, SandboxUID: testSandboxUID
 func ptr[T any](v T) *T { return &v }
 
 func matchingSandbox() sandboxreader.View {
-	return sandboxreader.View{Identity: sandboxreader.Identity{Namespace: testNamespace, Name: testSandbox, UID: testSandboxUID}}
+	return sandboxreader.View{Identity: sandboxreader.Identity{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}}
 }
 
 // fakeSandboxes serves the one Sandbox the destinations name, until a test makes it fail or replaces it.

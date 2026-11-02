@@ -13,7 +13,7 @@ py_library(
         "//agentplane:subjects",
         "//agentplane/environment_runtime_transport:config",
         "//agentplane/grpc:calls",
-        "//agentplane/proto:sandboxes_pb2",
+        "//agentplane/proto:identity_pb2",
         "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway:settings",
         "//agentplane/testing:tls",

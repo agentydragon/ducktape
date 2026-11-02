@@ -1,12 +1,12 @@
 /** The serial console of a VM Sandbox, read-only: the output from the moment this view attaches. */
 import { Code, ScrollArea, Stack, Text } from "@mantine/core";
 import { type JSX, useEffect, useRef, useState } from "react";
-import type { TargetHandle } from "../../../runner_gateway/environments/environment_service_pb";
 
 import { consoleText } from "./console_text";
 import { followStream } from "../live_stream";
+import type { EnvironmentTarget } from "../../../proto/identity_pb";
 
-export function SandboxConsole({ target }: { target: TargetHandle }): JSX.Element {
+export function SandboxConsole({ target }: { target: EnvironmentTarget }): JSX.Element {
   const { namespace, name, uid } = target;
   const [text, setText] = useState("");
   const [unavailable, setUnavailable] = useState<string | null>(null);

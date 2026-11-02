@@ -64,8 +64,8 @@ func newConnections() *connections {
 
 func (c *connections) accept(connection *runnerConnection) {
 	c.mu.Lock()
-	previous := c.local[connection.identity.UID]
-	c.local[connection.identity.UID] = connection
+	previous := c.local[connection.identity.Uid]
+	c.local[connection.identity.Uid] = connection
 	c.mu.Unlock()
 	if previous != nil {
 		previous.end(errSupersededConnection)
@@ -74,8 +74,8 @@ func (c *connections) accept(connection *runnerConnection) {
 
 func (c *connections) remove(connection *runnerConnection, err error) {
 	c.mu.Lock()
-	if c.local[connection.identity.UID] == connection {
-		delete(c.local, connection.identity.UID)
+	if c.local[connection.identity.Uid] == connection {
+		delete(c.local, connection.identity.Uid)
 	}
 	c.mu.Unlock()
 	connection.end(err)

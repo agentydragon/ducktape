@@ -45,6 +45,7 @@ proto_library(
     srcs = ["notifications.proto"],
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/proto:identity_proto",
         "@googleapis//google/api:annotations_proto",
         "@protobuf//:struct_proto",
         "@protobuf//:timestamp_proto",
@@ -74,7 +75,10 @@ ts_proto_library(
     node_modules = "//:node_modules",
     proto = ":notifications_proto",
     visibility = ["//agentplane:__subpackages__"],
-    deps = ["//google/api:annotations_pb"],
+    deps = [
+        "//agentplane/proto:identity_pb",
+        "//google/api:annotations_pb",
+    ],
 )
 
 ts_proto_library(
@@ -118,7 +122,10 @@ go_proto_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb",
     proto = ":notifications_proto",
     visibility = ["//agentplane:__subpackages__"],
-    deps = ["@org_golang_google_genproto_googleapis_api//annotations"],
+    deps = [
+        "//agentplane/proto:identity_go_proto",
+        "@org_golang_google_genproto_googleapis_api//annotations",
+    ],
 )
 
 go_proto_library(
@@ -257,6 +264,7 @@ go_test(
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",

@@ -17,7 +17,7 @@ from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP
 from agentplane.env.runtime.harness import Harness
 from agentplane.native.codex.testing import responses_sse
-from agentplane.proto import event_log_pb2, event_pb2, session_pb2
+from agentplane.proto import event_log_pb2, event_pb2, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests.agent import (
@@ -93,7 +93,7 @@ def _assert_prefix(before: list[event_log_pb2.EventEntry], after: list[event_log
     ], "archived events, cursors or origins changed across suspension"
 
 
-async def _wait_until_suspended_without_pod(client: Client, target: environment_service_pb2.TargetHandle) -> None:
+async def _wait_until_suspended_without_pod(client: Client, target: identity_pb2.EnvironmentTarget) -> None:
     """Wait for the old Pod to disappear before the same Sandbox is resumed."""
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(POD_TRANSITION_SECONDS),
@@ -112,7 +112,7 @@ async def _wait_until_suspended_without_pod(client: Client, target: environment_
 
 
 async def _wait_until_idle_suspended_without_pod(
-    client: Client, target: environment_service_pb2.TargetHandle
+    client: Client, target: identity_pb2.EnvironmentTarget
 ) -> environment_service_pb2.EnvironmentDescriptor:
     """Wait for the controller's idle suspension, distinguishing it from an operator stop."""
     async for attempt in AsyncRetrying(

@@ -36,6 +36,7 @@ go_test(
     embed = [":auth"],
     deps = [
         "//agentplane/proto:delegation_go_proto",
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/testing/kubeapiserver",
         "@com_github_google_uuid//:uuid",

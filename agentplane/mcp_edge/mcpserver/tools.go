@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -56,7 +58,7 @@ type getActionPolicyInput struct {
 
 // policyTarget is "self", or a named ServiceAccount.
 type policyTarget struct {
-	account *sandboxes.ServiceAccount
+	account *identitypb.ServiceAccount
 }
 
 func (t *policyTarget) UnmarshalJSON(data []byte) error {
@@ -72,7 +74,7 @@ func (t *policyTarget) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &named); err != nil {
 		return err
 	}
-	t.account = &sandboxes.ServiceAccount{Namespace: named.ServiceAccount.Namespace, Name: named.ServiceAccount.Name}
+	t.account = &identitypb.ServiceAccount{Namespace: named.ServiceAccount.Namespace, Name: named.ServiceAccount.Name}
 	return nil
 }
 

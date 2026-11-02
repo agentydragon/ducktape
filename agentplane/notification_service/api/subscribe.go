@@ -72,7 +72,7 @@ func (s *Notifications) sandbox(ctx context.Context, ref model.DestinationRef) (
 		return sandboxreader.View{}, errSandboxMissing
 	case err != nil:
 		return sandboxreader.View{}, unavailable("sandbox lookup", err)
-	case ref.UID != "" && view.Identity.UID != ref.UID:
+	case ref.UID != "" && view.Identity.Uid != ref.UID:
 		return sandboxreader.View{}, errSandboxMissing
 	}
 	return view, nil

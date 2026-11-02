@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
@@ -58,7 +60,7 @@ func TestGetRulesTellsTheCallerHowToPresentEveryCredential(t *testing.T) {
 	}
 
 	want := &egressrulespb.GetRulesResponse{
-		Subject: &sandboxespb.ServiceAccount{Namespace: namespace, Name: "sb"},
+		Subject: &identitypb.ServiceAccount{Namespace: namespace, Name: "sb"},
 		Policies: []*egressrulespb.Policy{{Name: "github", Rules: []*egressrulespb.Rule{
 			{
 				Hosts:   []string{"api.github.com"},
@@ -153,7 +155,7 @@ func TestGetRulesAnswersNoEgressWithNoPolicies(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := &egressrulespb.GetRulesResponse{Subject: &sandboxespb.ServiceAccount{Namespace: namespace, Name: "nobody"}}
+	want := &egressrulespb.GetRulesResponse{Subject: &identitypb.ServiceAccount{Namespace: namespace, Name: "nobody"}}
 	if !proto.Equal(got, want) {
 		t.Errorf("response = %v, want %v", got, want)
 	}

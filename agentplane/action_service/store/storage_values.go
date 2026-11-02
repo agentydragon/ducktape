@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
@@ -53,7 +55,7 @@ func (a ServiceAccount) validate() error {
 	return nil
 }
 
-func serviceAccountFromProto(account *sandboxespb.ServiceAccount) (ServiceAccount, error) {
+func serviceAccountFromProto(account *identitypb.ServiceAccount) (ServiceAccount, error) {
 	if account == nil {
 		return ServiceAccount{}, errors.New("a ServiceAccount needs a namespace and a name")
 	}
@@ -64,8 +66,8 @@ func serviceAccountFromProto(account *sandboxespb.ServiceAccount) (ServiceAccoun
 	return serviceAccount, nil
 }
 
-func (a ServiceAccount) Proto() *sandboxespb.ServiceAccount {
-	return &sandboxespb.ServiceAccount{Namespace: a.Namespace, Name: a.Name}
+func (a ServiceAccount) Proto() *identitypb.ServiceAccount {
+	return &identitypb.ServiceAccount{Namespace: a.Namespace, Name: a.Name}
 }
 
 // validateActor validates a recorded identity. It grants no read or decision authority.

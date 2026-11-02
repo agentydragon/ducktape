@@ -135,6 +135,7 @@ proto_library(
     name = "action_service_proto",
     srcs = ["action_service.proto"],
     deps = [
+        "//agentplane/proto:identity_proto",
         "//agentplane/proto:sandboxes_proto",
         "@googleapis//google/api:annotations_proto",
         "@protobuf//:empty_proto",

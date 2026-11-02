@@ -42,7 +42,7 @@ func newKubernetesFake(objects ...runtime.Object) *kubernetesfake.Clientset {
 }
 
 func TestConnectionRecordsRejectForeignObjects(t *testing.T) {
-	sandbox := sandboxreader.Identity{Name: testSandbox, UID: testSandboxUID}
+	sandbox := sandboxreader.Identity{Name: testSandbox, Uid: testSandboxUID}
 	owner := sandboxOwnerReference(sandbox)
 	cases := []struct {
 		name   string
@@ -111,7 +111,7 @@ func TestClaimExpiresByLocallyObservedRenewal(t *testing.T) {
 	for _, skew := range []time.Duration{-time.Hour, time.Hour} {
 		t.Run(skew.String(), func(t *testing.T) {
 			ctx := context.Background()
-			identity := sandboxreader.Identity{Name: testSandbox, UID: testSandboxUID}
+			identity := sandboxreader.Identity{Name: testSandbox, Uid: testSandboxUID}
 			start := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 			writerClock := start.Add(skew)
 			kube := newKubernetesFake(&coordinationv1.Lease{
@@ -170,7 +170,7 @@ func TestClaimExpiresByLocallyObservedRenewal(t *testing.T) {
 
 func TestConnectionRenewPublishesAndClearsAutosuspendBlockers(t *testing.T) {
 	kube := newKubernetesFake()
-	identity := sandboxreader.Identity{Name: testSandbox, UID: testSandboxUID}
+	identity := sandboxreader.Identity{Name: testSandbox, Uid: testSandboxUID}
 	records, err := newConnectionRecords(kube.CoordinationV1(), kube.DiscoveryV1(), testNamespace,
 		connectionHolder{name: "test-gateway", ip: "192.0.2.10", port: sandboxapi.ControlServicePort})
 	if err != nil {
@@ -210,7 +210,7 @@ func TestConnectionRenewPublishesAndClearsAutosuspendBlockers(t *testing.T) {
 func TestObservationClaimsPreserveVerifiedContact(t *testing.T) {
 	ctx := context.Background()
 	kube := newKubernetesFake()
-	identity := sandboxreader.Identity{Name: testSandbox, UID: testSandboxUID}
+	identity := sandboxreader.Identity{Name: testSandbox, Uid: testSandboxUID}
 	records, err := newConnectionRecords(kube.CoordinationV1(), kube.DiscoveryV1(), testNamespace,
 		connectionHolder{name: "gateway", ip: "192.0.2.10", port: sandboxapi.ControlServicePort})
 	if err != nil {
@@ -257,7 +257,7 @@ func TestObservationClaimsPreserveVerifiedContact(t *testing.T) {
 
 func TestControlRouteRecoversAfterLeaseRecreation(t *testing.T) {
 	ctx := context.Background()
-	identity := sandboxreader.Identity{Name: testSandbox, UID: testSandboxUID}
+	identity := sandboxreader.Identity{Name: testSandbox, Uid: testSandboxUID}
 	oldLeaseUID := types.UID("fixture-old-lease")
 	oldLease := &coordinationv1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
@@ -317,7 +317,7 @@ func TestControlRouteRecoversAfterLeaseRecreation(t *testing.T) {
 }
 
 func TestControlRouteEpochUsesLegacyBaselineAndRejectsInvalidValues(t *testing.T) {
-	identity := sandboxreader.Identity{Name: testSandbox, UID: testSandboxUID}
+	identity := sandboxreader.Identity{Name: testSandbox, Uid: testSandboxUID}
 	cases := []struct {
 		name       string
 		annotation string
@@ -357,7 +357,7 @@ func TestControlRouteEpochUsesLegacyBaselineAndRejectsInvalidValues(t *testing.T
 
 func TestDelayedRoutePublicationCannotRegressRecreatedLeaseRoute(t *testing.T) {
 	ctx := context.Background()
-	identity := sandboxreader.Identity{Name: testSandbox, UID: testSandboxUID}
+	identity := sandboxreader.Identity{Name: testSandbox, Uid: testSandboxUID}
 	oldLeaseUID := types.UID("fixture-old-lease")
 	oldLease := &coordinationv1.Lease{
 		ObjectMeta: metav1.ObjectMeta{

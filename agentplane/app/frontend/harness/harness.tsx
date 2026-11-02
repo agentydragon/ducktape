@@ -23,10 +23,10 @@ import { decisionFixture, type DecisionFixture } from "../sandboxes/decision_fix
 import type { DecisionsSnapshot, SandboxPolicySnapshot } from "../sandboxes/live";
 import type { WatchHealth } from "../live";
 import { DurationSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { ServiceAccountIdentitySchema } from "../../../proto/identity_pb";
 import {
   OwnerReferenceSchema,
   SandboxPhase,
-  AccountHandleSchema,
   EnvironmentDescriptorSchema,
   OperatingMode,
   ReadinessSchema,
@@ -130,7 +130,7 @@ const SANDBOXES: EnvironmentDescriptor[] = [
         operatingMode: OperatingMode.RUNNING,
         phase: SandboxPhase.RUNNING,
       },
-      executionAccount: { namespace: "agentplane-visual", name: "ready-sandbox" },
+      executionAccount: { account: { namespace: "agentplane-visual", name: "ready-sandbox" } },
       configuration: { wakeOnSend: true, idleSuspendAfter: { seconds: 3600n } },
       kubernetesDiagnostics: {
         sandboxStatus: {
@@ -176,7 +176,7 @@ const SANDBOXES: EnvironmentDescriptor[] = [
       operatingMode: OperatingMode.RUNNING,
       phase: SandboxPhase.RUNNING,
     },
-    executionAccount: { namespace: "agentplane-visual", name: "pending-sandbox" },
+    executionAccount: { account: { namespace: "agentplane-visual", name: "pending-sandbox" } },
     configuration: { wakeOnSend: false },
     kubernetesDiagnostics: {
       sandboxStatus: { conditions: [{ type: "Ready", status: "False", reason: "PodPending" }] },
@@ -222,7 +222,7 @@ const SANDBOXES: EnvironmentDescriptor[] = [
       operatingMode: OperatingMode.SUSPENDED,
       phase: SandboxPhase.SUSPENDED,
     },
-    executionAccount: { namespace: "agentplane-visual", name: "suspended-sandbox" },
+    executionAccount: { account: { namespace: "agentplane-visual", name: "suspended-sandbox" } },
     configuration: { wakeOnSend: false },
     kubernetesDiagnostics: {
       sandboxStatus: { conditions: [{ type: "Ready", status: "False", reason: "Suspended" }] },
@@ -245,7 +245,7 @@ function addSuspendedSandboxes(): void {
         suspendedBy: "Idle",
         phase: SandboxPhase.SUSPENDED,
       },
-      executionAccount: { namespace: "agentplane-visual", name: "idle-suspended-sandbox" },
+      executionAccount: { account: { namespace: "agentplane-visual", name: "idle-suspended-sandbox" } },
       configuration: { wakeOnSend: true, idleSuspendAfter: { seconds: 1800n } },
       kubernetesDiagnostics: { sandboxStatus: { conditions: [{ type: "Ready", status: "False", reason: "Stopped" }] } },
     }),
@@ -261,7 +261,7 @@ function addSuspendedSandboxes(): void {
         suspendedBy: "Requested",
         phase: SandboxPhase.SUSPENDED,
       },
-      executionAccount: { namespace: "agentplane-visual", name: "requested-suspended-sandbox" },
+      executionAccount: { account: { namespace: "agentplane-visual", name: "requested-suspended-sandbox" } },
       configuration: { wakeOnSend: false, idleSuspendAfter: { seconds: 7200n } },
       kubernetesDiagnostics: { sandboxStatus: { conditions: [{ type: "Ready", status: "False", reason: "Stopped" }] } },
     })
@@ -281,7 +281,7 @@ function addProvisioningSandbox(): void {
         operatingMode: OperatingMode.RUNNING,
         phase: SandboxPhase.CREATING,
       },
-      executionAccount: { namespace: "agentplane-visual", name: "test-provisioning" },
+      executionAccount: { account: { namespace: "agentplane-visual", name: "test-provisioning" } },
       configuration: { wakeOnSend: false },
       kubernetesDiagnostics: { sandboxStatus: {} },
     })
@@ -989,9 +989,8 @@ function autosuspendStarting(): void {
   SANDBOXES.push(
     Object.assign(clone(EnvironmentDescriptorSchema, ready), {
       target: { ...ready.target!, name: "starting-sandbox", uid: "0f9c1d2e-0000-4000-8000-000000000077" },
-      executionAccount: create(AccountHandleSchema, {
-        namespace: ready.target!.namespace,
-        name: "starting-sandbox",
+      executionAccount: create(ServiceAccountIdentitySchema, {
+        account: { namespace: ready.target!.namespace, name: "starting-sandbox" },
         uid: "starting-account",
       }),
       observedState: {

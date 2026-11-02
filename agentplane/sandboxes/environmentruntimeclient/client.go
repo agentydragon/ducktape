@@ -49,6 +49,7 @@ func WithClient(ctx context.Context, config Config, call func(context.Context, e
 	defer cancel()
 	metadataPairs := []string{
 		sandboxapi.RunnerProxySandboxMetadataKey, config.SandboxName,
+		sandboxapi.RunnerProxySandboxNamespaceMetadataKey, config.SandboxNamespace,
 		sandboxapi.RunnerProxySandboxUIDMetadataKey, config.SandboxUID,
 		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, config.SandboxNamespace,
 		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, config.SandboxName,

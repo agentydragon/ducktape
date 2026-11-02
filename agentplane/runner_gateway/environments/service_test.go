@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
@@ -55,7 +57,7 @@ type tokenReviewStub map[string]authenticationv1.UserInfo
 
 type unusedWakeBudget struct{}
 
-func (unusedWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.ServiceAccount, string, int64) (time.Duration, error) {
+func (unusedWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.ServiceAccountIdentity, string, int64) (time.Duration, error) {
 	return 0, nil
 }
 
@@ -221,7 +223,7 @@ func delegatedBearing(t *testing.T, token string, account auth.Account, uid stri
 	t.Helper()
 	envelope := &delegationpb.Delegation{
 		Caller: &delegationpb.ServiceAccountIdentity{
-			Account: &sandboxpb.ServiceAccount{Namespace: account.Namespace, Name: account.Name}, Uid: uid,
+			Account: &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name}, Uid: uid,
 		},
 		ActionRequestId: actionRequestID, ActionExecutionId: actionExecutionID,
 	}
@@ -239,7 +241,7 @@ func TestManagementRequiresDirectGrantedPodAndFencesTarget(t *testing.T) {
 	objects := baseReader(t)
 	method := environmentpb.EnvironmentService_SetEnvironmentWakeOnSend_FullMethodName
 	rpc := serveDiscoveryWithDelegation(t, objects, runtimeconfig.Catalog{}, []string{method})
-	target := &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
+	target := &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
 	request := &environmentpb.SetEnvironmentWakeOnSendRequest{Target: target, WakeOnSend: true}
 	if _, err := rpc.SetEnvironmentWakeOnSend(bearing(t, matchingToken), request); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("account-only caller: got %v", err)
@@ -267,7 +269,7 @@ func TestManagementRequiresDirectGrantedPodAndFencesTarget(t *testing.T) {
 
 func TestActionLauncherGrantDoesNotConferGeneralManagement(t *testing.T) {
 	rpc := serveDiscovery(t, baseReader(t), runtimeconfig.Catalog{})
-	origin := &sandboxpb.SandboxLaunchOrigin{Caller: &sandboxpb.ServiceAccount{Namespace: discoveryNamespace, Name: sandboxName}, ActionGroup: "orchestration_v1"}
+	origin := &sandboxpb.SandboxLaunchOrigin{Caller: &identitypb.ServiceAccount{Namespace: discoveryNamespace, Name: sandboxName}, ActionGroup: "orchestration_v1"}
 	request := &sandboxpb.CreateSandboxRequest{Name: "created", Template: "test", LaunchOrigin: origin}
 	if _, err := rpc.CreateEnvironment(bearing(t, actionsToken), request); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("manager supplied broker origin: %v", err)
@@ -275,14 +277,14 @@ func TestActionLauncherGrantDoesNotConferGeneralManagement(t *testing.T) {
 	if _, err := rpc.CreateEnvironment(bearing(t, launcherToken), &sandboxpb.CreateSandboxRequest{Name: "created", Template: "test"}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("launcher omitted broker origin: %v", err)
 	}
-	if _, err := rpc.SuspendEnvironment(bearing(t, launcherToken), &environmentpb.EnvironmentMutationRequest{Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}}); status.Code(err) != codes.PermissionDenied {
+	if _, err := rpc.SuspendEnvironment(bearing(t, launcherToken), &environmentpb.EnvironmentMutationRequest{Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("launcher suspended environment: %v", err)
 	}
 }
 
 func TestManagementRejectsUnrepresentableDuration(t *testing.T) {
 	rpc := serveDiscovery(t, baseReader(t), runtimeconfig.Catalog{})
-	target := &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
+	target := &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
 	tooLarge := &durationpb.Duration{Seconds: 315576000000}
 	_, err := rpc.SetEnvironmentIdleSuspend(bearing(t, actionsToken), &environmentpb.SetEnvironmentIdleSuspendRequest{Target: target, IdleSuspendAfter: tooLarge})
 	if status.Code(err) != codes.InvalidArgument {
@@ -315,7 +317,7 @@ func TestListAndGetReturnTheExactExecutionAccountIdentity(t *testing.T) {
 	if item.Target.GetNamespace() != discoveryNamespace || item.Target.GetName() != sandboxName || item.Target.GetUid() != sandboxUID {
 		t.Fatalf("target handle = %+v", item.Target)
 	}
-	if item.ExecutionAccount.GetNamespace() != discoveryNamespace || item.ExecutionAccount.GetName() != sandboxName || item.ExecutionAccount.GetUid() != executionUID {
+	if item.ExecutionAccount.GetAccount().GetNamespace() != discoveryNamespace || item.ExecutionAccount.GetAccount().GetName() != sandboxName || item.ExecutionAccount.GetUid() != executionUID {
 		t.Fatalf("execution account = %+v", item.ExecutionAccount)
 	}
 	got, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{Target: item.Target})
@@ -330,7 +332,7 @@ func TestListAndGetReturnTheExactExecutionAccountIdentity(t *testing.T) {
 		t.Fatalf("explicit resume eligibility = %+v", got.GetActions().GetResumeEligibility())
 	}
 	if got.GetActions().GetWakeGeneration() != 0 || got.GetActions().GetResumeToken() != lifecycle.NewResumeToken(lifecycle.Target{
-		Namespace: discoveryNamespace, Name: sandboxName, UID: sandboxUID,
+		Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID,
 	}, 0) {
 		t.Fatalf("generation-bound resume precondition = generation %d, token %q", got.GetActions().GetWakeGeneration(), got.GetActions().GetResumeToken())
 	}
@@ -379,7 +381,7 @@ func TestDiscoveryReportsResumeDenialAndReadinessFactsWithoutEffects(t *testing.
 	sandbox.Spec.ResumePolicy = &sandboxapi.ResumePolicy{AllowOwnServiceAccount: false}
 	objects := readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID))
 	rpc := serveDiscovery(t, objects, runtimeconfig.Catalog{})
-	target := &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
+	target := &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
 	got, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
 		Target: target,
 	})
@@ -414,7 +416,7 @@ func TestLegacyWakeOnSendAvailabilityIsSeparateFromExplicitResumeEligibility(t *
 		Namespace: discoveryNamespace, Name: sandboxName,
 	}})
 	got, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
-		Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -471,7 +473,7 @@ func TestGetReturnsTheCanonicalSandboxAndCurrentPodProjection(t *testing.T) {
 	}
 	objects := readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID), pod)
 	rpc := serveDiscovery(t, objects, runtimeconfig.Catalog{})
-	target := &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
+	target := &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
 	got, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{Target: target})
 	if err != nil {
 		t.Fatal(err)
@@ -508,7 +510,7 @@ func TestGetDoesNotProjectAReplacedPodWithTheSameName(t *testing.T) {
 	}}
 	rpc := serveDiscovery(t, readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID), pod), runtimeconfig.Catalog{})
 	got, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
-		Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -545,7 +547,7 @@ func TestDelegatedActionsUseTheEffectiveCallerAndKeepTargetUIDFences(t *testing.
 		t.Fatalf("delegated resume eligibility used the actor instead of effective caller: %+v", got.GetActions().GetResumeEligibility())
 	}
 
-	for _, target := range []*environmentpb.TargetHandle{
+	for _, target := range []*identitypb.EnvironmentTarget{
 		{Namespace: foreignNamespace, Name: sandboxName, Uid: sandboxUID},
 		{Namespace: discoveryNamespace, Name: sandboxName, Uid: "replaced-sandbox-uid"},
 	} {
@@ -556,7 +558,7 @@ func TestDelegatedActionsUseTheEffectiveCallerAndKeepTargetUIDFences(t *testing.
 
 	// Existing projected ServiceAccount callers keep the direct mode on the same RPC methods.
 	direct, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
-		Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 	})
 	if err != nil || direct.GetTarget().GetUid() != sandboxUID {
 		t.Fatalf("direct GetEnvironment = %+v, %v", direct, err)
@@ -568,7 +570,7 @@ func TestDelegatedDiscoveryRejectsUntrustedActorAndReplacedCallerUID(t *testing.
 		environmentpb.EnvironmentService_ListEnvironments_FullMethodName,
 		environmentpb.EnvironmentService_GetEnvironment_FullMethodName,
 	})
-	target := &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
+	target := &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
 	for _, test := range []struct {
 		name string
 		ctx  context.Context
@@ -604,7 +606,7 @@ func TestDelegatedDiscoveryRequiresOneValidEnvelopeAndAnOptedInMethod(t *testing
 		environmentpb.EnvironmentService_GetEnvironment_FullMethodName,
 	}
 	rpc := serveDiscoveryWithDelegation(t, baseReader(t), runtimeconfig.Catalog{}, methods)
-	target := &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
+	target := &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
 	valid := delegatedBearing(t, actionsToken, auth.Account{Namespace: discoveryNamespace, Name: sandboxName}, executionUID)
 	validMetadata, _ := metadata.FromOutgoingContext(valid)
 	encodedEnvelope := validMetadata.Get(auth.DelegationMetadataKey)[0]
@@ -659,7 +661,7 @@ func TestDelegatedDiscoveryRequiresOneValidEnvelopeAndAnOptedInMethod(t *testing
 
 func TestRecreatedAndForeignAccountsCannotDiscoverTheSandbox(t *testing.T) {
 	rpc := serveDiscovery(t, baseReader(t), runtimeconfig.Catalog{})
-	target := &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
+	target := &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
 	for _, test := range []struct {
 		name  string
 		token string
@@ -688,11 +690,11 @@ func TestGetUsesTheSameNotFoundForMissingAndUnauthorizedTargets(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		token  string
-		target *environmentpb.TargetHandle
+		target *identitypb.EnvironmentTarget
 	}{
-		{name: "missing name", token: matchingToken, target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: "missing", Uid: "missing-uid"}},
-		{name: "wrong ServiceAccount UID", token: recreatedToken, target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}},
-		{name: "foreign caller", token: foreignToken, target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}},
+		{name: "missing name", token: matchingToken, target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: "missing", Uid: "missing-uid"}},
+		{name: "wrong ServiceAccount UID", token: recreatedToken, target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}},
+		{name: "foreign caller", token: foreignToken, target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := rpc.GetEnvironment(bearing(t, test.token), &environmentpb.GetEnvironmentRequest{Target: test.target})
@@ -723,7 +725,7 @@ func TestGetRejectsStaleAndDeletingSandboxIncarnations(t *testing.T) {
 			reader := readerWithObjects(t, test.sandbox, executionAccountObject(test.sandbox.UID))
 			rpc := serveDiscovery(t, reader, runtimeconfig.Catalog{})
 			_, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
-				Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: test.requested},
+				Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: test.requested},
 			})
 			if status.Code(err) != codes.NotFound {
 				t.Fatalf("GetEnvironment error = %v, want NotFound", err)
@@ -765,7 +767,7 @@ func TestDiscoveryRequiresControllerOwnershipProof(t *testing.T) {
 			}
 			rpc := serveDiscovery(t, readerWithObjects(t, objects...), runtimeconfig.Catalog{})
 			_, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
-				Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+				Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 			})
 			if status.Code(err) != codes.NotFound {
 				t.Fatalf("GetEnvironment error = %v, want NotFound", err)
@@ -798,7 +800,7 @@ func TestDiscoveryValidatesLimitsPageTokensAndExactHandles(t *testing.T) {
 	if _, err := rpc.ListEnvironments(bearing(t, matchingToken), &environmentpb.ListEnvironmentsRequest{Limit: 10, PageToken: "next-page"}); status.Code(err) != codes.InvalidArgument {
 		t.Errorf("page token error = %v, want InvalidArgument", err)
 	}
-	for _, target := range []*environmentpb.TargetHandle{
+	for _, target := range []*identitypb.EnvironmentTarget{
 		nil,
 		{Namespace: discoveryNamespace, Name: sandboxName},
 		{Namespace: discoveryNamespace, Uid: sandboxUID},
@@ -858,7 +860,7 @@ func TestKubernetesReadFailuresReturnUnavailable(t *testing.T) {
 					switch operation {
 					case "GetEnvironment":
 						_, err = rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
-							Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+							Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 						})
 					case "ListEnvironments":
 						_, err = rpc.ListEnvironments(bearing(t, matchingToken), &environmentpb.ListEnvironmentsRequest{Limit: 10})
@@ -949,7 +951,7 @@ func TestInventoryReaderListAndGetAreBroadButOrdinaryCallersStayScoped(t *testin
 	if err != nil || len(all.GetItems()) != 3 {
 		t.Fatalf("reader list = %v, %v", all, err)
 	}
-	for _, target := range []*environmentpb.TargetHandle{
+	for _, target := range []*identitypb.EnvironmentTarget{
 		{Namespace: discoveryNamespace, Name: "other", Uid: "other-uid"},
 		{Namespace: discoveryNamespace, Name: "deleting", Uid: "deleting-uid"},
 	} {
@@ -1016,7 +1018,7 @@ func TestGetFencesSandboxReplacementDuringCallerAuthorization(t *testing.T) {
 	}
 	rpc := serveDiscovery(t, reader, runtimeconfig.Catalog{})
 	_, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
-		Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 	})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("GetEnvironment during same-name replacement = %v, want NotFound", err)
@@ -1036,7 +1038,7 @@ func TestGetRechecksExecutionAccountAfterPodProjection(t *testing.T) {
 	reader := &removeOwnerAfterPodRead{WithWatch: base}
 	rpc := serveDiscovery(t, reader, runtimeconfig.Catalog{})
 	_, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
-		Target: &environmentpb.TargetHandle{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 	})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("GetEnvironment after owner changed during Pod projection = %v, want NotFound", err)

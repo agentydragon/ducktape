@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"testing"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
@@ -57,7 +59,7 @@ func TestAnMCPClientAuthorizesByItsMetadataDocumentAndCallsAsTheBoundAccount(t *
 	c := h.only(t)
 	if _, err := h.connections.RebindConnection(as(t, testOperator), &pb.RebindConnectionRequest{
 		ConnectionId: c.GetId(), ExpectedVersion: c.GetVersion(),
-		ServiceAccount: &sandboxes.ServiceAccount{Namespace: otherAccount.Namespace, Name: otherAccount.Name},
+		ServiceAccount: &identitypb.ServiceAccount{Namespace: otherAccount.Namespace, Name: otherAccount.Name},
 	}); err != nil {
 		t.Fatal(err)
 	}

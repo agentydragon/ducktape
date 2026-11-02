@@ -14,7 +14,7 @@ from agentplane.central_sampler import sampler_pb2
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2
 from agentplane.native.codex.testing import responses_sse
-from agentplane.proto import event_pb2, session_pb2
+from agentplane.proto import event_pb2, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests.central_sampler import MODEL, CentralStack, capture_sampler_diagnostics, central_stack
@@ -482,7 +482,7 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
     first_command_id, resumed_command_id = str(uuid4()), str(uuid4())
     cwd = executor.cwd
     async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
-        target = environment_service_pb2.TargetHandle(
+        target = identity_pb2.EnvironmentTarget(
             namespace=cluster.namespace, name=deployed.sandbox, uid=deployed.sandbox_uid
         )
         model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)

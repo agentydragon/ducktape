@@ -5,6 +5,7 @@ package agentplane.env.runtime.cosistate;
 
 import "agentplane/proto/session.proto";
 import "agentplane/proto/delegation.proto";
+import "agentplane/proto/identity.proto";
 
 message BootstrapSelectionSpec {
   // The selected script is compared and executed byte for byte.

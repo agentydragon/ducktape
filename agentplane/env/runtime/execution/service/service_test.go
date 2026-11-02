@@ -12,10 +12,11 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -480,9 +481,9 @@ func testExecutorEndpoint(t *testing.T) string {
 func TestAdmissionRejectsForeignOrStaleScopeBeforeEffect(t *testing.T) {
 	config := Config{Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid", IncarnationUID: "test-incarnation"}
 	scope := &executorpb.ExecutionScope{
-		Destination: &sandboxespb.SandboxDestination{
-			Owner:   &sandboxespb.ServiceAccount{Namespace: config.Namespace, Name: config.SandboxName},
-			Sandbox: config.SandboxName, SandboxUid: config.SandboxUID,
+		Destination: &identitypb.SandboxDestination{
+			Owner:  &identitypb.ServiceAccount{Namespace: config.Namespace, Name: config.SandboxName},
+			Target: &identitypb.EnvironmentTarget{Namespace: config.Namespace, Name: config.SandboxName, Uid: config.SandboxUID},
 		}, ExpectedIncarnationUid: config.IncarnationUID, SessionId: "test-session",
 	}
 	for _, test := range []struct {
@@ -493,8 +494,8 @@ func TestAdmissionRejectsForeignOrStaleScopeBeforeEffect(t *testing.T) {
 		{"current", func(*executorpb.ExecutionScope) {}, codes.OK},
 		{"namespace", func(s *executorpb.ExecutionScope) { s.Destination.Owner.Namespace = "another-namespace" }, codes.PermissionDenied},
 		{"owner", func(s *executorpb.ExecutionScope) { s.Destination.Owner.Name = "another-owner" }, codes.PermissionDenied},
-		{"sandbox", func(s *executorpb.ExecutionScope) { s.Destination.Sandbox = "another-sandbox" }, codes.PermissionDenied},
-		{"uid", func(s *executorpb.ExecutionScope) { s.Destination.SandboxUid = "another-uid" }, codes.PermissionDenied},
+		{"sandbox", func(s *executorpb.ExecutionScope) { s.Destination.Target.Name = "another-sandbox" }, codes.PermissionDenied},
+		{"uid", func(s *executorpb.ExecutionScope) { s.Destination.Target.Uid = "another-uid" }, codes.PermissionDenied},
 		{"incarnation", func(s *executorpb.ExecutionScope) { s.ExpectedIncarnationUid = "old-incarnation" }, codes.FailedPrecondition},
 		{"session", func(s *executorpb.ExecutionScope) { s.SessionId = "" }, codes.InvalidArgument},
 	} {

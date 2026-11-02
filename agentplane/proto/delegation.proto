@@ -3,13 +3,7 @@ syntax = "proto3";
 
 package agentplane.proto;
 
-import "agentplane/proto/sandboxes.proto";
-
-// A ServiceAccount name pinned to the Kubernetes object incarnation that was authenticated.
-message ServiceAccountIdentity {
-  ServiceAccount account = 1;
-  string uid = 2;
-}
+import "agentplane/proto/identity.proto";
 
 // Payload of agentplane-delegation-bin gRPC metadata: the authenticated service
 // asserts this RPC serves the caller's Action request/execution. The receiver

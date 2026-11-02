@@ -1,6 +1,6 @@
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 import { clone, create } from "@bufbuild/protobuf";
-import { TargetHandleSchema, type TargetHandle } from "../../../runner_gateway/environments/environment_service_pb";
+
 import type { ThreadView } from "../schema";
 import { NotificationStatus } from "../notification_status";
 import {
@@ -59,6 +59,7 @@ import { traceSearchUrl } from "../trace_search";
 import { useFrontendConfig } from "../frontend_config";
 import { TopbarActions, TopbarTitle } from "../topbar";
 import type { SessionSpec } from "../../../proto/session_pb";
+import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
 
 // Persist only the Session ID, never instructions or setup scripts (which can contain secrets).
 function pendingOpenKey(sandbox: string): string {
@@ -125,7 +126,7 @@ export function SandboxPage({
     setPendingOpen(attempt);
   }
   const [launching, setLaunching] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState<TargetHandle | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<EnvironmentTarget | null>(null);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [threadLimit, setThreadLimit] = useState(200);
 
@@ -135,10 +136,10 @@ export function SandboxPage({
   const target = selected?.namespace && selected.name && selected.uid ? selected : undefined;
   const sandboxNamespace = target?.namespace;
   const sandboxUID = target?.uid;
-  const [lastTarget, setLastTarget] = useState<TargetHandle | null>(null);
+  const [lastTarget, setLastTarget] = useState<EnvironmentTarget | null>(null);
   useEffect(() => {
     if (sandboxNamespace && sandboxUID)
-      setLastTarget(create(TargetHandleSchema, { namespace: sandboxNamespace, name, uid: sandboxUID }));
+      setLastTarget(create(EnvironmentTargetSchema, { namespace: sandboxNamespace, name, uid: sandboxUID }));
   }, [name, sandboxNamespace, sandboxUID]);
   // History remains available after the resource disappears; do not use a prior route's UID.
   const threadUID = sandboxUID ?? (lastTarget?.name === name ? lastTarget.uid : undefined);
@@ -219,7 +220,7 @@ export function SandboxPage({
   }
 
   /** Deleting leaves nothing to look at, so a deleted sandbox takes the view back to the list. */
-  async function remove(target: TargetHandle): Promise<void> {
+  async function remove(target: EnvironmentTarget): Promise<void> {
     const failure = await deleteEnvironment(target).then(
       () => null,
       (reason: unknown) => reason
@@ -399,8 +400,8 @@ export function SandboxPage({
                 <Menu.Item
                   component="a"
                   href={langfuseSandboxTraceUrl(langfuseSearch, {
-                    namespace: sandbox.executionAccount?.namespace ?? sandbox.target!.namespace,
-                    serviceAccount: sandbox.executionAccount?.name ?? sandbox.target!.name,
+                    namespace: sandbox.executionAccount?.account?.namespace ?? sandbox.target!.namespace,
+                    serviceAccount: sandbox.executionAccount?.account?.name ?? sandbox.target!.name,
                   })}
                   target="_blank"
                   rel="noreferrer"
@@ -412,7 +413,7 @@ export function SandboxPage({
                 color="red"
                 leftSection={<IconTrash size={15} />}
                 disabled={!deletable(sandbox)}
-                onClick={() => setConfirmingDelete(clone(TargetHandleSchema, sandbox.target!))}
+                onClick={() => setConfirmingDelete(clone(EnvironmentTargetSchema, sandbox.target!))}
               >
                 Delete
                 {!deletable(sandbox) && (

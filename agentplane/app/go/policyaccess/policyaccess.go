@@ -8,6 +8,8 @@ import (
 	"sort"
 	"sync"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy"
@@ -75,7 +77,7 @@ func (a *Access) ActionPolicySets(ctx context.Context) ([]ActionPolicySetView, e
 
 // BindingsFor returns the subject's PolicyBindings by name, projecting every named set and each
 // policy reader's status without reading credential values.
-func (a *Access) BindingsFor(ctx context.Context, subject *sandboxespb.ServiceAccount) ([]BindingView, error) {
+func (a *Access) BindingsFor(ctx context.Context, subject *identitypb.ServiceAccount) ([]BindingView, error) {
 	if subject == nil || subject.GetNamespace() == "" || subject.GetName() == "" {
 		return nil, errors.New("ServiceAccount namespace and name are required")
 	}
@@ -99,7 +101,7 @@ func BindingsFromSnapshot(
 	bindings []policyapi.PolicyBinding,
 	sets []policyapi.PolicySet,
 	credentials []egressapi.EgressCredential,
-	subject *sandboxespb.ServiceAccount,
+	subject *identitypb.ServiceAccount,
 ) ([]BindingView, error) {
 	if subject == nil || subject.GetNamespace() == "" || subject.GetName() == "" {
 		return nil, errors.New("ServiceAccount namespace and name are required")
@@ -155,13 +157,13 @@ func (a *Access) Grant(
 	policySets []string,
 	expiresAt *metav1.Time,
 ) (*BindingView, error) {
-	var target *environmentpb.TargetHandle
-	var account *environmentpb.AccountHandle
+	var target *identitypb.EnvironmentTarget
+	var account *identitypb.ServiceAccountIdentity
 	if sandbox != nil {
 		target, account = sandbox.GetTarget(), sandbox.GetExecutionAccount()
 	}
 	if target == nil || target.GetNamespace() != a.namespace || target.GetName() == "" || target.GetUid() == "" ||
-		account == nil || account.GetNamespace() == "" || account.GetName() == "" {
+		account == nil || account.GetAccount() == nil || account.GetAccount().GetNamespace() == "" || account.GetAccount().GetName() == "" {
 		return nil, errors.New("Sandbox name, UID, and ServiceAccount are required")
 	}
 	if err := a.requireKnownPolicySets(ctx, policySets); err != nil {
@@ -181,7 +183,7 @@ func (a *Access) Grant(
 		},
 		Spec: policyapi.PolicyBindingSpec{
 			Subject: policyapi.ServiceAccountRef{
-				Namespace: account.GetNamespace(), Name: account.GetName(),
+				Namespace: account.GetAccount().GetNamespace(), Name: account.GetAccount().GetName(),
 			},
 			PolicySets: append([]string(nil), policySets...), ExpiresAt: expiresAt,
 		},
@@ -189,7 +191,7 @@ func (a *Access) Grant(
 	if err := a.objects.Create(ctx, binding); err != nil {
 		return nil, err
 	}
-	views, err := a.BindingsFor(ctx, &sandboxespb.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()})
+	views, err := a.BindingsFor(ctx, &identitypb.ServiceAccount{Namespace: account.GetAccount().GetNamespace(), Name: account.GetAccount().GetName()})
 	if err != nil {
 		return nil, err
 	}

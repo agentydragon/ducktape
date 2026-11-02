@@ -91,11 +91,13 @@ func (s *Sampler) OpenSession(ctx context.Context, request *samplerpb.OpenSessio
 	invalid := func() (*samplerpb.OpenSessionResponse, error) {
 		return nil, status.Error(codes.InvalidArgument, "invalid sampler request")
 	}
-	if parseErr != nil || id.String() != request.GetSessionId() || request.GetExpectedIncarnationUid() == "" || executor == nil || executor.GetSandbox() == "" || executor.GetSandboxUid() == "" || executor.GetOwner().GetNamespace() == "" || executor.GetOwner().GetName() == "" {
+	if parseErr != nil || id.String() != request.GetSessionId() || request.GetExpectedIncarnationUid() == "" || executor == nil ||
+		executor.GetTarget().GetNamespace() == "" || executor.GetTarget().GetName() == "" || executor.GetTarget().GetUid() == "" ||
+		executor.GetOwner().GetNamespace() == "" || executor.GetOwner().GetName() == "" || executor.GetTarget().GetNamespace() != executor.GetOwner().GetNamespace() {
 		return invalid()
 	}
 	if s.Settings.GatewayTarget != "" {
-		if _, err := s.Settings.GatewayAddress(executor.GetOwner().GetNamespace(), executor.GetSandbox()); err != nil {
+		if _, err := s.Settings.GatewayAddress(executor.GetTarget().GetNamespace(), executor.GetTarget().GetName()); err != nil {
 			return invalid()
 		}
 	}

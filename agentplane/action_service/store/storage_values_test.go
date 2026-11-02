@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
@@ -58,7 +60,7 @@ func TestValidateActor(t *testing.T) {
 		t.Errorf("an absent actor is invalid: %v", err)
 	}
 	for _, actor := range []*action_servicepb.Principal{
-		{Principal: &action_servicepb.Principal_Caller{Caller: &sandboxespb.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}},
+		{Principal: &action_servicepb.Principal_Caller{Caller: &identitypb.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}},
 		{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{Issuer: "https://issuer.example", Subject: "subject-123"}}},
 	} {
 		if err := validateActor(actor); err != nil {
@@ -67,7 +69,7 @@ func TestValidateActor(t *testing.T) {
 	}
 	for _, actor := range []*action_servicepb.Principal{
 		{},
-		{Principal: &action_servicepb.Principal_Caller{Caller: &sandboxespb.ServiceAccount{Name: "test-caller"}}},
+		{Principal: &action_servicepb.Principal_Caller{Caller: &identitypb.ServiceAccount{Name: "test-caller"}}},
 		{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{Issuer: "issuer"}}},
 	} {
 		if err := validateActor(actor); !errors.Is(err, errInvalidActor) {

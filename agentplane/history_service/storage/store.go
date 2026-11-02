@@ -11,6 +11,8 @@ import (
 	"math"
 	"slices"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
@@ -570,7 +572,7 @@ func wireExecutionPrincipal(principal *ExecutionPrincipal) *delegationpb.Service
 		return nil
 	}
 	return &delegationpb.ServiceAccountIdentity{
-		Account: &sandboxpb.ServiceAccount{Namespace: principal.Namespace, Name: principal.Name}, Uid: principal.UID,
+		Account: &identitypb.ServiceAccount{Namespace: principal.Namespace, Name: principal.Name}, Uid: principal.UID,
 	}
 }
 

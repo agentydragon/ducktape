@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
@@ -151,9 +153,8 @@ func testRunnerObserver(t *testing.T, mode environment_runtime_transport.Securit
 	defer stopExec()
 	exec, err := executorpb.NewExecutorClient(publicConn).OpenSession(execCtx, &executorpb.OpenSessionRequest{
 		Scope: &executorpb.ExecutionScope{
-			Destination: &sandboxespb.SandboxDestination{
-				Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
-				Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+			Destination: &identitypb.SandboxDestination{
+				Target: &identitypb.EnvironmentTarget{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)}, Owner: &identitypb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
 			},
 			ExpectedIncarnationUid: string(f.pod.UID), SessionId: "test-runner-exec-session",
 		},
@@ -177,9 +178,8 @@ func testRunnerObserver(t *testing.T, mode environment_runtime_transport.Securit
 	}
 	started, err := executorpb.NewExecutorClient(publicConn).StartProcess(execCtx, &executorpb.StartProcessRequest{
 		Scope: &executorpb.ExecutionScope{
-			Destination: &sandboxespb.SandboxDestination{
-				Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
-				Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+			Destination: &identitypb.SandboxDestination{
+				Target: &identitypb.EnvironmentTarget{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)}, Owner: &identitypb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
 			},
 			ExpectedIncarnationUid: string(f.pod.UID), SessionId: "test-runner-exec-session",
 		},
@@ -216,15 +216,14 @@ func TestExecutionConnectionOnlySignalsVerifiedIncarnationChanges(t *testing.T) 
 	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
 	server := &executorServer{gateway: g}
 	scope := &executorpb.ExecutionScope{
-		Destination: &sandboxespb.SandboxDestination{
-			Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
-			Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+		Destination: &identitypb.SandboxDestination{
+			Target: &identitypb.EnvironmentTarget{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)}, Owner: &identitypb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
 		},
 		ExpectedIncarnationUid: "previous-incarnation", SessionId: "sampler-session",
 	}
 	setConnection := func(podUID string) {
 		g.connections.accept(&runnerConnection{
-			identity: sandboxreader.Identity{Namespace: f.namespace, Name: f.sandbox.Name, UID: string(f.sandbox.UID)},
+			identity: sandboxreader.Identity{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)},
 			podUID:   podUID, ended: make(chan struct{}),
 		})
 	}
@@ -262,9 +261,8 @@ func TestExecutionConnectionOnlySignalsVerifiedIncarnationChanges(t *testing.T) 
 	}{
 		{name: "invalid scope", scope: &executorpb.ExecutionScope{Destination: scope.Destination, SessionId: scope.SessionId}, code: codes.InvalidArgument},
 		{name: "foreign Sandbox", scope: &executorpb.ExecutionScope{
-			Destination: &sandboxespb.SandboxDestination{
-				Sandbox: f.sandbox.Name, SandboxUid: "another-sandbox",
-				Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+			Destination: &identitypb.SandboxDestination{
+				Target: &identitypb.EnvironmentTarget{Namespace: f.namespace, Name: f.sandbox.Name, Uid: "another-sandbox"}, Owner: &identitypb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
 			},
 			ExpectedIncarnationUid: scope.ExpectedIncarnationUid, SessionId: scope.SessionId,
 		}, code: codes.NotFound},
@@ -357,9 +355,8 @@ func TestExecutionConnectionReportsVerifiedEnvironmentFailures(t *testing.T) {
 			g := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
 			server := &executorServer{gateway: g}
 			scope := &executorpb.ExecutionScope{
-				Destination: &sandboxespb.SandboxDestination{
-					Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
-					Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+				Destination: &identitypb.SandboxDestination{
+					Target: &identitypb.EnvironmentTarget{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)}, Owner: &identitypb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
 				},
 				ExpectedIncarnationUid: string(f.pod.UID), SessionId: "sampler-session",
 			}

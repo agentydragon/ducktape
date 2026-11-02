@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -234,7 +236,7 @@ func (d *viewDecoder) optionalTime(at *timestamppb.Timestamp) *time.Time {
 	return &value
 }
 
-func accountView(account *sandboxes.ServiceAccount) serviceAccount {
+func accountView(account *identitypb.ServiceAccount) serviceAccount {
 	return serviceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}
 }
 

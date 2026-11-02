@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -75,7 +77,7 @@ func delegationContext(t *testing.T, token string, caller auth.Account, uid stri
 	t.Helper()
 	envelope := &delegationpb.Delegation{
 		Caller: &delegationpb.ServiceAccountIdentity{
-			Account: &sandboxpb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, Uid: uid,
+			Account: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, Uid: uid,
 		},
 		ActionRequestId: uuid.NewString(), ActionExecutionId: uuid.NewString(),
 	}

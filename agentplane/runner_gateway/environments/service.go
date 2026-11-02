@@ -8,6 +8,8 @@ import (
 	"slices"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view"
@@ -126,8 +128,8 @@ func (s *Service) broadReader(ctx context.Context, identity auth.ServiceAccountP
 }
 
 func callerMatches(caller auth.ServiceAccountPrincipal, execution sandboxreader.ServiceAccountIdentity) bool {
-	return caller.Account.Namespace == execution.Namespace && caller.Account.Name == execution.Name &&
-		caller.ServiceAccountUID == execution.UID
+	return execution.GetAccount() != nil && caller.Account.Namespace == execution.GetAccount().GetNamespace() &&
+		caller.Account.Name == execution.GetAccount().GetName() && caller.ServiceAccountUID == execution.GetUid()
 }
 
 func (s *Service) ListEnvironments(ctx context.Context, request *environmentpb.ListEnvironmentsRequest) (*environmentpb.ListEnvironmentsResponse, error) {
@@ -200,7 +202,7 @@ func (s *Service) listAll(ctx context.Context, request *environmentpb.ListEnviro
 	response := &environmentpb.ListEnvironmentsResponse{NextPageToken: list.Continue}
 	for i := range list.Items {
 		object := &list.Items[i]
-		execution, _, err := s.sandboxes.ExecutionAccount(ctx, sandboxreader.Identity{Namespace: object.Namespace, Name: object.Name, UID: string(object.UID)})
+		execution, _, err := s.sandboxes.ExecutionAccount(ctx, sandboxreader.Identity{Namespace: object.Namespace, Name: object.Name, Uid: string(object.UID)})
 		if err != nil {
 			return nil, status.Error(codes.Unavailable, "Sandbox execution account is unavailable")
 		}
@@ -252,7 +254,7 @@ func (s *Service) getEnvironment(
 		return nil, "", status.Error(codes.Unavailable, "Sandbox inventory is unavailable")
 	}
 	broad := s.broadReader(ctx, identity)
-	if view.Identity.UID != target.GetUid() || (deleting(view.Resource) && !broad) {
+	if view.Identity.Uid != target.GetUid() || (deleting(view.Resource) && !broad) {
 		return nil, "", status.Error(codes.NotFound, "environment not found")
 	}
 	execution, found, err := s.sandboxes.ExecutionAccount(ctx, view.Identity)
@@ -304,7 +306,7 @@ func (s *Service) revalidateDescriptor(
 		return sandboxreader.ServiceAccountIdentity{}, false, false, nil
 	}
 	current, err := s.sandboxes.Get(ctx, target.GetName())
-	if status.Code(err) == codes.NotFound || (err == nil && current.Identity.UID != target.GetUid()) {
+	if status.Code(err) == codes.NotFound || (err == nil && current.Identity.Uid != target.GetUid()) {
 		return sandboxreader.ServiceAccountIdentity{}, false, false, nil
 	}
 	if err != nil {
@@ -321,8 +323,8 @@ func (s *Service) revalidateDescriptor(
 		return sandboxreader.ServiceAccountIdentity{}, false, false, nil
 	}
 	if found {
-		descriptor.ExecutionAccount = &environmentpb.AccountHandle{
-			Namespace: execution.Namespace, Name: execution.Name, Uid: execution.UID,
+		descriptor.ExecutionAccount = &identitypb.ServiceAccountIdentity{
+			Account: execution.Account, Uid: execution.Uid,
 		}
 	} else {
 		descriptor.ExecutionAccount = nil
@@ -360,7 +362,7 @@ func (s *Service) describe(
 	case api.OperatingModeSuspended:
 		automaticWake = environmentpb.AutomaticWakeState_AUTOMATIC_WAKE_STATE_NOT_AVAILABLE
 	}
-	target := lifecycle.Target{Namespace: object.Namespace, Name: object.Name, UID: string(object.UID)}
+	target := lifecycle.Target{Namespace: object.Namespace, Name: object.Name, Uid: string(object.UID)}
 	var eligibility *environmentlifecyclepb.ResumeEligibility
 	generation := object.Spec.WakeGeneration
 	if !deleting(object) {
@@ -370,10 +372,9 @@ func (s *Service) describe(
 			return nil, err
 		}
 		if object.Status.OperatingMode == api.OperatingModeSuspended {
-			wake, err := s.lifecycle.AssessAutomaticWake(ctx, target, lifecycle.ServiceAccount{
-				Namespace: caller.Account.Namespace,
-				Name:      caller.Account.Name,
-				UID:       caller.ServiceAccountUID,
+			wake, err := s.lifecycle.AssessAutomaticWake(ctx, target, lifecycle.ServiceAccountIdentity{
+				Account: &identitypb.ServiceAccount{Namespace: caller.Account.Namespace, Name: caller.Account.Name},
+				Uid:     caller.ServiceAccountUID,
 			})
 			if err != nil {
 				return nil, status.Error(codes.Unavailable, "automatic wake eligibility is unavailable")
@@ -383,8 +384,8 @@ func (s *Service) describe(
 			}
 		}
 	}
-	descriptor.ExecutionAccount = &environmentpb.AccountHandle{
-		Namespace: execution.Namespace, Name: execution.Name, Uid: execution.UID,
+	descriptor.ExecutionAccount = &identitypb.ServiceAccountIdentity{
+		Account: execution.Account, Uid: execution.Uid,
 	}
 	descriptor.Actions = &environmentpb.EnvironmentActions{
 		AutomaticWake: automaticWake, ResumeEligibility: eligibility, WakeGeneration: generation,

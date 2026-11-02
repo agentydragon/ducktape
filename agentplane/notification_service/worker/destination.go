@@ -73,7 +73,7 @@ func (w *Worker) checkDestination(ctx context.Context, claim store.Claim) error 
 		return &staleDestinationError{staleNotFound}
 	case err != nil:
 		return unavailable(err)
-	case view.Identity.UID != destination.UID:
+	case view.Identity.Uid != destination.UID:
 		return &staleDestinationError{staleUIDChanged}
 	}
 	// A Sandbox runs as the ServiceAccount of its own name.

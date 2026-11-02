@@ -3,18 +3,8 @@ syntax = "proto3";
 
 package agentplane.proto;
 
+import "agentplane/proto/identity.proto";
 import "google/protobuf/duration.proto";
-
-message ServiceAccount {
-  string namespace = 1;
-  string name = 2;
-}
-
-message SandboxDestination {
-  ServiceAccount owner = 1;
-  string sandbox = 2;
-  string sandbox_uid = 3;
-}
 
 message SessionDestination {
   SandboxDestination sandbox = 1;

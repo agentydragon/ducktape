@@ -1,10 +1,10 @@
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
+import { type EnvironmentTarget } from "../../../proto/identity_pb";
 import {
   WatchEnvironmentsResponseSchema,
   WatchEnvironmentResponseSchema,
   type EnvironmentDescriptor,
-  type TargetHandle,
 } from "../../../runner_gateway/environments/environment_service_pb";
 import { followWatch } from "../watch_stream";
 import { type StreamConnection } from "../stream_reader";
@@ -27,11 +27,11 @@ export function liveSandboxesUrl(): string {
   return "/upstream/environments/v1/environments:watch";
 }
 
-export function liveSandboxUrl(target: TargetHandle): string {
+export function liveSandboxUrl(target: EnvironmentTarget): string {
   return `/live/sandboxes/${encodeURIComponent(target.name)}?sandbox_uid=${encodeURIComponent(target.uid)}`;
 }
 
-export function liveEgressDecisionsUrl(target: TargetHandle): string {
+export function liveEgressDecisionsUrl(target: EnvironmentTarget): string {
   return `/live/sandboxes/${encodeURIComponent(target.name)}/egress/decisions?sandbox_uid=${encodeURIComponent(target.uid)}`;
 }
 
@@ -134,7 +134,7 @@ export function useRequiredSandboxesLive(): Live<EnvironmentDescriptor[]> {
 const DISABLED_ENVIRONMENT_CONNECTION: StreamConnection = { phase: "live", since: 0 };
 
 /** Exact-target observation; a reconnect begins a fresh generated EnvironmentService snapshot. */
-export function useEnvironmentWatch(target: TargetHandle | undefined): {
+export function useEnvironmentWatch(target: EnvironmentTarget | undefined): {
   environment: EnvironmentDescriptor | null;
   stream: ReturnType<typeof useStreamStatus>;
 } {

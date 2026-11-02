@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
@@ -529,7 +531,7 @@ func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 		t.Fatal(err)
 	}
 	record.NativeSessionId = &native
-	record.ExecutionPrincipal = &delegationpb.ServiceAccountIdentity{Account: &sandboxes.ServiceAccount{Namespace: "ns", Name: "account"}, Uid: "uid"}
+	record.ExecutionPrincipal = &delegationpb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "ns", Name: "account"}, Uid: "uid"}
 	if err := sessions.Write("session-1", record); err != nil {
 		t.Fatal(err)
 	}

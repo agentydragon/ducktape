@@ -3,6 +3,8 @@ package gateway
 import (
 	"context"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -10,9 +12,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 var identityMetadataKeys = []string{
+	sandboxapi.RunnerProxySandboxNamespaceMetadataKey,
 	sandboxapi.RunnerProxySandboxUIDMetadataKey,
 	sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey,
 	sandboxapi.RunnerProxySandboxOwnerNameMetadataKey,
@@ -41,9 +45,12 @@ func (p *environmentRuntimeProxy) connection(ctx context.Context, allowSuspendin
 			return nil, status.Error(codes.InvalidArgument, "Sandbox UID and owner headers must each appear exactly once")
 		}
 	}
-	view, err := g.sandboxes.destination(ctx, &sandboxespb.SandboxDestination{
-		Sandbox: names[0], SandboxUid: values[sandboxapi.RunnerProxySandboxUIDMetadataKey][0],
-		Owner: &sandboxespb.ServiceAccount{
+	view, err := g.sandboxes.destination(ctx, &identitypb.SandboxDestination{
+		Target: &identitypb.EnvironmentTarget{
+			Namespace: values[sandboxapi.RunnerProxySandboxNamespaceMetadataKey][0],
+			Name:      names[0], Uid: values[sandboxapi.RunnerProxySandboxUIDMetadataKey][0],
+		},
+		Owner: &identitypb.ServiceAccount{
 			Namespace: values[sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey][0],
 			Name:      values[sandboxapi.RunnerProxySandboxOwnerNameMetadataKey][0],
 		},
@@ -51,11 +58,11 @@ func (p *environmentRuntimeProxy) connection(ctx context.Context, allowSuspendin
 	if err != nil {
 		return nil, unavailable(err)
 	}
-	connection, err := g.connections.holder(view.identity.UID)
+	connection, err := g.connections.holder(view.identity.Uid)
 	if err != nil {
 		return nil, err
 	}
-	if view.incarnation == nil || connection.identity != view.identity || connection.podUID != view.incarnation.UID {
+	if view.incarnation == nil || !proto.Equal(&connection.identity, &view.identity) || connection.podUID != view.incarnation.UID {
 		return nil, status.Error(codes.Unavailable, "runner connection belongs to another incarnation")
 	}
 	return connection, nil

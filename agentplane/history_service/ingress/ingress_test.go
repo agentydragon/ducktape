@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -595,9 +597,8 @@ func TestCentralSamplerWriterAndExecutorAreSeparate(t *testing.T) {
 		Session: &sessionpb.Attached{SessionId: sessionID, Spec: &sessionpb.SessionSpec{
 			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test-workspace",
 		}},
-		Executor: &sandboxespb.SandboxDestination{
-			Sandbox: "test-execution-sandbox", SandboxUid: executorUID,
-			Owner: &sandboxespb.ServiceAccount{Namespace: testNamespace, Name: "test-execution-sandbox"},
+		Executor: &identitypb.SandboxDestination{
+			Target: &identitypb.EnvironmentTarget{Namespace: testNamespace, Name: "test-execution-sandbox", Uid: executorUID}, Owner: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "test-execution-sandbox"},
 		},
 	}
 	c := ingress.open(t, token)
@@ -608,12 +609,12 @@ func TestCentralSamplerWriterAndExecutorAreSeparate(t *testing.T) {
 		Scan(&writerName, &sandboxName, &sandboxUID); err != nil {
 		t.Fatal(err)
 	}
-	if writerName != account.Name || sandboxName != announcement.Executor.Sandbox || sandboxUID != executorUID {
+	if writerName != account.Name || sandboxName != announcement.Executor.Target.Name || sandboxUID != executorUID {
 		t.Fatalf("binding writer=%s executor=%s uid=%s", writerName, sandboxName, sandboxUID)
 	}
 	c.cancel()
 	changed := proto.Clone(announcement).(*session_ingresspb.SamplerAnnouncement)
-	changed.Executor.SandboxUid = uuid.NewString()
+	changed.Executor.Target.Uid = uuid.NewString()
 	next := ingress.open(t, token)
 	next.send(&session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: changed}})
 	if _, err := next.stream.Recv(); status.Code(err) != codes.PermissionDenied {

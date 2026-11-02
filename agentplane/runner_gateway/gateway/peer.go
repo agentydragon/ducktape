@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,7 +37,7 @@ func (g *Gateway) runnerDestination(ctx context.Context, sandbox *sandboxapi.San
 		return runnerDestination{}, err
 	}
 	view := routingView(sandboxreader.View{Identity: sandboxreader.Identity{
-		Namespace: sandbox.Namespace, Name: sandbox.Name, UID: string(sandbox.UID),
+		Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: string(sandbox.UID),
 	}, Resource: sandbox})
 	if !podIsReadyForSandbox(&pod, view) || pod.Status.PodIP == "" {
 		return runnerDestination{}, status.Error(codes.Unavailable, "runner Pod is unavailable")
@@ -102,14 +103,14 @@ func (g *Gateway) validateRunnerDestination(ctx context.Context, expected runner
 	if err := g.readWorkload(ctx, expected.identity.Namespace, expected.identity.Name, &sandbox); err != nil {
 		return err
 	}
-	if string(sandbox.UID) != expected.identity.UID {
+	if string(sandbox.UID) != expected.identity.Uid {
 		return status.Error(codes.PermissionDenied, "runner Sandbox was replaced")
 	}
 	current, err := g.runnerDestination(ctx, &sandbox)
 	if err != nil {
 		return err
 	}
-	if current.identity != expected.identity || current.podUID != expected.podUID || current.peerURI != expected.peerURI {
+	if !proto.Equal(&current.identity, &expected.identity) || current.podUID != expected.podUID || current.peerURI != expected.peerURI {
 		return status.Error(codes.PermissionDenied, "runner incarnation or credential changed")
 	}
 	return nil

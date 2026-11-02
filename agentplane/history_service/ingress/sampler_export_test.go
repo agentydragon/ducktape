@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	centralsampler "github.com/agentydragon/ducktape/agentplane/central_sampler"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
@@ -211,10 +213,8 @@ func (f samplerExportFixture) openSession(t *testing.T) *centralsampler.Session 
 			Model:   "test-model-initial",
 			Cwd:     "/test-workspace",
 		},
-		Executor: &sandboxespb.SandboxDestination{
-			Sandbox:    "test-execution-sandbox",
-			SandboxUid: uuid.NewString(),
-			Owner:      &sandboxespb.ServiceAccount{Namespace: testNamespace, Name: "test-execution-sandbox"},
+		Executor: &identitypb.SandboxDestination{
+			Target: &identitypb.EnvironmentTarget{Namespace: testNamespace, Name: "test-execution-sandbox", Uid: uuid.NewString()}, Owner: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "test-execution-sandbox"},
 		},
 		ExpectedIncarnationUid: uuid.NewString(),
 	}, samplerOwnerUID, protocol.APIStyleResponses, &platformInstructions)

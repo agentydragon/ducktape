@@ -103,13 +103,13 @@ type lifecycleWakeBudget struct {
 
 func (b lifecycleWakeBudget) ReserveWakeAttempt(
 	ctx context.Context,
-	caller lifecycle.ServiceAccount,
+	caller lifecycle.ServiceAccountIdentity,
 	sandboxUID string,
 	generation int64,
 ) (time.Duration, error) {
 	return b.store.ReserveWakeAttempt(ctx, dispatcher.ServiceAccountIdentity{
-		Account: dispatcher.Account{Namespace: caller.Namespace, Name: caller.Name},
-		UID:     caller.UID,
+		Account: dispatcher.Account{Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName()},
+		UID:     caller.GetUid(),
 	}, sandboxUID, generation)
 }
 

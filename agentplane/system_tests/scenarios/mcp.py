@@ -28,7 +28,7 @@ from agentplane.app.testing.client import Client
 from agentplane.app.testing.models import ActionPolicyView, CallerGrantView
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
-from agentplane.proto import session_pb2
+from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.runner_gateway.environments import environment_service_pb2
 from agentplane.system_tests import mcp_servers
@@ -614,7 +614,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
     assert target["name"] == name
     deleted = False
     try:
-        environment_target = environment_service_pb2.TargetHandle(
+        environment_target = identity_pb2.EnvironmentTarget(
             namespace=cluster.namespace, name=target["name"], uid=target["uid"]
         )
         view = await wait_until_running(client, environment_target)

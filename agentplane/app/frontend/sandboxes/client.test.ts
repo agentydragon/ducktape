@@ -9,7 +9,8 @@ import {
   SessionSpecSchema,
 } from "../../../proto/session_pb";
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
-import { TargetHandleSchema } from "../../../runner_gateway/environments/environment_service_pb";
+import { EnvironmentTargetSchema } from "../../../proto/identity_pb";
+
 import {
   getEnvironmentRuntimeStatus,
   openSession,
@@ -23,11 +24,11 @@ import {
 } from "./client";
 
 const id = "b351b316-fdc4-4f50-a642-758992ae3323";
-const target = create(TargetHandleSchema, { namespace: "team", name: "test", uid: "uid" });
+const target = create(EnvironmentTargetSchema, { namespace: "team", name: "test", uid: "uid" });
 afterEach(() => vi.unstubAllGlobals());
 
 it("sends the generated exact target through the EnvironmentService facade", async () => {
-  const target = create(TargetHandleSchema, { namespace: "team", name: "box", uid: "opaque-uid" });
+  const target = create(EnvironmentTargetSchema, { namespace: "team", name: "box", uid: "opaque-uid" });
   const fetchMock = vi
     .fn()
     .mockResolvedValueOnce(Response.json({}))
@@ -127,7 +128,7 @@ it("reads the AppService runner status as the existing generated EnvironmentRunt
   );
   vi.stubGlobal("fetch", fetchMock);
 
-  const statusTarget = create(TargetHandleSchema, { namespace: "team", name: "test", uid: "sandbox-uid" });
+  const statusTarget = create(EnvironmentTargetSchema, { namespace: "team", name: "test", uid: "sandbox-uid" });
   const status = await getEnvironmentRuntimeStatus(statusTarget);
 
   expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -149,7 +150,7 @@ it("keeps runner status errors readable across old and generated AppService resp
     .mockResolvedValueOnce(Response.json({ code: 14, message: "Runner is unavailable" }, { status: 503 }));
   vi.stubGlobal("fetch", fetchMock);
 
-  const statusTarget = create(TargetHandleSchema, { namespace: "team", name: "test", uid: "sandbox-uid" });
+  const statusTarget = create(EnvironmentTargetSchema, { namespace: "team", name: "test", uid: "sandbox-uid" });
   await expect(getEnvironmentRuntimeStatus(statusTarget)).rejects.toMatchObject({ status: 503 });
   await expect(getEnvironmentRuntimeStatus(statusTarget)).rejects.toMatchObject({ status: 503, code: 14 });
 });

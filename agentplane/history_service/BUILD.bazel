@@ -163,7 +163,7 @@ proto_library(
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/proto:event_log_proto",
-        "//agentplane/proto:sandboxes_proto",
+        "//agentplane/proto:identity_proto",
         "//agentplane/proto:session_proto",
     ],
 )

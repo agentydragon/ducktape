@@ -361,7 +361,7 @@ func parseControlRouteEpoch(slice *discoveryv1.EndpointSlice) (uint64, error) {
 func sandboxOwnerReference(sandbox sandboxreader.Identity) metav1.OwnerReference {
 	controller, blockOwnerDeletion := false, false
 	return metav1.OwnerReference{
-		APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: sandbox.Name, UID: types.UID(sandbox.UID),
+		APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: sandbox.Name, UID: types.UID(sandbox.Uid),
 		Controller: &controller, BlockOwnerDeletion: &blockOwnerDeletion,
 	}
 }
@@ -369,7 +369,7 @@ func sandboxOwnerReference(sandbox sandboxreader.Identity) metav1.OwnerReference
 func ownsSandbox(references []metav1.OwnerReference, sandbox sandboxreader.Identity) bool {
 	return len(references) == 1 && references[0].APIVersion == sandboxapi.GroupVersion.String() &&
 		references[0].Kind == sandboxapi.SandboxKind && references[0].Name == sandbox.Name &&
-		string(references[0].UID) == sandbox.UID
+		string(references[0].UID) == sandbox.Uid
 }
 
 func stringPointer(value string) *string                     { return &value }

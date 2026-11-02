@@ -7,6 +7,7 @@ import (
 	"time"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/google/uuid"
@@ -17,18 +18,18 @@ import (
 type callbackWake struct {
 	store   *Store
 	calls   int
-	callers []lifecycle.ServiceAccount
+	callers []lifecycle.ServiceAccountIdentity
 }
 
 func (w *callbackWake) RequestWake(
 	ctx context.Context,
 	target lifecycle.Target,
-	caller lifecycle.ServiceAccount,
+	caller lifecycle.ServiceAccountIdentity,
 ) (*environmentpb.WakeAssessment, error) {
 	w.calls++
 	w.callers = append(w.callers, caller)
 	wait, err := w.store.ReserveWakeAttempt(ctx, ServiceAccountIdentity{
-		Account: Account{Namespace: caller.Namespace, Name: caller.Name}, UID: caller.UID,
+		Account: Account{Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName()}, UID: caller.GetUid(),
 	}, target.UID, 41)
 	if err != nil {
 		return nil, err
@@ -175,8 +176,8 @@ func TestDeliveryUsesRetainedEffectiveCallerUIDForWakeBudget(t *testing.T) {
 		if effectiveRows != 1 || actorRows != 0 {
 			t.Fatalf("%s wake budget used effective=%d actor=%d rows", kind, effectiveRows, actorRows)
 		}
-		if got := wake.callers[i]; got != (lifecycle.ServiceAccount{
-			Namespace: effective.Namespace, Name: effective.Name, UID: effective.UID,
+		if got := wake.callers[i]; !proto.Equal(got, &identitypb.ServiceAccountIdentity{
+			Account: &identitypb.ServiceAccount{Namespace: effective.Namespace, Name: effective.Name}, Uid: effective.UID,
 		}) {
 			t.Fatalf("%s lifecycle caller=%+v, want retained effective identity", kind, got)
 		}

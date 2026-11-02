@@ -20,7 +20,7 @@ from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.testing.go_service import wait_for_history_session
 from agentplane.proto import command_pb2, event_log_pb2, session_pb2
-from agentplane.proto.sandboxes_pb2 import SandboxDestination
+from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
@@ -83,7 +83,7 @@ async def complete_turn(
     request = await model.request()
     assert launches.PLATFORM_INSTRUCTIONS in request.system_text
     assert "Test task guidance." in request.system_text
-    assert destination.sandbox_uid in request.system_text
+    assert destination.target.uid in request.system_text
     await model.reply(request, Text("GRPC_OK"))
     entries = await wait_for_entries(
         local, session_id, receipt.cursor - 1, lambda rows: any(events.turn_completed(row) for row in rows)

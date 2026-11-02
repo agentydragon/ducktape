@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -39,7 +41,7 @@ func (s *environmentStream) Recv() (*environmentpb.WatchEnvironmentResponse, err
 }
 
 func TestEnvironmentWatchDeliversSnapshotsAndTerminalErrorWithoutGet(t *testing.T) {
-	target := &environmentpb.TargetHandle{Namespace: "team", Name: "worker", Uid: "uid"}
+	target := &identitypb.EnvironmentTarget{Namespace: "team", Name: "worker", Uid: "uid"}
 	descriptor := &environmentpb.EnvironmentDescriptor{Target: target}
 	service := &fakeEnvironmentService{stream: &environmentStream{frames: []*environmentpb.WatchEnvironmentResponse{{Environment: descriptor}}}}
 	reader, err := NewEnvironmentReader(service)
@@ -77,10 +79,10 @@ func TestEnvironmentWatchUsesExactTargetAndSignalsFailure(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	changes := reader.Watch(ctx, &environmentpb.TargetHandle{Namespace: "team", Name: "worker", Uid: "opaque-uid"})
+	changes := reader.Watch(ctx, &identitypb.EnvironmentTarget{Namespace: "team", Name: "worker", Uid: "opaque-uid"})
 	select {
 	case request := <-service.watchRequests:
-		want := &environmentpb.TargetHandle{Namespace: "team", Name: "worker", Uid: "opaque-uid"}
+		want := &identitypb.EnvironmentTarget{Namespace: "team", Name: "worker", Uid: "opaque-uid"}
 		if !proto.Equal(request.GetTarget(), want) {
 			t.Fatalf("watch target = %v, want %v", request.GetTarget(), want)
 		}
@@ -103,11 +105,11 @@ func TestEnvironmentReaderForwardsExactTargetAndServiceError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = reader.GetEnvironment(context.Background(), &environmentpb.GetEnvironmentRequest{Target: &environmentpb.TargetHandle{Namespace: "team", Name: "worker", Uid: "opaque-uid"}})
+	_, err = reader.GetEnvironment(context.Background(), &environmentpb.GetEnvironmentRequest{Target: &identitypb.EnvironmentTarget{Namespace: "team", Name: "worker", Uid: "opaque-uid"}})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("error = %v, want NotFound", err)
 	}
-	want := &environmentpb.TargetHandle{Namespace: "team", Name: "worker", Uid: "opaque-uid"}
+	want := &identitypb.EnvironmentTarget{Namespace: "team", Name: "worker", Uid: "opaque-uid"}
 	if !proto.Equal(service.request.GetTarget(), want) {
 		t.Fatalf("target = %v, want %v", service.request.GetTarget(), want)
 	}

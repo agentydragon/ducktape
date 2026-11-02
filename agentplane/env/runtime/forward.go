@@ -82,11 +82,13 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 }
 
 func validateExecutionScope(scope *executorpb.ExecutionScope, sandbox configuration.SandboxIdentity, sandboxUID, incarnationUID string) error {
-	if scope == nil || scope.Destination == nil || scope.Destination.Owner == nil || scope.SessionId == "" || scope.ExpectedIncarnationUid == "" {
+	if scope == nil || scope.Destination == nil || scope.Destination.Target == nil || scope.Destination.Owner == nil || scope.SessionId == "" || scope.ExpectedIncarnationUid == "" {
 		return status.Error(codes.InvalidArgument, "execution scope is incomplete")
 	}
 	destination := scope.Destination
-	if destination.Sandbox != sandbox.Name || destination.SandboxUid != sandbox.UID || destination.Owner.Namespace != sandbox.Namespace || destination.Owner.Name != sandbox.Name || sandboxUID != sandbox.UID {
+	if destination.Target.Namespace == "" || destination.Target.Name == "" || destination.Target.Uid == "" ||
+		destination.Target.Namespace != sandbox.Namespace || destination.Target.Name != sandbox.Name || destination.Target.Uid != sandbox.UID ||
+		destination.Owner.Namespace != destination.Target.Namespace || destination.Owner.Name != sandbox.Name || sandboxUID != sandbox.UID {
 		return status.Error(codes.PermissionDenied, "execution destination names another Sandbox")
 	}
 	if scope.ExpectedIncarnationUid != incarnationUID {

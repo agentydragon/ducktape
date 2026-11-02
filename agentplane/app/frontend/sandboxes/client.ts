@@ -4,6 +4,7 @@ import { DurationSchema, ValueSchema } from "@bufbuild/protobuf/wkt";
 import type { components } from "../schema";
 import { fetchWithLogin, HttpError } from "../client";
 import { CreateSandboxRequestSchema, type CreateSandboxRequest } from "../../../proto/sandboxes_pb";
+import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
 import {
   EnvironmentMutationRequestSchema,
   ListEnvironmentTemplatesResponseSchema,
@@ -12,8 +13,6 @@ import {
   ResumeOutcome,
   SetEnvironmentIdleSuspendRequestSchema,
   SetEnvironmentWakeOnSendRequestSchema,
-  TargetHandleSchema,
-  type TargetHandle,
 } from "../../../runner_gateway/environments/environment_service_pb";
 import {
   EnvironmentRuntimeStatusSchema,
@@ -62,7 +61,7 @@ export type Decision = {
 };
 /** Submit once; an uncertain response is reconciled by the caller-minted Session ID. */
 export async function openSession(
-  target: TargetHandle,
+  target: EnvironmentTarget,
   sessionId: string,
   spec: SessionSpec,
   setupScript?: string | null
@@ -117,7 +116,7 @@ export function sessionOpeningNotVisible(error: unknown): boolean {
   );
 }
 
-export async function getEnvironmentRuntimeStatus(target: TargetHandle): Promise<EnvironmentRuntimeStatus> {
+export async function getEnvironmentRuntimeStatus(target: EnvironmentTarget): Promise<EnvironmentRuntimeStatus> {
   const request = create(GetEnvironmentRuntimeStatusRequestSchema, { name: target.name, sandboxUid: target.uid });
   const response = await fetchWithLogin(
     `/sandboxes/${encodeURIComponent(request.name)}/runner-status?sandbox_uid=${encodeURIComponent(request.sandboxUid)}`,
@@ -139,7 +138,7 @@ export async function getEnvironmentRuntimeStatus(target: TargetHandle): Promise
   return fromJson(EnvironmentRuntimeStatusSchema, body as JsonObject);
 }
 
-const environmentPath = (target: TargetHandle): string =>
+const environmentPath = (target: EnvironmentTarget): string =>
   `/upstream/environments/v1/environments/${encodeURIComponent(target.namespace)}/${encodeURIComponent(target.name)}`;
 
 async function environmentJSON(path: string, init?: RequestInit): Promise<JsonObject> {
@@ -162,10 +161,10 @@ export async function listEnvironmentTemplates(): Promise<string[]> {
   ).names;
 }
 
-export async function createEnvironment(request: CreateSandboxRequest): Promise<TargetHandle> {
+export async function createEnvironment(request: CreateSandboxRequest): Promise<EnvironmentTarget> {
   const body = toJson(CreateSandboxRequestSchema, request) as JsonObject;
   const target = fromJson(
-    TargetHandleSchema,
+    EnvironmentTargetSchema,
     await environmentJSON("/upstream/environments/v1/environments", environmentPost("POST", body))
   );
   if (!target.namespace || !target.uid || target.name !== request.name)
@@ -173,7 +172,7 @@ export async function createEnvironment(request: CreateSandboxRequest): Promise<
   return target;
 }
 
-export async function suspendEnvironment(target: TargetHandle): Promise<void> {
+export async function suspendEnvironment(target: EnvironmentTarget): Promise<void> {
   const request = create(EnvironmentMutationRequestSchema, { target });
   await environmentJSON(
     `${environmentPath(target)}:suspend`,
@@ -181,7 +180,7 @@ export async function suspendEnvironment(target: TargetHandle): Promise<void> {
   );
 }
 
-export async function resumeSandbox(target: TargetHandle): Promise<void> {
+export async function resumeSandbox(target: EnvironmentTarget): Promise<void> {
   const request = create(ResumeEnvironmentRequestSchema, { target });
   const response = fromJson(
     ResumeEnvironmentResponseSchema,
@@ -202,13 +201,13 @@ export async function resumeSandbox(target: TargetHandle): Promise<void> {
     throw new Error("EnvironmentService returned no resume outcome");
 }
 
-export async function deleteEnvironment(target: TargetHandle): Promise<void> {
+export async function deleteEnvironment(target: EnvironmentTarget): Promise<void> {
   await environmentJSON(`${environmentPath(target)}?target.uid=${encodeURIComponent(target.uid)}`, {
     method: "DELETE",
   });
 }
 
-export async function setEnvironmentWakeOnSend(target: TargetHandle, wakeOnSend: boolean): Promise<void> {
+export async function setEnvironmentWakeOnSend(target: EnvironmentTarget, wakeOnSend: boolean): Promise<void> {
   const request = create(SetEnvironmentWakeOnSendRequestSchema, { target, wakeOnSend });
   await environmentJSON(
     `${environmentPath(target)}:wake-policy`,
@@ -216,7 +215,7 @@ export async function setEnvironmentWakeOnSend(target: TargetHandle, wakeOnSend:
   );
 }
 
-export async function setEnvironmentIdleSuspend(target: TargetHandle, seconds: number | null): Promise<void> {
+export async function setEnvironmentIdleSuspend(target: EnvironmentTarget, seconds: number | null): Promise<void> {
   const request = create(SetEnvironmentIdleSuspendRequestSchema, {
     target,
     idleSuspendAfter: seconds === null ? undefined : create(DurationSchema, { seconds: BigInt(seconds) }),

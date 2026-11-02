@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/federation"
@@ -102,7 +104,7 @@ func TestActionPolicyReaderProjectsEveryPolicyKindAndExactRequest(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	view, unavailable, err := reader.ForSubject(context.Background(), auth.Caller{Kind: auth.CallerOperator}, actionSession(), &sandboxespb.ServiceAccount{
+	view, unavailable, err := reader.ForSubject(context.Background(), auth.Caller{Kind: auth.CallerOperator}, actionSession(), &identitypb.ServiceAccount{
 		Namespace: "team-a", Name: "worker",
 	})
 	if err != nil || unavailable != nil {
@@ -153,7 +155,7 @@ func TestActionPolicyReaderPropagatesCancellation(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		_, _, callErr := reader.ForSubject(ctx, auth.Caller{Kind: auth.CallerOperator}, actionSession(),
-			&sandboxespb.ServiceAccount{Namespace: "team", Name: "worker"})
+			&identitypb.ServiceAccount{Namespace: "team", Name: "worker"})
 		done <- callErr
 	}()
 	select {
@@ -179,7 +181,7 @@ func TestActionPolicyReaderReturnsPythonUnavailableCodesAndSanitizedFailures(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	subject := &sandboxespb.ServiceAccount{Namespace: "team", Name: "worker"}
+	subject := &identitypb.ServiceAccount{Namespace: "team", Name: "worker"}
 
 	_, unavailable, err := reader.ForSubject(context.Background(), auth.Caller{Kind: auth.CallerToken}, actionSession(), subject)
 	if err != nil || unavailable.Code != "operator_session_required" || federator.calls != 0 {
@@ -254,7 +256,7 @@ func TestActionPolicyReaderCancelsTheGeneratedRPCWithItsRequest(t *testing.T) {
 	done := make(chan result, 1)
 	go func() {
 		view, unavailable, err := reader.ForSubject(ctx, auth.Caller{Kind: auth.CallerOperator}, actionSession(),
-			&sandboxespb.ServiceAccount{Namespace: "team", Name: "worker"})
+			&identitypb.ServiceAccount{Namespace: "team", Name: "worker"})
 		done <- result{view: view, unavailable: unavailable, err: err}
 	}()
 	select {
@@ -302,7 +304,7 @@ func TestBindingsForStartsAllKubernetesReadsConcurrently(t *testing.T) {
 	access := New(testNamespace, objects)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if _, err := access.BindingsFor(ctx, &sandboxespb.ServiceAccount{Namespace: testNamespace, Name: "worker"}); err != nil {
+	if _, err := access.BindingsFor(ctx, &identitypb.ServiceAccount{Namespace: testNamespace, Name: "worker"}); err != nil {
 		t.Fatal(err)
 	}
 	if objects.started != 3 {
@@ -317,7 +319,7 @@ func TestActionPolicyReaderMapsProxyTransportFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, unavailable, err := reader.ForSubject(context.Background(), auth.Caller{Kind: auth.CallerOperator}, actionSession(),
-		&sandboxespb.ServiceAccount{Namespace: "team", Name: "worker"})
+		&identitypb.ServiceAccount{Namespace: "team", Name: "worker"})
 	if err != nil || unavailable.Code != "upstream_request_failed" || unavailable.Upstream == nil ||
 		unavailable.Upstream.ErrorType != "GRPCStatusError" || unavailable.Upstream.UpstreamStatus == nil ||
 		*unavailable.Upstream.UpstreamStatus != http.StatusServiceUnavailable {

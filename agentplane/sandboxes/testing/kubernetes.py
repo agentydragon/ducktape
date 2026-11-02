@@ -15,7 +15,7 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
+from agentplane.proto.identity_pb2 import EnvironmentTarget, SandboxDestination, ServiceAccount
 from agentplane.sandboxes.launch import SandboxIdentity
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
@@ -53,7 +53,8 @@ class SandboxCluster:
     @property
     def destination(self) -> SandboxDestination:
         return SandboxDestination(
-            owner=ServiceAccount(namespace=self.namespace, name=self.name), sandbox=self.name, sandbox_uid=self.uid
+            owner=ServiceAccount(namespace=self.namespace, name=self.name),
+            target=EnvironmentTarget(namespace=self.namespace, name=self.name, uid=self.uid),
         )
 
     @property

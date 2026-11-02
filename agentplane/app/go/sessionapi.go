@@ -10,6 +10,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"google.golang.org/grpc"
 
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
@@ -94,7 +96,7 @@ func (s *appService) OpenSession(ctx context.Context, request *apppb.OpenSession
 			return nil, status.Error(codes.InvalidArgument, "setup_script must be a string or null")
 		}
 	}
-	sandbox, err := s.environments.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &environmentpb.TargetHandle{
+	sandbox, err := s.environments.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &identitypb.EnvironmentTarget{
 		Namespace: s.config.SandboxNamespace, Name: request.GetName(), Uid: request.GetSandboxUid(),
 	}})
 	if err != nil {

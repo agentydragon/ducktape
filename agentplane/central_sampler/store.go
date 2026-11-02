@@ -340,7 +340,9 @@ func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionR
 		return nil, protocol.ErrInvalid
 	}
 	executor := request.GetExecutor()
-	if executor == nil || executor.GetOwner() == nil || executor.GetOwner().GetNamespace() == "" || executor.GetSandbox() == "" || executor.GetSandboxUid() == "" {
+	if executor == nil || executor.GetOwner() == nil || executor.GetTarget() == nil || executor.GetOwner().GetNamespace() == "" ||
+		executor.GetTarget().GetNamespace() == "" || executor.GetTarget().GetName() == "" || executor.GetTarget().GetUid() == "" ||
+		executor.GetTarget().GetNamespace() != executor.GetOwner().GetNamespace() {
 		return nil, protocol.ErrInvalid
 	}
 	if principal := request.GetExecutionPrincipal(); principal != nil &&
@@ -410,9 +412,9 @@ func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionR
 		if platformInstructions != nil {
 			instructions = sessioninstructions.Compose(*platformInstructions, sessioninstructions.Destination{
 				Sandbox: sessioninstructions.SandboxIdentity{
-					Namespace: executor.GetOwner().GetNamespace(),
-					Name:      executor.GetSandbox(),
-					UID:       executor.GetSandboxUid(),
+					Namespace: executor.GetTarget().GetNamespace(),
+					Name:      executor.GetTarget().GetName(),
+					UID:       executor.GetTarget().GetUid(),
 				},
 				SessionID: request.GetSessionId(),
 			}, instructions)
@@ -1890,7 +1892,7 @@ func (s *Store) rebindExecutorIncarnation(ctx context.Context, owner Owner, sand
 		if err := proto.Unmarshal(session.Configuration, request); err != nil {
 			return err
 		}
-		if request.GetExecutor().GetSandboxUid() != sandboxUID || request.GetExpectedIncarnationUid() != previousUID {
+		if request.GetExecutor().GetTarget().GetUid() != sandboxUID || request.GetExpectedIncarnationUid() != previousUID {
 			return protocol.ErrPrecondition
 		}
 		request.ExpectedIncarnationUid = replacementUID

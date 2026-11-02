@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"google.golang.org/grpc"
 )
@@ -22,7 +24,7 @@ type EnvironmentObservation struct {
 
 // Watch returns the service's exact-target snapshots. Stream errors end the observation;
 // the HTTP stream consumer ends too, so its normal reconnect starts a fresh authorized watch.
-func (r *EnvironmentReader) Watch(ctx context.Context, target *environmentpb.TargetHandle) <-chan EnvironmentObservation {
+func (r *EnvironmentReader) Watch(ctx context.Context, target *identitypb.EnvironmentTarget) <-chan EnvironmentObservation {
 	observations := make(chan EnvironmentObservation)
 	go func() {
 		defer close(observations)

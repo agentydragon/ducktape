@@ -8,7 +8,7 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 proto_library(
     name = "executor_proto",
     srcs = ["executor.proto"],
-    deps = ["//agentplane/proto:sandboxes_proto"],
+    deps = ["//agentplane/proto:identity_proto"],
 )
 
 go_proto_library(
@@ -19,7 +19,7 @@ go_proto_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb",
     proto = ":executor_proto",
-    deps = ["//agentplane/proto:sandboxes_go_proto"],
+    deps = ["//agentplane/proto:identity_go_proto"],
 )
 
 py_proto_library_with_mypy_stubs(

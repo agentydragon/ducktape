@@ -6,6 +6,8 @@ import (
 	"sort"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -19,6 +21,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/watch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -44,24 +47,24 @@ func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamin
 	if !broad && identity.Account.Namespace != s.namespace {
 		return status.Error(codes.NotFound, "environment not found")
 	}
-	target := &environmentpb.TargetHandle{Namespace: s.namespace}
+	name := ""
 	if !broad {
-		target.Name = identity.Account.Name
+		name = identity.Account.Name
 	}
 	initialSandboxes := &sandboxapi.SandboxList{}
-	sandboxes, err := s.watchCollection(ctx, initialSandboxes, target)
+	sandboxes, err := s.watchCollection(ctx, initialSandboxes, s.namespace, name)
 	if err != nil {
 		return err
 	}
 	defer sandboxes.Stop()
-	accounts, err := s.watchCollection(ctx, &corev1.ServiceAccountList{}, target)
+	accounts, err := s.watchCollection(ctx, &corev1.ServiceAccountList{}, s.namespace, name)
 	if err != nil {
 		return err
 	}
 	defer accounts.Stop()
 	accountEvents := accounts.ResultChan()
 	// A VM Pod may not have the Sandbox's name. Index each current incarnation by Pod name.
-	pods, err := s.watchCollection(ctx, &corev1.PodList{}, &environmentpb.TargetHandle{Namespace: s.namespace})
+	pods, err := s.watchCollection(ctx, &corev1.PodList{}, s.namespace, "")
 	if err != nil {
 		return err
 	}
@@ -118,7 +121,7 @@ func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamin
 		index(name, podName)
 		old := previous[name]
 		if old != nil && (item == nil || old.GetTarget().GetUid() != item.GetTarget().GetUid()) {
-			if err := sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Removed{Removed: proto.Clone(old.GetTarget()).(*environmentpb.TargetHandle)}}); err != nil {
+			if err := sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Removed{Removed: proto.Clone(old.GetTarget()).(*identitypb.EnvironmentTarget)}}); err != nil {
 				return err
 			}
 			delete(previous, name)
@@ -207,11 +210,11 @@ func sendCollection(ctx context.Context, stream grpc.ServerStreamingServer[envir
 	return err
 }
 
-func (s *Service) watchCollection(ctx context.Context, objects client.ObjectList, target *environmentpb.TargetHandle) (watch.Interface, error) {
-	if target.Name != "" {
-		return s.watchObjects(ctx, objects, target)
+func (s *Service) watchCollection(ctx context.Context, objects client.ObjectList, namespace, name string) (watch.Interface, error) {
+	opts := &client.ListOptions{Namespace: namespace}
+	if name != "" {
+		opts.FieldSelector = fields.OneTermEqualSelector("metadata.name", name)
 	}
-	opts := &client.ListOptions{Namespace: target.Namespace}
 	if err := s.objects.List(ctx, objects, opts); err != nil {
 		return nil, watchFailure(ctx, err)
 	}
@@ -252,7 +255,7 @@ func (s *Service) collection(ctx context.Context, identity auth.ServiceAccountPr
 	result := make([]*environmentpb.EnvironmentDescriptor, 0, len(resources))
 	for i := range resources {
 		resource := &resources[i]
-		execution, found, err := s.sandboxes.ExecutionAccount(ctx, sandboxreader.Identity{Namespace: resource.Namespace, Name: resource.Name, UID: string(resource.UID)})
+		execution, found, err := s.sandboxes.ExecutionAccount(ctx, sandboxreader.Identity{Namespace: resource.Namespace, Name: resource.Name, Uid: string(resource.UID)})
 		if err != nil {
 			return nil, watchFailure(ctx, err)
 		}

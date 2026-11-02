@@ -166,6 +166,7 @@ proto_library(
     name = "egress_admin_proto",
     srcs = ["egress_admin.proto"],
     deps = [
+        "//agentplane/proto:identity_proto",
         "//agentplane/proto:sandboxes_proto",
         "@protobuf//:timestamp_proto",
     ],
@@ -186,6 +187,7 @@ proto_library(
     name = "egress_rules_proto",
     srcs = ["egress_rules.proto"],
     deps = [
+        "//agentplane/proto:identity_proto",
         "//agentplane/proto:sandboxes_proto",
         "@googleapis//google/api:annotations_proto",
     ],

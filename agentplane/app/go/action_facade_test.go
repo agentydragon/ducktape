@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	operatoractionpb "github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	webpushpb "github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
@@ -33,14 +35,14 @@ type generatedEnvironmentService struct {
 	environmentpb.UnimplementedEnvironmentServiceServer
 	authorization []string
 	created       *sandboxpb.CreateSandboxRequest
-	deleted       *environmentpb.TargetHandle
+	deleted       *identitypb.EnvironmentTarget
 }
 
-func (s *generatedEnvironmentService) CreateEnvironment(ctx context.Context, request *sandboxpb.CreateSandboxRequest) (*environmentpb.TargetHandle, error) {
+func (s *generatedEnvironmentService) CreateEnvironment(ctx context.Context, request *sandboxpb.CreateSandboxRequest) (*identitypb.EnvironmentTarget, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	s.authorization = append(s.authorization, md.Get("authorization")...)
 	s.created = request
-	return &environmentpb.TargetHandle{Namespace: "agentplane", Name: request.GetName(), Uid: "sandbox-uid"}, nil
+	return &identitypb.EnvironmentTarget{Namespace: "agentplane", Name: request.GetName(), Uid: "sandbox-uid"}, nil
 }
 
 func (s *generatedEnvironmentService) DeleteEnvironment(ctx context.Context, request *environmentpb.EnvironmentMutationRequest) (*emptypb.Empty, error) {

@@ -9,6 +9,8 @@ import (
 	"math"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
@@ -98,7 +100,7 @@ func (s *Source) Reconcile(ctx context.Context, claim store.Claim, due store.Due
 	return err
 }
 
-func serviceAccount(account *sandboxespb.ServiceAccount) (model.ServiceAccount, error) {
+func serviceAccount(account *identitypb.ServiceAccount) (model.ServiceAccount, error) {
 	if account == nil || account.GetNamespace() == "" || account.GetName() == "" {
 		return model.ServiceAccount{}, validationFailure()
 	}

@@ -19,9 +19,8 @@ proto_library(
     srcs = ["sampler.proto"],
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_proto",
-        "//agentplane/proto:delegation_proto",
         "//agentplane/proto:event_log_proto",
-        "//agentplane/proto:sandboxes_proto",
+        "//agentplane/proto:identity_proto",
         "//agentplane/proto:session_proto",
     ],
 )
@@ -52,7 +51,7 @@ py_library(
         "//agentplane/central_sampler:sampler_pb2",
         "//agentplane/central_sampler:sampler_pb2_grpc",
         "//agentplane/native/testing:model_endpoint",
-        "//agentplane/proto:sandboxes_pb2",
+        "//agentplane/proto:identity_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/testing:go_process",
         "//util:net",
@@ -473,6 +472,7 @@ go_test(
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/proto:session_go_proto",
         "//agentplane/session_instructions",

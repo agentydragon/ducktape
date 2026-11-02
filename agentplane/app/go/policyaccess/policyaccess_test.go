@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -45,8 +47,8 @@ func newAccess(t *testing.T, objects ...client.Object) (*Access, client.Client) 
 	return New(testNamespace, objectsClient), objectsClient
 }
 
-func account(namespace, name string) *sandboxespb.ServiceAccount {
-	return &sandboxespb.ServiceAccount{Namespace: namespace, Name: name}
+func account(namespace, name string) *identitypb.ServiceAccount {
+	return &identitypb.ServiceAccount{Namespace: namespace, Name: name}
 }
 
 func policySet(name string, generation int64, rules ...policyapi.Rule) *policyapi.PolicySet {
@@ -283,8 +285,8 @@ func TestGrantValidatesPolicySetsAndCreatesIndependentSandboxOwnedBindings(t *te
 	objects := &generatedNameClient{Client: base}
 	access := New(testNamespace, objects)
 	sandbox := &environmentpb.EnvironmentDescriptor{
-		Target:           &environmentpb.TargetHandle{Namespace: testNamespace, Name: "worker", Uid: "sandbox-uid"},
-		ExecutionAccount: &environmentpb.AccountHandle{Namespace: testNamespace, Name: "worker"},
+		Target:           &identitypb.EnvironmentTarget{Namespace: testNamespace, Name: "worker", Uid: "sandbox-uid"},
+		ExecutionAccount: &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "worker"}},
 	}
 	expiresAt := &metav1.Time{Time: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)}
 	first, err := access.Grant(context.Background(), sandbox, []string{"known"}, expiresAt)

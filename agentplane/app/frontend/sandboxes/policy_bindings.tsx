@@ -1,11 +1,11 @@
 import { Button, Group, MultiSelect, Select, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
-import type { TargetHandle } from "../../../runner_gateway/environments/environment_service_pb";
 
 import type { BindingView } from "./client";
 import { BINDING_GRANT_HELP, BindingsTable } from "../bindings/table";
 import { api, displayableError } from "../client";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
+import type { EnvironmentTarget } from "../../../proto/identity_pb";
 
 /** How long a grant lasts; the Policy Controller deletes the binding when it ends. */
 const GRANT_DURATIONS = [
@@ -63,7 +63,7 @@ export function PolicyBindingsSection({
   target,
   bindings,
 }: {
-  target: TargetHandle;
+  target: EnvironmentTarget;
   bindings: BindingView[] | null;
 }): JSX.Element {
   const [error, setError] = useState<string | null>(null);

@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -34,7 +36,7 @@ func testRequest(state pb.ActionState) *pb.ActionRequest {
 		Action:         &pb.ActionIdentity{Group: "test-mcp", Name: "alpha"},
 		Arguments:      &structpb.Struct{},
 		Title:          "test title",
-		Caller:         &sandboxes.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"},
+		Caller:         &identitypb.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"},
 		State:          state,
 		Version:        1,
 		CreatedAt:      at,

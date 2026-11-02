@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/environmentpb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -47,7 +49,7 @@ func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentReques
 	// A Sandbox may name a VM Pod independently of its own name. Watching this namespace-scoped
 	// collection and filtering by the reported Pod name avoids missing a new incarnation between
 	// opening a Pod watch and receiving the Sandbox status event that names it.
-	pods, err := s.watchCollection(ctx, &corev1.PodList{}, &environmentpb.TargetHandle{Namespace: request.GetTarget().GetNamespace()})
+	pods, err := s.watchCollection(ctx, &corev1.PodList{}, request.GetTarget().GetNamespace(), "")
 	if err != nil {
 		return err
 	}
@@ -126,7 +128,7 @@ func sendEnvironment(
 	return err
 }
 
-func (s *Service) watchObjects(ctx context.Context, objects client.ObjectList, target *environmentpb.TargetHandle) (watch.Interface, error) {
+func (s *Service) watchObjects(ctx context.Context, objects client.ObjectList, target *identitypb.EnvironmentTarget) (watch.Interface, error) {
 	options := &client.ListOptions{
 		Namespace: target.GetNamespace(), FieldSelector: fields.OneTermEqualSelector("metadata.name", target.GetName()),
 	}

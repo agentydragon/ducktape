@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/liveinventory"
@@ -132,7 +134,7 @@ func (f *streamTestEnvironments) GetEnvironment(_ context.Context, request *envi
 	return proto.Clone(f.descriptor).(*environmentpb.EnvironmentDescriptor), nil
 }
 
-func (f *streamTestEnvironments) Watch(ctx context.Context, target *environmentpb.TargetHandle) <-chan sandboxes.EnvironmentObservation {
+func (f *streamTestEnvironments) Watch(ctx context.Context, target *identitypb.EnvironmentTarget) <-chan sandboxes.EnvironmentObservation {
 	observations := make(chan sandboxes.EnvironmentObservation)
 	go func() {
 		defer close(observations)
@@ -1093,8 +1095,8 @@ func liveFramesSnapshot() liveinventory.Snapshot {
 
 func testEnvironment(namespace, name, uid, accountNamespace, accountName string) *environmentpb.EnvironmentDescriptor {
 	return &environmentpb.EnvironmentDescriptor{
-		Target:           &environmentpb.TargetHandle{Namespace: namespace, Name: name, Uid: uid},
-		ExecutionAccount: &environmentpb.AccountHandle{Namespace: accountNamespace, Name: accountName},
+		Target:           &identitypb.EnvironmentTarget{Namespace: namespace, Name: name, Uid: uid},
+		ExecutionAccount: &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: accountNamespace, Name: accountName}},
 	}
 }
 
@@ -1186,11 +1188,11 @@ func TestLiveSandboxStreamsSharePolicyReadsAcrossViewers(t *testing.T) {
 type scriptedEnvironmentWatch struct {
 	streamSandboxInventory
 	observations chan sandboxes.EnvironmentObservation
-	target       *environmentpb.TargetHandle
+	target       *identitypb.EnvironmentTarget
 }
 
-func (f *scriptedEnvironmentWatch) Watch(_ context.Context, target *environmentpb.TargetHandle) <-chan sandboxes.EnvironmentObservation {
-	f.target = proto.Clone(target).(*environmentpb.TargetHandle)
+func (f *scriptedEnvironmentWatch) Watch(_ context.Context, target *identitypb.EnvironmentTarget) <-chan sandboxes.EnvironmentObservation {
+	f.target = proto.Clone(target).(*identitypb.EnvironmentTarget)
 	return f.observations
 }
 
@@ -1219,7 +1221,7 @@ func TestSandboxPolicyWatchRejectsMismatchedTargetsAndTerminatesOnErrors(t *test
 			if status.Code(err) != test.wantCode {
 				t.Fatalf("watch result = %v, want code %v", err, test.wantCode)
 			}
-			if !proto.Equal(watcher.target, &environmentpb.TargetHandle{Namespace: "tools", Name: "demo", Uid: liveFramesSandboxUID}) {
+			if !proto.Equal(watcher.target, &identitypb.EnvironmentTarget{Namespace: "tools", Name: "demo", Uid: liveFramesSandboxUID}) {
 				t.Fatalf("watch target = %v", watcher.target)
 			}
 			if test.wantMissing {

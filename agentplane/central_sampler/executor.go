@@ -78,7 +78,7 @@ func NewExecutor(ctx context.Context, store *Store, owner Owner, session *Sessio
 		err        error
 	)
 	if settings.GatewayTarget != "" {
-		address, err := settings.GatewayAddress(request.GetExecutor().GetOwner().GetNamespace(), request.GetExecutor().GetSandbox())
+		address, err := settings.GatewayAddress(request.GetExecutor().GetTarget().GetNamespace(), request.GetExecutor().GetTarget().GetName())
 		if err != nil {
 			return nil, nil, err
 		}
@@ -98,7 +98,7 @@ func NewExecutor(ctx context.Context, store *Store, owner Owner, session *Sessio
 	}
 	client := typedExecutorClient{ExecutorClient: executorpb.NewExecutorClient(connection)}
 	env, err := json.Marshal(map[string]any{"destination_ref": map[string]any{
-		"namespace": request.GetExecutor().GetOwner().GetNamespace(), "name": request.GetExecutor().GetSandbox(), "uid": request.GetExecutor().GetSandboxUid(),
+		"namespace": request.GetExecutor().GetTarget().GetNamespace(), "name": request.GetExecutor().GetTarget().GetName(), "uid": request.GetExecutor().GetTarget().GetUid(),
 	}, "session_id": session.ID})
 	if err != nil {
 		_ = connection.Close()
