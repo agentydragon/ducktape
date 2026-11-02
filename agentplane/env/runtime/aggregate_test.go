@@ -345,6 +345,68 @@ func TestEmbeddedHostAndRuntimeKeepDistinctDesiredResources(t *testing.T) {
 	}
 }
 
+func TestCanceledRuntimeCloseWaiterDoesNotStopNativeCleanup(t *testing.T) {
+	proxy := modelConfigServer(t)
+	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
+	r := newLifecycleRuntime(t, config)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+	var once sync.Once
+	r.deps.stopSessions = func(ctx context.Context) error {
+		once.Do(func() {
+			close(entered)
+			<-release
+		})
+		return r.sessions.BeginClose(ctx)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
+	defer cancel()
+	waitCtx, stopWaiting := context.WithCancel(ctx)
+	first := make(chan error, 1)
+	go func() { first <- r.Close(waitCtx) }()
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal("Runtime Close did not reach native cleanup")
+	}
+	stopWaiting()
+	select {
+	case err := <-first:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("canceled Close waiter = %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("canceled Close waiter remained blocked")
+	}
+	if owner, err := openEnvironmentOwner(config.StateDir); err == nil {
+		_ = owner.Close()
+		t.Fatal("Runtime released owner during native cleanup")
+	}
+	second := make(chan error, 1)
+	go func() { second <- r.Close(ctx) }()
+	close(release)
+	select {
+	case err := <-second:
+		if err != nil {
+			t.Fatalf("Close after canceled waiter = %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("Runtime Close did not finish native cleanup")
+	}
+	if owner, err := openEnvironmentOwner(config.StateDir); err != nil {
+		t.Fatalf("Runtime retained owner after joined cleanup: %v", err)
+	} else {
+		_ = owner.Close()
+	}
+}
+
 func TestRuntimeRetainsOwnerWhenJoinedHostCleanupFails(t *testing.T) {
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
