@@ -181,7 +181,7 @@ Use `test.xml` for the verdict; a case span measures fixture lifetime. Older inv
 their original `vm-phases.jsonl` and `k3s-timeline.jsonl` names.
 
 VM test guests store their full native systemd journals on the state virtiofs volume at
-`/state/.systemd-journal`, exposed as `/var/log/journal` in the guest. The standard journal-flush
+`/state/systemd-journal`, exposed as `/var/log/journal` in the guest. The standard journal-flush
 service transfers early boot entries there and releases the volume before unmounting. Test artifacts
 retain these files under `vm-artifacts/journals/<state-volume>/<machine-id>/`; inspect them with
 `journalctl --directory=<machine-id-directory>` or `journalctl --verify --directory=<machine-id-directory>`.

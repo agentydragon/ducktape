@@ -237,7 +237,7 @@ pkg_tar(
 pkg_tar(
     name = "root_var_links",
     symlinks = {
-        "var/log/journal": "/state/.systemd-journal",
+        "var/log/journal": "/state/systemd-journal",
         "var/run": "/run",
     },
 )

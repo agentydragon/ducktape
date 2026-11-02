@@ -131,10 +131,10 @@ def test_requires_shutdown_for_each_launcher(tmp_path: Path) -> None:
 
 def test_retains_native_journal_header_changes_after_unlink_on_failure(tmp_path: Path) -> None:
     storage = tmp_path / "storage"
-    source = storage / "pvc-one_systest_vm-state/.systemd-journal/machine/system.journal"
+    source = storage / "pvc-one_systest_vm-state/systemd-journal/machine/system.journal"
     source.parent.mkdir(parents=True)
     source.write_bytes(b"initial header\x00entries")
-    foreign = storage / "pvc-two_other_vm-state/.systemd-journal/machine/system.journal"
+    foreign = storage / "pvc-two_other_vm-state/systemd-journal/machine/system.journal"
     foreign.parent.mkdir(parents=True)
     foreign.write_bytes(b"FOREIGN_JOURNAL")
     outputs = tmp_path / "artifacts"
