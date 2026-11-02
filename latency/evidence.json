@@ -72091,7 +72091,11 @@
       "render_corrected_invocation": "a47ef816-3d64-4ac2-a98f-fa4b851f6a23",
       "render_corrected_passed": true,
       "observed_ordinary_cpu_removed_seconds": 25.154,
-      "wall_saving_established": false
+      "wall_saving_established": false,
+      "merge_commit": "2e141fd38a7ea6217c0af932c309ac1d5eea3624",
+      "merged_at_utc": "2026-11-02T15:29:31Z",
+      "pr_test_invocation": "a848211d-4975-579c-a2ab-ddd98725d77a",
+      "exact_head_ci_passed": true
     }
   },
   "vm_startup_experiments": {
