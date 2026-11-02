@@ -44,7 +44,8 @@ unknown start safe to replay or make an unavailable OS manager prove its domain 
 - `env/e2e:test_pid1_container`: private PID namespaces, native descriptor closure,
   TERM-resistant descendants and escaped groups; whole-container exit precedes replacement.
 - `system_tests/suites:test_vm`: boots the real-systemd fixture, including
-  `startup_fences_owner_scope_only`, uncertain starts, detached descendants and parent death.
+  `startup_fences_owner_scope_only`, uncertain starts, missing invocation markers and parent
+  death. Its public VM setup scenarios additionally check detached-child cleanup.
 
 These are source-reviewed coverage boundaries, not fresh execution results. CI results belong
 to the PR head. No live deployment, forced node loss, old-guest upgrade, or command-effect replay

@@ -79,7 +79,7 @@ Every launch allocates one UUID before `StartTransientUnit`. A lost reply or can
 cleanup of that same identity. An uncertain launch never creates a second unit to retry its effects.
 Native effects remain subject to journal reconciliation.
 
-`PrepareForOwner` takes an explicit service unit, lifetime directory and scope ID. Runtime uses the
+`PrepareForOwner` takes an explicit service unit, lifetime directory and scope ID. Runtime uses
 `environment-runtime`. Native harnesses use `harness` and Execution uses `execution-service`; their
 native scopes remain independent. All three bind their native units to
 `agentplane-environment-runtime.service` and require its invocation marker under
