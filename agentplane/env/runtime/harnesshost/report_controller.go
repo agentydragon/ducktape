@@ -3,7 +3,6 @@ package harnesshost
 import (
 	"context"
 
-	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	harnesshostlifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
 	"github.com/cosi-project/runtime/pkg/controller"
@@ -38,14 +37,8 @@ func (c *hostReportController) Run(ctx context.Context, engine controller.Runtim
 		}
 		if intent != nil && report != nil {
 			value := harnesshostlifecycle.HostReport{Intent: intent, Report: report}
-			previous, found, err := cosi.Read(ctx, engine, harnesshostlifecycle.HostReportResource(harnesshostlifecycle.HostReport{}))
-			if err != nil {
+			if err := harnesshostlifecycle.WriteHostReport(ctx, engine, value); err != nil {
 				return err
-			}
-			if !found || !proto.Equal(previous.Intent, intent) || !proto.Equal(previous.Report, report) {
-				if _, err := cosi.Write(ctx, engine, harnesshostlifecycle.HostReportResource(value), value); err != nil {
-					return err
-				}
 			}
 		}
 		select {
