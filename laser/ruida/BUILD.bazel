@@ -1,16 +1,16 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
-    name = "rd_writer",
-    srcs = ["rd_writer.py"],
+    name = "rd_format",
+    srcs = ["rd_format.py"],
     visibility = ["//laser:__subpackages__"],
 )
 
 py_test(
-    name = "test_rd_writer",
-    srcs = ["test_rd_writer.py"],
+    name = "test_rd_format",
+    srcs = ["test_rd_format.py"],
     deps = [
-        ":rd_writer",
+        ":rd_format",
         "//:conftest",
         "@pypi//pytest_bazel",
     ],

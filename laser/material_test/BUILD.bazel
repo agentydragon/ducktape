@@ -5,7 +5,7 @@ py_library(
     srcs = ["grid_generator.py"],
     deps = [
         "//laser/lightburn:lbrn2_writer",
-        "//laser/ruida:rd_writer",
+        "//laser/ruida:rd_format",
         "@pypi//pydantic",
     ],
 )
