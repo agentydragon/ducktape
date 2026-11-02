@@ -58,6 +58,7 @@ func DescribeDispatch(row *Dispatch) (*dispatcherpb.Dispatch, error) {
 		CommandId: row.CommandID, SessionId: row.SessionID, Sandbox: row.SandboxName,
 		SandboxUid: row.SandboxUID, Operation: operation, State: state,
 		Admission: row.Admission, CreatedAt: timestamppb.New(row.CreatedAt), UpdatedAt: timestamppb.New(row.UpdatedAt),
+		DeliveryBlocker: row.DeliveryBlocker, WakeAssessment: row.WakeAssessment,
 	}
 	if row.Reason != "" {
 		result.Reason = &row.Reason
@@ -73,6 +74,7 @@ func DescribeOpening(row *Opening) (*dispatcherpb.SessionOpening, error) {
 	result := &dispatcherpb.SessionOpening{
 		SessionId: row.SessionID, Sandbox: row.SandboxName, SandboxUid: row.SandboxUID,
 		State: state, CreatedAt: timestamppb.New(row.CreatedAt), UpdatedAt: timestamppb.New(row.UpdatedAt),
+		DeliveryBlocker: row.DeliveryBlocker, WakeAssessment: row.WakeAssessment,
 	}
 	if row.Reason != "" {
 		result.Reason = &row.Reason

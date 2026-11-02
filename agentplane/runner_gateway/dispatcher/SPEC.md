@@ -78,3 +78,14 @@ Dispatcher audience to `cluster/cdk8s/agentplane/sandbox_pod.py`, add an exact D
 credential rule to `cluster/cdk8s/agentplane/egress.py`, and connect a concrete MCP/client to that proxy route.
 The actual MCP/client and History provenance propagation are outside this foundation. Until they are implemented,
 this change does not claim a complete end-to-end spawning loop.
+
+## Typed delivery observations
+
+Dispatch and Session-opening receipts carry an optional `delivery_blocker` and a typed
+`wake_assessment`, independently of their delivery state. These fields round-trip through durable
+storage, Get/List/Watch and `sessions__observe_input`. A changed assessment is a watch update even
+when delivery state and reason are unchanged. An absent stored assessment reads as
+`WAKE_STATE_NOT_EVALUATED`; this does not claim a wake request was authorized or attempted.
+
+This contract does not change wake authorization or request resume. The automatic-wake integration
+will supply the policy and operation observations.

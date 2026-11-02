@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 // SandboxReader is the shared, UID-fenced live Sandbox view supplied by the
@@ -106,10 +107,7 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 	}
 	leaseCtx, endLease := context.WithTimeout(ctx, lease)
 	defer endLease()
-	written := map[string]struct {
-		State  dispatcherpb.DeliveryState
-		Reason string
-	}{}
+	written := map[string]*dispatcherpb.Dispatch{}
 	var terminal []TerminalEvent
 	changed, caughtUp := true, false
 	for {
@@ -126,11 +124,7 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 			}
 			terminal = nil
 			for _, row := range rows {
-				key := struct {
-					State  dispatcherpb.DeliveryState
-					Reason string
-				}{row.GetState(), row.GetReason()}
-				if written[row.GetCommandId()] == key {
+				if previous, ok := written[row.GetCommandId()]; ok && proto.Equal(previous, row) {
 					continue
 				}
 				ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
@@ -142,7 +136,7 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 				if ended {
 					return nil
 				}
-				written[row.GetCommandId()] = key
+				written[row.GetCommandId()] = proto.Clone(row).(*dispatcherpb.Dispatch)
 			}
 			if !caughtUp {
 				caughtUp = true
