@@ -335,7 +335,7 @@ func TestRuntimeUsesOneEnvironmentDesiredResource(t *testing.T) {
 	if runtimeDesired.Mode != lifecycle.Running {
 		t.Fatalf("Runtime desired=%+v, want Running", runtimeDesired)
 	}
-	hostDesired, err := r.lifecycleState.List(context.Background(), resource.NewMetadata(lifecycle.Namespace, "EnvironmentRuntimeDesiredStates.agentplane", "", resource.VersionUndefined))
+	hostDesired, err := r.lifecycleState.List(context.Background(), resource.NewMetadata(lifecycle.Namespace, "HarnessHostDesiredStates.agentplane", "", resource.VersionUndefined))
 	if err != nil || len(hostDesired.Items) != 0 {
 		t.Fatalf("obsolete Host desired resources: %+v, %v", hostDesired, err)
 	}
