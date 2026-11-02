@@ -74,6 +74,10 @@ func TestOperationCompletionPublicationPrecedesConsumption(t *testing.T) {
 		if op.Finished() {
 			t.Fatal("operation became consumable before completion publication")
 		}
+		if s.mu.TryLock() {
+			s.mu.Unlock()
+			t.Fatal("completion publication did not protect the operation slot")
+		}
 		consumed := make(chan bool, 1)
 		consumerStarted := make(chan struct{})
 		go func() {
