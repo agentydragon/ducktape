@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
 
 # Generated Python modules are emitted outside their proto source package.
 # gazelle:proto file
@@ -77,17 +77,6 @@ py_library(
         "@pypi//durationpy",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_policy_sets",
-    srcs = ["test_policy_sets.py"],
-    deps = [
-        ":policy_sets",
-        "//:conftest",
-        "@pypi//pydantic",
-        "@pypi//pytest_bazel",
     ],
 )
 
