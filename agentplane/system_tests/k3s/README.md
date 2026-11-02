@@ -19,6 +19,8 @@ Retention requires `AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1`, injected by BuildBud
 `test.env-overrides` exec property, rather than the test's ordinary environment. Without that
 executor permission, the stack starts fresh infrastructure and stops k3s during teardown, including
 when setup or a scenario fails. Local BuildBuddy credentials and `CI` do not enable retention.
+If an action without permission restores a previously retained snapshot, it first stops the server
+identified by the ownership marker, then starts and tears down its own fresh node.
 The cross-action diagnostic probe requires the same permission and fails before starting a server
 when it is absent. The lifecycle probe always cleans up the processes it starts.
 

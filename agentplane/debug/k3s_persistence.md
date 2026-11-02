@@ -39,6 +39,12 @@ touching persistent state when permission is absent, protecting the cross-action
 BuildBuddy API credentials and generic CI variables do not grant permission. PostgreSQL and all other
 per-action application state remain fresh in either mode.
 
+An initial distinct fallback trial restored a retained snapshot despite a header override to its
+recycling key. The ordinary reset failed on a busy Pod cgroup because the retained kubelet was still
+running. The normal-start branch now stops the exact owner recorded in the marker, removes its Pods,
+and deletes the marker before resetting the fresh node. The lifecycle test covers this transition,
+including the subsequent ordinary server shutdown; PID-reuse protection remains in force.
+
 ### Default enablement validation
 
 PR head `0e453d3e5a7b1b6124481cf93b106ec9dadd061a` enabled persistence directly in every standard

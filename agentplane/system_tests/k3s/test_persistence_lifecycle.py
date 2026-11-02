@@ -20,7 +20,7 @@ from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
-def test_persistence_lifecycle(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_persistence_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Cover clean attach, dirty/fingerprint rebuilds, dead servers, and PID reuse safely."""
     binary = get_required_path(os.environ["K3S_BINARY_RLOCATION"])
     base_fingerprint = (
@@ -174,6 +174,25 @@ def test_persistence_lifecycle(monkeypatch: pytest.MonkeyPatch) -> None:
         assert stack._baseline_identity(k3s, int(real_marker["identity"]["pid"])) == real_marker["identity"]
         marker = real_marker
         events.append({"step": "reused_pid", "unrelated_process_alive": True})
+
+        # Removing the executor permission can still restore a formerly retained snapshot.
+        # Stop its recorded owner before a normal start resets shared kubelet/containerd state.
+        retained_pid = int(marker["identity"]["pid"])
+        with monkeypatch.context() as patch:
+            patch.delenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE")
+            stack._baseline_stop_previous()
+            assert stack._baseline_process_start(retained_pid) is None
+            assert not stack._BASELINE_MARKER.exists()
+            k3s, marker = None, None
+            ordinary = K3s(tmp_path, binary)
+            with contextlib.ExitStack() as ordinary_cleanup:
+                process = ordinary.start(layers_in_memory=True)
+                ordinary_cleanup.callback(ordinary.stop, process)
+                assert process.poll() is None
+                assert not stack._BASELINE_MARKER.exists()
+            assert process.poll() is not None
+            assert not stack._BASELINE_MARKER.exists()
+        events.append({"step": "retention_disabled", "previous_owner_stopped": True, "ordinary_server_stopped": True})
 
 
 def _stop_unrelated(process: subprocess.Popen[bytes]) -> None:

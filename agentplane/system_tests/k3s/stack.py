@@ -633,6 +633,14 @@ def _baseline_stop_owned(k3s: K3s, previous: dict[str, Any]) -> None:
     k3s.cleanup_stopped()
 
 
+def _baseline_stop_previous() -> None:
+    """Leave retention mode by stopping only the server recorded in the ownership marker."""
+    if _BASELINE_MARKER.exists():
+        retained = K3s(_BASELINE_ROOT, _BASELINE_ROOT / "k3s")
+        _baseline_stop_owned(retained, json.loads(_BASELINE_MARKER.read_text()))
+        _BASELINE_MARKER.unlink()
+
+
 def _baseline_open(source: Path, fingerprint: str, *, layers_in_memory: bool) -> tuple[K3s, dict[str, Any], bool]:
     # Protect diagnostic callers too: only BuildBuddy's remote exec property grants this lifecycle.
     if os.environ.get("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE") != "1":
@@ -855,6 +863,9 @@ def running_stack(
                     layers_in_memory=not fixture.vm_sandboxes,
                 )
             else:
+                # An executor can restore a retained snapshot even when this action opts out.
+                # Stop its exact owned server before resetting the ordinary stack's state.
+                _baseline_stop_previous()
                 process = k3s.start(layers_in_memory=not fixture.vm_sandboxes)
                 cleanup.callback(k3s.stop, process)
             setup.add_event("node Ready")
