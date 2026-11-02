@@ -290,10 +290,10 @@ def from_collection(
 
     selected_by_roster: dict[tuple[str, str, str, int], list[OutputObservation]] = defaultdict(list)
     for output in collected.selected:
-        result = output.result
-        if result.configuration is None or result.run is None:
+        result_key = output.result
+        if result_key.configuration is None or result_key.run is None:
             continue
-        roster_id = result.invocation, result.target, result.configuration, result.run
+        roster_id = result_key.invocation, result_key.target, result_key.configuration, result_key.run
         if roster_id not in unusable_rosters:
             selected_by_roster[roster_id].append(output)
 

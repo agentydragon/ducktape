@@ -264,6 +264,12 @@ def collect_listed_outputs(
         if download_error is not None and any(item.artifact.file.name.startswith(_RECORDS) for item in items):
             source_issues.append(download_error)
         summary = items[0].artifact.test_summary
+        files = []
+        for item in items:
+            digest, size = _cas_digest(item.artifact.file.uri) or (None, None)
+            files.append(
+                SourceFile(item.artifact.file.name, item.artifact.file.uri, digest, size, contents.get(id(item)))
+            )
         sources.append(
             SourceResult(
                 key,
@@ -277,15 +283,7 @@ def collect_listed_outputs(
                 )
                 if summary is not None and len(summaries) == 1
                 else None,
-                tuple(
-                    SourceFile(
-                        item.artifact.file.name,
-                        item.artifact.file.uri,
-                        *(_cas_digest(item.artifact.file.uri) or (None, None)),
-                        contents.get(id(item)),
-                    )
-                    for item in items
-                ),
+                tuple(files),
                 tuple(source_issues),
             )
         )
@@ -518,6 +516,7 @@ def collect_materialized_outputs(
                 errors.append(detail)
                 per_result[earlier].append("superseded by retry")
         status = by_result[terminal].status
+        assert terminal.configuration is not None
         configured = (terminal.invocation, terminal.target, terminal.configuration)
         if status == "PASSED" and not per_result[terminal] and configured not in incomplete_configurations:
             selected_results.add(terminal)
@@ -527,13 +526,13 @@ def collect_materialized_outputs(
     selected = [observation for observation in observations if observation.result in selected_results]
     claims: dict[tuple[str, str, str, int, OutputKey], ResultKey] = {}
     for observation in selected:
-        source = observation.result
-        assert source.configuration is not None
-        assert source.run is not None
-        claim = (source.invocation, source.target, source.configuration, source.run, observation.key)
-        previous = claims.setdefault(claim, source)
-        if previous != source:
-            issue(source, f"output identity {observation.key!r} also claimed by shard {previous.shard}")
+        result_key = observation.result
+        assert result_key.configuration is not None
+        assert result_key.run is not None
+        claim = (result_key.invocation, result_key.target, result_key.configuration, result_key.run, observation.key)
+        previous_claim = claims.setdefault(claim, result_key)
+        if previous_claim != result_key:
+            issue(result_key, f"output identity {observation.key!r} also claimed by shard {previous_claim.shard}")
 
     coverage: list[ResultCoverage] = []
     for key, source in sorted(by_result.items(), key=lambda pair: repr(pair[0])):
