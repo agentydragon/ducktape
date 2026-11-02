@@ -15,7 +15,7 @@ enum Leaf {
     Primitive(PrimKinds),
     Function(u32),
     Binding(Id),
-    Record {
+    Allocation {
         allocation: u32,
         reads: BTreeSet<Id>,
     },
@@ -136,10 +136,10 @@ fn ordinary_parameter(parameter: &Pat) -> bool {
         if binding.type_ann.is_none() && !binding.id.optional)
 }
 
-/// Static data fields use CreateDataProperty; they do not read a receiver or
-/// invoke a setter. Retain every declarative-cell read, including overwritten
-/// duplicate fields. No value-kind or heap-locality premise is needed for it.
-fn record_inputs(expression: &Expr, reads: &mut BTreeSet<Id>) -> Option<()> {
+/// Static data fields and dense array elements use CreateDataProperty, without
+/// invoking receiver accessors. Retain every declarative-cell read, including
+/// overwritten duplicate fields. No value-kind or heap-locality premise is needed.
+fn allocation_inputs(expression: &Expr, reads: &mut BTreeSet<Id>) -> Option<()> {
     match expression.unwrap_parens() {
         Expr::Ident(binding) => {
             reads.insert(binding.to_id());
@@ -165,10 +165,19 @@ fn record_inputs(expression: &Expr, reads: &mut BTreeSet<Id>) -> Option<()> {
                         if name == "__proto__" {
                             return None;
                         }
-                        record_inputs(&property.value, reads)?;
+                        allocation_inputs(&property.value, reads)?;
                     }
                     _ => return None,
                 }
+            }
+        }
+        Expr::Array(array) => {
+            for element in &array.elems {
+                let element = element.as_ref()?;
+                if element.spread.is_some() {
+                    return None;
+                }
+                allocation_inputs(&element.expr, reads)?;
             }
         }
         _ => return None,
@@ -197,12 +206,12 @@ impl OriginalInitializer {
         };
         let leaf = match initializer.unwrap_parens() {
             Expr::Ident(binding) => Leaf::Binding(binding.to_id()),
-            Expr::Object(record) => {
+            Expr::Object(_) | Expr::Array(_) => {
                 let mut reads = BTreeSet::new();
-                record_inputs(initializer, &mut reads)
+                allocation_inputs(initializer, &mut reads)
                     .ok_or(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer)?;
-                Leaf::Record {
-                    allocation: record.span.lo.0,
+                Leaf::Allocation {
+                    allocation: initializer.unwrap_parens().span().lo.0,
                     reads,
                 }
             }
@@ -254,7 +263,7 @@ impl OriginalInitializer {
     pub(super) fn reads_are_initialized(&self, mut initialized: impl FnMut(&Id) -> bool) -> bool {
         match &self.leaf {
             Leaf::Binding(binding) => initialized(binding),
-            Leaf::Record { reads, .. } => reads.iter().all(initialized),
+            Leaf::Allocation { reads, .. } => reads.iter().all(initialized),
             Leaf::Primitive(_) | Leaf::Function(_) => true,
         }
     }
@@ -277,7 +286,7 @@ impl OriginalInitializer {
                 expected == lowered && initialized_reads
             }
             (
-                Leaf::Record { allocation, .. },
+                Leaf::Allocation { allocation, .. },
                 ValueExpr::ObjectLiteral(lowered, _),
                 AbstractValue::Value(Value::Alloc(Kind::Object, evaluated)),
             ) => {

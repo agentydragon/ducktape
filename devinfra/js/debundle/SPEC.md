@@ -350,12 +350,15 @@ An original, non-exported simple variable declarator with an unannotated
 binding may close global-property, general-heap and host-effect coverage when
 its initializer is a primitive literal, checked ordinary
 function/arrow creation, a read of an initialized module-local binding, or a
-static ordinary record literal. Record values may be primitive literals,
-initialized module-local binding reads, or nested records in the same subset.
-Identifier and string data keys and shorthand fields are supported; computed
-keys, spreads, accessors, methods, colon-form `__proto__`, and other value
-expressions remain uncovered. Creating these own data fields invokes no
-receiver getter, setter, coercion or callable body. Every source binding read,
+static ordinary record or dense array literal. Record values and array
+elements may be primitive literals, initialized module-local binding reads, or
+nested records and dense arrays in the same subset.
+Identifier and string data keys and shorthand fields are supported; array
+holes, computed keys, spreads, accessors, methods, colon-form `__proto__`, and
+other value expressions remain uncovered. Creating these own data fields invokes no
+receiver getter, setter, coercion or callable body. Array creation does not
+consult the global `Array` binding or iterate the element values. Every source
+binding read,
 including one in an overwritten duplicate field, must already be initialized
 before the root transfer. No additional heap privacy or native-slot premise
 is used. Allocation effects remain in the report.
@@ -372,7 +375,7 @@ in source order. A dedicated interpreter request must produce its expected
 value without an unavailable alternative, and owner finalization must complete
 the binding initialization without fallback or precision loss before
 sealing the coverage certificate. Bodies remain lazy; this certifies no call.
-Sequences, assignments, templates, exports, destructuring, classes, arrays,
+Sequences, assignments, templates, exports, destructuring, classes,
 imported/global/uninitialized binding reads, decorated/type-annotated
 functions and unsupported parameters remain uncovered. Parentheses alone
 preserve admissibility.

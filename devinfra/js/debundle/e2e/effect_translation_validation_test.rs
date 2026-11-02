@@ -527,7 +527,7 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
         ("(globalThis.marker = 1, () => 0)", false),
         ("`text`", false),
         ("({value: 1})", true),
-        ("[1]", false),
+        ("[1]", true),
         ("/pattern/", false),
         ("class {}", false),
         ("function (parameter = 1) { return parameter; }", false),
