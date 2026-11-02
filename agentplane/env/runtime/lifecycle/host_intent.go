@@ -1,10 +1,14 @@
 package lifecycle
 
 import (
+	"context"
+
 	runtimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/runtimepb"
+	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
+	"github.com/cosi-project/runtime/pkg/safe"
 )
 
 const (
@@ -59,4 +63,11 @@ func (hostIntentStatusExtension) ResourceDefinition() spec.ResourceDefinitionSpe
 
 func HostIntentStatusResource(v HostIntentStatus) *typed.Resource[HostIntentStatus, hostIntentStatusExtension] {
 	return typed.NewResource[HostIntentStatus, hostIntentStatusExtension](resource.NewMetadata(Namespace, HostIntentStatusType, "host", resource.VersionUndefined), v)
+}
+
+func WriteHostIntentStatus(ctx context.Context, writer controller.Writer, value HostIntentStatus) error {
+	return safe.WriterModify(ctx, writer, HostIntentStatusResource(value), func(current *typed.Resource[HostIntentStatus, hostIntentStatusExtension]) error {
+		*current.TypedSpec() = value
+		return nil
+	})
 }
