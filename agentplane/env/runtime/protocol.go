@@ -183,14 +183,12 @@ func (r *Runtime) readSessionStatus(ctx context.Context) (lifecycle.Status, bool
 func (r *Runtime) waitSessionStage(ctx context.Context, minimum lifecycle.Stage) error {
 	return r.waitForLifecycle(ctx, func() (bool, error) {
 		r.mu.Lock()
-		desired := r.desired
-		failure := r.failureLocked()
-		r.mu.Unlock()
+		defer r.mu.Unlock()
 		current, found, err := r.readSessionStatus(ctx)
 		if err != nil {
 			return false, err
 		}
-		if found && current.Generation == desired.Generation {
+		if found && current.Generation == r.desired.Generation {
 			if current.Error != "" {
 				return false, errors.New(current.Error)
 			}
@@ -198,7 +196,7 @@ func (r *Runtime) waitSessionStage(ctx context.Context, minimum lifecycle.Stage)
 				return true, nil
 			}
 		}
-		return false, failure
+		return false, r.failureLocked()
 	})
 }
 
@@ -299,8 +297,8 @@ func (r *Runtime) waitForExecutionFenced(ctx context.Context, generation uint64)
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.fenceInFlight != generation {
-		return errors.New("Execution fence generation changed")
+	if r.fenceInFlight != generation || r.desired.Generation != generation {
+		return status.Error(codes.Aborted, "Execution fence generation changed")
 	}
 	return r.fenceErr
 }
@@ -324,6 +322,11 @@ func (r *Runtime) fenceExecution(ctx context.Context, generation uint64) error {
 			return errors.New("Execution attempt is not fenced")
 		}
 		if !r.executionLifecycle.publishCompletion(func(input *executionSignal) bool {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			if r.desired.Generation != generation || input.Fence.LifecycleGeneration > generation {
+				return false
+			}
 			if input.Fence.Generation != 0 && input.Fence.Generation != current.Generation {
 				return false
 			}
