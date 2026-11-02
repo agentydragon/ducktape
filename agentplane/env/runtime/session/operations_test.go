@@ -75,11 +75,13 @@ func TestOperationCompletionPublicationPrecedesConsumption(t *testing.T) {
 			t.Fatal("operation became consumable before completion publication")
 		}
 		consumed := make(chan bool, 1)
+		consumerStarted := make(chan struct{})
 		go func() {
+			close(consumerStarted)
 			_, done := s.takeOperation(&s.preparation)
 			consumed <- done
 		}()
-		synctest.Wait()
+		<-consumerStarted
 		select {
 		case <-consumed:
 			t.Fatal("consumption did not wait for completion publication")
