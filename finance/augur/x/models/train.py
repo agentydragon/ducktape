@@ -101,6 +101,8 @@ def main(argv: list[str] | None = None) -> int:
             latest_observations={key.wire_id: point for key, point in evidence.latest_observations.items()},
             evidence_metadata=evidence.metadata,
             current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
+            public_evidence_revision=evidence.public_evidence_revision,
+            public_evidence_source_sha256=evidence.public_evidence_source_sha256,
         )
     elif args.model == "state_space":
         if out_blob is None:

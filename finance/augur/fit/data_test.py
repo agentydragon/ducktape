@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -14,19 +15,9 @@ from finance.augur.model.series import SP500_KEY, HomeValueKey, RentKey
 from finance.evidence import sources
 
 
-def test_configured_evidence_source_errors_raise_by_default(
-    monkeypatch: pytest.MonkeyPatch, synthetic_evidence_dir: Path
-) -> None:
-    real_source_bytes = evidence_data._source_bytes
-
-    # Redirect only the SPY adjusted-close source to malformed bytes (other sources
-    # resolve normally); the loader must surface the JSON parse error, not swallow it.
-    def fake_source_bytes(source: sources.EvidenceSource) -> bytes:
-        if source is sources.YAHOO_SPY:
-            return b"{not json"
-        return real_source_bytes(source)
-
-    monkeypatch.setattr(evidence_data, "_source_bytes", fake_source_bytes, raising=True)
+def test_configured_evidence_source_errors_raise_by_default(synthetic_evidence_dir: Path) -> None:
+    # Corrupt the actual source file so the snapshot hashes and parser see the same bytes.
+    (synthetic_evidence_dir / sources.YAHOO_SPY.output_filename).write_bytes(b"{not json")
 
     with pytest.raises(json.JSONDecodeError):
         load_evidence()
@@ -52,6 +43,11 @@ def test_explicit_fred_only_evidence_is_synthesized_and_labeled(synthetic_eviden
     for factor, point in evidence.latest_observations.items():
         if isinstance(factor, HomeValueKey):
             assert point.source_id == f"public:{sources.FRED_SFXRSA.provenance_label}"
+    assert evidence.public_evidence_revision is None
+    assert evidence.public_evidence_source_sha256 == _expected_hashes(
+        synthetic_evidence_dir,
+        (sources.FRED_SP500, sources.FRED_SFXRSA, sources.FRED_SF_RENT_CPI, sources.FRED_CPI, sources.FRED_MORTGAGE30),
+    )
 
 
 def test_full_evidence_history_keeps_each_return_on_its_calendar_month(synthetic_evidence_dir: Path) -> None:
@@ -112,25 +108,36 @@ def test_full_evidence_anchors_preserve_actual_source_units(synthetic_evidence_d
     assert evidence.metadata.auxiliary_observations["sp500_price"].units == ObservationUnits.INDEX_POINTS
     assert evidence.metadata.auxiliary_observations["mortgage30"].units == ObservationUnits.PERCENT
     assert evidence.metadata.return_sources
+    assert evidence.public_evidence_revision is None
+    assert evidence.public_evidence_source_sha256 == _expected_hashes(
+        synthetic_evidence_dir, evidence_data.EXOGENOUS_EVIDENCE_SOURCES
+    )
 
 
 def test_full_evidence_reads_each_zillow_table_once_for_all_cities(
     monkeypatch: pytest.MonkeyPatch, synthetic_evidence_dir: Path
 ) -> None:
-    original = evidence_data._source_bytes
-    reads: list[sources.EvidenceSource] = []
+    original = evidence_data.loading.zillow_city_table
+    parses: list[sources.EvidenceSource] = []
 
-    def track(source: sources.EvidenceSource) -> bytes:
-        reads.append(source)
-        return original(source)
+    def track(data: bytes, source: sources.EvidenceSource):
+        parses.append(source)
+        return original(data, source)
 
-    monkeypatch.setattr(evidence_data, "_source_bytes", track)
+    monkeypatch.setattr(evidence_data.loading, "zillow_city_table", track)
     _, evidence = load_evidence()
-    assert reads.count(sources.ZILLOW_ZHVI) == 1
-    assert reads.count(sources.ZILLOW_ZORI) == 1
+    assert parses.count(sources.ZILLOW_ZHVI) == 1
+    assert parses.count(sources.ZILLOW_ZORI) == 1
     home = [point.value for key, point in evidence.latest_observations.items() if isinstance(key, HomeValueKey)]
     assert len(home) == 2
     assert home[0] != home[1]
+
+
+def _expected_hashes(root: Path, evidence_sources: tuple[sources.EvidenceSource, ...]) -> dict[str, str]:
+    return {
+        source.provenance_label: hashlib.sha256((root / source.output_filename).read_bytes()).hexdigest()
+        for source in evidence_sources
+    }
 
 
 if __name__ == "__main__":

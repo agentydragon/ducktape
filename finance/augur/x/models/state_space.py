@@ -77,6 +77,23 @@ class StateSpaceModelArtifact(FrozenModel):
     monthly_log_return_cov: tuple[tuple[float, ...], ...]
     private_equity_event_priors: dict[IssuerId, StateSpacePrivateEquityEventPrior] = Field(default_factory=dict)
     private_equity_scale_priors: dict[IssuerId, TrainedPrivateEquityScalePrior] = Field(default_factory=dict)
+    public_evidence_revision: str | None = Field(
+        default=None,
+        description=(
+            "Git revision for the captured public EvidenceSource files used by this fit. None means "
+            "no Git revision was available (or the field is absent from a legacy artifact); plain "
+            "directory capture does not claim atomicity."
+        ),
+    )
+    public_evidence_source_sha256: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "SHA-256 of the exact captured public EvidenceSource bytes parsed for this fit, keyed by "
+            "stable source label. Optional private-equity YAML/JSONL files are not included; an empty "
+            "map may mean a legacy artifact has no recorded hashes. Plain-directory hashes do not "
+            "claim that upstream files were observed atomically."
+        ),
+    )
     source_manifest: dict[str, Any] = Field(default_factory=dict)
     prior_manifest: dict[str, Any] = Field(default_factory=dict)
 
@@ -186,6 +203,8 @@ class StateSpaceModel:
         latest_observations: Mapping[str, ExogenousObservedPoint],
         source_manifest: Mapping[str, Any],
         prior_manifest: Mapping[str, Any],
+        public_evidence_revision: str | None = None,
+        public_evidence_source_sha256: Mapping[str, str] | None = None,
         additional_factors: tuple[StateSpaceAdditionalFactor, ...] = (),
     ) -> StateSpaceModelArtifact:
         return cls.fit_monthly_returns(
@@ -195,6 +214,8 @@ class StateSpaceModel:
             latest_observations=latest_observations,
             source_manifest=source_manifest,
             prior_manifest=prior_manifest,
+            public_evidence_revision=public_evidence_revision,
+            public_evidence_source_sha256=public_evidence_source_sha256,
             additional_factors=additional_factors,
         )
 
@@ -208,6 +229,8 @@ class StateSpaceModel:
         latest_observations: Mapping[str, ExogenousObservedPoint],
         source_manifest: Mapping[str, Any],
         prior_manifest: Mapping[str, Any],
+        public_evidence_revision: str | None = None,
+        public_evidence_source_sha256: Mapping[str, str] | None = None,
         additional_factors: tuple[StateSpaceAdditionalFactor, ...] = (),
     ) -> StateSpaceModelArtifact:
         """Fit iid monthly returns directly, retaining the calendar labels of observed transitions."""
@@ -274,6 +297,8 @@ class StateSpaceModel:
             monthly_log_return_cov=_matrix_to_tuple(covariance),
             private_equity_event_priors=event_priors,
             private_equity_scale_priors=scale_priors,
+            public_evidence_revision=public_evidence_revision,
+            public_evidence_source_sha256=dict(public_evidence_source_sha256 or {}),
             source_manifest=merged_source_manifest,
             prior_manifest=dict(prior_manifest),
         )
@@ -355,6 +380,8 @@ class StateSpaceModel:
                 "conditioning_start_at": self.conditioning.start_at.isoformat(),
                 "source_manifest": self.artifact.source_manifest,
                 "prior_manifest": self.artifact.prior_manifest,
+                "public_evidence_revision": self.artifact.public_evidence_revision,
+                "public_evidence_source_sha256": self.artifact.public_evidence_source_sha256,
                 "exogenous_provider_label": self.label,
             },
         )
@@ -492,7 +519,12 @@ class StateSpaceModel:
             {"label": self.label, "class": type(self).__qualname__, "schema_version": self.artifact.schema_version}
         )
         self.evidence_set_id = "evidence_set:" + stable_identity_digest(
-            {"evidence_source_id": evidence_source_id, "conditioning": self.conditioning}
+            {
+                "evidence_source_id": evidence_source_id,
+                "conditioning": self.conditioning,
+                "public_evidence_revision": self.artifact.public_evidence_revision,
+                "public_evidence_source_sha256": self.artifact.public_evidence_source_sha256,
+            }
         )
         self.calibration_artifact_id = "calibration_artifact:" + stable_identity_digest(
             {"model_version_id": self.model_version_id, "evidence_set_id": self.evidence_set_id}

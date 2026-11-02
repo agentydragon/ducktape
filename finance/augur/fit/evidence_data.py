@@ -21,6 +21,7 @@ from finance.augur.model.series import (
 )
 from finance.evidence import loading, sources
 from finance.evidence.loading import MonthlyLevel
+from finance.evidence.snapshot import EvidenceSnapshot
 
 # The crypto symbols this fit models. Which securities get fitted is the fit's own choice;
 # the series type does not distinguish them from any other symbol.
@@ -44,22 +45,30 @@ ZILLOW_RENT_REGIONS: dict[LocationId, tuple[str, str]] = {
 # Minimum overlapping months required across the aligned exogenous series.
 MINIMUM_ALIGNED_MONTHS = 36
 
+# The public source bytes used by the joint VECM/state-space fit. Capture all of them at once
+# so the artifact's revision and hashes describe exactly the bytes the parsers consume.
+EXOGENOUS_EVIDENCE_SOURCES = (
+    sources.FRED_SP500,
+    sources.YAHOO_SPY,
+    sources.YAHOO_BTC,
+    sources.YAHOO_ETH,
+    sources.FRED_CPI,
+    sources.FRED_SFXRSA,
+    sources.FRED_FHFA_SF,
+    sources.FRED_MORTGAGE30,
+    sources.ZILLOW_ZHVI,
+    sources.ZILLOW_ZORI,
+)
 
-def _source_bytes(source: sources.EvidenceSource) -> bytes:
-    """Raw bytes for an evidence series, read from the git-synced evidence directory.
 
-    The git-sync sidecar keeps `AUGUR_EVIDENCE_DIR` pointed at the augur-evidence repo's current
-    worktree, so each read reflects freshly-pulled data. Kept as a module seam so tests can inject
-    malformed bytes per source (see `finance/augur/fit/data_test.py`)."""
-    return loading.source_bytes(loading.evidence_dir_from_env(), source)
+def _fred_frame(snapshot: EvidenceSnapshot, source: sources.EvidenceSource) -> pl.DataFrame:
+    return loading.fred_series_frame(snapshot.source_bytes(source), source)
 
 
-def _fred_frame(source: sources.EvidenceSource) -> pl.DataFrame:
-    return loading.fred_series_frame(_source_bytes(source), source)
-
-
-def _yahoo_frame(source: sources.EvidenceSource, *, minimum_samples: int = 36) -> pl.DataFrame:
-    return loading.yahoo_adjusted_close_frame(_source_bytes(source), source, minimum_samples=minimum_samples)
+def _yahoo_frame(
+    snapshot: EvidenceSnapshot, source: sources.EvidenceSource, *, minimum_samples: int = 36
+) -> pl.DataFrame:
+    return loading.yahoo_adjusted_close_frame(snapshot.source_bytes(source), source, minimum_samples=minimum_samples)
 
 
 MONTHS_PER_YEAR = 12
@@ -89,6 +98,11 @@ class ExogenousEvidence:
     current_mortgage30_rate_pct: float
     latest_observations: dict[LevelSeriesKey, ExogenousObservedPoint]
     metadata: EvidenceMetadata
+    # These identify only snapshot-managed public EvidenceSource bytes. A None revision means
+    # capture came from a plain directory; its hashes identify the captured bytes without
+    # claiming that separately written upstream files were observed atomically.
+    public_evidence_revision: str | None
+    public_evidence_source_sha256: dict[str, str]
 
 
 def calibrate_series_path_priors(
@@ -228,20 +242,22 @@ def _monthly_latest(
 
 
 def load_exogenous_evidence() -> ExogenousEvidence:
-    sp500_price = loading.monthly_last(_fred_frame(sources.FRED_SP500))
+    """Capture and parse joint-fit public evidence from one immutable source-byte snapshot."""
+    snapshot = EvidenceSnapshot.capture(loading.evidence_dir_from_env(), EXOGENOUS_EVIDENCE_SOURCES)
+    sp500_price = loading.monthly_last(_fred_frame(snapshot, sources.FRED_SP500))
     # SPY is daily; require thousands of rows to catch a truncated file.
-    sp500_total_return = loading.monthly_last(_yahoo_frame(sources.YAHOO_SPY, minimum_samples=1000))
-    btc_price = loading.monthly_last(_yahoo_frame(sources.YAHOO_BTC))
-    eth_price = loading.monthly_last(_yahoo_frame(sources.YAHOO_ETH))
-    cpi = loading.monthly_last(_fred_frame(sources.FRED_CPI))
-    case_shiller = loading.monthly_last(_fred_frame(sources.FRED_SFXRSA))
-    fhfa = loading.monthly_last(_fred_frame(sources.FRED_FHFA_SF))
-    mortgage30 = _fred_frame(sources.FRED_MORTGAGE30)
+    sp500_total_return = loading.monthly_last(_yahoo_frame(snapshot, sources.YAHOO_SPY, minimum_samples=1000))
+    btc_price = loading.monthly_last(_yahoo_frame(snapshot, sources.YAHOO_BTC))
+    eth_price = loading.monthly_last(_yahoo_frame(snapshot, sources.YAHOO_ETH))
+    cpi = loading.monthly_last(_fred_frame(snapshot, sources.FRED_CPI))
+    case_shiller = loading.monthly_last(_fred_frame(snapshot, sources.FRED_SFXRSA))
+    fhfa = loading.monthly_last(_fred_frame(snapshot, sources.FRED_FHFA_SF))
+    mortgage30 = _fred_frame(snapshot, sources.FRED_MORTGAGE30)
     # Home-value and rent evidence stay keyed by LocationId (their role-natural key); the
     # flat series wire ids (HomeValueKey/RentKey .wire_id) are derived only at the matrix/JSON
     # boundaries below.
-    home_table = loading.zillow_city_table(_source_bytes(sources.ZILLOW_ZHVI), sources.ZILLOW_ZHVI)
-    rent_table = loading.zillow_city_table(_source_bytes(sources.ZILLOW_ZORI), sources.ZILLOW_ZORI)
+    home_table = loading.zillow_city_table(snapshot.source_bytes(sources.ZILLOW_ZHVI), sources.ZILLOW_ZHVI)
+    rent_table = loading.zillow_city_table(snapshot.source_bytes(sources.ZILLOW_ZORI), sources.ZILLOW_ZORI)
     home_values = {
         location_id: loading.zillow_city_series_frame(
             home_table, sources.ZILLOW_ZHVI, region_name=region_name, state=state
@@ -375,6 +391,8 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         current_mortgage30_rate_pct=float(mortgage30["value"].to_list()[-1]),
         latest_observations=latest_observations,
         metadata=metadata,
+        public_evidence_revision=snapshot.revision,
+        public_evidence_source_sha256=snapshot.source_hashes(),
     )
 
 

@@ -8,6 +8,7 @@ sample without re-fitting from source CSVs."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -22,7 +23,7 @@ from finance.augur.fit.evidence_data import load_exogenous_evidence
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.series import HomeValueKey, InflationKey, LevelSeriesKey, RentKey
 from finance.augur.x.models.provider_config import ProviderConfig
-from finance.augur.x.models.state_space import StateSpaceProviderConfig
+from finance.augur.x.models.state_space import StateSpaceModelArtifact, StateSpaceProviderConfig
 from finance.augur.x.models.state_space_fit import fit_state_space_artifact
 from finance.augur.x.models.train import main as train_main
 from finance.augur.x.models.vecm import VecmProviderConfig
@@ -49,8 +50,17 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path, synthetic_
     assert parsed.trained_state.params
     assert set(parsed.latest_observations) == set(parsed.trained_state.factor_names)
     assert all(point.source_id and point.units for point in parsed.latest_observations.values())
+    expected_hashes = _expected_hashes(synthetic_evidence_dir)
+    assert parsed.public_evidence_revision is None
+    assert parsed.public_evidence_source_sha256 == expected_hashes
 
     model = parsed.realize_model()
+    assert model.public_evidence_revision is None
+    assert model.public_evidence_source_sha256 == expected_hashes
+    assert model.evidence_set_id
+    changed_hashes = _changed_hashes(expected_hashes, synthetic_evidence_dir, tmp_path)
+    changed_model = parsed.model_copy(update={"public_evidence_source_sha256": changed_hashes}).realize_model()
+    assert changed_model.evidence_set_id != model.evidence_set_id
     # Post-collapse the model's typed factors ARE the level keys; derive the home-value and
     # rent locations directly from them (there is no location_series_sources to consult).
     home_locations = sorted(factor.location_id for factor in model.factor_names if isinstance(factor, HomeValueKey))
@@ -65,6 +75,8 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path, synthetic_
     )
 
     assert str(sampled.provenance["model_version_id"]).startswith("model_version:")
+    assert sampled.provenance["public_evidence_revision"] is None
+    assert sampled.provenance["public_evidence_source_sha256"] == expected_hashes
     assert sampled.levels.series_keys() == set(required_level_series)
     for home_loc in home_locations:
         assert sampled.level_matrix(HomeValueKey(location_id=home_loc), rollout_count=2, horizon_months=12).shape == (
@@ -87,6 +99,9 @@ def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path
     assert artifact["schema_version"] == 3
     assert "filtered_log_state_mean" not in artifact
     assert "filtered_log_state_cov" not in artifact
+    expected_hashes = _expected_hashes(synthetic_evidence_dir)
+    assert artifact["public_evidence_revision"] is None
+    assert artifact["public_evidence_source_sha256"] == expected_hashes
 
     parsed = _ADAPTER.validate_python(yaml.safe_load(out_manifest.read_text(encoding="utf-8")))
     assert isinstance(parsed, StateSpaceProviderConfig)
@@ -95,6 +110,8 @@ def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path
     assert parsed.conditioning.observations
 
     model = parsed.realize_model()
+    assert model.artifact.public_evidence_revision is None
+    assert model.artifact.public_evidence_source_sha256 == expected_hashes
     home_locations = sorted(factor.location_id for factor in model.factor_names if isinstance(factor, HomeValueKey))
     rent_locations = sorted(factor.location_id for factor in model.factor_names if isinstance(factor, RentKey))
     required_level_series: frozenset[LevelSeriesKey] = frozenset(
@@ -107,8 +124,48 @@ def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path
     )
 
     assert str(sampled.provenance["model_version_id"]).startswith("model_version:")
+    assert sampled.provenance["public_evidence_revision"] is None
+    assert sampled.provenance["public_evidence_source_sha256"] == expected_hashes
     assert sampled.provenance["source_manifest"]
     assert sampled.levels.series_keys() >= set(required_level_series)
+
+    changed_hashes = _changed_hashes(expected_hashes, synthetic_evidence_dir, tmp_path)
+    changed_artifact = StateSpaceModelArtifact.model_validate(artifact).model_copy(
+        update={"public_evidence_source_sha256": changed_hashes}
+    )
+    changed_blob = tmp_path / "changed_evidence.json"
+    changed_blob.write_text(changed_artifact.model_dump_json(), encoding="utf-8")
+    changed_model = parsed.model_copy(update={"trained_artifact_path": changed_blob}).realize_model()
+    assert changed_model.evidence_set_id != model.evidence_set_id
+
+
+def _expected_hashes(synthetic_evidence_dir: Path) -> dict[str, str]:
+    return {
+        source.provenance_label: hashlib.sha256(
+            (synthetic_evidence_dir / source.output_filename).read_bytes()
+        ).hexdigest()
+        for source in (
+            sources.FRED_SP500,
+            sources.YAHOO_SPY,
+            sources.YAHOO_BTC,
+            sources.YAHOO_ETH,
+            sources.FRED_CPI,
+            sources.FRED_SFXRSA,
+            sources.FRED_FHFA_SF,
+            sources.FRED_MORTGAGE30,
+            sources.ZILLOW_ZHVI,
+            sources.ZILLOW_ZORI,
+        )
+    }
+
+
+def _changed_hashes(expected_hashes: dict[str, str], synthetic_evidence_dir: Path, tmp_path: Path) -> dict[str, str]:
+    # A second byte representation of an existing public source gives the identity check a
+    # real SHA-256 value, while proving even byte-only evidence changes alter the evidence id.
+    changed_bytes = (synthetic_evidence_dir / sources.FRED_CPI.output_filename).read_bytes() + b"\n"
+    changed_path = tmp_path / "changed_CPIAUCSL.csv"
+    changed_path.write_bytes(changed_bytes)
+    return {**expected_hashes, sources.FRED_CPI.provenance_label: hashlib.sha256(changed_path.read_bytes()).hexdigest()}
 
 
 def test_state_space_training_uses_dated_one_month_returns_across_a_cpi_gap(
@@ -126,6 +183,7 @@ def test_state_space_training_uses_dated_one_month_returns_across_a_cpi_gap(
     train_main(["--model", "state_space", "--out-provider-config", str(out_manifest), "--out-blob", str(out_blob)])
 
     artifact = json.loads(out_blob.read_text(encoding="utf-8"))
+    assert artifact["public_evidence_source_sha256"] == _expected_hashes(synthetic_evidence_dir)
     observed_months = artifact["source_manifest"]["monthly_return_months"]["observed"]
     assert observed_months == list(evidence.monthly_return_months)
     inflation_index = evidence.series_names.index(InflationKey())
