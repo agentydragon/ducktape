@@ -1000,6 +1000,7 @@ it("shows why a refused resume of a suspended Sandbox failed", async () => {
 const waking: EnvironmentDescriptor = updatedSandbox(autosuspendSandbox(null), {
   phase: SandboxPhase.CREATING,
   pod: undefined,
+  readiness: create(ReadinessSchema, { state: ReadinessState.NOT_READY }),
   status: {},
 });
 
@@ -1043,6 +1044,7 @@ it("does not call a failed Pod a Sandbox that is starting", async () => {
   const running = autosuspendSandbox(null);
   sandboxes = [
     updatedSandbox(running, {
+      readiness: create(ReadinessSchema, { state: ReadinessState.NOT_READY }),
       status: {},
       pod: running.pod && { ...running.pod, status: { phase: "Failed" } },
     }),
