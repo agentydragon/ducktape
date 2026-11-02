@@ -297,7 +297,14 @@ func (c *runtimeLifecycleController) prepare() error {
 	}
 	p := &c.plan
 	p.sealUID = sealUID
-	p.connected = r.host != nil && r.host.connected && !r.hostExited
+	p.connected = r.host != nil && r.host.connected
+	if p.connected && r.hostLifetime != nil {
+		select {
+		case <-r.hostLifetime.Done():
+			p.connected = false
+		default:
+		}
+	}
 	p.executionMayExist = r.config.CodexExecServer != nil || r.executionOwner != nil
 	p.hostLifetimeExists = r.hostLifetime != nil
 	if p.connected {

@@ -93,23 +93,16 @@ func (r *Runtime) startHost(ctx context.Context) error {
 	process := &embeddedHostLifetime{host: host, cancel: cancel, done: make(chan struct{})}
 	r.mu.Lock()
 	r.hostLifetime = process
-	r.hostExit = make(chan childExit, 1)
 	r.mu.Unlock()
 	r.startLifecycleEngineLocked()
 	go func() {
 		process.err = host.Run(hostCtx, r.config.HostIngress, r)
 		close(process.done)
-		code, err := process.Wait(context.Background())
-		exit := childExit{code: code, err: err}
 		r.mu.Lock()
-		exitChannel := r.hostExit
 		closing := r.closing
-		r.hostExited = true
 		r.mu.Unlock()
-		if exitChannel != nil {
-			exitChannel <- exit
-		}
 		if !closing {
+			code, err := process.Wait(context.Background())
 			if err != nil {
 				r.fail(fmt.Errorf("Harness Host stopped before Runtime shutdown (status=%d): %w", code, err))
 			} else {
@@ -129,6 +122,8 @@ type embeddedHostLifetime struct {
 	done   chan struct{}
 	err    error
 }
+
+func (p *embeddedHostLifetime) Done() <-chan struct{} { return p.done }
 
 func (p *embeddedHostLifetime) Stop(ctx context.Context) error {
 	p.cancel()
@@ -154,28 +149,43 @@ func (p *embeddedHostLifetime) Wait(ctx context.Context) (int, error) {
 func (r *Runtime) waitForInitialHost(ctx context.Context) error {
 	for {
 		r.mu.Lock()
-		if r.failed {
+		if r.failed || r.closing {
 			r.mu.Unlock()
-			return errors.New("Runtime failed while starting Harness Host")
+			return errors.New("Runtime failed or closed while starting Harness Host")
 		}
 		report := r.hostReportLocked()
-		if r.host != nil && r.host.connected && r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_INACTIVE &&
+		ready := r.host != nil && r.host.connected && r.intent != nil && r.intent.Mode == runtimepb.LifecycleIntent_INACTIVE &&
 			report != nil && report.Ready && report.NativeStopped &&
-			protoEqualBindings(report.Binding, r.intent.Binding) {
-			r.mu.Unlock()
+			protoEqualBindings(report.Binding, r.intent.Binding)
+		changed := r.changes
+		host := r.hostLifetime
+		r.mu.Unlock()
+		// A completed Host may leave an already-published ready report behind.
+		// The lifetime exit takes precedence before exposing Gateway control.
+		select {
+		case <-host.Done():
+			return initialHostExit(host)
+		default:
+		}
+		if ready {
 			return nil
 		}
-		changed := r.changes
-		exitChannel := r.hostExit
-		r.mu.Unlock()
 		select {
 		case <-changed:
-		case exit := <-exitChannel:
-			return fmt.Errorf("Harness Host exited before initial lifecycle acknowledgement (status=%d): %w", exit.code, exit.err)
+		case <-host.Done():
+			return initialHostExit(host)
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
+}
+
+func initialHostExit(host hostLifetime) error {
+	code, err := host.Wait(context.Background())
+	if err != nil {
+		return fmt.Errorf("Harness Host exited before initial lifecycle acknowledgement (status=%d): %w", code, err)
+	}
+	return fmt.Errorf("Harness Host exited before initial lifecycle acknowledgement (status=%d)", code)
 }
 
 func protoEqualBindings(left, right *runtimepb.Binding) bool {

@@ -56,6 +56,7 @@ type Config struct {
 }
 
 type hostLifetime interface {
+	Done() <-chan struct{}
 	Stop(context.Context) error
 	WaitClosed(context.Context) error
 	Wait(context.Context) (int, error)
@@ -141,8 +142,6 @@ type Runtime struct {
 	control                  *control.Server
 	waitBootstrap            func(context.Context) error
 	hostLifetime             hostLifetime
-	hostExited               bool
-	hostExit                 chan childExit
 	closeOnce                sync.Once
 	closeDone                chan struct{}
 	closeErr                 error
