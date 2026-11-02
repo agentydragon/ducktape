@@ -301,7 +301,7 @@ go_test(
 go_test(
     name = "staging_config_test",
     srcs = ["staging_config_test.go"],
-    data = ["//cluster/k8s/agentplane-staging:app_config_manifest"],
+    data = ["//cluster/k8s/agentplane-staging:agentplane-staging.k8s.yaml"],
     embed = [":main_lib"],
     deps = [
         "@in_gopkg_yaml_v3//:yaml_v3",
