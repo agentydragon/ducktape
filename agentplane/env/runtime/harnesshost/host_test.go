@@ -119,8 +119,8 @@ func TestOpenSessionRetryUsesPersistedSetupAfterSealPublicationFailure(t *testin
 	if r.sessions.Get(request.SessionId) != nil {
 		t.Fatal("failed OpenSession became visible in the Session registry")
 	}
-	if _, found, err := session.ReadInput(r.ctx, r.lifecycle.state, request.SessionId); err != nil || found {
-		t.Fatalf("failed OpenSession published a Session input: found=%t, err=%v", found, err)
+	if _, found, err := session.ReadReconcileSnapshot(r.ctx, r.lifecycle.state, request.SessionId); err != nil || found {
+		t.Fatalf("failed OpenSession published a Session reconcile snapshot: found=%t, err=%v", found, err)
 	}
 	record, err := r.store.Read(request.SessionId)
 	if err != nil || string(record.SetupScript) != script {
@@ -230,7 +230,7 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 	if _, err := r.OpenSession(hostContext(r, context.Background()), request); err != nil {
 		t.Fatalf("open recovered Session without resupplying setup source: %v", err)
 	}
-	input, found, err := session.ReadInput(r.ctx, r.lifecycle.state, sessionID)
+	input, found, err := session.ReadReconcileSnapshot(r.ctx, r.lifecycle.state, sessionID)
 	if err != nil || !found || input.Setup != sessionpb.SetupState_SETUP_STATE_INTERRUPTED || !input.SetupRequested {
 		t.Fatalf("recovered setup input = %+v, found=%t, err=%v; want retained but interrupted", input, found, err)
 	}

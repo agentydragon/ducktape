@@ -96,7 +96,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 		},
 		OnChange: func() {
 			for _, id := range []string{"one-session", "fresh-session"} {
-				input, found, err := ReadInput(ctx, resources, id)
+				input, found, err := ReadReconcileSnapshot(ctx, resources, id)
 				if err != nil {
 					publishErrors <- err
 				}
@@ -155,7 +155,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 			t.Fatalf("retained setup was published before recovery: %v", retainedPublications)
 		}
 	}
-	input, found, err := ReadInput(ctx, resources, "one-session")
+	input, found, err := ReadReconcileSnapshot(ctx, resources, "one-session")
 	if err != nil || !found || input.Setup != sessionpb.SetupState_SETUP_STATE_INTERRUPTED {
 		t.Fatalf("recovered setup was not published: %+v, found=%t, err=%v", input, found, err)
 	}
@@ -202,7 +202,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	if result.err != nil || result.session != fresh {
 		t.Fatalf("competing retained load did not share the fresh Session owner: %+v, fresh=%p", result, fresh)
 	}
-	input, found, err = ReadInput(ctx, resources, "fresh-session")
+	input, found, err = ReadReconcileSnapshot(ctx, resources, "fresh-session")
 	if err != nil || !found || input.Setup != sessionpb.SetupState_SETUP_STATE_RUNNING {
 		t.Fatalf("fresh setup was not published as running: %+v, found=%t, err=%v", input, found, err)
 	}
@@ -300,8 +300,8 @@ func TestReopenRetryKeepsCOSIIngressAcknowledgementAfterJournalReopened(t *testi
 	if m.Get("reopen-session") != nil {
 		t.Fatal("failed reopen became visible in the Session registry")
 	}
-	if _, found, err := ReadInput(ctx, resources, "reopen-session"); err != nil || found {
-		t.Fatalf("failed reopen published a Session input: found=%t, err=%v", found, err)
+	if _, found, err := ReadReconcileSnapshot(ctx, resources, "reopen-session"); err != nil || found {
+		t.Fatalf("failed reopen published a Session reconcile snapshot: found=%t, err=%v", found, err)
 	}
 	ack, err := store.ReadAcknowledgement("reopen-session")
 	if err != nil || ack == nil || ack.Cursor != sealCursor || ack.Sealed {
@@ -330,7 +330,7 @@ func TestReopenRetryKeepsCOSIIngressAcknowledgementAfterJournalReopened(t *testi
 			interrupted++
 		}
 	}
-	input, found, err := ReadInput(ctx, resources, "reopen-session")
+	input, found, err := ReadReconcileSnapshot(ctx, resources, "reopen-session")
 	if err != nil || !found || input.Setup != sessionpb.SetupState_SETUP_STATE_INTERRUPTED {
 		t.Fatalf("retained setup state = %+v, found=%t, err=%v", input, found, err)
 	}

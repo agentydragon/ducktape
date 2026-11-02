@@ -120,7 +120,7 @@ func (m *Manager) ReserveFresh(ctx context.Context, id string, reserve func() er
 	return m.loadLocked(ctx, id, false)
 }
 
-// Retained records are reconciled before publishing any schedulable Session input.
+// Retained records are reconciled before publishing any schedulable Session reconcile snapshot.
 func (m *Manager) Load(ctx context.Context, id string) (*Session, error) {
 	m.loadMu.Lock()
 	defer m.loadMu.Unlock()
@@ -171,7 +171,7 @@ func (m *Manager) loadLocked(ctx context.Context, id string, recoverRetained boo
 	if err := m.Reopen(ctx, s); err != nil {
 		return nil, err
 	}
-	// The Session controller resolves each published Input through Get.
+	// The Session controller resolves each published ReconcileSnapshot through Get.
 	m.mu.Lock()
 	m.sessions[id] = s
 	m.mu.Unlock()
@@ -242,7 +242,7 @@ func (m *Manager) ResetDemand() error {
 	m.publishMu.Lock()
 	defer m.publishMu.Unlock()
 	for _, s := range m.Inventory() {
-		input, _, err := componentRead[Input](m.ctx, m.state, s.id)
+		input, _, err := componentRead[ReconcileSnapshot](m.ctx, m.state, s.id)
 		if err != nil {
 			return err
 		}

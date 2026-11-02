@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	InputType          = "CodexAppServerInputs.agentplane"
+	LifecycleSignalType = "CodexAppServerLifecycleSignals.agentplane"
 	StatusType         = "CodexAppServerStatuses.agentplane"
 	OperationStateType = "CodexAppServerOperationStates.agentplane"
 	ControllerName     = "codex-app-server-lifecycle"
@@ -22,7 +22,7 @@ const (
 	HostOwner          = "codex-app-server-host"
 )
 
-type Input struct {
+type LifecycleSignal struct {
 	Demand        uint64
 	ExitSequence  uint64
 	ExitProcessID string
@@ -83,16 +83,16 @@ func publish[T componentSpec[T]](ctx context.Context, store state.State, id stri
 	return cosi.Publish(ctx, store, componentResource(id, value), value, HostOwner)
 }
 
-func ReadInput(ctx context.Context, reader controller.Reader) (Input, bool, error) {
-	return componentRead[Input](ctx, reader, ResourceID)
+func ReadLifecycleSignal(ctx context.Context, reader controller.Reader) (LifecycleSignal, bool, error) {
+	return componentRead[LifecycleSignal](ctx, reader, ResourceID)
 }
 
 func ReadStatus(ctx context.Context, reader controller.Reader) (Status, bool, error) {
 	return componentRead[Status](ctx, reader, ResourceID)
 }
 
-func (Input) resourceType() resource.Type             { return InputType }
-func (value Input) DeepCopy() Input                   { return value }
+func (LifecycleSignal) resourceType() resource.Type     { return LifecycleSignalType }
+func (value LifecycleSignal) DeepCopy() LifecycleSignal { return value }
 func (Status) resourceType() resource.Type            { return StatusType }
 func (value Status) DeepCopy() Status                 { return value }
 func (operationState) resourceType() resource.Type    { return OperationStateType }

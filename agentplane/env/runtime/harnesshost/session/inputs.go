@@ -16,7 +16,7 @@ import (
 func (m *Manager) publishSession(s *Session, demand bool) {
 	m.publishMu.Lock()
 	defer m.publishMu.Unlock()
-	var input Input
+	var input ReconcileSnapshot
 	s.mu.Lock()
 	input.Harness = s.record.Harness
 	input.SetupRequested = retained.HasSetupScript(s.record)
@@ -29,7 +29,7 @@ func (m *Manager) publishSession(s *Session, demand bool) {
 	s.mu.Unlock()
 	input.DispatchBlocked = adapter == nil || adapter.BlocksCommandDispatch()
 	// COSI retries this updater on conflict, so each demand increment starts from the current spec.
-	m.fail(safe.StateModify(m.ctx, m.state, componentResource(s.id, Input{}), func(current *typed.Resource[Input, componentExtension[Input]]) error {
+	m.fail(safe.StateModify(m.ctx, m.state, componentResource(s.id, ReconcileSnapshot{}), func(current *typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]) error {
 		next := input
 		next.Demand = current.TypedSpec().Demand
 		if demand {
@@ -81,13 +81,13 @@ func (s *Session) waitSetup(ctx context.Context) error {
 	if !pending {
 		return nil
 	}
-	_, err := safe.StateWatchFor[*typed.Resource[Input, componentExtension[Input]]](
-		ctx, s.deps.state, componentResource(s.id, Input{}).Metadata(),
+	_, err := safe.StateWatchFor[*typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]](
+		ctx, s.deps.state, componentResource(s.id, ReconcileSnapshot{}).Metadata(),
 		state.WithEventTypes(state.Created, state.Updated),
 		state.WithCondition(func(value resource.Resource) (bool, error) {
-			input, ok := value.(*typed.Resource[Input, componentExtension[Input]])
+			input, ok := value.(*typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]])
 			if !ok {
-				return false, fmt.Errorf("unexpected Session input resource %T", value)
+				return false, fmt.Errorf("unexpected Session reconcile snapshot resource %T", value)
 			}
 			return input.TypedSpec().Setup != sessionpb.SetupState_SETUP_STATE_RUNNING, nil
 		}),

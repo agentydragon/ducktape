@@ -123,12 +123,12 @@ flowchart LR
   I["HostIntents"]
   IS["HostIntentStatuses"]
   HI(["harness-host-intent"])
-  SI["SessionInputs"]
+  SI["SessionReconcileSnapshots"]
   Saved["SessionRecords<br/>(persistent)"]
   SD["SessionInspectionStatuses"]
   SO["SessionOperationStates"]
   SR["SessionLifecycleStatuses"]
-  AI["CodexAppServerInputs"]
+  AI["CodexAppServerLifecycleSignals"]
   AO["CodexAppServerOperationStates"]
   AR["CodexAppServerStatuses"]
   ER["ExecutionStatuses"]
@@ -173,8 +173,8 @@ flowchart LR
 | `harness-host-report`        | `HarnessHostDesiredStates`, `HarnessHostLifecycleStatuses` (weak), plus Host change wakeups                                                                                                                                                        | `HostReports` (exclusive)                  | Publishes inventory, blocker, idle and lifecycle facts with the full sampled intent.                                                          |
 | `harness-host-intent`        | `HostIntents` (weak)                                                                                                                                                                                                                               | `HostIntentStatuses` (exclusive)           | Checks startup and the synchronous Runtime connection gate, records Applying before the native effect, and fails closed on an unknown result. |
 | `harness-host-lifecycle`     | `HarnessHostDesiredStates`, `HarnessHostAdmissionCounts`, `HostIntentStatuses`, `SessionInspectionStatuses`, `SessionLifecycleStatuses`, `JournalSeals`, `IngressAcks`, `CodexAppServerStatuses`, `ProcessDesiredStates`, `ProcessStatuses` (weak) | `HarnessHostLifecycleStatuses` (exclusive) | Aggregates the Host drain barrier; explicitly queues its next step after changing status.                                                     |
-| `session-lifecycle`          | `SessionInputs` (primary); `HarnessHostDesiredStates`, `HarnessHostLifecycleStatuses`, `CodexAppServerStatuses`, `SessionOperationStates` (mapped)                                                                                                 | `SessionLifecycleStatuses` (exclusive)     | Per Session. App-server updates map only to Codex Sessions; operation state records map to their Session.                                     |
-| `codex-app-server-lifecycle` | `CodexAppServerInputs` (primary); `HarnessHostDesiredStates`, `HarnessHostLifecycleStatuses`, `CodexAppServerOperationStates`, `ExecutionStatuses` (mapped)                                                                                        | `CodexAppServerStatuses` (exclusive)       | Per shared app-server; native effects run in host-owned one-off workers. Execution status changes wake a separate live-owner readiness check. |
+| `session-lifecycle`          | `SessionReconcileSnapshots` (primary); `HarnessHostDesiredStates`, `HarnessHostLifecycleStatuses`, `CodexAppServerStatuses`, `SessionOperationStates` (mapped)                                                                                                 | `SessionLifecycleStatuses` (exclusive)     | Per Session. App-server updates map only to Codex Sessions; operation state records map to their Session.                                     |
+| `codex-app-server-lifecycle` | `CodexAppServerLifecycleSignals` (primary); `HarnessHostDesiredStates`, `HarnessHostLifecycleStatuses`, `CodexAppServerOperationStates`, `ExecutionStatuses` (mapped)                                                                                        | `CodexAppServerStatuses` (exclusive)       | Per shared app-server; native effects run in host-owned one-off workers. Execution status changes wake a separate live-owner readiness check. |
 | `process-lifecycle`          | `ProcessDesiredStates` (primary), `ProcessObservations` (mapped)                                                                                                                                                                                   | `ProcessStatuses` (exclusive)              | The same single controller and registry shown above; per-domain contexts and worker barriers remain separate.                                 |
 
 The process controller and its three resource types appear in both diagrams to show their callers;
@@ -189,13 +189,13 @@ its owning domain's context and join barrier.
 `HarnessHostAdmissionCounts` records in-flight Host admissions under the Host admission lock;
 its resource type also appears in drain blocker diagnostics. Harness Host publishes
 `SessionInspectionStatuses` when inspection work starts or settles, separately from the more
-frequently updated `SessionInputs`. Host aggregation needs inspection settlement, not every
-dispatch change. `SessionInputs`, `CodexAppServerInputs`, and `ExecutionLifecycleSignals` retain their
-input names because each combines demand with observed or completed facts for its controller.
+frequently updated `SessionReconcileSnapshots`. Host aggregation needs inspection settlement, not every
+dispatch change. `SessionReconcileSnapshots`, `CodexAppServerLifecycleSignals`, and
+`ExecutionLifecycleSignals` each combine demand with observed or completed facts for their controller.
 Journal seals are observations published from the durable journal; `IngressAcks` persists the latest
 History acknowledgement cursor and seal bit. The SQLite journal remains the authority for its events.
 
-The retained Session record supplies immutable configuration. `SessionInputs` carries harness kind
+The retained Session record supplies immutable configuration. `SessionReconcileSnapshots` carries harness kind
 and demand alongside the setup, process, dispatch and inspection facts the controller reconciles.
 `SessionLifecycleStatuses` records controller progress such as phase, observed demand and Host generation;
 it is not desired runtime configuration. Reconciliation starts a dedicated Claude process per Session

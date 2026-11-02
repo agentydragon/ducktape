@@ -15,10 +15,10 @@ import (
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 )
 
-func TestSessionInputsIgnoreJournalOnlyChanges(t *testing.T) {
+func TestSessionReconcileSnapshotsIgnoreJournalOnlyChanges(t *testing.T) {
 	ctx, root, resources, store, manager := newSessionTestManager(t, nil, func(string) string { return "destination" })
 	s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
-	inputPointer := componentResource(s.id, Input{}).Metadata()
+	inputPointer := componentResource(s.id, ReconcileSnapshot{}).Metadata()
 	drainPointer := componentResource(s.id, InspectionStatus{}).Metadata()
 	before, err := resources.Get(ctx, inputPointer)
 	if err != nil {
@@ -44,7 +44,7 @@ func TestSessionInputsIgnoreJournalOnlyChanges(t *testing.T) {
 		t.Fatal("journal output republished lifecycle input")
 	}
 	s.requestExecution()
-	demand, _, err := ReadInput(ctx, resources, s.id)
+	demand, _, err := ReadReconcileSnapshot(ctx, resources, s.id)
 	if err != nil || demand.Demand != 1 {
 		t.Fatalf("execution demand lost: %v, %v", demand, err)
 	}
@@ -92,7 +92,7 @@ func TestSessionInputTracksNativeDispatchReadinessWithoutJournalEvent(t *testing
 	before := s.journal.LastCursor()
 	adapter.blocked = false
 	s.wake()
-	input, _, err := ReadInput(ctx, resources, s.id)
+	input, _, err := ReadReconcileSnapshot(ctx, resources, s.id)
 	if err != nil || input.DispatchBlocked {
 		t.Fatalf("raw reply did not release dispatch: %v, %v", input, err)
 	}
@@ -109,9 +109,9 @@ func TestSessionDemandPublicationRetriesFromCurrentDemand(t *testing.T) {
 	manager.state = state.WrapCore(conflictingState)
 	manager.publishSession(s, true)
 
-	input, found, err := componentRead[Input](ctx, manager.state, s.id)
+	input, found, err := componentRead[ReconcileSnapshot](ctx, manager.state, s.id)
 	if err != nil || !found {
-		t.Fatalf("read Session input after conflict retry: found=%t error=%v", found, err)
+		t.Fatalf("read Session reconcile snapshot after conflict retry: found=%t error=%v", found, err)
 	}
 	if input.Demand != 2 {
 		t.Fatalf("Session demand after a competing increment and one request = %d, want 2", input.Demand)
@@ -124,15 +124,15 @@ func TestSessionDemandPublicationRetriesFromCurrentDemand(t *testing.T) {
 func TestSessionDemandPublicationStartsFromZeroWhenInputIsMissing(t *testing.T) {
 	ctx, root, resources, store, manager := newSessionTestManager(t, nil, func(string) string { return "destination" })
 	s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
-	if err := resources.Destroy(ctx, componentResource(s.id, Input{}).Metadata(), state.WithDestroyOwner(HostOwner)); err != nil {
+	if err := resources.Destroy(ctx, componentResource(s.id, ReconcileSnapshot{}).Metadata(), state.WithDestroyOwner(HostOwner)); err != nil {
 		t.Fatal(err)
 	}
 
 	s.requestExecution()
 
-	input, found, err := ReadInput(ctx, resources, s.id)
+	input, found, err := ReadReconcileSnapshot(ctx, resources, s.id)
 	if err != nil || !found {
-		t.Fatalf("read recreated Session input: found=%t error=%v", found, err)
+		t.Fatalf("read recreated Session reconcile snapshot: found=%t error=%v", found, err)
 	}
 	if input.Demand != 1 {
 		t.Fatalf("Session demand after recreating a missing input = %d, want 1", input.Demand)
@@ -146,17 +146,17 @@ type sessionDemandConflictCoreState struct {
 }
 
 func (s *sessionDemandConflictCoreState) Update(ctx context.Context, value resource.Resource, opts ...state.UpdateOption) error {
-	if value.Metadata().Type() == InputType {
+	if value.Metadata().Type() == ReconcileSnapshotType {
 		s.inputUpdateAttempts++
 		if !s.conflicted {
 			s.conflicted = true
 			current, err := s.CoreState.Get(ctx, value.Metadata())
 			if err != nil {
-				return fmt.Errorf("read competing Session input: %w", err)
+				return fmt.Errorf("read competing Session reconcile snapshot: %w", err)
 			}
-			input, ok := current.(*typed.Resource[Input, componentExtension[Input]])
+			input, ok := current.(*typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]])
 			if !ok {
-				return fmt.Errorf("unexpected Session input type %T", current)
+				return fmt.Errorf("unexpected Session reconcile snapshot type %T", current)
 			}
 			input.TypedSpec().Demand++
 			if err := s.CoreState.Update(ctx, input, opts...); err != nil {
@@ -164,7 +164,7 @@ func (s *sessionDemandConflictCoreState) Update(ctx context.Context, value resou
 			}
 			latest, err := s.CoreState.Get(ctx, value.Metadata())
 			if err != nil {
-				return fmt.Errorf("read Session input after competing demand: %w", err)
+				return fmt.Errorf("read Session reconcile snapshot after competing demand: %w", err)
 			}
 			return inmem.ErrVersionConflict(value.Metadata(), value.Metadata().Version(), latest.Metadata().Version())
 		}

@@ -24,7 +24,7 @@ func (*sessionLifecycleController) Name() string { return ControllerName }
 func (c *sessionLifecycleController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
-			{Namespace: harnesshostlifecycle.Namespace, Type: InputType, Kind: controller.InputQPrimary},
+			{Namespace: harnesshostlifecycle.Namespace, Type: ReconcileSnapshotType, Kind: controller.InputQPrimary},
 			{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.DesiredStateType, Kind: controller.InputQMapped},
 			{Namespace: harnesshostlifecycle.Namespace, Type: harnesshostlifecycle.AggregateStatusType, Kind: controller.InputQMapped},
 			{Namespace: harnesshostlifecycle.Namespace, Type: codexappserver.StatusType, Kind: controller.InputQMapped},
@@ -41,14 +41,14 @@ func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger
 		if err != nil || !found || result.Controller != ControllerName || result.Session == "" {
 			return nil, err
 		}
-		return []resource.Pointer{resource.NewMetadata(harnesshostlifecycle.Namespace, InputType, result.Session, resource.VersionUndefined)}, nil
+		return []resource.Pointer{resource.NewMetadata(harnesshostlifecycle.Namespace, ReconcileSnapshotType, result.Session, resource.VersionUndefined)}, nil
 	}
-	rows, err := safe.ReaderListAll[*typed.Resource[Input, componentExtension[Input]]](ctx, r)
+	rows, err := safe.ReaderListAll[*typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]](ctx, r)
 	if err != nil {
 		return nil, err
 	}
 	result := make([]resource.Pointer, 0, rows.Len())
-	rows.ForEach(func(row *typed.Resource[Input, componentExtension[Input]]) {
+	rows.ForEach(func(row *typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]) {
 		if ptr.Type() == codexappserver.StatusType && row.TypedSpec().Harness != sessionpb.Harness_HARNESS_CODEX {
 			return
 		}
@@ -62,7 +62,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	if s == nil {
 		return nil
 	}
-	input, found, err := componentRead[Input](ctx, r, s.id)
+	input, found, err := componentRead[ReconcileSnapshot](ctx, r, s.id)
 	if err != nil || !found {
 		return err
 	}
@@ -132,7 +132,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		c.manager.forgetOperation(op)
 		// takeOperation refreshes host input synchronously. The completion resource
 		// can be queued before the worker's own refresh, so read it again here.
-		input, _, err = componentRead[Input](ctx, r, s.id)
+		input, _, err = componentRead[ReconcileSnapshot](ctx, r, s.id)
 		if err != nil {
 			return err
 		}

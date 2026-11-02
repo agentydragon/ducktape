@@ -206,12 +206,12 @@ func waitCodexStatus(t *testing.T, r *Host, predicate func(codexappserver.Status
 
 func codexAppServerDemand(t *testing.T, r *Host) uint64 {
 	t.Helper()
-	input, found, err := codexappserver.ReadInput(r.ctx, r.lifecycle.state)
+	input, found, err := codexappserver.ReadLifecycleSignal(r.ctx, r.lifecycle.state)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Fatal("Codex input is missing")
+		t.Fatal("Codex app-server lifecycle signal is missing")
 	}
 	return input.Demand
 }
