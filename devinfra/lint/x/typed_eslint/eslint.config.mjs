@@ -29,4 +29,12 @@ export default [
       "@typescript-eslint/await-thenable": "error",
     },
   },
+  {
+    files: ["agentplane/app/frontend/connections/**/*.{ts,tsx}"],
+    languageOptions: {
+      parserOptions: {
+        project: ["agentplane/app/frontend/connections/tsconfig.json"],
+      },
+    },
+  },
 ];

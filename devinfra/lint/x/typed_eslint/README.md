@@ -1,8 +1,14 @@
 # Typed ESLint with the stock aspect
 
 The config, opt-in flag, [fixtures](fixtures/BUILD.bazel), and [write-up](investigation.md)
-all live in this directory. Shared integration is limited to `devinfra/js/ts_library.bzl`
+all live in this directory. Shared lint wiring is in `devinfra/js/ts_library.bzl`
 and the ESLint launcher in `devinfra/lint/BUILD.bazel`.
+
+The [connections trial](connections.md) additionally replaces one feature's per-module
+compilation targets with direct `ts_project` and explicit `ts_config` targets. These
+projects bypass the generated-config adapter below. One override in the experimental ESLint config selects their shared checked-in config.
+Production, reusable helpers under `testing/`, and specs have explicit source lists
+and separate compilation targets; the three test runners are declared explicitly.
 
 The experiment selects a custom ESLint config through the existing aspect's binary.
 It uses `parserOptions.project: ["**/tsconfig_*.json"]` to discover generated projects in

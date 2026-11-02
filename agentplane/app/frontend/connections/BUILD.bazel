@@ -1,121 +1,34 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
-load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
-load("//devinfra/js:ts_library.bzl", "ts_library")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config", "ts_project")
+load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
+SRCS = [
+    "caller_grants.tsx",
+    "caller_grants_client.ts",
+    "connection_service_client.ts",
+    "consent.tsx",
+    "management.tsx",
+    "models.ts",
+]
+
+SPEC_SRCS = [
+    "caller_grants.test.tsx",
+    "consent.test.tsx",
+    "management.test.tsx",
+]
+
 filegroup(
     name = "typed_lint_srcs",
-    srcs = glob(
-        [
-            "*.ts",
-            "*.tsx",
-            "**/*.ts",
-            "**/*.tsx",
-        ],
-        allow_empty = True,
-    ),
+    srcs = SRCS + SPEC_SRCS,
     visibility = ["//agentplane/app/frontend:__pkg__"],
 )
 
-TSCONFIG = "//agentplane/app/frontend:tsconfig"
-
-ts_library(
-    name = "models",
-    srcs = ["models.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:schema",
-        "//agentplane/app/frontend/actions:action_client",
-    ],
-)
-
-ts_library(
-    name = "caller_grants_client",
-    srcs = ["caller_grants_client.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":models",
-        "//agentplane/app/frontend:client",
-    ],
-)
-
-ts_library(
-    name = "connection_service_client",
-    srcs = ["connection_service_client.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":models",
-        "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/action_service:action_service_pb",
-        "//agentplane/app/frontend:client",
-        "//agentplane/mcp_edge:connection_service_pb",
-        "//agentplane/proto:sandboxes_pb",
-    ],
-)
-
-ts_library(
-    name = "consent",
-    srcs = ["consent.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":connection_service_client",
-        ":models",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:time_ago",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "consent_test",
-    srcs = ["consent.test.tsx"],
-    deps = [
-        ":connection_service_client",
-        ":consent",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/vitest",
-        "//agentplane/app/frontend/actions/testing:harness",
-        "//agentplane/app/frontend/connections/testing:fixture",
-        "//agentplane/app/frontend/connections/testing:test_support",
-    ],
-)
-
-ts_library(
-    name = "caller_grants",
-    srcs = ["caller_grants.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":caller_grants_client",
-        ":models",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend/actions:policy",
-        "//agentplane/app/frontend/bindings:table",
-        "//util/frontend:help_tooltip",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "caller_grants_test",
-    srcs = ["caller_grants.test.tsx"],
-    deps = [
-        ":caller_grants",
-        ":models",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/react-router",
-        "//:node_modules/vitest",
-    ],
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+    deps = ["//agentplane/app/frontend:tsconfig"],
 )
 
 js_library(
@@ -123,39 +36,100 @@ js_library(
     srcs = ["management.css"],
 )
 
-ts_library(
-    name = "management",
-    srcs = ["management.tsx"],
-    tsconfig = TSCONFIG,
+ts_project(
+    name = "connections",
+    srcs = SRCS,
+    declaration = True,
+    resolve_json_module = True,
+    source_map = True,
+    transpiler = "tsc",
+    tsconfig = ":tsconfig",
     deps = [
-        ":caller_grants",
-        ":caller_grants_client",
-        ":connection_service_client",
         ":management_css",
-        ":models",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:inline_name",
+        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:stream_reader",
+        "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend:watch_stream",
+        "//agentplane/app/frontend/actions:action_client",
+        "//agentplane/app/frontend/actions:policy",
+        "//agentplane/app/frontend/bindings:table",
+        "//agentplane/mcp_edge:connection_service_pb",
+        "//agentplane/proto:sandboxes_pb",
+        "//util/frontend:help_tooltip",
     ],
 )
 
-agentplane_vitest_test(
-    name = "management_test",
-    srcs = ["management.test.tsx"],
+ts_project(
+    name = "specs",
+    testonly = True,
+    srcs = SPEC_SRCS,
+    declaration = True,
+    resolve_json_module = True,
+    source_map = True,
+    transpiler = "tsc",
+    tsconfig = ":tsconfig",
     deps = [
-        ":connection_service_client",
-        ":management",
-        ":models",
+        ":connections",
+        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
+        "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/actions/testing:harness",
-        "//agentplane/app/frontend/connections/testing:fixture",
-        "//agentplane/app/frontend/connections/testing:test_support",
+        "//agentplane/app/frontend/connections/testing:support",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "caller_grants_test",
+    args = [
+        "run",
+        "--config",
+        "vitest_config.mjs",
+        "connections/caller_grants.test.js",
+    ],
+    chdir = "agentplane/app/frontend",
+    data = [
+        ":specs",
+        "//agentplane/app/frontend:vitest_config",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "consent_test",
+    args = [
+        "run",
+        "--config",
+        "vitest_config.mjs",
+        "connections/consent.test.js",
+    ],
+    chdir = "agentplane/app/frontend",
+    data = [
+        ":specs",
+        "//agentplane/app/frontend:vitest_config",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "management_test",
+    args = [
+        "run",
+        "--config",
+        "vitest_config.mjs",
+        "connections/management.test.js",
+    ],
+    chdir = "agentplane/app/frontend",
+    data = [
+        ":specs",
+        "//agentplane/app/frontend:vitest_config",
     ],
 )
