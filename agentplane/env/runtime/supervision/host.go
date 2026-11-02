@@ -81,12 +81,11 @@ type processHostEntry struct {
 }
 
 type processHostSnapshot struct {
-	startClaimed bool
-	startDone    bool
-	startErr     error
-	started      bool
-	pid          int
-	hasInstance  bool
+	startDone   bool
+	startErr    error
+	started     bool
+	pid         int
+	hasInstance bool
 
 	exitObserved bool
 	exitErr      error
@@ -209,7 +208,6 @@ func (h *Host) snapshot(id string) (processHostSnapshot, bool) {
 
 	var snapshot processHostSnapshot
 	if start := entry.start; start != nil {
-		snapshot.startClaimed = true
 		snapshot.startDone = processSlotDone(start.done)
 		snapshot.startErr = start.result.err
 		snapshot.started = start.result.started
