@@ -35,7 +35,7 @@ import { readySandbox, suspendedSandbox, testSandbox } from "../testing/sandbox"
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import "@mantine/core/styles.css";
 
-import { clone, create, fromJson, toJson, type JsonValue, type MessageInitShape } from "@bufbuild/protobuf";
+import { clone, create, fromJson, fromJsonString, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -747,7 +747,7 @@ function notificationStatus(sandbox: string) {
           },
         ]
       : [];
-  return fromJson(SandboxNotificationStatusSchema, { observedAt: ago(0), inboxes } as JsonValue);
+  return fromJsonString(SandboxNotificationStatusSchema, JSON.stringify({ observedAt: ago(0), inboxes }));
 }
 
 /** The store's copy of the sessions: the idle one named, the stopped one not, so both renderings are on the page. */
