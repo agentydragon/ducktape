@@ -4,14 +4,26 @@ use crate::inference::{FactContext, IterativeInference, IterativeRules};
 
 pub enum TopLevelItemView<'a> {
     Borrowed(&'a ModuleItem),
-    Owned(ModuleItem),
+    Owned {
+        item: ModuleItem,
+        provenance: SplitDeclaratorProvenance<'a>,
+    },
+}
+
+/// Original parent and child coordinates for a canonical comma-list split.
+/// The cloned analysis item is still the one consumed by per-source-unit
+/// analysis; this borrowed origin lets source-based proofs check that item
+/// against its exact original declarator without rediscovering it by name.
+pub struct SplitDeclaratorProvenance<'a> {
+    pub(crate) parent_item: &'a ModuleItem,
+    pub(crate) declarator_index: usize,
 }
 
 impl TopLevelItemView<'_> {
     pub fn as_module_item(&self) -> &ModuleItem {
         match self {
             Self::Borrowed(item) => item,
-            Self::Owned(item) => item,
+            Self::Owned { item, .. } => item,
         }
     }
 }
@@ -26,7 +38,7 @@ pub fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<'_>> {
     for item in body {
         match item {
             ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) if var.decls.len() > 1 => {
-                for decl in &var.decls {
+                for (declarator_index, decl) in var.decls.iter().enumerate() {
                     let single = VarDecl {
                         span: decl.span,
                         ctxt: var.ctxt,
@@ -34,15 +46,20 @@ pub fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<'_>> {
                         declare: var.declare,
                         decls: vec![decl.clone()],
                     };
-                    out.push(TopLevelItemView::Owned(ModuleItem::Stmt(Stmt::Decl(
-                        Decl::Var(Box::new(single)),
-                    ))));
+                    let item_view = ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(single))));
+                    out.push(TopLevelItemView::Owned {
+                        item: item_view,
+                        provenance: SplitDeclaratorProvenance {
+                            parent_item: item,
+                            declarator_index,
+                        },
+                    });
                 }
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
                 match &export_decl.decl {
                     Decl::Var(var) if var.decls.len() > 1 => {
-                        for decl in &var.decls {
+                        for (declarator_index, decl) in var.decls.iter().enumerate() {
                             let single = VarDecl {
                                 span: decl.span,
                                 ctxt: var.ctxt,
@@ -50,12 +67,18 @@ pub fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<'_>> {
                                 declare: var.declare,
                                 decls: vec![decl.clone()],
                             };
-                            out.push(TopLevelItemView::Owned(ModuleItem::ModuleDecl(
-                                ModuleDecl::ExportDecl(ExportDecl {
+                            let item_view =
+                                ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
                                     span: decl.span,
                                     decl: Decl::Var(Box::new(single)),
-                                }),
-                            )));
+                                }));
+                            out.push(TopLevelItemView::Owned {
+                                item: item_view,
+                                provenance: SplitDeclaratorProvenance {
+                                    parent_item: item,
+                                    declarator_index,
+                                },
+                            });
                         }
                     }
                     _ => out.push(TopLevelItemView::Borrowed(item)),

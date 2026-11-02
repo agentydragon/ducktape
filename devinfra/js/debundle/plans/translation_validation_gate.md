@@ -149,6 +149,14 @@ canonical comparisons remain necessary for the full TV2 migration.
   imports and bare var redeclarations). Today these live, in
   partial form, in `StatementFacts` (`reads`, `rebinds`, `heap_contents`,
   `global_reads`/`global_writes`, `synchronous_calls`).
+- **Narrow initialized-owner coverage for comma-split declarations.** The
+  canonical item view retains the original parent and declarator index; the
+  existing source collector checks that child against the singleton analysis
+  view. Each sibling keeps its own source-unit effect record and order. Only
+  the existing simple binding and leaf-syntax subset can reach the existing
+  EvaluateInitializer completion proof, including initialized local reads.
+  Exports, destructuring, effectful expressions, getters, calls/callbacks and
+  TDZ reads remain uncovered; this supplies no general effect-domain closure.
 - **Synchronous callee effects folded into the caller**, which the interpreter
   already does for binding and collection accesses. Bounded fallback reach
   is currently report-only, without a retained effect-domain closure;
