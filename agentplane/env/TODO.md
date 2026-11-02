@@ -5,17 +5,21 @@
 `Session.ModelChanged` and `ReasoningEffortChanged` commit the retained COSI record before their
 terminal event commits to the separate SQLite journal. A crash or rollback between those writes can
 leave the new configuration durable while the dispatched command has no terminal event. A fault
-injection after the COSI write reproduces that state; the durable dispatch marker prevents blindly
-replaying the native effect. Define one recoverable authority for configuration and its journal
+injection after the COSI write reproduces that state; rollback can also discard the native response
+frame needed for recovery. The durable dispatch marker prevents blindly replaying the native effect.
+Define one recoverable authority for configuration and its journal
 outcome, and test both sides of the commit boundary. A shared journal transaction or an explicit
 reconciliation protocol may fit; simply reversing the writes moves the inconsistency window.
 
-If we revisit the journal's storage design, consider COSI's upstream
-[`state-sqlite`](https://github.com/cosi-project/state-sqlite) backend. It reads resources from
-SQLite rather than keeping every resource in COSI's in-memory state; controller caches and large
-lists can still retain or load many resources. Before choosing it, evaluate compatibility, memory
-and performance, cursor-based history, watch retention, and whether its transaction boundaries can
-preserve the journal's atomic event and checkpoint guarantees.
+## Fence uncertain Session reservation writes
+
+`OpenSession` returns a retained `SessionRecords` write error without failing the Host. COSI writes
+the backing store before updating its in-memory collection, so an error after a durable write can
+leave `Exists` reporting the Session absent. With an injected backing store that saves the first
+record then returns an error, a retry writes a different record under the same ID, including a new
+event source ID. The probe establishes this failure model, not that a particular bbolt error occurred
+in production. Define a fail-closed recovery boundary for uncertain reservations and test retry,
+restart, conflicting Session specs and event-source identity; do not infer absence from stale memory.
 
 ## Prove VM guest boot and console autologin
 
@@ -47,13 +51,6 @@ disabled and a root shell when it is enabled.
   resources and joins a host worker barrier; those semantics are not automatically appropriate for
   the Runtime's coordinator-owned workers.
 
-## Measure bootstrap output storage at large volumes
-
-Bootstrap output now uses one persistent COSI resource per script-runner output chunk, with no
-retention limit or truncation. Measure representative and noisy output volumes, including cold
-restart time and Runtime memory, then decide whether proportional in-memory replay needs retention
-or paging. Preserve complete output and durable replay across any future change.
-
 ## Simplify ownership and process fencing with COSI lifecycle primitives
 
 Runtime and embedded Harness Host share the environment owner fence and inherited native
@@ -83,7 +80,10 @@ an identified replacement; do not assume the existing set of locks and markers i
 ## Reconsider COSI persistence for the Session journal
 
 Keep the SQLite journal as the authority for now, and revisit COSI if a disk-backed implementation
-or a different resource model makes it a good fit. Compare transaction and replay semantics,
+or a different resource model makes it a good fit. The upstream
+[`state-sqlite`](https://github.com/cosi-project/state-sqlite) backend reads resources from SQLite
+without requiring every resource to remain in COSI's in-memory state; controller caches and large
+lists can still retain or load many resources. Compare transaction and replay semantics,
 indexed and paged reads, startup and memory use, and write throughput at realistic journal sizes.
 Any replacement must retain atomic command admission, dispatch and event/checkpoint updates,
 commit-before-publication, ordered replay and reconciliation of uncertain native effects. A COSI
@@ -148,6 +148,22 @@ covers suspend and resume. Extend central execution coverage to the production P
 systemd paths, including ownership loss, executor replacement and descendant cleanup; keep the
 Sandbox incarnation and uncertain-effect boundaries in those checks.
 
+## Protect resident harnesses from tool resource exhaustion
+
+Claude's direct Bash children share the harness's Pod container or VM service cgroup. Codex commands
+have a separate boundary from the app-server, but share the exec-server's budget and failure domain.
+Evaluate a feasible tool-resource boundary for each deployment, then test that a tool OOM leaves the
+resident harness and its journal usable. Any executor restart must report lost work and must not replay
+uncertain commands. See [current isolation and options](runtime/execution/ISOLATION.md).
+
+## Exercise the shipped harness binaries
+
+The published [`environment-tools` image](images/image.nix) uses nixpkgs Claude and Codex, while
+environment e2e tests use separately pinned native binaries. The [image smoke check](images/ducktape_image_smoke.sh)
+verifies versions but does not run a turn through the shipped harnesses. Add a deterministic turn
+through each image binary at the Runtime boundary, or establish an equivalent release gate that
+tests the exact shipped versions.
+
 ## Decide whether Agentplane should own a base prompt
 
 Runners preserve the harness's default base prompt and add platform and Session instructions.
@@ -156,24 +172,18 @@ the supported harnesses and model routes before replacing their defaults.
 
 ## Verify Claude interrupted-turn reconciliation across transcript flush timing
 
-The previously cited `test_resume_after_an_interrupted_partial_turn_replays_only_completed_model_history`
-no longer exists. The current native test
-[`test_resume_after_an_interrupted_partial_turn_replays_the_partial_turn_and_marker`](../native/claude/test_turns.py)
-waits for the interrupt marker to persist and verifies that the partial text is replayed on resume.
-It does not establish the no-flush case or the Harness Host's reconciliation result. Compare those
-boundaries against `runtime/harnesshost/claude/history.go` and `adapter.go` with real-binary tests;
+The [native interrupted-turn test](../native/claude/test_turns.py) waits for the interrupt marker to
+persist; it does not establish the no-flush case or the Harness Host's reconciliation result. Compare
+those boundaries against `runtime/harnesshost/claude/history.go` and `adapter.go` with real-binary tests;
 retain unknown results when the transcript does not prove what survived.
 
 ## Reconcile conversations that were compacted
 
 Codex history RPCs report `UNKNOWN` when a compaction item appears in the recovery window;
-Claude's transcript reader does the same for `compact_boundary`. The manual-compaction probe in
-`native/codex/test_history_projection.py::test_compaction_history_projection_against_resumed_model_input`
-shows paginated RPCs retaining pre-compaction item identities and command output after restart while
-the next model request uses the generated summary and omits pre-compaction reasoning, function call
-and output, and assistant answer. Keep the `UNKNOWN` barrier: those projected items are not proof that
-they remain in model context. Automatic compaction, interruption or process loss during compaction,
-compaction outside Agentplane's observed recovery window, and external rollback remain unproved.
+Claude's transcript reader does the same for `compact_boundary`. The [manual-compaction probe](../native/codex/test_history_projection.py)
+shows that retained history items need not remain in the model context. Keep the `UNKNOWN` barrier
+until real-binary evidence covers automatic compaction, interruption or process loss during
+compaction, compaction outside the observed recovery window, and external rollback.
 
 ## Codex reconcile edge cases
 
