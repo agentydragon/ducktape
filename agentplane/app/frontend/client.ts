@@ -21,6 +21,7 @@ export async function fetchWithLogin(input: RequestInfo | URL, init?: RequestIni
 /** A non-2xx answer from the API: its status, and its body as openapi-fetch decoded it. */
 export class HttpError extends Error {
   readonly status: number;
+  readonly code: number | undefined;
 
   constructor(
     response: Response,
@@ -28,6 +29,10 @@ export class HttpError extends Error {
   ) {
     super(`HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}: ${displayableError(body)}`);
     this.status = response.status;
+    this.code =
+      typeof body === "object" && body !== null && "code" in body && typeof body.code === "number"
+        ? body.code
+        : undefined;
   }
 }
 

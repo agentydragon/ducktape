@@ -23,12 +23,13 @@ frontend; agent and service callers use native gRPC at the owning backend.
   this is a behavior to keep or drop on purpose, not a hole.
 - **Remaining app contracts.** `APP_API_GRPC_FACADE` in the
   [task DAG](task_dag.md#app_api_grpc_facade--uniform-app-grpc-apis-with-generated-http-facades)
-  covers the remaining app views, mutations and streams. Session opening still applies browser
-  presets and creates Thread metadata before calling Dispatcher; separate that human-facing
-  orchestration from native workload admission and reconciliation. Decide which checks each
-  remaining wrapper needs, at its owning boundary, rather than preserve them as transport requirements.
-- **Error codes in the browser.** `sandbox_page.tsx` and `connections/management.tsx` (three times)
-  branch on HTTP status; they move to the body's gRPC `code`, which `HttpError` then carries.
+  covers the remaining app views, mutations and streams. Session opening uses the app-owned
+  generated `SessionOpeningService` facade, retaining preset composition and Thread metadata
+  creation before native Dispatcher admission. Decide which checks each remaining wrapper needs,
+  at its owning boundary, rather than preserve them as transport requirements.
+- **Error codes in the browser.** `connections/management.tsx` still branches on HTTP status
+  (three times); move it to the body's gRPC `code`, which `HttpError` carries. Session-opening
+  recovery uses gRPC codes with an HTTP-status fallback for overlapping app replicas.
 - **Attribution.** Services see the app, not the operator; the Dispatcher's per-caller wake budget is
   per app. Per-operator attribution is the separate delegated-caller question.
 - **Git index.** Its `/search` gets a facade with its Go port, if an agent needs it.

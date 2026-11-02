@@ -298,15 +298,6 @@ class SandboxPresetView(BaseModel):
     bootstrap: str
 
 
-class NewSession(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    spec: dict[str, object]
-    session_id: UUID
-    sandbox_uid: UUID
-    setup_script: str | None = Field(default=None, max_length=65_536)
-
-
 class ThreadView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

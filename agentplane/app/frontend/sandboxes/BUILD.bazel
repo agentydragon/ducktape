@@ -248,6 +248,7 @@ ts_library(
         "//agentplane/app/frontend/threads:sandbox_threads",
         "//agentplane/app/frontend/threads:thread_status",
         "//agentplane/proto:session_pb",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
 
@@ -322,7 +323,22 @@ ts_library(
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:schema",
+        "//agentplane/app/session_opening:session_opening_pb",
         "//agentplane/proto:session_pb",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "client_test",
+    srcs = ["client.test.ts"],
+    deps = [
+        ":client",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend:client",
+        "//agentplane/proto:session_pb",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
 

@@ -322,7 +322,9 @@ func run(ctx context.Context, config Config) error {
 	}
 	RegisterSandboxRoutes(server, config, inventory)
 	RegisterPolicyRoutes(server, config, inventory, policies)
-	RegisterSessionRoutes(server, config, inventory, appBridge, threadStore)
+	if err := RegisterSessionRoutes(server, config, inventory, appBridge, threadStore); err != nil {
+		return fmt.Errorf("register Session opening facade: %w", err)
+	}
 	RegisterRunnerRoutes(server, appBridge)
 	if err := RegisterThreadReadRoutes(server, threadStore, history, inventory, appBridge, wakeupHub, wakeupHub.Connected); err != nil {
 		return fmt.Errorf("register Thread routes: %w", err)

@@ -144,10 +144,25 @@ shown as unavailable, while suspended Sandboxes show that diagnostics are unavai
 Idle Sessions can be archived while their harness process remains live. The UI disables archive for
 observable active turns, setup, or a pending local launch; the server checks whether Session work is
 unfinished before accepting the archive request.
-Every new Session opening is submitted to the Dispatcher with the complete Session spec. A `SessionOpening` reports queued,
-delivering, runner-admitted, or failed state, and
-`GET /sandboxes/{name}/sessions/{id}/opening` checks that durable result. Admission does not mean the
-History Service has projected a Thread yet.
+The app's protobuf-defined `SessionOpeningService` serves the generated HTTP facade at
+`POST /sandboxes/{name}/sessions` and `GET /sandboxes/{name}/sessions/{id}/opening`.
+It applies browser preset defaults, validates the current Sandbox UID, expands the Session ID in
+`cwd`, and creates app-owned Thread metadata before submitting a complete spec to the Dispatcher.
+The partial `spec` is a `Struct` validated as strict `SessionSpec` ProtoJSON: absent keys retain
+preset defaults, while explicit empty, zero and null values clear them. An omitted `setup_script`
+uses the preset; null clears it; a string (including empty) replaces it. Request envelopes and
+response codecs are generated from the proto; the nested override map intentionally preserves JSON
+presence rather than duplicating the `SessionSpec` scalar schema.
+The facade retains cookie-or-reviewed-workload-token admission and cookie CSRF checks; its native
+gRPC listener is local to the process UID in a private Unix-socket directory. Backend callers use
+the Dispatcher directly and never depend on app orchestration.
+
+A `SessionOpening` reports queued, delivering, runner-admitted, or failed state. The browser retains
+only its caller-minted Session ID on an uncertain response and reconciles that opening without
+replaying creation or setup. Admission does not mean History has projected a Thread yet.
+The HTTP paths, snake-case request names, direct response object and POST 201 status support
+cached browser bundles and overlapping app replicas. Rollback reverts the app image and frontend
+bundle together; check that the retained opening still resolves by the same ID.
 
 The catalog's `HARNESS_CENTRAL_SAMPLER` model list adds **Central sampler** to the launch form alongside the
 native harness offerings. The Dispatcher selects the sampler service from deployment configuration;

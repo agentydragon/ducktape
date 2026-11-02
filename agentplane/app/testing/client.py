@@ -18,16 +18,16 @@ from typing import Any, Self
 from uuid import UUID
 
 import httpx
-from google.protobuf.json_format import ParseDict, ParseError
+from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
+from agentplane.app.session_opening import session_opening_pb2
 from agentplane.app.testing.models import (
     BindingView,
     DecisionsSnapshot,
     DecisionsUnavailable,
     EnvironmentRuntimeStatusView,
     NewSandbox,
-    NewSession,
     SandboxesSnapshot,
     SandboxPresetView,
     SandboxView,
@@ -239,11 +239,17 @@ class Client:
         setup_script: str | None = None,
     ) -> session_dispatcher_pb2.SessionOpening:
         """Submit an opening and return its first durable state without waiting for admission."""
-        body = NewSession(
-            session_id=session_id, sandbox_uid=sandbox_uid, spec=overrides or {}, setup_script=setup_script
+        body = ParseDict(
+            {
+                "session_id": str(session_id),
+                "sandbox_uid": str(sandbox_uid),
+                "spec": overrides or {},
+                **({"setup_script": setup_script} if setup_script is not None else {}),
+            },
+            session_opening_pb2.OpenSessionRequest(),
         )
         answered = await self._json(
-            "POST", f"/sandboxes/{name}/sessions", json=body.model_dump(mode="json", exclude_none=True)
+            "POST", f"/sandboxes/{name}/sessions", json=MessageToDict(body, preserving_proto_field_name=True)
         )
         opening = ParseDict(answered, session_dispatcher_pb2.SessionOpening())
         self.opened_sandbox_uids.add(UUID(opening.sandbox_uid))

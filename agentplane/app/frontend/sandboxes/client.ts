@@ -1,8 +1,11 @@
-import { toJson, type JsonObject } from "@bufbuild/protobuf";
+import { create, fromJson, toJson, type JsonObject } from "@bufbuild/protobuf";
+import { ValueSchema } from "@bufbuild/protobuf/wkt";
 
 import type { components } from "../schema";
-import { api, ok } from "../client";
+import { api, ok, fetchWithLogin, HttpError } from "../client";
 import { SessionSpecSchema, type SessionSpec } from "../../../proto/session_pb";
+import { OpenSessionRequestSchema, GetSessionOpeningRequestSchema } from "../../session_opening/session_opening_pb";
+import { SessionOpeningSchema, type SessionOpening } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
 type Harness = NonNullable<components["schemas"]["ThreadView"]["harness"]>;
 /** The runner's protobuf JSON status; this route carries generated proto data as a raw JSON object. */
@@ -116,45 +119,62 @@ export type Decision = {
   substituted: boolean;
   address: string | null;
 };
-export type SessionOpening = {
-  sessionId: string;
-  sandbox: string;
-  sandboxUid: string;
-  state: string;
-  reason?: string;
-};
-
-/**
- * Create the Session `sessionId`, a fresh UUID, names. On an ambiguous response, look for its
- * Thread (`findThread`); never re-run bootstrap implicitly.
- */
+/** Submit once; an uncertain response is reconciled by the caller-minted Session ID. */
 export async function openSession(
   sandbox: string,
   sandboxUID: string,
   sessionId: string,
   spec: SessionSpec,
-  setupScript?: string
+  setupScript?: string | null
 ): Promise<SessionOpening> {
-  const data = ok(
-    await api.POST("/sandboxes/{name}/sessions", {
-      params: { path: { name: sandbox } },
-      body: {
-        session_id: sessionId,
-        sandbox_uid: sandboxUID,
-        spec: toJson(SessionSpecSchema, spec) as JsonObject,
-        setup_script: setupScript,
-      },
-    })
-  );
-  return data as SessionOpening;
+  const request = create(OpenSessionRequestSchema, {
+    name: sandbox,
+    sessionId,
+    sandboxUid: sandboxUID,
+    spec: toJson(SessionSpecSchema, spec) as JsonObject,
+    setupScript: setupScript === undefined ? undefined : fromJson(ValueSchema, setupScript),
+  });
+  const body = toJson(OpenSessionRequestSchema, request, { useProtoFieldName: true }) as JsonObject;
+  // The path supplies name. Older Huma replicas reject extra JSON properties.
+  delete body.name;
+  return sessionOpeningJson(`/sandboxes/${encodeURIComponent(request.name)}/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    // Preserve the request spelling understood by app replicas and cached bundles during rollout.
+    body: JSON.stringify(body),
+  });
 }
 
 export async function getSessionOpening(sandbox: string, sessionId: string): Promise<SessionOpening> {
-  return ok(
-    await api.GET("/sandboxes/{name}/sessions/{session_id}/opening", {
-      params: { path: { name: sandbox, session_id: sessionId } },
-    })
-  ) as SessionOpening;
+  const request = create(GetSessionOpeningRequestSchema, { name: sandbox, sessionId });
+  return sessionOpeningJson(
+    `/sandboxes/${encodeURIComponent(request.name)}/sessions/${encodeURIComponent(request.sessionId)}/opening`
+  );
+}
+
+async function sessionOpeningJson(path: string, init?: RequestInit): Promise<SessionOpening> {
+  const response = await fetchWithLogin(path, init);
+  const body = await response.json();
+  if (!response.ok) throw new HttpError(response, body);
+  return fromJson(SessionOpeningSchema, body);
+}
+
+/** During rollout an older app replica can still return its Huma HTTP error. */
+export function sessionOpeningRejected(error: unknown): boolean {
+  if (!(error instanceof HttpError)) return false;
+  if (error.code !== undefined) {
+    // INVALID_ARGUMENT, NOT_FOUND, ALREADY_EXISTS, PERMISSION_DENIED, FAILED_PRECONDITION,
+    // ABORTED and UNAUTHENTICATED describe a rejected submission. Other results remain uncertain.
+    return [3, 5, 6, 7, 9, 10, 16].includes(error.code);
+  }
+  return error.status >= 400 && error.status < 500 && error.status !== 408;
+}
+
+export function sessionOpeningNotVisible(error: unknown): boolean {
+  return (
+    error instanceof HttpError &&
+    (error.code !== undefined ? error.code === 5 || error.code === 14 : error.status === 404 || error.status === 503)
+  );
 }
 
 export async function getEnvironmentRuntimeStatus(sandbox: string): Promise<EnvironmentRuntimeStatusView> {

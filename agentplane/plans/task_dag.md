@@ -2319,7 +2319,7 @@ OpenAPI-derived contracts, mirrored wire types and handwritten route implementat
 UI-specific view models and adapters may remain.
 
 Remaining scope includes frontend configuration; Sandbox inventory, lifecycle, policy and Runner status;
-Session opening; Thread metadata mutations; Action policy, caller grants and system status;
+Thread metadata mutations; Action policy, caller grants and system status;
 and app-owned live snapshots, event, notice, notification and console streams. Inventory the raw
 streams and Electric synchronization path explicitly: migrate app-owned API contracts to generated
 facades, while recording any protocol-specific transport that must remain. Login/OAuth redirects,
