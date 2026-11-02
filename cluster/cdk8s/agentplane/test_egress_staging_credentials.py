@@ -97,5 +97,31 @@ def test_clickhouse_history_password_has_one_exact_source_reader(scratch_chart: 
     ]
 
 
+def test_quest_bearer_is_only_substituted_for_read_only_operations(scratch_chart: Chart) -> None:
+    objects = _staging_credentials_resources(scratch_chart)
+    credential = next(
+        obj for obj in objects if obj["kind"] == "EgressCredential" and obj["metadata"]["name"] == "quest-read"
+    )
+    assert credential["spec"]["source"] == {"secretRef": {"name": "quest-agent-token", "key": "token"}}
+    assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}]
+    policy = next(obj for obj in objects if obj["kind"] == "PolicySet" and obj["metadata"]["name"] == "quest-read")
+    assert policy["spec"]["rules"] == [
+        {
+            "type": "egress",
+            "hosts": ["quest-api.allegedly.works"],
+            "methods": ["GET"],
+            "paths": ["/openapi.json", "/guest/getReasons/*", "/guest/getPscDetails/*"],
+            "credentialRef": {"name": "quest-read"},
+        },
+        {
+            "type": "egress",
+            "hosts": ["quest-api.allegedly.works"],
+            "methods": ["POST"],
+            "paths": ["/guest/getPscsWithAvailability"],
+            "credentialRef": {"name": "quest-read"},
+        },
+    ]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -1004,6 +1004,7 @@ py_library(
         "//agentplane/crds:policyset",
         "//cluster/cdk8s:aiquota",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/activitywatch:app",
         "//cluster/cdk8s/authentik:app",
         "//cluster/cdk8s/clickhouse:client",

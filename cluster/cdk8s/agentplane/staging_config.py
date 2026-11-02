@@ -48,6 +48,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
+    QUEST_READ_POLICY,
 )
 from cluster.cdk8s.agentplane.model_selections import HarnessRoutes
 from cluster.cdk8s.monitoring.grafana_instance import GRAFANA_BASE_URL, TEMPO_DATASOURCE_UID
@@ -195,6 +196,7 @@ def config(
             GOOGLE_READONLY_POLICY,
             ACTIVITYWATCH_READ_POLICY,
             AIQUOTA_READ_POLICY,
+            QUEST_READ_POLICY,
             HAKU_MAILBOX_POLICY,
             GITHUB_CLONE_POLICY,
             GITHUB_AGENTYDRAGON_AGENT_POLICY,

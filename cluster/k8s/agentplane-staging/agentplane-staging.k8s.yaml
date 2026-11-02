@@ -3925,6 +3925,7 @@ data:
           - google-readonly
           - activitywatch-read
           - aiquota-read
+          - quest-read
           - haku-mailbox
           - github-clone
           - github-agentydragon-agent
@@ -6403,6 +6404,7 @@ data:
                   - google-readonly
                   - activitywatch-read
                   - aiquota-read
+                  - quest-read
                   - haku-mailbox
                   - github-clone
                   - github-agentydragon-agent
@@ -10307,6 +10309,7 @@ spec:
     - google-readonly
     - activitywatch-read
     - aiquota-read
+    - quest-read
     - haku-mailbox
     - coinbase
     - plaid-diagnostics
@@ -10414,6 +10417,7 @@ spec:
     - google-readonly
     - activitywatch-read
     - aiquota-read
+    - quest-read
     - haku-mailbox
     - coinbase
     - plaid-diagnostics
@@ -11455,6 +11459,50 @@ spec:
         - /
       type: egress
 ---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: quest-read
+  namespace: agentplane-staging
+spec:
+  description: Quest availability API. Use https://quest-api.allegedly.works/openapi.json to discover the read-only routes. The bearer is substituted only for the listed lookup paths.
+  source:
+    secretRef:
+      key: token
+      name: quest-agent-token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: quest-read
+  namespace: agentplane-staging
+spec:
+  rules:
+    - credentialRef:
+        name: quest-read
+      hosts:
+        - quest-api.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /openapi.json
+        - /guest/getReasons/*
+        - /guest/getPscDetails/*
+      type: egress
+    - credentialRef:
+        name: quest-read
+      hosts:
+        - quest-api.allegedly.works
+      methods:
+        - POST
+      paths:
+        - /guest/getPscsWithAvailability
+      type: egress
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -12194,6 +12242,14 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app: quest-diagnostics
+            k8s:io.kubernetes.pod.namespace: quest-diagnostics
+      toPorts:
+        - ports:
+            - port: "8082"
               protocol: TCP
     - toEndpoints:
         - matchLabels:

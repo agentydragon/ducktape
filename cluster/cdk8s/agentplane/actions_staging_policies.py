@@ -39,6 +39,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
+    QUEST_READ_POLICY,
     grocy_sf_read_egress_rules,
     home_assistant_read_egress_rules,
 )
@@ -704,6 +705,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             GOOGLE_READONLY_POLICY,
             ACTIVITYWATCH_READ_POLICY,
             AIQUOTA_READ_POLICY,
+            QUEST_READ_POLICY,
             HAKU_MAILBOX_POLICY,
             access.COINBASE_POLICY,
             access.PLAID_DIAGNOSTICS_POLICY,
@@ -764,6 +766,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             GOOGLE_READONLY_POLICY,
             ACTIVITYWATCH_READ_POLICY,
             AIQUOTA_READ_POLICY,
+            QUEST_READ_POLICY,
             HAKU_MAILBOX_POLICY,
             access.COINBASE_POLICY,
             access.PLAID_DIAGNOSTICS_POLICY,

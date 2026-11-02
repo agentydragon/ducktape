@@ -80,5 +80,19 @@ def test_haku_preset_binds_what_its_account_binding_names(staging_manifests: lis
     assert set(preset) <= created, sorted(set(preset) - created)
 
 
+def test_quest_read_is_granted_to_haku_and_claude_ai(staging_manifests: list[dict[str, Any]]) -> None:
+    for name in ("haku-agent", "claude-ai"):
+        binding = one(
+            doc for doc in staging_manifests if doc["kind"] == "PolicyBinding" and doc["metadata"]["name"] == name
+        )
+        assert "quest-read" in binding["spec"]["policySets"]
+    app_config = one(
+        doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config"
+    )
+    presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
+    assert "quest-read" in presets["haku"]["policy_sets"]
+    assert all("quest-read" not in preset["policy_sets"] for name, preset in presets.items() if name != "haku")
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
