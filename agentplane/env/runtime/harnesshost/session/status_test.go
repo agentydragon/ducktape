@@ -11,8 +11,8 @@ import (
 )
 
 func TestObservationRetainsCheckpointAndDoesNotExposePointers(t *testing.T) {
-	ctx, root, _, store, manager := runnerTestManager(t, nil, func(string) string { return "destination" })
-	s := runnerTestReserve(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
+	ctx, root, _, store, manager := newSessionTestManager(t, nil, func(string) string { return "destination" })
+	s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
 	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -38,8 +38,8 @@ func TestObservationRetainsCheckpointAndDoesNotExposePointers(t *testing.T) {
 }
 
 func TestObservationRetainsIdleBarrierBetweenAdmissionAndBatchCommit(t *testing.T) {
-	ctx, root, _, store, manager := runnerTestManager(t, nil, func(string) string { return "destination" })
-	s := runnerTestReserve(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
+	ctx, root, _, store, manager := newSessionTestManager(t, nil, func(string) string { return "destination" })
+	s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
 	if _, err := s.Admit(ctx, &commandpb.Command{CommandId: "command", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}, false); err != nil {
 		t.Fatal(err)
 	}

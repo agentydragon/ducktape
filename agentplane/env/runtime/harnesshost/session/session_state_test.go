@@ -23,21 +23,21 @@ func TestSessionEnvironmentCarriesItsOwnDestination(t *testing.T) {
 		"session-1": `{"destination_ref":{"namespace":"test","name":"sandbox","uid":"sandbox-uid"},"session_id":"session-1"}`,
 		"session-2": `{"destination_ref":{"namespace":"test","name":"sandbox","uid":"sandbox-uid"},"session_id":"session-2"}`,
 	}
-	ctx, root, _, store, manager := runnerTestManager(t, globalEnvironment, func(id string) string { return want[id] })
+	ctx, root, _, store, manager := newSessionTestManager(t, globalEnvironment, func(id string) string { return want[id] })
 	for id := range want {
-		s := runnerTestReserve(t, ctx, manager, store, id, filepath.Join(root, id), "")
+		s := reserveTestSession(t, ctx, manager, store, id, filepath.Join(root, id), "")
 		if got := s.Session().Environment["AGENTPLANE_DESTINATION"]; got != want[id] {
 			t.Fatalf("%s destination = %q, want %q", id, got, want[id])
 		}
 	}
 	if _, shared := globalEnvironment["AGENTPLANE_DESTINATION"]; shared {
-		t.Fatal("a Session's destination leaked into the runner-wide harness environment")
+		t.Fatal("a Session's destination leaked into the Host-wide harness environment")
 	}
 }
 
 func TestSessionBlockersTrackBusyReasonsAndReturnToIdle(t *testing.T) {
-	ctx, root, resources, store, manager := runnerTestManager(t, nil, func(string) string { return "test-destination" })
-	s := runnerTestReserve(t, ctx, manager, store, "session-1", filepath.Join(root, "project"), "setup script")
+	ctx, root, resources, store, manager := newSessionTestManager(t, nil, func(string) string { return "test-destination" })
+	s := reserveTestSession(t, ctx, manager, store, "session-1", filepath.Join(root, "project"), "setup script")
 	if err := publish(ctx, resources, s.ID(), LifecycleStatus{Phase: Preparing}); err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestSessionBlockersTrackBusyReasonsAndReturnToIdle(t *testing.T) {
 	}
 }
 
-func runnerTestManager(t *testing.T, environment map[string]string, destination func(string) string) (context.Context, string, state.State, *retained.Store, *Manager) {
+func newSessionTestManager(t *testing.T, environment map[string]string, destination func(string) string) (context.Context, string, state.State, *retained.Store, *Manager) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
@@ -114,7 +114,7 @@ func runnerTestManager(t *testing.T, environment map[string]string, destination 
 	return ctx, root, resources, store, manager
 }
 
-func runnerTestReserve(t *testing.T, ctx context.Context, manager *Manager, store *retained.Store, id, cwd, setup string) *Session {
+func reserveTestSession(t *testing.T, ctx context.Context, manager *Manager, store *retained.Store, id, cwd, setup string) *Session {
 	t.Helper()
 	record, err := retained.NewRecord(&sessionpb.SessionSpec{
 		Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: cwd, Model: "test-model",
