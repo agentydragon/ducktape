@@ -485,12 +485,10 @@ impl RuntimeRules<'_, '_> {
                 environment,
                 captures,
             } => {
-                let initialized_read = source
-                    .read_binding()
-                    .filter(|binding| executor.initialized_local_binding(binding))
-                    .cloned();
+                let initialized_reads = source
+                    .reads_are_initialized(|binding| executor.initialized_local_binding(binding));
                 let values = executor.evaluate_transfer(&expression, &environment, &captures);
-                let evaluated = source.evaluated(&expression, &values, initialized_read.as_ref());
+                let evaluated = source.evaluated(&expression, &values, initialized_reads);
                 RuntimeValue::Initializer { values, evaluated }
             }
             RuntimeOperation::Invoke {

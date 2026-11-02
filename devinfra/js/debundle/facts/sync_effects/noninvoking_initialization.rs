@@ -14,6 +14,10 @@ enum Leaf {
     Primitive(PrimKinds),
     Function(u32),
     Binding(Id),
+    Record {
+        allocation: u32,
+        reads: BTreeSet<Id>,
+    },
 }
 
 /// Collected from the original owner before ValueExpr can erase syntax.
@@ -49,6 +53,46 @@ fn ordinary_parameter(parameter: &Pat) -> bool {
         if binding.type_ann.is_none() && !binding.id.optional)
 }
 
+/// Static data fields use CreateDataProperty; they do not read a receiver or
+/// invoke a setter. Retain every declarative-cell read, including overwritten
+/// duplicate fields. No value-kind or heap-locality premise is needed for it.
+fn record_inputs(expression: &Expr, reads: &mut BTreeSet<Id>) -> Option<()> {
+    match expression.unwrap_parens() {
+        Expr::Ident(binding) => {
+            reads.insert(binding.to_id());
+        }
+        Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_)) => {}
+        Expr::Object(record) => {
+            for property in &record.props {
+                let PropOrSpread::Prop(property) = property else {
+                    return None;
+                };
+                match property.as_ref() {
+                    Prop::Shorthand(binding) => {
+                        reads.insert(binding.to_id());
+                    }
+                    Prop::KeyValue(property) => {
+                        let name = match &property.key {
+                            PropName::Ident(name) => name.sym.as_ref(),
+                            PropName::Str(name) => name.value.as_str()?,
+                            _ => return None,
+                        };
+                        // A colon-form __proto__ field changes the prototype
+                        // rather than creating an own data property.
+                        if name == "__proto__" {
+                            return None;
+                        }
+                        record_inputs(&property.value, reads)?;
+                    }
+                    _ => return None,
+                }
+            }
+        }
+        _ => return None,
+    }
+    Some(())
+}
+
 impl OriginalInitializer {
     pub(super) fn collect(item: &TopLevelItemView<'_>, owner: SourceUnitOrdinal) -> Option<Self> {
         // Owned views can be split comma declarations: they cannot prove the
@@ -69,6 +113,14 @@ impl OriginalInitializer {
         let initializer = declarator.init.as_deref()?;
         let leaf = match initializer.unwrap_parens() {
             Expr::Ident(binding) => Leaf::Binding(binding.to_id()),
+            Expr::Object(record) => {
+                let mut reads = BTreeSet::new();
+                record_inputs(initializer, &mut reads)?;
+                Leaf::Record {
+                    allocation: record.span.lo.0,
+                    reads,
+                }
+            }
             Expr::Lit(literal) => Leaf::Primitive(match literal {
                 Lit::Str(_) => PrimKinds::STRING,
                 Lit::Num(_) => PrimKinds::NUMBER,
@@ -112,29 +164,40 @@ impl OriginalInitializer {
         self.owner == owner && self.binding == *binding
     }
 
-    pub(super) fn read_binding(&self) -> Option<&Id> {
+    pub(super) fn reads_are_initialized(&self, mut initialized: impl FnMut(&Id) -> bool) -> bool {
         match &self.leaf {
-            Leaf::Binding(binding) => Some(binding),
-            Leaf::Primitive(_) | Leaf::Function(_) => None,
+            Leaf::Binding(binding) => initialized(binding),
+            Leaf::Record { reads, .. } => reads.iter().all(initialized),
+            Leaf::Primitive(_) | Leaf::Function(_) => true,
         }
     }
 
     /// The dedicated root Evaluate transfer must actually finish with its
-    /// expected value. `initialized_read` names a local declarative cell
-    /// checked before that transfer; imported and global reads cannot supply it.
+    /// expected value. Every source cell read must be initialized before that
+    /// transfer; imported and global reads cannot supply this proof.
     /// Generic lowering or an empty effect ledger is no proof.
     pub(super) fn evaluated(
         &self,
         expression: &ValueExpr,
         values: &Values,
-        initialized_read: Option<&Id>,
+        initialized_reads: bool,
     ) -> Option<EvaluatedInitializer> {
         if values.is_empty() || values.contains(&AbstractValue::Value(Value::Unavailable)) {
             return None;
         }
         let matches = match (&self.leaf, expression, values.first()?) {
             (Leaf::Binding(expected), ValueExpr::Binding(lowered), _) => {
-                expected == lowered && initialized_read == Some(expected)
+                expected == lowered && initialized_reads
+            }
+            (
+                Leaf::Record { allocation, .. },
+                ValueExpr::ObjectLiteral(lowered, _),
+                AbstractValue::Value(Value::Alloc(Kind::Object, evaluated)),
+            ) => {
+                values.len() == 1
+                    && allocation == lowered
+                    && allocation == evaluated
+                    && initialized_reads
             }
             (
                 Leaf::Primitive(expected),
