@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
