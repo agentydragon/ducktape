@@ -252,6 +252,8 @@ func TestSessionOpeningGatewayPreservesConflictAndUncertainOutcomes(t *testing.T
 		{"uid", true, nil, 503, codes.Unavailable, []string{"thread"}},
 		{"uid", false, &bridge.DispatcherRequestTimeoutError{SessionID: uuid.New()}, 504, codes.DeadlineExceeded, []string{"thread", "dispatch"}},
 		{"uid", false, &bridge.SessionOpeningNotFoundError{SessionID: uuid.New(), Sandbox: "demo"}, 500, codes.Unknown, []string{"thread", "dispatch"}},
+		{"uid", false, &bridge.ServiceError{Code: codes.Unavailable, Details: "private-upstream-diagnostic"}, 503, codes.Unavailable, []string{"thread", "dispatch"}},
+		{"uid", false, &bridge.ServiceError{Code: codes.Internal, Details: "private-upstream-diagnostic"}, 500, codes.Internal, []string{"thread", "dispatch"}},
 		{"uid", false, &bridge.ServiceError{Code: codes.AlreadyExists, Details: "conflict"}, 409, codes.AlreadyExists, []string{"thread", "dispatch"}},
 	} {
 		peer := &sessionTestPeer{sandbox: &sandboxespb.Sandbox{Uid: "uid"}, failThread: test.failThread, failOpen: test.failOpen}
@@ -259,6 +261,9 @@ func TestSessionOpeningGatewayPreservesConflictAndUncertainOutcomes(t *testing.T
 		var body struct {
 			Code   int32
 			Detail string
+		}
+		if strings.Contains(response.Body.String(), "private-upstream-diagnostic") {
+			t.Fatal("upstream diagnostics escaped the server boundary")
 		}
 		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 			t.Fatal(err)

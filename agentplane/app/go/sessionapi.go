@@ -182,6 +182,7 @@ func sessionRPCError(err error) error {
 	case errors.As(err, &service):
 		if gatewayruntime.HTTPStatusFromCode(service.Code) >= 500 {
 			slog.Error("Session opening dependency failed", "error", err)
+			return status.Error(service.Code, "Upstream service unavailable")
 		}
 		return status.Error(service.Code, service.Details)
 	case errors.As(err, &refused):
