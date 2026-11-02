@@ -1,122 +1,45 @@
 {
-  "source_devel_commit": "f1e187cbb483e534db543bcadc1141f4fa55e6bd",
-  "window_start_utc": "2026-11-02T17:56:00Z",
-  "window_end_utc": "2026-11-02T19:16:59.313622Z",
-  "published_at_utc": "2026-11-02T19:27:23.416706+00:00",
+  "source_devel_commit": "93928661222d1387273c296b7edba717d8d62ff9",
+  "window_start_utc": "2026-11-02T14:32:00Z",
+  "window_end_utc": "2026-11-02T21:04:50.528463+00:00",
+  "published_at_utc": "2026-11-02T21:09:49.220706+00:00",
   "attribution": "not collected",
-  "previous_report_branch_commit": "080c0a4880a98f57b464631631f35183256f3a9a",
-  "report_html_sha256": "3337fd022c95fcaaddf7ebbd29f0ebaecb7c135fa1cee0ec8bc2ffe8ae59077e",
-  "evidence_sha256": "2c51519a22e0b2809ec4e2133ae2cb5ffd9e13f07da20a37890114cb7c40b5e0",
-  "visual_validation_invocation": "48e3da5d-2e4d-4885-9f68-53c170d35b5b",
+  "previous_report_commit": "a9a69d44adb82fe4af5434aa1cc4c8c7ec780a1c",
+  "report_html_sha256": "285b8d9d5b556996c1e40f330898247d794784b4b85e4427cbf0f0e05b477a02",
+  "evidence_sha256": "0d6cde3195b956d3408edd820be53bba4d9b4175bf1a0cb07d920e1952b6831b",
   "visual_validation": {
+    "invocation": "102fa75b-68d7-485a-bb9c-8bada164fa0d",
+    "result": "passed",
     "viewports": [
       {
-        "viewport": {
-          "name": "desktop",
-          "width": 1280,
-          "height": 900
-        },
-        "report_sha256": "3337fd022c95fcaaddf7ebbd29f0ebaecb7c135fa1cee0ec8bc2ffe8ae59077e",
-        "anchors": {
-          "link_count": 99,
-          "missing": []
-        },
-        "expanded_details": 7,
-        "dimensions": {
-          "viewport_width": 1280,
-          "document_width": 1280,
-          "body_width": 1280
-        }
+        "name": "desktop",
+        "width": 1280,
+        "height": 900
       },
       {
-        "viewport": {
-          "name": "mobile",
-          "width": 390,
-          "height": 844
-        },
-        "report_sha256": "3337fd022c95fcaaddf7ebbd29f0ebaecb7c135fa1cee0ec8bc2ffe8ae59077e",
-        "anchors": {
-          "link_count": 99,
-          "missing": []
-        },
-        "expanded_details": 7,
-        "dimensions": {
-          "viewport_width": 390,
-          "document_width": 390,
-          "body_width": 390
-        }
+        "name": "mobile",
+        "width": 390,
+        "height": 844
       }
     ],
-    "manual_screenshot_review": "Desktop/mobile first screen, CPU and heartbeat sections, methods, and dated fleet header; no clipping or overflow observed."
+    "internal_links_checked": 30,
+    "interactive_budget_control_exercised": true,
+    "manual_review": "Desktop first screen, recommendations, graph, build experiment, runtime, resource costs, PR cases, continuity, methodology; mobile first screen, graph and experiment section",
+    "reviewed_html_sha256": "285b8d9d5b556996c1e40f330898247d794784b4b85e4427cbf0f0e05b477a02"
   },
-  "source_revision_scope": "Pinned effective devel source plus recorded per-arm experiment patches. Production PRs use current devel and exclude snapshot/helper diagnostics.",
-  "sampling_design": "Eight final observations: four immutable CPU2/CPU4 clones and four balanced heartbeat control/candidate observations. The two heartbeat controls are the shared CPU1 controls, counted once. Seeds and all known failures/retries/cancellations are retained separately.",
-  "cpu_budget_experiment": {
-    "selected_guest_vcpus": 2,
-    "source_pr": "https://github.com/agentydragon/ducktape/pull/13969",
-    "source_head": "bf83b88a3eff68ac53296585821753ab196a1103",
-    "full_pass_counts": {
-      "1_vcpu_shared_control": "2/2",
-      "2_vcpu": "2/2",
-      "4_vcpu": "0/2"
-    },
-    "fleet_saving_established": false
+  "analysis_scope": {
+    "completed_mainline_full_pattern_invocations": 42,
+    "all_seven_k3s_executed": 11,
+    "all_seven_k3s_passed": 8,
+    "explicit_PR_validation_cases_separate": 2,
+    "population_windows": "See evidence.json; fleet census and controlled experiments are separate",
+    "full_fleet_25_or_50_percent_speedup_established": false
   },
-  "handler_heartbeat_experiment": "Complete: stale/ineligible recovery exercised twice, but both controls scheduled normally; no net latency improvement established. Handler helper not selected for publication.",
-  "monitor_repair_pr": "https://github.com/agentydragon/ducktape/pull/13967",
-  "post_merge_soak_measurement": "Not yet collected for the now-merged CPU and monitor changes. Earlier fleet distributions remain frozen; the CPU 48-hour checkpoint is 2026-11-04T19:32:11Z.",
-  "first_soak_checkpoint_not_before_utc": "2026-11-04T03:17:13Z",
-  "storage_fix_soak_checkpoint_not_before_utc": "2026-11-04T14:21:44Z",
-  "frozen_fleet_manifest": {
-    "source_devel_commit": "2a7055db3c0e0d529160b73ccd0928b7561c8e5c",
-    "window_start_utc": "2026-11-02T08:34:00Z",
-    "window_end_utc": "2026-11-02T14:32:00Z",
-    "published_at_utc": "2026-11-02T15:59:54.560701+00:00",
-    "attribution": "not collected",
-    "previous_report_branch_commit": "67836498336b90559abb4d469e1ba10ad57a8b27",
-    "report_html_sha256": "433434cabb6de029a07f765c87fefd1cbb52716011ee0c2d462e87e76c7c8983",
-    "evidence_sha256": "6cbd0c51789cae8a3d9e08e3e8aedaf15f92f3957cc318cfe50c6af1098a1f53",
-    "visual_validation_invocation": "6150862b-d696-42be-9e35-fe1ebe440bd0",
-    "post_merge_soak_measurement": "Early follow-up measured; no originating k3s execution in the cohort contains the storage cleanup fix. Full 48-hour soak pending.",
-    "first_soak_checkpoint_not_before_utc": "2026-11-04T03:17:13Z",
-    "storage_fix_soak_checkpoint_not_before_utc": "2026-11-04T14:21:44Z",
-    "sampling_design": "Chronological exact-head PR arrival cohort plus a separate bounded completed mainline originating-physical-action cohort; controlled experiments are separate and are not a matched fleet treatment estimate.",
-    "historical_baseline_report_commit": "e412ed891dc2893b7af93d2d74ccbb688cb9f602",
-    "historical_baseline_window_utc": [
-      "2026-11-01T02:30:00Z",
-      "2026-11-01T21:45:00Z"
-    ],
-    "bridge_image_reuse_merge_commit": "cfdd0c627b080b54a0b142ff8c14f18239b2b7d2",
-    "visible_journal_path_merge_commit": "30b97e1cfa32e3352e116099bcd760cb26261cb3",
-    "controlled_observer_pr": 13921,
-    "controlled_observer_pr_head": "a328fa887401074aa76af527ad8ba3907f887f06",
-    "handler_heartbeat_experiment": "Completed bounded trial was inconclusive: both arms rebuilt cold, the warm-only refresh path never ran, and both targets failed guest boot-evidence teardown. No handler restart implementation or latency gain is claimed.",
-    "controlled_observer_merge_commit": "2e141fd38a7ea6217c0af932c309ac1d5eea3624"
+  "experiments": {
+    "guest_fixture_dependency_split": "Measured 186.16s reduction in blocking-image readiness under the same input perturbation; final full VM, five render cases and root layout passed; no matched full-gate effect established",
+    "three_shard_distribution": "Rejected blanket deployment: forced action-execution regime, 1.6-2.4x selected worker cost and sequential OAuth coverage caveat",
+    "KVM_capable_RBE": "Recommended next large probe; no matched measurement or pool provisioned",
+    "manifest_loading": "cProfile result only; no full-gate saving established"
   },
-  "separate_monitor_repair_validation": {
-    "invocation": "11a4607d-3aa7-47eb-b082-1bff4c744036",
-    "full_vm_suite_and_artifact_audit_passed": true,
-    "included_in_treatment_timing_comparison": false
-  },
-  "merged_source_changes": {
-    "observed_at_utc": "2026-11-02T19:36:31.123025+00:00",
-    "cpu": {
-      "pr": 13969,
-      "head": "bf83b88a3eff68ac53296585821753ab196a1103",
-      "merge_commit": "d90c0f57bc7e0deee33b047f0893d30ae908735c",
-      "merged_at_utc": "2026-11-02T19:32:11Z",
-      "bazel_precommit_imports": "SUCCESS",
-      "visual_review_at_observation": "SUCCESS"
-    },
-    "monitor": {
-      "pr": 13967,
-      "head": "c0d17ddbd3f834a046039235db2f67821da51e15",
-      "merge_commit": "9947d3d4d66217c8bbc4b890273ec8ba725a17be",
-      "merged_at_utc": "2026-11-02T19:29:14Z",
-      "bazel_precommit_imports": "SUCCESS",
-      "visual_review_at_observation": "NEUTRAL"
-    },
-    "cpu_first_48h_checkpoint_not_before_utc": "2026-11-04T19:32:11+00:00",
-    "scope": "Merge and validation evidence; no post-merge latency measurement collected, and no follow-up job scheduled."
-  }
+  "deployment_state": "Report PR only; intervention source prototypes are isolated and undeployed"
 }
