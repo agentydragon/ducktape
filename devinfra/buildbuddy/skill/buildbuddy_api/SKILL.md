@@ -126,7 +126,8 @@ bbapi execution <invocation-id>
 # Search remote executions across invocations
 bbapi execution search <query>
 
-# List the output files of a remote execution (path, size, digest, exec bit)
+# List GetExecutionDownloads file records for a remote execution (path, size, digest, exec bit).
+# This does not enumerate the action's complete input-root tree.
 # The execution-id is the EXECUTION column from `bbapi execution <invocation-id>`
 bbapi execution files <invocation-id> <execution-id>
 
