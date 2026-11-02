@@ -1,6 +1,6 @@
 ---
 name: ci_latency
-description: Diagnose CI feedback time and compute; derive and test improvements across test internals, execution structure, environment lifecycle and resource organization, with reproducible evidence and explicit coverage tradeoffs.
+description: Diagnose CI latency across build/test dependency graphs, OpenTelemetry phase traces and environment lifecycles; test improvements to execution structure and resource organization with reproducible evidence and explicit coverage tradeoffs.
 ---
 
 # CI latency analysis
@@ -302,15 +302,25 @@ labels; enumerating thousands of cached target/artifact pages is unnecessary.
 When testing fewer shards, preserve every case and compare both process/CPU
 totals and the slowest shard; repeated session setup may dominate cheap cases.
 
-## Explain what slow tests are doing
+## Analyze build, test and process dependency graphs
+
+For long poles, idle gaps (bubbles), or parallelism questions, read
+[execution graph and trace analysis](references/execution_graphs.md). Follow the
+dependencies across workflow jobs, Bazel build and test actions, and stages inside
+tests or services, including VM startup and teardown. Inspect persisted OTel traces
+before adding instrumentation; extend them when material phases or waits remain
+unexplained, rerun through the normal test path, and analyze the resulting artifacts.
+An instrumentation patch alone does not complete the latency investigation.
+
+## Explain what long build and test paths are doing
 
 For the major contributors selected from fresh cost and critical-path evidence,
-inspect the test source, fixture dependency graph and runtime behavior. Follow
+inspect the implementation, action/fixture dependency graph and runtime behavior. Follow
 expensive or unexplained phases into subprocesses, services and dependencies.
 Do not stop at "this test takes seven minutes" or "setup is expensive," or let
 easy workflow tweaks substitute for investigating the dominant test work.
 
-When a selected test emits spans, use them as the primary phase evidence before
+When a selected workload emits spans, use them as the primary phase evidence before
 adding instrumentation. Consult the component's tracing documentation or producer
 code for artifact formats, clocks and fixture/scenario lifetimes. Use the execution
 system's artifact tooling (`buildbuddy_api` for BuildBuddy) to list the exact
