@@ -1,12 +1,6 @@
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
-filegroup(
-    name = "agents",
-    srcs = glob(["agents/**"]),
-    visibility = ["//agentplane/notification_service:__pkg__"],
-)
-
 copy_file(
     name = "openapi_json",
     src = "//agentplane/notification_service:notifications_openapi",
