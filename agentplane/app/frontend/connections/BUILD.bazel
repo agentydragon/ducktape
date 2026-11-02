@@ -51,7 +51,7 @@ ts_library(
         "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/mcp_edge:connection_service_pb",
-        "//agentplane/proto:sandboxes_pb",
+        "//agentplane/proto:identity_pb",
     ],
 )
 
