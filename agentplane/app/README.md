@@ -134,8 +134,8 @@ and executor report command failures after submission.
 
 The Sandbox page lists retained Sessions from History Thread summaries, so suspension or removal of a
 runner Pod does not clear the inventory. A row's status mark is derived from those last-observed History
-values and the Sandbox's own state, and reads as unconfirmed whenever the stream, the watch or the
-Thread-update listener (`updates_connected` in the frame) is not current. The Status tab shows the
+values and the Sandbox's own state, and reads as unconfirmed whenever the Thread watches, the Sandbox inventory watch or the
+Thread-update listener (`updates_connected` in the Thread snapshot) is not current. The Status tab shows the
 Sandbox's state and lets an operator change its wake-on-message and idle-suspend settings, as the list
 does; the Kubernetes conditions and containers below start open only where one is unmet. It reads
 `GET /sandboxes/{name}/runner-status` for current runner process and Session diagnostics; it does not
@@ -273,13 +273,12 @@ Staging runs two app replicas on separate nodes with `RollingUpdate` (`maxUnavai
 
 The shared Sandbox inventory uses the generated EnvironmentService watch through
 `/upstream/environments/v1/environments:watch`. Protobuf snapshot chunks replace the inventory
-when complete; subsequent upserts and UID-fenced removals update individual Sandboxes. `/live/sandboxes/{name}` is an authenticated SSE stream carrying a
-whole detail snapshot on change and a health frame through the quiet. What it pushes: one Sandbox's bindings with each reader's verdict,
-its Action policy list, and its threads, the last of these from the store rather than a watch, since the app is the
-only writer of a thread's name. The Sandbox page uses those History Thread summaries as its retained
+when complete; subsequent upserts and UID-fenced removals update individual Sandboxes. `/live/sandboxes/{name}?sandbox_uid={uid}` is an authenticated SSE stream carrying a
+whole detail snapshot on change and a health frame through the quiet. It pushes one exact Sandbox incarnation's bindings with each reader's verdict and its Action policy list.
+The Sandbox page reads UID-filtered app Thread metadata pages, joins History summaries, and uses them as its retained
 Session inventory; its harness and turn fields are last observed History values. Suspending or
 removing a runner Pod does not clear projected Threads, and the app does not claim their harnesses
-are still running. Archived Threads stay hidden unless the operator chooses **Show archived**.
+are still running. Archived Threads stay hidden unless the operator chooses **Show archived**. The archived count and page tokens follow the same Sandbox UID.
 
 The Egress log tab's decisions are their own stream, `/live/sandboxes/{name}/egress/decisions`: the
 app follows the proxy's authenticated `EgressAdmin.WatchDecisions` gRPC stream for the sandbox's

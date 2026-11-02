@@ -131,51 +131,6 @@ func (f *streamTestLive) Subscribe() (<-chan struct{}, func()) {
 	return f.changes, func() {}
 }
 
-func TestSandboxThreadsUseCurrentSandboxUID(t *testing.T) {
-	const oldUID = "11111111-1111-4111-8111-111111111111"
-	const currentUID = "22222222-2222-4222-8222-222222222222"
-	oldID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	currentID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
-	store := &streamTestThreadStore{rows: []threads.Thread{{ID: oldID}, {ID: currentID}}}
-	history := &streamTestHistory{
-		summaries: map[uuid.UUID]historydata.FoldSummary{
-			oldID:     {Present: true, Sandbox: "reused-name", SandboxUID: oldUID},
-			currentID: {Present: true, Sandbox: "reused-name", SandboxUID: currentUID},
-		},
-		sandboxes:   map[uuid.UUID]string{oldID: "reused-name", currentID: "reused-name"},
-		sandboxUIDs: map[uuid.UUID]string{oldID: oldUID, currentID: currentUID},
-	}
-	routes := &streamingRoutes{deps: StreamingDependencies{
-		Threads: store,
-		History: history,
-	}}
-	replacement := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
-		Name: "reused-name", UID: currentUID,
-	}}
-	got, err := routes.sandboxThreads(context.Background(), replacement, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	views := got.([]threadView)
-	if len(views) != 1 || views[0].ID != currentID {
-		t.Fatalf("replacement Sandbox threads = %+v, want only %s", views, currentID)
-	}
-
-	for _, sandbox := range []*sandboxapi.Sandbox{
-		nil,
-		{ObjectMeta: metav1.ObjectMeta{Name: "reused-name"}},
-	} {
-		got, err := routes.sandboxThreads(context.Background(), sandbox, true)
-		if err != nil {
-			t.Fatal(err)
-		}
-		views := got.([]threadView)
-		if len(views) != 0 {
-			t.Fatalf("threads without a current Sandbox UID = %+v, want an empty list", views)
-		}
-	}
-}
-
 type decisionTestStream struct {
 	grpc.ServerStreamingClient[egress_adminpb.WatchDecisionsResponse]
 	messages []*egress_adminpb.WatchDecisionsResponse
@@ -1016,11 +971,6 @@ func waitForStreamTextAfter(t *testing.T, response *streamingRecorder, before, a
 
 const liveFramesSandboxUID = "33333333-3333-4333-8333-333333333333"
 
-var (
-	liveFramesFirstThread  = uuid.MustParse("00000000-0000-0000-0000-00000000000a")
-	liveFramesSecondThread = uuid.MustParse("00000000-0000-0000-0000-00000000000b")
-)
-
 // countingLive is a live inventory whose snapshot the test replaces. It counts reads and signals every subscriber
 // of each change.
 type countingLive struct {
@@ -1070,34 +1020,6 @@ func (f *countingLive) readCount() int {
 	return f.reads
 }
 
-type countingThreadStore struct {
-	threadReadStore
-	mu    sync.Mutex
-	rows  []threads.Thread
-	pages int
-}
-
-func (f *countingThreadStore) ListPage(context.Context, int, *threads.PageCursor, bool) (threads.Page, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.pages++
-	return threads.Page{Threads: append([]threads.Thread(nil), f.rows...)}, nil
-}
-
-func (f *countingThreadStore) ArchivedCount(context.Context) (int, error) { return 0, nil }
-
-func (f *countingThreadStore) setRows(rows ...threads.Thread) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.rows = rows
-}
-
-func (f *countingThreadStore) pageCount() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.pages
-}
-
 func liveFramesSnapshot(idleSuspendAt *metav1.Time) liveinventory.Snapshot {
 	return liveinventory.Snapshot{
 		Sandboxes: []sandboxapi.Sandbox{{
@@ -1108,32 +1030,6 @@ func liveFramesSnapshot(idleSuspendAt *metav1.Time) liveinventory.Snapshot {
 	}
 }
 
-type liveFramesFixture struct {
-	live    *countingLive
-	store   *countingThreadStore
-	updates *streamTestChanges
-	routes  *streamingRoutes
-}
-
-func newLiveFramesFixture() *liveFramesFixture {
-	summary := historydata.FoldSummary{Present: true, Sandbox: "demo", SandboxUID: liveFramesSandboxUID}
-	f := &liveFramesFixture{
-		live:    &countingLive{snapshot: liveFramesSnapshot(nil), unsubscribed: make(chan struct{}, 8)},
-		store:   &countingThreadStore{rows: []threads.Thread{{ID: liveFramesFirstThread}}},
-		updates: &streamTestChanges{changes: make(chan struct{}, 1), unsubscribed: make(chan struct{}, 8)},
-	}
-	history := &streamTestHistory{
-		summaries:   map[uuid.UUID]historydata.FoldSummary{liveFramesFirstThread: summary, liveFramesSecondThread: summary},
-		sandboxes:   map[uuid.UUID]string{liveFramesFirstThread: "demo", liveFramesSecondThread: "demo"},
-		sandboxUIDs: map[uuid.UUID]string{liveFramesFirstThread: liveFramesSandboxUID, liveFramesSecondThread: liveFramesSandboxUID},
-	}
-	f.routes = newStreamingRoutes(NewHTTPServer(nil), StreamingDependencies{
-		Live: f.live, Threads: f.store, History: history, Updates: f.updates,
-	})
-	return f
-}
-
-// openLiveStreams serves count identical requests and returns their responses and a wait for every handler to return.
 func openLiveStreams(ctx context.Context, handler http.HandlerFunc, newRequest func() *http.Request, count int) ([]*streamingRecorder, func()) {
 	var handlers sync.WaitGroup
 	responses := make([]*streamingRecorder, count)
@@ -1152,52 +1048,39 @@ func waitForEveryStream(t *testing.T, responses []*streamingRecorder, text strin
 	}
 }
 
-func (f *liveFramesFixture) assertReads(t *testing.T, step string, snapshots, threadPages int) {
-	t.Helper()
-	if got := f.live.readCount(); got != snapshots {
-		t.Fatalf("%s: live snapshot reads = %d, want %d", step, got, snapshots)
-	}
-	if got := f.store.pageCount(); got != threadPages {
-		t.Fatalf("%s: thread page reads = %d, want %d", step, got, threadPages)
-	}
-}
-
-// awaitProducerStopped waits for the shared producer to drop its thread update subscription.
-func (f *liveFramesFixture) awaitProducerStopped(t *testing.T) {
-	t.Helper()
-	select {
-	case <-f.updates.unsubscribed:
-	case <-time.After(2 * time.Second):
-		t.Fatal("the shared producer did not stop after its last stream ended")
-	}
-}
-
-func TestLiveSandboxStreamsShareThreadReadsAcrossViewers(t *testing.T) {
-	f := newLiveFramesFixture()
+func TestLiveSandboxStreamFencesSandboxUIDAndDoesNotReadThreads(t *testing.T) {
+	live := &countingLive{snapshot: liveFramesSnapshot(nil), unsubscribed: make(chan struct{}, 1)}
+	routes := newStreamingRoutes(NewHTTPServer(nil), StreamingDependencies{Live: live})
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	responses, wait := openLiveStreams(ctx, f.routes.liveSandbox, func() *http.Request {
-		request := httptest.NewRequest(http.MethodGet, "/live/sandboxes/demo?include_archived=false", nil)
+	responses, wait := openLiveStreams(ctx, routes.liveSandbox, func() *http.Request {
+		request := httptest.NewRequest(http.MethodGet, "/live/sandboxes/demo?sandbox_uid="+liveFramesSandboxUID, nil)
 		request.SetPathValue("name", "demo")
 		return request
 	}, 2)
-
-	waitForEveryStream(t, responses, liveFramesFirstThread.String())
-	f.assertReads(t, "initial frame", 1, 1)
-
+	waitForEveryStream(t, responses, `"uid":"`+liveFramesSandboxUID+`"`)
+	if got := live.readCount(); got != 1 {
+		t.Fatalf("shared snapshot reads = %d, want 1", got)
+	}
 	deadline := metav1.NewTime(time.Date(2026, 10, 20, 1, 4, 3, 0, time.UTC))
-	f.live.change(liveFramesSnapshot(&deadline))
+	live.change(liveFramesSnapshot(&deadline))
 	waitForEveryStream(t, responses, `"idle_suspend_at":"2026-10-20T01:04:03Z"`)
-	f.assertReads(t, "Kubernetes-only change", 2, 1)
-
-	f.store.setRows(threads.Thread{ID: liveFramesSecondThread}, threads.Thread{ID: liveFramesFirstThread})
-	f.updates.changes <- struct{}{}
-	waitForEveryStream(t, responses, liveFramesSecondThread.String())
-	f.assertReads(t, "thread update", 3, 2)
-
+	replacement := liveFramesSnapshot(nil)
+	replacement.Sandboxes[0].UID = types.UID("44444444-4444-4444-8444-444444444444")
+	live.change(replacement)
+	waitForEveryStream(t, responses, `"sandbox":null`)
+	for _, response := range responses {
+		body := response.String()
+		if strings.Contains(body, `"threads"`) || strings.Contains(body, `"updates_connected"`) {
+			t.Fatalf("Sandbox stream still carries Thread data: %s", body)
+		}
+	}
 	cancel()
 	wait()
-	f.awaitProducerStopped(t)
+	select {
+	case <-live.unsubscribed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("shared producer did not stop")
+	}
 }
 
 func TestEnvironmentWatchRequiresAppCallerAndForwardsOnlyInventory(t *testing.T) {

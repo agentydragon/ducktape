@@ -329,7 +329,7 @@ func run(ctx context.Context, config Config) error {
 	server := NewHTTPServer(appAuth)
 	app := &appService{
 		config: config, inventory: inventory, bridge: appBridge, runnerStatus: appBridge,
-		threadWriter: threadStore, threadReader: threadStore,
+		threadWriter: threadStore, threadReader: threadStore, threadHistory: history,
 		updates: wakeupHub, updatesConnected: wakeupHub.Connected, drainDone: server.DrainDone(),
 	}
 	if err := RegisterAppConfigRoutes(server, app); err != nil {

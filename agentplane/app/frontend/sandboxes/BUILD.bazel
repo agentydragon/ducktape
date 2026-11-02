@@ -253,6 +253,7 @@ ts_library(
         "//agentplane/app/frontend:tracing",
         "//agentplane/app/frontend/actions:policy",
         "//agentplane/app/frontend/threads:client",
+        "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:new_thread_form",
         "//agentplane/app/frontend/threads:sandbox_threads",
         "//agentplane/app/frontend/threads:thread_status",
@@ -287,6 +288,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/testing:runner_status",
         "//agentplane/app/frontend/testing:watch",
         "//agentplane/app/frontend/threads:client",
+        "//agentplane/app/frontend/threads:live",
     ],
 )
 

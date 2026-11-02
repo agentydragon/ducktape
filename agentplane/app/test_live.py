@@ -108,7 +108,7 @@ async def test_the_streams_need_a_caller(app: AppProcess) -> None:
             assert (await unauthenticated.get(route)).status_code == 401
 
 
-async def test_threads_the_history_service_cannot_list_are_said_so_in_the_frame(
+async def test_sandbox_detail_stays_available_when_thread_history_is_unavailable(
     db_url: str,
     history_client: HistoryServiceClient,
     namespace: SandboxNamespace,
@@ -126,11 +126,15 @@ async def test_threads_the_history_service_cannot_list_are_said_so_in_the_frame(
         ) as app,
         httpx.AsyncClient(base_url=app.url, cookies=app.cookies, headers={"Origin": app.url}) as http,
         asyncio.timeout(10),
-        http.stream("GET", "/live/sandboxes/runner-1") as response,
     ):
-        snapshot = json.loads(await anext(_snapshots(response)))
-        assert snapshot["sandbox"]["name"] == "runner-1"
-        assert snapshot["threads"] == {"kind": "unavailable", "code": "UNAVAILABLE"}
+        sandbox = (await http.get("/sandboxes/runner-1")).json()
+        uid = sandbox["uid"]
+        async with http.stream("GET", "/live/sandboxes/runner-1", params={"sandbox_uid": uid}) as response:
+            snapshot = json.loads(await anext(_snapshots(response)))
+            assert snapshot["sandbox"]["name"] == "runner-1"
+            assert "threads" not in snapshot
+        listing = await http.get("/upstream/app/v1/threads", params={"sandbox_uid": uid})
+        assert listing.status_code == 503
 
 
 async def test_thread_metadata_watch_follows_replica_commits(

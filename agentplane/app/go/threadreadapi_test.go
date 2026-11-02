@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
@@ -21,6 +22,8 @@ import (
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -103,6 +106,68 @@ type threadReadHistoryFake struct {
 	summaries   map[uuid.UUID]historydata.FoldSummary
 	sandboxes   map[uuid.UUID]string
 	sandboxUIDs map[uuid.UUID]string
+	err         error
+}
+
+func TestListThreadMetadataScopesPagesAndArchiveCountToSandboxUID(t *testing.T) {
+	const oldUID = "11111111-1111-4111-8111-111111111111"
+	const currentUID = "22222222-2222-4222-8222-222222222222"
+	ids := []uuid.UUID{
+		uuid.MustParse("00000000-0000-4000-8000-000000000001"),
+		uuid.MustParse("00000000-0000-4000-8000-000000000002"),
+		uuid.MustParse("00000000-0000-4000-8000-000000000003"),
+		uuid.MustParse("00000000-0000-4000-8000-000000000004"),
+		uuid.MustParse("00000000-0000-4000-8000-000000000005"),
+	}
+	store := &threadReadStoreFake{rows: []threads.Thread{
+		{ID: ids[0], CreatedAt: time.Unix(4, 0), Archived: true},
+		{ID: ids[1], CreatedAt: time.Unix(3, 0)},
+		{ID: ids[2], CreatedAt: time.Unix(2, 0)},
+		{ID: ids[3], CreatedAt: time.Unix(1, 0), Archived: true},
+		{ID: ids[4], CreatedAt: time.Unix(0, 0), Archived: true},
+	}}
+	history := &threadReadHistoryFake{
+		summaries: map[uuid.UUID]historydata.FoldSummary{
+			ids[0]: {Present: true, Sandbox: "reused", SandboxUID: oldUID},
+			ids[1]: {Present: true, Sandbox: "reused", SandboxUID: currentUID},
+			ids[2]: {Present: true, Sandbox: "reused", SandboxUID: currentUID},
+			ids[3]: {Present: true, Sandbox: "reused", SandboxUID: currentUID},
+			ids[4]: {Present: false, Sandbox: "reused", SandboxUID: currentUID},
+		},
+		sandboxes:   map[uuid.UUID]string{ids[0]: "reused", ids[1]: "reused", ids[2]: "reused", ids[3]: "reused", ids[4]: "reused"},
+		sandboxUIDs: map[uuid.UUID]string{ids[0]: oldUID, ids[1]: currentUID, ids[2]: currentUID, ids[3]: currentUID, ids[4]: currentUID},
+	}
+	service := &appService{threadReader: store, threadHistory: history}
+	first, err := service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID, Limit: 1, IncludeArchived: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Threads) != 1 || first.Threads[0].ThreadId != ids[1].String() || first.NextPageToken == "" || first.ArchivedCount != 1 {
+		t.Fatalf("first current-incarnation page = %+v", first)
+	}
+	second, err := service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID, Limit: 1, IncludeArchived: true, PageToken: first.NextPageToken})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Threads) != 1 || second.Threads[0].ThreadId != ids[2].String() || second.ArchivedCount != 1 {
+		t.Fatalf("second current-incarnation page = %+v", second)
+	}
+	_, err = service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: oldUID, Limit: 1, IncludeArchived: true, PageToken: first.NextPageToken})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("cross-incarnation page token = %v", err)
+	}
+	defaultPage, err := service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID, Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaultPage.ArchivedCount != 1 || defaultPage.Threads[0].ThreadId != ids[1].String() {
+		t.Fatalf("default current-incarnation page = %+v", defaultPage)
+	}
+	history.err = errors.New("History unavailable")
+	_, err = service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID})
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("History failure = %v", err)
+	}
 }
 
 type threadReadAcceptedTokenReviewer struct{}
@@ -221,6 +286,9 @@ func (f *threadReadHistoryFake) GetSummary(_ context.Context, id uuid.UUID) (his
 }
 
 func (f *threadReadHistoryFake) BatchGetSummaries(_ context.Context, ids []uuid.UUID) (map[uuid.UUID]historydata.FoldSummary, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	result := make(map[uuid.UUID]historydata.FoldSummary, len(ids))
 	for _, id := range ids {
 		result[id] = f.summaries[id]
@@ -229,6 +297,9 @@ func (f *threadReadHistoryFake) BatchGetSummaries(_ context.Context, ids []uuid.
 }
 
 func (f *threadReadHistoryFake) FindSessions(_ context.Context, sandboxName, sandboxNameContains, sandboxUID *string) (map[uuid.UUID]string, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	result := make(map[uuid.UUID]string)
 	for id, sandbox := range f.sandboxes {
 		if sandboxName != nil && sandbox == *sandboxName {

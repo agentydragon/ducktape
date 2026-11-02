@@ -138,7 +138,10 @@ def _get_action_policy_calls(review: FederationReview) -> list[Any]:
 
 @asynccontextmanager
 async def _live_sandbox_stream(browser: httpx.AsyncClient, name: str) -> AsyncIterator[Any]:
-    async with browser.stream("GET", f"/live/sandboxes/{name}", timeout=None) as response:
+    sandbox = (await browser.get(f"/sandboxes/{name}")).json()
+    async with browser.stream(
+        "GET", f"/live/sandboxes/{name}", params={"sandbox_uid": sandbox["uid"]}, timeout=None
+    ) as response:
         assert response.status_code == 200
         yield response.aiter_lines()
 

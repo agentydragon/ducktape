@@ -3227,7 +3227,10 @@ routes.push(
     "GET",
     /^\/upstream\/app\/v1\/threads$/,
     (_match, query) => {
-      const all = THREADS_WITH_SANDBOXES.map(mapThread);
+      const sandboxUID = query.get("sandbox_uid");
+      const all = THREADS_WITH_SANDBOXES.filter(
+        (thread) => !sandboxUID || fixtureSandboxUID(thread) === sandboxUID
+      ).map(mapThread);
       const archivedCount = all.filter((thread) => thread.archived).length;
       const includeArchived = query.get("include_archived") === "true";
       const listed = all.filter((thread) => includeArchived || !thread.archived);
@@ -3342,7 +3345,12 @@ function threadMetadataProtoJson(thread: ThreadView): Record<string, unknown> {
   };
 }
 
+function fixtureSandboxUID(thread: ThreadView): string | null {
+  return thread.sandbox_uid ?? SANDBOXES.find((sandbox) => sandbox.name === thread.sandbox)?.uid ?? null;
+}
+
 function historySummaryProtoJson(thread: ThreadView): Record<string, unknown> {
+  const sandboxUID = fixtureSandboxUID(thread);
   const feedStatus =
     thread.feed_status === "active"
       ? "FEED_STATUS_ACTIVE"
@@ -3365,7 +3373,7 @@ function historySummaryProtoJson(thread: ThreadView): Record<string, unknown> {
           sandbox: {
             namespace: "agentplane-visual",
             name: thread.sandbox,
-            ...(thread.sandbox_uid === null ? {} : { uid: thread.sandbox_uid }),
+            ...(sandboxUID === null ? {} : { uid: sandboxUID }),
           },
         }
       : {}),
@@ -3469,13 +3477,13 @@ function liveEvents(url: URL): ServerSentEvent[] {
   if (sandbox !== null) {
     const snapshot: SandboxSnapshot = {
       sandbox: (() => {
-        const row = SANDBOXES.find((row) => row.name === decodeURIComponent(sandbox));
+        const row = SANDBOXES.find(
+          (row) => row.name === decodeURIComponent(sandbox) && row.uid === url.searchParams.get("sandbox_uid")
+        );
         return row ? sandboxDetailFixture(row) : null;
       })(),
       bindings: BINDINGS,
       action_policy: ACTION_POLICY,
-      threads: THREADS,
-      updates_connected: !flags.has("threadDatabaseDisconnected"),
       watch: watch(),
     };
     return [{ event: "snapshot", data: snapshot }];
